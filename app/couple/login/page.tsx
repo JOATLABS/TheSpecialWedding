@@ -104,7 +104,13 @@ export default function CoupleLoginPage() {
             </button>
           </form>
 
-          <div className="mt-6 pt-6 border-t border-gray-100 text-center">
+          <div className="mt-4 text-center">
+            <a href="/couple/forgot-password" className="text-sm text-[#1e3a5f] hover:underline">
+              Forgot your password?
+            </a>
+          </div>
+
+          <div className="mt-4 pt-4 border-t border-gray-100 text-center">
             <p className="text-sm text-gray-500">
               Don&apos;t have an account?{' '}
               <span className="text-[#1e3a5f]">Your planner will send you an invitation.</span>

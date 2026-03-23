@@ -67,6 +67,35 @@ class VendorCampaignService:
         data: Dict[str, Any],
     ) -> Dict[str, Any]:
         """Create a new draft campaign for an advertising vendor."""
+        # ── Profile Completeness Gate (Phase 10) ──────────────────
+        from app.services.vendor_signup_service import check_profile_completeness
+        from app.services.ad_platform_config_service import AdPlatformConfigService
+
+        config_svc = AdPlatformConfigService(self.db)
+        config = await config_svc.get_config()
+
+        if config.get("require_profile_completion", True):
+            vendor_doc = await self.db["users"].find_one({"_id": ObjectId(vendor_id)})
+            if not vendor_doc:
+                from fastapi import HTTPException
+                raise HTTPException(status_code=404, detail="Vendor account not found")
+            completeness = check_profile_completeness(vendor_doc)
+            if not completeness["is_complete"]:
+                from fastapi import HTTPException
+                raise HTTPException(
+                    status_code=403,
+                    detail={
+                        "error": "profile_incomplete",
+                        "message": (
+                            "Please complete your business profile before "
+                            "creating campaigns."
+                        ),
+                        "missing_fields": completeness["missing_fields"],
+                        "completion_percentage": completeness["completion_percentage"],
+                    },
+                )
+        # ──────────────────────────────────────────────────────────
+
         now = datetime.now(timezone.utc)
 
         campaign = {

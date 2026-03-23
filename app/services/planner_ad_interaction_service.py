@@ -17,13 +17,13 @@ NOT the old sponsored_vendors system.
 import html
 import logging
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 
 from bson import ObjectId
 from bson.errors import InvalidId
 from fastapi import HTTPException
-from pymongo.errors import DuplicateKeyError
+from pymongo.errors import BulkWriteError, DuplicateKeyError
 
 from app.models.advertising_campaign import CampaignStatus
 
@@ -57,7 +57,7 @@ class PlannerAdInteractionService:
     Writes: vendor_profiles, ad_leads, ad_events
     """
 
-    def __init__(self, db, email_service=None, billing_service=None, fraud_detection_service=None):
+    def __init__(self, db, email_service=None, billing_service=None, fraud_detection_service=None, auction_service=None):
         self.db = db
         self.campaigns = db["ad_campaigns"]
         self.creatives = db["ad_creatives"]
@@ -67,6 +67,79 @@ class PlannerAdInteractionService:
         self.email_service = email_service
         self.billing_service = billing_service
         self.fraud_detection_service = fraud_detection_service
+        self.auction_service = auction_service
+
+    # ─── Event Deduplication ──────────────────────────────────────────
+
+    # Window in seconds — same planner + campaign + event_type within this
+    # window is considered a duplicate and silently skipped.
+    DEDUP_WINDOW_SECONDS = 300  # 5 minutes
+
+    async def _is_duplicate_event(
+        self,
+        event_type: str,
+        campaign_id: str,
+        planner_id: str,
+    ) -> bool:
+        """
+        Check if an identical event was already recorded within the dedup window.
+
+        Uses an index on (event_type, campaign_id, planner_id, created_at)
+        for efficient lookback.
+        """
+        cutoff = datetime.now(timezone.utc) - timedelta(seconds=self.DEDUP_WINDOW_SECONDS)
+        existing = await self.ad_events.find_one({
+            "event_type": event_type,
+            "campaign_id": campaign_id,
+            "planner_id": planner_id,
+            "created_at": {"$gte": cutoff},
+        })
+        return existing is not None
+
+    async def record_event_deduplicated(
+        self,
+        event_type: str,
+        campaign_id: str,
+        planner_id: str,
+        event_data: Dict[str, Any],
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Record an ad event with deduplication. Returns the event doc if created,
+        or None if it was a duplicate.
+
+        Uses a two-layer approach:
+          1. Fast pre-check (non-blocking, optimistic)
+          2. Insert with DuplicateKeyError guard for race safety
+             (requires compound unique index on dedup fields — see database_indexes.py)
+        """
+        # Layer 1: fast pre-check (avoids unnecessary insert attempts)
+        if await self._is_duplicate_event(event_type, campaign_id, planner_id):
+            logger.debug(
+                f"Dedup: skipping {event_type} for campaign={campaign_id} planner={planner_id}"
+            )
+            return None
+
+        now = datetime.now(timezone.utc)
+        event = {
+            "event_type": event_type,
+            "campaign_id": campaign_id,
+            "planner_id": planner_id,
+            **event_data,
+            "created_at": now,
+            "updated_at": now,
+        }
+
+        # Layer 2: race-safe insert — if two concurrent requests both pass Layer 1,
+        # the unique partial index catches the second one
+        try:
+            await self.ad_events.insert_one(event)
+        except DuplicateKeyError:
+            logger.debug(
+                f"Dedup (race-safe): duplicate {event_type} for campaign={campaign_id} planner={planner_id}"
+            )
+            return None
+
+        return event
 
     # ─── Shared: Resolve Campaign + Creative ─────────────────────────
 
@@ -610,6 +683,7 @@ class PlannerAdInteractionService:
     async def get_sponsored_cards(
         self,
         planner_email: str,
+        planner_id: Optional[str] = None,
         planner_location: Optional[str] = None,
         categories: Optional[List[str]] = None,
         limit: int = 3,
@@ -617,10 +691,30 @@ class PlannerAdInteractionService:
         """
         Get sponsored vendor cards for the planner rail.
 
-        Filters out vendors the planner has already added to their directory,
-        then enriches each campaign with its primary creative.
+        Filters out:
+        - Vendors the planner has already added to their directory
+        - Vendors the planner has hidden (planner_ad_preferences)
+        - Suppressed categories (planner_ad_preferences)
+        Respects reduced_frequency setting (max 1 card if enabled).
         """
         now = datetime.now(timezone.utc)
+
+        # ── Load planner ad preferences ──
+        hidden_vendor_ids = []
+        suppressed_categories = []
+        reduced_frequency = False
+        if planner_id:
+            prefs = await self.db["planner_ad_preferences"].find_one(
+                {"planner_id": planner_id}
+            )
+            if prefs:
+                hidden_vendor_ids = prefs.get("hidden_vendor_ids", [])
+                suppressed_categories = prefs.get("suppressed_categories", [])
+                reduced_frequency = prefs.get("reduced_frequency", False)
+
+        # Override limit if planner has reduced frequency enabled
+        if reduced_frequency:
+            limit = 1
 
         # ── Get campaigns the planner already interacted with ──
         already_added_campaign_ids = []
@@ -653,8 +747,22 @@ class PlannerAdInteractionService:
         if already_added_campaign_ids:
             query["_id"] = {"$nin": [ObjectId(c) for c in already_added_campaign_ids if ObjectId.is_valid(c)]}
 
+        # Filter out hidden vendors
+        if hidden_vendor_ids:
+            query["vendor_id"] = {"$nin": hidden_vendor_ids}
+
+        # Filter out suppressed categories
+        if suppressed_categories:
+            query["vendor_category"] = {"$nin": suppressed_categories}
+
         if categories:
-            query["vendor_category"] = {"$in": categories}
+            # Merge with existing vendor_category filter if suppressed_categories set
+            if "vendor_category" in query:
+                query["vendor_category"] = {
+                    "$in": [c for c in categories if c not in suppressed_categories],
+                }
+            else:
+                query["vendor_category"] = {"$in": categories}
 
         if planner_location:
             # Nest inside existing $and to avoid overwriting date checks
@@ -665,22 +773,69 @@ class PlannerAdInteractionService:
                 ]}
             )
 
-        # Fetch campaigns sorted by quality_score, dedup by vendor_id
+        # Fetch eligible campaigns, dedup by vendor_id
         seen_vendors = set()
-        results = []
+        eligible_campaigns = []
         async for campaign in (
-            self.campaigns.find(query).sort("quality_score", -1).limit(limit * 3)
+            self.campaigns.find(query).sort("quality_score", -1).limit(limit * 5)
         ):
             vid = campaign.get("vendor_id")
             if vid in seen_vendors:
                 continue
             seen_vendors.add(vid)
+            eligible_campaigns.append(campaign)
 
-            # Enrich with primary creative
+        # ── Auction-based ranking (if auction service available) ──
+        if self.auction_service and eligible_campaigns:
+            try:
+                auction_results = await self.auction_service.run_auction(
+                    eligible_campaigns=eligible_campaigns,
+                    max_winners=limit,
+                )
+
+                results = []
+                for winner in auction_results:
+                    campaign = winner["campaign"]
+                    creative = await self._get_primary_creative(campaign)
+                    card = {
+                        "campaign_id": str(campaign["_id"]),
+                        "vendor_id": campaign.get("vendor_id"),
+                        "vendor_name": campaign.get("vendor_name"),
+                        "vendor_category": campaign.get("vendor_category"),
+                        "vendor_service_area": campaign.get("vendor_service_area"),
+                        "vendor_logo_url": campaign.get("vendor_logo_url"),
+                        "quality_score": campaign.get("quality_score", 50),
+                        # Auction metadata (not exposed to planner UI, used for billing/analytics)
+                        "adrank": winner["adrank"],
+                        "position": winner["position"],
+                        "effective_cost": winner["effective_cost"],
+                        "estimated_action_rate": winner["estimated_action_rate"],
+                        "creative": {
+                            "creative_id": str(creative["_id"]) if creative else None,
+                            "headline": creative.get("headline") if creative else None,
+                            "description": creative.get("description") if creative else None,
+                            "image_url": creative.get("image_url") if creative else None,
+                            "offer": creative.get("offer") if creative else None,
+                            "call_to_action": creative.get("call_to_action", "View Portfolio") if creative else "View Portfolio",
+                        } if creative else None,
+                        "in_directory": False,
+                        "targeting_reason": self._build_targeting_reason(campaign, planner_location),
+                    }
+                    results.append(card)
+
+                return results
+
+            except Exception as e:
+                logger.error(f"Auction engine failed, falling back to quality_score sort: {e}")
+                # Fall through to legacy quality_score ranking below
+
+        # ── Legacy fallback: quality_score sort (no auction service) ──
+        results = []
+        for campaign in eligible_campaigns[:limit]:
             creative = await self._get_primary_creative(campaign)
             card = {
                 "campaign_id": str(campaign["_id"]),
-                "vendor_id": vid,
+                "vendor_id": campaign.get("vendor_id"),
                 "vendor_name": campaign.get("vendor_name"),
                 "vendor_category": campaign.get("vendor_category"),
                 "vendor_service_area": campaign.get("vendor_service_area"),
@@ -694,13 +849,10 @@ class PlannerAdInteractionService:
                     "offer": creative.get("offer") if creative else None,
                     "call_to_action": creative.get("call_to_action", "View Portfolio") if creative else "View Portfolio",
                 } if creative else None,
-                "in_directory": False,  # not in directory (filtered out above)
+                "in_directory": False,
                 "targeting_reason": self._build_targeting_reason(campaign, planner_location),
             }
             results.append(card)
-
-            if len(results) >= limit:
-                break
 
         return results
 

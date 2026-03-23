@@ -45,6 +45,26 @@ class NotificationService:
             if not result.inserted_id:
                 raise HTTPException(status_code=500, detail="Failed to create notification")
 
+            # ── WebPush: push to targeted user if applicable ──
+            try:
+                target = notification.get("target_audience")
+                user_id = notification.get("user_id")
+                if user_id:
+                    # Direct-targeted notification → push to that user
+                    await self._send_push_to_user(
+                        user_id,
+                        notification["title"],
+                        notification["message"],
+                    )
+                elif target == "root_admin":
+                    # System alert targeting root admin
+                    await self._send_push_to_admin(
+                        notification["title"],
+                        notification["message"],
+                    )
+            except Exception as push_err:
+                logger.warning("WebPush delivery failed (non-blocking): %s", str(push_err))
+
             return {
                 "id": str(result.inserted_id),
                 "message": "Notification created successfully",
@@ -707,6 +727,51 @@ class NotificationService:
         except Exception as e:
             logger.error(f"Error counting target audience: {str(e)}")
             return 0
+
+    # ==================== WEB PUSH HELPERS ====================
+
+    async def _check_push_enabled(self, user_email: str) -> bool:
+        """Check if user has push notifications enabled (defaults to True)."""
+        try:
+            user = await self.users_collection.find_one(
+                {"email": user_email},
+                {"push_notifications_enabled": 1},
+            )
+            if user:
+                return user.get("push_notifications_enabled", True)
+            return True
+        except Exception:
+            return True
+
+    async def _send_push_to_user(self, user_email: str, title: str, message: str) -> None:
+        """Send a WebPush notification to a specific user (non-blocking)."""
+        if not await self._check_push_enabled(user_email):
+            return
+        from app.services.web_push_service import web_push_service
+        if web_push_service.enabled:
+            await web_push_service.send_notification(
+                user_id=user_email,
+                title=title,
+                body=message,
+                tag="admin_notification",
+            )
+
+    async def _send_push_to_admin(self, title: str, message: str) -> None:
+        """Send a WebPush notification to root admin (non-blocking)."""
+        import os
+        root_admin_email = os.getenv(
+            "ROOT_ADMIN_EMAIL", "thedeveloper@thespecialwedding.io"
+        )
+        if not await self._check_push_enabled(root_admin_email):
+            return
+        from app.services.web_push_service import web_push_service
+        if web_push_service.enabled:
+            await web_push_service.send_notification(
+                user_id=root_admin_email,
+                title=title,
+                body=message,
+                tag="admin_system_alert",
+            )
 
     # ==================== NOTIFICATION TEMPLATE METHODS ====================
 

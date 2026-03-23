@@ -358,6 +358,14 @@ async def create_user_indexes():
         )
         logger.info("Created TTL index: idx_pending_payment_ttl (pending signups)")
 
+        # 3. Advertising vendor status queries (Phase 10 - admin vendor list)
+        await collection.create_index(
+            [("role", ASCENDING), ("vendor_account_status", ASCENDING)],
+            name="idx_user_role_vendor_status",
+            partialFilterExpression={"role": "advertising_vendor"},
+        )
+        logger.info("Created index: idx_user_role_vendor_status (vendor admin queries)")
+
         return True
     except Exception as e:
         logger.error(f"Error creating user indexes: {str(e)}")
@@ -1420,11 +1428,12 @@ async def create_campaign_platform_indexes():
             name="idx_ad_events_ttl_90d",
             expireAfterSeconds=90 * 24 * 60 * 60,  # 90 days
         )
-        # Fraud detection: planner + campaign + time window queries
+        # Fraud detection + event dedup: event_type + campaign + planner + time
+        # Field order matches dedup query in planner_ad_interaction_service._is_duplicate_event
         await ad_events.create_index(
-            [("planner_id", ASCENDING), ("campaign_id", ASCENDING),
-             ("event_type", ASCENDING), ("created_at", DESCENDING)],
-            name="idx_ad_events_planner_campaign_fraud",
+            [("event_type", ASCENDING), ("campaign_id", ASCENDING),
+             ("planner_id", ASCENDING), ("created_at", DESCENDING)],
+            name="idx_ad_events_dedup_fraud",
         )
         # Session anomaly detection
         await ad_events.create_index(
@@ -1564,6 +1573,21 @@ async def create_billing_indexes():
         logger.error(f"Error creating additional vendor_ad_billing indexes: {str(e)}")
 
     logger.info("All billing indexes created/verified (7 total)")
+
+    # =========================================================================
+    # planner_ad_preferences — 1 index
+    # =========================================================================
+    planner_prefs = mongo.db["planner_ad_preferences"]
+    try:
+        await planner_prefs.create_index(
+            [("planner_id", ASCENDING)],
+            name="idx_planner_prefs_planner_id",
+            unique=True,
+        )
+        logger.info("Created index: idx_planner_prefs_planner_id (unique)")
+    except Exception as e:
+        logger.error(f"Error creating planner_ad_preferences indexes: {str(e)}")
+
     return True
 
 
@@ -1628,7 +1652,54 @@ async def create_couple_portal_indexes():
             background=True
         )
 
-        logger.info("Couple portal indexes created/verified (couple_users, couple_updates, archived_weddings)")
+        # Sprint 3: Password reset token lookup
+        await couple_users.create_index(
+            [("password_reset_token", ASCENDING)],
+            name="idx_couple_reset_token",
+            sparse=True,
+            background=True
+        )
+
+        # Sprint 3: couple_messages collection
+        couple_messages = mongo.db["couple_messages"]
+
+        # Message history per wedding (chronological feed)
+        await couple_messages.create_index(
+            [("wedding_id", ASCENDING), ("_id", DESCENDING)],
+            name="idx_messages_wedding_id",
+            background=True
+        )
+
+        # Unread count queries (couple checking planner messages, planner checking couple messages)
+        await couple_messages.create_index(
+            [("wedding_id", ASCENDING), ("sender_role", ASCENDING), ("read_by_couple", ASCENDING)],
+            name="idx_messages_unread_couple",
+            background=True
+        )
+        await couple_messages.create_index(
+            [("wedding_id", ASCENDING), ("sender_role", ASCENDING), ("read_by_planner", ASCENDING)],
+            name="idx_messages_unread_planner",
+            background=True
+        )
+
+        # Sprint 4: custom_form_templates collection
+        custom_templates = mongo.db["custom_form_templates"]
+
+        await custom_templates.create_index(
+            [("planner_email", ASCENDING), ("created_at", DESCENDING)],
+            name="idx_custom_templates_planner",
+            background=True
+        )
+
+        # Sprint 5: planner_tasks meeting queries
+        planner_tasks = mongo.get_planner_tasks_collection()
+        await planner_tasks.create_index(
+            [("wedding_id", ASCENDING), ("category", ASCENDING), ("planner_email", ASCENDING), ("start_date", ASCENDING)],
+            name="idx_planner_tasks_meeting_lookup",
+            background=True
+        )
+
+        logger.info("Couple portal indexes created/verified (couple_users, couple_updates, couple_messages, archived_weddings, custom_form_templates, planner_tasks)")
 
     except Exception as e:
         logger.error(f"Error creating couple portal indexes: {e}")

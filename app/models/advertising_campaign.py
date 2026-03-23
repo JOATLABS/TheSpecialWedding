@@ -530,6 +530,7 @@ class CreateCampaignRequest(MongoModel):
     target_budget_max: Optional[float] = Field(None, ge=0)
     daily_budget: float = Field(default=0.0, ge=0)
     total_budget: float = Field(default=0.0, ge=0)
+    bid_amount: float = Field(default=0.0, ge=0, description="CPL bid amount for auction ranking")
     pacing_strategy: PacingStrategy = Field(default=PacingStrategy.EVEN)
     start_date: Optional[datetime] = Field(None)
     end_date: Optional[datetime] = Field(None)
@@ -551,6 +552,7 @@ class UpdateCampaignRequest(MongoModel):
     target_budget_max: Optional[float] = Field(None, ge=0)
     daily_budget: Optional[float] = Field(None, ge=0)
     total_budget: Optional[float] = Field(None, ge=0)
+    bid_amount: Optional[float] = Field(None, ge=0, description="CPL bid amount for auction ranking")
     pacing_strategy: Optional[PacingStrategy] = Field(None)
     start_date: Optional[datetime] = Field(None)
     end_date: Optional[datetime] = Field(None)
@@ -593,3 +595,118 @@ class UpdateCPLPricingRequest(MongoModel):
     """Root admin request to update CPL pricing on a campaign."""
     cpl_quote_request: Optional[float] = Field(None, ge=0)
     cpl_directory_add: Optional[float] = Field(None, ge=0)
+
+
+# =============================================================================
+# PLATFORM CONFIG (Singleton document in ad_platform_config collection)
+# =============================================================================
+
+class AdPlatformConfig(MongoModel):
+    """
+    Advertising platform configuration — singleton document.
+
+    Stores all configurable settings for the ad system: feature flags,
+    serving limits, fraud detection thresholds, and vendor signup settings.
+    Managed exclusively by root admin via /admin/ads/config endpoints.
+
+    Collection: ad_platform_config (always exactly 1 document, _id="singleton")
+    """
+
+    # ── Feature Flags ──
+    ads_enabled: bool = Field(default=True)
+    show_sponsored_badge: bool = Field(default=True)
+    enable_event_tracking: bool = Field(default=True)
+    require_creative_review: bool = Field(default=True)
+    auto_approve_returning_vendors: bool = Field(default=False)
+
+    # ── Serving Limits ──
+    max_sponsored_per_page: int = Field(default=3, ge=1, le=10)
+    impressions_per_session: int = Field(default=5, ge=1, le=20)
+    freq_cap_per_campaign_planner_day: int = Field(default=3, ge=1, le=20)
+    review_sla_hours: int = Field(default=48, ge=1, le=168)
+    max_campaigns_per_vendor: int = Field(default=5, ge=1, le=50)
+
+    # ── Fraud Detection ──
+    max_clicks_per_planner_campaign_hour: int = Field(default=5, ge=1, le=50)
+    hide_rate_auto_pause_threshold: int = Field(
+        default=3, ge=1, le=20,
+        description="Unique planners hiding in 7d before auto-pause"
+    )
+    click_velocity_window_minutes: int = Field(default=5, ge=1, le=60)
+    auto_void_suspicious_clicks: bool = Field(default=True)
+
+    # ── Vendor Signup ──
+    vendor_domain: str = Field(default="vendor.thespecialwedding.io", max_length=100)
+    auto_approve_signups: bool = Field(default=False)
+    require_profile_completion: bool = Field(default=True)
+    min_images_for_campaign: int = Field(default=1, ge=0, le=10)
+
+    # ── Metadata ──
+    updated_at: Optional[datetime] = Field(None)
+    updated_by: Optional[str] = Field(None, max_length=254)
+
+
+class UpdatePlatformConfigRequest(MongoModel):
+    """Root admin request to update platform config. All fields optional — only provided fields are updated."""
+
+    # Feature Flags
+    ads_enabled: Optional[bool] = None
+    show_sponsored_badge: Optional[bool] = None
+    enable_event_tracking: Optional[bool] = None
+    require_creative_review: Optional[bool] = None
+    auto_approve_returning_vendors: Optional[bool] = None
+
+    # Serving Limits
+    max_sponsored_per_page: Optional[int] = Field(None, ge=1, le=10)
+    impressions_per_session: Optional[int] = Field(None, ge=1, le=20)
+    freq_cap_per_campaign_planner_day: Optional[int] = Field(None, ge=1, le=20)
+    review_sla_hours: Optional[int] = Field(None, ge=1, le=168)
+    max_campaigns_per_vendor: Optional[int] = Field(None, ge=1, le=50)
+
+    # Fraud Detection
+    max_clicks_per_planner_campaign_hour: Optional[int] = Field(None, ge=1, le=50)
+    hide_rate_auto_pause_threshold: Optional[int] = Field(None, ge=1, le=20)
+    click_velocity_window_minutes: Optional[int] = Field(None, ge=1, le=60)
+    auto_void_suspicious_clicks: Optional[bool] = None
+
+    # Vendor Signup
+    vendor_domain: Optional[str] = Field(None, max_length=100)
+    auto_approve_signups: Optional[bool] = None
+    require_profile_completion: Optional[bool] = None
+    min_images_for_campaign: Optional[int] = Field(None, ge=0, le=10)
+
+
+# =============================================================================
+# PLANNER AD PREFERENCES
+# =============================================================================
+
+class PlannerAdPreferences(MongoModel):
+    """
+    Per-planner ad preferences.
+
+    Controls how sponsored content is displayed to this planner.
+    Collection: planner_ad_preferences (unique on planner_id)
+    """
+
+    planner_id: str = Field(..., description="Planner user _id")
+
+    # ── Vendor hiding ──
+    hidden_vendor_ids: List[str] = Field(
+        default_factory=list,
+        description="Vendor IDs this planner has dismissed — never shown again"
+    )
+
+    # ── Category suppression ──
+    suppressed_categories: List[str] = Field(
+        default_factory=list,
+        description="Vendor categories the planner has suppressed (e.g., already booked)"
+    )
+
+    # ── Frequency ──
+    reduced_frequency: bool = Field(
+        default=False,
+        description="When true, show max 1 card instead of 3 (P10 decision)"
+    )
+
+    # ── Metadata ──
+    updated_at: Optional[datetime] = Field(None)

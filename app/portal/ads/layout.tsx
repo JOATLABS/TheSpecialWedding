@@ -10,6 +10,7 @@ import {
   Image,
   Users,
   CreditCard,
+  Settings,
   LogOut,
   Menu,
   X,
@@ -30,6 +31,7 @@ interface VendorUser {
   email: string;
   name: string;
   role: string;
+  must_change_password?: boolean;
 }
 
 interface VendorAuthContextType {
@@ -62,6 +64,7 @@ const navItems = [
   { name: 'Creatives', href: '/portal/ads/creatives', icon: Image },
   { name: 'Leads', href: '/portal/ads/leads', icon: Users },
   { name: 'Billing', href: '/portal/ads/billing', icon: CreditCard },
+  { name: 'Settings', href: '/portal/ads/settings', icon: Settings },
 ];
 
 // =============================================================================
@@ -161,19 +164,16 @@ function VendorPortalLayoutInner({ children }: { children: React.ReactNode }) {
 
     const data = await response.json();
     setToken(data.access_token);
-    setUser({
+    const vendorUser: VendorUser = {
       _id: data.user_id || '',
       email: email,
       name: data.name || email,
       role: data.role || 'advertising_vendor',
-    });
+      must_change_password: data.must_change_password || false,
+    };
+    setUser(vendorUser);
     localStorage.setItem('vendor_ad_token', data.access_token);
-    localStorage.setItem('vendor_ad_user', JSON.stringify({
-      _id: data.user_id || '',
-      email,
-      name: data.name || email,
-      role: data.role || 'advertising_vendor',
-    }));
+    localStorage.setItem('vendor_ad_user', JSON.stringify(vendorUser));
   }, []);
 
   const logout = useCallback(() => {
@@ -195,6 +195,24 @@ function VendorPortalLayoutInner({ children }: { children: React.ReactNode }) {
     return (
       <VendorAuthContext.Provider value={authValue}>
         <LoginPage onLogin={login} />
+      </VendorAuthContext.Provider>
+    );
+  }
+
+  // Force password change screen — intercepts before portal access
+  if (!loading && token && user?.must_change_password) {
+    return (
+      <VendorAuthContext.Provider value={authValue}>
+        <ForcePasswordChangePage
+          token={token}
+          userEmail={user.email}
+          onPasswordChanged={() => {
+            const updated = { ...user, must_change_password: false };
+            setUser(updated);
+            localStorage.setItem('vendor_ad_user', JSON.stringify(updated));
+          }}
+          onLogout={logout}
+        />
       </VendorAuthContext.Provider>
     );
   }
@@ -413,10 +431,163 @@ function LoginPage({ onLogin }: { onLogin: (email: string, password: string) => 
           </button>
           <p className="text-center text-xs text-slate-500 dark:text-slate-400">
             Don&apos;t have an account?{' '}
-            <a href="mailto:ads@thespecialwedding.io" className="text-primary-500 hover:underline">
-              Contact us to get started
+            <a href="/portal/ads/signup" className="text-primary-500 hover:underline">
+              Register as a vendor
             </a>
           </p>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+// =============================================================================
+// Force Password Change Page (first login after admin approval)
+// =============================================================================
+
+function ForcePasswordChangePage({
+  token,
+  userEmail,
+  onPasswordChanged,
+  onLogout,
+}: {
+  token: string;
+  userEmail: string;
+  onPasswordChanged: () => void;
+  onLogout: () => void;
+}) {
+  const [currentPassword, setCurrentPassword] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError('');
+
+    if (newPassword !== confirmPassword) {
+      setError('New passwords do not match.');
+      return;
+    }
+    if (newPassword.length < 8) {
+      setError('Password must be at least 8 characters.');
+      return;
+    }
+    if (!/[A-Z]/.test(newPassword) || !/[a-z]/.test(newPassword) || !/\d/.test(newPassword) || !/[!@#$%^&*()_+\-\[\]{}|;:,.<>?]/.test(newPassword)) {
+      setError('Password must include uppercase, lowercase, number, and special character.');
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const response = await fetch(`${API_BASE}/api/v1/vendors/change-password`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          current_password: currentPassword,
+          new_password: newPassword,
+        }),
+      });
+
+      if (!response.ok) {
+        const err = await response.json().catch(() => ({}));
+        throw new Error(err.detail || 'Password change failed.');
+      }
+
+      onPasswordChanged();
+    } catch (err: any) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 dark:from-slate-900 dark:to-slate-800 flex items-center justify-center p-4">
+      <div className="w-full max-w-md">
+        <div className="text-center mb-8">
+          <div className="w-16 h-16 bg-amber-500 rounded-2xl flex items-center justify-center mx-auto mb-4">
+            <svg xmlns="http://www.w3.org/2000/svg" className="w-8 h-8 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z" />
+            </svg>
+          </div>
+          <h1 className="text-2xl font-bold text-slate-900 dark:text-white">Change Your Password</h1>
+          <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">
+            You must change your temporary password before accessing the portal.
+          </p>
+        </div>
+
+        <form onSubmit={handleSubmit} className="bg-white dark:bg-slate-800 rounded-2xl shadow-lg p-6 space-y-4">
+          {error && (
+            <div className="bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 text-sm p-3 rounded-lg">
+              {error}
+            </div>
+          )}
+
+          <div>
+            <label className="block text-sm font-medium text-slate-700 dark:text-slate-200 mb-1.5">
+              Temporary Password
+            </label>
+            <input
+              type="password"
+              value={currentPassword}
+              onChange={(e) => setCurrentPassword(e.target.value)}
+              required
+              className="w-full px-3 py-2.5 border border-slate-200 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-slate-900 dark:text-white text-sm focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+              placeholder="Enter your temporary password"
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-slate-700 dark:text-slate-200 mb-1.5">
+              New Password
+            </label>
+            <input
+              type="password"
+              value={newPassword}
+              onChange={(e) => setNewPassword(e.target.value)}
+              required
+              className="w-full px-3 py-2.5 border border-slate-200 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-slate-900 dark:text-white text-sm focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+              placeholder="At least 8 characters"
+            />
+            <p className="text-xs text-slate-400 mt-1">
+              Must include uppercase, lowercase, number, and special character.
+            </p>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-slate-700 dark:text-slate-200 mb-1.5">
+              Confirm New Password
+            </label>
+            <input
+              type="password"
+              value={confirmPassword}
+              onChange={(e) => setConfirmPassword(e.target.value)}
+              required
+              className="w-full px-3 py-2.5 border border-slate-200 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-slate-900 dark:text-white text-sm focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+              placeholder="Re-enter new password"
+            />
+          </div>
+
+          <button
+            type="submit"
+            disabled={loading}
+            className="w-full py-2.5 bg-amber-500 hover:bg-amber-600 text-white font-medium rounded-lg transition-colors disabled:opacity-50 text-sm"
+          >
+            {loading ? 'Changing Password...' : 'Change Password & Continue'}
+          </button>
+
+          <button
+            type="button"
+            onClick={onLogout}
+            className="w-full py-2 text-sm text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 transition-colors"
+          >
+            Sign Out
+          </button>
         </form>
       </div>
     </div>

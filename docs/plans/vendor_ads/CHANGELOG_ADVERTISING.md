@@ -1,5 +1,119 @@
 # Vendor Advertising Feature — Changelog
 
+## Phase 10: Vendor Signup / Onboarding Flow
+**Date:** 2026-03-23
+**Version:** 7.0.0
+
+### Overview
+
+Public self-signup for advertising vendors with full approval workflow, temp password flow, force-password-change screen, profile completeness gate, and admin approve/suspend/reactivate actions.
+
+### Mockup Reference
+V1 Vendor Signup/Onboarding Flow (mockup lines 1111–1116):
+Vendor submits signup → pending approval → admin notification → admin approves → temp password email → vendor signs in & changes password → profile completeness gate before campaign creation.
+
+### 1. Vendor Signup Service (NEW)
+**New file: `app/services/vendor_signup_service.py`**
+- `VendorSignupService` class with full signup → approval → onboarding lifecycle
+- `signup()` — public self-signup creating `pending_approval` vendor with email enumeration prevention
+- `approve_vendor()` / `_approve_vendor()` — generates temp password (72hr expiry), sets `must_change_password: true`, emails vendor
+- `suspend_vendor()` — suspends vendor + pauses all active campaigns
+- `reactivate_vendor()` — reactivates, campaigns stay paused for vendor to resume
+- `change_temp_password()` — validates temp password, checks expiry, clears `must_change_password` flag
+- `update_vendor_profile()` / `get_vendor_profile()` — profile CRUD with completeness tracking
+- `check_profile_completeness()` — module-level utility: required fields (business_name, email, vendor_category, vendor_location) + bonus fields (phone, website, description, logo)
+- Email templates: signup confirmation + approval with temp password, both in dark theme matching portal
+- Platform config integration: respects `auto_approve_signups` flag
+- Admin notification on new signup via `NotificationService.create_notification()`
+- Portal URL resolved from `settings.frontend_url` (not hardcoded)
+
+### 2. Vendor Signup API Router (NEW)
+**New file: `app/api/vendor_signup.py`**
+- `POST /api/v1/vendors/signup` — public, Pydantic-validated, rate-limited (3/min)
+- `POST /api/v1/vendors/change-password` — auth required, password strength validation
+- `GET /api/v1/vendors/profile` — returns profile + completeness status
+- `PUT /api/v1/vendors/profile` — update allowed fields only
+
+### 3. Admin Vendor Approval Endpoints
+**Modified: `app/api/admin_campaigns.py`**
+- `POST /admin/ads/campaigns/vendors/{vendor_id}/approve` — approve pending vendor
+- `POST /admin/ads/campaigns/vendors/{vendor_id}/suspend` — suspend active vendor
+- `POST /admin/ads/campaigns/vendors/{vendor_id}/reactivate` — reactivate suspended vendor
+- All endpoints: ObjectId validation, root admin auth, proper error handling
+
+### 4. Auth Service — Login Response Extension
+**Modified: `app/services/auth_service.py`**
+- `login_and_get_token()` now returns `must_change_password`, `name`, and `user_id` for advertising vendors
+- Non-breaking change: other roles still get the standard `{access_token, token_type}` response
+
+### 5. Profile Completeness Gate
+**Modified: `app/services/vendor_campaign_service.py`**
+- `create_campaign()` now checks profile completeness before allowing campaign creation
+- Reads `require_profile_completion` from platform config (respects feature flag)
+- Returns 403 with `missing_fields` and `completion_percentage` if profile incomplete
+- Missing vendor returns 404 (not silent pass-through)
+
+### 6. Vendor Signup Page (NEW)
+**New file: `app/portal/ads/signup/page.tsx`**
+- Full signup form: email, business name, category (dropdown), location, phone, website
+- Dark gradient theme matching vendor portal
+- Two-step UX: form → success confirmation with "what happens next" steps
+- Links back to vendor directory and portal login
+
+### 7. Force Password Change Screen
+**Modified: `app/portal/ads/layout.tsx`**
+- `ForcePasswordChangePage` component intercepts portal access when `must_change_password` is true
+- Validates password strength client-side (uppercase, lowercase, digit, special char)
+- Calls `POST /api/v1/vendors/change-password`, clears flag on success
+- `VendorUser` interface extended with `must_change_password` optional field
+- Login callback now captures and stores `must_change_password` from login response
+- Login page CTA updated: "Contact us" → "Register as a vendor" linking to `/portal/ads/signup`
+
+### 8. Vendor Profile/Settings Page (NEW)
+**New file: `app/portal/ads/settings/page.tsx`**
+- Profile form with all editable fields (business name, category, location, phone, website, description, logo URL)
+- Live profile completeness banner with progress bar and missing fields list
+- "Settings" added to vendor portal navigation sidebar
+
+### 9. Admin Vendor Approval UI
+**Modified: `app/admin/ads/page.tsx`**
+- Vendor cards now show context-aware action buttons:
+  - `pending_approval` → "Approve" (green)
+  - `active` → "Suspend" (red, prompts for reason)
+  - `suspended` → "Reactivate" (blue)
+- Free tier toggle preserved alongside status actions
+- Imported `approveVendorAccount`, `suspendVendorAccount`, `reactivateVendorAccount` from API layer
+
+### 10. TypeScript API Layer
+**Modified: `app/services/campaignAdvertisingApi.ts`**
+- `approveVendorAccount(token, vendorId)` — POST approve
+- `suspendVendorAccount(token, vendorId, reason?)` — POST suspend
+- `reactivateVendorAccount(token, vendorId)` — POST reactivate
+
+### 11. Vendor Directory CTA
+**Modified: `app/vendors/page.tsx`**
+- CTA updated from "coming soon" / link to "/" → "List Your Business" / link to `/portal/ads/signup`
+
+### 12. Rate Limiting
+**Modified: `app/middleware/rate_limiting.py`**
+- Added `/api/v1/vendors/signup` and `/api/v1/vendors/change-password` to auth endpoint detection
+- Signup rate: 3 attempts per 60 seconds (same as planner registration)
+
+### 13. Database Index
+**Modified: `app/core/database_indexes.py`**
+- Added compound index `idx_user_role_vendor_status` on `(role, vendor_account_status)` with partial filter for `advertising_vendor` role
+
+### 14. Router Registration
+**Modified: `app/main.py`**
+- Imported and registered `vendor_signup_router` alongside other ad platform routers
+
+### QA Fixes (post-review)
+- Resolved hardcoded portal URL in email template → uses `settings.frontend_url`
+- Added ObjectId validation on all admin vendor endpoints
+- Fixed silent pass-through on missing vendor in profile completeness gate → now returns 404
+
+---
+
 ## Phase 7: Platform Hardening — Billing Cron, Webhooks, Fraud Detection, FTC Compliance, Data Retention & UX Copy
 **Date:** 2026-03-22
 **Version:** 6.0.0
@@ -97,11 +211,216 @@ Systematic comparison of all implemented pages against `docs/plans/vendor_ads/MO
 - Send button: "Send Request" → "Send Quote Request" (matches mockup)
 - Toast: generic success → "Quote request sent to [vendor name]" (matches P11 decision)
 
-### Notes for Future Phases
+---
 
-- **Platform Config tab**: Mockup includes a "Platform Config" admin tab with sub-tabs for Settings, Data Export, and Data Pipeline. Not yet implemented as a UI — thresholds are currently code-level constants.
-- **"Show fewer sponsored vendors" toggle**: Mockup includes a bottom-of-rail link for planners to reduce ad frequency. Not yet implemented (requires `planner_ad_preferences.reduced_frequency` field per P10 decision).
-- **AI-suggested draft in quote modal**: Mockup shows an "AI-suggested draft" label with wedding-context-aware email pre-population. Current implementation has a static template — AI drafting is a future enhancement.
+## Phase 8: Platform Config UI, Planner Preferences & AI Quote Drafts
+**Date:** 2026-03-22
+**Version:** 7.0.0
+
+### Overview
+
+Implements the three items deferred from Phase 7: a full Platform Config admin tab with Settings/Export/Pipeline sub-tabs, planner-facing ad preferences (hide vendor, suppress category, reduced frequency toggle), and AI-powered quote request drafting using the existing Gemini AI service.
+
+### 1. Platform Config Admin Tab
+
+**New file: `app/services/ad_platform_config_service.py`**
+- `AdPlatformConfigService` with `get_config()`, `update_config()`, `get_pipeline_status()`, `export_data()`
+- Singleton pattern: `ad_platform_config` collection with `_id="singleton"`, created on first access with defaults
+
+**New file: `app/api/admin_platform_config.py`**
+- Router: `/admin/ads/config` prefix, requires root admin auth
+- `GET /admin/ads/config` — get platform config singleton
+- `PUT /admin/ads/config` — partial update config (all fields optional)
+- `GET /admin/ads/config/pipeline` — rollup health, collection stats, TTL info
+- `GET /admin/ads/config/export` — export 10 datasets, 4 date ranges, JSON format, pagination
+
+**Modified: `app/models/advertising_campaign.py`**
+- Added `AdPlatformConfig` Pydantic model with feature flags, serving limits, fraud detection, vendor signup fields
+- Added `UpdatePlatformConfigRequest` partial update model
+- Added `PlannerAdPreferences` model
+
+**Modified: `app/admin/ads/page.tsx`**
+- Added "Platform Config" tab to admin ads page tab navigation
+- `PlatformConfigTab` component with 3 sub-tabs: Settings, Data Export, Data Pipeline
+- Settings: 4 editable cards (Feature Flags toggles, Serving Limits inputs, Fraud Detection, Vendor Signup)
+- Data Export: dataset/date-range selectors, JSON download, quick export shortcuts
+- Data Pipeline: rollup health status, collection document counts, TTL policies
+
+**Modified: `app/services/campaignAdvertisingApi.ts`**
+- Updated `PlatformConfig` interface with all fields from backend model
+- Added `PipelineStatus`, `ExportResponse` interfaces
+- Updated `getAdminConfig()` / `updateAdminConfig()` to use `/admin/ads/config` endpoint
+- Added `getAdminPipelineStatus()`, `exportAdminData()` functions
+
+### 2. Planner Ad Preferences
+
+**New file: `app/api/planner_ad_preferences.py`**
+- Router: `/planner/ads/preferences` prefix
+- `GET /planner/ads/preferences` — get current preferences
+- `POST /planner/ads/preferences/hide-vendor` — hide vendor + record dismiss event
+- `POST /planner/ads/preferences/unhide-vendor` — undo hide
+- `POST /planner/ads/preferences/suppress-category` — suppress category + record event
+- `POST /planner/ads/preferences/unsuppress-category` — undo suppress
+- `PUT /planner/ads/preferences/frequency` — toggle reduced_frequency
+
+**Modified: `app/services/planner_ad_interaction_service.py`**
+- `get_sponsored_cards()` now loads planner preferences from `planner_ad_preferences` collection
+- Applies `$nin` filters for `hidden_vendor_ids` and `suppressed_categories`
+- Overrides `limit` to 1 when `reduced_frequency` is true
+
+**Modified: `app/core/database_indexes.py`**
+- Added unique index on `planner_ad_preferences.planner_id`
+
+**Modified: `app/admin/vendors/components/CampaignSponsoredRail.tsx`**
+- "Preferences" button now opens collapsible panel with "Show fewer" toggle switch
+- Hide card action now calls `hideVendor()` API to persist preference
+- Loads preferences on mount to reflect saved `reduced_frequency` state
+
+**Modified: `app/services/campaignAdvertisingApi.ts`**
+- Added `PlannerAdPreferences` interface
+- Added `getAdPreferences()`, `hideVendor()`, `unhideVendor()`, `suppressCategory()`, `unsuppressCategory()`, `setReducedFrequency()` functions
+
+### 3. AI-Powered Quote Drafting
+
+**Modified: `app/services/ai_service.py`**
+- Added `ad_quote_draft` feature to `AI_FEATURES` dict
+- 1 credit cost, non-cacheable, wedding-context-aware system prompt
+- Generates personalized quote request with subject line, body, and tone
+- Context includes vendor name, category, service area, planner name, and optional wedding details
+
+**Modified: `app/api/planner_ad_interactions.py`**
+- Added `DraftQuoteRequest` model
+- New `POST /planner/ads/draft-quote` endpoint
+- Resolves campaign + creative for vendor context, builds AI prompt with wedding details
+- Falls back to static template if AI service unavailable
+
+**Modified: `app/admin/vendors/components/QuoteRequestModal.tsx`**
+- Added "Suggest with AI" button (Sparkles icon) next to message label
+- Calls `draftQuote()` API, populates message textarea with AI response
+- Shows "AI-suggested draft — feel free to edit before sending" notice when draft applied
+- Graceful error handling with toast notification
+
+**Modified: `app/services/campaignAdvertisingApi.ts`**
+- Added `DraftQuoteRequest`, `DraftQuoteResponse` interfaces
+- Added `draftQuote()` function
+
+### Files Changed (Summary)
+
+| File | Change |
+|------|--------|
+| `app/services/ad_platform_config_service.py` | New — platform config CRUD + pipeline + export |
+| `app/api/admin_platform_config.py` | New — admin config REST endpoints |
+| `app/api/planner_ad_preferences.py` | New — planner preference REST endpoints |
+| `app/models/advertising_campaign.py` | Added config + preference models |
+| `app/services/ai_service.py` | Added `ad_quote_draft` AI feature |
+| `app/api/planner_ad_interactions.py` | Added draft-quote endpoint |
+| `app/services/planner_ad_interaction_service.py` | Preference-aware card filtering |
+| `app/core/database_indexes.py` | Planner preferences unique index |
+| `app/main.py` | Registered new routers |
+| `app/admin/ads/page.tsx` | Platform Config tab with 3 sub-tabs |
+| `app/admin/vendors/components/CampaignSponsoredRail.tsx` | Preferences panel + hide-vendor API |
+| `app/admin/vendors/components/QuoteRequestModal.tsx` | AI draft button + notice |
+| `app/services/campaignAdvertisingApi.ts` | All new TS interfaces + API functions |
+
+---
+
+## Phase 9: Performance Optimization & Auction Engine
+**Date:** 2026-03-22
+**Version:** 8.0.0
+
+### Overview
+
+Final optimization phase covering bulk operations, advanced filtering, application-level caching, aggregation pipeline optimization, event deduplication, high-volume event querying, and a real bid-based auction engine replacing the static quality_score sort.
+
+### 1. Bulk Vendor Operations
+
+**Modified: `app/services/admin_campaign_service.py`**
+- Added `bulk_create_vendor_accounts()` — create up to 100 vendor accounts per batch
+- Deduplication by email, per-entry error handling, returns summary with created/skipped/failed counts
+
+**Modified: `app/api/admin_campaigns.py`**
+- New `POST /admin/ads/vendors/bulk` endpoint (max 100 per batch)
+- Added `BulkVendorEntry` and `BulkVendorResult` request/response models
+
+**Modified: `app/services/campaignAdvertisingApi.ts`**
+- Added `BulkVendorEntry`, `BulkVendorResult` interfaces
+- Added `bulkCreateVendors()` function
+
+### 2. Advanced Vendor Filtering
+
+**Modified: `app/services/admin_campaign_service.py`**
+- Updated `list_vendor_accounts()` with category, location, date range, search, sort, pagination with total count
+- Returns `{vendors, total, page, page_size}` for frontend pagination
+
+**Modified: `app/api/admin_campaigns.py`**
+- Updated `GET /admin/ads/vendors` with query params: `category`, `location`, `date_from`, `date_to`, `search`, `sort_by`, `sort_dir`, `page`, `page_size`
+
+### 3. Feature Flag Caching
+
+**Modified: `app/services/ad_platform_config_service.py`**
+- Application-level TTL cache (60s) with `_config_cache` and `_config_cache_ts` module globals
+- `get_config(bypass_cache=False)` returns cached value if fresh; admin reads can pass `bypass_cache=True`
+- `invalidate_config_cache()` called after every write to ensure consistency
+- Reduces DB reads on hot paths (ad serving) from every request to at most once per minute
+
+### 4. Stats Aggregation Pipeline Optimization
+
+**Modified: `app/services/admin_campaign_service.py`**
+- New `get_vendor_stats_batch()` — batch stats via 2 MongoDB aggregate pipelines (campaigns + leads) instead of N+1 per-vendor queries
+- Accepts up to 200 vendor IDs per call
+
+**Modified: `app/api/admin_campaigns.py`**
+- New `POST /admin/ads/vendors/stats` endpoint for batch vendor stats
+
+### 5. Event Deduplication
+
+**Modified: `app/services/planner_ad_interaction_service.py`**
+- `DEDUP_WINDOW_SECONDS = 300` (5-minute window)
+- New `_is_duplicate_event()` — checks for same (event_type, campaign_id, planner_id) within window
+- New `record_event_deduplicated()` — insert with dedup check, returns None for duplicates
+- Uses compound index on `(event_type, campaign_id, planner_id, created_at)` for efficient lookback
+
+### 6. Elasticsearch-Style Event Querying
+
+**Modified: `app/services/admin_campaign_service.py`**
+- New `query_events()` — high-volume event query engine with:
+  - Multi-field filtering (event_type, campaign_id, vendor_id, planner_id, placement, date range)
+  - Pagination with sort by `created_at` descending
+  - Optional aggregation mode returning event_type counts
+
+**Modified: `app/api/admin_campaigns.py`**
+- New `GET /admin/ads/events/query` endpoint with all filter parameters
+
+### 7. Auction Engine (AdRank = Bid × EstimatedActionRate × QualityScore)
+
+**New file: `app/services/ad_auction_service.py`**
+- `AdAuctionService` class implementing a second-price auction:
+  - `compute_estimated_action_rate()` — Bayesian-smoothed EAR from `campaign_day_stats` (beta prior: 2 actions / 100 impressions = 2% baseline for cold-start campaigns)
+  - `compute_adrank()` — AdRank = Bid × EAR × (QualityScore / 100)
+  - `compute_second_price()` — minimum bid winner needs to beat the runner-up
+  - `run_auction(eligible_campaigns, max_winners=3)` — full auction flow: score → sort → select winners → price
+- Free tier default bid: $0.01; minimum AdRank threshold: 0.001
+
+**Modified: `app/services/planner_ad_interaction_service.py`**
+- Constructor accepts `auction_service` parameter
+- `get_sponsored_cards()` now runs `auction_service.run_auction()` instead of static `quality_score` sort
+- Auction results include `adrank`, `position`, `effective_cost`, `estimated_action_rate` per card
+- Graceful fallback to legacy quality_score sort if auction service unavailable or throws
+
+**Modified: `app/api/planner_ad_interactions.py`**
+- DI function instantiates `AdAuctionService` and passes to `PlannerAdInteractionService`
+
+### Files Changed (Summary)
+
+| File | Change |
+|------|--------|
+| `app/services/ad_auction_service.py` | New — second-price auction engine |
+| `app/services/admin_campaign_service.py` | Bulk ops, advanced filtering, batch stats, event query |
+| `app/services/planner_ad_interaction_service.py` | Auction integration, event dedup |
+| `app/services/ad_platform_config_service.py` | TTL config cache |
+| `app/api/admin_campaigns.py` | Bulk, stats, event query endpoints |
+| `app/api/planner_ad_interactions.py` | Auction service DI |
+| `app/services/campaignAdvertisingApi.ts` | Bulk vendor TS interfaces + functions |
 
 ---
 

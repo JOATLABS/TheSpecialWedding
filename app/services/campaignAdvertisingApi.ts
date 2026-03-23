@@ -262,6 +262,11 @@ export interface SponsoredCard {
   placement_match?: string;
   quality_score: number;
   targeting_reason?: string;
+  // Auction metadata (populated when auction engine is active)
+  adrank?: number;
+  position?: number;
+  effective_cost?: number;
+  estimated_action_rate?: number;
 }
 
 export interface SponsoredCardsResponse {
@@ -333,14 +338,46 @@ export interface VendorAccountSummary {
 }
 
 export interface PlatformConfig {
-  max_sponsored_per_page: number;
+  // Feature Flags
+  ads_enabled: boolean;
   show_sponsored_badge: boolean;
-  require_review: boolean;
+  enable_event_tracking: boolean;
+  require_creative_review: boolean;
   auto_approve_returning_vendors: boolean;
+  // Serving Limits
+  max_sponsored_per_page: number;
+  impressions_per_session: number;
+  freq_cap_per_campaign_planner_day: number;
   review_sla_hours: number;
-  enable_tracking: boolean;
-  free_tier_active: boolean;
+  max_campaigns_per_vendor: number;
+  // Fraud Detection
+  max_clicks_per_planner_campaign_hour: number;
+  hide_rate_auto_pause_threshold: number;
+  click_velocity_window_minutes: number;
+  auto_void_suspicious_clicks: boolean;
+  // Vendor Signup
+  vendor_domain: string;
+  auto_approve_signups: boolean;
+  require_profile_completion: boolean;
+  min_images_for_campaign: number;
+  // Metadata
+  updated_at?: string;
+  updated_by?: string;
   [key: string]: any;
+}
+
+export interface PipelineStatus {
+  rollup_health: string;
+  last_rollup_at: string | null;
+  collections: Record<string, { count: number; size_bytes: number }>;
+  ttl_policies: Record<string, number>;
+}
+
+export interface ExportResponse {
+  dataset: string;
+  date_range: string;
+  row_count: number;
+  rows: any[];
 }
 
 export interface PlannerFeedbackEntry {
@@ -763,22 +800,68 @@ export async function updateFraudSignal(
   return handleResponse<AdFraudSignal>(response, 'Failed to update fraud signal');
 }
 
-/** Get vendor accounts */
+/** Bulk-create vendor accounts */
+export interface BulkVendorEntry {
+  email: string;
+  business_name: string;
+  category?: string;
+  location?: string;
+  phone?: string;
+  website?: string;
+  is_free_tier?: boolean;
+}
+
+export interface BulkVendorResult {
+  total_submitted: number;
+  created: number;
+  skipped: number;
+  failed: number;
+  details: {
+    created: Array<{ index: number; email: string; business_name: string; _id: string }>;
+    skipped: Array<{ index: number; email: string; reason: string }>;
+    failed: Array<{ index: number; email: string; reason: string }>;
+  };
+}
+
+export async function bulkCreateVendors(
+  token: string,
+  vendors: BulkVendorEntry[]
+): Promise<BulkVendorResult> {
+  const response = await fetch(buildUrl('/admin/ads/campaigns/vendors/bulk'), {
+    method: 'POST',
+    headers: jsonHeaders(token),
+    body: JSON.stringify(vendors),
+  });
+  return handleResponse<BulkVendorResult>(response, 'Failed to bulk create vendors');
+}
+
+/** Get vendor accounts with advanced filtering */
 export async function getAdminVendorAccounts(
   token: string,
-  params?: { status?: string; limit?: number; skip?: number }
-): Promise<VendorAccountSummary[]> {
+  params?: {
+    status?: string;
+    category?: string;
+    location?: string;
+    date_from?: string;
+    date_to?: string;
+    search?: string;
+    sort_by?: string;
+    sort_order?: number;
+    limit?: number;
+    skip?: number;
+  }
+): Promise<{ vendors: VendorAccountSummary[]; total: number; page: number; page_size: number }> {
   const response = await fetch(
     buildUrl('/admin/ads/campaigns/vendors', params),
     { headers: authHeaders(token) }
   );
-  return handleResponse<VendorAccountSummary[]>(response, 'Failed to fetch vendor accounts');
+  return handleResponse<{ vendors: VendorAccountSummary[]; total: number; page: number; page_size: number }>(response, 'Failed to fetch vendor accounts');
 }
 
 /** Get platform advertising config */
 export async function getAdminConfig(token: string): Promise<PlatformConfig> {
   const response = await fetch(
-    buildUrl('/admin/ads/campaigns/config'),
+    buildUrl('/admin/ads/config'),
     { headers: authHeaders(token) }
   );
   return handleResponse<PlatformConfig>(response, 'Failed to fetch config');
@@ -789,12 +872,41 @@ export async function updateAdminConfig(
   token: string,
   updates: Partial<PlatformConfig>
 ): Promise<PlatformConfig> {
-  const response = await fetch(buildUrl('/admin/ads/campaigns/config'), {
+  const response = await fetch(buildUrl('/admin/ads/config'), {
     method: 'PUT',
     headers: jsonHeaders(token),
-    body: JSON.stringify({ updates }),
+    body: JSON.stringify(updates),
   });
   return handleResponse<PlatformConfig>(response, 'Failed to update config');
+}
+
+/** Get data pipeline status */
+export async function getAdminPipelineStatus(token: string): Promise<PipelineStatus> {
+  const response = await fetch(
+    buildUrl('/admin/ads/config/pipeline'),
+    { headers: authHeaders(token) }
+  );
+  return handleResponse<PipelineStatus>(response, 'Failed to fetch pipeline status');
+}
+
+/** Export advertising data */
+export async function exportAdminData(
+  token: string,
+  dataset: string,
+  dateRange: string = 'last_30_days',
+  format: string = 'json',
+  limit: number = 1000
+): Promise<ExportResponse> {
+  const response = await fetch(
+    buildUrl('/admin/ads/config/export', {
+      dataset,
+      date_range: dateRange,
+      format,
+      limit,
+    }),
+    { headers: authHeaders(token) }
+  );
+  return handleResponse<ExportResponse>(response, 'Failed to export data');
 }
 
 // =============================================================================
@@ -839,6 +951,34 @@ export async function requestQuote(
   return handleResponse<any>(response, 'Failed to request quote');
 }
 
+/** AI-generate a personalized quote request draft */
+export interface DraftQuoteRequest {
+  campaign_id: string;
+  wedding_context?: WeddingContext;
+}
+
+export interface DraftQuoteResponse {
+  draft: {
+    subject: string;
+    body: string;
+    tone: string;
+  };
+  credits_used: number;
+  model_used: string;
+}
+
+export async function draftQuote(
+  token: string,
+  data: DraftQuoteRequest
+): Promise<DraftQuoteResponse> {
+  const response = await fetch(buildUrl('/planner/ads/draft-quote'), {
+    method: 'POST',
+    headers: jsonHeaders(token),
+    body: JSON.stringify(data),
+  });
+  return handleResponse<DraftQuoteResponse>(response, 'Failed to generate quote draft');
+}
+
 /** Check if a campaign's vendor is already in the planner's directory */
 export async function getDirectoryStatus(
   token: string,
@@ -849,6 +989,76 @@ export async function getDirectoryStatus(
     { headers: authHeaders(token) }
   );
   return handleResponse<DirectoryStatusResponse>(response, 'Failed to check directory status');
+}
+
+// =============================================================================
+// PLANNER PREFERENCES API — /planner/ads/preferences/*
+// =============================================================================
+
+export interface PlannerAdPreferences {
+  planner_id: string;
+  hidden_vendor_ids: string[];
+  suppressed_categories: string[];
+  reduced_frequency: boolean;
+}
+
+/** Get planner's ad preferences */
+export async function getAdPreferences(token: string): Promise<PlannerAdPreferences> {
+  const response = await fetch(
+    buildUrl('/planner/ads/preferences'),
+    { headers: authHeaders(token) }
+  );
+  return handleResponse<PlannerAdPreferences>(response, 'Failed to fetch ad preferences');
+}
+
+/** Hide a specific vendor from the sponsored rail */
+export async function hideVendor(token: string, vendorId: string): Promise<any> {
+  const response = await fetch(buildUrl('/planner/ads/preferences/hide-vendor'), {
+    method: 'POST',
+    headers: jsonHeaders(token),
+    body: JSON.stringify({ vendor_id: vendorId }),
+  });
+  return handleResponse(response, 'Failed to hide vendor');
+}
+
+/** Unhide a previously hidden vendor */
+export async function unhideVendor(token: string, vendorId: string): Promise<any> {
+  const response = await fetch(buildUrl('/planner/ads/preferences/unhide-vendor'), {
+    method: 'POST',
+    headers: jsonHeaders(token),
+    body: JSON.stringify({ vendor_id: vendorId }),
+  });
+  return handleResponse(response, 'Failed to unhide vendor');
+}
+
+/** Suppress a vendor category from the sponsored rail */
+export async function suppressCategory(token: string, category: string): Promise<any> {
+  const response = await fetch(buildUrl('/planner/ads/preferences/suppress-category'), {
+    method: 'POST',
+    headers: jsonHeaders(token),
+    body: JSON.stringify({ category }),
+  });
+  return handleResponse(response, 'Failed to suppress category');
+}
+
+/** Unsuppress a vendor category */
+export async function unsuppressCategory(token: string, category: string): Promise<any> {
+  const response = await fetch(buildUrl('/planner/ads/preferences/unsuppress-category'), {
+    method: 'POST',
+    headers: jsonHeaders(token),
+    body: JSON.stringify({ category }),
+  });
+  return handleResponse(response, 'Failed to unsuppress category');
+}
+
+/** Toggle reduced ad frequency */
+export async function setReducedFrequency(token: string, reducedFrequency: boolean): Promise<any> {
+  const response = await fetch(buildUrl('/planner/ads/preferences/frequency'), {
+    method: 'PUT',
+    headers: jsonHeaders(token),
+    body: JSON.stringify({ reduced_frequency: reducedFrequency }),
+  });
+  return handleResponse(response, 'Failed to update ad frequency');
 }
 
 // =============================================================================
@@ -1133,5 +1343,50 @@ export async function getVendorBillingCharges(
     headers: { Authorization: `Bearer ${token}` },
   });
   if (!res.ok) throw new Error('Failed to get billing charges');
+  return res.json();
+}
+
+// =============================================================================
+// VENDOR ACCOUNT MANAGEMENT (Phase 10)
+// =============================================================================
+
+/** Approve a pending vendor account. Sends temp password email. */
+export async function approveVendorAccount(
+  token: string,
+  vendorId: string,
+): Promise<{ vendor_id: string; status: string; message: string }> {
+  const res = await fetch(`${API_BASE}/admin/ads/campaigns/vendors/${vendorId}/approve`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+  });
+  if (!res.ok) throw new Error((await res.json().catch(() => ({}))).detail || 'Failed to approve vendor');
+  return res.json();
+}
+
+/** Suspend an active vendor account. Pauses all their campaigns. */
+export async function suspendVendorAccount(
+  token: string,
+  vendorId: string,
+  reason: string = '',
+): Promise<{ vendor_id: string; status: string; campaigns_paused: number; message: string }> {
+  const res = await fetch(`${API_BASE}/admin/ads/campaigns/vendors/${vendorId}/suspend`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ reason }),
+  });
+  if (!res.ok) throw new Error((await res.json().catch(() => ({}))).detail || 'Failed to suspend vendor');
+  return res.json();
+}
+
+/** Reactivate a suspended vendor account. Campaigns remain paused. */
+export async function reactivateVendorAccount(
+  token: string,
+  vendorId: string,
+): Promise<{ vendor_id: string; status: string; message: string }> {
+  const res = await fetch(`${API_BASE}/admin/ads/campaigns/vendors/${vendorId}/reactivate`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+  });
+  if (!res.ok) throw new Error((await res.json().catch(() => ({}))).detail || 'Failed to reactivate vendor');
   return res.json();
 }

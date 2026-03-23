@@ -350,18 +350,124 @@ async def update_fraud_signal(
 # VENDOR ACCOUNTS
 # =============================================================================
 
+@router.post("/vendors/bulk", status_code=201)
+async def bulk_create_vendors(
+    vendors: list = Body(..., description="List of vendor objects with email, business_name, category, location"),
+    service: AdminCampaignService = Depends(get_admin_campaign_service),
+    current_user: ExtendedAuthUser = Depends(require_root_admin),
+):
+    """
+    Bulk-create advertising vendor accounts.
+
+    Accepts a JSON array of vendor objects. Each must have `email` and `business_name`.
+    Optional fields: `category`, `location`, `phone`, `website`, `is_free_tier`.
+
+    Returns summary: created/skipped/failed counts with details.
+    """
+    if len(vendors) > 100:
+        raise HTTPException(status_code=400, detail="Maximum 100 vendors per batch")
+    return await service.bulk_create_vendor_accounts(
+        vendors=vendors,
+        admin_email=current_user.email,
+    )
+
+
 @router.get("/vendors")
 async def list_vendor_accounts(
     status: Optional[str] = Query(None, description="Filter by account status"),
+    category: Optional[str] = Query(None, description="Filter by vendor category"),
+    location: Optional[str] = Query(None, description="Text search on vendor location"),
+    date_from: Optional[str] = Query(None, description="Filter created_at >= this ISO date"),
+    date_to: Optional[str] = Query(None, description="Filter created_at <= this ISO date"),
+    search: Optional[str] = Query(None, description="Text search on email or business_name"),
+    sort_by: str = Query("created_at", description="Sort field"),
+    sort_order: int = Query(-1, description="Sort order: -1 desc, 1 asc"),
     limit: int = Query(50, ge=1, le=100),
     skip: int = Query(0, ge=0),
     service: AdminCampaignService = Depends(get_admin_campaign_service),
     current_user: ExtendedAuthUser = Depends(require_root_admin),
 ):
-    """List advertising vendor accounts."""
+    """List advertising vendor accounts with advanced filtering."""
     return await service.list_vendor_accounts(
-        status_filter=status, limit=limit, skip=skip
+        status_filter=status,
+        category_filter=category,
+        location_filter=location,
+        date_from=date_from,
+        date_to=date_to,
+        search=search,
+        sort_by=sort_by,
+        sort_order=sort_order,
+        limit=limit,
+        skip=skip,
     )
+
+
+# =============================================================================
+# EVENT QUERY ENGINE (Elasticsearch-style)
+# =============================================================================
+
+from typing import List
+
+@router.get("/events/query")
+async def query_events(
+    event_types: Optional[str] = Query(None, description="Comma-separated event types to filter"),
+    campaign_id: Optional[str] = Query(None, description="Filter by campaign ID"),
+    vendor_id: Optional[str] = Query(None, description="Filter by vendor ID"),
+    planner_id: Optional[str] = Query(None, description="Filter by planner ID"),
+    session_id: Optional[str] = Query(None, description="Filter by session ID"),
+    date_from: Optional[str] = Query(None, description="Filter created_at >= ISO date"),
+    date_to: Optional[str] = Query(None, description="Filter created_at <= ISO date"),
+    sort_by: str = Query("created_at", description="Sort field"),
+    sort_order: int = Query(-1, description="-1 desc, 1 asc"),
+    limit: int = Query(100, ge=1, le=1000),
+    skip: int = Query(0, ge=0),
+    aggregate_by: Optional[str] = Query(None, description="Group by field: event_type, campaign_id, vendor_id, planner_id, placement"),
+    service: AdminCampaignService = Depends(get_admin_campaign_service),
+    current_user: ExtendedAuthUser = Depends(require_root_admin),
+):
+    """
+    Elasticsearch-style event query with filtering, pagination, and aggregation.
+
+    Supports filtering by event_type, campaign_id, vendor_id, planner_id, session_id,
+    date range, and optional aggregation (returns grouped counts instead of raw docs).
+    """
+    event_type_list = [t.strip() for t in event_types.split(",")] if event_types else None
+    return await service.query_events(
+        event_types=event_type_list,
+        campaign_id=campaign_id,
+        vendor_id=vendor_id,
+        planner_id=planner_id,
+        session_id=session_id,
+        date_from=date_from,
+        date_to=date_to,
+        sort_by=sort_by,
+        sort_order=sort_order,
+        limit=limit,
+        skip=skip,
+        aggregate_by=aggregate_by,
+    )
+
+
+# =============================================================================
+# BATCH VENDOR STATS (aggregation pipeline optimization)
+# =============================================================================
+
+@router.post("/vendors/stats")
+async def get_vendor_stats_batch(
+    vendor_ids: list = Body(..., description="List of vendor_id strings"),
+    days: int = Body(30, description="Lookback period in days"),
+    service: AdminCampaignService = Depends(get_admin_campaign_service),
+    current_user: ExtendedAuthUser = Depends(require_root_admin),
+):
+    """
+    Get stats for multiple vendors in a single aggregation pipeline.
+
+    Returns impressions, clicks, leads, CTR, and campaign counts for each vendor,
+    computed in 2 aggregate queries instead of N+1 individual queries.
+    """
+    if len(vendor_ids) > 200:
+        raise HTTPException(status_code=400, detail="Maximum 200 vendor IDs per batch")
+    return await service.get_vendor_stats_batch(vendor_ids=vendor_ids, days=days)
 
 
 # =============================================================================
@@ -507,3 +613,70 @@ async def get_campaign_lead_charges(
         limit=limit,
         skip=skip,
     )
+
+
+# =============================================================================
+# VENDOR ACCOUNT MANAGEMENT (Phase 10)
+# =============================================================================
+
+def get_vendor_signup_service():
+    """Get vendor signup service instance."""
+    from app.services.vendor_signup_service import VendorSignupService
+    return VendorSignupService(mongo.db)
+
+
+def _validate_vendor_id(vendor_id: str) -> str:
+    """Validate vendor_id is a valid ObjectId format."""
+    from bson import ObjectId
+    from bson.errors import InvalidId
+    try:
+        ObjectId(vendor_id)
+    except (InvalidId, TypeError):
+        raise HTTPException(status_code=400, detail=f"Invalid vendor ID format: {vendor_id}")
+    return vendor_id
+
+
+@router.post("/vendors/{vendor_id}/approve")
+async def approve_vendor_account(
+    vendor_id: str,
+    current_user: ExtendedAuthUser = Depends(require_root_admin),
+):
+    """
+    Approve a pending vendor account.
+
+    Generates a temp password and emails it to the vendor.
+    Root admin only.
+    """
+    _validate_vendor_id(vendor_id)
+    svc = get_vendor_signup_service()
+    return await svc.approve_vendor(vendor_id, current_user.email)
+
+
+@router.post("/vendors/{vendor_id}/suspend")
+async def suspend_vendor_account(
+    vendor_id: str,
+    reason: str = Body("", embed=True),
+    current_user: ExtendedAuthUser = Depends(require_root_admin),
+):
+    """
+    Suspend an active vendor account. Pauses all their active campaigns.
+    Root admin only.
+    """
+    _validate_vendor_id(vendor_id)
+    svc = get_vendor_signup_service()
+    return await svc.suspend_vendor(vendor_id, current_user.email, reason)
+
+
+@router.post("/vendors/{vendor_id}/reactivate")
+async def reactivate_vendor_account(
+    vendor_id: str,
+    current_user: ExtendedAuthUser = Depends(require_root_admin),
+):
+    """
+    Reactivate a suspended vendor account.
+    Campaigns remain paused — vendor must resume them manually.
+    Root admin only.
+    """
+    _validate_vendor_id(vendor_id)
+    svc = get_vendor_signup_service()
+    return await svc.reactivate_vendor(vendor_id, current_user.email)

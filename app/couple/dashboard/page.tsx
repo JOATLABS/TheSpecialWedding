@@ -10,7 +10,10 @@ import {
   CheckCircle, AlertCircle, XCircle, TrendingUp,
   Sparkles, Phone, Mail, Building2, Archive,
   ClipboardList, Send, ChevronDown, ChevronUp,
-  MessageSquare, StickyNote, FileSignature, Eye
+  MessageSquare, StickyNote, FileSignature, Eye,
+  MessageCircle, CalendarClock, Repeat,
+  Gift, HelpCircle, QrCode, BellRing, Plus,
+  Pencil, Trash2, ExternalLink, Download, BellOff
 } from 'lucide-react';
 
 // ============================================================================
@@ -31,6 +34,7 @@ interface EventNote {
   author_name?: string;
   text: string;
   status: 'pending' | 'seen' | 'addressed';
+  reply_to?: string;
   created_at?: string;
 }
 
@@ -164,7 +168,7 @@ interface DashboardData {
   updates: UpdateItem[];
 }
 
-type TabType = 'overview' | 'timeline' | 'payments' | 'contracts' | 'forms' | 'updates';
+type TabType = 'overview' | 'timeline' | 'payments' | 'contracts' | 'forms' | 'updates' | 'messages' | 'meetings' | 'registry' | 'faq';
 
 // ============================================================================
 // HELPERS
@@ -222,6 +226,7 @@ export default function CoupleDashboardPage() {
   const [loading, setLoading] = useState(true);
   const [data, setData] = useState<DashboardData | null>(null);
   const [activeTab, setActiveTab] = useState<TabType>('overview');
+  const [unreadMessages, setUnreadMessages] = useState(0);
 
   const fetchDashboard = useCallback(async () => {
     const token = localStorage.getItem('couple_token');
@@ -250,6 +255,17 @@ export default function CoupleDashboardPage() {
 
       const dashboardData = await res.json();
       setData(dashboardData);
+
+      // Fetch unread message count
+      try {
+        const unreadRes = await fetch(`${getApiBaseUrl()}/couple/portal/messages/unread-count`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (unreadRes.ok) {
+          const unreadData = await unreadRes.json();
+          setUnreadMessages(unreadData.unread_count || 0);
+        }
+      } catch { /* non-critical */ }
     } catch (err) {
       toast.error('Failed to connect to server');
     } finally {
@@ -260,6 +276,15 @@ export default function CoupleDashboardPage() {
   useEffect(() => {
     fetchDashboard();
   }, [fetchDashboard]);
+
+  // Register service worker for PWA + push (Sprint 6)
+  useEffect(() => {
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('/sw.js').catch((err) => {
+        console.warn('SW registration failed:', err);
+      });
+    }
+  }, []);
 
   const handleLogout = () => {
     localStorage.removeItem('couple_token');
@@ -299,6 +324,10 @@ export default function CoupleDashboardPage() {
     { key: 'contracts', label: 'Contract', icon: <FileSignature className="w-4 h-4" /> },
     { key: 'forms', label: 'Forms', icon: <ClipboardList className="w-4 h-4" />, count: data.forms?.filter(f => f.status === 'pending').length },
     { key: 'updates', label: 'Updates', icon: <Bell className="w-4 h-4" />, count: data.updates?.length },
+    { key: 'messages', label: 'Messages', icon: <MessageCircle className="w-4 h-4" />, count: unreadMessages || undefined },
+    { key: 'meetings', label: 'Meetings', icon: <CalendarClock className="w-4 h-4" /> },
+    { key: 'registry', label: 'Registry', icon: <Gift className="w-4 h-4" />, count: data.wedding?.registries?.length || undefined },
+    { key: 'faq', label: 'FAQ', icon: <HelpCircle className="w-4 h-4" />, count: data.wedding?.faqs?.length || undefined },
   ];
 
   return (
@@ -355,7 +384,7 @@ export default function CoupleDashboardPage() {
               <button
                 key={tab.key}
                 onClick={() => setActiveTab(tab.key)}
-                className={`flex items-center gap-2 px-4 py-3 text-sm font-medium whitespace-nowrap border-b-2 transition-colors ${
+                className={`flex items-center gap-1.5 sm:gap-2 px-2.5 sm:px-4 py-3 text-xs sm:text-sm font-medium whitespace-nowrap border-b-2 transition-colors ${
                   activeTab === tab.key
                     ? 'border-[#1e3a5f] text-[#1e3a5f]'
                     : 'border-transparent text-gray-400 hover:text-gray-600'
@@ -384,6 +413,10 @@ export default function CoupleDashboardPage() {
         {activeTab === 'contracts' && <ContractTab />}
         {activeTab === 'forms' && <FormsTab forms={data.forms || []} />}
         {activeTab === 'updates' && <UpdatesTab updates={data.updates || []} />}
+        {activeTab === 'messages' && <MessagesTab onMessageSent={() => { setUnreadMessages(0); }} onMessagesRead={() => { setUnreadMessages(0); }} archived={!!data.archived} />}
+        {activeTab === 'meetings' && <MeetingsTab />}
+        {activeTab === 'registry' && <RegistryTab registries={data.wedding?.registries || []} archived={!!data.archived} onUpdated={fetchDashboard} />}
+        {activeTab === 'faq' && <FAQTab faqs={data.wedding?.faqs || []} archived={!!data.archived} onUpdated={fetchDashboard} />}
       </main>
     </div>
   );
@@ -480,6 +513,12 @@ function OverviewTab({ data }: { data: DashboardData }) {
             </div>
           </div>
         )}
+      </div>
+
+      {/* QR Code + Push Notifications Quick Actions */}
+      <div className="grid sm:grid-cols-2 gap-4">
+        <QRCodeWidget />
+        <PushNotificationWidget />
       </div>
 
       {/* Upcoming Events Preview */}
@@ -648,23 +687,51 @@ function TimelineTab({ events, timezone, onNoteAdded }: { events: WeddingEvent[]
                             </button>
                           </div>
 
-                          {/* Item-level notes */}
-                          {item.notes.length > 0 && (
-                            <div className="mt-2 ml-[72px] space-y-1.5">
-                              {item.notes.map((note) => (
-                                <div key={note.id} className="flex items-start gap-2 text-xs">
-                                  <StickyNote className="w-3 h-3 text-amber-400 mt-0.5 flex-shrink-0" />
-                                  <div className="flex-1">
-                                    <span className="text-gray-600">{note.text}</span>
-                                    <div className="flex items-center gap-1.5 mt-0.5">
-                                      <span className="text-gray-400">{note.author_name || note.author_role}</span>
-                                      {noteStatusBadge(note.status)}
+                          {/* Item-level notes (threaded with planner replies) */}
+                          {item.notes.length > 0 && (() => {
+                            const parentItemNotes = item.notes.filter(n => !n.reply_to);
+                            const itemReplies = item.notes.filter(n => !!n.reply_to);
+                            const itemRepliesMap: Record<string, EventNote[]> = {};
+                            itemReplies.forEach(r => {
+                              const replyTo = r.reply_to;
+                              if (!replyTo) return;
+                              if (!itemRepliesMap[replyTo]) itemRepliesMap[replyTo] = [];
+                              itemRepliesMap[replyTo].push(r);
+                            });
+                            return (parentItemNotes.length > 0 || itemReplies.length > 0) ? (
+                              <div className="mt-2 ml-[72px] space-y-1.5">
+                                {parentItemNotes.map((note) => (
+                                  <div key={note.id}>
+                                    <div className="flex items-start gap-2 text-xs">
+                                      <StickyNote className="w-3 h-3 text-amber-400 mt-0.5 flex-shrink-0" />
+                                      <div className="flex-1">
+                                        <span className="text-gray-600">{note.text}</span>
+                                        <div className="flex items-center gap-1.5 mt-0.5">
+                                          <span className="text-gray-400">{note.author_name || note.author_role}</span>
+                                          {noteStatusBadge(note.status)}
+                                        </div>
+                                      </div>
                                     </div>
+                                    {/* Planner replies */}
+                                    {(itemRepliesMap[note.id] || []).map(reply => (
+                                      <div key={reply.id} className="ml-5 mt-1 flex items-start gap-2 text-xs">
+                                        <MessageCircle className="w-3 h-3 text-blue-400 mt-0.5 flex-shrink-0" />
+                                        <div className="flex-1">
+                                          <span className="text-gray-600">{reply.text}</span>
+                                          <div className="flex items-center gap-1.5 mt-0.5">
+                                            <span className="text-[#1e3a5f] font-medium">Planner</span>
+                                            {reply.created_at && (
+                                              <span className="text-gray-400">· {new Date(reply.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</span>
+                                            )}
+                                          </div>
+                                        </div>
+                                      </div>
+                                    ))}
                                   </div>
-                                </div>
-                              ))}
-                            </div>
-                          )}
+                                ))}
+                              </div>
+                            ) : null;
+                          })()}
 
                           {/* Inline note form for this item */}
                           {noteTarget?.eventIndex === eventIdx && noteTarget?.itemId === item.id && (
@@ -699,28 +766,53 @@ function TimelineTab({ events, timezone, onNoteAdded }: { events: WeddingEvent[]
                   </div>
                 )}
 
-                {/* Event-level notes */}
-                {eventNotes.length > 0 && (
-                  <div>
-                    <h4 className="text-sm font-medium text-gray-700 mb-2 flex items-center gap-2">
-                      <StickyNote className="w-4 h-4" /> General Notes
-                    </h4>
-                    <div className="space-y-2">
-                      {eventNotes.map((note) => (
-                        <div key={note.id} className="p-3 bg-amber-50/50 border border-amber-100 rounded-lg">
-                          <p className="text-sm text-gray-700">{note.text}</p>
-                          <div className="flex items-center gap-2 mt-1.5 text-xs text-gray-400">
-                            <span>{note.author_name || note.author_role}</span>
-                            {noteStatusBadge(note.status)}
-                            {note.created_at && (
-                              <span>· {new Date(note.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</span>
-                            )}
+                {/* Event-level notes (threaded with planner replies) */}
+                {eventNotes.length > 0 && (() => {
+                  const parentEventNotes = eventNotes.filter(n => !n.reply_to);
+                  const eventReplies = eventNotes.filter(n => !!n.reply_to);
+                  const eventRepliesMap: Record<string, EventNote[]> = {};
+                  eventReplies.forEach(r => {
+                    const replyTo = r.reply_to;
+                    if (!replyTo) return;
+                    if (!eventRepliesMap[replyTo]) eventRepliesMap[replyTo] = [];
+                    eventRepliesMap[replyTo].push(r);
+                  });
+                  return (parentEventNotes.length > 0 || eventReplies.length > 0) ? (
+                    <div>
+                      <h4 className="text-sm font-medium text-gray-700 mb-2 flex items-center gap-2">
+                        <StickyNote className="w-4 h-4" /> General Notes
+                      </h4>
+                      <div className="space-y-2">
+                        {parentEventNotes.map((note) => (
+                          <div key={note.id}>
+                            <div className="p-3 bg-amber-50/50 border border-amber-100 rounded-lg">
+                              <p className="text-sm text-gray-700">{note.text}</p>
+                              <div className="flex items-center gap-2 mt-1.5 text-xs text-gray-400">
+                                <span>{note.author_name || note.author_role}</span>
+                                {noteStatusBadge(note.status)}
+                                {note.created_at && (
+                                  <span>· {new Date(note.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</span>
+                                )}
+                              </div>
+                            </div>
+                            {/* Planner replies threaded below */}
+                            {(eventRepliesMap[note.id] || []).map(reply => (
+                              <div key={reply.id} className="ml-4 mt-1.5 p-2.5 bg-blue-50/60 border border-blue-100 rounded-lg">
+                                <p className="text-sm text-gray-700">{reply.text}</p>
+                                <div className="flex items-center gap-2 mt-1 text-xs text-gray-400">
+                                  <span className="text-[#1e3a5f] font-medium">Planner</span>
+                                  {reply.created_at && (
+                                    <span>· {new Date(reply.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</span>
+                                  )}
+                                </div>
+                              </div>
+                            ))}
                           </div>
-                        </div>
-                      ))}
+                        ))}
+                      </div>
                     </div>
-                  </div>
-                )}
+                  ) : null;
+                })()}
 
                 {/* Add general event note */}
                 {noteTarget?.eventIndex === eventIdx && !noteTarget?.itemId ? (
@@ -1081,6 +1173,991 @@ function UpdatesTab({ updates }: { updates: UpdateItem[] }) {
           </div>
         </div>
       ))}
+    </div>
+  );
+}
+
+
+// ============================================================================
+// MESSAGES TAB (Sprint 3)
+// ============================================================================
+
+interface MessageItem {
+  id: string;
+  sender_role: 'couple' | 'planner';
+  sender_name: string;
+  content: string;
+  read_by_planner: boolean;
+  created_at?: string;
+}
+
+function MessagesTab({ onMessageSent, onMessagesRead, archived = false }: { onMessageSent: () => void; onMessagesRead: () => void; archived?: boolean }) {
+  const [messages, setMessages] = useState<MessageItem[]>([]);
+  const [msgLoading, setMsgLoading] = useState(true);
+  const [newMessage, setNewMessage] = useState('');
+  const [sending, setSending] = useState(false);
+  const messagesEndRef = useCallback((node: HTMLDivElement | null) => {
+    if (node) node.scrollIntoView({ behavior: 'smooth' });
+  }, []);
+
+  const fetchMessages = useCallback(async () => {
+    const token = localStorage.getItem('couple_token');
+    if (!token) return;
+
+    try {
+      const res = await fetch(`${getApiBaseUrl()}/couple/portal/messages?limit=100`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setMessages(data.messages || []);
+        onMessagesRead(); // Clear unread badge — backend marks read on fetch
+      }
+    } catch {
+      toast.error('Failed to load messages');
+    } finally {
+      setMsgLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchMessages();
+  }, [fetchMessages]);
+
+  const handleSend = async () => {
+    if (!newMessage.trim() || sending) return;
+    const token = localStorage.getItem('couple_token');
+    if (!token) return;
+
+    setSending(true);
+    try {
+      const res = await fetch(`${getApiBaseUrl()}/couple/portal/messages`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ content: newMessage.trim() }),
+      });
+
+      if (res.ok) {
+        setNewMessage('');
+        onMessageSent();
+        await fetchMessages();
+      } else {
+        const err = await res.json();
+        toast.error(err.detail || 'Failed to send message');
+      }
+    } catch {
+      toast.error('Failed to send message');
+    } finally {
+      setSending(false);
+    }
+  };
+
+  if (msgLoading) {
+    return (
+      <div className="flex items-center justify-center py-12">
+        <Loader2 className="w-6 h-6 animate-spin text-[#1e3a5f]" />
+      </div>
+    );
+  }
+
+  return (
+    <div className="bg-white rounded-xl border border-gray-100 shadow-sm flex flex-col" style={{ height: 'calc(100vh - 280px)', minHeight: '400px', maxHeight: '700px' }}>
+      {/* Messages area */}
+      <div className="flex-1 overflow-y-auto p-4 space-y-3">
+        {messages.length === 0 ? (
+          <div className="flex flex-col items-center justify-center h-full text-gray-400">
+            <MessageCircle className="w-12 h-12 mb-3 opacity-50" />
+            <p className="text-sm">No messages yet</p>
+            <p className="text-xs mt-1">Send a message to your planner to start the conversation</p>
+          </div>
+        ) : (
+          messages.map((msg, idx) => {
+            const isCouple = msg.sender_role === 'couple';
+            return (
+              <div key={msg.id} className={`flex ${isCouple ? 'justify-end' : 'justify-start'}`}>
+                <div className={`max-w-[75%] rounded-2xl px-4 py-2.5 ${
+                  isCouple
+                    ? 'bg-[#1e3a5f] text-white rounded-br-md'
+                    : 'bg-gray-100 text-gray-800 rounded-bl-md'
+                }`}>
+                  {!isCouple && (
+                    <p className="text-xs font-medium text-gray-500 mb-1">{msg.sender_name}</p>
+                  )}
+                  <p className="text-sm whitespace-pre-wrap">{msg.content}</p>
+                  <div className={`flex items-center gap-1.5 mt-1 ${isCouple ? 'justify-end' : ''}`}>
+                    <span className={`text-xs ${isCouple ? 'text-white/50' : 'text-gray-400'}`}>
+                      {msg.created_at ? new Date(msg.created_at).toLocaleTimeString('en-US', {
+                        hour: 'numeric', minute: '2-digit', hour12: true,
+                      }) : ''}
+                    </span>
+                    {isCouple && msg.read_by_planner && (
+                      <Eye className="w-3 h-3 text-white/50" />
+                    )}
+                  </div>
+                </div>
+              </div>
+            );
+          })
+        )}
+        <div ref={messagesEndRef} />
+      </div>
+
+      {/* Input area */}
+      {/* Input area — disabled for archived weddings */}
+      {archived ? (
+        <div className="border-t border-gray-100 p-3 bg-gray-50">
+          <p className="text-sm text-gray-400 text-center flex items-center justify-center gap-2">
+            <Archive className="w-4 h-4" />
+            Messaging is disabled for archived weddings
+          </p>
+        </div>
+      ) : (
+        <div className="border-t border-gray-100 p-3 flex gap-2">
+          <input
+            type="text"
+            value={newMessage}
+            onChange={(e) => setNewMessage(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend(); } }}
+            placeholder="Type a message to your planner..."
+            className="flex-1 px-4 py-2.5 border border-gray-200 rounded-full text-sm focus:outline-none focus:ring-2 focus:ring-[#1e3a5f]/20 focus:border-[#1e3a5f]"
+            disabled={sending}
+          />
+          <button
+            onClick={handleSend}
+            disabled={!newMessage.trim() || sending}
+            className="w-10 h-10 flex items-center justify-center bg-[#1e3a5f] text-white rounded-full hover:bg-[#2a4a6f] transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            {sending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+
+// ============================================================================
+// MEETINGS TAB — Couple views upcoming meetings with planner
+// ============================================================================
+
+interface CoupleMeeting {
+  id: string;
+  title: string;
+  description?: string;
+  start_date: string;
+  end_date?: string;
+  is_recurring: boolean;
+  status: string;
+}
+
+function MeetingsTab() {
+  const [meetings, setMeetings] = useState<CoupleMeeting[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const fetchMeetings = async () => {
+      const token = localStorage.getItem('couple_token');
+      if (!token) return;
+      try {
+        const res = await fetch(`${getApiBaseUrl()}/couple/portal/meetings`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (res.ok) {
+          const data = await res.json();
+          setMeetings(data.meetings || []);
+        } else if (res.status !== 401) {
+          toast.error('Failed to load meetings');
+        }
+      } catch {
+        toast.error('Failed to load meetings');
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchMeetings();
+  }, []);
+
+  if (loading) {
+    return <div className="flex items-center justify-center py-16"><Loader2 className="w-6 h-6 animate-spin text-gray-400" /></div>;
+  }
+
+  if (meetings.length === 0) {
+    return (
+      <div className="text-center py-12 text-gray-400">
+        <CalendarClock className="w-10 h-10 mx-auto mb-3 opacity-50" />
+        <p>No upcoming meetings</p>
+        <p className="text-sm mt-1">Your planner will schedule check-ins here</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="max-w-2xl mx-auto space-y-3">
+      <h2 className="text-lg font-semibold text-gray-800 mb-4 flex items-center gap-2">
+        <CalendarClock className="w-5 h-5 text-[#1e3a5f]" /> Upcoming Meetings
+      </h2>
+      {meetings.map((m) => (
+        <div key={m.id} className="bg-white rounded-xl border border-gray-100 shadow-sm p-4">
+          <div className="flex items-center gap-2 mb-1">
+            <h3 className="text-sm font-medium text-gray-800">{m.title}</h3>
+            {m.is_recurring && (
+              <span className="text-xs px-1.5 py-0.5 rounded-full bg-purple-100 text-purple-700 flex items-center gap-0.5">
+                <Repeat className="w-3 h-3" /> Recurring
+              </span>
+            )}
+          </div>
+          {m.description && <p className="text-xs text-gray-500 mb-2">{m.description}</p>}
+          <div className="flex items-center gap-2 text-xs text-gray-500">
+            <Calendar className="w-3.5 h-3.5" />
+            <span>{new Date(m.start_date).toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}</span>
+          </div>
+          <div className="flex items-center gap-2 text-xs text-gray-500 mt-1">
+            <Clock className="w-3.5 h-3.5" />
+            <span>{new Date(m.start_date).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}</span>
+            {m.end_date && <span>– {new Date(m.end_date).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}</span>}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+
+// ============================================================================
+// SPRINT 6: QR CODE WIDGET (Overview tab — reuses guest_export_service)
+// ============================================================================
+
+function QRCodeWidget() {
+  const [qrUrl, setQrUrl] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+
+  const generateQR = async () => {
+    setLoading(true);
+    try {
+      const token = localStorage.getItem('couple_token');
+      const res = await fetch(`${getApiBaseUrl()}/couple/portal/qr-code`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+
+      if (!res.ok) throw new Error('Failed to generate QR code');
+
+      const blob = await res.blob();
+      const objectUrl = URL.createObjectURL(blob);
+      setQrUrl(objectUrl);
+    } catch {
+      toast.error('Could not generate QR code');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const downloadQR = () => {
+    if (!qrUrl) return;
+    const a = document.createElement('a');
+    a.href = qrUrl;
+    a.download = 'wedding-portal-qr.png';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+  };
+
+  return (
+    <div className="bg-white rounded-xl p-6 border border-gray-100 shadow-sm">
+      <div className="flex items-center gap-3 mb-3">
+        <QrCode className="w-5 h-5 text-[#1e3a5f]" />
+        <h3 className="font-medium text-gray-800">Portal QR Code</h3>
+      </div>
+      <p className="text-xs text-gray-500 mb-3">Share quick access to your wedding portal</p>
+
+      {qrUrl ? (
+        <div className="text-center">
+          <img
+            src={qrUrl}
+            alt="Wedding portal QR code"
+            width={160}
+            height={160}
+            className="mx-auto rounded-lg border border-gray-100"
+          />
+          <button
+            onClick={downloadQR}
+            className="flex items-center gap-1.5 mx-auto mt-3 text-xs font-medium text-[#1e3a5f] hover:text-[#2a4a6f] transition-colors"
+            aria-label="Download QR code as PNG"
+          >
+            <Download className="w-3.5 h-3.5" /> Download PNG
+          </button>
+        </div>
+      ) : (
+        <button
+          onClick={generateQR}
+          disabled={loading}
+          className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-gray-50 hover:bg-gray-100 border border-gray-200 rounded-lg text-sm text-gray-600 font-medium transition-colors disabled:opacity-50"
+        >
+          {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <QrCode className="w-4 h-4" />}
+          Generate QR Code
+        </button>
+      )}
+    </div>
+  );
+}
+
+
+// ============================================================================
+// SPRINT 6: PUSH NOTIFICATION WIDGET (Overview tab)
+// ============================================================================
+
+function PushNotificationWidget() {
+  const [pushStatus, setPushStatus] = useState<'loading' | 'unsupported' | 'denied' | 'subscribed' | 'unsubscribed'>('loading');
+  const [subscribing, setSubscribing] = useState(false);
+
+  useEffect(() => {
+    checkStatus();
+  }, []);
+
+  const checkStatus = async () => {
+    // Check browser support
+    if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
+      setPushStatus('unsupported');
+      return;
+    }
+
+    if (Notification.permission === 'denied') {
+      setPushStatus('denied');
+      return;
+    }
+
+    // Check server subscription status
+    try {
+      const token = localStorage.getItem('couple_token');
+      const res = await fetch(`${getApiBaseUrl()}/couple/portal/push/status`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (!data.enabled) {
+          setPushStatus('unsupported');
+        } else {
+          setPushStatus(data.subscribed ? 'subscribed' : 'unsubscribed');
+        }
+      } else {
+        setPushStatus('unsubscribed');
+      }
+    } catch {
+      setPushStatus('unsubscribed');
+    }
+  };
+
+  const handleSubscribe = async () => {
+    setSubscribing(true);
+    try {
+      // Request notification permission
+      const permission = await Notification.requestPermission();
+      if (permission !== 'granted') {
+        setPushStatus('denied');
+        toast.error('Notification permission denied');
+        return;
+      }
+
+      // Get VAPID public key
+      const token = localStorage.getItem('couple_token');
+      const keyRes = await fetch(`${getApiBaseUrl()}/web-push/vapid-public-key`);
+      if (!keyRes.ok) throw new Error('Push not configured');
+      const { vapid_public_key } = await keyRes.json();
+
+      // Register service worker and subscribe
+      const registration = await navigator.serviceWorker.ready;
+      const subscription = await registration.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: vapid_public_key,
+      });
+
+      // Send subscription to backend
+      const subRes = await fetch(`${getApiBaseUrl()}/couple/portal/push/subscribe`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ subscription: subscription.toJSON() }),
+      });
+
+      if (!subRes.ok) throw new Error('Failed to save subscription');
+
+      setPushStatus('subscribed');
+      toast.success('Push notifications enabled');
+    } catch (e: any) {
+      toast.error(e.message || 'Could not enable notifications');
+    } finally {
+      setSubscribing(false);
+    }
+  };
+
+  const handleUnsubscribe = async () => {
+    setSubscribing(true);
+    try {
+      const registration = await navigator.serviceWorker.ready;
+      const subscription = await registration.pushManager.getSubscription();
+
+      if (subscription) {
+        const token = localStorage.getItem('couple_token');
+        await fetch(`${getApiBaseUrl()}/couple/portal/push/unsubscribe`, {
+          method: 'DELETE',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+          body: JSON.stringify({ endpoint: subscription.endpoint }),
+        });
+        await subscription.unsubscribe();
+      }
+
+      setPushStatus('unsubscribed');
+      toast.success('Push notifications disabled');
+    } catch {
+      toast.error('Could not disable notifications');
+    } finally {
+      setSubscribing(false);
+    }
+  };
+
+  return (
+    <div className="bg-white rounded-xl p-6 border border-gray-100 shadow-sm">
+      <div className="flex items-center gap-3 mb-3">
+        {pushStatus === 'subscribed' ? (
+          <BellRing className="w-5 h-5 text-green-500" />
+        ) : (
+          <BellOff className="w-5 h-5 text-gray-400" />
+        )}
+        <h3 className="font-medium text-gray-800">Push Notifications</h3>
+      </div>
+      <p className="text-xs text-gray-500 mb-3">Get alerts for updates, messages, and meetings</p>
+
+      {pushStatus === 'loading' && (
+        <div className="flex items-center gap-2 text-sm text-gray-400">
+          <Loader2 className="w-4 h-4 animate-spin" /> Checking...
+        </div>
+      )}
+
+      {pushStatus === 'unsupported' && (
+        <p className="text-xs text-gray-400">Push notifications are not available in this browser.</p>
+      )}
+
+      {pushStatus === 'denied' && (
+        <p className="text-xs text-amber-600">Notifications blocked. Please enable them in your browser settings.</p>
+      )}
+
+      {pushStatus === 'subscribed' && (
+        <div>
+          <div className="flex items-center gap-2 text-xs text-green-600 mb-3">
+            <CheckCircle className="w-3.5 h-3.5" /> Notifications active
+          </div>
+          <button
+            onClick={handleUnsubscribe}
+            disabled={subscribing}
+            className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-red-50 hover:bg-red-100 text-red-600 text-xs font-medium rounded-lg transition-colors disabled:opacity-50"
+          >
+            {subscribing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <BellOff className="w-3.5 h-3.5" />}
+            Disable Notifications
+          </button>
+        </div>
+      )}
+
+      {pushStatus === 'unsubscribed' && (
+        <button
+          onClick={handleSubscribe}
+          disabled={subscribing}
+          className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-[#1e3a5f] hover:bg-[#2a4a6f] text-white text-sm font-medium rounded-lg transition-colors disabled:opacity-50"
+        >
+          {subscribing ? <Loader2 className="w-4 h-4 animate-spin" /> : <BellRing className="w-4 h-4" />}
+          Enable Notifications
+        </button>
+      )}
+    </div>
+  );
+}
+
+
+// ============================================================================
+// SPRINT 6: REGISTRY TAB (CRUD — syncs to wedding model)
+// ============================================================================
+
+interface RegistryItem {
+  name: string;
+  url: string;
+  color?: string;
+}
+
+function RegistryTab({ registries, archived, onUpdated }: { registries: RegistryItem[]; archived: boolean; onUpdated: () => void }) {
+  const [showForm, setShowForm] = useState(false);
+  const [editIndex, setEditIndex] = useState<number | null>(null);
+  const [name, setName] = useState('');
+  const [url, setUrl] = useState('');
+  const [color, setColor] = useState('bg-gray-600');
+  const [saving, setSaving] = useState(false);
+  const [deleting, setDeleting] = useState<number | null>(null);
+
+  const colorOptions = [
+    { value: 'bg-red-600', label: 'Red' },
+    { value: 'bg-orange-500', label: 'Orange' },
+    { value: 'bg-amber-500', label: 'Amber' },
+    { value: 'bg-green-600', label: 'Green' },
+    { value: 'bg-blue-600', label: 'Blue' },
+    { value: 'bg-indigo-600', label: 'Indigo' },
+    { value: 'bg-purple-600', label: 'Purple' },
+    { value: 'bg-pink-600', label: 'Pink' },
+    { value: 'bg-gray-600', label: 'Gray' },
+    { value: 'bg-[#1e3a5f]', label: 'Navy' },
+  ];
+
+  const resetForm = () => {
+    setName('');
+    setUrl('');
+    setColor('bg-gray-600');
+    setShowForm(false);
+    setEditIndex(null);
+  };
+
+  const startEdit = (index: number) => {
+    const item = registries[index];
+    setName(item.name);
+    setUrl(item.url);
+    setColor(item.color || 'bg-gray-600');
+    setEditIndex(index);
+    setShowForm(true);
+  };
+
+  const handleSave = async () => {
+    if (!name.trim() || !url.trim()) return;
+    setSaving(true);
+    try {
+      const token = localStorage.getItem('couple_token');
+      const isEdit = editIndex !== null;
+      const endpoint = isEdit
+        ? `${getApiBaseUrl()}/couple/portal/registries/${editIndex}`
+        : `${getApiBaseUrl()}/couple/portal/registries`;
+
+      const res = await fetch(endpoint, {
+        method: isEdit ? 'PUT' : 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ name: name.trim(), url: url.trim(), color }),
+      });
+
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.detail || 'Failed to save registry');
+      }
+
+      toast.success(isEdit ? 'Registry updated' : 'Registry added');
+      resetForm();
+      onUpdated();
+    } catch (e: any) {
+      toast.error(e.message || 'Something went wrong');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleDelete = async (index: number) => {
+    setDeleting(index);
+    try {
+      const token = localStorage.getItem('couple_token');
+      const res = await fetch(`${getApiBaseUrl()}/couple/portal/registries/${index}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${token}` },
+      });
+
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.detail || 'Failed to delete');
+      }
+
+      toast.success('Registry removed');
+      onUpdated();
+    } catch (e: any) {
+      toast.error(e.message || 'Something went wrong');
+    } finally {
+      setDeleting(null);
+    }
+  };
+
+  return (
+    <div className="max-w-3xl mx-auto">
+      <div className="flex items-center justify-between mb-6">
+        <h2 className="text-lg font-semibold text-gray-800 flex items-center gap-2">
+          <Gift className="w-5 h-5 text-[#1e3a5f]" /> Wedding Registry
+        </h2>
+        {!archived && !showForm && (
+          <button
+            onClick={() => { resetForm(); setShowForm(true); }}
+            className="flex items-center gap-1.5 text-sm font-medium text-[#1e3a5f] hover:text-[#2a4a6f] transition-colors"
+            aria-label="Add new registry item"
+          >
+            <Plus className="w-4 h-4" /> Add Registry
+          </button>
+        )}
+      </div>
+
+      <p className="text-sm text-gray-500 mb-4">Your presence is the greatest gift, but if you&apos;d like to celebrate with us, we&apos;re registered at:</p>
+
+      {/* Add/Edit Form */}
+      {showForm && (
+        <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5 mb-6" role="form" aria-label={editIndex !== null ? 'Edit registry item' : 'Add registry item'}>
+          <h3 className="text-sm font-semibold text-gray-700 mb-3">{editIndex !== null ? 'Edit Registry' : 'Add Registry'}</h3>
+          <div className="space-y-3">
+            <div>
+              <label htmlFor="reg-name" className="block text-xs font-medium text-gray-600 mb-1">Registry Name</label>
+              <input
+                id="reg-name"
+                type="text"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                placeholder="e.g., Target, Amazon, Zola"
+                className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:ring-2 focus:ring-[#1e3a5f]/20 focus:border-[#1e3a5f] outline-none"
+                aria-required="true"
+              />
+            </div>
+            <div>
+              <label htmlFor="reg-url" className="block text-xs font-medium text-gray-600 mb-1">Registry URL</label>
+              <input
+                id="reg-url"
+                type="url"
+                value={url}
+                onChange={(e) => setUrl(e.target.value)}
+                placeholder="https://www.target.com/gift-registry/..."
+                className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:ring-2 focus:ring-[#1e3a5f]/20 focus:border-[#1e3a5f] outline-none"
+                aria-required="true"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">Button Color</label>
+              <div className="flex flex-wrap gap-2">
+                {colorOptions.map((c) => (
+                  <button
+                    key={c.value}
+                    type="button"
+                    onClick={() => setColor(c.value)}
+                    className={`w-8 h-8 rounded-full ${c.value} transition-all ${color === c.value ? 'ring-2 ring-offset-2 ring-[#1e3a5f] scale-110' : 'opacity-60 hover:opacity-100'}`}
+                    title={c.label}
+                    aria-label={`Select ${c.label} color`}
+                    aria-pressed={color === c.value}
+                  />
+                ))}
+              </div>
+            </div>
+            <div className="flex gap-2 pt-2">
+              <button
+                onClick={handleSave}
+                disabled={saving || !name.trim() || !url.trim()}
+                className="flex items-center gap-1.5 px-4 py-2 bg-[#1e3a5f] text-white text-sm font-medium rounded-lg hover:bg-[#2a4a6f] disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              >
+                {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle className="w-4 h-4" />}
+                {editIndex !== null ? 'Update' : 'Save'}
+              </button>
+              <button
+                onClick={resetForm}
+                className="px-4 py-2 text-sm text-gray-500 hover:text-gray-700 transition-colors"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Registry Grid */}
+      {registries.length === 0 && !showForm ? (
+        <div className="text-center py-12">
+          <Gift className="w-10 h-10 text-gray-300 mx-auto mb-3" />
+          <p className="text-gray-400 font-medium">No registries added yet</p>
+          {!archived && <p className="text-sm text-gray-400 mt-1">Click &quot;Add Registry&quot; to get started</p>}
+        </div>
+      ) : (
+        <div className={`grid gap-4 ${registries.length === 1 ? 'grid-cols-1 max-w-xs mx-auto' : registries.length === 2 ? 'grid-cols-1 sm:grid-cols-2' : 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-3'}`}>
+          {registries.map((reg, i) => (
+            <div key={i} className="bg-white rounded-xl border border-gray-100 shadow-sm p-5 text-center group">
+              <h3 className="text-base font-semibold text-gray-800 mb-3">{reg.name}</h3>
+              <a
+                href={reg.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className={`${reg.color || 'bg-gray-600'} text-white px-6 py-2.5 rounded-lg hover:opacity-90 transition-opacity inline-flex items-center gap-2 text-sm font-medium`}
+                aria-label={`View ${reg.name} registry (opens in new tab)`}
+              >
+                View Registry <ExternalLink className="w-3.5 h-3.5" />
+              </a>
+              {!archived && (
+                <div className="flex items-center justify-center gap-2 mt-3 opacity-0 group-hover:opacity-100 transition-opacity">
+                  <button
+                    onClick={() => startEdit(i)}
+                    className="text-xs text-gray-400 hover:text-[#1e3a5f] flex items-center gap-1 transition-colors"
+                    aria-label={`Edit ${reg.name}`}
+                  >
+                    <Pencil className="w-3 h-3" /> Edit
+                  </button>
+                  <button
+                    onClick={() => handleDelete(i)}
+                    disabled={deleting === i}
+                    className="text-xs text-gray-400 hover:text-red-500 flex items-center gap-1 transition-colors disabled:opacity-50"
+                    aria-label={`Delete ${reg.name}`}
+                  >
+                    {deleting === i ? <Loader2 className="w-3 h-3 animate-spin" /> : <Trash2 className="w-3 h-3" />} Delete
+                  </button>
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+
+// ============================================================================
+// SPRINT 6: FAQ TAB (CRUD — syncs to wedding model)
+// ============================================================================
+
+interface FAQItem {
+  question: string;
+  answer: string;
+  link_url?: string | null;
+  link_label?: string | null;
+}
+
+function FAQTab({ faqs, archived, onUpdated }: { faqs: FAQItem[]; archived: boolean; onUpdated: () => void }) {
+  const [showForm, setShowForm] = useState(false);
+  const [editIndex, setEditIndex] = useState<number | null>(null);
+  const [question, setQuestion] = useState('');
+  const [answer, setAnswer] = useState('');
+  const [linkUrl, setLinkUrl] = useState('');
+  const [linkLabel, setLinkLabel] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [deleting, setDeleting] = useState<number | null>(null);
+  const [expandedIndex, setExpandedIndex] = useState<number | null>(null);
+
+  const resetForm = () => {
+    setQuestion('');
+    setAnswer('');
+    setLinkUrl('');
+    setLinkLabel('');
+    setShowForm(false);
+    setEditIndex(null);
+  };
+
+  const startEdit = (index: number) => {
+    const item = faqs[index];
+    setQuestion(item.question);
+    setAnswer(item.answer);
+    setLinkUrl(item.link_url || '');
+    setLinkLabel(item.link_label || '');
+    setEditIndex(index);
+    setShowForm(true);
+  };
+
+  const handleSave = async () => {
+    if (!question.trim() || !answer.trim()) return;
+    setSaving(true);
+    try {
+      const token = localStorage.getItem('couple_token');
+      const isEdit = editIndex !== null;
+      const endpoint = isEdit
+        ? `${getApiBaseUrl()}/couple/portal/faqs/${editIndex}`
+        : `${getApiBaseUrl()}/couple/portal/faqs`;
+
+      const body: any = { question: question.trim(), answer: answer.trim() };
+      if (linkUrl.trim()) body.link_url = linkUrl.trim();
+      if (linkLabel.trim()) body.link_label = linkLabel.trim();
+
+      const res = await fetch(endpoint, {
+        method: isEdit ? 'PUT' : 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify(body),
+      });
+
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.detail || 'Failed to save FAQ');
+      }
+
+      toast.success(isEdit ? 'FAQ updated' : 'FAQ added');
+      resetForm();
+      onUpdated();
+    } catch (e: any) {
+      toast.error(e.message || 'Something went wrong');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleDelete = async (index: number) => {
+    setDeleting(index);
+    try {
+      const token = localStorage.getItem('couple_token');
+      const res = await fetch(`${getApiBaseUrl()}/couple/portal/faqs/${index}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${token}` },
+      });
+
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.detail || 'Failed to delete');
+      }
+
+      toast.success('FAQ removed');
+      onUpdated();
+    } catch (e: any) {
+      toast.error(e.message || 'Something went wrong');
+    } finally {
+      setDeleting(null);
+    }
+  };
+
+  return (
+    <div className="max-w-3xl mx-auto">
+      <div className="flex items-center justify-between mb-6">
+        <h2 className="text-lg font-semibold text-gray-800 flex items-center gap-2">
+          <HelpCircle className="w-5 h-5 text-[#1e3a5f]" /> Frequently Asked Questions
+        </h2>
+        {!archived && !showForm && (
+          <button
+            onClick={() => { resetForm(); setShowForm(true); }}
+            className="flex items-center gap-1.5 text-sm font-medium text-[#1e3a5f] hover:text-[#2a4a6f] transition-colors"
+            aria-label="Add new FAQ item"
+          >
+            <Plus className="w-4 h-4" /> Add FAQ
+          </button>
+        )}
+      </div>
+
+      <p className="text-sm text-gray-500 mb-4">These FAQs will appear on your wedding page for your guests. Add questions and answers to help them prepare.</p>
+
+      {/* Add/Edit Form */}
+      {showForm && (
+        <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5 mb-6" role="form" aria-label={editIndex !== null ? 'Edit FAQ item' : 'Add FAQ item'}>
+          <h3 className="text-sm font-semibold text-gray-700 mb-3">{editIndex !== null ? 'Edit FAQ' : 'Add FAQ'}</h3>
+          <div className="space-y-3">
+            <div>
+              <label htmlFor="faq-q" className="block text-xs font-medium text-gray-600 mb-1">Question</label>
+              <input
+                id="faq-q"
+                type="text"
+                value={question}
+                onChange={(e) => setQuestion(e.target.value)}
+                placeholder="e.g., What should I wear?"
+                className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:ring-2 focus:ring-[#1e3a5f]/20 focus:border-[#1e3a5f] outline-none"
+                aria-required="true"
+              />
+            </div>
+            <div>
+              <label htmlFor="faq-a" className="block text-xs font-medium text-gray-600 mb-1">Answer</label>
+              <textarea
+                id="faq-a"
+                value={answer}
+                onChange={(e) => setAnswer(e.target.value)}
+                placeholder="Your answer here..."
+                rows={3}
+                className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:ring-2 focus:ring-[#1e3a5f]/20 focus:border-[#1e3a5f] outline-none resize-none"
+                aria-required="true"
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label htmlFor="faq-link" className="block text-xs font-medium text-gray-600 mb-1">Link URL (optional)</label>
+                <input
+                  id="faq-link"
+                  type="url"
+                  value={linkUrl}
+                  onChange={(e) => setLinkUrl(e.target.value)}
+                  placeholder="https://..."
+                  className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:ring-2 focus:ring-[#1e3a5f]/20 focus:border-[#1e3a5f] outline-none"
+                />
+              </div>
+              <div>
+                <label htmlFor="faq-label" className="block text-xs font-medium text-gray-600 mb-1">Link Label (optional)</label>
+                <input
+                  id="faq-label"
+                  type="text"
+                  value={linkLabel}
+                  onChange={(e) => setLinkLabel(e.target.value)}
+                  placeholder="e.g., Book Hotel Room"
+                  className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:ring-2 focus:ring-[#1e3a5f]/20 focus:border-[#1e3a5f] outline-none"
+                />
+              </div>
+            </div>
+            <div className="flex gap-2 pt-2">
+              <button
+                onClick={handleSave}
+                disabled={saving || !question.trim() || !answer.trim()}
+                className="flex items-center gap-1.5 px-4 py-2 bg-[#1e3a5f] text-white text-sm font-medium rounded-lg hover:bg-[#2a4a6f] disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              >
+                {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle className="w-4 h-4" />}
+                {editIndex !== null ? 'Update' : 'Save'}
+              </button>
+              <button
+                onClick={resetForm}
+                className="px-4 py-2 text-sm text-gray-500 hover:text-gray-700 transition-colors"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* FAQ List */}
+      {faqs.length === 0 && !showForm ? (
+        <div className="text-center py-12">
+          <HelpCircle className="w-10 h-10 text-gray-300 mx-auto mb-3" />
+          <p className="text-gray-400 font-medium">No FAQs added yet</p>
+          {!archived && <p className="text-sm text-gray-400 mt-1">Click &quot;Add FAQ&quot; to help your guests prepare</p>}
+        </div>
+      ) : (
+        <div className="space-y-3">
+          {faqs.map((faq, i) => (
+            <div key={i} className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden group">
+              <button
+                onClick={() => setExpandedIndex(expandedIndex === i ? null : i)}
+                className="w-full px-5 py-4 flex items-center justify-between text-left"
+                aria-expanded={expandedIndex === i}
+                aria-controls={`faq-answer-${i}`}
+              >
+                <h3 className="text-sm font-semibold text-gray-800 pr-4">{faq.question}</h3>
+                {expandedIndex === i ? <ChevronUp className="w-4 h-4 text-gray-400 flex-shrink-0" /> : <ChevronDown className="w-4 h-4 text-gray-400 flex-shrink-0" />}
+              </button>
+              {expandedIndex === i && (
+                <div id={`faq-answer-${i}`} className="px-5 pb-4 border-t border-gray-50">
+                  <p className="text-sm text-gray-600 leading-relaxed mt-3">{faq.answer}</p>
+                  {faq.link_url && faq.link_label && (
+                    <a
+                      href={faq.link_url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-2 mt-3 px-4 py-2 bg-[#1e3a5f] text-white text-xs font-medium rounded-lg hover:bg-[#2a4a6f] transition-colors"
+                    >
+                      {faq.link_label} <ExternalLink className="w-3 h-3" />
+                    </a>
+                  )}
+                  {!archived && (
+                    <div className="flex items-center gap-3 mt-3 pt-3 border-t border-gray-50">
+                      <button
+                        onClick={(e) => { e.stopPropagation(); startEdit(i); }}
+                        className="text-xs text-gray-400 hover:text-[#1e3a5f] flex items-center gap-1 transition-colors"
+                        aria-label={`Edit FAQ: ${faq.question}`}
+                      >
+                        <Pencil className="w-3 h-3" /> Edit
+                      </button>
+                      <button
+                        onClick={(e) => { e.stopPropagation(); handleDelete(i); }}
+                        disabled={deleting === i}
+                        className="text-xs text-gray-400 hover:text-red-500 flex items-center gap-1 transition-colors disabled:opacity-50"
+                        aria-label={`Delete FAQ: ${faq.question}`}
+                      >
+                        {deleting === i ? <Loader2 className="w-3 h-3 animate-spin" /> : <Trash2 className="w-3 h-3" />} Delete
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

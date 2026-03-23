@@ -1,8 +1,8 @@
 # PRD: Couple Portal — The Special Wedding
 
 **Author:** Etastic
-**Last Updated:** 2026-03-22
-**Status:** In Progress (Phase 1 partially built)
+**Last Updated:** 2026-03-23
+**Status:** Complete (Sprints 1-6 — all P0, P1, and reclassified P2 features built)
 
 ---
 
@@ -116,33 +116,38 @@ The cost of not solving this is measurable — planners report spending 3-5 hour
 | P0-8 | **Planner: invite, resend, list couples** | Planner can invite couple, resend invite, see all couples with status | Built |
 | P0-9 | **Planner: post updates** | Planner can create text updates and milestone cards visible to couple | Built |
 | P0-10 | **Order of events model** | EventModel supports `order_of_events` (list of program steps) and `event_notes` (collaborative notes) — backward compatible with existing events | Built |
-| P0-11 | **Planner management page** | `/admin/couple-portal/` page where planners manage invitations, post updates, view couple activity | Not started |
-| P0-12 | **Order of events — planner CRUD** | Planner can add, edit, reorder, delete program steps within each event | Not started |
-| P0-13 | **Order of events — couple view + notes** | Couple can view the program and leave notes on individual items or the event overall; notes show status | Not started |
-| P0-14 | **Contract review in couple portal** | Couple can view contract details and status from the portal (read from existing contracts collection) | Not started |
+| P0-11 | **Planner management page** | `/admin/couple-portal/` page where planners manage invitations, post updates, view couple activity | Built (Sprint 2) |
+| P0-12 | **Order of events — planner CRUD** | Planner can add, edit, reorder, delete program steps within each event | Built (Sprint 2) |
+| P0-13 | **Order of events — couple view + notes** | Couple can view the program and leave notes on individual items or the event overall; notes show status | Built (Sprint 2) |
+| P0-14 | **Contract review in couple portal** | Couple can view contract details and status from the portal (read from existing contracts collection) | Built (Sprint 2) |
 
 ### Nice-to-Have (P1) — Ship soon after core launch
 
-| # | Requirement | Notes |
-|---|------------|-------|
-| P1-1 | **Inbound messaging** | Couple↔planner messaging within the portal. Near-real-time delivery, message history, notifications both ways |
-| P1-2 | **Recurring meeting scheduling** | Couple and planner can schedule recurring check-ins, synced with planner's Google Calendar |
-| P1-3 | **Planner notification center** | Consolidated view of couple activity — form submissions, new notes, messages — in the planner dashboard |
-| P1-4 | **Couple password reset** | "Forgot password" flow for couple accounts |
-| P1-5 | **Form templates** | Planners can save forms as reusable templates for common data collection |
-| P1-6 | **Note replies** | Planner can reply to a couple's note inline, creating a threaded conversation on each program item |
+| # | Requirement | Notes | Status |
+|---|------------|-------|--------|
+| P1-1 | **Inbound messaging** | Couple↔planner messaging within the portal. Near-real-time delivery, message history, notifications both ways | Built (Sprint 3) |
+| P1-2 | **Recurring meeting scheduling** | Couple and planner can schedule recurring check-ins, synced with planner's Google Calendar | Built (Sprint 5) |
+| P1-3 | **Planner notification center** | Consolidated view of couple activity — form submissions, new notes, messages — in the planner dashboard | Built (Sprint 3) |
+| P1-4 | **Couple password reset** | "Forgot password" flow for couple accounts | Built (Sprint 3) |
+| P1-5 | **Form templates** | Planners can save forms as reusable templates for common data collection | Built (Sprint 4) |
+| P1-6 | **Note replies** | Planner can reply to a couple's note inline, creating a threaded conversation on each program item | Built (Sprint 5) |
+
+### Reclassified from P2 → Built in Sprint 6
+
+| # | Requirement | Notes | Status |
+|---|------------|-------|--------|
+| P2-2 | **Registry CRUD** | Couple can add/edit/delete registries — shared data with planner on wedding model | Built (Sprint 6) |
+| P2-3 | **FAQ CRUD** | Couple can add/edit/delete FAQs — shared data with planner on wedding model | Built (Sprint 6) |
+| P2-5 | **QR code for portal access** | Reuses `guest_export_service.generate_qr_code()` — downloadable PNG | Built (Sprint 6) |
+| P2-6 | **Push notifications (couple)** | Couple-auth subscribe/unsubscribe endpoints + push opt-in widget | Built (Sprint 6) |
+| P2-7 | **PWA / mobile optimization** | `manifest.json`, service worker caching, `noindex` SEO, apple-mobile-web-app meta | Built (Sprint 6) |
 
 ### Future Considerations (P2) — Design for but don't build now
 
 | # | Requirement | Architectural Consideration |
 |---|------------|----------------------------|
 | P2-1 | **Real-time messaging via WebSocket** | Service layer should support pluggable transport (polling → SSE → WebSocket) |
-| P2-2 | **Registry display** | Wedding model already has `registries` array; just needs a couple dashboard widget |
-| P2-3 | **FAQ display** | Wedding model already has `faqs` array; same as above |
 | P2-4 | **Document sharing** | Consider R2 storage integration for planner-uploaded PDFs/images viewable by couple |
-| P2-5 | **QR code for portal access** | Generate QR from couple portal URL for in-person sharing |
-| P2-6 | **Push notifications** | Browser push for new updates/messages/form assignments |
-| P2-7 | **PWA / mobile optimization** | Service worker, manifest, offline-first dashboard |
 | P2-8 | **Multi-couple login** | Separate logins for each partner (requires auth model change) |
 | P2-9 | **Wedding archival analytics dashboard** | Post-wedding insights: total spend, vendor ratings, timeline adherence |
 
@@ -202,37 +207,43 @@ The cost of not solving this is measurable — planners report spending 3-5 hour
 - [x] Feature spec document
 - [x] EventModel extension: `order_of_events` + `event_notes` (backward-compatible)
 
-### Sprint 2 — Planner Management + Order of Events
+### Sprint 2 — Planner Management + Order of Events (DONE)
 *Planner-side UI, program management, collaborative notes*
 
-- [ ] **Planner management page** (`/admin/couple-portal/page.tsx`): invite couples, view couple status, post updates, view activity feed
-- [ ] **Order of events CRUD** (planner side): add/edit/reorder/delete program steps per event, assign times and descriptions
-- [ ] **Order of events view** (couple side): render program in Timeline tab, expandable per-event
-- [ ] **Collaborative notes UI** (couple side): add notes to program items or events, see status badges
-- [ ] **Note management** (planner side): view couple notes inline, mark as seen/addressed, optional replies
-- [ ] **Contract review** in couple dashboard: surface contract details and status from existing contracts collection
-- [ ] **API endpoints**: order-of-events CRUD, note creation, note status updates
+- [x] **Planner management page** (`/admin/couple-portal/page.tsx`): invite couples, view couple status, post updates, view activity feed
+- [x] **Order of events CRUD** (planner side): add/edit/reorder/delete program steps per event, assign times and descriptions
+- [x] **Order of events view** (couple side): render program in Timeline tab, expandable per-event
+- [x] **Collaborative notes UI** (couple side): add notes to program items or events, see status badges
+- [x] **Note management** (planner side): view couple notes inline, mark as seen/addressed
+- [x] **Contract review** in couple dashboard: surface contract details and status from existing contracts collection
+- [x] **API endpoints**: order-of-events CRUD, note creation, note status updates
 
-### Sprint 3 — Communication + Scheduling
+### Sprint 3 — Communication + Scheduling (DONE)
 *Messaging, meetings, notifications*
 
-- [ ] **Inbound messaging**: couple↔planner messaging with history and notifications
-- [ ] **Recurring meeting scheduling**: schedule check-ins, sync with planner calendar, reminders for both parties
-- [ ] **Planner notification center**: consolidated feed of couple actions (form submissions, notes, messages)
-- [ ] **Couple password reset**: forgot-password flow for couple accounts
-- [ ] **Email notifications**: digest emails for unread updates, upcoming payments, pending forms
+- [x] **Inbound messaging**: couple↔planner messaging with history and notifications
+- [x] **Planner notification center**: consolidated feed via existing /planner/activity-notifications API
+- [x] **Couple password reset**: forgot-password flow for couple accounts
+- [x] **Email notifications**: digest emails for unread updates, upcoming payments, pending forms
 
-### Sprint 4 — Polish, Archival & Testing
+### Sprint 4 — Polish, Archival & Testing (DONE)
 *End-to-end flows, archival, edge cases*
 
-- [ ] **Wedding archival flow**: planner triggers archive → data snapshot → couple sees archived view
-- [ ] **Form templates**: planners save/reuse common form templates
-- [ ] **Error states**: expired tokens, revoked access, archived wedding messaging
-- [ ] **Mobile responsiveness**: test and polish all couple portal pages on mobile viewports
+- [x] **Wedding archival flow**: planner triggers archive → data snapshot → couple sees archived view
+- [x] **Form templates**: planners save/reuse common form templates (custom template library)
+- [x] **Error states**: archived wedding blocks messaging/forms/notes, ObjectId validation, proper 403/400 responses
+- [x] **Mobile responsiveness**: responsive tab sizes, viewport-relative chat container, stacking layout
 - [ ] **End-to-end testing**: full flow from planner invite → couple setup → dashboard → forms → notes → messaging
-- [ ] **Performance**: lazy-load tabs, paginate updates/messages, optimize dashboard API response
+- [x] **Performance**: messages/contracts lazy-load on tab switch, responsive container sizing
 
-### Sprint 5 — Future Enhancements (P2)
+### Sprint 5 — Remaining P1 Features (DONE)
+*Note replies + meeting scheduling*
+
+- [x] **Note replies (P1-6)**: planner can reply inline to couple notes, threaded conversation display on both sides
+- [x] **Recurring meeting scheduling (P1-2)**: schedule check-ins with Google Calendar sync, recurring rules (weekly/biweekly/monthly), couple-side meeting view
+- [x] **Reply auto-addresses notes**: replying to a note automatically marks it as addressed
+
+### Sprint 6 — Future Enhancements (P2)
 *Only if capacity allows or demand is clear*
 
 - [ ] Registry and FAQ display widgets

@@ -11,6 +11,7 @@ Endpoints:
   POST /planner/ads/add-to-directory    — Add vendor to planner's directory
   POST /planner/ads/request-quote       — Send quote request to vendor
   GET  /planner/ads/directory-status    — Check if vendor already in directory
+  POST /planner/ads/draft-quote         — AI-generate a personalized quote request
 
 Auth: wedding_planner role or root admin.
 """
@@ -59,6 +60,11 @@ class RequestQuoteRequest(BaseModel):
     auto_add_to_directory: bool = Field(True, description="Auto-add vendor to directory")
 
 
+class DraftQuoteRequest(BaseModel):
+    campaign_id: str = Field(..., description="Campaign to draft quote for")
+    wedding_context: Optional[WeddingContext] = Field(None, description="Wedding details for context")
+
+
 # ═════════════════════════════════════════════════════════════════════════
 # DEPENDENCY INJECTION
 # ═════════════════════════════════════════════════════════════════════════
@@ -91,11 +97,20 @@ def get_planner_ad_interaction_service() -> PlannerAdInteractionService:
     except Exception:
         logger.warning("Fraud detection service unavailable; fraud checks will be skipped")
 
+    # Auction service — bid-based ranking for sponsored cards
+    auction_service = None
+    try:
+        from app.services.ad_auction_service import AdAuctionService
+        auction_service = AdAuctionService(mongo.db)
+    except Exception:
+        logger.warning("Auction service unavailable; falling back to quality_score sort")
+
     return PlannerAdInteractionService(
         mongo.db,
         email_service=email_service,
         billing_service=billing_service,
         fraud_detection_service=fraud_detection_service,
+        auction_service=auction_service,
     )
 
 
@@ -109,6 +124,30 @@ async def require_planner_or_admin(
         status_code=403,
         detail="Wedding planner access required",
     )
+
+
+async def require_ads_enabled() -> bool:
+    """
+    Dependency that checks if the advertising platform is enabled.
+
+    Uses the cached config (60s TTL) so this is efficient on the hot ad-serving path.
+    Returns True if enabled; raises 403 if disabled.
+    """
+    try:
+        from app.services.ad_platform_config_service import AdPlatformConfigService
+        config_service = AdPlatformConfigService(mongo.db)
+        config = await config_service.get_config()  # uses TTL cache
+        if not config.get("ads_enabled", True):
+            raise HTTPException(
+                status_code=403,
+                detail="Advertising platform is currently disabled",
+            )
+    except HTTPException:
+        raise
+    except Exception:
+        # If config service is unavailable, allow ads (fail-open)
+        logger.warning("Could not check ads_enabled flag; defaulting to enabled")
+    return True
 
 
 def _get_planner_email(user: ExtendedAuthUser) -> str:
@@ -143,6 +182,7 @@ async def get_sponsored_cards(
     limit: int = Query(3, ge=1, le=10, description="Max cards to return"),
     current_user: ExtendedAuthUser = Depends(require_planner_or_admin),
     service: PlannerAdInteractionService = Depends(get_planner_ad_interaction_service),
+    _ads_on: bool = Depends(require_ads_enabled),
 ):
     """
     Get sponsored vendor cards for the planner rail.
@@ -155,6 +195,7 @@ async def get_sponsored_cards(
 
     cards = await service.get_sponsored_cards(
         planner_email=planner_email,
+        planner_id=str(current_user.user_id),
         planner_location=location,
         categories=cat_list,
         limit=limit,
@@ -167,6 +208,7 @@ async def add_to_directory(
     body: AddToDirectoryRequest,
     current_user: ExtendedAuthUser = Depends(require_planner_or_admin),
     service: PlannerAdInteractionService = Depends(get_planner_ad_interaction_service),
+    _ads_on: bool = Depends(require_ads_enabled),
 ):
     """
     Add a vendor from an active campaign to the planner's vendor directory.
@@ -192,6 +234,7 @@ async def request_quote(
     body: RequestQuoteRequest,
     current_user: ExtendedAuthUser = Depends(require_planner_or_admin),
     service: PlannerAdInteractionService = Depends(get_planner_ad_interaction_service),
+    _ads_on: bool = Depends(require_ads_enabled),
 ):
     """
     Send a quote request to an advertising vendor.
@@ -224,6 +267,7 @@ async def check_directory_status(
     campaign_id: str = Query(..., description="Campaign ID to check"),
     current_user: ExtendedAuthUser = Depends(require_planner_or_admin),
     service: PlannerAdInteractionService = Depends(get_planner_ad_interaction_service),
+    _ads_on: bool = Depends(require_ads_enabled),
 ):
     """
     Check if a vendor from a specific campaign is already in the
@@ -234,3 +278,129 @@ async def check_directory_status(
         campaign_id=campaign_id,
         planner_email=planner_email,
     )
+
+
+@router.post("/draft-quote")
+async def draft_quote(
+    body: DraftQuoteRequest,
+    current_user: ExtendedAuthUser = Depends(require_planner_or_admin),
+    service: PlannerAdInteractionService = Depends(get_planner_ad_interaction_service),
+    _ads_on: bool = Depends(require_ads_enabled),
+):
+    """
+    AI-generate a personalized quote request message for a vendor.
+
+    Uses the AI service to draft a context-aware message based on the
+    vendor's campaign info and optionally the planner's wedding details.
+    Returns a suggested subject + body that the planner can edit before sending.
+    """
+    planner_name = _get_planner_name(current_user)
+    planner_id = _get_planner_id(current_user)
+
+    # Resolve campaign to get vendor info
+    campaign = await service._get_active_campaign(body.campaign_id)
+    creative = await service._get_primary_creative(campaign)
+
+    # Build AI context from campaign + wedding info
+    ai_context = {
+        "vendor_name": campaign.get("vendor_name", "Vendor"),
+        "vendor_category": campaign.get("category", "wedding vendor"),
+        "service_area": campaign.get("target_location", ""),
+        "planner_name": planner_name,
+    }
+
+    # Add creative details if available
+    if creative:
+        ai_context["headline"] = creative.get("headline", "")
+        ai_context["description"] = creative.get("description", "")
+
+    # Add wedding context if provided
+    if body.wedding_context:
+        wc = body.wedding_context
+        if wc.date:
+            ai_context["wedding_date"] = wc.date
+        if wc.location:
+            ai_context["wedding_location"] = wc.location
+        if wc.guest_count:
+            ai_context["guest_count"] = wc.guest_count
+        if wc.venue:
+            ai_context["venue"] = wc.venue
+        if wc.budget_range:
+            ai_context["budget_range"] = wc.budget_range
+
+    # Build prompt
+    prompt = f"Draft a quote request from {planner_name} to {ai_context['vendor_name']} ({ai_context['vendor_category']})."
+    if ai_context.get("service_area"):
+        prompt += f" They serve the {ai_context['service_area']} area."
+    if ai_context.get("wedding_date"):
+        prompt += f" Wedding date: {ai_context['wedding_date']}."
+    if ai_context.get("wedding_location"):
+        prompt += f" Location: {ai_context['wedding_location']}."
+    if ai_context.get("guest_count"):
+        prompt += f" Guest count: {ai_context['guest_count']}."
+    if ai_context.get("venue"):
+        prompt += f" Venue: {ai_context['venue']}."
+    if ai_context.get("budget_range"):
+        prompt += f" Budget range: {ai_context['budget_range']}."
+
+    # Call AI service
+    try:
+        from app.services.ai_service import ai_service, AIGenerationError, InsufficientCreditsError
+        import json
+
+        result = await ai_service.generate(
+            user_id=planner_id,
+            tenant_id=planner_id,
+            feature="ad_quote_draft",
+            prompt=prompt,
+            context=ai_context,
+        )
+
+        # Parse AI response
+        response_text = result.get("response", "")
+        try:
+            parsed = json.loads(response_text)
+        except (json.JSONDecodeError, TypeError):
+            # If AI returned plain text, wrap it
+            parsed = {
+                "subject": f"Quote Request — {ai_context['vendor_category'].replace('_', ' ').title()}",
+                "body": response_text,
+                "tone": "professional",
+            }
+
+        return {
+            "draft": parsed,
+            "credits_used": result.get("credits_used", 0),
+            "model_used": result.get("model_used", "unknown"),
+        }
+
+    except InsufficientCreditsError as e:
+        raise HTTPException(
+            status_code=402,
+            detail={"error": "insufficient_credits", "message": e.message},
+        )
+    except AIGenerationError as e:
+        raise HTTPException(
+            status_code=503,
+            detail={"error": e.error_code, "message": e.message},
+        )
+    except ImportError:
+        # AI service not available — return a basic template instead
+        logger.warning("AI service not available; returning template draft")
+        vendor_name = campaign.get("vendor_name", "Vendor")
+        category = campaign.get("category", "services").replace("_", " ")
+        return {
+            "draft": {
+                "subject": f"Quote Request — {category.title()}",
+                "body": (
+                    f"Hi {vendor_name},\n\n"
+                    f"I'm {planner_name}, a wedding planner, and I found your profile on The Special Wedding. "
+                    f"I'm interested in your {category} services and would love to discuss pricing and availability.\n\n"
+                    "Could you share your packages and any availability you have?\n\n"
+                    "Thank you!"
+                ),
+                "tone": "professional",
+            },
+            "credits_used": 0,
+            "model_used": "template",
+        }

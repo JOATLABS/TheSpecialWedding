@@ -4,6 +4,9 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { ChevronLeft, ChevronRight, HelpCircle, Settings } from 'lucide-react';
 import {
   getSponsoredCards,
+  hideVendor,
+  getAdPreferences,
+  setReducedFrequency,
   type SponsoredCard,
 } from '@/services/campaignAdvertisingApi';
 import { useAdmin } from '@/contexts/AdminContext';
@@ -34,6 +37,22 @@ export function CampaignSponsoredRail({
   const [showTooltip, setShowTooltip] = useState(false);
   const [selectedWeddingId, setSelectedWeddingId] = useState<string | null>(null);
   const [quoteModalCard, setQuoteModalCard] = useState<SponsoredCard | null>(null);
+  const [reducedFreq, setReducedFreq] = useState(false);
+  const [showPrefs, setShowPrefs] = useState(false);
+
+  // Load ad preferences
+  useEffect(() => {
+    const loadPrefs = async () => {
+      if (!token) return;
+      try {
+        const prefs = await getAdPreferences(token);
+        setReducedFreq(prefs.reduced_frequency);
+      } catch {
+        // Preferences not critical — fail silently
+      }
+    };
+    loadPrefs();
+  }, [token]);
 
   // Fetch sponsored cards from the campaign platform
   useEffect(() => {
@@ -100,8 +119,29 @@ export function CampaignSponsoredRail({
     onWeddingChange?.(weddingId);
   };
 
-  const handleHideCard = (campaignId: string) => {
+  const handleHideCard = async (campaignId: string) => {
+    const card = cards.find((c) => c.campaign_id === campaignId);
     setCards((prev) => prev.filter((c) => c.campaign_id !== campaignId));
+    // Persist hide to backend
+    if (token && card?.vendor_id) {
+      try {
+        await hideVendor(token, card.vendor_id);
+      } catch {
+        // Already removed from UI — backend fail is non-critical
+      }
+    }
+  };
+
+  const handleToggleFrequency = async () => {
+    const newVal = !reducedFreq;
+    setReducedFreq(newVal);
+    if (token) {
+      try {
+        await setReducedFrequency(token, newVal);
+      } catch {
+        setReducedFreq(!newVal); // revert on failure
+      }
+    }
   };
 
   const selectedWedding = weddings?.find((w) => w.id === selectedWeddingId) || weddings?.[0];
@@ -141,7 +181,10 @@ export function CampaignSponsoredRail({
             <h3 className="text-base font-semibold text-wedding-navy">Sponsored Vendors</h3>
           </div>
         </div>
-        <button className="hidden lg:inline-flex items-center gap-1 text-[10px] text-gray-600 hover:text-wedding-sage transition-colors">
+        <button
+          onClick={() => setShowPrefs(!showPrefs)}
+          className="hidden lg:inline-flex items-center gap-1 text-[10px] text-gray-600 hover:text-wedding-sage transition-colors"
+        >
           <Settings size={10} />
           Preferences
         </button>
@@ -160,6 +203,33 @@ export function CampaignSponsoredRail({
           )}
         </div>
       </div>
+
+      {/* Ad Preferences Panel */}
+      {showPrefs && (
+        <div className="bg-gray-50 dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-lg p-3 space-y-2">
+          <div className="flex items-center justify-between">
+            <span className="text-[11px] text-gray-700 dark:text-gray-300">Show fewer sponsored vendors</span>
+            <button
+              onClick={handleToggleFrequency}
+              className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${
+                reducedFreq ? 'bg-wedding-sage' : 'bg-gray-300'
+              }`}
+              role="switch"
+              aria-checked={reducedFreq}
+              aria-label="Show fewer sponsored vendors"
+            >
+              <span
+                className={`inline-block h-3.5 w-3.5 rounded-full bg-white transition-transform ${
+                  reducedFreq ? 'translate-x-4' : 'translate-x-0.5'
+                }`}
+              />
+            </button>
+          </div>
+          <p className="text-[9px] text-gray-400">
+            {reducedFreq ? 'Showing max 1 sponsored card' : 'Showing up to 3 sponsored cards'}
+          </p>
+        </div>
+      )}
 
       {/* Wedding Context Badge */}
       {selectedWedding && (

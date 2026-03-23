@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useRef } from 'react';
-import { X, Camera, Flower2, Music, UtensilsCrossed, Building2, Video, Plus, FolderPlus } from 'lucide-react';
+import { X, Camera, Flower2, Music, UtensilsCrossed, Building2, Video, FolderPlus } from 'lucide-react';
 import {
   addToDirectory,
   type SponsoredCard,
@@ -85,12 +85,12 @@ export function CampaignSponsoredCard({
       ref={cardRef}
       role="article"
       aria-label={`Sponsored vendor: ${card.vendor_name}`}
-      className="relative w-72 flex-shrink-0 lg:w-full lg:flex-shrink rounded-lg border border-gray-200 bg-white shadow-sm hover:shadow-md hover:border-wedding-sage transition-all overflow-hidden lg:mb-2.5 focus-within:ring-2 focus-within:ring-wedding-sage focus-within:ring-offset-1"
+      className="relative w-72 flex-shrink-0 lg:w-full lg:flex-shrink rounded-lg border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-800/95 shadow-sm hover:shadow-md hover:border-wedding-sage transition-all overflow-hidden lg:mb-2.5 focus-within:ring-2 focus-within:ring-wedding-sage focus-within:ring-offset-1"
     >
       {/* Hide Button */}
       <button
         onClick={(e) => { e.stopPropagation(); handleHide(); }}
-        className="absolute top-1 right-1 z-10 w-11 h-11 flex items-center justify-center rounded-full hover:bg-gray-100 transition-colors text-gray-500 hover:text-red-500"
+        className="absolute top-1 right-1 z-10 w-11 h-11 flex items-center justify-center rounded-full hover:bg-gray-100 dark:hover:bg-slate-700 transition-colors text-gray-500 dark:text-gray-400 hover:text-red-500"
         aria-label={`Hide ${card.vendor_name} from sponsored vendors`}
         title="Hide this vendor"
       >

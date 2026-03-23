@@ -56,7 +56,7 @@ const showcaseFeatures: ShowcaseFeature[] = [
     id: "guests",
     title: "Guest Management",
     tagline: "242 guests, RSVPs, plus-ones, groups — one live view.",
-    image: "/guest_management.png",
+    image: "/guest_management_view.png",
     category: "Planning",
   },
   {
@@ -343,9 +343,6 @@ function FeatureShowcase({ isClone }: { isClone: boolean }) {
               <span className="h-2.5 w-2.5 rounded-full bg-red-400/60" />
               <span className="h-2.5 w-2.5 rounded-full bg-yellow-400/60" />
               <span className="h-2.5 w-2.5 rounded-full bg-green-400/60" />
-              <span className="ml-3 text-[10px] text-slate-500 font-mono">
-                thespecialwedding.io/dashboard/{active.id}
-              </span>
             </div>
             {/* Image container with smooth transition */}
             <div className="relative aspect-[16/10] overflow-hidden rounded-b-xl bg-slate-900">
@@ -533,12 +530,12 @@ function LandingContent({
               Choose the plan that matches your roster. Scale up or down as your season unfolds.
             </p>
           </div>
-          {/* Horizontal scroll on mobile/tablet, single row on desktop */}
-          <div className="mt-10 grid grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-4 lg:grid-cols-4">
+          {/* Flex-wrap so any number of cards stay centered */}
+          <div className="mt-10 flex flex-wrap justify-center gap-4">
             {pricing.map((tier) => (
               <div
                 key={tier.name}
-                className={`relative overflow-hidden rounded-2xl border border-white/10 bg-white/5 px-4 py-4 sm:px-5 sm:py-5 lg:px-6 lg:py-7 text-slate-200 backdrop-blur-xl transition hover:border-wedding-rose/60 ${
+                className={`relative overflow-hidden rounded-2xl border border-white/10 bg-white/5 px-4 py-4 sm:px-5 sm:py-5 lg:px-6 lg:py-7 text-slate-200 backdrop-blur-xl transition hover:border-wedding-rose/60 w-full sm:w-[calc(50%-0.5rem)] lg:w-[280px] ${
                   tier.emphasized ? "shadow-[0_35px_120px_rgba(212,165,165,0.3)]" : ""
                 }`}
               >
