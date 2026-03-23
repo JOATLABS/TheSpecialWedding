@@ -49,7 +49,7 @@ export function QuoteRequestModal({
         auto_add_to_directory: autoAdd,
       });
       setSubmitted(true);
-      toast.success('Quote request sent successfully!');
+      toast.success(`Quote request sent to ${card.vendor_name}`);
       setTimeout(onClose, 1500);
     } catch (err: any) {
       toast.error(err.message || 'Failed to send quote request');
@@ -76,7 +76,9 @@ export function QuoteRequestModal({
           <div>
             <h2 className="text-lg font-semibold text-slate-900 dark:text-white">Request Quote</h2>
             <p className="text-sm text-slate-500 dark:text-slate-400 mt-0.5">
-              from <span className="font-medium text-wedding-sage">{card.vendor_name}</span>
+              <span className="font-medium text-wedding-sage">{card.vendor_name}</span>
+              {card.vendor_category && ` · ${card.vendor_category.replace(/_/g, ' ')}`}
+              {card.vendor_service_area && ` · ${card.vendor_service_area}`}
             </p>
           </div>
           <button
@@ -104,14 +106,14 @@ export function QuoteRequestModal({
             {weddings && weddings.length > 0 && (
               <div>
                 <label className="block text-sm font-medium text-slate-700 dark:text-slate-200 mb-1.5">
-                  Wedding
+                  Link to a wedding? <span className="font-normal text-slate-400">(optional)</span>
                 </label>
                 <select
                   value={weddingId}
                   onChange={(e) => setWeddingId(e.target.value)}
                   className="w-full px-3 py-2 text-sm border border-slate-200 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-slate-700 dark:text-slate-200"
                 >
-                  <option value="">Select a wedding (optional)</option>
+                  <option value="">General inquiry (no specific wedding)</option>
                   {weddings.map((w) => (
                     <option key={w.id} value={w.id}>{w.name}</option>
                   ))}
@@ -218,7 +220,7 @@ export function QuoteRequestModal({
                 className="flex items-center gap-2 px-5 py-2 bg-wedding-sage hover:bg-wedding-navy text-white text-sm font-medium rounded-lg transition-colors disabled:opacity-50"
               >
                 <Send size={14} />
-                {submitting ? 'Sending...' : 'Send Request'}
+                {submitting ? 'Sending...' : 'Send Quote Request'}
               </button>
             </div>
           </div>

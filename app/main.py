@@ -170,11 +170,72 @@ async def _nightly_rollup_scheduler():
             if expired_count > 0:
                 logger.info(f"Auto-completed {expired_count} expired campaigns")
 
+            # Run batch fraud detection
+            try:
+                from app.services.ad_fraud_detection_service import AdFraudDetectionService
+                fraud_svc = AdFraudDetectionService(mongo.db)
+                fraud_result = await fraud_svc.run_batch_detection()
+                if fraud_result.get("signals_created", 0) > 0:
+                    logger.info(f"Fraud detection: {fraud_result['signals_created']} signals created")
+            except Exception as fraud_err:
+                logger.error(f"Batch fraud detection failed: {fraud_err}")
+
         except asyncio.CancelledError:
             logger.info("Ad rollup scheduler shutting down")
             raise
         except Exception as e:
             logger.error(f"Ad rollup scheduler error: {e}", exc_info=True)
+            # Wait 1 hour before retrying on error
+            await asyncio.sleep(3600)
+
+
+async def _monthly_billing_scheduler():
+    """
+    Background task that finalizes ad billing invoices on the 1st of each month at 6:00 AM UTC.
+
+    Collects all pending CPL charges from the previous month, creates Stripe invoices
+    for each vendor, and updates billing records. Idempotent and safe to re-run.
+    """
+    from app.core.database import mongo
+
+    while True:
+        try:
+            # Calculate seconds until next 1st of month at 6:00 AM UTC
+            now = datetime.now(timezone.utc)
+            if now.month == 12:
+                next_run = now.replace(year=now.year + 1, month=1, day=1, hour=6, minute=0, second=0, microsecond=0)
+            else:
+                next_run = now.replace(month=now.month + 1, day=1, hour=6, minute=0, second=0, microsecond=0)
+
+            wait_seconds = (next_run - now).total_seconds()
+
+            logger.info(
+                f"Ad billing scheduler: next invoice finalization at {next_run.isoformat()} "
+                f"({wait_seconds / 3600:.1f}h from now)"
+            )
+            await asyncio.sleep(wait_seconds)
+
+            # Run monthly invoice finalization
+            from app.services.ad_billing_service import AdBillingService
+            try:
+                from app.services.stripe_service import StripeService
+                stripe_svc = StripeService(mongo.db)
+            except Exception:
+                stripe_svc = None
+
+            billing_svc = AdBillingService(mongo.db, stripe_service=stripe_svc)
+            result = await billing_svc.finalize_monthly_invoices()
+            logger.info(
+                f"Monthly ad billing finalization complete: "
+                f"{result.get('invoices_created', 0)} invoices created, "
+                f"{len(result.get('errors', []))} errors"
+            )
+
+        except asyncio.CancelledError:
+            logger.info("Ad billing scheduler shutting down")
+            raise
+        except Exception as e:
+            logger.error(f"Ad billing scheduler error: {e}", exc_info=True)
             # Wait 1 hour before retrying on error
             await asyncio.sleep(3600)
 
@@ -258,14 +319,23 @@ async def lifespan(app: FastAPI):
         rollup_task = asyncio.create_task(_nightly_rollup_scheduler())
         logger.info("Ad stats nightly rollup scheduler started")
 
+        # Start monthly ad billing invoice finalization scheduler
+        billing_task = asyncio.create_task(_monthly_billing_scheduler())
+        logger.info("Ad billing monthly invoice scheduler started")
+
         logger.info("Application startup complete")
 
         yield  # Application runs here
 
         # Cancel background tasks on shutdown
         rollup_task.cancel()
+        billing_task.cancel()
         try:
             await rollup_task
+        except asyncio.CancelledError:
+            pass
+        try:
+            await billing_task
         except asyncio.CancelledError:
             pass
 

@@ -1,5 +1,212 @@
 # Vendor Advertising Feature — Changelog
 
+## Phase 7: Platform Hardening — Billing Cron, Webhooks, Fraud Detection, FTC Compliance, Data Retention & UX Copy
+**Date:** 2026-03-22
+**Version:** 6.0.0
+
+### Overview
+
+Platform hardening phase that wires up all remaining operational infrastructure: monthly billing cron, Stripe webhook handlers for ad invoices, real-time + batch fraud detection, FTC native advertising compliance disclosures, MongoDB TTL-based data retention, and a UX copy audit aligning all microcopy to the original mockup.
+
+### 1. Monthly Invoice Cron
+
+**Modified: `app/main.py`**
+- Added `_monthly_billing_scheduler()` background task registered in FastAPI lifespan
+- Runs on the 1st of each month at 6:00 AM UTC
+- Calls `AdBillingService.finalize_monthly_invoices()` to finalize all pending Stripe invoices for the prior month
+- Registered alongside existing `rollup_task` with proper shutdown cancellation
+
+### 2. Stripe Webhook Handlers for Ad Billing
+
+**Modified: `app/services/stripe_service.py`**
+- `_handle_invoice_paid()` — now routes ad invoices (`metadata.platform == "thespecialwedding_ads"`) to `_handle_ad_invoice_paid()`: updates `vendor_ad_billing` to `payment_status: "paid"`, updates `ad_lead_charges` from `"charged"` to `"paid"`
+- `_handle_invoice_payment_failed()` — routes ad invoices to `_handle_ad_invoice_payment_failed()`: updates billing to `"payment_failed"`, creates root admin notification
+- New `_handle_invoice_finalized()` — updates ad billing records to `"invoiced"` status
+- Added `invoice.finalized` to webhook dispatch chain
+
+**Modified: `app/api/stripe_payment.py`**
+- Added `invoice.finalized` to webhook endpoint docstring
+
+### 3. Fraud Detection
+
+**New file: `app/services/ad_fraud_detection_service.py`**
+- `AdFraudDetectionService` class with configurable thresholds matching mockup Platform Config:
+  - `MAX_CLICKS_PER_PLANNER_PER_CAMPAIGN_PER_HOUR = 5`
+  - `CLICK_VELOCITY_WINDOW_MINUTES = 5` / `MAX_CLICKS_IN_VELOCITY_WINDOW = 4`
+  - `DUPLICATE_CLICK_WINDOW_SECONDS = 60`
+  - `HIGH_HIDE_RATE_THRESHOLD = 0.03` (3%)
+  - `MAX_EVENTS_PER_SESSION_PER_HOUR = 50`
+- Real-time `check_click_event()` — 3 sub-checks: click velocity, duplicate click, session anomaly
+- Batch `run_batch_detection()` — 2 aggregate checks: high hide rates (7-day window), hourly click abuse (24-hour window)
+- Creates `ad_fraud_signals` documents with `signal_type`, `details`, `status: "pending"`
+
+**Modified: `app/services/planner_ad_interaction_service.py`**
+- Constructor accepts `fraud_detection_service` parameter
+- `add_to_directory()` and `request_quote()` call fraud detection after event recording (non-blocking, wrapped in try/except)
+
+**Modified: `app/api/planner_ad_interactions.py`**
+- DI function instantiates `AdFraudDetectionService` and passes to service
+
+**Modified: `app/main.py`**
+- Nightly rollup scheduler now runs batch fraud detection after campaign rollup and auto-complete
+
+### 4. FTC Native Advertising Compliance
+
+**Modified: `app/services/planner_ad_interaction_service.py`**
+- New `_build_targeting_reason()` static method — builds dynamic disclosure text based on planner location + campaign category match
+- `get_sponsored_cards()` now includes `targeting_reason` field on each sponsored card
+
+**Modified: `app/services/campaignAdvertisingApi.ts`**
+- Added `targeting_reason?: string` to `SponsoredCard` interface
+
+**Modified: `app/admin/vendors/components/CampaignSponsoredCard.tsx`**
+- Added FTC disclosure paragraph displaying `card.targeting_reason` below the offer tag
+
+**Modified: `app/admin/vendors/components/CampaignSponsoredRail.tsx`**
+- Updated tooltip disclosure text: "These vendors are paid sponsors. They appear here because they match your wedding location and vendor needs. Ads are labeled 'Sponsored.'"
+
+### 5. Data Retention (TTL Indexes)
+
+**Modified: `app/core/database_indexes.py`**
+- 90-day TTL index on `ad_events.created_at` (`expireAfterSeconds = 7,776,000`)
+- 7-day TTL on `ad_fraud_signals` via existing index lifecycle
+- Fraud detection compound index: `(planner_id, campaign_id, event_type, created_at DESC)`
+- Session anomaly index: `(session_id, created_at DESC)` (sparse)
+- Total ad_events indexes increased from 2 to 5
+
+### 6. UX Copy Audit (Mockup Alignment)
+
+Systematic comparison of all implemented pages against `docs/plans/vendor_ads/MOCKUP/full-advertising-platform.html`. Changes made:
+
+**`app/portal/ads/billing/page.tsx`**
+- Page title: "Billing" → "Billing & Spend" (matches mockup vendor billing section header)
+- Total Spend subtitle: "Lifetime total" → conditionally shows "Free tier" when `is_free_tier` is active
+
+**`app/admin/vendors/components/CampaignSponsoredCard.tsx`**
+- Added-to-directory button text: "Added" → "✓ In Directory" (matches mockup + P12 decision)
+- Updated aria-label for added state to "is in your directory"
+
+**`app/admin/vendors/components/CampaignSponsoredRail.tsx`**
+- Mobile rail title: "Recommended for you" → "Sponsored Vendors" (FTC requires clear "Sponsored" labeling, matches mockup)
+- Added helper text to both desktop and mobile footers: "You can hide any vendor you're not interested in" (matches mockup rail footer)
+
+**`app/admin/vendors/components/QuoteRequestModal.tsx`**
+- Modal subtitle: now includes vendor category and service area (matches mockup "Bloom & Petal Florals · Florist · Austin, TX")
+- Wedding selector label: "Wedding" → "Link to a wedding? (optional)" (matches mockup)
+- Wedding default option: "Select a wedding (optional)" → "General inquiry (no specific wedding)" (matches mockup)
+- Send button: "Send Request" → "Send Quote Request" (matches mockup)
+- Toast: generic success → "Quote request sent to [vendor name]" (matches P11 decision)
+
+### Notes for Future Phases
+
+- **Platform Config tab**: Mockup includes a "Platform Config" admin tab with sub-tabs for Settings, Data Export, and Data Pipeline. Not yet implemented as a UI — thresholds are currently code-level constants.
+- **"Show fewer sponsored vendors" toggle**: Mockup includes a bottom-of-rail link for planners to reduce ad frequency. Not yet implemented (requires `planner_ad_preferences.reduced_frequency` field per P10 decision).
+- **AI-suggested draft in quote modal**: Mockup shows an "AI-suggested draft" label with wedding-context-aware email pre-population. Current implementation has a static template — AI drafting is a future enhancement.
+
+---
+
+## Phase 6: CPL Billing & Stripe Integration
+**Date:** 2026-03-22
+**Version:** 5.0.0
+
+### Overview
+
+Implemented Cost Per Lead (CPL) billing for the advertising platform with full Stripe integration. Vendors are charged per lead event (quote request or directory add) via Stripe invoice items. Root admin has exclusive control to grant free tier status at both the vendor level (all campaigns free) and individual campaign level.
+
+### Billing Model: CPL (Cost Per Lead)
+
+Two billable lead types with configurable per-campaign pricing:
+- **Quote Request** — Default $10.00/lead. Planner sends quote to vendor.
+- **Directory Add** — Default $3.00/lead. Planner adds vendor to directory.
+
+Free tier campaigns still create all billing records (charge_amount=$0, charge_status="free") so the data pipeline works identically — only actual Stripe charges are skipped.
+
+### Root Admin Free Tier Security
+
+Only the root admin can grant free tier status. Two levels of control:
+- **Per-vendor**: `vendor_free_tier` collection. All campaigns from that vendor are free. Optional expiry date.
+- **Per-campaign**: `is_free_tier` field on `ad_campaigns`. Individual campaign override.
+
+Check priority: campaign-level `is_free_tier` → vendor-level `vendor_free_tier` → paid.
+
+### Backend Changes
+
+**New file: `app/services/ad_billing_service.py`**
+- `AdBillingService` class with CPL charge logic
+- `charge_for_lead()` — creates AdLeadCharge, updates budget_consumed, creates Stripe invoice item
+- `is_campaign_free()` — checks campaign + vendor free tier status
+- `_check_budget_enforcement()` — auto-pauses campaigns at budget cap
+- `_create_stripe_invoice_item()` — creates Stripe invoice items for paid leads
+- `_update_period_billing()` — upserts monthly vendor_ad_billing aggregates
+- `set_vendor_free_tier()` / `set_campaign_free_tier()` — admin free tier toggles
+- `finalize_monthly_invoices()` — monthly cron for Stripe invoice finalization
+
+**Modified: `app/services/planner_ad_interaction_service.py`**
+- Constructor now accepts `billing_service` parameter
+- `add_to_directory()` — calls `billing_service.charge_for_lead(lead_type="add_to_directory")` after lead creation
+- `request_quote()` — calls `billing_service.charge_for_lead(lead_type="quote_request")` after lead creation
+- Both return `billing` result in response
+
+**Modified: `app/api/planner_ad_interactions.py`**
+- `get_planner_ad_interaction_service()` now instantiates AdBillingService + StripeService and passes to PlannerAdInteractionService
+
+**Modified: `app/api/admin_campaigns.py`** — 8 new endpoints:
+- `PUT /{campaign_id}/free-tier` — Toggle campaign free tier
+- `PUT /vendors/{vendor_id}/free-tier` — Toggle vendor free tier
+- `GET /vendors/{vendor_id}/free-tier` — Check vendor free tier status
+- `GET /free-tier-vendors` — List all free tier vendors
+- `PUT /{campaign_id}/cpl-pricing` — Update CPL rates per campaign
+- `GET /{campaign_id}/billing` — Campaign billing summary
+- `GET /{campaign_id}/lead-charges` — Individual charge history
+
+**Modified: `app/api/vendor_campaigns.py`** — Replaced placeholder billing endpoint:
+- `GET /billing` — Full billing summary with CPL data, free tier status, period history
+- `GET /billing/charges` — Individual charge history for vendor
+
+**Modified: `app/models/advertising_campaign.py`**:
+- New enums: `BillingModel`, `LeadChargeType`
+- AdCampaign: added `billing_model`, `is_free_tier`, `cpl_quote_request`, `cpl_directory_add`
+- New models: `AdLeadCharge`, `VendorFreeTierConfig`, `SetFreeTierRequest`, `UpdateCPLPricingRequest`
+- VendorAdBilling: added `quote_request_leads`, `directory_add_leads`, `is_free_tier`, `stripe_customer_id`
+
+**Modified: `app/core/database_indexes.py`**:
+- New function: `create_billing_indexes()` — 7 indexes across 3 collections
+- `ad_lead_charges`: campaign+date, vendor+date, lead_id (unique), stripe_invoice_item (sparse)
+- `vendor_free_tier`: vendor_id (unique), is_free+expires_at
+- `vendor_ad_billing`: payment_status
+
+### Frontend Changes
+
+**Modified: `app/services/campaignAdvertisingApi.ts`** — 10 new functions + 6 new types:
+- Types: `LeadCharge`, `BillingPeriod`, `VendorBillingSummary`, `CampaignBillingSummary`, `FreeTierStatus`
+- Admin: `setCampaignFreeTier`, `setVendorFreeTier`, `getVendorFreeTierStatus`, `listFreeTierVendors`, `updateCampaignCPLPricing`, `getCampaignBilling`, `getCampaignLeadCharges`
+- Vendor: `getVendorBillingSummary`, `getVendorBillingCharges`
+
+**Modified: `app/admin/ads/page.tsx`** — Admin console billing features:
+- Campaign Monitor tab: "Free"/"Make Free" toggle button per campaign row
+- Vendor Accounts tab: free tier toggle per vendor
+- Revenue Dashboard: "Free Tier Vendors" list section
+
+**Modified: `app/portal/ads/billing/page.tsx`** — Full billing dashboard:
+- Summary cards: Total Spend, Total Leads, Quote Requests, Directory Adds
+- Free tier badge with reason
+- Billing history table by period
+- Recent charges list with type, amount, and status badges
+
+### Budget Enforcement
+
+Campaigns auto-pause when `budget_consumed >= total_budget`:
+- Status set to "paused" with `metadata.paused_reason = "budget_exhausted"`
+- Warning at 80% budget consumed
+- `total_budget = 0` means unlimited (no cap)
+
+### Collections Added
+
+- `ad_lead_charges` — Individual CPL charge per lead event
+- `vendor_free_tier` — Vendor-level free tier overrides
+
+---
+
 ## Phase 5.3: Documentation & Phase 5.1: E2E Flow Verification
 **Date:** 2026-03-20
 **Version:** 4.1.0

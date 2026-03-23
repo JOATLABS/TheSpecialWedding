@@ -261,6 +261,7 @@ export interface SponsoredCard {
   goal: CampaignGoal;
   placement_match?: string;
   quality_score: number;
+  targeting_reason?: string;
 }
 
 export interface SponsoredCardsResponse {
@@ -938,4 +939,199 @@ export function formatNumber(num: number): string {
 export function formatPercent(value: number): string {
   if (value == null || isNaN(value)) return '0.00%';
   return `${(value * 100).toFixed(2)}%`;
+}
+
+
+// =============================================================================
+// BILLING TYPES
+// =============================================================================
+
+export interface LeadCharge {
+  _id: string;
+  lead_id: string;
+  campaign_id: string;
+  vendor_id: string;
+  lead_type: 'quote_request' | 'add_to_directory';
+  charge_amount: number;
+  currency: string;
+  is_free_tier: boolean;
+  charge_status: 'pending' | 'charged' | 'free' | 'failed';
+  stripe_invoice_item_id?: string;
+  planner_id?: string;
+  click_id?: string;
+  created_at: string;
+}
+
+export interface BillingPeriod {
+  _id: string;
+  vendor_id: string;
+  campaign_id: string;
+  billing_period_start: string;
+  billing_period_end: string;
+  leads: number;
+  quote_request_leads: number;
+  directory_add_leads: number;
+  total_spend: number;
+  is_free_tier: boolean;
+  payment_status: string;
+}
+
+export interface VendorBillingSummary {
+  vendor_id: string;
+  billing_model: string;
+  is_free_tier: boolean;
+  free_tier_reason: string;
+  free_tier_expires_at?: string;
+  total_spend: number;
+  currency: string;
+  total_leads: number;
+  quote_request_leads: number;
+  directory_add_leads: number;
+  billing_periods: BillingPeriod[];
+}
+
+export interface CampaignBillingSummary {
+  total_charges: number;
+  total_leads: number;
+  quote_requests: number;
+  directory_adds: number;
+  free_leads: number;
+  paid_leads: number;
+}
+
+export interface FreeTierStatus {
+  vendor_id: string;
+  is_free: boolean;
+  reason?: string;
+  expires_at?: string;
+  granted_by?: string;
+}
+
+
+// =============================================================================
+// ADMIN BILLING ENDPOINTS
+// =============================================================================
+
+/** Set campaign-level free tier */
+export async function setCampaignFreeTier(
+  token: string,
+  campaignId: string,
+  body: { is_free: boolean; reason?: string },
+): Promise<AdCampaign> {
+  const res = await fetch(`${API_BASE}/admin/ads/campaigns/${campaignId}/free-tier`, {
+    method: 'PUT',
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) throw new Error((await res.json().catch(() => ({}))).detail || 'Failed to set free tier');
+  return res.json();
+}
+
+/** Set vendor-level free tier */
+export async function setVendorFreeTier(
+  token: string,
+  vendorId: string,
+  body: { is_free: boolean; reason?: string; expires_at?: string },
+): Promise<FreeTierStatus> {
+  const res = await fetch(`${API_BASE}/admin/ads/campaigns/vendors/${vendorId}/free-tier`, {
+    method: 'PUT',
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) throw new Error((await res.json().catch(() => ({}))).detail || 'Failed to set vendor free tier');
+  return res.json();
+}
+
+/** Get vendor free tier status */
+export async function getVendorFreeTierStatus(
+  token: string,
+  vendorId: string,
+): Promise<FreeTierStatus> {
+  const res = await fetch(`${API_BASE}/admin/ads/campaigns/vendors/${vendorId}/free-tier`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!res.ok) throw new Error('Failed to get free tier status');
+  return res.json();
+}
+
+/** List all free tier vendors */
+export async function listFreeTierVendors(token: string): Promise<FreeTierStatus[]> {
+  const res = await fetch(`${API_BASE}/admin/ads/campaigns/free-tier-vendors`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!res.ok) throw new Error('Failed to list free tier vendors');
+  return res.json();
+}
+
+/** Update CPL pricing on a campaign */
+export async function updateCampaignCPLPricing(
+  token: string,
+  campaignId: string,
+  body: { cpl_quote_request?: number; cpl_directory_add?: number },
+): Promise<{ status: string }> {
+  const res = await fetch(`${API_BASE}/admin/ads/campaigns/${campaignId}/cpl-pricing`, {
+    method: 'PUT',
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) throw new Error((await res.json().catch(() => ({}))).detail || 'Failed to update pricing');
+  return res.json();
+}
+
+/** Get campaign billing summary */
+export async function getCampaignBilling(
+  token: string,
+  campaignId: string,
+): Promise<CampaignBillingSummary> {
+  const res = await fetch(`${API_BASE}/admin/ads/campaigns/${campaignId}/billing`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!res.ok) throw new Error('Failed to get campaign billing');
+  return res.json();
+}
+
+/** Get individual lead charges for a campaign */
+export async function getCampaignLeadCharges(
+  token: string,
+  campaignId: string,
+  params?: { limit?: number; skip?: number },
+): Promise<LeadCharge[]> {
+  const sp = new URLSearchParams();
+  if (params?.limit) sp.set('limit', params.limit.toString());
+  if (params?.skip) sp.set('skip', params.skip.toString());
+  const res = await fetch(`${API_BASE}/admin/ads/campaigns/${campaignId}/lead-charges?${sp}`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!res.ok) throw new Error('Failed to get lead charges');
+  return res.json();
+}
+
+
+// =============================================================================
+// VENDOR BILLING ENDPOINTS
+// =============================================================================
+
+/** Get vendor billing summary (vendor portal) */
+export async function getVendorBillingSummary(token: string): Promise<VendorBillingSummary> {
+  const res = await fetch(`${API_BASE}/portal/ads/billing`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!res.ok) throw new Error('Failed to get billing summary');
+  return res.json();
+}
+
+/** Get vendor billing charges (vendor portal) */
+export async function getVendorBillingCharges(
+  token: string,
+  params?: { campaign_id?: string; limit?: number; skip?: number },
+): Promise<LeadCharge[]> {
+  const sp = new URLSearchParams();
+  if (params?.campaign_id) sp.set('campaign_id', params.campaign_id);
+  if (params?.limit) sp.set('limit', params.limit.toString());
+  if (params?.skip) sp.set('skip', params.skip.toString());
+  const res = await fetch(`${API_BASE}/portal/ads/billing/charges?${sp}`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!res.ok) throw new Error('Failed to get billing charges');
+  return res.json();
 }

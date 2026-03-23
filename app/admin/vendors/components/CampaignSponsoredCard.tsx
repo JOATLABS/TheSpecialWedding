@@ -147,6 +147,13 @@ export function CampaignSponsoredCard({
         )}
       </div>
 
+      {/* FTC Disclosure: Targeting reason */}
+      {card.targeting_reason && (
+        <p className="px-3 pb-1 text-[9px] text-gray-400 leading-tight">
+          {card.targeting_reason}
+        </p>
+      )}
+
       {/* Dual CTA: Add to Directory + Request Quote */}
       <div className="flex gap-1.5 px-3 pb-3">
         <button
@@ -157,10 +164,10 @@ export function CampaignSponsoredCard({
               ? 'bg-green-100 text-green-700 cursor-default'
               : 'text-white bg-wedding-sage hover:bg-wedding-navy'
           }`}
-          aria-label={addedToDirectory ? `${card.vendor_name} added to directory` : `Add ${card.vendor_name} to directory`}
+          aria-label={addedToDirectory ? `${card.vendor_name} is in your directory` : `Add ${card.vendor_name} to directory`}
         >
           {addedToDirectory ? (
-            'Added'
+            '\u2713 In Directory'
           ) : (
             <>
               <FolderPlus size={12} />

@@ -279,6 +279,7 @@ async def stripe_webhook(
     - customer.updated
     - invoice.paid
     - invoice.payment_failed
+    - invoice.finalized
     - payment_intent.succeeded
     - payment_intent.payment_failed
     - product.updated

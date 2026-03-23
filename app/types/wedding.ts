@@ -9,10 +9,31 @@ export interface EventDetails {
   timezone?: string;
 }
 
+export interface EventNote {
+  id: string;
+  author_role: 'planner' | 'couple';
+  author_name?: string;
+  text: string;
+  status: 'pending' | 'seen' | 'addressed';
+  created_at?: string;
+}
+
+export interface OrderOfEventsItem {
+  id: string;
+  title: string;
+  description?: string;
+  time?: string;
+  duration_minutes?: number;
+  order: number;
+  notes: EventNote[];
+}
+
 export interface WeddingEvent {
   type: 'traditional' | 'white_wedding' | 'reception' | 'engagement' | 'rehearsal';
   date: string;
   details?: EventDetails;
+  order_of_events?: OrderOfEventsItem[];
+  event_notes?: EventNote[];
 }
 
 export interface RegistryItem {

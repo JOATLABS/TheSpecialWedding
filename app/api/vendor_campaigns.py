@@ -314,7 +314,7 @@ async def get_vendor_leads(
 
 
 # =============================================================================
-# BILLING (Placeholder — free tier)
+# BILLING — CPL (Cost Per Lead)
 # =============================================================================
 
 @router.get("/billing")
@@ -324,14 +324,70 @@ async def get_billing_summary(
     """
     Billing summary for the vendor.
 
-    Currently always returns $0 (free tier). When billing goes live,
-    this will show spend per campaign, invoices, and payment status.
+    Shows CPL billing status: total spend, lead counts, free tier status,
+    and per-campaign breakdowns.
     """
     vendor_id = _get_vendor_id(current_user)
+
+    from app.services.ad_billing_service import AdBillingService
+    billing_svc = AdBillingService(mongo.db)
+
+    # Check free tier status
+    free_tier = await billing_svc.get_vendor_free_tier_status(vendor_id)
+    is_free = free_tier.get("is_free", False) if free_tier else False
+
+    # Get all charges for this vendor
+    charges = await billing_svc.get_lead_charges(vendor_id=vendor_id, limit=500)
+    total_spend = sum(c.get("charge_amount", 0) for c in charges)
+    total_leads = len(charges)
+    quote_requests = sum(1 for c in charges if c.get("lead_type") == "quote_request")
+    directory_adds = sum(1 for c in charges if c.get("lead_type") == "add_to_directory")
+
+    # Get period billing records
+    billing_records = []
+    cursor = billing_svc.billing.find({"vendor_id": vendor_id}).sort("billing_period_start", -1).limit(12)
+    async for doc in cursor:
+        if "_id" in doc:
+            doc["_id"] = str(doc["_id"])
+        billing_records.append(doc)
+
     return {
         "vendor_id": vendor_id,
-        "billing_status": "free_tier",
-        "total_spend": 0.0,
+        "billing_model": "cpl",
+        "is_free_tier": is_free,
+        "free_tier_reason": free_tier.get("reason", "") if free_tier else "",
+        "free_tier_expires_at": free_tier.get("expires_at") if free_tier else None,
+        "total_spend": total_spend,
         "currency": "USD",
-        "message": "Advertising is currently free during our beta period.",
+        "total_leads": total_leads,
+        "quote_request_leads": quote_requests,
+        "directory_add_leads": directory_adds,
+        "billing_periods": billing_records,
     }
+
+
+@router.get("/billing/charges")
+async def get_billing_charges(
+    campaign_id: Optional[str] = Query(None, description="Filter by campaign"),
+    limit: int = Query(50, ge=1, le=200),
+    skip: int = Query(0, ge=0),
+    current_user: ExtendedAuthUser = Depends(require_advertising_vendor),
+):
+    """List individual CPL charges for the vendor."""
+    vendor_id = _get_vendor_id(current_user)
+    from app.services.ad_billing_service import AdBillingService
+    billing_svc = AdBillingService(mongo.db)
+
+    if campaign_id:
+        # Verify campaign belongs to this vendor
+        from bson import ObjectId as OId
+        campaign = await mongo.db["ad_campaigns"].find_one({"_id": OId(campaign_id)})
+        if not campaign or campaign.get("vendor_id") != vendor_id:
+            raise HTTPException(status_code=404, detail="Campaign not found")
+
+    return await billing_svc.get_lead_charges(
+        campaign_id=campaign_id,
+        vendor_id=vendor_id,
+        limit=limit,
+        skip=skip,
+    )

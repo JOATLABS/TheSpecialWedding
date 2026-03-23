@@ -23,6 +23,10 @@ import {
   getAdminFraudSignals,
   updateFraudSignal,
   getAdminVendorAccounts,
+  setCampaignFreeTier,
+  setVendorFreeTier,
+  listFreeTierVendors,
+  getCampaignBilling,
   getCampaignStatusLabel,
   getCampaignStatusColor,
   getCreativeStatusLabel,
@@ -39,6 +43,8 @@ import {
   type VendorAccountSummary,
   type PlannerFeedbackEntry,
   type CampaignStatus,
+  type FreeTierStatus,
+  type CampaignBillingSummary,
 } from '@/services/campaignAdvertisingApi';
 import {
   Megaphone,
@@ -490,6 +496,16 @@ function CampaignMonitorTab({ token }: { token: string }) {
     } catch (err: any) { toast.error(err.message); }
   };
 
+  const handleToggleFreeTier = async (id: string, isCurrentlyFree: boolean) => {
+    try {
+      setActionLoading(id);
+      await setCampaignFreeTier(token, id, { is_free: !isCurrentlyFree });
+      toast.success(!isCurrentlyFree ? 'Campaign set to free tier' : 'Campaign removed from free tier');
+      loadData();
+    } catch (err: any) { toast.error(err.message); }
+    finally { setActionLoading(null); }
+  };
+
   const filteredCampaigns = campaigns.filter((c) =>
     !searchQuery || c.campaign_name.toLowerCase().includes(searchQuery.toLowerCase()) || c.vendor_name.toLowerCase().includes(searchQuery.toLowerCase())
   );
@@ -587,28 +603,42 @@ function CampaignMonitorTab({ token }: { token: string }) {
                     <td className="px-4 py-3 text-right text-slate-700 dark:text-slate-300">{formatNumber(campaign.click_count)}</td>
                     <td className="px-4 py-3 text-right text-slate-700 dark:text-slate-300">{formatNumber(campaign.lead_count)}</td>
                     <td className="px-4 py-3 text-right text-slate-700 dark:text-slate-300">{formatPercent(ctr)}</td>
-                    <td className="px-4 py-3 text-center">
-                      <div className="flex items-center justify-center gap-1">
-                        {campaign.status === 'active' && (
-                          <button
-                            onClick={() => handlePause(campaign._id)}
-                            disabled={actionLoading === campaign._id}
-                            className="p-1.5 hover:bg-orange-50 dark:hover:bg-orange-900/20 text-orange-500 rounded-lg transition-colors disabled:opacity-50"
-                            title="Pause"
-                          >
-                            <Pause size={14} />
-                          </button>
-                        )}
-                        {(campaign.status === 'active' || campaign.status === 'paused') && (
-                          <button
-                            onClick={() => handleDeactivate(campaign._id)}
-                            disabled={actionLoading === campaign._id}
-                            className="p-1.5 hover:bg-red-50 dark:hover:bg-red-900/20 text-red-500 rounded-lg transition-colors disabled:opacity-50"
-                            title="Deactivate"
-                          >
-                            <Ban size={14} />
-                          </button>
-                        )}
+                    <td className="px-4 py-3">
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="flex items-center gap-1">
+                          {campaign.status === 'active' && (
+                            <button
+                              onClick={() => handlePause(campaign._id)}
+                              disabled={actionLoading === campaign._id}
+                              className="p-1.5 hover:bg-orange-50 dark:hover:bg-orange-900/20 text-orange-500 rounded-lg transition-colors disabled:opacity-50"
+                              title="Pause"
+                            >
+                              <Pause size={14} />
+                            </button>
+                          )}
+                          {(campaign.status === 'active' || campaign.status === 'paused') && (
+                            <button
+                              onClick={() => handleDeactivate(campaign._id)}
+                              disabled={actionLoading === campaign._id}
+                              className="p-1.5 hover:bg-red-50 dark:hover:bg-red-900/20 text-red-500 rounded-lg transition-colors disabled:opacity-50"
+                              title="Deactivate"
+                            >
+                              <Ban size={14} />
+                            </button>
+                          )}
+                        </div>
+                        <button
+                          onClick={() => handleToggleFreeTier(campaign._id, campaign.is_free_tier || false)}
+                          disabled={actionLoading === campaign._id}
+                          className={`text-xs px-2 py-1 rounded transition-colors disabled:opacity-50 ${
+                            campaign.is_free_tier
+                              ? 'bg-emerald-100 text-emerald-700 hover:bg-emerald-200'
+                              : 'bg-slate-100 text-slate-700 hover:bg-slate-200 dark:bg-slate-700 dark:text-slate-300'
+                          }`}
+                          title={campaign.is_free_tier ? 'Remove free tier' : 'Make free tier'}
+                        >
+                          {campaign.is_free_tier ? 'Free ✓' : 'Make Free'}
+                        </button>
                       </div>
                     </td>
                   </tr>
@@ -633,6 +663,8 @@ function RevenueDashboardTab({ token }: { token: string }) {
   const [revenue, setRevenue] = useState<RevenueResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [days, setDays] = useState(30);
+  const [freeTierVendors, setFreeTierVendors] = useState<any[]>([]);
+  const [freeTierLoading, setFreeTierLoading] = useState(false);
 
   const loadData = useCallback(async () => {
     try {
@@ -646,7 +678,20 @@ function RevenueDashboardTab({ token }: { token: string }) {
     }
   }, [token, days]);
 
+  const loadFreeTierVendors = useCallback(async () => {
+    try {
+      setFreeTierLoading(true);
+      const data = await listFreeTierVendors(token);
+      setFreeTierVendors(Array.isArray(data) ? data : (data as any).items ?? []);
+    } catch (err: any) {
+      toast.error(err.message);
+    } finally {
+      setFreeTierLoading(false);
+    }
+  }, [token]);
+
   useEffect(() => { loadData(); }, [loadData]);
+  useEffect(() => { loadFreeTierVendors(); }, [loadFreeTierVendors]);
 
   if (loading) return <LoadingSpinner />;
   if (!revenue) return <EmptyState icon={DollarSign} title="No data" description="Revenue data is not available yet." />;
@@ -715,6 +760,28 @@ function RevenueDashboardTab({ token }: { token: string }) {
         </div>
       )}
 
+      {/* Free Tier Vendors */}
+      {!freeTierLoading && (
+        <div className="bg-white dark:bg-slate-800/95 rounded-2xl shadow-lg border border-slate-200 dark:border-slate-700 p-6">
+          <h3 className="text-base font-semibold text-slate-900 dark:text-white mb-4">Free Tier Vendors ({freeTierVendors.length})</h3>
+          {freeTierVendors.length === 0 ? (
+            <p className="text-sm text-slate-500 dark:text-slate-400">No vendors currently on free tier.</p>
+          ) : (
+            <div className="space-y-2">
+              {freeTierVendors.map((vendor: any) => (
+                <div key={vendor.vendor_id || vendor._id} className="flex items-center justify-between bg-slate-50 dark:bg-slate-700/50 rounded-lg p-3 text-sm">
+                  <div>
+                    <span className="font-medium text-slate-900 dark:text-white">{vendor.vendor_name || vendor.name}</span>
+                    <div className="text-xs text-slate-500 mt-0.5">{vendor.campaigns_count || 0} campaigns</div>
+                  </div>
+                  <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-emerald-100 text-emerald-700">Free</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Free Tier Notice */}
       <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-xl p-4">
         <div className="flex items-center gap-2">
@@ -736,6 +803,7 @@ function VendorAccountsTab({ token }: { token: string }) {
   const [vendors, setVendors] = useState<VendorAccountSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [statusFilter, setStatusFilter] = useState<string>('');
+  const [actionLoading, setActionLoading] = useState<string | null>(null);
 
   const loadData = useCallback(async () => {
     try {
@@ -750,6 +818,16 @@ function VendorAccountsTab({ token }: { token: string }) {
   }, [token, statusFilter]);
 
   useEffect(() => { loadData(); }, [loadData]);
+
+  const handleToggleFreeTier = async (vendorId: string, isCurrentlyFree: boolean) => {
+    try {
+      setActionLoading(vendorId);
+      await setVendorFreeTier(token, vendorId, { is_free: !isCurrentlyFree, reason: 'Admin override' });
+      toast.success(!isCurrentlyFree ? 'Vendor set to free tier' : 'Vendor removed from free tier');
+      loadData();
+    } catch (err: any) { toast.error(err.message); }
+    finally { setActionLoading(null); }
+  };
 
   if (loading) return <LoadingSpinner />;
 
@@ -810,6 +888,18 @@ function VendorAccountsTab({ token }: { token: string }) {
                 <span>{formatNumber(vendor.total_impressions)} impressions</span>
                 <span>{formatNumber(vendor.total_clicks)} clicks</span>
               </div>
+              <button
+                onClick={() => handleToggleFreeTier(vendor.vendor_id, vendor.is_free_tier || false)}
+                disabled={actionLoading === vendor.vendor_id}
+                className={`w-full mt-4 text-xs px-2 py-1.5 rounded transition-colors disabled:opacity-50 font-medium ${
+                  vendor.is_free_tier
+                    ? 'bg-emerald-100 text-emerald-700 hover:bg-emerald-200'
+                    : 'bg-slate-100 text-slate-700 hover:bg-slate-200 dark:bg-slate-700 dark:text-slate-300'
+                }`}
+                title={vendor.is_free_tier ? 'Remove free tier' : 'Make free tier'}
+              >
+                {vendor.is_free_tier ? 'Free ✓' : 'Make Free'}
+              </button>
             </div>
           ))}
         </div>

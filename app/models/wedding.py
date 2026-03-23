@@ -11,10 +11,33 @@ class EventDetailsModel(BaseModel):
     timezone: Optional[str] = Field(default=None, description="IANA timezone for this event (e.g., 'America/Chicago')")
 
 
+class EventNoteModel(BaseModel):
+    """A note/comment on an order-of-events item or the event itself, left by planner or couple."""
+    id: str = Field(..., description="Unique note ID")
+    author_role: str = Field(..., description="Who wrote it: 'planner' or 'couple'")
+    author_name: Optional[str] = Field(default=None, description="Display name of the author")
+    text: str = Field(..., description="Note content")
+    status: str = Field(default="pending", description="Note status: pending, seen, addressed")
+    created_at: Optional[str] = Field(default=None, description="ISO timestamp when the note was created")
+
+
+class OrderOfEventsItemModel(BaseModel):
+    """A single step in the order of events / run of show for a ceremony."""
+    id: str = Field(..., description="Unique item ID")
+    title: str = Field(..., description="Step title (e.g., 'First Dance', 'Cake Cutting')")
+    description: Optional[str] = Field(default=None, description="Optional details about this step")
+    time: Optional[str] = Field(default=None, description="Scheduled time (e.g., '6:30 PM')")
+    duration_minutes: Optional[int] = Field(default=None, description="Estimated duration in minutes")
+    order: int = Field(default=0, description="Display order (0-indexed, for drag-and-drop reordering)")
+    notes: List[EventNoteModel] = Field(default_factory=list, description="Notes/comments from planner or couple on this step")
+
+
 class EventModel(BaseModel):
     type: str = Field(..., description="Event type: traditional, white_wedding, reception, engagement, rehearsal")
     date: str = Field(..., description="Event date in YYYY-MM-DD format")
     details: Optional[EventDetailsModel] = Field(default=None, description="Additional event details")
+    order_of_events: List[OrderOfEventsItemModel] = Field(default_factory=list, description="Detailed run of show / program for this event")
+    event_notes: List[EventNoteModel] = Field(default_factory=list, description="General notes on this event from planner or couple")
 
 
 class RegistryItemModel(BaseModel):

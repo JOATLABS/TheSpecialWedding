@@ -138,7 +138,7 @@ export function CampaignSponsoredRail({
         <div className="flex items-center gap-2">
           <h3 className="hidden lg:block text-[13px] font-bold text-wedding-navy">Sponsored Vendors</h3>
           <div className="flex items-center gap-2 lg:hidden">
-            <h3 className="text-base font-semibold text-wedding-navy">Recommended for you</h3>
+            <h3 className="text-base font-semibold text-wedding-navy">Sponsored Vendors</h3>
           </div>
         </div>
         <button className="hidden lg:inline-flex items-center gap-1 text-[10px] text-gray-600 hover:text-wedding-sage transition-colors">
@@ -155,7 +155,7 @@ export function CampaignSponsoredRail({
           </button>
           {showTooltip && (
             <div role="tooltip" className="absolute right-0 top-full mt-2 z-30 bg-wedding-navy text-white text-xs rounded-lg p-2 w-56 shadow-lg">
-              These vendors are sponsored recommendations matched to your wedding.
+              These vendors are paid sponsors. They appear here because they match your wedding location and vendor needs. Ads are labeled &ldquo;Sponsored.&rdquo;
             </div>
           )}
         </div>
@@ -237,28 +237,32 @@ export function CampaignSponsoredRail({
       </div>
 
       {/* Footer */}
-      <div className="hidden lg:flex justify-between pt-2 border-t border-gray-200">
-        <button
-          onClick={() => setShowTooltip(!showTooltip)}
-          className="text-[10px] text-wedding-sage font-medium hover:underline"
-        >
-          Why am I seeing this?
-        </button>
-        <a href="/admin/vendors" className="text-[10px] text-wedding-sage font-medium hover:underline">
-          See more vendors &rsaquo;
-        </a>
+      <div className="hidden lg:flex flex-col gap-1.5 pt-2 border-t border-gray-200">
+        <div className="flex justify-between">
+          <button
+            onClick={() => setShowTooltip(!showTooltip)}
+            className="text-[10px] text-wedding-sage font-medium hover:underline"
+          >
+            Why am I seeing this?
+          </button>
+          <a href="/admin/vendors" className="text-[10px] text-wedding-sage font-medium hover:underline">
+            See more vendors &rsaquo;
+          </a>
+        </div>
+        <p className="text-[9px] text-gray-400 text-center">You can hide any vendor you&rsquo;re not interested in</p>
       </div>
 
       {showTooltip && (
         <div className="hidden lg:block text-[10px] text-gray-600 bg-gray-50 px-3 py-2 rounded-md border border-gray-200">
-          These vendors are sponsored recommendations matched to your wedding location, budget, and vendor needs.
+          These vendors are paid sponsors matched to your wedding location, budget, and vendor needs. Ads are labeled &ldquo;Sponsored.&rdquo;
         </div>
       )}
 
-      <div className="flex justify-center pt-2 lg:hidden">
+      <div className="flex flex-col items-center gap-1 pt-2 lg:hidden">
         <a href="/admin/vendors" className="text-xs text-gray-600 hover:text-wedding-sage transition-colors">
           See more vendors &rsaquo;
         </a>
+        <span className="text-[10px] text-gray-400">You can hide any vendor you&rsquo;re not interested in</span>
       </div>
 
       {/* Quote Request Modal */}

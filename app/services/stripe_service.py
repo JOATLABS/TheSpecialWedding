@@ -1118,6 +1118,8 @@ class StripeService:
                 return await self._handle_invoice_paid(data)
             elif event_type == "invoice.payment_failed":
                 return await self._handle_invoice_payment_failed(data)
+            elif event_type == "invoice.finalized":
+                return await self._handle_invoice_finalized(data)
             elif event_type == "payment_intent.succeeded":
                 return await self._handle_payment_intent_succeeded(data)
             elif event_type == "payment_intent.payment_failed":
@@ -1458,6 +1460,11 @@ class StripeService:
 
     async def _handle_invoice_paid(self, invoice: Dict[str, Any]) -> Dict[str, Any]:
         """Handle successful invoice payment"""
+        # Check if this is an ad billing invoice
+        metadata = invoice.get("metadata", {})
+        if metadata.get("platform") == "thespecialwedding_ads":
+            return await self._handle_ad_invoice_paid(invoice)
+
         subscription_id = invoice.get("subscription")
         if not subscription_id:
             return {"status": "ignored", "reason": "no subscription on invoice"}
@@ -1502,8 +1509,59 @@ class StripeService:
 
         return {"status": "success", "subscription_id": subscription_id}
 
+    async def _handle_ad_invoice_paid(self, invoice: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Handle successful payment of an ad billing invoice.
+
+        Updates vendor_ad_billing record to 'paid' and marks all associated
+        ad_lead_charges as 'paid'. Called when Stripe collects payment for
+        monthly CPL charges.
+        """
+        invoice_id = invoice.get("id", "")
+        metadata = invoice.get("metadata", {})
+        vendor_id = metadata.get("vendor_id", "")
+        campaign_id = metadata.get("campaign_id", "")
+        now = datetime.now(timezone.utc)
+
+        # Update the billing period record
+        update_result = await mongo.db["vendor_ad_billing"].update_many(
+            {"stripe_invoice_id": invoice_id},
+            {"$set": {
+                "payment_status": "paid",
+                "paid_at": now,
+                "updated_at": now,
+            }}
+        )
+
+        # Also update all lead charges associated with this invoice's line items
+        # Mark pending charges for this vendor/campaign in the billing period as paid
+        if vendor_id:
+            await mongo.db["ad_lead_charges"].update_many(
+                {
+                    "vendor_id": vendor_id,
+                    "charge_status": "charged",
+                    "stripe_invoice_item_id": {"$ne": None},
+                },
+                {"$set": {
+                    "charge_status": "paid",
+                    "updated_at": now,
+                }}
+            )
+
+        logger.info(
+            f"Ad invoice paid: {invoice_id} for vendor {vendor_id} "
+            f"campaign {campaign_id} — {update_result.modified_count} billing records updated"
+        )
+
+        return {"status": "success", "invoice_id": invoice_id, "platform": "ads"}
+
     async def _handle_invoice_payment_failed(self, invoice: Dict[str, Any]) -> Dict[str, Any]:
         """Handle failed invoice payment"""
+        # Check if this is an ad billing invoice
+        metadata = invoice.get("metadata", {})
+        if metadata.get("platform") == "thespecialwedding_ads":
+            return await self._handle_ad_invoice_payment_failed(invoice)
+
         subscription_id = invoice.get("subscription")
         if not subscription_id:
             return {"status": "ignored", "reason": "no subscription on invoice"}
@@ -1547,6 +1605,89 @@ class StripeService:
             logger.error(f"Failed to send payment failure notification: {str(e)}")
 
         return {"status": "success", "subscription_id": subscription_id}
+
+    async def _handle_ad_invoice_payment_failed(self, invoice: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Handle failed payment of an ad billing invoice.
+
+        Updates vendor_ad_billing record to 'payment_failed'. Campaigns remain
+        active (Stripe will retry) but we flag the billing record. After 3 failed
+        attempts Stripe will mark the invoice as uncollectible automatically.
+        """
+        invoice_id = invoice.get("id", "")
+        metadata = invoice.get("metadata", {})
+        vendor_id = metadata.get("vendor_id", "")
+        campaign_id = metadata.get("campaign_id", "")
+        now = datetime.now(timezone.utc)
+
+        # Update billing period record
+        update_result = await mongo.db["vendor_ad_billing"].update_many(
+            {"stripe_invoice_id": invoice_id},
+            {"$set": {
+                "payment_status": "payment_failed",
+                "last_payment_attempt": now,
+                "updated_at": now,
+            }}
+        )
+
+        logger.warning(
+            f"Ad invoice payment failed: {invoice_id} for vendor {vendor_id} "
+            f"campaign {campaign_id} — {update_result.modified_count} billing records updated"
+        )
+
+        # Create admin notification for failed ad payment
+        try:
+            from app.services.config_validator import _create_root_admin_notification
+            await _create_root_admin_notification(
+                title="Ad Billing Payment Failed",
+                message=(
+                    f"Stripe invoice {invoice_id} payment failed for vendor {vendor_id}. "
+                    f"Campaign: {campaign_id}. Stripe will retry automatically."
+                ),
+                priority="high"
+            )
+        except Exception as e:
+            logger.error(f"Failed to notify admin of ad payment failure: {e}")
+
+        return {"status": "success", "invoice_id": invoice_id, "platform": "ads"}
+
+    async def _handle_invoice_finalized(self, invoice: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Handle invoice.finalized event.
+
+        For ad billing invoices: updates vendor_ad_billing with the Stripe invoice ID
+        and sets status to 'invoiced'. For subscription invoices: acknowledged only.
+        """
+        metadata = invoice.get("metadata", {})
+        invoice_id = invoice.get("id", "")
+
+        if metadata.get("platform") == "thespecialwedding_ads":
+            vendor_id = metadata.get("vendor_id", "")
+            campaign_id = metadata.get("campaign_id", "")
+            now = datetime.now(timezone.utc)
+
+            # Update billing records that match this vendor/campaign and are still pending
+            update_result = await mongo.db["vendor_ad_billing"].update_many(
+                {
+                    "stripe_invoice_id": invoice_id,
+                    "payment_status": {"$in": ["pending", "invoiced"]},
+                },
+                {"$set": {
+                    "payment_status": "invoiced",
+                    "stripe_invoice_id": invoice_id,
+                    "updated_at": now,
+                }}
+            )
+
+            logger.info(
+                f"Ad invoice finalized: {invoice_id} for vendor {vendor_id} "
+                f"— {update_result.modified_count} billing records updated"
+            )
+            return {"status": "success", "invoice_id": invoice_id, "platform": "ads"}
+
+        # Non-ad invoices: acknowledge
+        logger.info(f"Invoice finalized: {invoice_id}")
+        return {"status": "acknowledged", "event_type": "invoice.finalized"}
 
     async def _handle_payment_intent_succeeded(self, payment_intent: Dict[str, Any]) -> Dict[str, Any]:
         """

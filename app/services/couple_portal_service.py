@@ -59,7 +59,9 @@ class CouplePortalService:
                     {
                         "type": e.get("type"),
                         "date": e.get("date"),
-                        "details": e.get("details")
+                        "details": e.get("details"),
+                        "order_of_events": e.get("order_of_events", []),
+                        "event_notes": e.get("event_notes", []),
                     }
                     for e in wedding.get("events", [])
                 ],
@@ -188,7 +190,9 @@ class CouplePortalService:
     async def _get_shared_forms(self, wedding_id: str, couple_email: str) -> List[Dict]:
         """Get forms shared with this couple."""
         try:
-            forms = []
+            # Collect all shared forms first
+            form_list = []
+            form_ids = []
             async for form in mongo.db["forms"].find({
                 "wedding_id": wedding_id,
                 "$or": [
@@ -197,14 +201,25 @@ class CouplePortalService:
                     {"couple_email": couple_email}
                 ]
             }).sort("created_at", -1):
-                # Check if couple has already submitted
-                submission = await mongo.db["form_submissions"].find_one({
-                    "form_id": str(form["_id"]),
-                    "submitted_by": couple_email
-                })
+                form_list.append(form)
+                form_ids.append(str(form["_id"]))
 
+            # Batch-fetch all submissions for these forms in a single query (fixes N+1)
+            submissions_lookup = {}
+            if form_ids:
+                async for sub in mongo.db["form_submissions"].find({
+                    "form_id": {"$in": form_ids},
+                    "submitted_by": couple_email
+                }):
+                    submissions_lookup[sub["form_id"]] = sub
+
+            # Build response
+            forms = []
+            for form in form_list:
+                fid = str(form["_id"])
+                submission = submissions_lookup.get(fid)
                 forms.append({
-                    "id": str(form["_id"]),
+                    "id": fid,
                     "title": form.get("title"),
                     "description": form.get("description"),
                     "status": "submitted" if submission else "pending",
@@ -240,6 +255,71 @@ class CouplePortalService:
         except Exception as e:
             logger.error(f"Error getting updates for wedding {wedding_id}: {e}")
             return []
+
+    async def get_contract_for_couple(self, wedding_id: str, couple_email: str) -> Optional[Dict]:
+        """
+        Get full contract details for the couple portal.
+        Returns payment info, sections, and timestamps — all read-only for the couple.
+        Single DB query (no N+1). Access scoped to the couple's wedding.
+        """
+        try:
+            # Find contract scoped to this wedding (same query pattern as _get_contract_info)
+            contract = await mongo.db["contracts"].find_one({
+                "wedding_id": wedding_id,
+                "$or": [
+                    {"couple.email": couple_email},
+                    {"wedding_id": wedding_id}  # fallback for contracts without couple.email
+                ]
+            })
+
+            if not contract:
+                return None
+
+            # Build payments summary
+            payments = []
+            for p in contract.get("payments", []):
+                payments.append({
+                    "id": p.get("id"),
+                    "name": p.get("name"),
+                    "amount": p.get("amount"),
+                    "currency": p.get("currency", "usd"),
+                    "due_date": p.get("due_date"),
+                    "status": p.get("status"),
+                    "paid_at": p.get("paid_at"),
+                })
+
+            total_amount = sum(p.get("amount", 0) for p in payments)
+            paid_amount = sum(p.get("amount", 0) for p in payments if p.get("status") == "succeeded")
+
+            # Extract sections (terms, scope, etc.) — safe for couple to read
+            sections = []
+            for section in contract.get("custom_sections", []):
+                sections.append({
+                    "title": section.get("title"),
+                    "content": section.get("content"),
+                })
+
+            return {
+                "id": str(contract["_id"]),
+                "status": contract.get("status"),
+                "package_name": contract.get("package_name"),
+                "couple_name": contract.get("couple", {}).get("name"),
+                "couple_email": contract.get("couple", {}).get("email"),
+                "signed_at": contract.get("signed_at").isoformat() if contract.get("signed_at") else None,
+                "created_at": contract.get("created_at").isoformat() if contract.get("created_at") else None,
+                "sent_at": contract.get("sent_at").isoformat() if contract.get("sent_at") else None,
+                "viewed_at": contract.get("viewed_at").isoformat() if contract.get("viewed_at") else None,
+                "sections": sections,
+                "payments": payments,
+                "summary": {
+                    "total_amount": total_amount,
+                    "paid_amount": paid_amount,
+                    "remaining": total_amount - paid_amount,
+                }
+            }
+        except Exception as e:
+            logger.error(f"Error getting contract details for wedding {wedding_id}: {e}")
+            return None
 
     async def archive_wedding_data(self, wedding_id: str) -> Dict[str, Any]:
         """

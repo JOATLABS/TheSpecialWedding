@@ -818,6 +818,73 @@ async def create_kb_articles_indexes():
         return False
 
 
+async def create_blog_articles_indexes():
+    """
+    Create indexes for blog_articles collection
+
+    Key queries that need optimization:
+    1. Get article by slug (single article view) - UNIQUE
+    2. List published articles by category (main listing)
+    3. Featured articles sorting
+    4. Full-text search on title, excerpt, and content
+    5. View count for popular articles
+    """
+    collection = mongo.db["blog_articles"]
+
+    try:
+        # 1. Unique slug index (for URL lookup)
+        await collection.create_index(
+            [("slug", ASCENDING)],
+            name="idx_blog_slug_unique",
+            unique=True
+        )
+        logger.info("Created index: idx_blog_slug_unique")
+
+        # 2. Status + category + created_at (main listing query)
+        await collection.create_index(
+            [("status", ASCENDING), ("category", ASCENDING), ("created_at", DESCENDING)],
+            name="idx_blog_status_category_created"
+        )
+        logger.info("Created index: idx_blog_status_category_created")
+
+        # 3. Featured articles
+        await collection.create_index(
+            [("status", ASCENDING), ("featured", DESCENDING), ("created_at", DESCENDING)],
+            name="idx_blog_featured_articles"
+        )
+        logger.info("Created index: idx_blog_featured_articles")
+
+        # 4. Full-text search on title, excerpt, and content
+        await collection.create_index(
+            [("title", TEXT), ("content", TEXT), ("excerpt", TEXT)],
+            name="idx_blog_text_search",
+            default_language="english",
+            weights={"title": 10, "excerpt": 5, "content": 1}
+        )
+        logger.info("Created index: idx_blog_text_search (full-text search)")
+
+        # 5. View count for popular articles
+        await collection.create_index(
+            [("status", ASCENDING), ("view_count", DESCENDING)],
+            name="idx_blog_popular_articles"
+        )
+        logger.info("Created index: idx_blog_popular_articles")
+
+        # 6. Published date sorting (public listing)
+        await collection.create_index(
+            [("status", ASCENDING), ("published_at", DESCENDING)],
+            name="idx_blog_published_at"
+        )
+        logger.info("Created index: idx_blog_published_at")
+
+        logger.info("All blog articles indexes created successfully")
+        return True
+
+    except Exception as e:
+        logger.error(f"Error creating blog articles indexes: {str(e)}")
+        return False
+
+
 async def create_invitation_indexes():
     """
     Create indexes for user_invitations collection
@@ -1346,7 +1413,26 @@ async def create_campaign_platform_indexes():
             unique=True,
             sparse=True,
         )
-        logger.info("Campaign platform ad_events indexes created (2)")
+        # TTL index: auto-delete ad events older than 90 days
+        # Rollup data is preserved in campaign_day_stats and placement_day_stats
+        await ad_events.create_index(
+            [("created_at", ASCENDING)],
+            name="idx_ad_events_ttl_90d",
+            expireAfterSeconds=90 * 24 * 60 * 60,  # 90 days
+        )
+        # Fraud detection: planner + campaign + time window queries
+        await ad_events.create_index(
+            [("planner_id", ASCENDING), ("campaign_id", ASCENDING),
+             ("event_type", ASCENDING), ("created_at", DESCENDING)],
+            name="idx_ad_events_planner_campaign_fraud",
+        )
+        # Session anomaly detection
+        await ad_events.create_index(
+            [("session_id", ASCENDING), ("created_at", DESCENDING)],
+            name="idx_ad_events_session_date",
+            sparse=True,
+        )
+        logger.info("Campaign platform ad_events indexes created (5)")
     except Exception as e:
         logger.error(f"Error creating campaign ad_events indexes: {str(e)}")
 
@@ -1382,6 +1468,172 @@ async def create_campaign_platform_indexes():
     return True
 
 
+async def create_billing_indexes():
+    """
+    Create indexes for billing-related collections
+
+    Collections: ad_lead_charges, vendor_free_tier, vendor_ad_billing (additional indexes)
+
+    Key queries:
+    1. Get charges by campaign_id sorted by created_at (campaign charge history)
+    2. Get charges by vendor_id sorted by created_at (vendor charge history)
+    3. Get charge by lead_id (one charge per lead - unique)
+    4. Get charge by stripe_invoice_item_id (Stripe reconciliation)
+    5. Get free tier record by vendor_id (unique)
+    6. Check active free tier by is_free and expires_at
+    7. Get invoices by payment_status (invoice finalization queries)
+    """
+
+    # =========================================================================
+    # ad_lead_charges — 4 indexes
+    # =========================================================================
+    ad_lead_charges = mongo.db["ad_lead_charges"]
+    try:
+        # 1. Campaign charge history (campaign_id + created_at descending)
+        await ad_lead_charges.create_index(
+            [("campaign_id", ASCENDING), ("created_at", DESCENDING)],
+            name="idx_lead_charges_campaign_date",
+        )
+        logger.info("Created index: idx_lead_charges_campaign_date")
+
+        # 2. Vendor charge history (vendor_id + created_at descending)
+        await ad_lead_charges.create_index(
+            [("vendor_id", ASCENDING), ("created_at", DESCENDING)],
+            name="idx_lead_charges_vendor_date",
+        )
+        logger.info("Created index: idx_lead_charges_vendor_date")
+
+        # 3. Unique index on lead_id (one charge per lead)
+        await ad_lead_charges.create_index(
+            [("lead_id", ASCENDING)],
+            name="idx_lead_charges_lead_id",
+            unique=True,
+        )
+        logger.info("Created index: idx_lead_charges_lead_id (unique)")
+
+        # 4. Stripe reconciliation (sparse index for stripe_invoice_item_id)
+        await ad_lead_charges.create_index(
+            [("stripe_invoice_item_id", ASCENDING)],
+            name="idx_lead_charges_stripe_invoice_item",
+            sparse=True,
+        )
+        logger.info("Created index: idx_lead_charges_stripe_invoice_item (sparse)")
+
+        logger.info("All ad_lead_charges indexes created (4)")
+    except Exception as e:
+        logger.error(f"Error creating ad_lead_charges indexes: {str(e)}")
+
+    # =========================================================================
+    # vendor_free_tier — 2 indexes
+    # =========================================================================
+    vendor_free_tier = mongo.db["vendor_free_tier"]
+    try:
+        # 1. Unique index on vendor_id (one record per vendor)
+        await vendor_free_tier.create_index(
+            [("vendor_id", ASCENDING)],
+            name="idx_free_tier_vendor_id",
+            unique=True,
+        )
+        logger.info("Created index: idx_free_tier_vendor_id (unique)")
+
+        # 2. Active free tier lookup (is_free + expires_at)
+        await vendor_free_tier.create_index(
+            [("is_free", ASCENDING), ("expires_at", ASCENDING)],
+            name="idx_free_tier_active_lookup",
+        )
+        logger.info("Created index: idx_free_tier_active_lookup")
+
+        logger.info("All vendor_free_tier indexes created (2)")
+    except Exception as e:
+        logger.error(f"Error creating vendor_free_tier indexes: {str(e)}")
+
+    # =========================================================================
+    # vendor_ad_billing — additional payment_status index
+    # =========================================================================
+    vendor_ad_billing = mongo.db["vendor_ad_billing"]
+    try:
+        # Payment status index (for invoice finalization queries)
+        await vendor_ad_billing.create_index(
+            [("payment_status", ASCENDING)],
+            name="idx_billing_payment_status",
+        )
+        logger.info("Created index: idx_billing_payment_status")
+
+        logger.info("Additional vendor_ad_billing indexes created (1)")
+    except Exception as e:
+        logger.error(f"Error creating additional vendor_ad_billing indexes: {str(e)}")
+
+    logger.info("All billing indexes created/verified (7 total)")
+    return True
+
+
+async def create_couple_portal_indexes():
+    """
+    Create indexes for couple portal collections: couple_users, couple_updates, archived_weddings.
+
+    Key queries:
+    1. couple_users: login by email, invite token lookup, list by planner, list by wedding
+    2. couple_updates: updates feed by wedding_id sorted by created_at
+    3. archived_weddings: lookup by original wedding_id
+    """
+    try:
+        couple_users = mongo.db["couple_users"]
+
+        # Login: find by email (unique per wedding, not globally unique since same email could be in multiple weddings)
+        await couple_users.create_index(
+            [("email", ASCENDING), ("wedding_id", ASCENDING)],
+            unique=True,
+            name="idx_couple_email_wedding",
+            background=True
+        )
+
+        # Invite token lookup (used during setup flow)
+        await couple_users.create_index(
+            [("invite_token", ASCENDING)],
+            name="idx_couple_invite_token",
+            sparse=True,
+            background=True
+        )
+
+        # List couples by planner (planner management page)
+        await couple_users.create_index(
+            [("planner_id", ASCENDING), ("created_at", DESCENDING)],
+            name="idx_couple_planner_created",
+            background=True
+        )
+
+        # List couples by wedding (portal service lookups)
+        await couple_users.create_index(
+            [("wedding_id", ASCENDING)],
+            name="idx_couple_wedding",
+            background=True
+        )
+
+        couple_updates = mongo.db["couple_updates"]
+
+        # Updates feed: by wedding_id, sorted by created_at desc
+        await couple_updates.create_index(
+            [("wedding_id", ASCENDING), ("created_at", DESCENDING)],
+            name="idx_updates_wedding_created",
+            background=True
+        )
+
+        archived_weddings = mongo.db["archived_weddings"]
+
+        # Lookup archived wedding by original ID
+        await archived_weddings.create_index(
+            [("original_wedding_id", ASCENDING)],
+            unique=True,
+            name="idx_archived_original_id",
+            background=True
+        )
+
+        logger.info("Couple portal indexes created/verified (couple_users, couple_updates, archived_weddings)")
+
+    except Exception as e:
+        logger.error(f"Error creating couple portal indexes: {e}")
+
+
 async def create_all_indexes():
     """Create all database indexes (called on app startup)"""
     try:
@@ -1401,10 +1653,13 @@ async def create_all_indexes():
         await create_security_audit_logs_indexes()
         await create_errors_indexes()
         await create_kb_articles_indexes()  # Knowledge Base articles
+        await create_blog_articles_indexes()  # Blog articles
         await create_invitation_indexes()  # User invitation cleanup
         await create_team_member_indexes()  # Team management
         await create_advertising_indexes()  # Legacy advertising (19 indexes)
         await create_campaign_platform_indexes()  # Campaign platform (21 indexes)
+        await create_billing_indexes()  # Billing collections (7 indexes)
+        await create_couple_portal_indexes()  # Couple portal (6 indexes)
         logger.info("All database indexes created/verified")
     except Exception as e:
         logger.error(f"Error creating database indexes: {str(e)}")

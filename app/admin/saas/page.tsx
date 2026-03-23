@@ -1304,7 +1304,7 @@ function CustomerReviewsTab() {
   const fetchTestimonials = useCallback(async () => {
     try {
       setLoading(true);
-      const token = localStorage.getItem('token');
+      const token = localStorage.getItem('admin_token') || sessionStorage.getItem('admin_token');
       const res = await fetch(`${getApiBaseUrl()}/saas/testimonials`, {
         headers: { Authorization: `Bearer ${token}` },
       });
@@ -1322,7 +1322,7 @@ function CustomerReviewsTab() {
 
   const handleToggle = async (id: string) => {
     try {
-      const token = localStorage.getItem('token');
+      const token = localStorage.getItem('admin_token') || sessionStorage.getItem('admin_token');
       const res = await fetch(`${getApiBaseUrl()}/saas/testimonials/${id}/toggle`, {
         method: 'PUT',
         headers: { Authorization: `Bearer ${token}` },
@@ -1342,7 +1342,7 @@ function CustomerReviewsTab() {
   const handleDelete = async (id: string) => {
     if (!confirm('Delete this testimonial permanently?')) return;
     try {
-      const token = localStorage.getItem('token');
+      const token = localStorage.getItem('admin_token') || sessionStorage.getItem('admin_token');
       const res = await fetch(`${getApiBaseUrl()}/saas/testimonials/${id}`, {
         method: 'DELETE',
         headers: { Authorization: `Bearer ${token}` },
@@ -1359,7 +1359,7 @@ function CustomerReviewsTab() {
   const handleSave = async (data: Partial<Testimonial>) => {
     setSaving(true);
     try {
-      const token = localStorage.getItem('token');
+      const token = localStorage.getItem('admin_token') || sessionStorage.getItem('admin_token');
       const isEdit = !!editingTestimonial;
       const url = isEdit
         ? `${getApiBaseUrl()}/saas/testimonials/${editingTestimonial!._id}`

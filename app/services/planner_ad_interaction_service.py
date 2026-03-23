@@ -57,7 +57,7 @@ class PlannerAdInteractionService:
     Writes: vendor_profiles, ad_leads, ad_events
     """
 
-    def __init__(self, db, email_service=None):
+    def __init__(self, db, email_service=None, billing_service=None, fraud_detection_service=None):
         self.db = db
         self.campaigns = db["ad_campaigns"]
         self.creatives = db["ad_creatives"]
@@ -65,6 +65,8 @@ class PlannerAdInteractionService:
         self.ad_leads = db["ad_leads"]
         self.vendor_profiles = db["vendor_profiles"]
         self.email_service = email_service
+        self.billing_service = billing_service
+        self.fraud_detection_service = fraud_detection_service
 
     # ─── Shared: Resolve Campaign + Creative ─────────────────────────
 
@@ -244,6 +246,17 @@ class PlannerAdInteractionService:
         }
         await self.ad_events.insert_one(event)
 
+        # ── 3b. Fraud detection (non-blocking) ──
+        if self.fraud_detection_service:
+            try:
+                await self.fraud_detection_service.check_click_event(
+                    planner_id=planner_email,
+                    campaign_id=campaign_id,
+                    creative_id=str(creative["_id"]) if creative else None,
+                )
+            except Exception as e:
+                logger.error(f"Fraud detection check failed: {e}")
+
         # ── 4. Increment campaign counters ──
         await self.campaigns.update_one(
             {"_id": ObjectId(campaign_id)},
@@ -252,6 +265,20 @@ class PlannerAdInteractionService:
                 "$set": {"updated_at": now},
             },
         )
+
+        # ── 5. CPL billing ──
+        billing_result = None
+        if self.billing_service:
+            try:
+                billing_result = await self.billing_service.charge_for_lead(
+                    campaign=campaign,
+                    lead_id=lead["_id"],
+                    lead_type="add_to_directory",
+                    planner_id=planner_email,
+                    click_id=generated_click_id,
+                )
+            except Exception as e:
+                logger.error(f"CPL billing failed for add_to_directory lead: {e}")
 
         logger.info(
             f"Planner {planner_email} added vendor {vendor_name} "
@@ -262,6 +289,7 @@ class PlannerAdInteractionService:
             "vendor_profile": vendor_profile,
             "lead_id": lead["_id"],
             "status": "added_to_directory",
+            "billing": billing_result,
         }
 
     # ─── 3.4  Request Quote ──────────────────────────────────────────
@@ -350,6 +378,17 @@ class PlannerAdInteractionService:
         }
         await self.ad_events.insert_one(event)
 
+        # ── 2b. Fraud detection (non-blocking) ──
+        if self.fraud_detection_service:
+            try:
+                await self.fraud_detection_service.check_click_event(
+                    planner_id=planner_email,
+                    campaign_id=campaign_id,
+                    creative_id=str(creative["_id"]) if creative else None,
+                )
+            except Exception as e:
+                logger.error(f"Fraud detection check failed: {e}")
+
         # ── 3. Increment campaign counters ──
         await self.campaigns.update_one(
             {"_id": ObjectId(campaign_id)},
@@ -358,6 +397,20 @@ class PlannerAdInteractionService:
                 "$set": {"updated_at": now},
             },
         )
+
+        # ── 3b. CPL billing ──
+        billing_result = None
+        if self.billing_service:
+            try:
+                billing_result = await self.billing_service.charge_for_lead(
+                    campaign=campaign,
+                    lead_id=lead["_id"],
+                    lead_type="quote_request",
+                    planner_id=planner_email,
+                    click_id=generated_click_id,
+                )
+            except Exception as e:
+                logger.error(f"CPL billing failed for quote_request lead: {e}")
 
         # ── 4. Send email to vendor ──
         email_sent = False
@@ -418,6 +471,7 @@ class PlannerAdInteractionService:
             "email_sent": email_sent,
             "auto_added_to_directory": directory_entry is not None,
             "vendor_profile_id": directory_entry.get("_id") if directory_entry else None,
+            "billing": billing_result,
         }
 
     async def _create_directory_entry(
@@ -641,6 +695,7 @@ class PlannerAdInteractionService:
                     "call_to_action": creative.get("call_to_action", "View Portfolio") if creative else "View Portfolio",
                 } if creative else None,
                 "in_directory": False,  # not in directory (filtered out above)
+                "targeting_reason": self._build_targeting_reason(campaign, planner_location),
             }
             results.append(card)
 
@@ -648,6 +703,43 @@ class PlannerAdInteractionService:
                 break
 
         return results
+
+    @staticmethod
+    def _build_targeting_reason(
+        campaign: Dict[str, Any], planner_location: Optional[str] = None
+    ) -> str:
+        """
+        Build an FTC-compliant targeting disclosure string explaining
+        why this sponsored content is being shown to the planner.
+
+        Per FTC native advertising guidelines, sponsored content must
+        clearly disclose its commercial nature and targeting rationale.
+        """
+        reasons = []
+
+        # Location match
+        target_regions = campaign.get("target_regions", [])
+        if planner_location and target_regions:
+            reasons.append(f"your location ({planner_location})")
+        elif target_regions:
+            reasons.append("your area")
+
+        # Category match
+        category = campaign.get("vendor_category", "")
+        if category:
+            label = category.replace("_", " ").title()
+            reasons.append(f"your interest in {label} services")
+
+        # Goal-based
+        goal = campaign.get("campaign_goal", "")
+        if goal == "quote_requests":
+            reasons.append("vendors seeking quotes")
+        elif goal == "profile_visits":
+            reasons.append("vendor discovery")
+
+        if reasons:
+            return f"Based on {', '.join(reasons)}"
+        return "Sponsored recommendation for your wedding"
 
     # ─── Check Directory Status ──────────────────────────────────────
 
