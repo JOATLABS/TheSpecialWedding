@@ -695,24 +695,35 @@ function LandingContent({
    Page component
    ═══════════════════════════════════════════════════════════ */
 
+const fallbackTestimonials: Testimonial[] = [
+  {
+    quote: "I used to juggle Google Sheets for guests, QuickBooks for budgets, and DocuSign for contracts — all disconnected. Now my 240-person guest list, seating chart, and budget tracker live in one place. Last Saturday I reassigned three tables in the seating orchestrator ten minutes before doors opened and the live headcount updated instantly at check-in.",
+    name: "Maya Glenn",
+    role: "Director of Events, Aurora Collective",
+  },
+  {
+    quote: "Building a service package with AI-suggested pricing took me ten minutes instead of a full afternoon of market research. I sent the quote through the contract canvas with e-sign the same day, and the client's milestone payment hit my dashboard before dinner. The entire book-to-pay cycle that used to take me a week now happens in a single session.",
+    name: "Elias Romero",
+    role: "Lead Coordinator, Harbor & Bloom",
+  },
+  {
+    quote: "Coordinating twelve vendors across two venues was a nightmare of group texts and missed emails. Now every florist, caterer, and photographer has role-based access to the timeline, uploads deliverables to the gallery, and signs off on contracts inside the platform. The automated reminders alone saved me from three near-disasters last season.",
+    name: "Priya Chandran",
+    role: "Senior Planner, Verdant Celebrations",
+  },
+  {
+    quote: "We run fifteen weddings a month and the planning calendar synced with Google Calendar keeps my team sane. I set up intake forms for new couples in the forms canvas, the RSVP reminders go out automatically by SMS and email, and every wedding has its own branded configuration so clients feel like they have a dedicated app. The knowledge base even onboards our junior planners faster than I can.",
+    name: "Tomás Vega",
+    role: "Founder, Día Perfecto Weddings",
+  },
+];
+
 export default function HomePage() {
   const [isSignupModalOpen, setIsSignupModalOpen] = useState(false);
   const [selectedPlanId, setSelectedPlanId] = useState<string | undefined>();
   const [apiPlans, setApiPlans] = useState<ApiPlan[]>([]);
   const [plansLoading, setPlansLoading] = useState(true);
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  const [testimonials, setTestimonials] = useState<Testimonial[]>([
-    {
-      quote: "The Special Wedding replaced five subscriptions overnight. Every guest touchpoint feels intentional now.",
-      name: "Maya Glenn",
-      role: "Director of Events, Aurora Collective",
-    },
-    {
-      quote: "I built a full service package with AI-suggested pricing in under ten minutes. My clients saw the quote the same afternoon.",
-      name: "Elias Romero",
-      role: "Lead Coordinator, Harbor & Bloom",
-    },
-  ]);
+  const [testimonials, setTestimonials] = useState<Testimonial[]>(fallbackTestimonials);
 
   // Fetch subscription plans from API (admin-configurable)
   useEffect(() => {
@@ -732,8 +743,30 @@ export default function HomePage() {
     fetchPlans();
   }, []);
 
-  // TODO: Fetch testimonials from API when endpoint exists
-  // useEffect(() => { fetchTestimonials(); }, []);
+  // Fetch testimonials from API (admin-configurable via Customer Reviews tab)
+  useEffect(() => {
+    const fetchTestimonials = async () => {
+      try {
+        const response = await fetch(`${getApiBaseUrl()}/saas/public/testimonials`);
+        if (response.ok) {
+          const data = await response.json();
+          if (data.length > 0) {
+            setTestimonials(
+              data.map((t: any) => ({
+                quote: t.quote,
+                name: t.name,
+                role: [t.role, t.company].filter(Boolean).join(', '),
+              }))
+            );
+          }
+        }
+      } catch (error) {
+        console.error('Failed to fetch testimonials:', error);
+        // Fallback testimonials are already set as initial state
+      }
+    };
+    fetchTestimonials();
+  }, []);
 
   const handlePricingCTAClick = (planId: string) => {
     if (planId === 'agency') {

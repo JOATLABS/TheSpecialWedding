@@ -147,12 +147,26 @@ function formatPercentage(value: number): string {
 
 /* Landing page content (hero, features, stats, theme, etc.) is now hardcoded
    in app/page.tsx for performance. The SaaS Content and Theme tabs have been
-   removed. Only subscription plans & analytics remain admin-configurable. */
+   removed. Subscription plans, analytics, and customer reviews remain admin-configurable. */
+
+interface Testimonial {
+  _id: string;
+  name: string;
+  company: string;
+  role: string;
+  quote: string;
+  avatar_url?: string;
+  is_active: boolean;
+  display_order: number;
+  created_at?: string;
+  updated_at?: string;
+  created_by?: string;
+}
 
 const SaasAdminDashboard = () => {
  const router = useRouter();
  const { userProfile } = useAdmin();
- const [activeTab, setActiveTab] = useState<'overview' | 'plans' | 'ad-config'>('overview');
+ const [activeTab, setActiveTab] = useState<'overview' | 'plans' | 'reviews' | 'ad-config'>('overview');
  const [plans, setPlans] = useState<SubscriptionPlan[]>([]);
  const [planners, setPlanners] = useState<WeddingPlanner[]>([]);
  const [loading, setLoading] = useState(true);
@@ -635,6 +649,7 @@ const SaasAdminDashboard = () => {
  {[
  { key: 'overview', label: 'Overview' },
  { key: 'plans', label: 'Subscription Plans' },
+ { key: 'reviews', label: 'Customer Reviews' },
  { key: 'ad-config', label: 'Ad Platform' }
  ].map((tab) => (
  <button
@@ -1006,6 +1021,10 @@ const SaasAdminDashboard = () => {
  </div>
  )}
 
+ {activeTab === 'reviews' && (
+   <CustomerReviewsTab />
+ )}
+
  {activeTab === 'ad-config' && (
    <AdPlatformConfigTab />
  )}
@@ -1270,6 +1289,333 @@ const PlanModal = ({ isEditing, plan, onSave, onClose }: {
  </div>
  );
 };
+
+// =============================================================================
+// Customer Reviews Tab
+// =============================================================================
+
+function CustomerReviewsTab() {
+  const [testimonials, setTestimonials] = useState<Testimonial[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [showModal, setShowModal] = useState(false);
+  const [editingTestimonial, setEditingTestimonial] = useState<Testimonial | null>(null);
+  const [saving, setSaving] = useState(false);
+
+  const fetchTestimonials = useCallback(async () => {
+    try {
+      setLoading(true);
+      const token = localStorage.getItem('token');
+      const res = await fetch(`${getApiBaseUrl()}/saas/testimonials`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (res.ok) {
+        setTestimonials(await res.json());
+      }
+    } catch (err) {
+      console.error('Failed to fetch testimonials:', err);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => { fetchTestimonials(); }, [fetchTestimonials]);
+
+  const handleToggle = async (id: string) => {
+    try {
+      const token = localStorage.getItem('token');
+      const res = await fetch(`${getApiBaseUrl()}/saas/testimonials/${id}/toggle`, {
+        method: 'PUT',
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setTestimonials(prev =>
+          prev.map(t => t._id === id ? { ...t, is_active: data.is_active } : t)
+        );
+        toast.success(data.message);
+      }
+    } catch (err) {
+      toast.error('Failed to toggle testimonial');
+    }
+  };
+
+  const handleDelete = async (id: string) => {
+    if (!confirm('Delete this testimonial permanently?')) return;
+    try {
+      const token = localStorage.getItem('token');
+      const res = await fetch(`${getApiBaseUrl()}/saas/testimonials/${id}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (res.ok) {
+        setTestimonials(prev => prev.filter(t => t._id !== id));
+        toast.success('Testimonial deleted');
+      }
+    } catch (err) {
+      toast.error('Failed to delete testimonial');
+    }
+  };
+
+  const handleSave = async (data: Partial<Testimonial>) => {
+    setSaving(true);
+    try {
+      const token = localStorage.getItem('token');
+      const isEdit = !!editingTestimonial;
+      const url = isEdit
+        ? `${getApiBaseUrl()}/saas/testimonials/${editingTestimonial!._id}`
+        : `${getApiBaseUrl()}/saas/testimonials`;
+      const res = await fetch(url, {
+        method: isEdit ? 'PUT' : 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify(data),
+      });
+      if (res.ok) {
+        toast.success(isEdit ? 'Testimonial updated' : 'Testimonial created');
+        setShowModal(false);
+        setEditingTestimonial(null);
+        fetchTestimonials();
+      } else {
+        const err = await res.json();
+        toast.error(err.detail || 'Save failed');
+      }
+    } catch (err) {
+      toast.error('Failed to save testimonial');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-12">
+        <div className="animate-spin h-8 w-8 border-4 border-blue-500 border-t-transparent rounded-full" />
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-6">
+      <div className="flex justify-between items-center">
+        <div>
+          <h2 className="text-2xl font-bold text-gray-900 dark:text-gray-100">Customer Reviews</h2>
+          <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
+            Manage testimonials displayed on the SaaS landing page.
+          </p>
+        </div>
+        <button
+          onClick={() => { setEditingTestimonial(null); setShowModal(true); }}
+          className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors"
+        >
+          Add Testimonial
+        </button>
+      </div>
+
+      {testimonials.length === 0 ? (
+        <div className="text-center py-12 bg-gray-50 dark:bg-slate-700 rounded-lg border-2 border-dashed border-gray-300 dark:border-gray-600">
+          <svg className="mx-auto h-12 w-12 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" />
+          </svg>
+          <h3 className="mt-2 text-sm font-medium text-gray-900 dark:text-gray-100">No testimonials yet</h3>
+          <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">Add your first customer testimonial to display on the landing page.</p>
+          <button
+            onClick={() => { setEditingTestimonial(null); setShowModal(true); }}
+            className="mt-4 inline-flex items-center px-4 py-2 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700"
+          >
+            Add Testimonial
+          </button>
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {testimonials.map((t) => (
+            <Card key={t._id} className="p-5">
+              <div className="flex justify-between items-start mb-3">
+                <div className="flex-1 min-w-0">
+                  <h3 className="text-base font-semibold text-gray-900 dark:text-gray-100 truncate">{t.name}</h3>
+                  <p className="text-xs text-gray-500 dark:text-gray-400">
+                    {t.role}{t.company ? `, ${t.company}` : ''}
+                  </p>
+                </div>
+                <span className={`flex-shrink-0 ml-2 px-2 py-0.5 rounded text-xs font-medium ${
+                  t.is_active
+                    ? 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400'
+                    : 'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-400'
+                }`}>
+                  {t.is_active ? 'Active' : 'Hidden'}
+                </span>
+              </div>
+
+              <blockquote className="text-sm text-gray-700 dark:text-gray-300 italic mb-4 line-clamp-3">
+                &ldquo;{t.quote}&rdquo;
+              </blockquote>
+
+              <div className="flex items-center gap-2 text-xs text-gray-400 mb-3">
+                <span>Order: {t.display_order}</span>
+                {t.updated_at && <span>· Updated {new Date(t.updated_at).toLocaleDateString()}</span>}
+              </div>
+
+              <div className="flex gap-2">
+                <button
+                  onClick={() => { setEditingTestimonial(t); setShowModal(true); }}
+                  className="flex-1 bg-blue-50 text-blue-700 dark:bg-blue-900/20 dark:text-blue-400 py-1.5 px-3 rounded text-sm hover:bg-blue-100 dark:hover:bg-blue-900/30 transition-colors"
+                >
+                  Edit
+                </button>
+                <button
+                  onClick={() => handleToggle(t._id)}
+                  className="flex-1 bg-yellow-50 text-yellow-700 dark:bg-yellow-900/20 dark:text-yellow-400 py-1.5 px-3 rounded text-sm hover:bg-yellow-100 dark:hover:bg-yellow-900/30 transition-colors"
+                >
+                  {t.is_active ? 'Hide' : 'Show'}
+                </button>
+                <button
+                  onClick={() => handleDelete(t._id)}
+                  className="flex-1 bg-red-50 text-red-700 dark:bg-red-900/20 dark:text-red-400 py-1.5 px-3 rounded text-sm hover:bg-red-100 dark:hover:bg-red-900/30 transition-colors"
+                >
+                  Delete
+                </button>
+              </div>
+            </Card>
+          ))}
+        </div>
+      )}
+
+      {/* Create / Edit Testimonial Modal */}
+      {showModal && (
+        <TestimonialModal
+          testimonial={editingTestimonial}
+          saving={saving}
+          onSave={handleSave}
+          onClose={() => { setShowModal(false); setEditingTestimonial(null); }}
+        />
+      )}
+    </div>
+  );
+}
+
+function TestimonialModal({
+  testimonial,
+  saving,
+  onSave,
+  onClose,
+}: {
+  testimonial: Testimonial | null;
+  saving: boolean;
+  onSave: (data: Partial<Testimonial>) => void;
+  onClose: () => void;
+}) {
+  const [form, setForm] = useState({
+    name: testimonial?.name || '',
+    company: testimonial?.company || '',
+    role: testimonial?.role || '',
+    quote: testimonial?.quote || '',
+    display_order: testimonial?.display_order ?? 0,
+    is_active: testimonial?.is_active ?? true,
+  });
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    onSave(form);
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+      <div className="bg-white dark:bg-slate-800 rounded-xl shadow-xl max-w-lg w-full max-h-[90vh] overflow-y-auto">
+        <div className="p-6">
+          <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-4">
+            {testimonial ? 'Edit Testimonial' : 'Add Testimonial'}
+          </h3>
+          <form onSubmit={handleSubmit} className="space-y-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Name *</label>
+              <input
+                type="text"
+                required
+                value={form.name}
+                onChange={e => setForm(f => ({ ...f, name: e.target.value }))}
+                className="w-full border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100"
+                placeholder="Maya Glenn"
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Role</label>
+                <input
+                  type="text"
+                  value={form.role}
+                  onChange={e => setForm(f => ({ ...f, role: e.target.value }))}
+                  className="w-full border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100"
+                  placeholder="Director of Events"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Company</label>
+                <input
+                  type="text"
+                  value={form.company}
+                  onChange={e => setForm(f => ({ ...f, company: e.target.value }))}
+                  className="w-full border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100"
+                  placeholder="Aurora Collective"
+                />
+              </div>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Quote *</label>
+              <textarea
+                required
+                rows={4}
+                value={form.quote}
+                onChange={e => setForm(f => ({ ...f, quote: e.target.value }))}
+                className="w-full border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100"
+                placeholder="The Special Wedding replaced five subscriptions overnight..."
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Display Order</label>
+                <input
+                  type="number"
+                  value={form.display_order}
+                  onChange={e => setForm(f => ({ ...f, display_order: parseInt(e.target.value) || 0 }))}
+                  className="w-full border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100"
+                  min={0}
+                />
+              </div>
+              <div className="flex items-end pb-1">
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={form.is_active}
+                    onChange={e => setForm(f => ({ ...f, is_active: e.target.checked }))}
+                    className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                  />
+                  <span className="text-sm text-gray-700 dark:text-gray-300">Active on landing page</span>
+                </label>
+              </div>
+            </div>
+            <div className="flex justify-end gap-3 pt-2">
+              <button
+                type="button"
+                onClick={onClose}
+                className="px-4 py-2 text-sm text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={saving}
+                className="px-5 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 text-sm font-medium"
+              >
+                {saving ? 'Saving...' : testimonial ? 'Update' : 'Create'}
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 // =============================================================================
 // Ad Platform Configuration Tab

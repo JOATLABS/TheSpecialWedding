@@ -31,6 +31,7 @@ import {
 
   PlusCircle,
   ExternalLink,
+  HeartHandshake,
   type LucideIcon
 } from 'lucide-react';
 
@@ -71,6 +72,7 @@ const plannerNavItems: NavItem[] = [
   { name: 'Calendar', href: '/admin/planner/calendar', icon: Calendar },
   { name: 'Weddings', href: '/admin/weddings', icon: Heart },
   { name: 'Packages', href: '/admin/packages', icon: Package },
+  { name: 'Couple Portal', href: '/admin/couple-portal', icon: HeartHandshake },
   { name: 'Guests', href: '/admin/guests', icon: Users },
   { name: 'Inbox', href: '/admin/inbox', icon: Mail },
   { name: 'Gallery', href: '/admin/gallery/upload', icon: Image },

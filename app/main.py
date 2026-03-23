@@ -47,6 +47,7 @@ from app.api.platform_metrics import router as platform_metrics_router
 from app.api.user_management import router as user_management_router
 from app.api.subscription_management import router as subscription_router
 from app.api.saas_config import router as saas_config_router
+from app.api.testimonials import router as testimonials_router
 from app.api.planner_metrics import router as planner_metrics_router
 from app.api.forms import router as forms_router
 from app.api.guest_verification import router as guest_verification_router
@@ -89,6 +90,11 @@ from app.api.admin_campaigns import router as admin_campaigns_router
 from app.api.planner_ad_interactions import router as planner_ad_interactions_router
 from app.api.vendor_public import router as vendor_public_router
 from app.api.blog import router as blog_router
+
+# Couple Portal routers
+from app.api.couple_auth import router as couple_auth_router
+from app.api.couple_invite import router as couple_invite_router
+from app.api.couple_portal import router as couple_portal_router
 
 # Setup logging
 logging.basicConfig(
@@ -428,6 +434,7 @@ app.include_router(wedding_router, tags=["Wedding"])  # Public wedding endpoints
 app.include_router(gallery_public_router, tags=["Gallery"])  # Public gallery endpoints
 app.include_router(subscription_router, tags=["Subscription"])  # Public subscription plans
 app.include_router(saas_config_router, prefix="/saas", tags=["Subscription"])
+app.include_router(testimonials_router, prefix="/saas", tags=["Testimonials"])
 app.include_router(public_contact_router, tags=["Sales"])
 app.include_router(guest_verification_router, tags=["Guest"])
 app.include_router(forms_router, tags=["Forms"])  # Public form submission endpoints
@@ -451,6 +458,10 @@ app.include_router(admin_campaigns_router, tags=["Admin Campaigns"])  # Admin ca
 app.include_router(planner_ad_interactions_router, tags=["Planner Ad Interactions"])  # Planner ad interaction flows (has own /planner/ads prefix)
 app.include_router(vendor_public_router, tags=["Public Vendors"])  # Public vendor profiles (has own /api/v1/vendors prefix)
 app.include_router(blog_router, tags=["Blog"])  # Public blog + admin blog endpoints (has own /api/v1/blog and /blog/admin prefixes)
+
+# Couple Portal routes (public - couple auth is handled at route level)
+app.include_router(couple_auth_router, tags=["Couple Auth"])  # Couple login, setup, verify invite
+app.include_router(couple_portal_router, tags=["Couple Portal"])  # Couple dashboard, forms, updates
 
 # Admin routes (authentication required)
 # Note: Routers already registered publicly with route-level auth are excluded to avoid duplicate routes
@@ -494,6 +505,7 @@ admin_routers = [
     (notification_stream_router, "Notifications SSE"),
     (team_management_router, "Team Management"),
     (inbound_emails_router, "Inbound Emails"),
+    (couple_invite_router, "Couple Portal"),  # Planner-side couple invitation management
 ]
 
 for router, tag in admin_routers:
