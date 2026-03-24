@@ -188,13 +188,13 @@ export default function CoupleLoginPage() {
                           value={password}
                           onChange={(e) => setPassword(e.target.value)}
                           required
-                          className="w-full rounded-xl border border-white/40 bg-white/60 px-4 py-3 pr-16 text-base text-wedding-navy shadow-inner placeholder:text-wedding-navy/40 focus:border-wedding-rose focus:outline-none focus:ring-2 focus:ring-wedding-rose/50"
+                          className="w-full rounded-xl border border-white/40 bg-white/60 px-4 py-3 pr-12 text-base text-wedding-navy shadow-inner placeholder:text-wedding-navy/40 focus:border-wedding-rose focus:outline-none focus:ring-2 focus:ring-wedding-rose/50"
                           placeholder="Enter your password"
                         />
                         <button
                           type="button"
                           onClick={() => setShowPassword(!showPassword)}
-                          className="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-medium text-wedding-navy/60 hover:text-wedding-navy transition-colors"
+                          className="absolute inset-y-0 right-0 flex items-center rounded-r-xl px-4 text-sm font-medium text-wedding-navy/80 hover:text-wedding-rose focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-wedding-rose/60"
                           tabIndex={-1}
                         >
                           {showPassword ? 'Hide' : 'Show'}
@@ -203,9 +203,9 @@ export default function CoupleLoginPage() {
                     </div>
 
                     {error && (
-                      <div className="rounded-xl bg-red-50 px-4 py-3 text-sm text-red-700" role="alert">
+                      <p role="alert" className="rounded-lg border border-wedding-rose/40 bg-wedding-rose/10 px-3 py-2 text-sm text-wedding-rose">
                         {error}
-                      </div>
+                      </p>
                     )}
 
                     <Button

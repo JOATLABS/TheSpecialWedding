@@ -1,9 +1,12 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React from 'react';
 import { usePathname } from 'next/navigation';
 import { ThemeProvider } from '@/contexts/ThemeContext';
+import ErrorBoundary from '@/components/ErrorBoundary';
 import { Toaster } from 'sonner';
+// TODO: AIChatWidget requires AdminProvider (useAdmin hook). Build a couple-compatible
+// wrapper that reads couple_token from localStorage before adding it here.
 
 interface CoupleLayoutClientProps {
   children: React.ReactNode;
@@ -30,7 +33,9 @@ export default function CoupleLayoutClient({ children }: CoupleLayoutClientProps
             <div className="absolute bottom-[-10%] right-[-10%] w-[40%] h-[40%] rounded-full bg-secondary-400/30 blur-[100px] animate-float" style={{ animationDelay: '-3s' }} />
           </div>
           <main className="relative z-10 min-h-screen">
-            {children}
+            <ErrorBoundary>
+              {children}
+            </ErrorBoundary>
           </main>
           <Toaster position="top-right" richColors theme="system" />
         </div>
@@ -50,8 +55,13 @@ export default function CoupleLayoutClient({ children }: CoupleLayoutClientProps
           <div className="absolute bottom-[-10%] right-[-10%] w-[40%] h-[40%] rounded-full bg-secondary-400/30 blur-[100px] animate-float" style={{ animationDelay: '-3s' }} />
         </div>
         <div className="relative z-10 min-h-screen">
-          {children}
+          <ErrorBoundary>
+            {children}
+          </ErrorBoundary>
         </div>
+
+        {/* TODO: Add couple-compatible AIChatWidget here once it supports couple auth */}
+
         <Toaster position="top-right" richColors theme="system" />
       </div>
     </ThemeProvider>

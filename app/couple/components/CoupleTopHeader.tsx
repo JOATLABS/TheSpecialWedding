@@ -1,8 +1,8 @@
 'use client';
 
-import React from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { useTheme } from '@/contexts/ThemeContext';
-import { Menu, Sun, Moon, LogOut, Heart } from 'lucide-react';
+import { Menu, Sun, Moon, LogOut, Heart, Settings, ChevronDown } from 'lucide-react';
 
 interface CoupleTopHeaderProps {
   onMenuClick: () => void;
@@ -12,9 +12,32 @@ interface CoupleTopHeaderProps {
 
 export default function CoupleTopHeader({ onMenuClick, coupleName, onLogout }: CoupleTopHeaderProps) {
   const { resolvedTheme, setTheme } = useTheme();
+  const [dropdownOpen, setDropdownOpen] = useState(false);
+  const dropdownRef = useRef<HTMLDivElement>(null);
 
   const toggleTheme = () => {
     setTheme(resolvedTheme === 'dark' ? 'light' : 'dark');
+  };
+
+  // Close dropdown on outside click
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
+        setDropdownOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  // Initials from couple name
+  const getInitials = (name?: string) => {
+    if (!name) return '♥';
+    const parts = name.split(/\s*&\s*|\s+and\s+/i);
+    if (parts.length >= 2) {
+      return `${parts[0].charAt(0)}${parts[1].trim().charAt(0)}`.toUpperCase();
+    }
+    return name.charAt(0).toUpperCase();
   };
 
   return (
@@ -23,7 +46,7 @@ export default function CoupleTopHeader({ onMenuClick, coupleName, onLogout }: C
       role="banner"
     >
       <div className="flex items-center justify-between h-16 px-4 sm:px-6 lg:px-8">
-        {/* Left: Mobile menu toggle */}
+        {/* Left: Mobile menu toggle + couple name */}
         <div className="flex items-center gap-4">
           <button
             onClick={onMenuClick}
@@ -36,7 +59,7 @@ export default function CoupleTopHeader({ onMenuClick, coupleName, onLogout }: C
           {coupleName && (
             <div className="flex items-center gap-2">
               <Heart size={18} className="text-primary-500 hidden sm:block" aria-hidden="true" />
-              <h1 className="text-lg font-heading font-semibold text-slate-800 dark:text-white truncate max-w-[200px] sm:max-w-none">
+              <h1 className="text-xl font-heading font-semibold text-slate-800 dark:text-white truncate max-w-[200px] sm:max-w-none">
                 {coupleName}
               </h1>
             </div>
@@ -59,16 +82,43 @@ export default function CoupleTopHeader({ onMenuClick, coupleName, onLogout }: C
             )}
           </button>
 
-          {/* Logout */}
-          <button
-            onClick={onLogout}
-            className="flex items-center gap-2 p-2 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors text-slate-600 dark:text-slate-400 hover:text-red-600 dark:hover:text-red-400"
-            aria-label="Sign out"
-            title="Sign out"
-          >
-            <LogOut size={20} aria-hidden="true" />
-            <span className="hidden sm:block text-sm font-medium">Sign Out</span>
-          </button>
+          {/* User Avatar + Dropdown (matches admin TopHeader pattern) */}
+          <div className="relative" ref={dropdownRef}>
+            <button
+              onClick={() => setDropdownOpen(!dropdownOpen)}
+              className="flex items-center gap-2 p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+              aria-label="User menu"
+              aria-expanded={dropdownOpen}
+            >
+              <div className="w-8 h-8 rounded-full bg-gradient-to-br from-primary-400 to-secondary-400 flex items-center justify-center">
+                <span className="text-sm font-semibold text-white">{getInitials(coupleName)}</span>
+              </div>
+              <ChevronDown
+                size={14}
+                className={`text-slate-400 transition-transform hidden sm:block ${dropdownOpen ? 'rotate-180' : ''}`}
+              />
+            </button>
+
+            {dropdownOpen && (
+              <div className="absolute right-0 top-full mt-1 w-48 bg-white dark:bg-slate-800 rounded-lg shadow-lg border border-slate-200 dark:border-slate-700 py-1 z-50">
+                {coupleName && (
+                  <div className="px-3 py-2 border-b border-slate-100 dark:border-slate-700">
+                    <p className="text-sm font-medium text-slate-900 dark:text-white truncate">{coupleName}</p>
+                  </div>
+                )}
+                <button
+                  onClick={() => {
+                    setDropdownOpen(false);
+                    onLogout();
+                  }}
+                  className="w-full flex items-center gap-2 px-3 py-2 text-sm text-slate-600 dark:text-slate-400 hover:bg-red-50 dark:hover:bg-red-900/20 hover:text-red-600 dark:hover:text-red-400 transition-colors"
+                >
+                  <LogOut size={16} />
+                  Sign Out
+                </button>
+              </div>
+            )}
+          </div>
         </div>
       </div>
     </header>
