@@ -223,7 +223,7 @@ export default function MoneyDashboard() {
 
       // Fetch all money data in parallel
       const [summaryRes, incomingRes, contractsRes] = await Promise.all([
-        fetch(`${baseUrl}/admin/autopilot/status`, { headers }),
+        fetch(`${baseUrl}/admin/autopilot/admin-status`, { headers }),
         fetch(`${baseUrl}/contracts?status=signed`, { headers }),
         fetch(`${baseUrl}/contracts?status=active`, { headers })
       ]);
@@ -291,7 +291,7 @@ export default function MoneyDashboard() {
             const weddingId = wedding._id || wedding.id;
             if (!weddingId) return [];
             try {
-              const budgetRes = await fetch(`${baseUrl}/weddings/${weddingId}/budget`, { headers });
+              const budgetRes = await fetch(`${baseUrl}/admin/weddings/${weddingId}/budget`, { headers });
               if (budgetRes.ok) {
                 const budgetData = await budgetRes.json();
                 const categories = budgetData.categories || [];

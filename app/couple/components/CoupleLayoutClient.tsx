@@ -5,8 +5,6 @@ import { usePathname } from 'next/navigation';
 import { ThemeProvider } from '@/contexts/ThemeContext';
 import ErrorBoundary from '@/components/ErrorBoundary';
 import { Toaster } from 'sonner';
-// TODO: AIChatWidget requires AdminProvider (useAdmin hook). Build a couple-compatible
-// wrapper that reads couple_token from localStorage before adding it here.
 
 interface CoupleLayoutClientProps {
   children: React.ReactNode;
@@ -60,7 +58,6 @@ export default function CoupleLayoutClient({ children }: CoupleLayoutClientProps
           </ErrorBoundary>
         </div>
 
-        {/* TODO: Add couple-compatible AIChatWidget here once it supports couple auth */}
 
         <Toaster position="top-right" richColors theme="system" />
       </div>

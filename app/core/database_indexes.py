@@ -1469,7 +1469,7 @@ async def create_campaign_platform_indexes():
     await vendor_profiles.create_index(
         [("created_by", 1), ("source_campaign_id", 1)],
         unique=True,
-        sparse=True,  # Only index docs where source_campaign_id exists
+        partialFilterExpression={"source_campaign_id": {"$exists": True, "$ne": None}},
         name="idx_sponsored_ad_dedup",
     )
 

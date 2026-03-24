@@ -7,10 +7,14 @@ import { toast } from 'sonner';
 import CoupleSidebar, { type CoupleSection } from '../components/CoupleSidebar';
 import CoupleTopHeader from '../components/CoupleTopHeader';
 import PageHeader from '@/components/ui/PageHeader';
+import MessageBubble from '@/components/ui/MessageBubble';
+import ChatInput from '@/components/ui/ChatInput';
+import InboxListItem from '@/components/ui/InboxListItem';
+import SplitPanelInbox from '@/components/ui/SplitPanelInbox';
 import {
-  Heart, Calendar, Users, DollarSign, FileText, Bell,
+  Heart, Calendar, Users, DollarSign, FileText,
   Clock, MapPin, ChevronRight, Loader2,
-  CheckCircle, AlertCircle, Sparkles, Phone, Mail, Building2, Archive,
+  CheckCircle, AlertCircle, Phone, Mail, Building2, Archive,
   ClipboardList, Send, ChevronDown, ChevronUp,
   MessageSquare, StickyNote, FileSignature, Eye,
   MessageCircle,
@@ -1083,7 +1087,7 @@ function FormsSection({ forms }: { forms: FormItem[] }) {
 
 
 // ============================================================================
-// SECTION: INBOX (merged Messages + Updates)
+// SECTION: INBOX (shared components, split-panel layout)
 // ============================================================================
 
 interface MessageItem {
@@ -1101,19 +1105,12 @@ function InboxSection({ updates, onMessageSent, onMessagesRead, archived = false
   onMessagesRead: () => void;
   archived?: boolean;
 }) {
-  return (
-    <div className="space-y-4">
-      <PageHeader title="Inbox" description="Messages between you and your planner" />
-      <MessagesContent onMessageSent={onMessageSent} onMessagesRead={onMessagesRead} archived={archived} />
-    </div>
-  );
-}
-
-function MessagesContent({ onMessageSent, onMessagesRead, archived = false }: { onMessageSent: () => void; onMessagesRead: () => void; archived?: boolean }) {
   const [messages, setMessages] = useState<MessageItem[]>([]);
   const [msgLoading, setMsgLoading] = useState(true);
   const [newMessage, setNewMessage] = useState('');
   const [sending, setSending] = useState(false);
+  const [showChat, setShowChat] = useState(false);
+  const [mobileShowDetail, setMobileShowDetail] = useState(false);
   const messagesEndRef = useCallback((node: HTMLDivElement | null) => {
     if (node) node.scrollIntoView({ behavior: 'smooth' });
   }, []);
@@ -1121,7 +1118,6 @@ function MessagesContent({ onMessageSent, onMessagesRead, archived = false }: { 
   const fetchMessages = useCallback(async () => {
     const token = localStorage.getItem('couple_token');
     if (!token) return;
-
     try {
       const res = await fetch(`${getApiBaseUrl()}/couple/portal/messages?limit=100`, {
         headers: { Authorization: `Bearer ${token}` },
@@ -1138,15 +1134,12 @@ function MessagesContent({ onMessageSent, onMessagesRead, archived = false }: { 
     }
   }, []);
 
-  useEffect(() => {
-    fetchMessages();
-  }, [fetchMessages]);
+  useEffect(() => { fetchMessages(); }, [fetchMessages]);
 
   const handleSend = async () => {
     if (!newMessage.trim() || sending) return;
     const token = localStorage.getItem('couple_token');
     if (!token) return;
-
     setSending(true);
     try {
       const res = await fetch(`${getApiBaseUrl()}/couple/portal/messages`, {
@@ -1154,7 +1147,6 @@ function MessagesContent({ onMessageSent, onMessagesRead, archived = false }: { 
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
         body: JSON.stringify({ content: newMessage.trim() }),
       });
-
       if (res.ok) {
         setNewMessage('');
         onMessageSent();
@@ -1170,141 +1162,120 @@ function MessagesContent({ onMessageSent, onMessagesRead, archived = false }: { 
     }
   };
 
-  if (msgLoading) {
-    return (
-      <div className="flex items-center justify-center py-12">
-        <Loader2 className="w-6 h-6 animate-spin text-indigo-500" />
-      </div>
-    );
-  }
+  const handleRefresh = () => { setMsgLoading(true); fetchMessages(); };
 
-  return (
-    <div className="bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm flex flex-col" style={{ height: 'calc(100vh - 320px)', minHeight: '400px', maxHeight: '700px' }}>
-      {/* Messages area */}
-      <div className="flex-1 overflow-y-auto p-4 space-y-3">
-        {messages.length === 0 ? (
-          <div className="flex flex-col items-center justify-center h-full text-slate-400 dark:text-slate-500">
-            <MessageCircle className="w-12 h-12 mb-3 opacity-50" />
-            <p className="text-sm font-medium">No messages yet</p>
-            <p className="text-xs mt-1">Send a message to start a conversation with your planner.</p>
-          </div>
-        ) : (
-          messages.map((msg) => {
-            const isCouple = msg.sender_role === 'couple';
-            return (
-              <div key={msg.id} className={`flex ${isCouple ? 'justify-end' : 'justify-start'}`}>
-                <div className={`max-w-[75%] rounded-2xl px-4 py-2.5 ${
-                  isCouple
-                    ? 'bg-indigo-600 text-white rounded-br-md'
-                    : 'bg-slate-100 dark:bg-slate-700 text-slate-900 dark:text-white rounded-bl-md'
-                }`}>
-                  {!isCouple && (
-                    <p className="text-xs font-medium text-slate-500 dark:text-slate-400 mb-1">{msg.sender_name}</p>
-                  )}
-                  <p className="text-sm whitespace-pre-wrap">{msg.content}</p>
-                  <div className={`flex items-center gap-1.5 mt-1 ${isCouple ? 'justify-end' : ''}`}>
-                    <span className={`text-xs ${isCouple ? 'text-white/50' : 'text-slate-400 dark:text-slate-500'}`}>
-                      {msg.created_at ? new Date(msg.created_at).toLocaleTimeString('en-US', {
-                        hour: 'numeric', minute: '2-digit', hour12: true,
-                      }) : ''}
-                    </span>
-                    {isCouple && msg.read_by_planner && (
-                      <Eye className="w-3 h-3 text-white/50" />
-                    )}
-                  </div>
-                </div>
-              </div>
-            );
-          })
-        )}
-        <div ref={messagesEndRef} />
-      </div>
-
-      {/* Input area */}
-      {archived ? (
-        <div className="border-t border-slate-200 dark:border-slate-700 p-3 bg-slate-50 dark:bg-slate-700/50">
-          <p className="text-sm text-slate-500 dark:text-slate-400 text-center flex items-center justify-center gap-2">
-            <Archive className="w-4 h-4" />
-            Messaging is disabled for archived weddings.
-          </p>
-        </div>
-      ) : (
-        <div className="border-t border-slate-200 dark:border-slate-700 p-3 flex gap-2">
-          <input
-            type="text"
-            value={newMessage}
-            onChange={(e) => setNewMessage(e.target.value)}
-            onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend(); } }}
-            placeholder="Type a message..."
-            className="flex-1 px-4 py-2.5 border border-slate-300 dark:border-slate-600 rounded-full text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 bg-white dark:bg-slate-700 text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-slate-500"
-            disabled={sending}
-          />
-          <button
-            onClick={handleSend}
-            disabled={!newMessage.trim() || sending}
-            className="w-10 h-10 flex items-center justify-center bg-indigo-600 hover:bg-indigo-700 text-white rounded-full transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-          >
-            {sending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
-          </button>
-        </div>
-      )}
-    </div>
-  );
-}
-
-function UpdatesContent({ updates }: { updates: UpdateItem[] }) {
-  if (!updates || updates.length === 0) {
-    return (
-      <div className="text-center py-12">
-        <Bell className="w-12 h-12 text-slate-300 dark:text-slate-600 mx-auto mb-3" />
-        <p className="text-slate-600 dark:text-slate-400 font-medium">No updates yet</p>
-        <p className="text-sm text-slate-400 dark:text-slate-500 mt-1">Your planner will post updates and milestones here.</p>
-      </div>
-    );
-  }
-
-  const categoryColors: Record<string, string> = {
-    venue: 'bg-purple-100 dark:bg-purple-950/30 text-purple-700 dark:text-purple-400',
-    catering: 'bg-orange-100 dark:bg-orange-950/30 text-orange-700 dark:text-orange-400',
-    decor: 'bg-pink-100 dark:bg-pink-950/30 text-pink-700 dark:text-pink-400',
-    timeline: 'bg-blue-100 dark:bg-blue-950/30 text-blue-700 dark:text-blue-400',
-    budget: 'bg-green-100 dark:bg-green-950/30 text-green-700 dark:text-green-400',
-    vendor: 'bg-indigo-100 dark:bg-indigo-950/30 text-indigo-700 dark:text-indigo-400',
-  };
+  const lastMessage = messages.length > 0 ? messages[messages.length - 1] : null;
+  const unreadCount = messages.filter(m => m.sender_role === 'planner' && !m.read_by_planner).length;
+  const conversationPreview = lastMessage
+    ? `${lastMessage.sender_role === 'couple' ? 'You' : lastMessage.sender_name}: ${lastMessage.content}`
+    : 'Start a conversation with your planner';
 
   return (
     <div className="space-y-4">
-      {updates.map((update) => (
-        <div key={update.id} className={`bg-white dark:bg-slate-800 rounded-xl border shadow-sm overflow-hidden ${
-          update.is_milestone ? 'border-amber-400 dark:border-amber-600' : 'border-slate-200 dark:border-slate-700'
-        }`}>
-          {update.is_milestone && (
-            <div className="bg-gradient-to-r from-amber-500 to-orange-500 px-4 py-1.5">
-              <div className="flex items-center gap-1.5 text-white text-xs font-medium">
-                <Sparkles className="w-3.5 h-3.5" />
-                MILESTONE
+      <PageHeader title="Inbox" description="Messages between you and your planner" />
+
+      {/* Toolbar */}
+      <div className="flex items-center justify-between flex-wrap gap-2">
+        <span className="text-sm text-slate-500 dark:text-slate-400">
+          1 conversation
+          {unreadCount > 0 && (
+            <span className="ml-2 inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-400">
+              {unreadCount} unread
+            </span>
+          )}
+        </span>
+        <button
+          onClick={handleRefresh}
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm bg-white text-slate-600 hover:bg-slate-100 dark:bg-slate-800 dark:text-slate-400 transition border border-slate-200 dark:border-slate-700"
+        >
+          <Loader2 size={14} className={msgLoading ? 'animate-spin' : ''} />
+        </button>
+      </div>
+
+      {/* Split-panel layout using shared component */}
+      <SplitPanelInbox
+        loading={msgLoading}
+        hasSelection={showChat}
+        mobileShowDetail={mobileShowDetail}
+        listContent={
+          <InboxListItem
+            id="planner-conversation"
+            type="planner"
+            name="Your Planner"
+            preview={conversationPreview}
+            isRead={unreadCount === 0}
+            isSelected={showChat}
+            timestamp={lastMessage?.created_at ? new Date(lastMessage.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : ''}
+            unreadCount={unreadCount > 0 ? unreadCount : undefined}
+            accentColor="indigo"
+            onClick={() => { setShowChat(true); setMobileShowDetail(true); }}
+          />
+        }
+        detailContent={
+          <div className="bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700 flex flex-col h-[calc(100vh-300px)]">
+            {/* Chat header */}
+            <div className="p-4 border-b border-slate-100 dark:border-slate-800">
+              <button
+                onClick={() => { setMobileShowDetail(false); setShowChat(false); }}
+                className="lg:hidden flex items-center gap-1 text-sm text-slate-500 mb-3"
+              >
+                <ChevronDown size={16} className="rotate-90" />
+                Back to inbox
+              </button>
+              <div className="flex items-center gap-3">
+                <div className="w-9 h-9 rounded-full bg-indigo-100 dark:bg-indigo-900/30 flex items-center justify-center">
+                  <Heart size={16} className="text-indigo-500" />
+                </div>
+                <div>
+                  <h2 className="text-lg font-semibold text-slate-900 dark:text-white">Your Planner</h2>
+                  <p className="text-xs text-slate-400">Direct conversation</p>
+                </div>
               </div>
             </div>
-          )}
-          <div className="p-5">
-            <div className="flex items-start justify-between mb-2">
-              <h3 className="font-medium text-slate-900 dark:text-white">{update.title}</h3>
-              {update.category && (
-                <span className={`text-xs px-2 py-0.5 rounded-full ${categoryColors[update.category] || 'bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-400'}`}>
-                  {update.category}
-                </span>
+
+            {/* Messages area using shared MessageBubble */}
+            <div className="flex-1 overflow-y-auto p-4 space-y-3">
+              {msgLoading ? (
+                <div className="text-center text-slate-400 py-8">
+                  <Loader2 className="w-5 h-5 mx-auto mb-2 animate-spin" />
+                  Loading messages...
+                </div>
+              ) : messages.length === 0 ? (
+                <div className="flex flex-col items-center justify-center h-full text-slate-400 dark:text-slate-500">
+                  <MessageCircle className="w-12 h-12 mb-3 opacity-50" />
+                  <p className="text-sm font-medium">No messages yet</p>
+                  <p className="text-xs mt-1">Send a message to start a conversation with your planner.</p>
+                </div>
+              ) : (
+                messages.map((msg) => (
+                  <MessageBubble
+                    key={msg.id}
+                    content={msg.content}
+                    senderName={msg.sender_role !== 'couple' ? msg.sender_name : undefined}
+                    isSelf={msg.sender_role === 'couple'}
+                    timestamp={msg.created_at ? new Date(msg.created_at).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true }) : undefined}
+                    isRead={msg.read_by_planner}
+                    showReadIndicator={true}
+                    accentColor="indigo"
+                  />
+                ))
               )}
+              <div ref={messagesEndRef} />
             </div>
-            <p className="text-sm text-slate-600 dark:text-slate-300 whitespace-pre-wrap">{update.content}</p>
-            <div className="mt-3 flex items-center gap-2 text-xs text-slate-400 dark:text-slate-500">
-              {update.created_by && <span>{update.created_by}</span>}
-              {update.created_at && (
-                <span>· {new Date(update.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</span>
-              )}
-            </div>
+
+            {/* Input area using shared ChatInput */}
+            <ChatInput
+              value={newMessage}
+              onChange={setNewMessage}
+              onSend={handleSend}
+              sending={sending}
+              archived={archived}
+              placeholder="Message your planner..."
+              accentColor="indigo"
+            />
           </div>
-        </div>
-      ))}
+        }
+      />
     </div>
   );
 }
