@@ -17,7 +17,12 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
 OUTPUT_DIR="$PROJECT_ROOT/app/types/generated"
-MODELS_DIR="$PROJECT_ROOT/app/models"
+
+# Require bash 4+ for associative arrays
+if [[ ${BASH_VERSINFO[0]} -lt 4 ]]; then
+    echo "❌ Bash 4+ required (found ${BASH_VERSION}). On macOS, install via: brew install bash"
+    exit 1
+fi
 
 # Ensure output directory exists
 mkdir -p "$OUTPUT_DIR"
@@ -57,13 +62,17 @@ for module in "${!MODEL_MAP[@]}"; do
     output_file="${MODEL_MAP[$module]}"
     echo "  → $module → $OUTPUT_DIR/$output_file"
 
+    ERR_LOG=$(mktemp)
     if ! pydantic2ts \
         --module "$module" \
         --output "$OUTPUT_DIR/$output_file" \
-        2>/dev/null; then
-        echo "  ⚠️  Failed to generate $output_file (module may have runtime deps)"
+        2>"$ERR_LOG"; then
+        echo "  ⚠️  Failed to generate $output_file:"
+        # Show the actual error (indented) so it's not silently lost
+        sed 's/^/      /' "$ERR_LOG"
         FAILED=$((FAILED + 1))
     fi
+    rm -f "$ERR_LOG"
 done
 
 # Add auto-generated header to each file

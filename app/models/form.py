@@ -222,7 +222,11 @@ class FormModel(BaseModel):
     email_distribution: Optional[EmailDistributionSettings] = Field(None, description="Email settings")
     created_by: str = Field(..., description="Creator email")
     wedding_id: Optional[str] = Field(None, description="Associated wedding ID")
-    template_type: Optional[str] = Field(None, description="Form template type")
+    template_type: Optional[str] = Field(
+        None,
+        description="DEPRECATED — use form_type instead. Retained for backward compatibility "
+                    "with existing documents. Will be removed in a future sprint.",
+    )
     is_active: bool = Field(default=True, description="Whether form is active")
     created_at: datetime = Field(default_factory=datetime.utcnow, description="Creation timestamp")
     updated_at: datetime = Field(default_factory=datetime.utcnow, description="Last update timestamp")

@@ -8,6 +8,7 @@ from datetime import datetime, timedelta, timezone
 from app.core.settings import settings
 from app.core.database import mongo
 from bson import ObjectId
+from pymongo.errors import DuplicateKeyError
 import logging
 
 from app.models.subscription import SubscriptionStatus
@@ -1127,12 +1128,10 @@ class StripeService:
                             "created_at": datetime.now(timezone.utc),
                             "processed_at": None,
                         })
-                    except Exception as insert_err:
-                        if "duplicate" in str(insert_err).lower() or "E11000" in str(insert_err):
-                            # Another concurrent request already claimed this event
-                            logger.info(f"Concurrent duplicate insert for event {event_id}, skipping")
-                            return {"status": "already_processed", "event_id": event_id, "event_type": event_type}
-                        raise
+                    except DuplicateKeyError:
+                        # Another concurrent request already claimed this event
+                        logger.info(f"Concurrent duplicate insert for event {event_id}, skipping")
+                        return {"status": "already_processed", "event_id": event_id, "event_type": event_type}
                 else:
                     # Re-processing a previously failed/stuck event
                     await mongo.db["stripe_webhook_events"].update_one(
@@ -1186,8 +1185,26 @@ class StripeService:
                     logger.info(f"Unhandled event type: {event_type}")
                     result = {"status": "ignored", "event_type": event_type}
 
-                # ── Mark event as successfully processed ──────────────
+            except Exception as handler_err:
+                # ── Mark event as failed with error detail ────────────
                 if event_id:
+                    try:
+                        await mongo.db["stripe_webhook_events"].update_one(
+                            {"event_id": event_id},
+                            {"$set": {
+                                "status": "failed",
+                                "error_message": str(handler_err)[:2000],
+                            }},
+                        )
+                    except Exception as update_err:
+                        logger.error(f"Failed to mark event {event_id} as failed: {update_err}")
+                raise
+
+            # ── Mark event as successfully processed ──────────────
+            # Placed OUTSIDE the handler try/except so a failure here
+            # does not get conflated with a handler failure.
+            if event_id:
+                try:
                     await mongo.db["stripe_webhook_events"].update_one(
                         {"event_id": event_id},
                         {"$set": {
@@ -1195,20 +1212,11 @@ class StripeService:
                             "processed_at": datetime.now(timezone.utc),
                         }},
                     )
+                except Exception as update_err:
+                    # Handler succeeded — don't crash on status bookkeeping failure
+                    logger.error(f"Failed to mark event {event_id} as processed: {update_err}")
 
-                return result
-
-            except Exception as handler_err:
-                # ── Mark event as failed with error detail ────────────
-                if event_id:
-                    await mongo.db["stripe_webhook_events"].update_one(
-                        {"event_id": event_id},
-                        {"$set": {
-                            "status": "failed",
-                            "error_message": str(handler_err)[:2000],
-                        }},
-                    )
-                raise
+            return result
 
         except SignatureVerificationError as e:
             logger.error(f"Invalid webhook signature: {str(e)}")

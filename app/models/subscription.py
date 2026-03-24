@@ -151,7 +151,9 @@ class UserSubscriptionModel(BaseModel):
     version: int = Field(default=1, description="Optimistic lock version — increment on every write, include in update filter")
     state_history: List[Dict[str, Any]] = Field(
         default_factory=list,
-        description="Append-only log of state transitions [{from, to, trigger, at, metadata}]",
+        description="Append-only log of state transitions [{from, to, trigger, at, metadata}]. "
+                    "IMPORTANT: When appending via $push, use $slice: -100 to cap at 100 entries "
+                    "and prevent unbounded document growth.",
     )
 
     # System fields
