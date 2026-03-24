@@ -1,7 +1,7 @@
 # Vendor Advertising Feature — Changelog
 
 ## Phase 10.3: Notification Shared-Resource Refactor + Ad Enable/Disable Layout Fix
-**Date:** 2026-03-23
+**Date:** 2026-03-23 — 2026-03-24
 **Version:** 7.3.0
 
 ### Overview
@@ -33,11 +33,12 @@ Two areas of work: (1) eliminating duplicated notification infrastructure in the
 **Fix:**
 - **`app/admin/vendors/components/CampaignSponsoredRail.tsx`** — Added `onVisibilityChange` callback prop. Fires `onVisibilityChange(true/false)` after loading completes, reporting whether cards are visible.
 - **All 4 parent pages** (`planner/page.tsx`, `vendors/page.tsx`, `budget/page.tsx`, `weddings/[id]/page.tsx`):
-  - Added `showAdRail` state (default `true`)
+  - Added `showAdRail` state (default `false` — page starts full-width, no skeleton flash)
   - Grid toggles between `lg:grid-cols-4` (ads on) and single-column (ads off)
   - Main content toggles between `lg:col-span-3` and full-width
   - Rail column uses `hidden` class when empty (component stays mounted for re-detection)
   - Passed `onVisibilityChange={setShowAdRail}` to `CampaignSponsoredRail`
+  - Default `false` prevents layout flash on login/reload — rail only appears after cards confirmed
 
 | Page | Grid (ads on) | Grid (ads off) |
 |------|--------------|----------------|
