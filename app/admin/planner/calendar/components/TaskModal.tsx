@@ -291,8 +291,8 @@ export default function TaskModal({
               className="px-2 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg dark:bg-gray-700 dark:text-gray-100"
             >
               <option value="">No wedding</option>
-              {weddings.map((w) => (
-                <option key={w.id} value={w.id}>{w.couple_names}</option>
+              {weddings.map((w, idx) => (
+                <option key={w.id || `wedding-${idx}`} value={w.id}>{w.couple_names}</option>
               ))}
             </select>
             <select

@@ -516,7 +516,8 @@ class CouplePortalService:
         Reuses the existing email_service (Resend) — no new email infra.
         """
         try:
-            from app.services.email_service import email_service
+            from app.services.email_service_resend import ResendEmailService
+            email_service = ResendEmailService()
             from app.core.settings import settings
 
             frontend_url = getattr(settings, 'frontend_url', None) or "https://thespecialwedding.io"
@@ -596,9 +597,9 @@ class CouplePortalService:
             """
 
             await email_service.send_email(
-                to=couple_doc["email"],
+                to_email=couple_doc["email"],
                 subject=f"Wedding Portal Update — {couple_name or 'Your Wedding'}",
-                html=html_content,
+                html_content=html_content,
             )
             return True
 

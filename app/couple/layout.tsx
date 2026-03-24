@@ -1,4 +1,5 @@
 import type { Metadata, Viewport } from 'next';
+import CoupleLayoutClient from './components/CoupleLayoutClient';
 
 export const metadata: Metadata = {
   title: 'Wedding Portal | The Special Wedding',
@@ -24,8 +25,8 @@ export const viewport: Viewport = {
 
 export default function CoupleLayout({ children }: { children: React.ReactNode }) {
   return (
-    <div className="min-h-screen bg-gray-50 dark:bg-slate-900">
+    <CoupleLayoutClient>
       {children}
-    </div>
+    </CoupleLayoutClient>
   );
 }

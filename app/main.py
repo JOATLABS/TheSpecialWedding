@@ -561,6 +561,7 @@ admin_routers = [
     (trial_management_router, "Admin"),
     # vendor_forms_router - already registered publicly with route-level auth
     # vendor_management_router - registered at /admin prefix (line ~300)
+    (notification_stream_router, "Notifications SSE"),  # Must come BEFORE notification_router so /notifications/stream matches before /notifications/{notification_id}
     (notification_router, "Notifications"),
     (support_router, "Support"),
     (admin_platform_metrics_router, "ROOT_ADMIN"),
@@ -578,7 +579,6 @@ admin_routers = [
     (guest_export_router, "Guest Export"),
     (web_push_router, "Web Push"),
     (knowledge_base_router, "Knowledge Base"),
-    (notification_stream_router, "Notifications SSE"),
     (team_management_router, "Team Management"),
     (inbound_emails_router, "Inbound Emails"),
     (couple_invite_router, "Couple Portal"),  # Planner-side couple invitation management

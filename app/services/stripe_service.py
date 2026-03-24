@@ -791,12 +791,14 @@ class StripeService:
 
             unset_fields: Dict[str, Any] = {}
 
-            # Auto-activate and verify when a paid/trial subscription is established
+            # Auto-activate and verify when a paid/trial subscription is established.
+            # NOTE: We intentionally do NOT $unset email_verification_token here.
+            # The token must remain in the DB so that the GET /verify-email/{token}
+            # endpoint can still find the user when they click the email link.
+            # The verify_email endpoint is responsible for cleaning up the token.
             if internal_status in (SubscriptionStatus.ACTIVE.value, SubscriptionStatus.TRIAL.value):
                 user_updates["is_active"] = True
                 user_updates["email_verified"] = True
-                unset_fields["email_verification_token"] = ""
-                unset_fields["verification_token_expires"] = ""
                 unset_fields["pending_expires_at"] = ""
 
             user_update_doc = {"$set": user_updates}

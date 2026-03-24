@@ -35,22 +35,77 @@ HEARTBEAT_INTERVAL = 30
 async def _authenticate_from_query(token: str) -> ExtendedAuthUser:
     """Validate a JWT passed as a query parameter and return an ExtendedAuthUser.
 
-    Reuses get_current_user_extended by constructing a fake credentials object,
-    so SSE auth stays in sync with the main auth logic automatically.
+    Uses verify_token directly and performs a lightweight user lookup, so SSE
+    auth doesn't rely on get_current_user_extended (which was designed for
+    FastAPI DI injection).  This avoids subtle issues where request=None
+    causes the generic catch-all to mask real errors as 401.
+
     The browser EventSource API cannot send custom headers, so the token
     comes via query parameter instead.
     """
-    from fastapi.security import HTTPAuthorizationCredentials
-    from app.dependencies.auth_extended import get_current_user_extended
-
-    credentials = HTTPAuthorizationCredentials(scheme="Bearer", credentials=token)
+    # Step 1: Verify JWT
     try:
-        return await get_current_user_extended(credentials=credentials)
-    except HTTPException:
-        raise
+        payload = verify_token(token)
+    except ValueError as e:
+        logger.warning(f"SSE auth: invalid token — {e}")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid or expired token",
+        )
+
+    email = payload.get("sub")
+    role = payload.get("role")
+    if not email:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Token missing subject claim",
+        )
+
+    # Step 2: Verify user exists and is active (lightweight DB lookup)
+    try:
+        user_data = await mongo.get_users_collection().find_one({"email": email})
     except Exception as e:
-        logger.warning(f"SSE auth failed: {e}")
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Authentication failed")
+        logger.error(f"SSE auth: DB lookup failed for {email}: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Temporary service error — please retry",
+        )
+
+    if not user_data:
+        logger.warning(f"SSE auth: user not found — {email}")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="User not found",
+        )
+
+    # Step 3: Check essential gates (email verified, account active)
+    if not user_data.get("is_active", True):
+        logger.warning(f"SSE auth: deactivated account — {email}")
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Account deactivated",
+        )
+
+    root_admin_email = os.getenv("ROOT_ADMIN_EMAIL", "thedeveloper@thespecialwedding.io")
+    if email != root_admin_email and not user_data.get("email_verified"):
+        logger.warning(f"SSE auth: email not verified — {email}")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Email not verified",
+        )
+
+    # Resolve role from DB (may differ from JWT for ROOT_ADMIN)
+    if email == root_admin_email:
+        role = "ROOT_ADMIN"
+    else:
+        role = user_data.get("role", role or "wedding_planner")
+
+    # Convert ObjectId to string for consistency
+    if "_id" in user_data and isinstance(user_data["_id"], ObjectId):
+        user_data["_id"] = str(user_data["_id"])
+
+    logger.info(f"SSE auth succeeded for {email} (role={role})")
+    return ExtendedAuthUser(email=email, role=role, user_data=user_data)
 
 
 async def _get_combined_count(user_email: str, user_role: str) -> dict:
