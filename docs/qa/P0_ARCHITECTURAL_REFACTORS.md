@@ -124,7 +124,7 @@ related-but-different document types in a single collection is:
    `"rsvp_custom"`, `"general"`) [5].
 2. **Conditional validation** — use MongoDB's `$jsonSchema` with `oneOf` for
    type-specific field requirements [5].
-3. **Compound indexes including discriminator** — `{ form_type: 1, user_id: 1, created_at: -1 }` [5].
+3. **Compound indexes including discriminator** — `{ form_type: 1, created_by: 1, created_at: -1 }` [5].
 4. **Single service + route aliases** — merge routes into `forms.py` with type filtering,
    keep `vendor_forms.py` as thin aliases for backward compat (1 sprint deprecation window).
 
@@ -137,7 +137,7 @@ class FormModel(BaseModel):
     # ... shared fields ...
 
 # MongoDB index
-db.forms.create_index([("form_type", 1), ("user_id", 1), ("created_at", -1)])
+db.forms.create_index([("form_type", 1), ("created_by", 1), ("created_at", -1)])
 ```
 
 **Files to Change**: `forms.py`, `vendor_forms.py`, `form_service.py`, `models/form.py`

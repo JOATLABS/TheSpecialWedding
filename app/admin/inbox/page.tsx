@@ -298,7 +298,7 @@ export default function InboxPage() {
       setDetailLoading(true);
       const response = await fetch(
         `${baseUrl}/couple-portal/messages?wedding_id=${weddingId}&limit=100`,
-        { headers: { Authorization: `Bearer ${token}` } }
+        { headers: { Authorization: `Bearer ${token}` }, cache: 'no-store' }
       );
       if (response.ok) {
         const data = await response.json();

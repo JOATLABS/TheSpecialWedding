@@ -1121,6 +1121,7 @@ function InboxSection({ updates, onMessageSent, onMessagesRead, archived = false
     try {
       const res = await fetch(`${getApiBaseUrl()}/couple/portal/messages?limit=100`, {
         headers: { Authorization: `Bearer ${token}` },
+        cache: 'no-store',
       });
       if (res.ok) {
         const data = await res.json();

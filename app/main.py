@@ -633,7 +633,11 @@ async def add_cache_headers(request: Request, call_next):
 
         if any(path.endswith(ext) for ext in ['.css', '.js', '.png', '.jpg', '.jpeg', '.gif', '.ico', '.woff', '.woff2']):
             response.headers["Cache-Control"] = f"public, max-age={settings.static_cache_max_age}"
-        elif path.startswith("/api/"):
+        elif request.method in ("POST", "PUT", "PATCH", "DELETE"):
+            # Mutations must never be cached
+            response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+        elif path.startswith("/api/") or path.startswith("/couple-portal/") or path.startswith("/couple/") or path.startswith("/admin/"):
+            # All dynamic API/portal endpoints — no caching
             response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
         else:
             response.headers["Cache-Control"] = "public, max-age=300"  # 5 minutes for other content

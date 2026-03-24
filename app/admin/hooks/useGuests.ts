@@ -103,8 +103,13 @@ export function useGuests(weddingId: string, options: UseGuestsOptions = {}): Us
           number_of_plus_ones_allowed: g.number_of_plus_ones_allowed,
           plus_one_submitted: g.plus_one_submitted,
           sms_opt_in: g.sms_opt_in,
+          sms_opt_in_date: g.sms_opt_in_date,
+          sms_opt_out_date: g.sms_opt_out_date,
           email_opt_in: g.email_opt_in,
+          email_opt_in_date: g.email_opt_in_date,
+          email_opt_out_date: g.email_opt_out_date,
           phone_status: g.phone_status,
+          phone_status_updated_at: g.phone_status_updated_at,
           invite_sent: g.invite_sent,
           invite_sent_date: g.invite_sent_date,
           // Seating constraint fields

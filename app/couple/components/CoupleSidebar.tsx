@@ -99,14 +99,12 @@ export default function CoupleSidebar({
         <div className="flex items-center justify-between h-16 px-3 border-b border-slate-200/50 dark:border-slate-700/50">
           <Link href="/couple/dashboard" className="flex items-center flex-1 min-w-0 mr-2">
             {isOpen ? (
-              <NextImage
+              <img
                 src="/logo.svg"
                 alt="The Special Wedding"
-                width={140}
+                width={144}
                 height={36}
-                className="h-9 w-auto"
-                unoptimized
-                priority
+                className="block shrink-0"
               />
             ) : (
               <NextImage

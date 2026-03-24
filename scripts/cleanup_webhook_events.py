@@ -70,11 +70,16 @@ async def cleanup_webhook_events(retention_days: int = 30, dry_run: bool = False
             logger.info(f"[DRY RUN] Would delete {count} events. No changes made.")
             return count
 
-        # Delete in batches to avoid long locks
+        # Delete in batches to avoid long locks.
+        # Max iterations guard prevents infinite loops if concurrent inserts
+        # keep adding matching documents between batches.
         batch_size = 500
+        max_iterations = (count // batch_size) + 10  # generous headroom
         total_deleted = 0
+        iteration = 0
 
-        while True:
+        while iteration < max_iterations:
+            iteration += 1
             # Find a batch of IDs to delete
             cursor = collection.find(query, {"_id": 1}).limit(batch_size)
             batch_ids = [doc["_id"] async for doc in cursor]
@@ -85,6 +90,12 @@ async def cleanup_webhook_events(retention_days: int = 30, dry_run: bool = False
             result = await collection.delete_many({"_id": {"$in": batch_ids}})
             total_deleted += result.deleted_count
             logger.info(f"  Deleted batch: {result.deleted_count} events (total: {total_deleted}/{count})")
+
+        if iteration >= max_iterations:
+            logger.warning(
+                f"⚠️  Reached max iteration limit ({max_iterations}). "
+                f"Deleted {total_deleted} of {count} events. Re-run if needed."
+            )
 
         logger.info(f"✅ Cleanup complete. Deleted {total_deleted} webhook events.")
 

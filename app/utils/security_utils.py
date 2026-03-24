@@ -266,6 +266,19 @@ class FormSecurityValidator:
                 raise ValueError("Template type must be a string")
             sanitized['template_type'] = InputSanitizer.sanitize_text(template_type, 50)
 
+        # Validate form_type polymorphic discriminator (P0-10)
+        if 'form_type' in form_data:
+            form_type = form_data['form_type']
+            allowed_form_types = {
+                'general', 'vendor_intake', 'rsvp_custom', 'wedding_feedback',
+                'guest_feedback', 'vendor_questionnaire', 'contact_form',
+                'survey', 'registration',
+            }
+            if form_type and isinstance(form_type, str) and form_type in allowed_form_types:
+                sanitized['form_type'] = form_type
+            elif form_type:
+                raise ValueError(f"Invalid form type: {form_type}. Allowed: {', '.join(sorted(allowed_form_types))}")
+
         return sanitized
 
     @staticmethod

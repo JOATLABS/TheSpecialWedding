@@ -2,7 +2,6 @@
 
 import React, { useState, useEffect, Suspense } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
-import NextImage from 'next/image';
 import { getApiBaseUrl } from '@/utils/env';
 import { toast, Toaster } from 'sonner';
 import { Loader2, Eye, EyeOff, Shield, CheckCircle2, AlertCircle } from 'lucide-react';
@@ -239,14 +238,12 @@ function AcceptInviteContent() {
       <div className="w-full max-w-[480px]">
         {/* Logo */}
         <div className="text-center mb-8">
-          <NextImage
+          <img
             src="/logo.svg"
             alt="The Special Wedding"
-            width={180}
-            height={45}
-            className="h-10 w-auto mx-auto mb-3"
-            unoptimized
-            priority
+            width={160}
+            height={40}
+            className="mx-auto mb-3 block"
           />
           <p className="text-sm text-slate-500">You&apos;ve been invited to join a team</p>
         </div>

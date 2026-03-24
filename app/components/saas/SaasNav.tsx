@@ -2,7 +2,6 @@
 
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
-import Image from 'next/image';
 import { usePathname } from 'next/navigation';
 import { Menu, X } from 'lucide-react';
 
@@ -42,14 +41,12 @@ export default function SaasNav() {
         <div className="flex items-center justify-between h-16">
           {/* Logo / Brand — left-aligned */}
           <Link href="/" className="flex items-center group flex-shrink-0">
-            <Image
+            <img
               src="/logo.svg"
               alt="The Special Wedding"
-              width={200}
-              height={50}
-              className="h-10 w-auto"
-              unoptimized
-              priority
+              width={160}
+              height={40}
+              className="block shrink-0"
             />
           </Link>
 
