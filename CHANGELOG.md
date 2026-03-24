@@ -5,6 +5,61 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.28.0] - 2026-03-24 — Planner Inbox, Couple Messaging, AI Chat Gating, Cache Fixes
+
+### Added
+
+- **Split-panel planner inbox** (`/app/admin/inbox/page.tsx`) — Full rewrite with conversation list + message detail split view, unread badges, real-time couple message display, and keyboard send (Enter).
+- **Shared inbox UI components** — `ChatInput.tsx`, `MessageBubble.tsx`, `InboxListItem.tsx`, `SplitPanelInbox.tsx` for reuse across planner and couple portals.
+- **Couple tab on wedding detail** (`/app/admin/weddings/[id]/page.tsx`) — New "Couple" tab with invite, revoke/restore access, and resend invite functionality.
+- **Weddings list inline notes/replies** (`/app/admin/weddings/page.tsx`) — Expanded with 532 new lines: planner notes with reply threads, sticky notes UI, message compose with send button.
+- **AI chat widget role gating** — Widget only renders for `is_wedding_planner` or `is_team_member` roles; hidden for root admins and couples.
+- **Autopilot status endpoint** (`/app/api/autopilot.py`) — New `/admin/status` endpoint for autopilot metrics.
+- **Vendor notification refactor** — Shared notification endpoints eliminating duplicate code across vendor portal.
+- **Task recurrence in calendar** — TaskModal now supports recurring tasks with presets (daily, weekly, monthly) and iCal RRULE generation.
+- **Couple portal UI components** — `CoupleSidebar.tsx`, `CoupleTopHeader.tsx`, `CoupleLayoutClient.tsx` for consistent layout matching admin portal.
+- **Error boundaries** — Added `error.tsx` for inbox, weddings, budget, billing, dashboard, forms, guests, metrics, notifications, packages, calendar, platform, saas, seating, support, users, vendors, and ads pages.
+- **Vendor portal notifications and settings pages** — New `/portal/ads/notifications/page.tsx` and `/portal/ads/settings/page.tsx`.
+- **Cursor pagination utility** (`/app/utils/cursor_pagination.py`) — Reusable cursor-based pagination for API endpoints.
+- **Rate limiter utility** (`/app/utils/rate_limiter.py`) — Configurable rate limiting for API routes.
+- **Dependency management script** (`/scripts/update-deps.mjs`) — Automated dependency updates with dry-run, interactive, and auto modes.
+- **Database scripts** — `cleanup_webhook_events.py` for Stripe webhook cleanup, `create_indexes_p0.py` for MongoDB index migration, `generate_types.sh` for TypeScript type generation from Pydantic models.
+- **Testing checklist** (`/docs/TESTING_CHECKLIST_v2.28.0.md`) — Comprehensive v2.28.0 QA checklist with 39 test cases across 6 sections.
+- **Architectural audit** (`/docs/qa/P0_ARCHITECTURAL_REFACTORS.md`) — P0 architectural refactors document.
+- **Couple portal visual audit** (`/docs/frontend/COUPLE_PORTAL_VISUAL_AUDIT.md`) — Visual discrepancy audit between couple and planner portals.
+
+### Changed
+
+- **Cache-Control middleware** (`/app/main.py`) — Rewrote to handle Next.js `_next/` assets separately (no-cache in dev, immutable in prod), added `/couple-portal/`, `/couple/`, `/admin/` to no-cache rules, and added mutation method no-cache for POST/PUT/PATCH/DELETE.
+- **Couple dashboard** (`/app/couple/dashboard/page.tsx`) — Added `cache: 'no-store'` to message fetch, major UI refactor with sidebar-driven navigation.
+- **Planner inbox fetch** (`/app/admin/inbox/page.tsx`) — Added `cache: 'no-store'` to prevent stale message data.
+- **Admin router ordering** — Reorganized to prioritize notification stream route.
+- **Stripe service** (`/app/services/stripe_service.py`) — Retained email verification token for user consistency, refactored payment handling.
+- **Couple portal service** — Switched to ResendEmailService for email sending.
+- **User management service** — Improved email verification logic, cleans up tokens for already-verified users.
+- **Couple login/setup pages** — Updated styles to align with design tokens, added password validation with visual feedback.
+- **Wedding detail page** — Conditional ad rail layout, added couple tab.
+- **Admin sidebar** — Updated navigation items and styling.
+- **Image assets** — Optimized/replaced dashboard, budget, forms, and wedding config screenshots.
+- **Icon imports in `[id]/page.tsx`** — Switched from barrel import to direct path imports to avoid Turbopack module factory instantiation bug.
+
+### Fixed
+
+- **BUG-001 (Critical):** Messages saved to DB but not displayed in inbox — caused by `Cache-Control: public, max-age=300` on `/couple-portal/` and `/admin/` routes falling through to catch-all. Fixed in middleware + frontend fetch calls.
+- **BUG-003 (Low):** Wedding date rendering "20270" instead of "2027" in certain views.
+
+### Known Issues
+
+- **BUG-002 (Medium):** AI chat widget z-index overlaps with inbox send button on certain pages. Workaround: use Enter key to send.
+- **Turbopack module factory error:** `lucide-react` barrel import triggers stale module factory instantiation in dev mode on `[id]/page.tsx`. Mitigated by switching to direct icon imports. Known Turbopack HMR bug tracked in vercel/next.js#84264.
+
+### Removed
+
+- **Couple portal standalone page** (`/app/admin/couple-portal/page.tsx`) — 1,770 lines removed; functionality moved to inbox and wedding detail couple tab.
+- **Unused dependencies** — Removed `@dnd-kit/utilities`, `is-number`, `victory-vendor` from package.json.
+
+---
+
 ## [2.27.0] - 2026-03-24 — Couple Portal Redesign: Match Platform Design System
 
 ### Context
