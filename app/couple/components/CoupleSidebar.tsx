@@ -105,6 +105,7 @@ export default function CoupleSidebar({
                 width={140}
                 height={36}
                 className="h-9 w-auto"
+                unoptimized
                 priority
               />
             ) : (

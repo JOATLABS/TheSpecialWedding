@@ -77,7 +77,7 @@ export default function InboxListItem({
         isSelected
           ? colors.selected
           : isRead
-            ? 'border-l-transparent hover:bg-slate-50 dark:hover:bg-slate-800/50'
+            ? 'border-l-transparent hover:bg-gray-50 dark:hover:bg-slate-800/50'
             : `${colors.unreadBorder}`
       }`}
     >
@@ -85,12 +85,12 @@ export default function InboxListItem({
         <div className="mt-1 flex-shrink-0">
           <div
             className={`w-7 h-7 rounded-full flex items-center justify-center ${
-              !isRead ? colors.unreadIcon : 'bg-slate-100 dark:bg-slate-700'
+              !isRead ? colors.unreadIcon : 'bg-gray-100 dark:bg-slate-700'
             }`}
           >
             <IconComponent
               size={13}
-              className={!isRead ? colors.unreadIconColor : 'text-slate-400 dark:text-slate-500'}
+              className={!isRead ? colors.unreadIconColor : 'text-gray-400 dark:text-gray-500'}
             />
           </div>
         </div>
@@ -100,22 +100,22 @@ export default function InboxListItem({
             <p
               className={`text-sm truncate ${
                 !isRead
-                  ? 'font-semibold text-slate-900 dark:text-white'
-                  : 'font-medium text-slate-700 dark:text-slate-300'
+                  ? 'font-semibold text-gray-900 dark:text-white'
+                  : 'font-medium text-gray-700 dark:text-gray-300'
               }`}
             >
               {name}
             </p>
             {timestamp && (
-              <span className="text-xs text-slate-400 flex-shrink-0">{timestamp}</span>
+              <span className="text-xs text-gray-400 flex-shrink-0">{timestamp}</span>
             )}
           </div>
 
           <p
             className={`text-sm truncate mb-0.5 ${
               !isRead
-                ? 'text-slate-800 dark:text-slate-200'
-                : 'text-slate-600 dark:text-slate-400'
+                ? 'text-gray-800 dark:text-gray-200'
+                : 'text-gray-600 dark:text-gray-400'
             }`}
           >
             {preview}
@@ -123,7 +123,7 @@ export default function InboxListItem({
 
           <div className="flex items-center gap-2 mt-1">
             {hasAttachments && (
-              <span className="inline-flex items-center gap-0.5 text-xs text-slate-400">
+              <span className="inline-flex items-center gap-0.5 text-xs text-gray-400">
                 <Paperclip size={10} />
               </span>
             )}
@@ -141,7 +141,7 @@ export default function InboxListItem({
               </span>
             )}
             {weddingLabel && (
-              <span className="text-xs text-slate-400 bg-slate-100 dark:bg-slate-700 px-1.5 py-0.5 rounded truncate max-w-[120px]">
+              <span className="text-xs text-gray-400 bg-gray-100 dark:bg-slate-700 px-1.5 py-0.5 rounded truncate max-w-[120px]">
                 {weddingLabel}
               </span>
             )}

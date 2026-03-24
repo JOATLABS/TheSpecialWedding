@@ -82,6 +82,11 @@ export default function TaskModal({
   const [color, setColor] = useState('');
   const [syncToGoogle, setSyncToGoogle] = useState(true);
 
+  // Recurrence state
+  const [isRecurring, setIsRecurring] = useState(false);
+  const [recurrencePreset, setRecurrencePreset] = useState<'weekly' | 'biweekly' | 'monthly'>('weekly');
+  const [recurrenceCount, setRecurrenceCount] = useState(8);
+
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
@@ -118,6 +123,23 @@ export default function TaskModal({
         if (task.reminder_minutes) {
           setReminderMinutes(task.reminder_minutes);
         }
+        // Load recurrence
+        setIsRecurring(task.is_recurring || false);
+        if (task.recurrence_rule) {
+          // Parse existing RRULE to determine preset
+          const rule = task.recurrence_rule;
+          if (rule.includes('INTERVAL=2')) {
+            setRecurrencePreset('biweekly');
+          } else if (rule.includes('FREQ=MONTHLY')) {
+            setRecurrencePreset('monthly');
+          } else {
+            setRecurrencePreset('weekly');
+          }
+          const countMatch = rule.match(/COUNT=(\d+)/);
+          if (countMatch) {
+            setRecurrenceCount(parseInt(countMatch[1]));
+          }
+        }
       } else {
         // Creating new task
         resetForm();
@@ -149,7 +171,31 @@ export default function TaskModal({
     setNotes('');
     setColor('');
     setSyncToGoogle(true);
+    setIsRecurring(false);
+    setRecurrencePreset('weekly');
+    setRecurrenceCount(8);
     setError('');
+  };
+
+  // Build iCal RRULE string from preset options
+  const buildRecurrenceRule = (): string | undefined => {
+    if (!isRecurring) return undefined;
+    const dayMap: Record<string, string> = {
+      '0': 'SU', '1': 'MO', '2': 'TU', '3': 'WE', '4': 'TH', '5': 'FR', '6': 'SA',
+    };
+    const startDayOfWeek = startDate
+      ? dayMap[new Date(`${startDate}T${startTime || '09:00'}`).getDay().toString()] || 'MO'
+      : 'MO';
+    switch (recurrencePreset) {
+      case 'weekly':
+        return `FREQ=WEEKLY;BYDAY=${startDayOfWeek};COUNT=${recurrenceCount}`;
+      case 'biweekly':
+        return `FREQ=WEEKLY;INTERVAL=2;BYDAY=${startDayOfWeek};COUNT=${recurrenceCount}`;
+      case 'monthly':
+        return `FREQ=MONTHLY;COUNT=${recurrenceCount}`;
+      default:
+        return `FREQ=WEEKLY;BYDAY=${startDayOfWeek};COUNT=${recurrenceCount}`;
+    }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -196,6 +242,8 @@ export default function TaskModal({
           all_day: allDay,
           due_date: dueDate ? `${dueDate}T23:59:59Z` : undefined,
           reminder_minutes: reminderMinutes || undefined,
+          is_recurring: isRecurring,
+          recurrence_rule: buildRecurrenceRule(),
           notes: notes || undefined,
           color: color || undefined,
         };
@@ -215,6 +263,8 @@ export default function TaskModal({
           all_day: allDay,
           due_date: dueDate ? `${dueDate}T23:59:59Z` : undefined,
           reminder_minutes: reminderMinutes || undefined,
+          is_recurring: isRecurring,
+          recurrence_rule: buildRecurrenceRule(),
           notes: notes || undefined,
           color: color || undefined,
           sync_to_google: syncToGoogle,
@@ -376,7 +426,32 @@ export default function TaskModal({
             )}
           </div>
 
-          {/* Row 5: Description (single field, replaces both Description + Notes) */}
+          {/* Row 5: Recurrence */}
+          <div className="flex items-center gap-3">
+            <label className="flex items-center gap-1.5 cursor-pointer">
+              <input type="checkbox" checked={isRecurring} onChange={(e) => setIsRecurring(e.target.checked)}
+                className="w-4 h-4 text-indigo-600 border-gray-300 rounded" />
+              <span className="text-xs text-gray-600 dark:text-gray-400">Recurring</span>
+            </label>
+            {isRecurring && (
+              <>
+                <select value={recurrencePreset} onChange={(e) => setRecurrencePreset(e.target.value as 'weekly' | 'biweekly' | 'monthly')}
+                  className="px-2 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg dark:bg-gray-700 dark:text-gray-100">
+                  <option value="weekly">Weekly</option>
+                  <option value="biweekly">Every 2 weeks</option>
+                  <option value="monthly">Monthly</option>
+                </select>
+                <div className="flex items-center gap-1.5">
+                  <input type="number" value={recurrenceCount} onChange={(e) => setRecurrenceCount(Math.max(1, Math.min(52, parseInt(e.target.value) || 1)))}
+                    min={1} max={52}
+                    className="w-16 px-2 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg dark:bg-gray-700 dark:text-gray-100" />
+                  <span className="text-xs text-gray-500 dark:text-gray-400">occurrences</span>
+                </div>
+              </>
+            )}
+          </div>
+
+          {/* Row 6: Description (single field, replaces both Description + Notes) */}
           <textarea
             value={description}
             onChange={(e) => setDescription(e.target.value)}

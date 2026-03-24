@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useCallback, useRef } from 'react';
-import { GripVertical, Loader2, MessageCircle } from 'lucide-react';
+import { GripVertical, RefreshCw, Inbox } from 'lucide-react';
 
 export interface SplitPanelInboxProps {
   /** Left panel content (conversation list) */
@@ -72,23 +72,23 @@ export default function SplitPanelInbox({
     <div ref={containerRef} className="flex min-h-[600px] gap-0">
       {/* Left Panel — List */}
       <div
-        className={`bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700 overflow-hidden flex-shrink-0 ${
+        className={`bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-gray-200 dark:border-slate-700 overflow-hidden flex-shrink-0 ${
           mobileShowDetail ? 'hidden lg:block' : ''
         }`}
         style={{ width: `${listWidthPercent}%` }}
       >
         <div
-          className="divide-y divide-slate-100 dark:divide-slate-800 overflow-y-auto"
+          className="divide-y divide-gray-100 dark:divide-slate-800 overflow-y-auto"
           style={{ maxHeight: minHeight }}
         >
           {loading ? (
-            <div className="p-8 text-center text-slate-400">
-              <Loader2 className="w-6 h-6 mx-auto mb-2 animate-spin" />
+            <div className="p-8 text-center text-gray-400">
+              <RefreshCw className="w-6 h-6 mx-auto mb-2 animate-spin" />
               <p>Loading messages...</p>
             </div>
           ) : emptyMessage ? (
-            <div className="p-12 text-center text-slate-400">
-              <MessageCircle className="w-12 h-12 mx-auto mb-3 opacity-40" />
+            <div className="p-12 text-center text-gray-400">
+              <Inbox className="w-12 h-12 mx-auto mb-3 opacity-40" />
               <p className="font-medium mb-1">{emptyMessage}</p>
               {emptySubMessage && <p className="text-sm">{emptySubMessage}</p>}
             </div>
@@ -117,12 +117,12 @@ export default function SplitPanelInbox({
           detailContent
         ) : (
           <div
-            className="bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700 flex items-center justify-center"
+            className="bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-gray-200 dark:border-slate-700 flex items-center justify-center"
             style={{ height: minHeight }}
           >
-            <div className="text-center text-slate-400">
-              <MessageCircle className="w-14 h-14 mx-auto mb-4 opacity-30" />
-              <p className="font-medium text-slate-500 dark:text-slate-400">
+            <div className="text-center text-gray-400">
+              <Inbox className="w-14 h-14 mx-auto mb-4 opacity-30" />
+              <p className="font-medium text-gray-500 dark:text-gray-400">
                 Select a conversation
               </p>
               <p className="text-sm mt-1">Choose a message from the list</p>

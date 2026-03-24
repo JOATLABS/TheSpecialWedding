@@ -20,6 +20,9 @@ import {
   ChevronDown
 } from 'lucide-react';
 import PageHeader from '../components/PageHeader';
+import InboxListItem from '@/components/ui/InboxListItem';
+import MessageBubble from '@/components/ui/MessageBubble';
+import ChatInput from '@/components/ui/ChatInput';
 
 // ==================== TYPES ====================
 
@@ -692,57 +695,27 @@ export default function InboxPage() {
             </div>
           ) : (
             coupleMessages.map((msg) => (
-              <div
+              <MessageBubble
                 key={msg.id}
-                className={`flex ${msg.sender_role === 'planner' ? 'justify-end' : 'justify-start'}`}
-              >
-                <div
-                  className={`max-w-[75%] px-3.5 py-2.5 rounded-2xl text-sm ${
-                    msg.sender_role === 'planner'
-                      ? 'bg-rose-500 text-white rounded-br-md'
-                      : 'bg-gray-100 dark:bg-slate-700 text-gray-900 dark:text-white rounded-bl-md'
-                  }`}
-                >
-                  {msg.sender_role !== 'planner' && (
-                    <p className="text-xs font-medium mb-1 opacity-70">{msg.sender_name}</p>
-                  )}
-                  <p className="whitespace-pre-wrap">{msg.content}</p>
-                  <p className={`text-[10px] mt-1 ${
-                    msg.sender_role === 'planner' ? 'text-white/60' : 'text-gray-400'
-                  }`}>
-                    {msg.created_at ? formatDate(msg.created_at) : ''}
-                  </p>
-                </div>
-              </div>
+                content={msg.content}
+                senderName={msg.sender_role !== 'planner' ? msg.sender_name : undefined}
+                isSelf={msg.sender_role === 'planner'}
+                timestamp={msg.created_at ? formatDate(msg.created_at) : undefined}
+                accentColor="rose"
+              />
             ))
           )}
           <div ref={messagesEndRef} />
         </div>
 
-        <div className="p-4 border-t border-gray-100 dark:border-slate-800 bg-gray-50 dark:bg-slate-800/50">
-          <div className="flex items-end gap-2">
-            <textarea
-              value={replyText}
-              onChange={(e) => setReplyText(e.target.value)}
-              placeholder={`Message ${coupleName}...`}
-              className="flex-1 p-3 border border-gray-200 dark:border-slate-700 rounded-lg text-sm bg-white dark:bg-slate-900 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-rose-500 focus:border-transparent resize-none"
-              rows={2}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' && !e.shiftKey) {
-                  e.preventDefault();
-                  handleSendReply();
-                }
-              }}
-            />
-            <button
-              onClick={handleSendReply}
-              disabled={sending || !replyText.trim()}
-              className="flex items-center justify-center w-10 h-10 bg-rose-500 text-white rounded-lg hover:bg-rose-600 disabled:opacity-50 disabled:cursor-not-allowed transition flex-shrink-0"
-            >
-              <Send size={16} />
-            </button>
-          </div>
-        </div>
+        <ChatInput
+          value={replyText}
+          onChange={setReplyText}
+          onSend={handleSendReply}
+          sending={sending}
+          placeholder={`Message ${coupleName}...`}
+          accentColor="rose"
+        />
       </>
     );
   };
@@ -871,78 +844,22 @@ export default function InboxPage() {
                 </div>
               ) : (
                 filteredItems.map((item) => (
-                  <div
+                  <InboxListItem
                     key={item.id}
+                    id={item.id}
+                    type={item.type}
+                    name={item.name}
+                    preview={item.preview}
+                    isRead={item.is_read}
+                    isSelected={selectedItem?.id === item.id}
+                    timestamp={item.created_at ? formatDate(item.created_at) : ''}
+                    unreadCount={item.type === 'couple' ? item.unread_count : undefined}
+                    weddingLabel={item.wedding_label}
+                    hasAttachments={item.type === 'email' ? item.email?.has_attachments : undefined}
+                    hasReplied={item.type === 'email' ? item.email?.planner_response_sent : undefined}
+                    accentColor="rose"
                     onClick={() => handleSelectItem(item)}
-                    className={`px-4 py-3 cursor-pointer transition-colors border-l-3 ${
-                      selectedItem?.id === item.id
-                        ? 'bg-rose-50 dark:bg-rose-900/10 border-l-rose-500'
-                        : item.is_read
-                          ? 'border-l-transparent hover:bg-gray-50 dark:hover:bg-slate-800/50'
-                          : 'border-l-rose-400 bg-rose-50/50 dark:bg-rose-900/5 hover:bg-rose-50 dark:hover:bg-rose-900/10'
-                    }`}
-                  >
-                    <div className="flex items-start gap-3">
-                      <div className="mt-1 flex-shrink-0">
-                        <div className={`w-7 h-7 rounded-full flex items-center justify-center ${
-                          !item.is_read
-                            ? 'bg-rose-100 dark:bg-rose-900/30'
-                            : 'bg-gray-100 dark:bg-slate-700'
-                        }`}>
-                          {item.type === 'couple'
-                            ? <Heart size={13} className={!item.is_read ? 'text-rose-500' : 'text-gray-400 dark:text-gray-500'} />
-                            : <Mail size={13} className={!item.is_read ? 'text-rose-500' : 'text-gray-400 dark:text-gray-500'} />
-                          }
-                        </div>
-                      </div>
-
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center justify-between gap-2 mb-0.5">
-                          <p className={`text-sm truncate ${!item.is_read ? 'font-semibold text-gray-900 dark:text-white' : 'font-medium text-gray-700 dark:text-gray-300'}`}>
-                            {item.name}
-                          </p>
-                          <span className="text-xs text-gray-400 flex-shrink-0">
-                            {item.created_at ? formatDate(item.created_at) : ''}
-                          </span>
-                        </div>
-
-                        <p className={`text-sm truncate mb-0.5 ${!item.is_read ? 'text-gray-800 dark:text-gray-200' : 'text-gray-600 dark:text-gray-400'}`}>
-                          {item.preview}
-                        </p>
-
-                        <div className="flex items-center gap-2 mt-1">
-                          {item.type === 'email' && item.email?.has_attachments && (
-                            <span className="inline-flex items-center gap-0.5 text-xs text-gray-400">
-                              <Paperclip size={10} />
-                            </span>
-                          )}
-                          {item.type === 'email' && item.email?.planner_response_sent && (
-                            <span className="inline-flex items-center gap-0.5 text-xs text-emerald-500">
-                              <Reply size={10} />
-                              Replied
-                            </span>
-                          )}
-                          {item.type === 'couple' && (item.unread_count || 0) > 0 && (
-                            <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-xs font-medium bg-rose-100 text-rose-600 dark:bg-rose-900/30 dark:text-rose-400">
-                              {item.unread_count}
-                            </span>
-                          )}
-                          {item.wedding_label && (
-                            <span className="text-xs text-gray-400 bg-gray-100 dark:bg-slate-700 px-1.5 py-0.5 rounded truncate max-w-[120px]">
-                              {item.wedding_label}
-                            </span>
-                          )}
-                          <span className={`text-xs px-1.5 py-0.5 rounded ${
-                            item.type === 'couple'
-                              ? 'bg-rose-50 text-rose-500 dark:bg-rose-900/20 dark:text-rose-400'
-                              : 'bg-blue-50 text-blue-500 dark:bg-blue-900/20 dark:text-blue-400'
-                          }`}>
-                            {item.type === 'couple' ? 'Couple' : 'Email'}
-                          </span>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
+                  />
                 ))
               )}
             </div>
