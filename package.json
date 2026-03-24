@@ -4,7 +4,7 @@
   "license": "UNLICENSED",
   "description": "Wedding planning platform for professional wedding planners",
   "scripts": {
-    "dev": "node scripts/ensure-deps.mjs && next dev",
+    "dev": "node scripts/ensure-deps.mjs && next dev --webpack",
     "build": "next build --webpack",
     "start": "next start",
     "lint": "next lint",
