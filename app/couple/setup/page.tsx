@@ -1,22 +1,71 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, Suspense } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { getApiBaseUrl } from '@/utils/env';
 import { toast } from 'sonner';
-import { Heart, Lock, Loader2, CheckCircle, XCircle, ArrowRight } from 'lucide-react';
+import { GlassCard } from '@/components/ui/GlassCard';
+import { Heart, Lock, Loader2, CheckCircle, XCircle, ArrowRight, Eye, EyeOff } from 'lucide-react';
 
+// ---------------------------------------------------------------------------
+// Password validation (matches admin setup-account pattern)
+// ---------------------------------------------------------------------------
+interface PasswordValidation {
+  minLength: boolean;
+  hasUppercase: boolean;
+  hasLowercase: boolean;
+  hasNumber: boolean;
+}
+
+const validatePassword = (password: string): PasswordValidation => ({
+  minLength: password.length >= 8,
+  hasUppercase: /[A-Z]/.test(password),
+  hasLowercase: /[a-z]/.test(password),
+  hasNumber: /\d/.test(password),
+});
+
+const isPasswordValid = (v: PasswordValidation): boolean =>
+  v.minLength && v.hasUppercase && v.hasLowercase && v.hasNumber;
+
+// ---------------------------------------------------------------------------
+// Page wrapper with Suspense (matches admin pattern)
+// ---------------------------------------------------------------------------
 export default function CoupleSetupPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="min-h-screen flex items-center justify-center">
+          <div className="text-center">
+            <Loader2 className="w-10 h-10 animate-spin text-primary-500 mx-auto mb-4" />
+            <p className="text-slate-500 dark:text-slate-400">Loading...</p>
+          </div>
+        </div>
+      }
+    >
+      <CoupleSetupContent />
+    </Suspense>
+  );
+}
+
+function CoupleSetupContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
   const token = searchParams.get('token');
 
   const [verifying, setVerifying] = useState(true);
   const [valid, setValid] = useState(false);
-  const [inviteData, setInviteData] = useState<{ email: string; partner1_name: string; partner2_name?: string } | null>(null);
+  const [inviteData, setInviteData] = useState<{
+    email: string;
+    partner1_name: string;
+    partner2_name?: string;
+  } | null>(null);
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirm, setShowConfirm] = useState(false);
   const [loading, setLoading] = useState(false);
+
+  const validation = validatePassword(password);
 
   useEffect(() => {
     if (!token) {
@@ -32,7 +81,7 @@ export default function CoupleSetupPage() {
           setValid(true);
           setInviteData(data);
         }
-      } catch (err) {
+      } catch {
         // Invalid token
       } finally {
         setVerifying(false);
@@ -45,13 +94,13 @@ export default function CoupleSetupPage() {
   const handleSetup = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    if (password !== confirmPassword) {
-      toast.error('Passwords do not match');
+    if (!isPasswordValid(validation)) {
+      toast.error('Please meet all password requirements');
       return;
     }
 
-    if (password.length < 8) {
-      toast.error('Password must be at least 8 characters');
+    if (password !== confirmPassword) {
+      toast.error('Passwords do not match');
       return;
     }
 
@@ -74,36 +123,43 @@ export default function CoupleSetupPage() {
       localStorage.setItem('couple_data', JSON.stringify(data.couple));
       toast.success('Account setup complete! Welcome!');
       router.push('/couple/dashboard');
-    } catch (err) {
+    } catch {
       toast.error('Something went wrong. Please try again.');
     } finally {
       setLoading(false);
     }
   };
 
+  // -- Verifying state --
   if (verifying) {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <div className="text-center">
-          <Loader2 className="w-10 h-10 animate-spin text-[#1e3a5f] mx-auto mb-4" />
-          <p className="text-gray-500">Verifying your invitation...</p>
+          <Loader2 className="w-10 h-10 animate-spin text-primary-500 mx-auto mb-4" />
+          <p className="text-slate-500 dark:text-slate-400">Verifying your invitation...</p>
         </div>
       </div>
     );
   }
 
+  // -- Invalid/expired token --
   if (!token || !valid) {
     return (
       <div className="min-h-screen flex items-center justify-center px-4">
         <div className="text-center max-w-md">
-          <div className="inline-flex items-center justify-center w-16 h-16 bg-red-50 rounded-full mb-4">
+          <div className="inline-flex items-center justify-center w-16 h-16 bg-red-50 dark:bg-red-900/20 rounded-full mb-4">
             <XCircle className="w-8 h-8 text-red-500" />
           </div>
-          <h1 className="text-2xl font-serif text-gray-800 mb-2">Invalid or Expired Link</h1>
-          <p className="text-gray-500 mb-6">
+          <h1 className="text-2xl font-heading font-semibold text-slate-900 dark:text-white mb-2">
+            Invalid or Expired Link
+          </h1>
+          <p className="text-slate-500 dark:text-slate-400 mb-6">
             This invitation link is no longer valid. Please ask your wedding planner to send a new invitation.
           </p>
-          <a href="/couple/login" className="text-[#1e3a5f] font-medium hover:underline">
+          <a
+            href="/couple/login"
+            className="text-primary-600 dark:text-primary-400 font-medium hover:underline"
+          >
             Already have an account? Sign in
           </a>
         </div>
@@ -115,72 +171,130 @@ export default function CoupleSetupPage() {
     ? `${inviteData.partner1_name} & ${inviteData.partner2_name}`
     : inviteData?.partner1_name;
 
+  const reqItems: { label: string; met: boolean }[] = [
+    { label: 'At least 8 characters', met: validation.minLength },
+    { label: 'One uppercase letter', met: validation.hasUppercase },
+    { label: 'One lowercase letter', met: validation.hasLowercase },
+    { label: 'One number', met: validation.hasNumber },
+  ];
+
   return (
     <div className="min-h-screen flex items-center justify-center px-4 py-12">
       <div className="w-full max-w-md">
+        {/* Header */}
         <div className="text-center mb-8">
-          <div className="inline-flex items-center justify-center w-16 h-16 bg-[#1e3a5f] rounded-full mb-4">
-            <Heart className="w-8 h-8 text-[#d4af37]" />
+          <div className="inline-flex items-center justify-center w-16 h-16 bg-primary-600 dark:bg-primary-500 rounded-full mb-4">
+            <Heart className="w-8 h-8 text-white" />
           </div>
-          <h1 className="text-3xl font-serif text-[#1e3a5f] mb-2">Welcome, {coupleName}!</h1>
-          <p className="text-gray-500">Set up your wedding portal account</p>
+          <h1 className="text-2xl sm:text-3xl font-heading font-semibold text-slate-900 dark:text-white mb-2">
+            Welcome, {coupleName}!
+          </h1>
+          <p className="text-slate-500 dark:text-slate-400">Set up your wedding portal account</p>
         </div>
 
-        <div className="bg-white rounded-2xl shadow-lg border border-gray-100 p-8">
-          <div className="flex items-center gap-3 bg-green-50 text-green-700 p-3 rounded-xl mb-6">
-            <CheckCircle className="w-5 h-5 flex-shrink-0" />
-            <p className="text-sm">Invitation verified for <strong>{inviteData?.email}</strong></p>
-          </div>
-
-          <form onSubmit={handleSetup} className="space-y-5">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1.5">Create Password</label>
-              <div className="relative">
-                <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
-                <input
-                  type="password"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  placeholder="At least 8 characters"
-                  required
-                  minLength={8}
-                  className="w-full pl-11 pr-4 py-3 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#1e3a5f]/20 focus:border-[#1e3a5f] transition-all text-gray-800"
-                />
-              </div>
+        {/* Card */}
+        <GlassCard depth="near" blur="xl">
+          <div className="px-6 py-7 sm:px-8">
+            {/* Verified badge */}
+            <div className="flex items-center gap-3 bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-400 p-3 rounded-xl mb-6">
+              <CheckCircle className="w-5 h-5 flex-shrink-0" />
+              <p className="text-sm">
+                Invitation verified for <strong>{inviteData?.email}</strong>
+              </p>
             </div>
 
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1.5">Confirm Password</label>
-              <div className="relative">
-                <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
-                <input
-                  type="password"
-                  value={confirmPassword}
-                  onChange={(e) => setConfirmPassword(e.target.value)}
-                  placeholder="Confirm your password"
-                  required
-                  minLength={8}
-                  className="w-full pl-11 pr-4 py-3 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#1e3a5f]/20 focus:border-[#1e3a5f] transition-all text-gray-800"
-                />
+            <form onSubmit={handleSetup} className="space-y-5">
+              {/* Password */}
+              <div>
+                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1.5">
+                  Create Password
+                </label>
+                <div className="relative">
+                  <input
+                    type={showPassword ? 'text' : 'password'}
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    placeholder="At least 8 characters"
+                    required
+                    minLength={8}
+                    className="w-full rounded-xl border border-white/40 dark:border-slate-600 bg-white/60 dark:bg-slate-800/60 px-4 py-3 pr-12 text-base text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-primary-500/50 focus:border-primary-500 transition-all"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword(!showPassword)}
+                    className="absolute inset-y-0 right-0 flex items-center rounded-r-xl px-4 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300"
+                  >
+                    {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                  </button>
+                </div>
               </div>
-            </div>
 
-            <button
-              type="submit"
-              disabled={loading}
-              className="w-full bg-[#1e3a5f] text-white py-3 rounded-xl font-medium hover:bg-[#2a4a6f] transition-all flex items-center justify-center gap-2 disabled:opacity-50"
-            >
-              {loading ? (
-                <Loader2 className="w-5 h-5 animate-spin" />
-              ) : (
-                <>
-                  Set Up My Account
-                  <ArrowRight className="w-4 h-4" />
-                </>
+              {/* Password requirements */}
+              {password.length > 0 && (
+                <div className="grid grid-cols-2 gap-x-4 gap-y-1">
+                  {reqItems.map((r) => (
+                    <div key={r.label} className="flex items-center gap-2">
+                      {r.met ? (
+                        <CheckCircle className="w-3.5 h-3.5 text-green-500 flex-shrink-0" />
+                      ) : (
+                        <XCircle className="w-3.5 h-3.5 text-slate-300 dark:text-slate-600 flex-shrink-0" />
+                      )}
+                      <span
+                        className={`text-xs ${r.met ? 'text-green-600 dark:text-green-400' : 'text-slate-400 dark:text-slate-500'}`}
+                      >
+                        {r.label}
+                      </span>
+                    </div>
+                  ))}
+                </div>
               )}
-            </button>
-          </form>
-        </div>
+
+              {/* Confirm Password */}
+              <div>
+                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1.5">
+                  Confirm Password
+                </label>
+                <div className="relative">
+                  <input
+                    type={showConfirm ? 'text' : 'password'}
+                    value={confirmPassword}
+                    onChange={(e) => setConfirmPassword(e.target.value)}
+                    placeholder="Confirm your password"
+                    required
+                    minLength={8}
+                    className="w-full rounded-xl border border-white/40 dark:border-slate-600 bg-white/60 dark:bg-slate-800/60 px-4 py-3 pr-12 text-base text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-primary-500/50 focus:border-primary-500 transition-all"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowConfirm(!showConfirm)}
+                    className="absolute inset-y-0 right-0 flex items-center rounded-r-xl px-4 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300"
+                  >
+                    {showConfirm ? <EyeOff size={18} /> : <Eye size={18} />}
+                  </button>
+                </div>
+                {confirmPassword.length > 0 && password !== confirmPassword && (
+                  <p className="mt-1.5 text-xs text-red-500">Passwords do not match</p>
+                )}
+              </div>
+
+              {/* Submit */}
+              <button
+                type="submit"
+                disabled={loading || !isPasswordValid(validation) || password !== confirmPassword}
+                className="w-full bg-primary-600 hover:bg-primary-700 text-white py-3 rounded-xl font-medium transition-all flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {loading ? (
+                  <Loader2 className="w-5 h-5 animate-spin" />
+                ) : (
+                  <>
+                    Set Up My Account
+                    <ArrowRight className="w-4 h-4" />
+                  </>
+                )}
+              </button>
+            </form>
+          </div>
+        </GlassCard>
       </div>
     </div>
   );

@@ -6,6 +6,7 @@ import { getApiBaseUrl } from '@/utils/env';
 import { toast } from 'sonner';
 import CoupleSidebar, { type CoupleSection } from '../components/CoupleSidebar';
 import CoupleTopHeader from '../components/CoupleTopHeader';
+import PageHeader from '@/components/ui/PageHeader';
 import {
   Heart, Calendar, Users, DollarSign, FileText, Bell,
   Clock, MapPin, ChevronRight, Loader2,
@@ -414,6 +415,7 @@ function DashboardSection({ data }: { data: DashboardData }) {
 
   return (
     <div className="space-y-6">
+      <PageHeader title="Dashboard" description="Your wedding overview at a glance" />
       {/* Countdown */}
       {days !== null && days > 0 && !data.archived && (
         <div className="bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700 p-6">
@@ -552,10 +554,13 @@ function TimelineSection({ events, timezone, onNoteAdded }: { events: WeddingEve
 
   if (!events || events.length === 0) {
     return (
-      <div className="text-center py-16">
-        <Calendar className="w-12 h-12 text-slate-300 dark:text-slate-600 mx-auto mb-3" />
-        <p className="text-slate-600 dark:text-slate-400 font-medium">No events scheduled yet</p>
-        <p className="text-sm text-slate-400 dark:text-slate-500 mt-1">Your planner will add events as they&apos;re confirmed.</p>
+      <div>
+        <PageHeader title="Timeline" description="Your wedding day schedule and events" />
+        <div className="text-center py-16">
+          <Calendar className="w-12 h-12 text-slate-300 dark:text-slate-600 mx-auto mb-3" />
+          <p className="text-slate-600 dark:text-slate-400 font-medium">No events scheduled yet</p>
+          <p className="text-sm text-slate-400 dark:text-slate-500 mt-1">Your planner will add events as they&apos;re confirmed.</p>
+        </div>
       </div>
     );
   }
@@ -604,7 +609,7 @@ function TimelineSection({ events, timezone, onNoteAdded }: { events: WeddingEve
 
   return (
     <div className="space-y-4">
-      <h2 className="text-lg font-semibold text-slate-900 dark:text-white">Your wedding events</h2>
+      <PageHeader title="Timeline" description="Your wedding day schedule and events" />
       {events.map((event, eventIdx) => {
         const orderItems = (event.order_of_events || []).sort((a, b) => a.order - b.order);
         const eventNotes = event.event_notes || [];
@@ -888,18 +893,24 @@ function PaymentsSection({ contract }: { contract?: ContractInfo | null }) {
 
   if (!contract && loadingContract) {
     return (
-      <div className="text-center py-16">
-        <Loader2 className="w-8 h-8 animate-spin text-indigo-500 mx-auto" />
+      <div>
+        <PageHeader title="Payments" description="Track your wedding package and payment schedule" />
+        <div className="text-center py-16">
+          <Loader2 className="w-8 h-8 animate-spin text-indigo-500 mx-auto" />
+        </div>
       </div>
     );
   }
 
   if (!contract) {
     return (
-      <div className="text-center py-16">
-        <DollarSign className="w-12 h-12 text-slate-300 dark:text-slate-600 mx-auto mb-3" />
-        <p className="text-slate-600 dark:text-slate-400 font-medium">No payment schedule yet</p>
-        <p className="text-sm text-slate-400 dark:text-slate-500 mt-1">Your planner will set this up once your package is confirmed.</p>
+      <div>
+        <PageHeader title="Payments" description="Track your wedding package and payment schedule" />
+        <div className="text-center py-16">
+          <DollarSign className="w-12 h-12 text-slate-300 dark:text-slate-600 mx-auto mb-3" />
+          <p className="text-slate-600 dark:text-slate-400 font-medium">No payment schedule yet</p>
+          <p className="text-sm text-slate-400 dark:text-slate-500 mt-1">Your planner will set this up once your package is confirmed.</p>
+        </div>
       </div>
     );
   }
@@ -919,6 +930,8 @@ function PaymentsSection({ contract }: { contract?: ContractInfo | null }) {
 
   return (
     <div className="space-y-6">
+      <PageHeader title="Payments" description="Track your wedding package and payment schedule" />
+
       {/* Contract Summary Card */}
       {contractDetail && (
         <div className="bg-white dark:bg-slate-800 rounded-xl p-6 border border-slate-200 dark:border-slate-700 shadow-sm">
@@ -1024,17 +1037,20 @@ function FormsSection({ forms }: { forms: FormItem[] }) {
 
   if (!forms || forms.length === 0) {
     return (
-      <div className="text-center py-16">
-        <ClipboardList className="w-12 h-12 text-slate-300 dark:text-slate-600 mx-auto mb-3" />
-        <p className="text-slate-600 dark:text-slate-400 font-medium">No forms to fill out</p>
-        <p className="text-sm text-slate-400 dark:text-slate-500 mt-1">Your planner will share forms here when they need information from you.</p>
+      <div>
+        <PageHeader title="Forms" description="Questionnaires and forms from your planner" />
+        <div className="text-center py-16">
+          <ClipboardList className="w-12 h-12 text-slate-300 dark:text-slate-600 mx-auto mb-3" />
+          <p className="text-slate-600 dark:text-slate-400 font-medium">No forms to fill out</p>
+          <p className="text-sm text-slate-400 dark:text-slate-500 mt-1">Your planner will share forms here when they need information from you.</p>
+        </div>
       </div>
     );
   }
 
   return (
     <div className="space-y-4">
-      <h2 className="text-lg font-semibold text-slate-900 dark:text-white">Your forms</h2>
+      <PageHeader title="Forms" description="Questionnaires and forms from your planner" />
       {forms.map((form) => (
         <div key={form.id} className="bg-white dark:bg-slate-800 rounded-xl p-5 border border-slate-200 dark:border-slate-700 shadow-sm">
           <div className="flex items-center justify-between">
@@ -1085,42 +1101,10 @@ function InboxSection({ updates, onMessageSent, onMessagesRead, archived = false
   onMessagesRead: () => void;
   archived?: boolean;
 }) {
-  const [inboxTab, setInboxTab] = useState<'messages' | 'updates'>('messages');
-
   return (
     <div className="space-y-4">
-      <h2 className="text-lg font-semibold text-slate-900 dark:text-white">Inbox</h2>
-
-      {/* Sub-tab toggle */}
-      <div className="flex gap-1 bg-slate-100 dark:bg-slate-800 p-1 rounded-lg w-fit">
-        <button
-          onClick={() => setInboxTab('messages')}
-          className={`px-4 py-2 text-sm font-medium rounded-md transition-colors ${
-            inboxTab === 'messages'
-              ? 'bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-sm'
-              : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300'
-          }`}
-        >
-          Messages
-        </button>
-        <button
-          onClick={() => setInboxTab('updates')}
-          className={`px-4 py-2 text-sm font-medium rounded-md transition-colors ${
-            inboxTab === 'updates'
-              ? 'bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-sm'
-              : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300'
-          }`}
-        >
-          Updates {updates.length > 0 && <span className="ml-1 text-xs bg-slate-200 dark:bg-slate-600 px-1.5 py-0.5 rounded-full">{updates.length}</span>}
-        </button>
-      </div>
-
-      {inboxTab === 'messages' && (
-        <MessagesContent onMessageSent={onMessageSent} onMessagesRead={onMessagesRead} archived={archived} />
-      )}
-      {inboxTab === 'updates' && (
-        <UpdatesContent updates={updates} />
-      )}
+      <PageHeader title="Inbox" description="Messages between you and your planner" />
+      <MessagesContent onMessageSent={onMessageSent} onMessagesRead={onMessagesRead} archived={archived} />
     </div>
   );
 }
@@ -1430,9 +1414,8 @@ function RegistrySection({ registries, archived, onUpdated }: { registries: Regi
   };
 
   return (
-    <div className="max-w-3xl mx-auto">
-      <div className="flex items-center justify-between mb-4">
-        <h2 className="text-lg font-semibold text-slate-900 dark:text-white">Gift registry</h2>
+    <div>
+      <PageHeader title="Registry" description="Your guests can find your registries here. Add links to any store where you're registered.">
         {!archived && !showForm && (
           <button
             onClick={() => { resetForm(); setShowForm(true); }}
@@ -1442,9 +1425,7 @@ function RegistrySection({ registries, archived, onUpdated }: { registries: Regi
             <Plus className="w-4 h-4" /> Add registry
           </button>
         )}
-      </div>
-
-      <p className="text-sm text-slate-500 dark:text-slate-400 mb-6">Your guests can find your registries here. Add links to any store where you&apos;re registered.</p>
+      </PageHeader>
 
       {/* Add/Edit Form */}
       {showForm && (
@@ -1516,7 +1497,7 @@ function RegistrySection({ registries, archived, onUpdated }: { registries: Regi
           {!archived && <p className="text-sm text-slate-400 dark:text-slate-500 mt-1">Click &quot;Add registry&quot; to share where guests can find your wish list.</p>}
         </div>
       ) : (
-        <div className={`grid gap-4 ${registries.length === 1 ? 'grid-cols-1 max-w-xs mx-auto' : registries.length === 2 ? 'grid-cols-1 sm:grid-cols-2' : 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-3'}`}>
+        <div className={`grid gap-4 ${registries.length === 1 ? 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-3' : registries.length === 2 ? 'grid-cols-1 sm:grid-cols-2' : 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-3'}`}>
           {registries.map((reg, i) => (
             <div key={i} className="bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm p-5 text-center group">
               <h3 className="text-base font-semibold text-slate-900 dark:text-white mb-3">{reg.name}</h3>
@@ -1637,9 +1618,8 @@ function FAQSection({ faqs, archived, onUpdated }: { faqs: FAQItem[]; archived: 
   };
 
   return (
-    <div className="max-w-3xl mx-auto">
-      <div className="flex items-center justify-between mb-4">
-        <h2 className="text-lg font-semibold text-slate-900 dark:text-white">Frequently asked questions</h2>
+    <div>
+      <PageHeader title="FAQ" description="Help your guests prepare by answering common questions about your wedding day.">
         {!archived && !showForm && (
           <button
             onClick={() => { resetForm(); setShowForm(true); }}
@@ -1649,9 +1629,7 @@ function FAQSection({ faqs, archived, onUpdated }: { faqs: FAQItem[]; archived: 
             <Plus className="w-4 h-4" /> Add FAQ
           </button>
         )}
-      </div>
-
-      <p className="text-sm text-slate-500 dark:text-slate-400 mb-6">Help your guests prepare by answering common questions about your wedding day.</p>
+      </PageHeader>
 
       {/* Add/Edit Form */}
       {showForm && (

@@ -64,7 +64,7 @@ class Settings(BaseSettings):
         return v
     cors_credentials: bool = Field(default=True, alias="CORS_CREDENTIALS")
     cors_methods: List[str] = Field(
-        default=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+        default=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
         alias="CORS_METHODS"
     )
     cors_headers: List[str] = Field(
