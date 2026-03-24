@@ -19,6 +19,8 @@ interface CampaignSponsoredRailProps {
   maxItems?: number;
   weddings?: Array<{ id: string; name: string }>;
   onWeddingChange?: (weddingId: string) => void;
+  /** Called after load completes — true if cards are showing, false if empty/disabled */
+  onVisibilityChange?: (visible: boolean) => void;
 }
 
 export function CampaignSponsoredRail({
@@ -27,6 +29,7 @@ export function CampaignSponsoredRail({
   maxItems = 3,
   weddings,
   onWeddingChange,
+  onVisibilityChange,
 }: CampaignSponsoredRailProps) {
   const { token } = useAdmin();
   const [cards, setCards] = useState<SponsoredCard[]>([]);
@@ -79,6 +82,13 @@ export function CampaignSponsoredRail({
 
     fetchCards();
   }, [token, location, categories, maxItems]);
+
+  // Notify parent of visibility state (cards loaded vs empty/disabled)
+  useEffect(() => {
+    if (!loading) {
+      onVisibilityChange?.(cards.length > 0);
+    }
+  }, [loading, cards.length, onVisibilityChange]);
 
   // Check scroll position
   const checkScroll = useCallback(() => {

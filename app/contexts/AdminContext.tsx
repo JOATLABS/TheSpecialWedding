@@ -257,12 +257,46 @@ export const AdminProvider = ({ children }: { children: React.ReactNode }) => {
 
             persistAdminAuthToken(access_token, rememberMe);
 
-            setToken(access_token);
+            // Track the active token — may be replaced by a fresh one below
+            let activeToken = access_token;
+
+            // Immediately check if the token needs a refresh (edge case:
+            // server issued a token with < 10 min remaining, e.g. during
+            // rapid login/logout cycles or clock skew)
+            const ttlMs = getTokenExpiresInMs(access_token);
+            if (ttlMs > 0 && ttlMs < 10 * 60 * 1000) {
+                // Token has < 10 min left — trigger a background refresh
+                // so the useEffect scheduler doesn't race against expiry
+                try {
+                    const refreshRes = await fetch(`${baseUrl}/admin/token/refresh`, {
+                        method: 'POST',
+                        headers: {
+                            'Authorization': `Bearer ${access_token}`,
+                            'Content-Type': 'application/json',
+                        },
+                    });
+                    if (refreshRes.ok) {
+                        const { access_token: fresh } = await refreshRes.json();
+                        persistAdminAuthToken(fresh, rememberMe);
+                        activeToken = fresh;
+                        setToken(fresh);
+                    } else {
+                        // Refresh failed but login token is still valid — use it
+                        setToken(access_token);
+                    }
+                } catch {
+                    // Network error on refresh — proceed with login token
+                    setToken(access_token);
+                }
+            } else {
+                setToken(access_token);
+            }
 
             // Fetch user profile to determine redirect location
+            // Use activeToken (which may be the refreshed token) for this request
             const profileResponse = await fetch(`${baseUrl}/admin/profile`, {
                 headers: {
-                    'Authorization': `Bearer ${access_token}`,
+                    'Authorization': `Bearer ${activeToken}`,
                     'Content-Type': 'application/json',
                 },
             });
@@ -276,7 +310,7 @@ export const AdminProvider = ({ children }: { children: React.ReactNode }) => {
                         const permissionsResponse = await fetch(`${baseUrl}/admin/team/permissions`, {
                             method: 'GET',
                             headers: {
-                                'Authorization': `Bearer ${access_token}`,
+                                'Authorization': `Bearer ${activeToken}`,
                                 'Content-Type': 'application/json',
                             },
                         });

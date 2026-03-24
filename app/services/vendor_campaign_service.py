@@ -272,6 +272,19 @@ class VendorCampaignService:
         )
 
         logger.info(f"Campaign {campaign_id} submitted for review by vendor {vendor_id}")
+
+        # Notify admin (in-portal + push)
+        try:
+            from app.services.vendor_notification_service import VendorNotificationService
+            vns = VendorNotificationService()
+            await vns.notify_admin_campaign_submitted(
+                vendor_name=campaign.get("vendor_name", vendor_id),
+                campaign_name=campaign.get("campaign_name", campaign_id),
+                campaign_id=campaign_id,
+            )
+        except Exception as e:
+            logger.warning(f"Failed to notify admin on campaign submission: {e}")
+
         return _serialize(updated)
 
     def _validate_campaign_ready(self, campaign: Dict[str, Any]) -> List[str]:

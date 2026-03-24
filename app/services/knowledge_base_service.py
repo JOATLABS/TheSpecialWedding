@@ -634,6 +634,142 @@ class KnowledgeBaseService:
             logger.error(f"Error getting related articles: {str(e)}")
             return []
 
+    async def get_feedback_summary(self) -> dict:
+        """
+        Get aggregated feedback summary across all KB articles for admin review.
+        Returns top/bottom articles by helpfulness and recent feedback comments.
+        """
+        try:
+            # Get all articles with feedback aggregation
+            pipeline = [
+                {
+                    "$match": {"status": "published"}
+                },
+                {
+                    "$project": {
+                        "title": 1,
+                        "slug": 1,
+                        "category": 1,
+                        "helpful_count": 1,
+                        "not_helpful_count": 1,
+                        "feedback": 1,
+                        "view_count": 1,
+                        "created_at": 1
+                    }
+                },
+                {
+                    "$addFields": {
+                        "total_feedback": {
+                            "$add": ["$helpful_count", "$not_helpful_count"]
+                        },
+                        "helpfulness_percentage": {
+                            "$cond": [
+                                {"$gt": [{"$add": ["$helpful_count", "$not_helpful_count"]}, 0]},
+                                {
+                                    "$multiply": [
+                                        {"$divide": ["$helpful_count", {"$add": ["$helpful_count", "$not_helpful_count"]}]},
+                                        100
+                                    ]
+                                },
+                                0
+                            ]
+                        }
+                    }
+                }
+            ]
+
+            articles_data = []
+            async for article in self.articles_collection.aggregate(pipeline):
+                article["id"] = str(article["_id"])
+                articles_data.append(article)
+
+            # Calculate global statistics
+            total_feedback_count = sum(a.get("total_feedback", 0) for a in articles_data)
+            total_helpful = sum(a.get("helpful_count", 0) for a in articles_data)
+            total_not_helpful = sum(a.get("not_helpful_count", 0) for a in articles_data)
+
+            global_helpfulness_percentage = 0
+            if total_feedback_count > 0:
+                global_helpfulness_percentage = round((total_helpful / total_feedback_count) * 100, 2)
+
+            # Get top 5 most helpful articles
+            top_helpful = sorted(
+                [a for a in articles_data if a.get("total_feedback", 0) > 0],
+                key=lambda x: x.get("helpfulness_percentage", 0),
+                reverse=True
+            )[:5]
+
+            # Get top 5 least helpful articles
+            least_helpful = sorted(
+                [a for a in articles_data if a.get("total_feedback", 0) > 0],
+                key=lambda x: x.get("helpfulness_percentage", 0)
+            )[:5]
+
+            # Collect all feedback comments from all articles
+            all_feedback = []
+            for article in articles_data:
+                if article.get("feedback"):
+                    for feedback_item in article.get("feedback", []):
+                        if feedback_item.get("comment"):  # Only include feedback with comments
+                            all_feedback.append({
+                                "article_id": article["id"],
+                                "article_title": article.get("title", "Unknown"),
+                                "user_email": feedback_item.get("user_email", "Unknown"),
+                                "helpful": feedback_item.get("helpful", False),
+                                "comment": feedback_item.get("comment"),
+                                "feedback_at": feedback_item.get("feedback_at"),
+                                "category": article.get("category")
+                            })
+
+            # Sort by date and get recent 20
+            all_feedback.sort(
+                key=lambda x: x.get("feedback_at", datetime.now(timezone.utc)),
+                reverse=True
+            )
+            recent_feedback = all_feedback[:20]
+
+            # Format top/bottom articles for response
+            def format_article(article):
+                return {
+                    "id": article.get("id"),
+                    "title": article.get("title"),
+                    "slug": article.get("slug"),
+                    "category": article.get("category"),
+                    "helpful_count": article.get("helpful_count", 0),
+                    "not_helpful_count": article.get("not_helpful_count", 0),
+                    "total_feedback": article.get("total_feedback", 0),
+                    "helpfulness_percentage": round(article.get("helpfulness_percentage", 0), 2),
+                    "view_count": article.get("view_count", 0)
+                }
+
+            return {
+                "global_stats": {
+                    "total_articles": len(articles_data),
+                    "total_feedback_count": total_feedback_count,
+                    "total_helpful": total_helpful,
+                    "total_not_helpful": total_not_helpful,
+                    "global_helpfulness_percentage": global_helpfulness_percentage
+                },
+                "top_helpful_articles": [format_article(a) for a in top_helpful],
+                "least_helpful_articles": [format_article(a) for a in least_helpful],
+                "recent_feedback_comments": [
+                    {
+                        "article_id": f["article_id"],
+                        "article_title": f["article_title"],
+                        "user_email": f["user_email"],
+                        "helpful": f["helpful"],
+                        "comment": f["comment"],
+                        "feedback_at": f["feedback_at"],
+                        "category": f["category"]
+                    }
+                    for f in recent_feedback
+                ]
+            }
+
+        except Exception as e:
+            logger.error(f"Error getting feedback summary: {str(e)}")
+            raise HTTPException(status_code=500, detail=f"Error retrieving feedback summary: {str(e)}")
+
 
 # Singleton instance
 knowledge_base_service = KnowledgeBaseService()

@@ -252,6 +252,20 @@ class AdBillingService:
                     f"Campaign {campaign['_id']} auto-paused: "
                     f"budget ${budget_consumed:.2f} >= cap ${total_budget:.2f}"
                 )
+
+                # Notify vendor (in-portal + email + push)
+                try:
+                    from app.services.vendor_notification_service import VendorNotificationService
+                    vns = VendorNotificationService()
+                    await vns.notify_vendor_budget_exhausted(
+                        vendor_email=campaign.get("vendor_email", ""),
+                        campaign_name=campaign.get("campaign_name", str(campaign["_id"])),
+                        budget_consumed=budget_consumed,
+                        total_budget=total_budget,
+                    )
+                except Exception as e:
+                    logger.warning(f"Failed to notify vendor on budget exhaustion: {e}")
+
             return "paused"
 
         # 80% consumed — warning

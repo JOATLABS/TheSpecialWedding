@@ -766,8 +766,36 @@ async def get_subscription_details(
 
         # Get local subscription record
         subscription_record = await mongo.db["user_subscriptions"].find_one({"user_id": user_id})
+
+        # Fallback: if user_subscriptions record is missing (e.g. standalone MongoDB
+        # transaction failed during webhook), reconstruct from the users collection
+        # which is also updated by _sync_subscription_state.
         if not subscription_record:
-            raise HTTPException(status_code=404, detail="No subscription found")
+            from bson import ObjectId as _ObjId
+            user_doc = await mongo.db["users"].find_one(
+                {"_id": _ObjId(user_id)},
+                {
+                    "subscription_status": 1, "plan_id": 1,
+                    "stripe_subscription_id": 1, "stripe_customer_id": 1,
+                    "trial_end_date": 1, "created_at": 1,
+                }
+            )
+            if user_doc and user_doc.get("subscription_status") in ("active", "trial"):
+                # Construct a minimal subscription record from users collection
+                subscription_record = {
+                    "user_id": user_id,
+                    "plan_id": user_doc.get("plan_id"),
+                    "status": user_doc.get("subscription_status"),
+                    "stripe_subscription_id": user_doc.get("stripe_subscription_id"),
+                    "stripe_customer_id": user_doc.get("stripe_customer_id"),
+                    "billing_interval": "monthly",
+                    "current_period_start": user_doc.get("created_at"),
+                    "trial_end_date": user_doc.get("trial_end_date"),
+                    "payment_status": "paid",
+                }
+                logger.info(f"Reconstructed subscription from users collection for user {user_id}")
+            else:
+                raise HTTPException(status_code=404, detail="No subscription found")
 
         plan_id = subscription_record.get("plan_id")
         plan = None

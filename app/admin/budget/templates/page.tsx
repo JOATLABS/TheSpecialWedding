@@ -25,10 +25,9 @@ const normaliseTemplate = (template: any): BudgetTemplate => {
     throw new Error('Invalid template payload');
   }
 
-  const identifier = template.id || template._id || template?._id?.$oid || template?._id?.oid || '';
+  const identifier = template.id || (template as any)._id || '';
   return {
     id: identifier,
-    _id: identifier,
     name: template.name || '',
     description: template.description || undefined,
     wedding_type: template.wedding_type || '',

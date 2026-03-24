@@ -116,8 +116,8 @@ export default function CouplePortalManagementPage() {
     if (!token) return;
     try {
       const url = selectedWeddingId
-        ? `${getApiBaseUrl()}/couple-portal/couples?wedding_id=${selectedWeddingId}`
-        : `${getApiBaseUrl()}/couple-portal/couples`;
+        ? `${getApiBaseUrl()}/admin/couple-portal/couples?wedding_id=${selectedWeddingId}`
+        : `${getApiBaseUrl()}/admin/couple-portal/couples`;
       const res = await fetch(url, {
         headers: { Authorization: `Bearer ${token}` },
       });
@@ -165,7 +165,7 @@ export default function CouplePortalManagementPage() {
     }
     setInviting(true);
     try {
-      const res = await fetch(`${getApiBaseUrl()}/couple-portal/invite`, {
+      const res = await fetch(`${getApiBaseUrl()}/admin/couple-portal/invite`, {
         method: 'POST',
         headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -216,7 +216,7 @@ export default function CouplePortalManagementPage() {
   // Resend invite
   const handleResend = async (coupleId: string) => {
     try {
-      const res = await fetch(`${getApiBaseUrl()}/couple-portal/resend-invite`, {
+      const res = await fetch(`${getApiBaseUrl()}/admin/couple-portal/resend-invite`, {
         method: 'POST',
         headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
         body: JSON.stringify({ couple_id: coupleId }),
@@ -250,33 +250,36 @@ export default function CouplePortalManagementPage() {
   ];
 
   return (
-    <div className="p-4 sm:p-6 max-w-6xl mx-auto">
+    <div className="space-y-6">
       <PageHeader
         title="Couple Portal"
         description="Manage couple access, program details, and collaborative notes"
       />
 
       {/* Wedding Selector + Archive */}
-      <div className="mb-6 flex flex-col sm:flex-row sm:items-end gap-3">
-        <div className="flex-1">
-          <label className="block text-sm font-medium text-gray-700 mb-1">Select Wedding</label>
+      <div className="bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-4">
+        <div className="flex flex-col sm:flex-row gap-4 items-center">
+          <label className="font-medium text-slate-700 dark:text-gray-200 whitespace-nowrap">
+            Select Wedding:
+          </label>
           <select
             value={selectedWeddingId}
             onChange={(e) => setSelectedWeddingId(e.target.value)}
-            className="w-full sm:w-80 px-3 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+            className="flex-1 px-4 py-2.5 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-wedding-rose focus:border-transparent"
           >
+            <option value="">Choose a wedding...</option>
             {weddings.map((w) => (
               <option key={w.id} value={w.id}>{w.couple_names} — {w.date}</option>
             ))}
           </select>
+          {selectedWeddingId && (
+            <ArchiveButton weddingId={selectedWeddingId} token={token || ''} onArchived={() => { fetchCouples(); fetchEvents(); }} />
+          )}
         </div>
-        {selectedWeddingId && (
-          <ArchiveButton weddingId={selectedWeddingId} token={token || ''} onArchived={() => { fetchCouples(); fetchEvents(); }} />
-        )}
       </div>
 
       {/* Section Tabs */}
-      <div className="flex gap-1 mb-6 border-b border-gray-200">
+      <div className="flex gap-1 mb-6 border-b border-gray-200 dark:border-gray-700">
         {sectionTabs.map((tab) => (
           <button
             key={tab.key}
@@ -284,7 +287,7 @@ export default function CouplePortalManagementPage() {
             className={`flex items-center gap-2 px-4 py-2.5 text-sm font-medium border-b-2 transition-colors ${
               activeSection === tab.key
                 ? 'border-blue-600 text-blue-600'
-                : 'border-transparent text-gray-500 hover:text-gray-700'
+                : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200'
             }`}
           >
             {tab.icon}
@@ -345,42 +348,42 @@ export default function CouplePortalManagementPage() {
       {/* Invite Modal */}
       {showInviteForm && (
         <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-xl shadow-xl w-full max-w-md p-6">
-            <h3 className="text-lg font-semibold text-gray-800 mb-4">Invite Couple</h3>
+          <div className="bg-white dark:bg-slate-800 rounded-xl shadow-xl w-full max-w-md p-6">
+            <h3 className="text-lg font-semibold text-gray-800 dark:text-gray-200 mb-4">Invite Couple</h3>
             <div className="space-y-3">
               <div>
-                <label className="block text-sm text-gray-600 mb-1">Email *</label>
+                <label className="block text-sm text-gray-600 dark:text-gray-400 mb-1">Email *</label>
                 <input
                   type="email"
                   value={inviteEmail}
                   onChange={(e) => setInviteEmail(e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm"
+                  className="w-full px-3 py-2 border border-gray-200 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-slate-700 text-gray-800 dark:text-gray-200"
                   placeholder="couple@email.com"
                 />
               </div>
               <div>
-                <label className="block text-sm text-gray-600 mb-1">Partner 1 Name *</label>
+                <label className="block text-sm text-gray-600 dark:text-gray-400 mb-1">Partner 1 Name *</label>
                 <input
                   type="text"
                   value={invitePartner1}
                   onChange={(e) => setInvitePartner1(e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm"
+                  className="w-full px-3 py-2 border border-gray-200 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-slate-700 text-gray-800 dark:text-gray-200"
                 />
               </div>
               <div>
-                <label className="block text-sm text-gray-600 mb-1">Partner 2 Name</label>
+                <label className="block text-sm text-gray-600 dark:text-gray-400 mb-1">Partner 2 Name</label>
                 <input
                   type="text"
                   value={invitePartner2}
                   onChange={(e) => setInvitePartner2(e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm"
+                  className="w-full px-3 py-2 border border-gray-200 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-slate-700 text-gray-800 dark:text-gray-200"
                 />
               </div>
             </div>
             <div className="flex justify-end gap-3 mt-6">
               <button
                 onClick={() => setShowInviteForm(false)}
-                className="px-4 py-2 text-sm text-gray-600 hover:text-gray-800"
+                className="px-4 py-2 text-sm text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200"
               >
                 Cancel
               </button>
@@ -419,7 +422,7 @@ function CouplesSection({
   return (
     <div>
       <div className="flex items-center justify-between mb-4">
-        <h2 className="text-lg font-semibold text-gray-800">Couple Accounts</h2>
+        <h2 className="text-xl font-semibold text-gray-800 dark:text-gray-200">Couple Accounts</h2>
         <button
           onClick={onInvite}
           className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700"
@@ -430,7 +433,7 @@ function CouplesSection({
       </div>
 
       {couples.length === 0 ? (
-        <div className="text-center py-12 text-gray-400">
+        <div className="text-center py-12 text-gray-400 dark:text-gray-500">
           <Users className="w-10 h-10 mx-auto mb-3 opacity-50" />
           <p>No couples invited yet</p>
           <p className="text-sm mt-1">Click "Invite Couple" to get started</p>
@@ -438,7 +441,7 @@ function CouplesSection({
       ) : (
         <div className="space-y-3">
           {couples.map((couple) => (
-            <div key={couple.id} className="bg-white rounded-lg border border-gray-200 p-4 flex items-center justify-between">
+            <div key={couple.id} className="bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-4 flex items-center justify-between">
               <div className="flex items-center gap-3">
                 <div className={`w-10 h-10 rounded-full flex items-center justify-center text-white text-sm font-medium ${
                   couple.is_active ? 'bg-green-500' : couple.setup_completed ? 'bg-red-400' : 'bg-amber-400'
@@ -446,19 +449,19 @@ function CouplesSection({
                   {(couple.partner1_name || 'C').charAt(0)}
                 </div>
                 <div>
-                  <p className="font-medium text-gray-800 text-sm">
+                  <p className="font-medium text-gray-800 dark:text-gray-200 text-sm">
                     {couple.partner1_name}{couple.partner2_name ? ` & ${couple.partner2_name}` : ''}
                   </p>
-                  <p className="text-xs text-gray-500">{couple.email}</p>
+                  <p className="text-xs text-gray-500 dark:text-gray-400">{couple.email}</p>
                 </div>
               </div>
               <div className="flex items-center gap-3">
                 <span className={`text-xs px-2 py-1 rounded-full ${
                   couple.is_active
-                    ? 'bg-green-100 text-green-700'
+                    ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
                     : couple.setup_completed
-                    ? 'bg-red-100 text-red-700'
-                    : 'bg-amber-100 text-amber-700'
+                    ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'
+                    : 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400'
                 }`}>
                   {couple.is_active ? 'Active' : couple.setup_completed ? 'Revoked' : 'Pending Setup'}
                 </span>
@@ -490,7 +493,7 @@ function CouplesSection({
                 )}
 
                 {couple.last_login && (
-                  <span className="text-xs text-gray-400" title="Last login">
+                  <span className="text-xs text-gray-400 dark:text-gray-500" title="Last login">
                     {new Date(couple.last_login).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
                   </span>
                 )}
@@ -601,7 +604,7 @@ function ProgramSection({
 
   if (events.length === 0) {
     return (
-      <div className="text-center py-12 text-gray-400">
+      <div className="text-center py-12 text-gray-400 dark:text-gray-500">
         <ListOrdered className="w-10 h-10 mx-auto mb-3 opacity-50" />
         <p>No events in this wedding yet</p>
         <p className="text-sm mt-1">Add events to the wedding first, then manage the run of show here</p>
@@ -611,34 +614,34 @@ function ProgramSection({
 
   return (
     <div className="space-y-4">
-      <p className="text-sm text-gray-500 mb-2">
+      <p className="text-sm text-gray-500 dark:text-gray-400 mb-2">
         Build the detailed run of show for each ceremony. Couples will see this in their portal and can leave notes.
       </p>
 
       {events.map((event, eventIdx) => (
-        <div key={eventIdx} className="bg-white rounded-lg border border-gray-200 overflow-hidden">
+        <div key={eventIdx} className="bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden">
           {/* Event Header */}
           <button
             onClick={() => setExpandedEvent(expandedEvent === eventIdx ? null : eventIdx)}
-            className="w-full flex items-center justify-between px-5 py-3 hover:bg-gray-50 transition-colors"
+            className="w-full flex items-center justify-between px-5 py-3 hover:bg-gray-50 dark:hover:bg-slate-700 transition-colors"
           >
             <div className="flex items-center gap-3">
               <ListOrdered className="w-5 h-5 text-blue-500" />
               <div className="text-left">
-                <p className="font-medium text-gray-800">{eventTypeLabel(event.type)}</p>
-                <p className="text-xs text-gray-500">
+                <p className="font-medium text-gray-800 dark:text-gray-200">{eventTypeLabel(event.type)}</p>
+                <p className="text-xs text-gray-500 dark:text-gray-400">
                   {event.date} · {event.order_of_events?.length || 0} items
                 </p>
               </div>
             </div>
-            {expandedEvent === eventIdx ? <ChevronUp className="w-5 h-5 text-gray-400" /> : <ChevronDown className="w-5 h-5 text-gray-400" />}
+            {expandedEvent === eventIdx ? <ChevronUp className="w-5 h-5 text-gray-400 dark:text-gray-500" /> : <ChevronDown className="w-5 h-5 text-gray-400 dark:text-gray-500" />}
           </button>
 
           {/* Expanded: Order of Events List */}
           {expandedEvent === eventIdx && (
-            <div className="border-t border-gray-100 px-5 py-4">
+            <div className="border-t border-gray-100 dark:border-gray-700 px-5 py-4">
               {(event.order_of_events || []).length === 0 ? (
-                <p className="text-sm text-gray-400 text-center py-4">No program items yet</p>
+                <p className="text-sm text-gray-400 dark:text-gray-500 text-center py-4">No program items yet</p>
               ) : (
                 <div className="space-y-2 mb-4">
                   {(event.order_of_events || [])
@@ -646,23 +649,23 @@ function ProgramSection({
                     .map((item) => (
                       <div
                         key={item.id}
-                        className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg group"
+                        className="flex items-center gap-3 p-3 bg-gray-50 dark:bg-slate-700/50 rounded-lg group"
                       >
-                        <GripVertical className="w-4 h-4 text-gray-300 flex-shrink-0" />
+                        <GripVertical className="w-4 h-4 text-gray-300 dark:text-gray-600 flex-shrink-0" />
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-2">
-                            <p className="font-medium text-gray-800 text-sm">{item.title}</p>
+                            <p className="font-medium text-gray-800 dark:text-gray-200 text-sm">{item.title}</p>
                             {item.time && (
-                              <span className="text-xs text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded">
+                              <span className="text-xs text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/30 px-1.5 py-0.5 rounded">
                                 {item.time}
                               </span>
                             )}
                             {item.duration_minutes && (
-                              <span className="text-xs text-gray-400">{item.duration_minutes}min</span>
+                              <span className="text-xs text-gray-400 dark:text-gray-500">{item.duration_minutes}min</span>
                             )}
                           </div>
                           {item.description && (
-                            <p className="text-xs text-gray-500 mt-0.5">{item.description}</p>
+                            <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">{item.description}</p>
                           )}
                           {item.notes.length > 0 && (
                             <div className="flex items-center gap-1 mt-1">
@@ -686,7 +689,7 @@ function ProgramSection({
 
               {/* Add Item Form */}
               {addingToEvent === eventIdx ? (
-                <div className="border border-blue-200 rounded-lg p-4 bg-blue-50/50">
+                <div className="border border-blue-200 dark:border-blue-700 rounded-lg p-4 bg-blue-50/50 dark:bg-blue-900/20">
                   <div className="grid grid-cols-2 gap-3">
                     <div className="col-span-2">
                       <input
@@ -694,7 +697,7 @@ function ProgramSection({
                         placeholder="Title (e.g. First Dance)"
                         value={newTitle}
                         onChange={(e) => setNewTitle(e.target.value)}
-                        className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm"
+                        className="w-full px-3 py-2 border border-gray-200 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-slate-700 text-gray-800 dark:text-gray-200"
                         autoFocus
                       />
                     </div>
@@ -703,14 +706,14 @@ function ProgramSection({
                       placeholder="Time (e.g. 6:30 PM)"
                       value={newTime}
                       onChange={(e) => setNewTime(e.target.value)}
-                      className="px-3 py-2 border border-gray-200 rounded-lg text-sm"
+                      className="px-3 py-2 border border-gray-200 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-slate-700 text-gray-800 dark:text-gray-200"
                     />
                     <input
                       type="number"
                       placeholder="Duration (min)"
                       value={newDuration}
                       onChange={(e) => setNewDuration(e.target.value)}
-                      className="px-3 py-2 border border-gray-200 rounded-lg text-sm"
+                      className="px-3 py-2 border border-gray-200 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-slate-700 text-gray-800 dark:text-gray-200"
                       min="1"
                     />
                     <div className="col-span-2">
@@ -718,7 +721,7 @@ function ProgramSection({
                         placeholder="Description (optional)"
                         value={newDescription}
                         onChange={(e) => setNewDescription(e.target.value)}
-                        className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm resize-none"
+                        className="w-full px-3 py-2 border border-gray-200 dark:border-gray-600 rounded-lg text-sm resize-none bg-white dark:bg-slate-700 text-gray-800 dark:text-gray-200"
                         rows={2}
                       />
                     </div>
@@ -726,7 +729,7 @@ function ProgramSection({
                   <div className="flex justify-end gap-2 mt-3">
                     <button
                       onClick={() => setAddingToEvent(null)}
-                      className="px-3 py-1.5 text-sm text-gray-600 hover:text-gray-800"
+                      className="px-3 py-1.5 text-sm text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200"
                     >
                       Cancel
                     </button>
@@ -743,7 +746,7 @@ function ProgramSection({
               ) : (
                 <button
                   onClick={() => setAddingToEvent(eventIdx)}
-                  className="w-full py-2 border border-dashed border-gray-300 rounded-lg text-sm text-gray-500 hover:border-blue-400 hover:text-blue-600 transition-colors flex items-center justify-center gap-1"
+                  className="w-full py-2 border border-dashed border-gray-300 dark:border-gray-600 rounded-lg text-sm text-gray-500 dark:text-gray-400 hover:border-blue-400 hover:text-blue-600 dark:hover:border-blue-500 dark:hover:text-blue-400 transition-colors flex items-center justify-center gap-1"
                 >
                   <Plus className="w-4 h-4" />
                   Add Program Item
@@ -934,10 +937,10 @@ function NotesSection({
   return (
     <div>
       <div className="flex items-center justify-between mb-4">
-        <h2 className="text-lg font-semibold text-gray-800">
+        <h2 className="text-xl font-semibold text-gray-800 dark:text-gray-200">
           Couple Notes
           {pendingCount > 0 && (
-            <span className="ml-2 text-sm font-normal text-amber-600">
+            <span className="ml-2 text-sm font-normal text-amber-600 dark:text-amber-400">
               ({pendingCount} pending)
             </span>
           )}
@@ -952,8 +955,8 @@ function NotesSection({
           return (
             <div
               key={noteId}
-              className={`bg-white rounded-lg border p-4 ${
-                note.status === 'pending' ? 'border-amber-200' : 'border-gray-200'
+              className={`bg-white dark:bg-slate-800 rounded-xl shadow-sm border p-4 ${
+                note.status === 'pending' ? 'border-amber-200 dark:border-amber-700' : 'border-gray-200 dark:border-gray-700'
               }`}
             >
               {/* Parent note */}
@@ -961,13 +964,13 @@ function NotesSection({
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 mb-1">
                     {statusIcon(note.status)}
-                    <span className="text-xs text-gray-500">{context}</span>
+                    <span className="text-xs text-gray-500 dark:text-gray-400">{context}</span>
                     <span className={`text-xs px-1.5 py-0.5 rounded-full ${statusBadge(note.status)}`}>
                       {note.status}
                     </span>
                   </div>
-                  <p className="text-sm text-gray-800">{note.text}</p>
-                  <div className="flex items-center gap-2 mt-2 text-xs text-gray-400">
+                  <p className="text-sm text-gray-800 dark:text-gray-200">{note.text}</p>
+                  <div className="flex items-center gap-2 mt-2 text-xs text-gray-400 dark:text-gray-500">
                     <span>{note.author_name || note.author_role}</span>
                     {note.created_at && (
                       <span>· {new Date(note.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}</span>
@@ -982,7 +985,7 @@ function NotesSection({
                       {note.status === 'pending' && (
                         <button
                           onClick={() => handleStatusUpdate(eventIndex, noteId, 'seen', itemId)}
-                          className="p-1.5 text-blue-500 hover:bg-blue-50 rounded-lg transition-colors"
+                          className="p-1.5 text-blue-500 hover:bg-blue-50 dark:hover:bg-blue-900/30 rounded-lg transition-colors"
                           title="Mark as seen"
                         >
                           <Eye className="w-4 h-4" />
@@ -990,7 +993,7 @@ function NotesSection({
                       )}
                       <button
                         onClick={() => handleStatusUpdate(eventIndex, noteId, 'addressed', itemId)}
-                        className="p-1.5 text-green-500 hover:bg-green-50 rounded-lg transition-colors"
+                        className="p-1.5 text-green-500 hover:bg-green-50 dark:hover:bg-green-900/30 rounded-lg transition-colors"
                         title="Mark as addressed"
                       >
                         <CheckCheck className="w-4 h-4" />
@@ -1001,7 +1004,7 @@ function NotesSection({
                   <button
                     onClick={() => { setReplyTarget(isReplyOpen ? null : noteId); setReplyText(''); }}
                     className={`p-1.5 rounded-lg transition-colors ${
-                      isReplyOpen ? 'text-[#1e3a5f] bg-blue-50' : 'text-gray-400 hover:bg-gray-50 hover:text-gray-600'
+                      isReplyOpen ? 'text-[#1e3a5f] bg-blue-50 dark:bg-blue-900/30' : 'text-gray-400 hover:bg-gray-50 dark:hover:bg-slate-700 hover:text-gray-600 dark:hover:text-gray-300'
                     }`}
                     title="Reply to note"
                   >
@@ -1012,12 +1015,12 @@ function NotesSection({
 
               {/* Threaded replies */}
               {replies.length > 0 && (
-                <div className="mt-3 ml-4 border-l-2 border-blue-100 pl-3 space-y-2">
+                <div className="mt-3 ml-4 border-l-2 border-blue-100 dark:border-blue-800 pl-3 space-y-2">
                   {replies.map(({ note: reply }) => (
-                    <div key={reply.id} className="bg-blue-50/50 rounded-lg p-2.5">
-                      <p className="text-sm text-gray-700">{reply.text}</p>
-                      <div className="flex items-center gap-2 mt-1.5 text-xs text-gray-400">
-                        <span className="text-[#1e3a5f] font-medium">Planner</span>
+                    <div key={reply.id} className="bg-blue-50/50 dark:bg-blue-900/20 rounded-lg p-2.5">
+                      <p className="text-sm text-gray-700 dark:text-gray-300">{reply.text}</p>
+                      <div className="flex items-center gap-2 mt-1.5 text-xs text-gray-400 dark:text-gray-500">
+                        <span className="text-[#1e3a5f] dark:text-blue-400 font-medium">Planner</span>
                         {reply.created_at && (
                           <span>· {new Date(reply.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}</span>
                         )}
@@ -1029,14 +1032,14 @@ function NotesSection({
 
               {/* Reply input */}
               {isReplyOpen && (
-                <div className="mt-3 ml-4 border-l-2 border-blue-200 pl-3">
+                <div className="mt-3 ml-4 border-l-2 border-blue-200 dark:border-blue-700 pl-3">
                   <div className="flex gap-2">
                     <input
                       type="text"
                       value={replyText}
                       onChange={(e) => setReplyText(e.target.value)}
                       placeholder="Type your reply..."
-                      className="flex-1 px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-[#1e3a5f]"
+                      className="flex-1 px-3 py-2 border border-gray-200 dark:border-gray-600 rounded-lg text-sm focus:outline-none focus:border-[#1e3a5f] bg-white dark:bg-slate-700 text-gray-800 dark:text-gray-200"
                       autoFocus
                       onKeyDown={(e) => e.key === 'Enter' && !submittingReply && handleReply(eventIndex, noteId, itemId)}
                     />
@@ -1049,7 +1052,7 @@ function NotesSection({
                     </button>
                     <button
                       onClick={() => { setReplyTarget(null); setReplyText(''); }}
-                      className="text-gray-400 hover:text-gray-600 text-sm"
+                      className="text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-400 text-sm"
                     >
                       Cancel
                     </button>
@@ -1169,7 +1172,7 @@ function PlannerMessagesSection({ weddingId, token }: { weddingId: string; token
         <button
           onClick={handleSendDigest}
           disabled={sendingDigest}
-          className="flex items-center gap-2 px-3 py-2 text-sm bg-amber-50 text-amber-700 border border-amber-200 rounded-lg hover:bg-amber-100 transition-colors disabled:opacity-50"
+          className="flex items-center gap-2 px-3 py-2 text-sm bg-amber-50 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 border border-amber-200 dark:border-amber-700 rounded-lg hover:bg-amber-100 dark:hover:bg-amber-900/50 transition-colors disabled:opacity-50"
         >
           {sendingDigest ? <Loader2 className="w-4 h-4 animate-spin" /> : <Bell className="w-4 h-4" />}
           Send Digest Email
@@ -1177,11 +1180,11 @@ function PlannerMessagesSection({ weddingId, token }: { weddingId: string; token
       </div>
 
       {/* Chat container */}
-      <div className="bg-white rounded-xl border border-gray-200 shadow-sm flex flex-col" style={{ height: '55vh', minHeight: '350px' }}>
+      <div className="bg-white dark:bg-slate-800 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm flex flex-col" style={{ height: '55vh', minHeight: '350px' }}>
         {/* Messages area */}
         <div className="flex-1 overflow-y-auto p-4 space-y-3">
           {messages.length === 0 ? (
-            <div className="flex flex-col items-center justify-center h-full text-gray-400">
+            <div className="flex flex-col items-center justify-center h-full text-gray-400 dark:text-gray-500">
               <MessageCircle className="w-12 h-12 mb-3 opacity-50" />
               <p className="text-sm">No messages yet</p>
               <p className="text-xs mt-1">Start a conversation with your couple</p>
@@ -1194,14 +1197,14 @@ function PlannerMessagesSection({ weddingId, token }: { weddingId: string; token
                   <div className={`max-w-[75%] rounded-2xl px-4 py-2.5 ${
                     isPlanner
                       ? 'bg-blue-600 text-white rounded-br-md'
-                      : 'bg-gray-100 text-gray-800 rounded-bl-md'
+                      : 'bg-gray-100 dark:bg-slate-700 text-gray-800 dark:text-gray-200 rounded-bl-md'
                   }`}>
                     {!isPlanner && (
-                      <p className="text-xs font-medium text-gray-500 mb-1">{msg.sender_name}</p>
+                      <p className="text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">{msg.sender_name}</p>
                     )}
                     <p className="text-sm whitespace-pre-wrap">{msg.content}</p>
                     <div className={`flex items-center gap-1.5 mt-1 ${isPlanner ? 'justify-end' : ''}`}>
-                      <span className={`text-xs ${isPlanner ? 'text-white/50' : 'text-gray-400'}`}>
+                      <span className={`text-xs ${isPlanner ? 'text-white/50' : 'text-gray-400 dark:text-gray-500'}`}>
                         {msg.created_at ? new Date(msg.created_at).toLocaleTimeString('en-US', {
                           hour: 'numeric', minute: '2-digit', hour12: true,
                         }) : ''}
@@ -1218,14 +1221,14 @@ function PlannerMessagesSection({ weddingId, token }: { weddingId: string; token
         </div>
 
         {/* Input area */}
-        <div className="border-t border-gray-200 p-3 flex gap-2">
+        <div className="border-t border-gray-200 dark:border-gray-700 p-3 flex gap-2">
           <input
             type="text"
             value={newMessage}
             onChange={(e) => setNewMessage(e.target.value)}
             onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend(); } }}
             placeholder="Type a message to the couple..."
-            className="flex-1 px-4 py-2.5 border border-gray-200 rounded-full text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+            className="flex-1 px-4 py-2.5 border border-gray-200 dark:border-gray-600 rounded-full text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 bg-white dark:bg-slate-700 text-gray-800 dark:text-gray-200"
             disabled={sending}
           />
           <button
@@ -1276,7 +1279,7 @@ function ArchiveButton({ weddingId, token, onArchived }: { weddingId: string; to
     <>
       <button
         onClick={() => setShowConfirm(true)}
-        className="flex items-center gap-2 px-3 py-2 text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-lg hover:bg-amber-100 transition-colors"
+        className="flex items-center gap-2 px-3 py-2 text-sm text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/30 border border-amber-200 dark:border-amber-700 rounded-lg hover:bg-amber-100 dark:hover:bg-amber-900/50 transition-colors"
       >
         <Archive className="w-4 h-4" />
         Archive Wedding
@@ -1284,23 +1287,23 @@ function ArchiveButton({ weddingId, token, onArchived }: { weddingId: string; to
 
       {showConfirm && (
         <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-xl shadow-xl w-full max-w-md p-6">
+          <div className="bg-white dark:bg-slate-800 rounded-xl shadow-xl w-full max-w-md p-6">
             <div className="flex items-center gap-3 mb-4">
-              <div className="w-10 h-10 rounded-full bg-amber-50 flex items-center justify-center">
-                <Archive className="w-5 h-5 text-amber-600" />
+              <div className="w-10 h-10 rounded-full bg-amber-50 dark:bg-amber-900/30 flex items-center justify-center">
+                <Archive className="w-5 h-5 text-amber-600 dark:text-amber-400" />
               </div>
-              <h3 className="text-lg font-semibold text-gray-800">Archive This Wedding?</h3>
+              <h3 className="text-lg font-semibold text-gray-800 dark:text-gray-200">Archive This Wedding?</h3>
             </div>
-            <p className="text-sm text-gray-600 mb-2">
+            <p className="text-sm text-gray-600 dark:text-gray-400 mb-2">
               Archiving will snapshot all wedding data (guests, contracts, forms, messages) and mark the couple portal as read-only.
             </p>
-            <p className="text-sm text-gray-500 mb-6">
+            <p className="text-sm text-gray-500 dark:text-gray-400 mb-6">
               The couple can still log in and view their archived details, but won&apos;t be able to send messages, submit forms, or add notes.
             </p>
             <div className="flex gap-3 justify-end">
               <button
                 onClick={() => setShowConfirm(false)}
-                className="px-4 py-2 text-sm text-gray-600 border border-gray-200 rounded-lg hover:bg-gray-50"
+                className="px-4 py-2 text-sm text-gray-600 dark:text-gray-400 border border-gray-200 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-slate-700"
               >
                 Cancel
               </button>
@@ -1421,41 +1424,41 @@ function FormTemplatesSection({ weddingId, token }: { weddingId: string; token: 
   return (
     <div className="space-y-4">
       <div>
-        <h3 className="text-lg font-semibold text-gray-800">Custom Form Templates</h3>
-        <p className="text-sm text-gray-500 mt-1">Save forms as reusable templates to quickly create new forms for any wedding.</p>
+        <h3 className="text-xl font-semibold text-gray-800 dark:text-gray-200">Custom Form Templates</h3>
+        <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">Save forms as reusable templates to quickly create new forms for any wedding.</p>
       </div>
 
       {templates.length === 0 ? (
-        <div className="bg-white border border-gray-200 rounded-xl p-8 text-center">
-          <Copy className="w-10 h-10 text-gray-300 mx-auto mb-3" />
-          <p className="text-gray-500 text-sm">No custom templates yet</p>
-          <p className="text-gray-400 text-xs mt-1">Save any form as a template from the Forms page to reuse it across weddings.</p>
+        <div className="bg-white dark:bg-slate-800 border border-gray-200 dark:border-gray-700 rounded-xl p-8 text-center">
+          <Copy className="w-10 h-10 text-gray-300 dark:text-gray-600 mx-auto mb-3" />
+          <p className="text-gray-500 dark:text-gray-400 text-sm">No custom templates yet</p>
+          <p className="text-gray-400 dark:text-gray-500 text-xs mt-1">Save any form as a template from the Forms page to reuse it across weddings.</p>
         </div>
       ) : (
         <div className="grid gap-3">
           {templates.map((tpl) => (
-            <div key={tpl.id} className="bg-white border border-gray-200 rounded-xl p-4">
+            <div key={tpl.id} className="bg-white dark:bg-slate-800 border border-gray-200 dark:border-gray-700 rounded-xl p-4">
               <div className="flex items-start justify-between">
                 <div className="flex-1">
-                  <h4 className="font-medium text-gray-800">{tpl.name}</h4>
-                  {tpl.description && <p className="text-sm text-gray-500 mt-0.5">{tpl.description}</p>}
-                  <div className="flex items-center gap-3 mt-2 text-xs text-gray-400">
+                  <h4 className="font-medium text-gray-800 dark:text-gray-200">{tpl.name}</h4>
+                  {tpl.description && <p className="text-sm text-gray-500 dark:text-gray-400 mt-0.5">{tpl.description}</p>}
+                  <div className="flex items-center gap-3 mt-2 text-xs text-gray-400 dark:text-gray-500">
                     <span>{tpl.field_count} fields</span>
-                    {tpl.category && <span className="bg-gray-100 px-2 py-0.5 rounded">{tpl.category}</span>}
+                    {tpl.category && <span className="bg-gray-100 dark:bg-slate-700 px-2 py-0.5 rounded">{tpl.category}</span>}
                     {tpl.created_at && <span>{new Date(tpl.created_at).toLocaleDateString()}</span>}
                   </div>
                 </div>
                 <div className="flex items-center gap-2 ml-4">
                   <button
                     onClick={() => { setCreatingFrom(tpl.id); setNewFormName(''); }}
-                    className="flex items-center gap-1.5 px-3 py-1.5 text-sm text-blue-600 bg-blue-50 rounded-lg hover:bg-blue-100 transition-colors"
+                    className="flex items-center gap-1.5 px-3 py-1.5 text-sm text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/30 rounded-lg hover:bg-blue-100 dark:hover:bg-blue-900/50 transition-colors"
                   >
                     <FileText className="w-3.5 h-3.5" />
                     Use Template
                   </button>
                   <button
                     onClick={() => handleDelete(tpl.id, tpl.name)}
-                    className="p-1.5 text-gray-400 hover:text-red-500 transition-colors"
+                    className="p-1.5 text-gray-400 dark:text-gray-500 hover:text-red-500 dark:hover:text-red-400 transition-colors"
                     title="Delete template"
                   >
                     <Trash2 className="w-4 h-4" />
@@ -1464,13 +1467,13 @@ function FormTemplatesSection({ weddingId, token }: { weddingId: string; token: 
               </div>
 
               {creatingFrom === tpl.id && (
-                <div className="mt-3 pt-3 border-t border-gray-100 flex gap-2">
+                <div className="mt-3 pt-3 border-t border-gray-100 dark:border-gray-700 flex gap-2">
                   <input
                     type="text"
                     value={newFormName}
                     onChange={(e) => setNewFormName(e.target.value)}
                     placeholder="New form name..."
-                    className="flex-1 px-3 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    className="flex-1 px-3 py-2 border border-gray-200 dark:border-gray-600 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white dark:bg-slate-700 text-gray-800 dark:text-gray-200"
                     onKeyDown={(e) => { if (e.key === 'Enter') handleCreateFromTemplate(tpl.id); }}
                   />
                   <button
@@ -1481,7 +1484,7 @@ function FormTemplatesSection({ weddingId, token }: { weddingId: string; token: 
                   </button>
                   <button
                     onClick={() => setCreatingFrom(null)}
-                    className="px-3 py-2 text-sm text-gray-500 border border-gray-200 rounded-lg hover:bg-gray-50"
+                    className="px-3 py-2 text-sm text-gray-500 dark:text-gray-400 border border-gray-200 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-slate-700"
                   >
                     Cancel
                   </button>
@@ -1654,85 +1657,85 @@ function MeetingsSection({ weddingId, token }: { weddingId: string; token: strin
   return (
     <div>
       <div className="flex items-center justify-between mb-4">
-        <h2 className="text-lg font-semibold text-gray-800">Meetings</h2>
+        <h2 className="text-xl font-semibold text-gray-800 dark:text-gray-200">Meetings</h2>
         <button onClick={() => setShowForm(!showForm)} className="flex items-center gap-1.5 px-3 py-2 bg-[#1e3a5f] text-white rounded-lg text-sm hover:bg-[#2a4f7f] transition-colors">
           <Plus className="w-4 h-4" /> Schedule Meeting
         </button>
       </div>
 
       {showForm && (
-        <div className="bg-white rounded-lg border border-gray-200 p-4 mb-4 space-y-3">
+        <div className="bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-4 mb-4 space-y-3">
           <div>
-            <label className="block text-sm text-gray-600 mb-1">Title *</label>
-            <input type="text" value={title} onChange={(e) => setTitle(e.target.value)} placeholder="e.g., Weekly Check-in" className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-[#1e3a5f]" />
+            <label className="block text-sm text-gray-600 dark:text-gray-400 mb-1">Title *</label>
+            <input type="text" value={title} onChange={(e) => setTitle(e.target.value)} placeholder="e.g., Weekly Check-in" className="w-full px-3 py-2 border border-gray-200 dark:border-gray-600 rounded-lg text-sm focus:outline-none focus:border-[#1e3a5f] bg-white dark:bg-slate-700 text-gray-800 dark:text-gray-200" />
           </div>
           <div>
-            <label className="block text-sm text-gray-600 mb-1">Description</label>
-            <input type="text" value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Meeting agenda or notes..." className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-[#1e3a5f]" />
+            <label className="block text-sm text-gray-600 dark:text-gray-400 mb-1">Description</label>
+            <input type="text" value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Meeting agenda or notes..." className="w-full px-3 py-2 border border-gray-200 dark:border-gray-600 rounded-lg text-sm focus:outline-none focus:border-[#1e3a5f] bg-white dark:bg-slate-700 text-gray-800 dark:text-gray-200" />
           </div>
           <div className="grid grid-cols-3 gap-3">
             <div>
-              <label className="block text-sm text-gray-600 mb-1">Date *</label>
-              <input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-[#1e3a5f]" />
+              <label className="block text-sm text-gray-600 dark:text-gray-400 mb-1">Date *</label>
+              <input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} className="w-full px-3 py-2 border border-gray-200 dark:border-gray-600 rounded-lg text-sm focus:outline-none focus:border-[#1e3a5f] bg-white dark:bg-slate-700 text-gray-800 dark:text-gray-200" />
             </div>
             <div>
-              <label className="block text-sm text-gray-600 mb-1">Start Time</label>
-              <input type="time" value={startTime} onChange={(e) => setStartTime(e.target.value)} className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-[#1e3a5f]" />
+              <label className="block text-sm text-gray-600 dark:text-gray-400 mb-1">Start Time</label>
+              <input type="time" value={startTime} onChange={(e) => setStartTime(e.target.value)} className="w-full px-3 py-2 border border-gray-200 dark:border-gray-600 rounded-lg text-sm focus:outline-none focus:border-[#1e3a5f] bg-white dark:bg-slate-700 text-gray-800 dark:text-gray-200" />
             </div>
             <div>
-              <label className="block text-sm text-gray-600 mb-1">End Time</label>
-              <input type="time" value={endTime} onChange={(e) => setEndTime(e.target.value)} className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-[#1e3a5f]" />
+              <label className="block text-sm text-gray-600 dark:text-gray-400 mb-1">End Time</label>
+              <input type="time" value={endTime} onChange={(e) => setEndTime(e.target.value)} className="w-full px-3 py-2 border border-gray-200 dark:border-gray-600 rounded-lg text-sm focus:outline-none focus:border-[#1e3a5f] bg-white dark:bg-slate-700 text-gray-800 dark:text-gray-200" />
             </div>
           </div>
           <div className="flex items-center gap-3">
             <label className="flex items-center gap-2 cursor-pointer">
-              <input type="checkbox" checked={isRecurring} onChange={(e) => setIsRecurring(e.target.checked)} className="rounded border-gray-300" />
-              <span className="text-sm text-gray-700 flex items-center gap-1"><Repeat className="w-4 h-4" /> Recurring</span>
+              <input type="checkbox" checked={isRecurring} onChange={(e) => setIsRecurring(e.target.checked)} className="rounded border-gray-300 dark:border-gray-600" />
+              <span className="text-sm text-gray-700 dark:text-gray-300 flex items-center gap-1"><Repeat className="w-4 h-4" /> Recurring</span>
             </label>
           </div>
           {isRecurring && (
             <div className="grid grid-cols-2 gap-3 pl-6">
               <div>
-                <label className="block text-sm text-gray-600 mb-1">Frequency</label>
-                <select value={recurrencePreset} onChange={(e) => setRecurrencePreset(e.target.value)} className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-[#1e3a5f]">
+                <label className="block text-sm text-gray-600 dark:text-gray-400 mb-1">Frequency</label>
+                <select value={recurrencePreset} onChange={(e) => setRecurrencePreset(e.target.value)} className="w-full px-3 py-2 border border-gray-200 dark:border-gray-600 rounded-lg text-sm focus:outline-none focus:border-[#1e3a5f] bg-white dark:bg-slate-700 text-gray-800 dark:text-gray-200">
                   <option value="weekly">Weekly</option>
                   <option value="biweekly">Every 2 weeks</option>
                   <option value="monthly">Monthly</option>
                 </select>
               </div>
               <div>
-                <label className="block text-sm text-gray-600 mb-1">Number of meetings</label>
-                <input type="number" value={recurrenceCount} onChange={(e) => setRecurrenceCount(parseInt(e.target.value) || 1)} min={1} max={52} className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-[#1e3a5f]" />
+                <label className="block text-sm text-gray-600 dark:text-gray-400 mb-1">Number of meetings</label>
+                <input type="number" value={recurrenceCount} onChange={(e) => setRecurrenceCount(parseInt(e.target.value) || 1)} min={1} max={52} className="w-full px-3 py-2 border border-gray-200 dark:border-gray-600 rounded-lg text-sm focus:outline-none focus:border-[#1e3a5f] bg-white dark:bg-slate-700 text-gray-800 dark:text-gray-200" />
               </div>
             </div>
           )}
           <div className="flex items-center gap-4">
             <label className="flex items-center gap-2 cursor-pointer">
-              <input type="checkbox" checked={syncToGoogle} onChange={(e) => setSyncToGoogle(e.target.checked)} className="rounded border-gray-300" />
-              <span className="text-sm text-gray-600">Sync to Google Calendar</span>
+              <input type="checkbox" checked={syncToGoogle} onChange={(e) => setSyncToGoogle(e.target.checked)} className="rounded border-gray-300 dark:border-gray-600" />
+              <span className="text-sm text-gray-600 dark:text-gray-400">Sync to Google Calendar</span>
             </label>
             <div className="flex items-center gap-2">
-              <span className="text-sm text-gray-600">Remind</span>
-              <select value={reminderMinutes} onChange={(e) => setReminderMinutes(parseInt(e.target.value))} className="px-2 py-1 border border-gray-200 rounded text-sm">
+              <span className="text-sm text-gray-600 dark:text-gray-400">Remind</span>
+              <select value={reminderMinutes} onChange={(e) => setReminderMinutes(parseInt(e.target.value))} className="px-2 py-1 border border-gray-200 dark:border-gray-600 rounded text-sm bg-white dark:bg-slate-700 text-gray-800 dark:text-gray-200">
                 <option value={15}>15 min</option>
                 <option value={30}>30 min</option>
                 <option value={60}>1 hour</option>
                 <option value={1440}>1 day</option>
               </select>
-              <span className="text-sm text-gray-600">before</span>
+              <span className="text-sm text-gray-600 dark:text-gray-400">before</span>
             </div>
           </div>
           <div className="flex gap-2 pt-2">
             <button onClick={handleSchedule} disabled={submitting || !title.trim() || !startDate} className="px-4 py-2 bg-[#1e3a5f] text-white rounded-lg text-sm disabled:opacity-50 flex items-center gap-1">
               {submitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Calendar className="w-4 h-4" />} Schedule
             </button>
-            <button onClick={() => setShowForm(false)} className="px-4 py-2 text-sm text-gray-500 border border-gray-200 rounded-lg hover:bg-gray-50">Cancel</button>
+            <button onClick={() => setShowForm(false)} className="px-4 py-2 text-sm text-gray-500 dark:text-gray-400 border border-gray-200 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-slate-700">Cancel</button>
           </div>
         </div>
       )}
 
       {meetings.length === 0 ? (
-        <div className="text-center py-12 text-gray-400">
+        <div className="text-center py-12 text-gray-400 dark:text-gray-500">
           <Calendar className="w-10 h-10 mx-auto mb-3 opacity-50" />
           <p>No meetings scheduled</p>
           <p className="text-sm mt-1">Schedule a check-in with the couple to stay aligned</p>
@@ -1740,22 +1743,22 @@ function MeetingsSection({ weddingId, token }: { weddingId: string; token: strin
       ) : (
         <div className="space-y-2">
           {meetings.map((m) => (
-            <div key={m.id} className="bg-white rounded-lg border border-gray-200 p-4 flex items-center justify-between">
+            <div key={m.id} className="bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-4 flex items-center justify-between">
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2">
-                  <h3 className="text-sm font-medium text-gray-800">{m.title}</h3>
-                  {m.is_recurring && <span className="text-xs px-1.5 py-0.5 rounded-full bg-purple-100 text-purple-700 flex items-center gap-0.5"><Repeat className="w-3 h-3" /> Recurring</span>}
-                  {m.synced_to_google && <span className="text-xs px-1.5 py-0.5 rounded-full bg-green-100 text-green-700">Google Cal</span>}
+                  <h3 className="text-sm font-medium text-gray-800 dark:text-gray-200">{m.title}</h3>
+                  {m.is_recurring && <span className="text-xs px-1.5 py-0.5 rounded-full bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-400 flex items-center gap-0.5"><Repeat className="w-3 h-3" /> Recurring</span>}
+                  {m.synced_to_google && <span className="text-xs px-1.5 py-0.5 rounded-full bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400">Google Cal</span>}
                 </div>
-                {m.description && <p className="text-xs text-gray-500 mt-0.5">{m.description}</p>}
-                <div className="flex items-center gap-2 mt-1 text-xs text-gray-400">
+                {m.description && <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">{m.description}</p>}
+                <div className="flex items-center gap-2 mt-1 text-xs text-gray-400 dark:text-gray-500">
                   <Clock className="w-3 h-3" />
                   <span>{fmtDate(m.start_date)}</span>
                   <span>{fmtTime(m.start_date)}</span>
                   {m.end_date && <span>– {fmtTime(m.end_date)}</span>}
                 </div>
               </div>
-              <button onClick={() => handleCancelMeeting(m.id)} className="p-1.5 text-red-400 hover:bg-red-50 rounded-lg transition-colors" title="Cancel meeting">
+              <button onClick={() => handleCancelMeeting(m.id)} className="p-1.5 text-red-400 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/30 rounded-lg transition-colors" title="Cancel meeting">
                 <Trash2 className="w-4 h-4" />
               </button>
             </div>

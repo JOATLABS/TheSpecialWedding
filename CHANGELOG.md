@@ -5,6 +5,121 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.27.0] - 2026-03-24 — Couple Portal Redesign: Match Platform Design System
+
+### Context
+
+The couple-facing portal at `/couple/dashboard` looked like a completely separate app with its own layout (sticky header + horizontal tab bar), color scheme, and design patterns. This release redesigns it to match the platform's sidebar + top header layout, design tokens, and interaction patterns.
+
+### Added
+
+- **CoupleSidebar** (`/app/couple/components/CoupleSidebar.tsx`) — Collapsible sidebar matching the admin Sidebar structure. Navigation items: Dashboard, Timeline, Payments, Forms, Inbox, Registry, FAQ. Badge counts for unread inbox messages and pending forms. Mobile drawer with overlay.
+- **CoupleTopHeader** (`/app/couple/components/CoupleTopHeader.tsx`) — Top header matching admin TopHeader with mobile menu toggle, theme toggle (light/dark), couple name display, and sign out button.
+- **CoupleLayoutClient** (`/app/couple/components/CoupleLayoutClient.tsx`) — Client-side layout wrapper with ThemeProvider, mesh gradient background (matching admin layout), and public/authenticated page routing.
+
+### Changed
+
+- **Couple layout** (`/app/couple/layout.tsx`) — Rewritten to use CoupleLayoutClient wrapper while preserving server-side metadata exports.
+- **Couple dashboard** (`/app/couple/dashboard/page.tsx`) — Complete rewrite:
+  - Replaced horizontal tab bar with sidebar-driven section navigation
+  - Applied platform card styles: `bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700`
+  - Switched primary color from slate to indigo to match platform buttons
+  - Added responsive sidebar margin transitions matching admin layout
+  - Improved all dark mode token usage to slate palette
+  - Budget progress bar now color-coded (indigo → amber → red based on spend percentage)
+- **Payments + Contract merged** — Combined into single "Payments" section showing contract summary, payment overview, contract sections, and payment schedule in one view.
+- **Messages + Updates merged** — Combined into "Inbox" section with pill-toggle sub-tabs for Messages and Updates.
+- **UX copy improvements** — Rewrote empty states, error messages, button labels, and section headings for clarity and warmth (e.g., "Needs your input" instead of "Pending", "Your big day is X days away" instead of "Counting Down", more helpful empty state guidance).
+
+### Removed
+
+- Standalone sticky header with couple name + logout button (replaced by sidebar + top header)
+- Horizontal scrolling tab bar (replaced by sidebar navigation)
+- Meetings tab (meetings are now planner tasks with "Couple Meeting" category)
+- `MeetingsTab` component and `CoupleMeeting` interface
+
+### Technical Notes
+
+- Layout uses same ThemeProvider, mesh gradient, and responsive sidebar pattern as admin layout
+- Section switching via state (Option A from spec) to avoid new routes
+- All existing API endpoints preserved — no backend changes required
+- Zero TypeScript compilation errors introduced
+
+---
+
+## [2.26.0] - 2026-03-23 — Couple Portal Consolidation: Integrate into Existing Platform Pages
+
+### Context
+
+The couple portal (planner side) was built as a standalone page with its own tabs and design language. This release walks that back — every couple portal feature is now integrated into the existing platform pages where it belongs, eliminating duplicate UI and keeping the planner workflow in one place per domain.
+
+### Changed
+
+- **Program & Couple Notes → Weddings page** — Added "Program" (indigo) and "Notes" (amber) popup modal buttons on each wedding card. Planners manage run-of-show items and couple notes directly from the Weddings list without navigating away. Full CRUD: add/delete program items per event, status tracking and replies on notes.
+- **Messages → Inbox page** — Unified couple messaging into the existing Inbox page (done in prior session).
+- **Form Templates → Forms page** — Added "Custom Templates" section to the existing Forms page. Planners can browse saved templates, create forms from them, and delete templates — all inline with the existing forms library using the same glassmorphism card style.
+- **Meetings → Calendar task system** — Instead of a separate meetings module, added `meeting` ("Couple Meeting") as a task category in the existing Calendar task system. Planners schedule meetings using the same task form that already supports start/end times, recurring, Google Calendar sync, and reminders. Removed the standalone Meetings button and modal from the Calendar page (~250 lines deleted).
+- **Task modal compact layout** — Rewrote the Create/Edit Task modal to fit all fields on screen without scrolling: 4-column row for Wedding/Category/Priority/Color, inline date+time rows, merged Description and Notes into a single textarea.
+- **Dialog component fix** — Removed hardcoded `max-w-lg` from the shared Dialog component so callers can specify their own max-width. Added `max-h-[90vh] overflow-y-auto` as base defaults.
+
+### Removed
+
+- Standalone "Meetings" button and modal from Calendar page (replaced by task category)
+- `MeetingsModalContent` component and `Meeting` interface from Calendar page (~250 lines)
+- `meetingModalOpen` state from Calendar page
+
+### Technical Notes
+
+- `calendarApi.ts`: Added `'meeting'` to `TaskCategory` union and `CATEGORY_LABELS` map
+- `TaskModal.tsx`: Added `'meeting'` to `CATEGORIES` array, widened time inputs, compact form layout
+- `planner/calendar/page.tsx`: Removed meetings modal, button, state, and `MeetingsModalContent` function
+- `components/ui/Dialog.tsx`: Removed hardcoded `max-w-lg`, added viewport-constrained scrolling
+- `admin/forms/page.tsx`: Added custom templates state, fetch/create/delete handlers, and UI section
+- Backend category field is a free string — no backend changes needed for meeting category
+
+---
+
+## [2.25.0] - 2026-03-23 — Full-Stack Alignment Audit: P2/P3 Remediation
+
+### Context
+
+Resolved 27 misalignment items (15 P2, 12 P3) identified in the full-stack alignment audit covering 69 API files, 23 models, 64 services, and 271 frontend files. A post-implementation code review caught and fixed 2 additional critical bugs before merge.
+
+### Added
+
+- **Rate Limiting** (`app/utils/rate_limiter.py`) — In-memory sliding window rate limiter with per-IP tracking, DoS protection (auto-eviction at 10k IPs), and pre-configured limiters: `public_read_limiter` (60/min), `public_search_limiter` (30/min), `public_slug_limiter` (100/min). Applied to 3 blog endpoints and 5 knowledge base endpoints.
+- **Cursor-Based Pagination** (`app/utils/cursor_pagination.py`) — Base64-encoded cursors with `_id` + sort field for stable MongoDB pagination. Generic `CursorPage[T]` response model, `limit + 1` fetch pattern (no extra count query), `validated_cursor()` and `validated_cursor_limit()` FastAPI dependencies.
+- **Error Boundaries** (~20 `error.tsx` files) — Next.js App Router error boundaries for all admin pages: ads, billing, budget, couple-portal, dashboard, forms, guests, inbox, metrics, notifications, packages, planner/billing, planner/calendar, platform, saas, seating, support, users, vendors, weddings.
+- **Knowledge Base Feedback Summary** — `GET /admin/kb/feedback-summary` endpoint with MongoDB aggregation pipeline returning global stats, top 5 most/least helpful articles, and 20 most recent feedback comments.
+- **Admin RSVP Contact Fields** — Optional `phone` and `email` on `AdminRSVPUpdateRequest`; guest contact info updated before RSVP creation (non-None only, prevents accidental blanking).
+
+### Changed
+
+- **Vendor Assignment Status Enum** (`app/models/vendor.py`) — Formalized `VendorAssignmentStatus(str, Enum)` with 6 states: `inquiry → quoted → contracted → confirmed → completed → cancelled`. Added state machine docstring, changed field type from `str` to enum, added validation in `vendor_service.py` and regex pattern on the API query parameter.
+- **Payment Milestone Status Docs** — Added comprehensive state machine docstring to `PaymentMilestoneStatus` enum.
+- **Budget TypeScript Cleanup** (`app/types/budget.ts`, budget pages, `PaymentHistoryPanel.tsx`) — Removed `_id: string` from `BudgetCategory`, `VendorQuote`, and `BudgetTemplate` interfaces. Eliminated all `category.id || category._id` fallback patterns across budget page, templates page, and payment history panel.
+- **AdminContext Token Refresh** (`app/contexts/AdminContext.tsx`) — Added immediate post-login refresh for tokens with <10 min TTL. Introduced `activeToken` tracking so profile and team permissions fetches always use the freshest token.
+- **SMS Config Logging** (`app/core/sms_config.py`) — Module-level docstring documenting all env vars for Twilio/Telnyx. Unknown provider values now log a warning with fallback behavior.
+- **Trial Expiration Emails** (`app/services/trial_expiration_service.py`) — Retry logic (max 2 retries, 2s/4s exponential backoff), email validation, early return for unconfigured service, fixed subject line pluralization ("1 Day" vs "X Days"), individual failures no longer break the loop.
+- **Offset Pagination Deprecation** (`app/utils/query_validation.py`) — Deprecation docstring on `validated_skip()` pointing to `cursor_pagination` module.
+- **Planner Billing Migration Prep** (`app/admin/planner/billing/page.tsx`) — Destructured `apiRequest` from `useAdmin()` with TODO for migrating raw `fetch()` calls.
+
+### Fixed
+
+- **Stale Token in Profile Fetch** (Critical) — `AdminContext.tsx` profile fetch used original `access_token` instead of potentially refreshed token after post-login refresh, causing intermittent auth failures on login. Fixed with `activeToken` variable.
+- **Cursor Pagination `$or` Overwrite** (Critical) — `query_filter.update(cursor_query)` silently dropped existing `$or` clauses. Changed to `{"$and": [query_filter, cursor_query]}` for safe filter merging.
+
+### Code Review Ratings
+
+| Dimension       | Rating | Notes                                           |
+|-----------------|--------|-------------------------------------------------|
+| Security        | A-     | Rate limiting in place; naming concern (info)   |
+| Performance     | A      | Cursor pagination, no extra count queries        |
+| Correctness     | A      | 2 critical bugs found and fixed during review    |
+| Maintainability | A-     | Enums, deprecation notices, error boundaries     |
+
+---
+
 ## [2.24.0] - 2026-03-23 — Couple Portal Sprint 6: Registry, FAQ, QR Code, Push Notifications & PWA
 
 ### Context

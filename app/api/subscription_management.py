@@ -80,7 +80,7 @@ async def get_user_subscription(
 ):
     """Get user's current subscription"""
     # Users can only see their own subscription unless they're ROOT_ADMIN
-    if not current_user.is_root_admin and current_user.user_data.get("_id") != user_id:
+    if not current_user.is_root_admin and str(current_user.user_data.get("_id")) != user_id:
         raise HTTPException(status_code=403, detail="Can only view your own subscription")
 
     subscription = await subscription_service.get_user_subscription(user_id)
@@ -116,7 +116,7 @@ async def change_billing_interval(
     - Switching to monthly: Credit for unused yearly time, charge for monthly
     """
     # Users can only change their own billing interval unless they're ROOT_ADMIN
-    if not current_user.is_root_admin and current_user.user_data.get("_id") != user_id:
+    if not current_user.is_root_admin and str(current_user.user_data.get("_id")) != user_id:
         raise HTTPException(status_code=403, detail="Can only change your own billing interval")
 
     from app.services.stripe_service import stripe_service
@@ -132,7 +132,7 @@ async def get_user_usage_stats(
 ):
     """Get user's current usage statistics"""
     # Users can only see their own usage unless they're ROOT_ADMIN
-    if not current_user.is_root_admin and current_user.user_data.get("_id") != user_id:
+    if not current_user.is_root_admin and str(current_user.user_data.get("_id")) != user_id:
         raise HTTPException(status_code=403, detail="Can only view your own usage")
     return await subscription_service.get_usage_stats(user_id)
 
@@ -145,7 +145,7 @@ async def check_usage_limits(
 ):
     """Check if user can use more of a resource without exceeding limits"""
     # Users can only check their own limits unless they're ROOT_ADMIN
-    if not current_user.is_root_admin and current_user.user_data.get("_id") != user_id:
+    if not current_user.is_root_admin and str(current_user.user_data.get("_id")) != user_id:
         raise HTTPException(status_code=403, detail="Can only check your own limits")
     return await subscription_service.check_usage_limits(user_id, resource_type, amount)
 

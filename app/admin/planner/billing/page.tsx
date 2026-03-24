@@ -104,7 +104,7 @@ interface PaymentRequest {
 
 export default function PlannerBillingPage() {
   const router = useRouter();
-  const { userProfile } = useAdmin();
+  const { userProfile, apiRequest } = useAdmin();
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<'subscription' | 'client_payments'>('subscription');
   const [plans, setPlans] = useState<SubscriptionPlan[]>([]);
@@ -135,6 +135,9 @@ export default function PlannerBillingPage() {
     try {
       setLoading(true);
       const baseUrl = getApiBaseUrl();
+      // TODO(P3): Migrate remaining direct fetch() calls in this file to use
+      // apiRequest() from AdminContext for centralized 401/402 handling.
+      // Current direct fetch() calls bypass auto-logout on token expiry.
       const token = localStorage.getItem('admin_token') || sessionStorage.getItem('admin_token');
 
       if (!token || !userProfile) return;
@@ -182,7 +185,7 @@ export default function PlannerBillingPage() {
       // Fallback to legacy endpoints if Stripe endpoint failed
       if (!subscriptionLoaded) {
         // Use user_id (MongoDB _id mapped to .id), not email — backend authorization checks _id match
-        const userId = userProfile.id || (userProfile as any)._id || '';
+        const userId = userProfile.id || (userProfile as any)._id || (userProfile as any).user_data?._id || '';
         if (userId) {
           const subResponse = await fetch(
             `${baseUrl}/users/${encodeURIComponent(userId)}/subscription`,
@@ -202,7 +205,30 @@ export default function PlannerBillingPage() {
               const planDetail = fetchedPlans.find((p: SubscriptionPlan) => p._id === subData.plan_id);
               setCurrentPlan(planDetail || null);
               generateBillingAlerts(subData, planDetail);
+              subscriptionLoaded = true;
             }
+          }
+        }
+      }
+
+      // Last-resort fallback: if no subscription endpoints returned data but
+      // the user profile indicates an active/trial subscription (set by webhook
+      // updating the users collection), construct a minimal subscription object
+      // so the billing page shows the management view instead of "Choose Your Plan".
+      if (!subscriptionLoaded && userProfile.subscription_status && ['active', 'trial'].includes(userProfile.subscription_status)) {
+        const profilePlanId = (userProfile as any).user_data?.plan_id || '';
+        if (profilePlanId) {
+          const minimalSub: any = {
+            plan_id: profilePlanId,
+            status: userProfile.subscription_status,
+            billing_interval: 'monthly',
+            payment_status: 'paid',
+          };
+          setCurrentSubscription(minimalSub);
+          const planDetail = fetchedPlans.find((p: SubscriptionPlan) => p._id === profilePlanId);
+          setCurrentPlan(planDetail || null);
+          if (planDetail) {
+            generateBillingAlerts(minimalSub, planDetail);
           }
         }
       }
@@ -601,50 +627,56 @@ export default function PlannerBillingPage() {
           </p>
         </div>
 
-        <div className="grid md:grid-cols-3 gap-6">
+        <div className="grid md:grid-cols-3 gap-8 max-w-5xl mx-auto">
           {plans.map((plan) => (
             <Card
               key={plan._id}
-              className={`relative bg-white dark:bg-gray-800 transition-all hover:shadow-lg ${
+              className={`relative flex flex-col bg-white dark:bg-gray-800 transition-all hover:shadow-lg ${
                 plan.is_featured
-                  ? 'border-2 border-blue-500 dark:border-blue-400'
+                  ? 'border-2 border-blue-500 dark:border-blue-400 shadow-md'
                   : 'border border-gray-200 dark:border-gray-700'
               }`}
             >
               {plan.is_featured && (
                 <div className="absolute -top-3 left-1/2 -translate-x-1/2">
-                  <Badge className="bg-blue-500 text-white px-3">Recommended</Badge>
+                  <Badge className="bg-blue-500 text-white px-3 py-1">Recommended</Badge>
                 </div>
               )}
-              <CardHeader className="text-center pb-2">
-                <CardTitle className="text-lg text-gray-900 dark:text-gray-100">
+              <CardHeader className="text-center pb-4 pt-8">
+                <CardTitle className="text-xl font-semibold text-gray-900 dark:text-gray-100">
                   {plan.name}
                 </CardTitle>
-                <div className="mt-3">
-                  <span className="text-3xl font-bold text-gray-900 dark:text-white">
+                <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">{plan.description}</p>
+                <div className="mt-4">
+                  <span className="text-4xl font-bold text-gray-900 dark:text-white">
                     ${plan.price_monthly}
                   </span>
                   <span className="text-gray-500 dark:text-gray-400">/mo</span>
+                  {plan.price_yearly > 0 && (
+                    <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">
+                      or ${plan.price_yearly}/yr (save ${plan.price_monthly * 12 - plan.price_yearly})
+                    </p>
+                  )}
                 </div>
               </CardHeader>
-              <CardContent className="space-y-4">
-                <ul className="space-y-2 text-sm">
-                  <li className="flex items-center gap-2 text-gray-700 dark:text-gray-300">
-                    <CheckCircle2 className="w-4 h-4 text-green-500 flex-shrink-0" />
-                    {plan.max_weddings === -1 ? 'Unlimited' : plan.max_weddings} weddings
-                  </li>
-                  <li className="flex items-center gap-2 text-gray-700 dark:text-gray-300">
-                    <CheckCircle2 className="w-4 h-4 text-green-500 flex-shrink-0" />
-                    {plan.max_guests_per_wedding} guests per wedding
-                  </li>
-                  <li className="flex items-center gap-2 text-gray-700 dark:text-gray-300">
-                    <CheckCircle2 className="w-4 h-4 text-green-500 flex-shrink-0" />
-                    {plan.storage_gb} GB storage
-                  </li>
+              <CardContent className="flex-1 flex flex-col space-y-6 px-6 pb-8">
+                <ul className="space-y-3 text-sm flex-1">
+                  {(plan.features_list && plan.features_list.length > 0 ? plan.features_list : [
+                    `${plan.max_weddings === -1 ? 'Unlimited' : plan.max_weddings} weddings`,
+                    `${plan.max_guests_per_wedding === -1 ? 'Unlimited' : plan.max_guests_per_wedding} guests per wedding`,
+                    `${plan.storage_gb} GB storage`,
+                    `${plan.staff_seats} staff seat${plan.staff_seats !== 1 ? 's' : ''}`,
+                    `${plan.ai_credits_monthly} AI credits/month`,
+                  ]).map((feature, idx) => (
+                    <li key={idx} className="flex items-start gap-2.5 text-gray-700 dark:text-gray-300">
+                      <CheckCircle2 className="w-4 h-4 text-green-500 flex-shrink-0 mt-0.5" />
+                      <span>{feature}</span>
+                    </li>
+                  ))}
                 </ul>
                 <Button
                   onClick={() => handleSubscribe(plan._id)}
-                  className={`w-full ${
+                  className={`w-full py-3 text-base font-medium ${
                     plan.is_featured
                       ? 'bg-blue-600 hover:bg-blue-700 text-white'
                       : 'bg-gray-900 dark:bg-gray-100 hover:bg-gray-800 dark:hover:bg-gray-200 text-white dark:text-gray-900'

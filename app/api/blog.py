@@ -2,12 +2,13 @@
 Blog API Endpoints
 Public endpoints for the /resources page (no auth) + Admin CRUD (ROOT_ADMIN only)
 """
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, Request
 from pydantic import BaseModel, Field, field_validator
 from typing import Optional, List
 from app.dependencies.auth_extended import require_root_admin, ExtendedAuthUser
 from app.services.blog_service import blog_service
 from app.models.blog import BLOG_CATEGORIES
+from app.utils.rate_limiter import public_read_limiter, public_slug_limiter, check_rate_limit
 import logging
 
 logger = logging.getLogger(__name__)
@@ -89,6 +90,7 @@ class BlogUpdateRequest(BaseModel):
 
 @router.get("/api/v1/blog/articles", tags=["Blog"])
 async def get_published_articles(
+    request: Request,
     page: int = Query(1, ge=1),
     limit: int = Query(20, ge=1, le=50),
     category: Optional[str] = Query(None),
@@ -98,7 +100,11 @@ async def get_published_articles(
     """
     Get published blog articles — PUBLIC, no auth required.
     Used by the /resources page on the marketing site.
+    Rate limited to 60 requests per minute per IP.
     """
+    client_ip = request.client.host if request.client else "unknown"
+    check_rate_limit(client_ip, public_read_limiter)
+
     return await blog_service.get_published_articles(
         page=page,
         limit=limit,
@@ -109,20 +115,28 @@ async def get_published_articles(
 
 
 @router.get("/api/v1/blog/articles/slug/{slug}", tags=["Blog"])
-async def get_article_by_slug(slug: str):
+async def get_article_by_slug(request: Request, slug: str):
     """
     Get a single published article by slug — PUBLIC.
     Used by the split-panel blog reader and direct blog URLs.
+    Rate limited to 100 requests per minute per IP.
     """
+    client_ip = request.client.host if request.client else "unknown"
+    check_rate_limit(client_ip, public_slug_limiter)
+
     return await blog_service.get_article_by_slug(slug, increment_view=True)
 
 
 @router.get("/api/v1/blog/slugs", tags=["Blog"])
-async def get_all_slugs():
+async def get_all_slugs(request: Request):
     """
     Get all published blog slugs — PUBLIC.
     Used by the sitemap generator.
+    Rate limited to 60 requests per minute per IP.
     """
+    client_ip = request.client.host if request.client else "unknown"
+    check_rate_limit(client_ip, public_read_limiter)
+
     return await blog_service.get_slugs()
 
 

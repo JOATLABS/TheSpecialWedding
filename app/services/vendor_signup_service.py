@@ -343,6 +343,15 @@ class VendorSignupService:
             f"Vendor {vendor_id} suspended by {admin_email}. "
             f"Reason: {reason}. Campaigns paused: {campaigns_result.modified_count}"
         )
+
+        # Notify vendor (in-portal + email + push)
+        try:
+            from app.services.vendor_notification_service import VendorNotificationService
+            vns = VendorNotificationService()
+            await vns.notify_vendor_suspended(vendor["email"], reason)
+        except Exception as e:
+            logger.warning(f"Failed to notify vendor on suspension: {e}")
+
         return {
             "vendor_id": vendor_id,
             "status": "suspended",
@@ -380,6 +389,15 @@ class VendorSignupService:
         )
 
         logger.info(f"Vendor {vendor_id} reactivated by {admin_email}")
+
+        # Notify vendor (in-portal + email + push)
+        try:
+            from app.services.vendor_notification_service import VendorNotificationService
+            vns = VendorNotificationService()
+            await vns.notify_vendor_reactivated(vendor["email"])
+        except Exception as e:
+            logger.warning(f"Failed to notify vendor on reactivation: {e}")
+
         return {
             "vendor_id": vendor_id,
             "status": "active",
@@ -659,11 +677,5 @@ class VendorSignupService:
         except Exception as e:
             logger.error(f"Failed to create admin notification for signup: {e}")
 
-        # Dedicated push notification for admin (belt-and-suspenders alongside
-        # the NotificationService.create_notification push we added)
-        try:
-            from app.services.vendor_notification_service import VendorNotificationService
-            vns = VendorNotificationService()
-            await vns.notify_admin_new_vendor_signup(business_name, vendor_email)
-        except Exception as e:
-            logger.warning(f"Failed to send admin push for vendor signup: {e}")
+        # Note: NotificationService.create_notification() above already handles
+        # in-portal + push + SSE for root_admin. No extra call needed.

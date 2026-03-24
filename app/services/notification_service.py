@@ -405,7 +405,7 @@ class NotificationService:
             logger.error(f"Error getting user notifications: {str(e)}")
             raise HTTPException(status_code=500, detail=f"Error retrieving user notifications: {str(e)}")
 
-    async def mark_notification_read(self, notification_id: str, user_id: str) -> dict:
+    async def mark_notification_read(self, notification_id: str, user_id: str, user_role: str = "wedding_planner") -> dict:
         """Mark notification as read by user"""
         try:
             # Validate ObjectId
@@ -443,7 +443,7 @@ class NotificationService:
             # Broadcast updated count via SSE
             from app.services.sse_manager import sse_manager
             try:
-                counts = await self.get_user_notification_count(user_id, "wedding_planner")
+                counts = await self.get_user_notification_count(user_id, user_role)
                 task = asyncio.create_task(
                     sse_manager.broadcast_to_user(user_id, "notification-count", counts)
                 )
@@ -459,7 +459,7 @@ class NotificationService:
             logger.error(f"Error marking notification as read: {str(e)}")
             raise HTTPException(status_code=500, detail=f"Error marking notification as read: {str(e)}")
 
-    async def mark_all_notifications_read(self, user_id: str) -> dict:
+    async def mark_all_notifications_read(self, user_id: str, user_role: str = "wedding_planner") -> dict:
         """Mark all notifications as read for a user"""
         try:
             # Find all notifications that haven't been read by this user yet
@@ -481,7 +481,7 @@ class NotificationService:
             # Broadcast updated count via SSE
             from app.services.sse_manager import sse_manager
             try:
-                counts = await self.get_user_notification_count(user_id, "wedding_planner")
+                counts = await self.get_user_notification_count(user_id, user_role)
                 task = asyncio.create_task(
                     sse_manager.broadcast_to_user(user_id, "notification-count", counts)
                 )

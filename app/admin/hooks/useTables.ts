@@ -1,27 +1,52 @@
 import { useState, useCallback } from 'react';
-import { Table, CreateTableRequest, UpdateTableRequest, AssignGuestsRequest } from '@/types/table';
-
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || '';
+import { Table, CreateTableRequest, UpdateTableRequest } from '@/types/table';
+import { useAdmin } from '@/contexts/AdminContext';
+import { getApiBaseUrl } from '@/utils/env';
 
 export function useTables(weddingId: string) {
   const [tables, setTables] = useState<Table[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const getAuthHeader = (): Record<string, string> => {
-    const token = typeof window !== 'undefined'
-      ? localStorage.getItem('admin_token') || sessionStorage.getItem('admin_token')
-      : null;
-    return token ? { Authorization: `Bearer ${token}` } : {};
+  // Get token and logout from AdminContext (single source of truth for auth)
+  const { token, logout } = useAdmin();
+
+  /**
+   * Handle auth-related response statuses consistently with AdminContext.
+   * Returns true if the response was handled (caller should return early).
+   */
+  const handleAuthResponse = (response: Response): boolean => {
+    if (response.status === 401) {
+      logout();
+      return true;
+    }
+    if (response.status === 402) {
+      window.location.href = '/admin/planner/billing';
+      return true;
+    }
+    return false;
+  };
+
+  const getHeaders = (includeContentType = false): Record<string, string> => {
+    const headers: Record<string, string> = {};
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+    if (includeContentType) {
+      headers['Content-Type'] = 'application/json';
+    }
+    return headers;
   };
 
   const fetchTables = useCallback(async () => {
-    if (!weddingId) return;
+    if (!weddingId || !token) return;
     setLoading(true);
     try {
-      const response = await fetch(`${API_BASE_URL}/admin/tables/${weddingId}`, {
-        headers: getAuthHeader(),
+      const baseUrl = getApiBaseUrl();
+      const response = await fetch(`${baseUrl}/admin/tables/${weddingId}`, {
+        headers: getHeaders(),
       });
+      if (handleAuthResponse(response)) return;
       if (!response.ok) throw new Error('Failed to fetch tables');
       const data = await response.json();
       setTables(data);
@@ -30,18 +55,17 @@ export function useTables(weddingId: string) {
     } finally {
       setLoading(false);
     }
-  }, [weddingId]);
+  }, [weddingId, token, logout]);
 
   const createTable = async (data: CreateTableRequest) => {
     try {
-      const response = await fetch(`${API_BASE_URL}/admin/tables`, {
+      const baseUrl = getApiBaseUrl();
+      const response = await fetch(`${baseUrl}/admin/tables`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...getAuthHeader(),
-        },
+        headers: getHeaders(true),
         body: JSON.stringify(data),
       });
+      if (handleAuthResponse(response)) return;
       if (!response.ok) throw new Error('Failed to create table');
       const newTable = await response.json();
       setTables((prev) => [...prev, newTable]);
@@ -52,16 +76,15 @@ export function useTables(weddingId: string) {
     }
   };
 
-  const updateTable = async (tableId: string, data: UpdateTableRequest) => {
+  const updateTable = async (tableId: string, data: Partial<Table>) => {
     try {
-      const response = await fetch(`${API_BASE_URL}/admin/tables/${tableId}`, {
+      const baseUrl = getApiBaseUrl();
+      const response = await fetch(`${baseUrl}/admin/tables/${tableId}`, {
         method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          ...getAuthHeader(),
-        },
+        headers: getHeaders(true),
         body: JSON.stringify(data),
       });
+      if (handleAuthResponse(response)) return;
       if (!response.ok) throw new Error('Failed to update table');
 
       setTables((prev) =>
@@ -75,10 +98,12 @@ export function useTables(weddingId: string) {
 
   const deleteTable = async (tableId: string) => {
     try {
-      const response = await fetch(`${API_BASE_URL}/admin/tables/${tableId}`, {
+      const baseUrl = getApiBaseUrl();
+      const response = await fetch(`${baseUrl}/admin/tables/${tableId}`, {
         method: 'DELETE',
-        headers: getAuthHeader(),
+        headers: getHeaders(),
       });
+      if (handleAuthResponse(response)) return;
       if (!response.ok) throw new Error('Failed to delete table');
 
       setTables((prev) => prev.filter((t) => t.id !== tableId));
@@ -90,14 +115,13 @@ export function useTables(weddingId: string) {
 
   const assignGuests = async (tableId: string, guestIds: string[]) => {
     try {
-      const response = await fetch(`${API_BASE_URL}/admin/tables/assign`, {
+      const baseUrl = getApiBaseUrl();
+      const response = await fetch(`${baseUrl}/admin/tables/assign`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...getAuthHeader(),
-        },
+        headers: getHeaders(true),
         body: JSON.stringify({ table_id: tableId, guest_ids: guestIds }),
       });
+      if (handleAuthResponse(response)) return false;
       if (!response.ok) {
         // Parse error response to get actual message (e.g., capacity exceeded)
         const errorData = await response.json().catch(() => ({}));
@@ -118,14 +142,13 @@ export function useTables(weddingId: string) {
 
   const unassignGuests = async (guestIds: string[]) => {
     try {
-      const response = await fetch(`${API_BASE_URL}/admin/tables/unassign`, {
+      const baseUrl = getApiBaseUrl();
+      const response = await fetch(`${baseUrl}/admin/tables/unassign`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...getAuthHeader(),
-        },
+        headers: getHeaders(true),
         body: JSON.stringify({ guest_ids: guestIds, wedding_id: weddingId }),
       });
+      if (handleAuthResponse(response)) return false;
       if (!response.ok) throw new Error('Failed to unassign guests');
       return true;
     } catch (err: any) {

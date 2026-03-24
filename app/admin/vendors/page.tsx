@@ -115,6 +115,7 @@ export default function VendorManagementPage() {
   const [priceVendorType, setPriceVendorType] = useState<VendorCategory>('photographer');
   const [priceQuotedAmount, setPriceQuotedAmount] = useState<string>('');
   const [priceDescription, setPriceDescription] = useState<string>('');
+  const [showAdRail, setShowAdRail] = useState(false);
 
   // Pagination
   const pagination = usePagination({ initialItemsPerPage: 50 });
@@ -388,9 +389,9 @@ export default function VendorManagementPage() {
         description="Your complete vendor CRM - directory, contracts, and payments in one place"
       />
 
-      <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
-      {/* Main Content — 3 columns on desktop */}
-      <div className="lg:col-span-3">
+      <div className={`grid grid-cols-1 ${showAdRail ? 'lg:grid-cols-4' : ''} gap-6`}>
+      {/* Main Content — expands to full width when ad rail hidden */}
+      <div className={showAdRail ? 'lg:col-span-3' : ''}>
 
       <div className="bg-white dark:bg-slate-800/95 rounded-2xl shadow-lg border border-slate-200 dark:border-slate-700 overflow-hidden">
 
@@ -1399,10 +1400,10 @@ export default function VendorManagementPage() {
 
       </div>
 
-      {/* Right Sidebar — Sponsored Vendors Rail */}
-      <div className="lg:col-span-1">
+      {/* Right Sidebar — Sponsored Vendors Rail (hidden when ads disabled) */}
+      <div className={showAdRail ? 'lg:col-span-1' : 'hidden'}>
         <div className="sticky top-6">
-          <CampaignSponsoredRail />
+          <CampaignSponsoredRail onVisibilityChange={setShowAdRail} />
         </div>
       </div>
 

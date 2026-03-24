@@ -296,8 +296,8 @@ export default function CoupleDashboardPage() {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <div className="text-center">
-          <Loader2 className="w-10 h-10 animate-spin text-[#1e3a5f] mx-auto mb-4" />
-          <p className="text-gray-500">Loading your wedding portal...</p>
+          <Loader2 className="w-10 h-10 animate-spin text-slate-900 dark:text-white mx-auto mb-4" />
+          <p className="text-slate-600 dark:text-slate-400">Loading your wedding portal...</p>
         </div>
       </div>
     );
@@ -308,8 +308,8 @@ export default function CoupleDashboardPage() {
       <div className="min-h-screen flex items-center justify-center">
         <div className="text-center">
           <AlertCircle className="w-10 h-10 text-red-400 mx-auto mb-4" />
-          <p className="text-gray-600 mb-4">Could not load your dashboard</p>
-          <button onClick={fetchDashboard} className="text-[#1e3a5f] font-medium hover:underline">Try Again</button>
+          <p className="text-slate-700 dark:text-slate-300 mb-4">Could not load your dashboard</p>
+          <button onClick={fetchDashboard} className="text-slate-900 dark:text-white font-medium hover:underline">Try Again</button>
         </div>
       </div>
     );
@@ -331,22 +331,16 @@ export default function CoupleDashboardPage() {
   ];
 
   return (
-    <div className="min-h-screen">
+    <div className="min-h-screen flex flex-col">
       {/* Header */}
-      <header className="bg-white/80 backdrop-blur-md border-b border-gray-100 sticky top-0 z-30">
-        <div className="max-w-6xl mx-auto px-4 sm:px-6 py-4 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 bg-[#1e3a5f] rounded-full flex items-center justify-center">
-              <Heart className="w-5 h-5 text-[#d4af37]" />
-            </div>
-            <div>
-              <h1 className="text-lg font-serif text-[#1e3a5f] leading-tight">{data.wedding?.couple_names || 'Your Wedding'}</h1>
-              <p className="text-xs text-gray-400 tracking-wide">WEDDING PORTAL</p>
-            </div>
-          </div>
+      <header className="sticky top-0 z-30 bg-white/80 dark:bg-slate-900/80 backdrop-blur-xl border-b border-slate-200/50 dark:border-slate-700/50">
+        <div className="flex items-center justify-between h-16 px-4 sm:px-6 lg:px-8">
+          <h1 className="text-xl font-semibold text-slate-900 dark:text-white">
+            {data.wedding?.couple_names || 'Your Wedding'}
+          </h1>
           <button
             onClick={handleLogout}
-            className="flex items-center gap-2 text-gray-400 hover:text-gray-600 transition-colors text-sm"
+            className="flex items-center gap-2 text-slate-700 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white transition-colors text-sm"
           >
             <LogOut className="w-4 h-4" />
             <span className="hidden sm:inline">Sign Out</span>
@@ -356,45 +350,34 @@ export default function CoupleDashboardPage() {
 
       {/* Archived Banner */}
       {data.archived && (
-        <div className="bg-amber-50 border-b border-amber-200 px-4 py-3">
-          <div className="max-w-6xl mx-auto flex items-center gap-3 text-amber-700">
+        <div className="bg-amber-50 dark:bg-amber-950/30 border-b border-amber-200 dark:border-amber-800/50 px-4 py-3">
+          <div className="flex items-center gap-3 text-amber-700 dark:text-amber-600">
             <Archive className="w-5 h-5 flex-shrink-0" />
             <p className="text-sm">This wedding has been completed and archived. You can still view your wedding details and memories.</p>
           </div>
         </div>
       )}
 
-      {/* Countdown Hero */}
-      {days !== null && days > 0 && !data.archived && (
-        <div className="bg-gradient-to-r from-[#1e3a5f] to-[#2a4a6f] text-white">
-          <div className="max-w-6xl mx-auto px-4 sm:px-6 py-8 sm:py-12 text-center">
-            <p className="text-[#d4af37] text-sm tracking-widest uppercase mb-2">Counting Down</p>
-            <div className="text-5xl sm:text-7xl font-serif mb-2">{days}</div>
-            <p className="text-white/70 text-lg">days until your wedding</p>
-            <p className="text-white/50 text-sm mt-2">{data.wedding?.date ? formatDate(data.wedding.date) : ''}</p>
-          </div>
-        </div>
-      )}
-
-      {/* Tabs */}
-      <div className="border-b border-gray-100 bg-white/60 backdrop-blur-sm sticky top-[73px] z-20">
-        <div className="max-w-6xl mx-auto px-4 sm:px-6">
-          <nav className="flex gap-1 overflow-x-auto -mb-px scrollbar-hide">
+      {/* Main Content Area with Tabs */}
+      <div className="flex-1 flex flex-col">
+        {/* Tab Navigation */}
+        <div className="border-b border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800">
+          <nav className="flex gap-1 overflow-x-auto -mb-px scrollbar-hide px-4 sm:px-6 lg:px-8">
             {tabs.map((tab) => (
               <button
                 key={tab.key}
                 onClick={() => setActiveTab(tab.key)}
-                className={`flex items-center gap-1.5 sm:gap-2 px-2.5 sm:px-4 py-3 text-xs sm:text-sm font-medium whitespace-nowrap border-b-2 transition-colors ${
+                className={`flex items-center gap-1.5 sm:gap-2 px-2.5 sm:px-4 py-4 text-xs sm:text-sm font-medium whitespace-nowrap border-b-2 transition-colors ${
                   activeTab === tab.key
-                    ? 'border-[#1e3a5f] text-[#1e3a5f]'
-                    : 'border-transparent text-gray-400 hover:text-gray-600'
+                    ? 'border-slate-900 dark:border-white text-slate-900 dark:text-white'
+                    : 'border-transparent text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
                 }`}
               >
                 {tab.icon}
                 {tab.label}
                 {tab.count !== undefined && tab.count > 0 && (
                   <span className={`text-xs px-1.5 py-0.5 rounded-full ${
-                    activeTab === tab.key ? 'bg-[#1e3a5f] text-white' : 'bg-gray-100 text-gray-500'
+                    activeTab === tab.key ? 'bg-slate-900 dark:bg-white text-white dark:text-slate-900' : 'bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-400'
                   }`}>
                     {tab.count}
                   </span>
@@ -403,11 +386,10 @@ export default function CoupleDashboardPage() {
             ))}
           </nav>
         </div>
-      </div>
 
-      {/* Tab Content */}
-      <main className="max-w-6xl mx-auto px-4 sm:px-6 py-6 sm:py-8">
-        {activeTab === 'overview' && <OverviewTab data={data} />}
+        {/* Tab Content */}
+        <main className="flex-1 p-4 sm:p-6 lg:p-8 space-y-6">
+        {activeTab === 'overview' && <OverviewTab data={data} days={days} />}
         {activeTab === 'timeline' && <TimelineTab events={data.wedding?.events || []} timezone={data.wedding?.timezone} onNoteAdded={fetchDashboard} />}
         {activeTab === 'payments' && <PaymentsTab contract={data.contract} />}
         {activeTab === 'contracts' && <ContractTab />}
@@ -417,7 +399,8 @@ export default function CoupleDashboardPage() {
         {activeTab === 'meetings' && <MeetingsTab />}
         {activeTab === 'registry' && <RegistryTab registries={data.wedding?.registries || []} archived={!!data.archived} onUpdated={fetchDashboard} />}
         {activeTab === 'faq' && <FAQTab faqs={data.wedding?.faqs || []} archived={!!data.archived} onUpdated={fetchDashboard} />}
-      </main>
+        </main>
+      </div>
     </div>
   );
 }
@@ -426,53 +409,63 @@ export default function CoupleDashboardPage() {
 // TAB COMPONENTS
 // ============================================================================
 
-function OverviewTab({ data }: { data: DashboardData }) {
+function OverviewTab({ data, days }: { data: DashboardData; days: number | null }) {
   const stats = data.guest_stats;
   const budget = data.budget_summary;
   const budgetPercent = budget.total_budget > 0 ? Math.min(100, (budget.total_spent / budget.total_budget) * 100) : 0;
 
   return (
     <div className="space-y-6">
+      {/* Countdown Card */}
+      {days !== null && days > 0 && !data.archived && (
+        <div className="bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700 p-6">
+          <p className="text-slate-600 dark:text-slate-400 text-sm font-medium mb-2">Counting Down</p>
+          <div className="text-5xl sm:text-6xl font-semibold text-slate-900 dark:text-white mb-2">{days}</div>
+          <p className="text-slate-700 dark:text-slate-300">days until your wedding</p>
+          <p className="text-slate-500 dark:text-slate-400 text-sm mt-2">{data.wedding?.date ? formatDate(data.wedding.date) : ''}</p>
+        </div>
+      )}
+
       {/* Quick Stats */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-        <div className="bg-white rounded-xl p-4 border border-gray-100 shadow-sm">
-          <Users className="w-5 h-5 text-[#1e3a5f] mb-2" />
-          <div className="text-2xl font-semibold text-gray-800">{stats.total_invited}</div>
-          <div className="text-xs text-gray-500">Guests Invited</div>
+        <div className="bg-white dark:bg-slate-800 rounded-xl p-4 border border-slate-200 dark:border-slate-700 shadow-sm">
+          <Users className="w-5 h-5 text-slate-900 dark:text-slate-300 mb-2" />
+          <div className="text-2xl font-semibold text-slate-900 dark:text-white">{stats.total_invited}</div>
+          <div className="text-xs text-slate-600 dark:text-slate-400">Guests Invited</div>
         </div>
-        <div className="bg-white rounded-xl p-4 border border-gray-100 shadow-sm">
+        <div className="bg-white dark:bg-slate-800 rounded-xl p-4 border border-slate-200 dark:border-slate-700 shadow-sm">
           <CheckCircle className="w-5 h-5 text-green-500 mb-2" />
-          <div className="text-2xl font-semibold text-gray-800">{stats.confirmed}</div>
-          <div className="text-xs text-gray-500">Confirmed</div>
+          <div className="text-2xl font-semibold text-slate-900 dark:text-white">{stats.confirmed}</div>
+          <div className="text-xs text-slate-600 dark:text-slate-400">Confirmed</div>
         </div>
-        <div className="bg-white rounded-xl p-4 border border-gray-100 shadow-sm">
+        <div className="bg-white dark:bg-slate-800 rounded-xl p-4 border border-slate-200 dark:border-slate-700 shadow-sm">
           <Clock className="w-5 h-5 text-amber-500 mb-2" />
-          <div className="text-2xl font-semibold text-gray-800">{stats.pending}</div>
-          <div className="text-xs text-gray-500">Pending</div>
+          <div className="text-2xl font-semibold text-slate-900 dark:text-white">{stats.pending}</div>
+          <div className="text-xs text-slate-600 dark:text-slate-400">Pending</div>
         </div>
-        <div className="bg-white rounded-xl p-4 border border-gray-100 shadow-sm">
-          <DollarSign className="w-5 h-5 text-[#d4af37] mb-2" />
-          <div className="text-2xl font-semibold text-gray-800">{formatCurrency(budget.total_budget)}</div>
-          <div className="text-xs text-gray-500">Total Budget</div>
+        <div className="bg-white dark:bg-slate-800 rounded-xl p-4 border border-slate-200 dark:border-slate-700 shadow-sm">
+          <DollarSign className="w-5 h-5 text-amber-500 mb-2" />
+          <div className="text-2xl font-semibold text-slate-900 dark:text-white">{formatCurrency(budget.total_budget)}</div>
+          <div className="text-xs text-slate-600 dark:text-slate-400">Total Budget</div>
         </div>
       </div>
 
       {/* Budget Progress */}
       {budget.total_budget > 0 && (
-        <div className="bg-white rounded-xl p-6 border border-gray-100 shadow-sm">
+        <div className="bg-white dark:bg-slate-800 rounded-xl p-6 border border-slate-200 dark:border-slate-700 shadow-sm">
           <div className="flex items-center justify-between mb-3">
-            <h3 className="font-medium text-gray-800">Budget Progress</h3>
-            <span className="text-sm text-gray-500">{budgetPercent.toFixed(0)}% spent</span>
+            <h3 className="font-semibold text-slate-900 dark:text-white">Budget Progress</h3>
+            <span className="text-sm text-slate-600 dark:text-slate-400">{budgetPercent.toFixed(0)}% spent</span>
           </div>
-          <div className="w-full bg-gray-100 rounded-full h-3 mb-3">
+          <div className="w-full bg-slate-200 dark:bg-slate-700 rounded-full h-3 mb-3">
             <div
-              className="h-3 rounded-full transition-all bg-gradient-to-r from-[#1e3a5f] to-[#d4af37]"
+              className="h-3 rounded-full transition-all bg-slate-900 dark:bg-white"
               style={{ width: `${budgetPercent}%` }}
             />
           </div>
           <div className="flex justify-between text-sm">
-            <span className="text-gray-500">Spent: {formatCurrency(budget.total_spent)}</span>
-            <span className="text-gray-500">Remaining: {formatCurrency(budget.remaining)}</span>
+            <span className="text-slate-600 dark:text-slate-400">Spent: {formatCurrency(budget.total_spent)}</span>
+            <span className="text-slate-600 dark:text-slate-400">Remaining: {formatCurrency(budget.remaining)}</span>
           </div>
         </div>
       )}
@@ -480,33 +473,33 @@ function OverviewTab({ data }: { data: DashboardData }) {
       {/* Venue & Planner */}
       <div className="grid sm:grid-cols-2 gap-4">
         {data.wedding?.venue && (
-          <div className="bg-white rounded-xl p-6 border border-gray-100 shadow-sm">
+          <div className="bg-white dark:bg-slate-800 rounded-xl p-6 border border-slate-200 dark:border-slate-700 shadow-sm">
             <div className="flex items-center gap-3 mb-3">
-              <MapPin className="w-5 h-5 text-[#c8847e]" />
-              <h3 className="font-medium text-gray-800">Venue</h3>
+              <MapPin className="w-5 h-5 text-slate-700 dark:text-slate-300" />
+              <h3 className="font-semibold text-slate-900 dark:text-white">Venue</h3>
             </div>
-            <p className="text-gray-600">{data.wedding.venue}</p>
+            <p className="text-slate-700 dark:text-slate-300">{data.wedding.venue}</p>
           </div>
         )}
 
         {data.planner && (
-          <div className="bg-white rounded-xl p-6 border border-gray-100 shadow-sm">
+          <div className="bg-white dark:bg-slate-800 rounded-xl p-6 border border-slate-200 dark:border-slate-700 shadow-sm">
             <div className="flex items-center gap-3 mb-3">
-              <Building2 className="w-5 h-5 text-[#1e3a5f]" />
-              <h3 className="font-medium text-gray-800">Your Planner</h3>
+              <Building2 className="w-5 h-5 text-slate-700 dark:text-slate-300" />
+              <h3 className="font-semibold text-slate-900 dark:text-white">Your Planner</h3>
             </div>
-            <p className="text-gray-800 font-medium">{data.planner.name || data.planner.company}</p>
+            <p className="text-slate-900 dark:text-white font-medium">{data.planner.name || data.planner.company}</p>
             {data.planner.company && data.planner.name && (
-              <p className="text-gray-500 text-sm">{data.planner.company}</p>
+              <p className="text-slate-600 dark:text-slate-400 text-sm">{data.planner.company}</p>
             )}
             <div className="mt-3 space-y-1">
               {data.planner.email && (
-                <a href={`mailto:${data.planner.email}`} className="flex items-center gap-2 text-sm text-[#1e3a5f] hover:underline">
+                <a href={`mailto:${data.planner.email}`} className="flex items-center gap-2 text-sm text-slate-700 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white transition-colors">
                   <Mail className="w-3.5 h-3.5" /> {data.planner.email}
                 </a>
               )}
               {data.planner.phone && (
-                <a href={`tel:${data.planner.phone}`} className="flex items-center gap-2 text-sm text-[#1e3a5f] hover:underline">
+                <a href={`tel:${data.planner.phone}`} className="flex items-center gap-2 text-sm text-slate-700 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white transition-colors">
                   <Phone className="w-3.5 h-3.5" /> {data.planner.phone}
                 </a>
               )}
@@ -523,22 +516,22 @@ function OverviewTab({ data }: { data: DashboardData }) {
 
       {/* Upcoming Events Preview */}
       {data.wedding?.events?.length > 0 && (
-        <div className="bg-white rounded-xl p-6 border border-gray-100 shadow-sm">
-          <h3 className="font-medium text-gray-800 mb-4">Upcoming Events</h3>
+        <div className="bg-white dark:bg-slate-800 rounded-xl p-6 border border-slate-200 dark:border-slate-700 shadow-sm">
+          <h3 className="font-semibold text-slate-900 dark:text-white mb-4">Upcoming Events</h3>
           <div className="space-y-3">
             {data.wedding.events.slice(0, 3).map((event, i) => (
-              <div key={i} className="flex items-center gap-4 p-3 rounded-lg bg-gray-50">
-                <div className="w-12 h-12 bg-[#1e3a5f] rounded-lg flex items-center justify-center text-white text-xs font-medium">
+              <div key={i} className="flex items-center gap-4 p-3 rounded-lg bg-slate-50 dark:bg-slate-700/50">
+                <div className="w-12 h-12 bg-slate-900 dark:bg-slate-600 rounded-lg flex items-center justify-center text-white text-xs font-medium">
                   {new Date(event.date + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
                 </div>
                 <div className="flex-1 min-w-0">
-                  <p className="font-medium text-gray-800 text-sm">{eventTypeLabel(event.type)}</p>
-                  <p className="text-xs text-gray-500 truncate">
+                  <p className="font-medium text-slate-900 dark:text-white text-sm">{eventTypeLabel(event.type)}</p>
+                  <p className="text-xs text-slate-600 dark:text-slate-400 truncate">
                     {event.details?.venue_name && `${event.details.venue_name}`}
                     {event.details?.time && ` · ${event.details.time}`}
                   </p>
                 </div>
-                <ChevronRight className="w-4 h-4 text-gray-300 flex-shrink-0" />
+                <ChevronRight className="w-4 h-4 text-slate-300 dark:text-slate-600 flex-shrink-0" />
               </div>
             ))}
           </div>
@@ -556,7 +549,7 @@ function TimelineTab({ events, timezone, onNoteAdded }: { events: WeddingEvent[]
 
   if (!events || events.length === 0) {
     return (
-      <div className="text-center py-12 text-gray-400">
+      <div className="text-center py-12 text-slate-400 dark:text-slate-500">
         <Calendar className="w-10 h-10 mx-auto mb-3 opacity-50" />
         <p>No events scheduled yet</p>
       </div>
@@ -613,14 +606,14 @@ function TimelineTab({ events, timezone, onNoteAdded }: { events: WeddingEvent[]
         const isExpanded = expandedEvent === eventIdx;
 
         return (
-          <div key={eventIdx} className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
+          <div key={eventIdx} className="bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm overflow-hidden">
             {/* Event Header */}
-            <div className="bg-gradient-to-r from-[#1e3a5f] to-[#2a4a6f] px-6 py-3 flex items-center justify-between">
-              <p className="text-[#d4af37] text-sm font-medium">{eventTypeLabel(event.type)}</p>
+            <div className="bg-slate-900 dark:bg-slate-700 px-6 py-3 flex items-center justify-between">
+              <p className="text-slate-100 dark:text-slate-200 text-sm font-medium">{eventTypeLabel(event.type)}</p>
               {(orderItems.length > 0 || eventNotes.length > 0) && (
                 <button
                   onClick={() => setExpandedEvent(isExpanded ? null : eventIdx)}
-                  className="text-white/70 hover:text-white text-xs flex items-center gap-1"
+                  className="text-slate-300 dark:text-slate-400 hover:text-white text-xs flex items-center gap-1"
                 >
                   {orderItems.length > 0 && `${orderItems.length} items`}
                   {isExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
@@ -632,55 +625,55 @@ function TimelineTab({ events, timezone, onNoteAdded }: { events: WeddingEvent[]
             <div className="p-6">
               <div className="grid sm:grid-cols-2 gap-4">
                 <div className="flex items-start gap-3">
-                  <Calendar className="w-5 h-5 text-gray-400 mt-0.5" />
+                  <Calendar className="w-5 h-5 text-slate-400 dark:text-slate-500 mt-0.5" />
                   <div>
-                    <p className="text-sm font-medium text-gray-800">{formatDate(event.date)}</p>
-                    {event.details?.time && <p className="text-sm text-gray-500">{event.details.time}</p>}
+                    <p className="text-sm font-medium text-slate-900 dark:text-white">{formatDate(event.date)}</p>
+                    {event.details?.time && <p className="text-sm text-slate-600 dark:text-slate-400">{event.details.time}</p>}
                   </div>
                 </div>
                 {event.details?.venue_name && (
                   <div className="flex items-start gap-3">
-                    <MapPin className="w-5 h-5 text-gray-400 mt-0.5" />
+                    <MapPin className="w-5 h-5 text-slate-400 dark:text-slate-500 mt-0.5" />
                     <div>
-                      <p className="text-sm font-medium text-gray-800">{event.details.venue_name}</p>
-                      {event.details.location && <p className="text-sm text-gray-500">{event.details.location}</p>}
+                      <p className="text-sm font-medium text-slate-900 dark:text-white">{event.details.venue_name}</p>
+                      {event.details.location && <p className="text-sm text-slate-600 dark:text-slate-400">{event.details.location}</p>}
                     </div>
                   </div>
                 )}
               </div>
               {event.details?.attire && (
-                <div className="mt-4 p-3 bg-gray-50 rounded-lg">
-                  <p className="text-sm text-gray-600"><span className="font-medium">Attire:</span> {event.details.attire}</p>
+                <div className="mt-4 p-3 bg-slate-50 dark:bg-slate-700/50 rounded-lg">
+                  <p className="text-sm text-slate-700 dark:text-slate-300"><span className="font-medium">Attire:</span> {event.details.attire}</p>
                 </div>
               )}
             </div>
 
             {/* Expanded: Order of Events + Notes */}
             {isExpanded && (
-              <div className="border-t border-gray-100 px-6 py-4 space-y-4">
+              <div className="border-t border-slate-200 dark:border-slate-700 px-6 py-4 space-y-4">
                 {/* Order of Events Items */}
                 {orderItems.length > 0 && (
                   <div>
-                    <h4 className="text-sm font-medium text-gray-700 mb-3 flex items-center gap-2">
+                    <h4 className="text-sm font-semibold text-slate-900 dark:text-white mb-3 flex items-center gap-2">
                       <Clock className="w-4 h-4" /> Run of Show
                     </h4>
                     <div className="space-y-2">
                       {orderItems.map((item) => (
-                        <div key={item.id} className="p-3 bg-gray-50 rounded-lg">
+                        <div key={item.id} className="p-3 bg-slate-50 dark:bg-slate-700/50 rounded-lg">
                           <div className="flex items-center gap-3">
                             {item.time && (
-                              <span className="text-xs font-medium text-[#1e3a5f] bg-[#1e3a5f]/10 px-2 py-1 rounded min-w-[60px] text-center">
+                              <span className="text-xs font-medium text-slate-900 dark:text-slate-100 bg-slate-200 dark:bg-slate-600 px-2 py-1 rounded min-w-[60px] text-center">
                                 {item.time}
                               </span>
                             )}
                             <div className="flex-1">
-                              <p className="text-sm font-medium text-gray-800">{item.title}</p>
-                              {item.description && <p className="text-xs text-gray-500 mt-0.5">{item.description}</p>}
-                              {item.duration_minutes && <p className="text-xs text-gray-400">{item.duration_minutes} minutes</p>}
+                              <p className="text-sm font-medium text-slate-900 dark:text-white">{item.title}</p>
+                              {item.description && <p className="text-xs text-slate-600 dark:text-slate-400 mt-0.5">{item.description}</p>}
+                              {item.duration_minutes && <p className="text-xs text-slate-500 dark:text-slate-500">{item.duration_minutes} minutes</p>}
                             </div>
                             <button
                               onClick={() => setNoteTarget({ eventIndex: eventIdx, itemId: item.id })}
-                              className="text-gray-400 hover:text-[#1e3a5f] transition-colors p-1"
+                              className="text-slate-400 dark:text-slate-500 hover:text-slate-900 dark:hover:text-white transition-colors p-1"
                               title="Add a note"
                             >
                               <MessageSquare className="w-4 h-4" />
@@ -719,7 +712,7 @@ function TimelineTab({ events, timezone, onNoteAdded }: { events: WeddingEvent[]
                                         <div className="flex-1">
                                           <span className="text-gray-600">{reply.text}</span>
                                           <div className="flex items-center gap-1.5 mt-0.5">
-                                            <span className="text-[#1e3a5f] font-medium">Planner</span>
+                                            <span className="font-medium text-slate-900 dark:text-white">Planner</span>
                                             {reply.created_at && (
                                               <span className="text-gray-400">· {new Date(reply.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</span>
                                             )}
@@ -741,20 +734,20 @@ function TimelineTab({ events, timezone, onNoteAdded }: { events: WeddingEvent[]
                                 value={noteText}
                                 onChange={(e) => setNoteText(e.target.value)}
                                 placeholder="Add a note for your planner..."
-                                className="flex-1 px-3 py-1.5 border border-gray-200 rounded-lg text-xs"
+                                className="flex-1 px-3 py-1.5 border border-slate-300 dark:border-slate-600 rounded-lg text-xs bg-white dark:bg-slate-700 text-slate-900 dark:text-white placeholder-slate-500 dark:placeholder-slate-400"
                                 autoFocus
                                 onKeyDown={(e) => e.key === 'Enter' && handleSubmitNote(eventIdx, item.id)}
                               />
                               <button
                                 onClick={() => handleSubmitNote(eventIdx, item.id)}
                                 disabled={submittingNote || !noteText.trim()}
-                                className="px-3 py-1.5 bg-[#1e3a5f] text-white rounded-lg text-xs disabled:opacity-50 flex items-center gap-1"
+                                className="px-3 py-1.5 bg-slate-900 dark:bg-slate-700 text-white rounded-lg text-xs disabled:opacity-50 flex items-center gap-1"
                               >
                                 {submittingNote ? <Loader2 className="w-3 h-3 animate-spin" /> : <Send className="w-3 h-3" />}
                               </button>
                               <button
                                 onClick={() => { setNoteTarget(null); setNoteText(''); }}
-                                className="text-gray-400 hover:text-gray-600 text-xs"
+                                className="text-slate-400 dark:text-slate-500 hover:text-slate-600 dark:hover:text-slate-300 text-xs"
                               >
                                 Cancel
                               </button>
@@ -779,15 +772,15 @@ function TimelineTab({ events, timezone, onNoteAdded }: { events: WeddingEvent[]
                   });
                   return (parentEventNotes.length > 0 || eventReplies.length > 0) ? (
                     <div>
-                      <h4 className="text-sm font-medium text-gray-700 mb-2 flex items-center gap-2">
+                      <h4 className="text-sm font-semibold text-slate-900 dark:text-white mb-2 flex items-center gap-2">
                         <StickyNote className="w-4 h-4" /> General Notes
                       </h4>
                       <div className="space-y-2">
                         {parentEventNotes.map((note) => (
                           <div key={note.id}>
-                            <div className="p-3 bg-amber-50/50 border border-amber-100 rounded-lg">
-                              <p className="text-sm text-gray-700">{note.text}</p>
-                              <div className="flex items-center gap-2 mt-1.5 text-xs text-gray-400">
+                            <div className="p-3 bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800/50 rounded-lg">
+                              <p className="text-sm text-slate-900 dark:text-amber-100">{note.text}</p>
+                              <div className="flex items-center gap-2 mt-1.5 text-xs text-slate-600 dark:text-amber-700">
                                 <span>{note.author_name || note.author_role}</span>
                                 {noteStatusBadge(note.status)}
                                 {note.created_at && (
@@ -797,10 +790,10 @@ function TimelineTab({ events, timezone, onNoteAdded }: { events: WeddingEvent[]
                             </div>
                             {/* Planner replies threaded below */}
                             {(eventRepliesMap[note.id] || []).map(reply => (
-                              <div key={reply.id} className="ml-4 mt-1.5 p-2.5 bg-blue-50/60 border border-blue-100 rounded-lg">
-                                <p className="text-sm text-gray-700">{reply.text}</p>
-                                <div className="flex items-center gap-2 mt-1 text-xs text-gray-400">
-                                  <span className="text-[#1e3a5f] font-medium">Planner</span>
+                              <div key={reply.id} className="ml-4 mt-1.5 p-2.5 bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800/50 rounded-lg">
+                                <p className="text-sm text-slate-900 dark:text-blue-100">{reply.text}</p>
+                                <div className="flex items-center gap-2 mt-1 text-xs text-slate-600 dark:text-blue-700">
+                                  <span className="font-medium">Planner</span>
                                   {reply.created_at && (
                                     <span>· {new Date(reply.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</span>
                                   )}
@@ -822,23 +815,23 @@ function TimelineTab({ events, timezone, onNoteAdded }: { events: WeddingEvent[]
                       value={noteText}
                       onChange={(e) => setNoteText(e.target.value)}
                       placeholder="Add a general note for this event..."
-                      className="flex-1 px-3 py-2 border border-gray-200 rounded-lg text-sm"
+                      className="flex-1 px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg text-sm bg-white dark:bg-slate-700 text-slate-900 dark:text-white placeholder-slate-500 dark:placeholder-slate-400"
                       autoFocus
                       onKeyDown={(e) => e.key === 'Enter' && handleSubmitNote(eventIdx)}
                     />
                     <button
                       onClick={() => handleSubmitNote(eventIdx)}
                       disabled={submittingNote || !noteText.trim()}
-                      className="px-4 py-2 bg-[#1e3a5f] text-white rounded-lg text-sm disabled:opacity-50 flex items-center gap-1"
+                      className="px-4 py-2 bg-slate-900 dark:bg-slate-700 text-white rounded-lg text-sm disabled:opacity-50 flex items-center gap-1"
                     >
                       {submittingNote ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
                     </button>
-                    <button onClick={() => { setNoteTarget(null); setNoteText(''); }} className="text-gray-400 hover:text-gray-600 text-sm">Cancel</button>
+                    <button onClick={() => { setNoteTarget(null); setNoteText(''); }} className="text-slate-400 dark:text-slate-500 hover:text-slate-600 dark:hover:text-slate-300 text-sm">Cancel</button>
                   </div>
                 ) : (
                   <button
                     onClick={() => setNoteTarget({ eventIndex: eventIdx })}
-                    className="w-full py-2 border border-dashed border-gray-200 rounded-lg text-sm text-gray-400 hover:border-[#1e3a5f] hover:text-[#1e3a5f] transition-colors flex items-center justify-center gap-1"
+                    className="w-full py-2 border border-dashed border-slate-300 dark:border-slate-600 rounded-lg text-sm text-slate-500 dark:text-slate-400 hover:border-slate-900 dark:hover:border-white hover:text-slate-900 dark:hover:text-white transition-colors flex items-center justify-center gap-1"
                   >
                     <MessageSquare className="w-4 h-4" />
                     Add a Note
@@ -851,7 +844,7 @@ function TimelineTab({ events, timezone, onNoteAdded }: { events: WeddingEvent[]
             {!isExpanded && orderItems.length > 0 && (
               <button
                 onClick={() => setExpandedEvent(eventIdx)}
-                className="w-full border-t border-gray-100 px-6 py-2.5 text-sm text-[#1e3a5f] hover:bg-gray-50 transition-colors flex items-center justify-center gap-1"
+                className="w-full border-t border-slate-200 dark:border-slate-700 px-6 py-2.5 text-sm text-slate-900 dark:text-white hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors flex items-center justify-center gap-1"
               >
                 <Clock className="w-4 h-4" />
                 View Run of Show ({orderItems.length} items)
@@ -868,7 +861,7 @@ function TimelineTab({ events, timezone, onNoteAdded }: { events: WeddingEvent[]
 function PaymentsTab({ contract }: { contract?: ContractInfo | null }) {
   if (!contract) {
     return (
-      <div className="text-center py-12 text-gray-400">
+      <div className="text-center py-12 text-slate-400 dark:text-slate-500">
         <DollarSign className="w-10 h-10 mx-auto mb-3 opacity-50" />
         <p>No payment schedule yet</p>
         <p className="text-sm mt-1">Your planner will set this up soon</p>
@@ -879,20 +872,20 @@ function PaymentsTab({ contract }: { contract?: ContractInfo | null }) {
   return (
     <div className="space-y-6">
       {/* Payment Summary */}
-      <div className="bg-white rounded-xl p-6 border border-gray-100 shadow-sm">
-        <h3 className="font-medium text-gray-800 mb-4">Payment Summary — {contract.package_name}</h3>
+      <div className="bg-white dark:bg-slate-800 rounded-xl p-6 border border-slate-200 dark:border-slate-700 shadow-sm">
+        <h3 className="font-semibold text-slate-900 dark:text-white mb-4">Payment Summary — {contract.package_name}</h3>
         <div className="grid grid-cols-3 gap-4 text-center">
           <div>
-            <div className="text-2xl font-semibold text-gray-800">{formatCurrency(contract.summary.total_amount)}</div>
-            <div className="text-xs text-gray-500">Total</div>
+            <div className="text-2xl font-semibold text-slate-900 dark:text-white">{formatCurrency(contract.summary.total_amount)}</div>
+            <div className="text-xs text-slate-600 dark:text-slate-400">Total</div>
           </div>
           <div>
-            <div className="text-2xl font-semibold text-green-600">{formatCurrency(contract.summary.paid_amount)}</div>
-            <div className="text-xs text-gray-500">Paid</div>
+            <div className="text-2xl font-semibold text-green-600 dark:text-green-400">{formatCurrency(contract.summary.paid_amount)}</div>
+            <div className="text-xs text-slate-600 dark:text-slate-400">Paid</div>
           </div>
           <div>
-            <div className="text-2xl font-semibold text-amber-600">{formatCurrency(contract.summary.remaining)}</div>
-            <div className="text-xs text-gray-500">Remaining</div>
+            <div className="text-2xl font-semibold text-amber-600 dark:text-amber-400">{formatCurrency(contract.summary.remaining)}</div>
+            <div className="text-xs text-slate-600 dark:text-slate-400">Remaining</div>
           </div>
         </div>
       </div>
@@ -900,15 +893,15 @@ function PaymentsTab({ contract }: { contract?: ContractInfo | null }) {
       {/* Payment List */}
       <div className="space-y-3">
         {contract.payments.map((payment) => (
-          <div key={payment.id} className="bg-white rounded-xl p-5 border border-gray-100 shadow-sm flex items-center justify-between">
+          <div key={payment.id} className="bg-white dark:bg-slate-800 rounded-xl p-5 border border-slate-200 dark:border-slate-700 shadow-sm flex items-center justify-between">
             <div>
-              <p className="font-medium text-gray-800">{payment.name}</p>
-              <p className="text-sm text-gray-500">
+              <p className="font-medium text-slate-900 dark:text-white">{payment.name}</p>
+              <p className="text-sm text-slate-600 dark:text-slate-400">
                 Due: {payment.due_date ? new Date(payment.due_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : 'TBD'}
               </p>
             </div>
             <div className="text-right">
-              <p className="font-semibold text-gray-800">{formatCurrency(payment.amount, payment.currency)}</p>
+              <p className="font-semibold text-slate-900 dark:text-white">{formatCurrency(payment.amount, payment.currency)}</p>
               <span className={`text-xs px-2 py-0.5 rounded-full ${paymentStatusColor(payment.status)}`}>
                 {payment.status === 'succeeded' ? 'Paid' : payment.status.charAt(0).toUpperCase() + payment.status.slice(1)}
               </span>
@@ -925,7 +918,7 @@ function FormsTab({ forms }: { forms: FormItem[] }) {
 
   if (!forms || forms.length === 0) {
     return (
-      <div className="text-center py-12 text-gray-400">
+      <div className="text-center py-12 text-slate-400 dark:text-slate-500">
         <ClipboardList className="w-10 h-10 mx-auto mb-3 opacity-50" />
         <p>No forms to fill out yet</p>
         <p className="text-sm mt-1">Your planner will share forms when needed</p>
@@ -936,22 +929,22 @@ function FormsTab({ forms }: { forms: FormItem[] }) {
   return (
     <div className="space-y-3">
       {forms.map((form) => (
-        <div key={form.id} className="bg-white rounded-xl p-5 border border-gray-100 shadow-sm">
+        <div key={form.id} className="bg-white dark:bg-slate-800 rounded-xl p-5 border border-slate-200 dark:border-slate-700 shadow-sm">
           <div className="flex items-center justify-between">
             <div className="flex-1 min-w-0">
               <div className="flex items-center gap-2 mb-1">
-                <h3 className="font-medium text-gray-800">{form.title}</h3>
+                <h3 className="font-medium text-slate-900 dark:text-white">{form.title}</h3>
                 <span className={`text-xs px-2 py-0.5 rounded-full ${
-                  form.status === 'submitted' ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'
+                  form.status === 'submitted' ? 'bg-green-100 dark:bg-green-950/30 text-green-700 dark:text-green-400' : 'bg-amber-100 dark:bg-amber-950/30 text-amber-700 dark:text-amber-400'
                 }`}>
                   {form.status === 'submitted' ? 'Submitted' : 'Pending'}
                 </span>
               </div>
-              {form.description && <p className="text-sm text-gray-500 truncate">{form.description}</p>}
+              {form.description && <p className="text-sm text-slate-600 dark:text-slate-400 truncate">{form.description}</p>}
             </div>
             <button
               onClick={() => router.push(`/couple/forms/${form.id}`)}
-              className="ml-4 flex items-center gap-1.5 text-sm text-[#1e3a5f] font-medium hover:underline"
+              className="ml-4 flex items-center gap-1.5 text-sm text-slate-900 dark:text-white font-medium hover:opacity-70"
             >
               {form.status === 'submitted' ? 'Edit' : 'Fill Out'}
               <ChevronRight className="w-4 h-4" />
@@ -992,14 +985,14 @@ function ContractTab() {
   if (loading) {
     return (
       <div className="text-center py-12">
-        <Loader2 className="w-8 h-8 animate-spin text-[#1e3a5f] mx-auto" />
+        <Loader2 className="w-8 h-8 animate-spin text-slate-900 dark:text-white mx-auto" />
       </div>
     );
   }
 
   if (!contract) {
     return (
-      <div className="text-center py-12 text-gray-400">
+      <div className="text-center py-12 text-slate-400 dark:text-slate-500">
         <FileSignature className="w-10 h-10 mx-auto mb-3 opacity-50" />
         <p>No contract available yet</p>
         <p className="text-sm mt-1">Your planner will share the contract when it is ready</p>
@@ -1025,11 +1018,11 @@ function ContractTab() {
   return (
     <div className="space-y-6">
       {/* Contract Header */}
-      <div className="bg-white rounded-xl p-6 border border-gray-100 shadow-sm">
+      <div className="bg-white dark:bg-slate-800 rounded-xl p-6 border border-slate-200 dark:border-slate-700 shadow-sm">
         <div className="flex items-start justify-between mb-4">
           <div>
-            <h3 className="text-lg font-semibold text-gray-800">{contract.package_name || 'Wedding Package'}</h3>
-            {contract.couple_name && <p className="text-sm text-gray-500 mt-0.5">{contract.couple_name}</p>}
+            <h3 className="text-lg font-semibold text-slate-900 dark:text-white">{contract.package_name || 'Wedding Package'}</h3>
+            {contract.couple_name && <p className="text-sm text-slate-600 dark:text-slate-400 mt-0.5">{contract.couple_name}</p>}
           </div>
           <span className={`text-xs px-2.5 py-1 rounded-full font-medium ${statusInfo.style}`}>
             {statusInfo.text}
@@ -1040,20 +1033,20 @@ function ContractTab() {
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-sm">
           {contract.sent_at && (
             <div>
-              <p className="text-gray-400 text-xs">Sent</p>
-              <p className="text-gray-700">{new Date(contract.sent_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</p>
+              <p className="text-slate-600 dark:text-slate-400 text-xs">Sent</p>
+              <p className="text-slate-900 dark:text-white">{new Date(contract.sent_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</p>
             </div>
           )}
           {contract.viewed_at && (
             <div>
-              <p className="text-gray-400 text-xs">Viewed</p>
-              <p className="text-gray-700">{new Date(contract.viewed_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</p>
+              <p className="text-slate-600 dark:text-slate-400 text-xs">Viewed</p>
+              <p className="text-slate-900 dark:text-white">{new Date(contract.viewed_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</p>
             </div>
           )}
           {contract.signed_at && (
             <div>
-              <p className="text-gray-400 text-xs">Signed</p>
-              <p className="text-gray-700">{new Date(contract.signed_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</p>
+              <p className="text-slate-600 dark:text-slate-400 text-xs">Signed</p>
+              <p className="text-slate-900 dark:text-white">{new Date(contract.signed_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</p>
             </div>
           )}
         </div>
@@ -1061,20 +1054,20 @@ function ContractTab() {
 
       {/* Payment Summary */}
       {contract.summary && (
-        <div className="bg-white rounded-xl p-6 border border-gray-100 shadow-sm">
-          <h3 className="font-medium text-gray-800 mb-4">Payment Summary</h3>
+        <div className="bg-white dark:bg-slate-800 rounded-xl p-6 border border-slate-200 dark:border-slate-700 shadow-sm">
+          <h3 className="font-semibold text-slate-900 dark:text-white mb-4">Payment Summary</h3>
           <div className="grid grid-cols-3 gap-4 text-center">
             <div>
-              <div className="text-2xl font-semibold text-gray-800">{formatCurrency(contract.summary.total_amount)}</div>
-              <div className="text-xs text-gray-500">Total</div>
+              <div className="text-2xl font-semibold text-slate-900 dark:text-white">{formatCurrency(contract.summary.total_amount)}</div>
+              <div className="text-xs text-slate-600 dark:text-slate-400">Total</div>
             </div>
             <div>
-              <div className="text-2xl font-semibold text-green-600">{formatCurrency(contract.summary.paid_amount)}</div>
-              <div className="text-xs text-gray-500">Paid</div>
+              <div className="text-2xl font-semibold text-green-600 dark:text-green-400">{formatCurrency(contract.summary.paid_amount)}</div>
+              <div className="text-xs text-slate-600 dark:text-slate-400">Paid</div>
             </div>
             <div>
-              <div className="text-2xl font-semibold text-amber-600">{formatCurrency(contract.summary.remaining)}</div>
-              <div className="text-xs text-gray-500">Remaining</div>
+              <div className="text-2xl font-semibold text-amber-600 dark:text-amber-400">{formatCurrency(contract.summary.remaining)}</div>
+              <div className="text-xs text-slate-600 dark:text-slate-400">Remaining</div>
             </div>
           </div>
         </div>
@@ -1084,9 +1077,9 @@ function ContractTab() {
       {contract.sections && contract.sections.length > 0 && (
         <div className="space-y-4">
           {contract.sections.map((section, idx) => (
-            <div key={idx} className="bg-white rounded-xl p-6 border border-gray-100 shadow-sm">
-              <h3 className="font-medium text-gray-800 mb-3">{section.title}</h3>
-              <div className="text-sm text-gray-600 leading-relaxed whitespace-pre-wrap">{section.content}</div>
+            <div key={idx} className="bg-white dark:bg-slate-800 rounded-xl p-6 border border-slate-200 dark:border-slate-700 shadow-sm">
+              <h3 className="font-semibold text-slate-900 dark:text-white mb-3">{section.title}</h3>
+              <div className="text-sm text-slate-700 dark:text-slate-300 leading-relaxed whitespace-pre-wrap">{section.content}</div>
             </div>
           ))}
         </div>
@@ -1095,18 +1088,18 @@ function ContractTab() {
       {/* Payment Schedule */}
       {contract.payments && contract.payments.length > 0 && (
         <div>
-          <h3 className="font-medium text-gray-800 mb-3">Payment Schedule</h3>
+          <h3 className="font-semibold text-slate-900 dark:text-white mb-3">Payment Schedule</h3>
           <div className="space-y-3">
             {contract.payments.map((payment) => (
-              <div key={payment.id} className="bg-white rounded-xl p-5 border border-gray-100 shadow-sm flex items-center justify-between">
+              <div key={payment.id} className="bg-white dark:bg-slate-800 rounded-xl p-5 border border-slate-200 dark:border-slate-700 shadow-sm flex items-center justify-between">
                 <div>
-                  <p className="font-medium text-gray-800">{payment.name}</p>
-                  <p className="text-sm text-gray-500">
+                  <p className="font-medium text-slate-900 dark:text-white">{payment.name}</p>
+                  <p className="text-sm text-slate-600 dark:text-slate-400">
                     Due: {payment.due_date ? new Date(payment.due_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : 'TBD'}
                   </p>
                 </div>
                 <div className="text-right">
-                  <p className="font-semibold text-gray-800">{formatCurrency(payment.amount, payment.currency)}</p>
+                  <p className="font-semibold text-slate-900 dark:text-white">{formatCurrency(payment.amount, payment.currency)}</p>
                   <span className={`text-xs px-2 py-0.5 rounded-full ${paymentStatusColor(payment.status)}`}>
                     {payment.status === 'succeeded' ? 'Paid' : payment.status.charAt(0).toUpperCase() + payment.status.slice(1)}
                   </span>
@@ -1123,7 +1116,7 @@ function ContractTab() {
 function UpdatesTab({ updates }: { updates: UpdateItem[] }) {
   if (!updates || updates.length === 0) {
     return (
-      <div className="text-center py-12 text-gray-400">
+      <div className="text-center py-12 text-slate-400 dark:text-slate-500">
         <Bell className="w-10 h-10 mx-auto mb-3 opacity-50" />
         <p>No updates yet</p>
         <p className="text-sm mt-1">Your planner will share updates here</p>
@@ -1132,22 +1125,22 @@ function UpdatesTab({ updates }: { updates: UpdateItem[] }) {
   }
 
   const categoryColors: Record<string, string> = {
-    venue: 'bg-purple-100 text-purple-700',
-    catering: 'bg-orange-100 text-orange-700',
-    decor: 'bg-pink-100 text-pink-700',
-    timeline: 'bg-blue-100 text-blue-700',
-    budget: 'bg-green-100 text-green-700',
-    vendor: 'bg-indigo-100 text-indigo-700',
+    venue: 'bg-purple-100 dark:bg-purple-950/30 text-purple-700 dark:text-purple-400',
+    catering: 'bg-orange-100 dark:bg-orange-950/30 text-orange-700 dark:text-orange-400',
+    decor: 'bg-pink-100 dark:bg-pink-950/30 text-pink-700 dark:text-pink-400',
+    timeline: 'bg-blue-100 dark:bg-blue-950/30 text-blue-700 dark:text-blue-400',
+    budget: 'bg-green-100 dark:bg-green-950/30 text-green-700 dark:text-green-400',
+    vendor: 'bg-indigo-100 dark:bg-indigo-950/30 text-indigo-700 dark:text-indigo-400',
   };
 
   return (
     <div className="space-y-4">
       {updates.map((update) => (
-        <div key={update.id} className={`bg-white rounded-xl border shadow-sm overflow-hidden ${
-          update.is_milestone ? 'border-[#d4af37]' : 'border-gray-100'
+        <div key={update.id} className={`bg-white dark:bg-slate-800 rounded-xl border shadow-sm overflow-hidden ${
+          update.is_milestone ? 'border-amber-400 dark:border-amber-600' : 'border-slate-200 dark:border-slate-700'
         }`}>
           {update.is_milestone && (
-            <div className="bg-gradient-to-r from-[#d4af37] to-[#c8847e] px-4 py-1.5">
+            <div className="bg-gradient-to-r from-amber-500 to-orange-500 dark:from-amber-600 dark:to-orange-600 px-4 py-1.5">
               <div className="flex items-center gap-1.5 text-white text-xs font-medium">
                 <Sparkles className="w-3.5 h-3.5" />
                 MILESTONE
@@ -1156,15 +1149,15 @@ function UpdatesTab({ updates }: { updates: UpdateItem[] }) {
           )}
           <div className="p-5">
             <div className="flex items-start justify-between mb-2">
-              <h3 className="font-medium text-gray-800">{update.title}</h3>
+              <h3 className="font-medium text-slate-900 dark:text-white">{update.title}</h3>
               {update.category && (
-                <span className={`text-xs px-2 py-0.5 rounded-full ${categoryColors[update.category] || 'bg-gray-100 text-gray-600'}`}>
+                <span className={`text-xs px-2 py-0.5 rounded-full ${categoryColors[update.category] || 'bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300'}`}>
                   {update.category}
                 </span>
               )}
             </div>
-            <p className="text-sm text-gray-600 whitespace-pre-wrap">{update.content}</p>
-            <div className="mt-3 flex items-center gap-2 text-xs text-gray-400">
+            <p className="text-sm text-slate-700 dark:text-slate-300 whitespace-pre-wrap">{update.content}</p>
+            <div className="mt-3 flex items-center gap-2 text-xs text-slate-600 dark:text-slate-400">
               {update.created_by && <span>From: {update.created_by}</span>}
               {update.created_at && (
                 <span>· {new Date(update.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</span>
@@ -1258,17 +1251,17 @@ function MessagesTab({ onMessageSent, onMessagesRead, archived = false }: { onMe
   if (msgLoading) {
     return (
       <div className="flex items-center justify-center py-12">
-        <Loader2 className="w-6 h-6 animate-spin text-[#1e3a5f]" />
+        <Loader2 className="w-6 h-6 animate-spin text-slate-900 dark:text-white" />
       </div>
     );
   }
 
   return (
-    <div className="bg-white rounded-xl border border-gray-100 shadow-sm flex flex-col" style={{ height: 'calc(100vh - 280px)', minHeight: '400px', maxHeight: '700px' }}>
+    <div className="bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm flex flex-col" style={{ height: 'calc(100vh - 280px)', minHeight: '400px', maxHeight: '700px' }}>
       {/* Messages area */}
       <div className="flex-1 overflow-y-auto p-4 space-y-3">
         {messages.length === 0 ? (
-          <div className="flex flex-col items-center justify-center h-full text-gray-400">
+          <div className="flex flex-col items-center justify-center h-full text-slate-400 dark:text-slate-500">
             <MessageCircle className="w-12 h-12 mb-3 opacity-50" />
             <p className="text-sm">No messages yet</p>
             <p className="text-xs mt-1">Send a message to your planner to start the conversation</p>
@@ -1280,15 +1273,15 @@ function MessagesTab({ onMessageSent, onMessagesRead, archived = false }: { onMe
               <div key={msg.id} className={`flex ${isCouple ? 'justify-end' : 'justify-start'}`}>
                 <div className={`max-w-[75%] rounded-2xl px-4 py-2.5 ${
                   isCouple
-                    ? 'bg-[#1e3a5f] text-white rounded-br-md'
-                    : 'bg-gray-100 text-gray-800 rounded-bl-md'
+                    ? 'bg-slate-900 dark:bg-slate-700 text-white rounded-br-md'
+                    : 'bg-slate-100 dark:bg-slate-700 text-slate-900 dark:text-white rounded-bl-md'
                 }`}>
                   {!isCouple && (
-                    <p className="text-xs font-medium text-gray-500 mb-1">{msg.sender_name}</p>
+                    <p className="text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">{msg.sender_name}</p>
                   )}
                   <p className="text-sm whitespace-pre-wrap">{msg.content}</p>
                   <div className={`flex items-center gap-1.5 mt-1 ${isCouple ? 'justify-end' : ''}`}>
-                    <span className={`text-xs ${isCouple ? 'text-white/50' : 'text-gray-400'}`}>
+                    <span className={`text-xs ${isCouple ? 'text-white/50' : 'text-slate-600 dark:text-slate-400'}`}>
                       {msg.created_at ? new Date(msg.created_at).toLocaleTimeString('en-US', {
                         hour: 'numeric', minute: '2-digit', hour12: true,
                       }) : ''}
@@ -1308,27 +1301,27 @@ function MessagesTab({ onMessageSent, onMessagesRead, archived = false }: { onMe
       {/* Input area */}
       {/* Input area — disabled for archived weddings */}
       {archived ? (
-        <div className="border-t border-gray-100 p-3 bg-gray-50">
-          <p className="text-sm text-gray-400 text-center flex items-center justify-center gap-2">
+        <div className="border-t border-slate-200 dark:border-slate-700 p-3 bg-slate-50 dark:bg-slate-700/50">
+          <p className="text-sm text-slate-600 dark:text-slate-400 text-center flex items-center justify-center gap-2">
             <Archive className="w-4 h-4" />
             Messaging is disabled for archived weddings
           </p>
         </div>
       ) : (
-        <div className="border-t border-gray-100 p-3 flex gap-2">
+        <div className="border-t border-slate-200 dark:border-slate-700 p-3 flex gap-2">
           <input
             type="text"
             value={newMessage}
             onChange={(e) => setNewMessage(e.target.value)}
             onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend(); } }}
             placeholder="Type a message to your planner..."
-            className="flex-1 px-4 py-2.5 border border-gray-200 rounded-full text-sm focus:outline-none focus:ring-2 focus:ring-[#1e3a5f]/20 focus:border-[#1e3a5f]"
+            className="flex-1 px-4 py-2.5 border border-slate-300 dark:border-slate-600 rounded-full text-sm focus:outline-none focus:ring-2 focus:ring-slate-900/20 dark:focus:ring-white/20 focus:border-slate-900 dark:focus:border-white bg-white dark:bg-slate-700 text-slate-900 dark:text-white placeholder-slate-500 dark:placeholder-slate-400"
             disabled={sending}
           />
           <button
             onClick={handleSend}
             disabled={!newMessage.trim() || sending}
-            className="w-10 h-10 flex items-center justify-center bg-[#1e3a5f] text-white rounded-full hover:bg-[#2a4a6f] transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+            className="w-10 h-10 flex items-center justify-center bg-slate-900 dark:bg-slate-700 text-white rounded-full hover:bg-slate-800 dark:hover:bg-slate-600 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
           >
             {sending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
           </button>
@@ -1381,12 +1374,12 @@ function MeetingsTab() {
   }, []);
 
   if (loading) {
-    return <div className="flex items-center justify-center py-16"><Loader2 className="w-6 h-6 animate-spin text-gray-400" /></div>;
+    return <div className="flex items-center justify-center py-16"><Loader2 className="w-6 h-6 animate-spin text-slate-400 dark:text-slate-500" /></div>;
   }
 
   if (meetings.length === 0) {
     return (
-      <div className="text-center py-12 text-gray-400">
+      <div className="text-center py-12 text-slate-400 dark:text-slate-500">
         <CalendarClock className="w-10 h-10 mx-auto mb-3 opacity-50" />
         <p>No upcoming meetings</p>
         <p className="text-sm mt-1">Your planner will schedule check-ins here</p>
@@ -1396,25 +1389,25 @@ function MeetingsTab() {
 
   return (
     <div className="max-w-2xl mx-auto space-y-3">
-      <h2 className="text-lg font-semibold text-gray-800 mb-4 flex items-center gap-2">
-        <CalendarClock className="w-5 h-5 text-[#1e3a5f]" /> Upcoming Meetings
+      <h2 className="text-lg font-semibold text-slate-900 dark:text-white mb-4 flex items-center gap-2">
+        <CalendarClock className="w-5 h-5" /> Upcoming Meetings
       </h2>
       {meetings.map((m) => (
-        <div key={m.id} className="bg-white rounded-xl border border-gray-100 shadow-sm p-4">
+        <div key={m.id} className="bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm p-4">
           <div className="flex items-center gap-2 mb-1">
-            <h3 className="text-sm font-medium text-gray-800">{m.title}</h3>
+            <h3 className="text-sm font-medium text-slate-900 dark:text-white">{m.title}</h3>
             {m.is_recurring && (
-              <span className="text-xs px-1.5 py-0.5 rounded-full bg-purple-100 text-purple-700 flex items-center gap-0.5">
+              <span className="text-xs px-1.5 py-0.5 rounded-full bg-purple-100 dark:bg-purple-950/30 text-purple-700 dark:text-purple-400 flex items-center gap-0.5">
                 <Repeat className="w-3 h-3" /> Recurring
               </span>
             )}
           </div>
-          {m.description && <p className="text-xs text-gray-500 mb-2">{m.description}</p>}
-          <div className="flex items-center gap-2 text-xs text-gray-500">
+          {m.description && <p className="text-xs text-slate-600 dark:text-slate-400 mb-2">{m.description}</p>}
+          <div className="flex items-center gap-2 text-xs text-slate-600 dark:text-slate-400">
             <Calendar className="w-3.5 h-3.5" />
             <span>{new Date(m.start_date).toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}</span>
           </div>
-          <div className="flex items-center gap-2 text-xs text-gray-500 mt-1">
+          <div className="flex items-center gap-2 text-xs text-slate-600 dark:text-slate-400 mt-1">
             <Clock className="w-3.5 h-3.5" />
             <span>{new Date(m.start_date).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}</span>
             {m.end_date && <span>– {new Date(m.end_date).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}</span>}
@@ -1465,12 +1458,12 @@ function QRCodeWidget() {
   };
 
   return (
-    <div className="bg-white rounded-xl p-6 border border-gray-100 shadow-sm">
+    <div className="bg-white dark:bg-slate-800 rounded-xl p-6 border border-slate-200 dark:border-slate-700 shadow-sm">
       <div className="flex items-center gap-3 mb-3">
-        <QrCode className="w-5 h-5 text-[#1e3a5f]" />
-        <h3 className="font-medium text-gray-800">Portal QR Code</h3>
+        <QrCode className="w-5 h-5 text-slate-900 dark:text-slate-300" />
+        <h3 className="font-medium text-slate-900 dark:text-white">Portal QR Code</h3>
       </div>
-      <p className="text-xs text-gray-500 mb-3">Share quick access to your wedding portal</p>
+      <p className="text-xs text-slate-600 dark:text-slate-400 mb-3">Share quick access to your wedding portal</p>
 
       {qrUrl ? (
         <div className="text-center">
@@ -1479,11 +1472,11 @@ function QRCodeWidget() {
             alt="Wedding portal QR code"
             width={160}
             height={160}
-            className="mx-auto rounded-lg border border-gray-100"
+            className="mx-auto rounded-lg border border-slate-200 dark:border-slate-700"
           />
           <button
             onClick={downloadQR}
-            className="flex items-center gap-1.5 mx-auto mt-3 text-xs font-medium text-[#1e3a5f] hover:text-[#2a4a6f] transition-colors"
+            className="flex items-center gap-1.5 mx-auto mt-3 text-xs font-medium text-slate-900 dark:text-white hover:opacity-70 transition-opacity"
             aria-label="Download QR code as PNG"
           >
             <Download className="w-3.5 h-3.5" /> Download PNG
@@ -1493,7 +1486,7 @@ function QRCodeWidget() {
         <button
           onClick={generateQR}
           disabled={loading}
-          className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-gray-50 hover:bg-gray-100 border border-gray-200 rounded-lg text-sm text-gray-600 font-medium transition-colors disabled:opacity-50"
+          className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 border border-slate-300 dark:border-slate-600 rounded-lg text-sm text-slate-700 dark:text-white font-medium transition-colors disabled:opacity-50"
         >
           {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <QrCode className="w-4 h-4" />}
           Generate QR Code
@@ -1617,40 +1610,40 @@ function PushNotificationWidget() {
   };
 
   return (
-    <div className="bg-white rounded-xl p-6 border border-gray-100 shadow-sm">
+    <div className="bg-white dark:bg-slate-800 rounded-xl p-6 border border-slate-200 dark:border-slate-700 shadow-sm">
       <div className="flex items-center gap-3 mb-3">
         {pushStatus === 'subscribed' ? (
           <BellRing className="w-5 h-5 text-green-500" />
         ) : (
-          <BellOff className="w-5 h-5 text-gray-400" />
+          <BellOff className="w-5 h-5 text-slate-400 dark:text-slate-500" />
         )}
-        <h3 className="font-medium text-gray-800">Push Notifications</h3>
+        <h3 className="font-medium text-slate-900 dark:text-white">Push Notifications</h3>
       </div>
-      <p className="text-xs text-gray-500 mb-3">Get alerts for updates, messages, and meetings</p>
+      <p className="text-xs text-slate-600 dark:text-slate-400 mb-3">Get alerts for updates, messages, and meetings</p>
 
       {pushStatus === 'loading' && (
-        <div className="flex items-center gap-2 text-sm text-gray-400">
+        <div className="flex items-center gap-2 text-sm text-slate-600 dark:text-slate-400">
           <Loader2 className="w-4 h-4 animate-spin" /> Checking...
         </div>
       )}
 
       {pushStatus === 'unsupported' && (
-        <p className="text-xs text-gray-400">Push notifications are not available in this browser.</p>
+        <p className="text-xs text-slate-600 dark:text-slate-400">Push notifications are not available in this browser.</p>
       )}
 
       {pushStatus === 'denied' && (
-        <p className="text-xs text-amber-600">Notifications blocked. Please enable them in your browser settings.</p>
+        <p className="text-xs text-amber-600 dark:text-amber-500">Notifications blocked. Please enable them in your browser settings.</p>
       )}
 
       {pushStatus === 'subscribed' && (
         <div>
-          <div className="flex items-center gap-2 text-xs text-green-600 mb-3">
+          <div className="flex items-center gap-2 text-xs text-green-600 dark:text-green-400 mb-3">
             <CheckCircle className="w-3.5 h-3.5" /> Notifications active
           </div>
           <button
             onClick={handleUnsubscribe}
             disabled={subscribing}
-            className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-red-50 hover:bg-red-100 text-red-600 text-xs font-medium rounded-lg transition-colors disabled:opacity-50"
+            className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-red-100 dark:bg-red-950/30 hover:bg-red-200 dark:hover:bg-red-900/50 text-red-700 dark:text-red-400 text-xs font-medium rounded-lg transition-colors disabled:opacity-50"
           >
             {subscribing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <BellOff className="w-3.5 h-3.5" />}
             Disable Notifications
@@ -1662,7 +1655,7 @@ function PushNotificationWidget() {
         <button
           onClick={handleSubscribe}
           disabled={subscribing}
-          className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-[#1e3a5f] hover:bg-[#2a4a6f] text-white text-sm font-medium rounded-lg transition-colors disabled:opacity-50"
+          className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-slate-900 dark:bg-slate-700 hover:bg-slate-800 dark:hover:bg-slate-600 text-white text-sm font-medium rounded-lg transition-colors disabled:opacity-50"
         >
           {subscribing ? <Loader2 className="w-4 h-4 animate-spin" /> : <BellRing className="w-4 h-4" />}
           Enable Notifications
@@ -1702,7 +1695,7 @@ function RegistryTab({ registries, archived, onUpdated }: { registries: Registry
     { value: 'bg-purple-600', label: 'Purple' },
     { value: 'bg-pink-600', label: 'Pink' },
     { value: 'bg-gray-600', label: 'Gray' },
-    { value: 'bg-[#1e3a5f]', label: 'Navy' },
+    { value: 'bg-slate-900', label: 'Navy' },
   ];
 
   const resetForm = () => {
@@ -1779,13 +1772,13 @@ function RegistryTab({ registries, archived, onUpdated }: { registries: Registry
   return (
     <div className="max-w-3xl mx-auto">
       <div className="flex items-center justify-between mb-6">
-        <h2 className="text-lg font-semibold text-gray-800 flex items-center gap-2">
-          <Gift className="w-5 h-5 text-[#1e3a5f]" /> Wedding Registry
+        <h2 className="text-lg font-semibold text-slate-900 dark:text-white flex items-center gap-2">
+          <Gift className="w-5 h-5" /> Wedding Registry
         </h2>
         {!archived && !showForm && (
           <button
             onClick={() => { resetForm(); setShowForm(true); }}
-            className="flex items-center gap-1.5 text-sm font-medium text-[#1e3a5f] hover:text-[#2a4a6f] transition-colors"
+            className="flex items-center gap-1.5 text-sm font-medium text-slate-900 dark:text-white hover:opacity-70 transition-opacity"
             aria-label="Add new registry item"
           >
             <Plus className="w-4 h-4" /> Add Registry
@@ -1793,46 +1786,46 @@ function RegistryTab({ registries, archived, onUpdated }: { registries: Registry
         )}
       </div>
 
-      <p className="text-sm text-gray-500 mb-4">Your presence is the greatest gift, but if you&apos;d like to celebrate with us, we&apos;re registered at:</p>
+      <p className="text-sm text-slate-600 dark:text-slate-400 mb-4">Your presence is the greatest gift, but if you&apos;d like to celebrate with us, we&apos;re registered at:</p>
 
       {/* Add/Edit Form */}
       {showForm && (
-        <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5 mb-6" role="form" aria-label={editIndex !== null ? 'Edit registry item' : 'Add registry item'}>
-          <h3 className="text-sm font-semibold text-gray-700 mb-3">{editIndex !== null ? 'Edit Registry' : 'Add Registry'}</h3>
+        <div className="bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm p-5 mb-6" role="form" aria-label={editIndex !== null ? 'Edit registry item' : 'Add registry item'}>
+          <h3 className="text-sm font-semibold text-slate-900 dark:text-white mb-3">{editIndex !== null ? 'Edit Registry' : 'Add Registry'}</h3>
           <div className="space-y-3">
             <div>
-              <label htmlFor="reg-name" className="block text-xs font-medium text-gray-600 mb-1">Registry Name</label>
+              <label htmlFor="reg-name" className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">Registry Name</label>
               <input
                 id="reg-name"
                 type="text"
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 placeholder="e.g., Target, Amazon, Zola"
-                className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:ring-2 focus:ring-[#1e3a5f]/20 focus:border-[#1e3a5f] outline-none"
+                className="w-full px-3 py-2 text-sm border border-slate-300 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-slate-900/20 dark:focus:ring-white/20 focus:border-slate-900 dark:focus:border-white outline-none bg-white dark:bg-slate-700 text-slate-900 dark:text-white placeholder-slate-500 dark:placeholder-slate-400"
                 aria-required="true"
               />
             </div>
             <div>
-              <label htmlFor="reg-url" className="block text-xs font-medium text-gray-600 mb-1">Registry URL</label>
+              <label htmlFor="reg-url" className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">Registry URL</label>
               <input
                 id="reg-url"
                 type="url"
                 value={url}
                 onChange={(e) => setUrl(e.target.value)}
                 placeholder="https://www.target.com/gift-registry/..."
-                className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:ring-2 focus:ring-[#1e3a5f]/20 focus:border-[#1e3a5f] outline-none"
+                className="w-full px-3 py-2 text-sm border border-slate-300 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-slate-900/20 dark:focus:ring-white/20 focus:border-slate-900 dark:focus:border-white outline-none bg-white dark:bg-slate-700 text-slate-900 dark:text-white placeholder-slate-500 dark:placeholder-slate-400"
                 aria-required="true"
               />
             </div>
             <div>
-              <label className="block text-xs font-medium text-gray-600 mb-1">Button Color</label>
+              <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">Button Color</label>
               <div className="flex flex-wrap gap-2">
                 {colorOptions.map((c) => (
                   <button
                     key={c.value}
                     type="button"
                     onClick={() => setColor(c.value)}
-                    className={`w-8 h-8 rounded-full ${c.value} transition-all ${color === c.value ? 'ring-2 ring-offset-2 ring-[#1e3a5f] scale-110' : 'opacity-60 hover:opacity-100'}`}
+                    className={`w-8 h-8 rounded-full ${c.value} transition-all ${color === c.value ? 'ring-2 ring-offset-2 ring-slate-900 dark:ring-white scale-110' : 'opacity-60 hover:opacity-100'}`}
                     title={c.label}
                     aria-label={`Select ${c.label} color`}
                     aria-pressed={color === c.value}
@@ -1844,14 +1837,14 @@ function RegistryTab({ registries, archived, onUpdated }: { registries: Registry
               <button
                 onClick={handleSave}
                 disabled={saving || !name.trim() || !url.trim()}
-                className="flex items-center gap-1.5 px-4 py-2 bg-[#1e3a5f] text-white text-sm font-medium rounded-lg hover:bg-[#2a4a6f] disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                className="flex items-center gap-1.5 px-4 py-2 bg-slate-900 dark:bg-slate-700 text-white text-sm font-medium rounded-lg hover:bg-slate-800 dark:hover:bg-slate-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
               >
                 {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle className="w-4 h-4" />}
                 {editIndex !== null ? 'Update' : 'Save'}
               </button>
               <button
                 onClick={resetForm}
-                className="px-4 py-2 text-sm text-gray-500 hover:text-gray-700 transition-colors"
+                className="px-4 py-2 text-sm text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white transition-colors"
               >
                 Cancel
               </button>
@@ -1863,20 +1856,20 @@ function RegistryTab({ registries, archived, onUpdated }: { registries: Registry
       {/* Registry Grid */}
       {registries.length === 0 && !showForm ? (
         <div className="text-center py-12">
-          <Gift className="w-10 h-10 text-gray-300 mx-auto mb-3" />
-          <p className="text-gray-400 font-medium">No registries added yet</p>
-          {!archived && <p className="text-sm text-gray-400 mt-1">Click &quot;Add Registry&quot; to get started</p>}
+          <Gift className="w-10 h-10 text-slate-300 dark:text-slate-600 mx-auto mb-3" />
+          <p className="text-slate-600 dark:text-slate-400 font-medium">No registries added yet</p>
+          {!archived && <p className="text-sm text-slate-600 dark:text-slate-400 mt-1">Click &quot;Add Registry&quot; to get started</p>}
         </div>
       ) : (
         <div className={`grid gap-4 ${registries.length === 1 ? 'grid-cols-1 max-w-xs mx-auto' : registries.length === 2 ? 'grid-cols-1 sm:grid-cols-2' : 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-3'}`}>
           {registries.map((reg, i) => (
-            <div key={i} className="bg-white rounded-xl border border-gray-100 shadow-sm p-5 text-center group">
-              <h3 className="text-base font-semibold text-gray-800 mb-3">{reg.name}</h3>
+            <div key={i} className="bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm p-5 text-center group">
+              <h3 className="text-base font-semibold text-slate-900 dark:text-white mb-3">{reg.name}</h3>
               <a
                 href={reg.url}
                 target="_blank"
                 rel="noopener noreferrer"
-                className={`${reg.color || 'bg-gray-600'} text-white px-6 py-2.5 rounded-lg hover:opacity-90 transition-opacity inline-flex items-center gap-2 text-sm font-medium`}
+                className={`${reg.color || 'bg-slate-600'} text-white px-6 py-2.5 rounded-lg hover:opacity-90 transition-opacity inline-flex items-center gap-2 text-sm font-medium`}
                 aria-label={`View ${reg.name} registry (opens in new tab)`}
               >
                 View Registry <ExternalLink className="w-3.5 h-3.5" />
@@ -1885,7 +1878,7 @@ function RegistryTab({ registries, archived, onUpdated }: { registries: Registry
                 <div className="flex items-center justify-center gap-2 mt-3 opacity-0 group-hover:opacity-100 transition-opacity">
                   <button
                     onClick={() => startEdit(i)}
-                    className="text-xs text-gray-400 hover:text-[#1e3a5f] flex items-center gap-1 transition-colors"
+                    className="text-xs text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white flex items-center gap-1 transition-colors"
                     aria-label={`Edit ${reg.name}`}
                   >
                     <Pencil className="w-3 h-3" /> Edit
@@ -1893,7 +1886,7 @@ function RegistryTab({ registries, archived, onUpdated }: { registries: Registry
                   <button
                     onClick={() => handleDelete(i)}
                     disabled={deleting === i}
-                    className="text-xs text-gray-400 hover:text-red-500 flex items-center gap-1 transition-colors disabled:opacity-50"
+                    className="text-xs text-slate-600 dark:text-slate-400 hover:text-red-500 dark:hover:text-red-400 flex items-center gap-1 transition-colors disabled:opacity-50"
                     aria-label={`Delete ${reg.name}`}
                   >
                     {deleting === i ? <Loader2 className="w-3 h-3 animate-spin" /> : <Trash2 className="w-3 h-3" />} Delete
@@ -2011,13 +2004,13 @@ function FAQTab({ faqs, archived, onUpdated }: { faqs: FAQItem[]; archived: bool
   return (
     <div className="max-w-3xl mx-auto">
       <div className="flex items-center justify-between mb-6">
-        <h2 className="text-lg font-semibold text-gray-800 flex items-center gap-2">
-          <HelpCircle className="w-5 h-5 text-[#1e3a5f]" /> Frequently Asked Questions
+        <h2 className="text-lg font-semibold text-slate-900 dark:text-white flex items-center gap-2">
+          <HelpCircle className="w-5 h-5" /> Frequently Asked Questions
         </h2>
         {!archived && !showForm && (
           <button
             onClick={() => { resetForm(); setShowForm(true); }}
-            className="flex items-center gap-1.5 text-sm font-medium text-[#1e3a5f] hover:text-[#2a4a6f] transition-colors"
+            className="flex items-center gap-1.5 text-sm font-medium text-slate-900 dark:text-white hover:opacity-70 transition-opacity"
             aria-label="Add new FAQ item"
           >
             <Plus className="w-4 h-4" /> Add FAQ
@@ -2025,58 +2018,58 @@ function FAQTab({ faqs, archived, onUpdated }: { faqs: FAQItem[]; archived: bool
         )}
       </div>
 
-      <p className="text-sm text-gray-500 mb-4">These FAQs will appear on your wedding page for your guests. Add questions and answers to help them prepare.</p>
+      <p className="text-sm text-slate-600 dark:text-slate-400 mb-4">These FAQs will appear on your wedding page for your guests. Add questions and answers to help them prepare.</p>
 
       {/* Add/Edit Form */}
       {showForm && (
-        <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5 mb-6" role="form" aria-label={editIndex !== null ? 'Edit FAQ item' : 'Add FAQ item'}>
-          <h3 className="text-sm font-semibold text-gray-700 mb-3">{editIndex !== null ? 'Edit FAQ' : 'Add FAQ'}</h3>
+        <div className="bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm p-5 mb-6" role="form" aria-label={editIndex !== null ? 'Edit FAQ item' : 'Add FAQ item'}>
+          <h3 className="text-sm font-semibold text-slate-900 dark:text-white mb-3">{editIndex !== null ? 'Edit FAQ' : 'Add FAQ'}</h3>
           <div className="space-y-3">
             <div>
-              <label htmlFor="faq-q" className="block text-xs font-medium text-gray-600 mb-1">Question</label>
+              <label htmlFor="faq-q" className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">Question</label>
               <input
                 id="faq-q"
                 type="text"
                 value={question}
                 onChange={(e) => setQuestion(e.target.value)}
                 placeholder="e.g., What should I wear?"
-                className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:ring-2 focus:ring-[#1e3a5f]/20 focus:border-[#1e3a5f] outline-none"
+                className="w-full px-3 py-2 text-sm border border-slate-300 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-slate-900/20 dark:focus:ring-white/20 focus:border-slate-900 dark:focus:border-white outline-none bg-white dark:bg-slate-700 text-slate-900 dark:text-white placeholder-slate-500 dark:placeholder-slate-400"
                 aria-required="true"
               />
             </div>
             <div>
-              <label htmlFor="faq-a" className="block text-xs font-medium text-gray-600 mb-1">Answer</label>
+              <label htmlFor="faq-a" className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">Answer</label>
               <textarea
                 id="faq-a"
                 value={answer}
                 onChange={(e) => setAnswer(e.target.value)}
                 placeholder="Your answer here..."
                 rows={3}
-                className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:ring-2 focus:ring-[#1e3a5f]/20 focus:border-[#1e3a5f] outline-none resize-none"
+                className="w-full px-3 py-2 text-sm border border-slate-300 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-slate-900/20 dark:focus:ring-white/20 focus:border-slate-900 dark:focus:border-white outline-none resize-none bg-white dark:bg-slate-700 text-slate-900 dark:text-white placeholder-slate-500 dark:placeholder-slate-400"
                 aria-required="true"
               />
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <label htmlFor="faq-link" className="block text-xs font-medium text-gray-600 mb-1">Link URL (optional)</label>
+                <label htmlFor="faq-link" className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">Link URL (optional)</label>
                 <input
                   id="faq-link"
                   type="url"
                   value={linkUrl}
                   onChange={(e) => setLinkUrl(e.target.value)}
                   placeholder="https://..."
-                  className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:ring-2 focus:ring-[#1e3a5f]/20 focus:border-[#1e3a5f] outline-none"
+                  className="w-full px-3 py-2 text-sm border border-slate-300 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-slate-900/20 dark:focus:ring-white/20 focus:border-slate-900 dark:focus:border-white outline-none bg-white dark:bg-slate-700 text-slate-900 dark:text-white placeholder-slate-500 dark:placeholder-slate-400"
                 />
               </div>
               <div>
-                <label htmlFor="faq-label" className="block text-xs font-medium text-gray-600 mb-1">Link Label (optional)</label>
+                <label htmlFor="faq-label" className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">Link Label (optional)</label>
                 <input
                   id="faq-label"
                   type="text"
                   value={linkLabel}
                   onChange={(e) => setLinkLabel(e.target.value)}
                   placeholder="e.g., Book Hotel Room"
-                  className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:ring-2 focus:ring-[#1e3a5f]/20 focus:border-[#1e3a5f] outline-none"
+                  className="w-full px-3 py-2 text-sm border border-slate-300 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-slate-900/20 dark:focus:ring-white/20 focus:border-slate-900 dark:focus:border-white outline-none bg-white dark:bg-slate-700 text-slate-900 dark:text-white placeholder-slate-500 dark:placeholder-slate-400"
                 />
               </div>
             </div>
@@ -2084,14 +2077,14 @@ function FAQTab({ faqs, archived, onUpdated }: { faqs: FAQItem[]; archived: bool
               <button
                 onClick={handleSave}
                 disabled={saving || !question.trim() || !answer.trim()}
-                className="flex items-center gap-1.5 px-4 py-2 bg-[#1e3a5f] text-white text-sm font-medium rounded-lg hover:bg-[#2a4a6f] disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                className="flex items-center gap-1.5 px-4 py-2 bg-slate-900 dark:bg-slate-700 text-white text-sm font-medium rounded-lg hover:bg-slate-800 dark:hover:bg-slate-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
               >
                 {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle className="w-4 h-4" />}
                 {editIndex !== null ? 'Update' : 'Save'}
               </button>
               <button
                 onClick={resetForm}
-                className="px-4 py-2 text-sm text-gray-500 hover:text-gray-700 transition-colors"
+                className="px-4 py-2 text-sm text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white transition-colors"
               >
                 Cancel
               </button>
@@ -2103,41 +2096,41 @@ function FAQTab({ faqs, archived, onUpdated }: { faqs: FAQItem[]; archived: bool
       {/* FAQ List */}
       {faqs.length === 0 && !showForm ? (
         <div className="text-center py-12">
-          <HelpCircle className="w-10 h-10 text-gray-300 mx-auto mb-3" />
-          <p className="text-gray-400 font-medium">No FAQs added yet</p>
-          {!archived && <p className="text-sm text-gray-400 mt-1">Click &quot;Add FAQ&quot; to help your guests prepare</p>}
+          <HelpCircle className="w-10 h-10 text-slate-300 dark:text-slate-600 mx-auto mb-3" />
+          <p className="text-slate-600 dark:text-slate-400 font-medium">No FAQs added yet</p>
+          {!archived && <p className="text-sm text-slate-600 dark:text-slate-400 mt-1">Click &quot;Add FAQ&quot; to help your guests prepare</p>}
         </div>
       ) : (
         <div className="space-y-3">
           {faqs.map((faq, i) => (
-            <div key={i} className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden group">
+            <div key={i} className="bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm overflow-hidden group">
               <button
                 onClick={() => setExpandedIndex(expandedIndex === i ? null : i)}
                 className="w-full px-5 py-4 flex items-center justify-between text-left"
                 aria-expanded={expandedIndex === i}
                 aria-controls={`faq-answer-${i}`}
               >
-                <h3 className="text-sm font-semibold text-gray-800 pr-4">{faq.question}</h3>
-                {expandedIndex === i ? <ChevronUp className="w-4 h-4 text-gray-400 flex-shrink-0" /> : <ChevronDown className="w-4 h-4 text-gray-400 flex-shrink-0" />}
+                <h3 className="text-sm font-semibold text-slate-900 dark:text-white pr-4">{faq.question}</h3>
+                {expandedIndex === i ? <ChevronUp className="w-4 h-4 text-slate-400 dark:text-slate-500 flex-shrink-0" /> : <ChevronDown className="w-4 h-4 text-slate-400 dark:text-slate-500 flex-shrink-0" />}
               </button>
               {expandedIndex === i && (
-                <div id={`faq-answer-${i}`} className="px-5 pb-4 border-t border-gray-50">
-                  <p className="text-sm text-gray-600 leading-relaxed mt-3">{faq.answer}</p>
+                <div id={`faq-answer-${i}`} className="px-5 pb-4 border-t border-slate-100 dark:border-slate-700">
+                  <p className="text-sm text-slate-700 dark:text-slate-300 leading-relaxed mt-3">{faq.answer}</p>
                   {faq.link_url && faq.link_label && (
                     <a
                       href={faq.link_url}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="inline-flex items-center gap-2 mt-3 px-4 py-2 bg-[#1e3a5f] text-white text-xs font-medium rounded-lg hover:bg-[#2a4a6f] transition-colors"
+                      className="inline-flex items-center gap-2 mt-3 px-4 py-2 bg-slate-900 dark:bg-slate-700 text-white text-xs font-medium rounded-lg hover:bg-slate-800 dark:hover:bg-slate-600 transition-colors"
                     >
                       {faq.link_label} <ExternalLink className="w-3 h-3" />
                     </a>
                   )}
                   {!archived && (
-                    <div className="flex items-center gap-3 mt-3 pt-3 border-t border-gray-50">
+                    <div className="flex items-center gap-3 mt-3 pt-3 border-t border-slate-100 dark:border-slate-700">
                       <button
                         onClick={(e) => { e.stopPropagation(); startEdit(i); }}
-                        className="text-xs text-gray-400 hover:text-[#1e3a5f] flex items-center gap-1 transition-colors"
+                        className="text-xs text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white flex items-center gap-1 transition-colors"
                         aria-label={`Edit FAQ: ${faq.question}`}
                       >
                         <Pencil className="w-3 h-3" /> Edit
@@ -2145,7 +2138,7 @@ function FAQTab({ faqs, archived, onUpdated }: { faqs: FAQItem[]; archived: bool
                       <button
                         onClick={(e) => { e.stopPropagation(); handleDelete(i); }}
                         disabled={deleting === i}
-                        className="text-xs text-gray-400 hover:text-red-500 flex items-center gap-1 transition-colors disabled:opacity-50"
+                        className="text-xs text-slate-600 dark:text-slate-400 hover:text-red-500 dark:hover:text-red-400 flex items-center gap-1 transition-colors disabled:opacity-50"
                         aria-label={`Delete FAQ: ${faq.question}`}
                       >
                         {deleting === i ? <Loader2 className="w-3 h-3 animate-spin" /> : <Trash2 className="w-3 h-3" />} Delete

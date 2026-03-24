@@ -17,6 +17,7 @@ import {
   ChevronLeft,
   Sun,
   Moon,
+  Bell,
 } from 'lucide-react';
 import { ThemeProvider, useTheme } from '@/contexts/ThemeContext';
 
@@ -64,6 +65,7 @@ const navItems = [
   { name: 'Creatives', href: '/portal/ads/creatives', icon: Image },
   { name: 'Leads', href: '/portal/ads/leads', icon: Users },
   { name: 'Billing', href: '/portal/ads/billing', icon: CreditCard },
+  { name: 'Notifications', href: '/portal/ads/notifications', icon: Bell },
   { name: 'Settings', href: '/portal/ads/settings', icon: Settings },
 ];
 
@@ -150,8 +152,9 @@ function VendorPortalLayoutInner({ children }: { children: React.ReactNode }) {
     setLoading(false);
   }, []);
 
-  const login = useCallback(async (email: string, password: string) => {
-    const response = await fetch(`${API_BASE}/auth/login`, {
+  const login = async (email: string, password: string) => {
+    // Uses the same /admin/token endpoint as AdminContext — it's role-agnostic
+    const response = await fetch(`${API_BASE}/admin/token`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ email, password }),
@@ -163,18 +166,36 @@ function VendorPortalLayoutInner({ children }: { children: React.ReactNode }) {
     }
 
     const data = await response.json();
-    setToken(data.access_token);
+    const accessToken = data.access_token;
+
+    // Fetch profile to get vendor details (same as AdminContext pattern)
+    const profileRes = await fetch(`${API_BASE}/admin/profile`, {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
+
+    if (!profileRes.ok) {
+      throw new Error('Failed to verify account');
+    }
+
+    const profile = await profileRes.json();
+
+    // Only allow advertising_vendor or root_admin into the vendor portal
+    if (!profile.is_root_admin && profile.role !== 'advertising_vendor') {
+      throw new Error('This portal is for advertising vendors only');
+    }
+
+    setToken(accessToken);
     const vendorUser: VendorUser = {
-      _id: data.user_id || '',
-      email: email,
-      name: data.name || email,
-      role: data.role || 'advertising_vendor',
-      must_change_password: data.must_change_password || false,
+      _id: profile._id || profile.id || '',
+      email: profile.email || email,
+      name: profile.business_name || profile.company_name || email,
+      role: profile.role || 'advertising_vendor',
+      must_change_password: profile.must_change_password || false,
     };
     setUser(vendorUser);
-    localStorage.setItem('vendor_ad_token', data.access_token);
+    localStorage.setItem('vendor_ad_token', accessToken);
     localStorage.setItem('vendor_ad_user', JSON.stringify(vendorUser));
-  }, []);
+  };
 
   const logout = useCallback(() => {
     setToken(null);

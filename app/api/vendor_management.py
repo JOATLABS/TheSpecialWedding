@@ -160,7 +160,8 @@ async def get_wedding_vendors(
 @router.patch("/assignments/{assignment_id}/status", tags=["Vendor Assignments"])
 async def update_vendor_assignment_status(
     assignment_id: str,
-    status: str = Query(..., description="New status: inquiry, quoted, contracted, confirmed, completed, cancelled"),
+    status: str = Query(..., description="New status: inquiry, quoted, contracted, confirmed, completed, cancelled",
+                       pattern="^(inquiry|quoted|contracted|confirmed|completed|cancelled)$"),
     current_user: ExtendedAuthUser = Depends(require_vendor_feature)
 ):
     """Update the status of a vendor assignment"""

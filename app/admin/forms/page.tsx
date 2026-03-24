@@ -1,6 +1,6 @@
 'use client';
 
-import { Fragment, useEffect, useMemo, useState } from 'react';
+import { Fragment, useCallback, useEffect, useMemo, useState } from 'react';
 import type { ReactNode, ReactElement } from 'react';
 import { Dialog, Transition } from '@headlessui/react';
 import { SparklesIcon, SquaresPlusIcon, DocumentDuplicateIcon } from '@heroicons/react/24/outline';
@@ -11,6 +11,8 @@ import { useConfirmDialog } from '@/components/ui/ConfirmDialog';
 import { formsApi, type DuplicateFormPayload, type BlankFormPayload } from '@/services/formsApi';
 import { formatDate as formatUtcDate } from '@/utils/dateFormat';
 import PageHeader from '../components/PageHeader';
+import { Copy, FileText, Trash2, Loader2 } from 'lucide-react';
+import { toast } from 'sonner';
 
 type CreationMode = 'template' | 'blank' | 'duplicate';
 
@@ -157,6 +159,66 @@ export default function FormsManagementPage(): ReactElement {
   const [creating, setCreating] = useState(false);
   const [creationError, setCreationError] = useState<string | null>(null);
 
+  // Custom Templates state
+  const [customTemplates, setCustomTemplates] = useState<Array<{
+    id: string; name: string; description?: string; category?: string;
+    field_count: number; created_at?: string;
+  }>>([]);
+  const [customTplLoading, setCustomTplLoading] = useState(true);
+  const [creatingFromTpl, setCreatingFromTpl] = useState<string | null>(null);
+  const [newTplFormName, setNewTplFormName] = useState('');
+
+  const fetchCustomTemplates = useCallback(async () => {
+    if (!token) return;
+    try {
+      const res = await fetch(`${formsApi.resolveBaseUrl()}/couple-portal/form-templates`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setCustomTemplates(data.templates || []);
+      }
+    } catch {
+      // silently fail
+    } finally {
+      setCustomTplLoading(false);
+    }
+  }, [token]);
+
+  const handleCreateFromCustomTemplate = async (templateId: string) => {
+    if (!newTplFormName.trim()) { toast.error('Please enter a form name'); return; }
+    try {
+      const res = await fetch(`${formsApi.resolveBaseUrl()}/couple-portal/form-templates/create-form`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ template_id: templateId, form_name: newTplFormName.trim() }),
+      });
+      if (res.ok) {
+        toast.success(`Form "${newTplFormName.trim()}" created`);
+        setCreatingFromTpl(null);
+        setNewTplFormName('');
+        await refreshForms();
+      } else {
+        const err = await res.json();
+        toast.error(err.detail || 'Failed to create form');
+      }
+    } catch { toast.error('Failed to connect'); }
+  };
+
+  const handleDeleteCustomTemplate = async (templateId: string, templateName: string) => {
+    if (!confirm(`Delete template "${templateName}"? This cannot be undone.`)) return;
+    try {
+      const res = await fetch(`${formsApi.resolveBaseUrl()}/couple-portal/form-templates/${templateId}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (res.ok) {
+        toast.success('Template deleted');
+        setCustomTemplates(prev => prev.filter(t => t.id !== templateId));
+      } else { toast.error('Failed to delete template'); }
+    } catch { toast.error('Failed to connect'); }
+  };
+
   useEffect(() => {
     if (!token) {
       return;
@@ -190,7 +252,8 @@ export default function FormsManagementPage(): ReactElement {
     };
 
     initialise();
-  }, [token, userProfile, router]);
+    fetchCustomTemplates();
+  }, [token, userProfile, router, fetchCustomTemplates]);
 
   const resetCreateModalState = () => {
     setFormName('');
@@ -391,7 +454,7 @@ export default function FormsManagementPage(): ReactElement {
 
         {forms.length === 0 ? (
           <div className="px-8 py-20 text-center">
-            <div className="mx-auto max-w-md space-y-3">
+            <div className="mx-auto max-w-md space-y-3 flex flex-col items-center">
               <h3 className="text-lg font-semibold text-wedding-navy dark:text-white">Design your first form</h3>
               <p className="text-sm text-gray-600 dark:text-gray-300">
                 Start from the curated template gallery or open a blank canvas to craft a bespoke workflow.
@@ -485,6 +548,80 @@ export default function FormsManagementPage(): ReactElement {
                 </article>
               );
             })}
+          </div>
+        )}
+      </section>
+
+      {/* Custom Templates Section */}
+      <section className="rounded-[36px] border border-white/40 dark:border-slate-700 bg-white/70 dark:bg-slate-800/90 shadow-xl backdrop-blur">
+        <header className="flex flex-col gap-4 border-b border-white/40 dark:border-slate-700 px-8 py-6 md:flex-row md:items-center md:justify-between">
+          <div>
+            <h2 className="text-xl font-semibold text-wedding-navy dark:text-white">Custom Templates</h2>
+            <p className="text-sm text-gray-600 dark:text-gray-300">
+              Save forms as reusable templates to quickly create new forms for any wedding.
+            </p>
+          </div>
+          <FormBadge tone="neutral">{customTemplates.length} saved</FormBadge>
+        </header>
+
+        {customTplLoading ? (
+          <div className="flex items-center justify-center py-12">
+            <Loader2 className="w-6 h-6 animate-spin text-wedding-rose" />
+          </div>
+        ) : customTemplates.length === 0 ? (
+          <div className="px-8 py-12 text-center">
+            <Copy className="w-10 h-10 text-gray-300 dark:text-gray-600 mx-auto mb-3" />
+            <p className="text-sm text-gray-500 dark:text-gray-400">No custom templates yet</p>
+            <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">Save any form as a template to reuse it across weddings.</p>
+          </div>
+        ) : (
+          <div className="grid gap-4 p-6 sm:grid-cols-2 xl:grid-cols-3">
+            {customTemplates.map((tpl) => (
+              <div key={tpl.id} className="rounded-3xl border border-white/50 dark:border-slate-700 bg-gradient-to-br from-white/70 via-white/40 to-indigo-50/30 dark:from-slate-800 dark:via-slate-800/80 dark:to-slate-900 p-5 shadow-lg backdrop-blur">
+                <div className="space-y-2">
+                  <h3 className="text-base font-semibold text-wedding-navy dark:text-white">{tpl.name}</h3>
+                  {tpl.description && <p className="text-sm text-gray-600 dark:text-gray-300">{tpl.description}</p>}
+                  <div className="flex items-center gap-3 text-xs text-gray-500 dark:text-gray-400">
+                    <span>{tpl.field_count} fields</span>
+                    {tpl.category && <span className="bg-gray-100 dark:bg-slate-700 px-2 py-0.5 rounded-full">{tpl.category}</span>}
+                    {tpl.created_at && <span>{new Date(tpl.created_at).toLocaleDateString()}</span>}
+                  </div>
+                </div>
+
+                {creatingFromTpl === tpl.id ? (
+                  <div className="mt-4 pt-3 border-t border-gray-200 dark:border-gray-700 flex gap-2">
+                    <input
+                      type="text"
+                      value={newTplFormName}
+                      onChange={(e) => setNewTplFormName(e.target.value)}
+                      placeholder="New form name..."
+                      className="flex-1 px-3 py-2 border border-gray-200 dark:border-gray-600 rounded-xl text-sm bg-white dark:bg-slate-700 text-wedding-navy dark:text-white focus:ring-2 focus:ring-wedding-rose/50 focus:border-wedding-rose"
+                      onKeyDown={(e) => { if (e.key === 'Enter') handleCreateFromCustomTemplate(tpl.id); }}
+                      autoFocus
+                    />
+                    <Button onClick={() => handleCreateFromCustomTemplate(tpl.id)}>Create</Button>
+                    <Button variant="secondary" onClick={() => setCreatingFromTpl(null)}>Cancel</Button>
+                  </div>
+                ) : (
+                  <div className="mt-4 flex gap-2">
+                    <Button
+                      variant="secondary"
+                      className="flex-1"
+                      onClick={() => { setCreatingFromTpl(tpl.id); setNewTplFormName(''); }}
+                    >
+                      <FileText className="w-3.5 h-3.5 mr-1.5" />
+                      Use Template
+                    </Button>
+                    <Button
+                      variant="danger"
+                      onClick={() => handleDeleteCustomTemplate(tpl.id, tpl.name)}
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </Button>
+                  </div>
+                )}
+              </div>
+            ))}
           </div>
         )}
       </section>

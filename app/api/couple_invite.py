@@ -58,7 +58,7 @@ async def invite_couple(
         raise HTTPException(status_code=400, detail="This couple already has an active portal account for this wedding.")
 
     # Get wedding details for the email
-    wedding = await mongo.get_weddings_collection().find_one({"_id": ObjectId(data.wedding_id)})
+    wedding = await mongo.get_weddings_collection().find_one({"_id": data.wedding_id})
     if not wedding:
         raise HTTPException(status_code=404, detail="Wedding not found")
 
@@ -110,7 +110,7 @@ async def invite_couple(
 
     # Also update the wedding to track the couple link
     await mongo.get_weddings_collection().update_one(
-        {"_id": ObjectId(data.wedding_id)},
+        {"_id": data.wedding_id},
         {"$set": {
             "couple_portal_email": data.email.lower().strip(),
             "couple_portal_enabled": True,
@@ -227,7 +227,7 @@ async def resend_invite(
     # Send email (reuse same template logic)
     try:
         from app.services.email_service import email_service
-        wedding = await mongo.get_weddings_collection().find_one({"_id": ObjectId(couple["wedding_id"])})
+        wedding = await mongo.get_weddings_collection().find_one({"_id": couple["wedding_id"]})
         planner_name = f"{(current_user.user_data or {}).get('first_name', '')} {(current_user.user_data or {}).get('last_name', '')}".strip()
         if not planner_name:
             planner_name = (current_user.user_data or {}).get("company_name", current_user.email)

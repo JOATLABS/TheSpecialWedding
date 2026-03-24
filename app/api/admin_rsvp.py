@@ -17,6 +17,8 @@ class AdminRSVPUpdateRequest(BaseModel):
     """Request model for admin to update or create an RSVP"""
     attending: List[str] = []
     dietary: Optional[str] = None
+    phone: Optional[str] = None
+    email: Optional[str] = None
     confirmed_by_admin: bool = True
 
 
@@ -52,6 +54,16 @@ async def admin_update_rsvp(
         raise HTTPException(status_code=403, detail="Access to this wedding denied")
 
     try:
+        # If admin provided phone/email, update the guest record directly
+        if rsvp_data.phone or rsvp_data.email:
+            update_fields = {}
+            if rsvp_data.phone is not None:
+                update_fields["phone"] = rsvp_data.phone
+            if rsvp_data.email is not None:
+                update_fields["email"] = rsvp_data.email
+            if update_fields:
+                await guest_service.update_guest(guest_id, update_fields)
+
         result = await admin_service.admin_create_or_update_rsvp(
             guest_id=guest_id,
             wedding_id=guest.get("wedding_id"),

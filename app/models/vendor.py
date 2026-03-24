@@ -58,7 +58,35 @@ class ContractStatus(str, Enum):
 
 
 class PaymentMilestoneStatus(str, Enum):
-    """Payment milestone status"""
+    """
+    Payment milestone lifecycle status.
+
+    State machine:
+        PENDING → DUE → PAID
+                    ↘ OVERDUE → PAID
+                    ↘ PARTIAL → PAID
+        Any state → WAIVED (forgiven by planner)
+
+    Transitions:
+        - PENDING → DUE:     Triggered when current date >= due_date
+                              (should be auto-calculated by a cron job)
+        - DUE → OVERDUE:     Triggered when current date > due_date + grace_period
+                              (auto-calculated, typically 3–7 days grace)
+        - DUE → PAID:        Full payment received (paid_amount >= amount)
+        - DUE → PARTIAL:     Partial payment received (0 < paid_amount < amount)
+        - OVERDUE → PAID:    Late full payment received
+        - OVERDUE → PARTIAL: Late partial payment received
+        - PARTIAL → PAID:    Remaining balance paid (paid_amount >= amount)
+        - Any → WAIVED:      Planner forgives the payment (manual action)
+
+    Notes:
+        - Status transitions should be validated server-side via
+          update_milestone_status() to prevent illegal jumps (e.g. PAID → PENDING)
+        - PENDING → DUE and DUE → OVERDUE should be automated via a
+          scheduled job (e.g. daily cron calling calculate_milestone_statuses())
+        - Reminder emails are sent at DUE and OVERDUE stages
+          (tracked by reminder_sent_at and reminder_count on the milestone)
+    """
     PENDING = "pending"
     DUE = "due"
     OVERDUE = "overdue"
@@ -84,6 +112,30 @@ class ContractType(str, Enum):
     TEMPLATE = "template"
     UPLOADED_PDF = "uploaded_pdf"
     CUSTOM = "custom"
+
+
+class VendorAssignmentStatus(str, Enum):
+    """
+    Vendor assignment lifecycle status.
+
+    State transitions:
+        inquiry → quoted → contracted → confirmed → completed
+                                                  ↘ cancelled
+        Any state → cancelled (vendor dropped at any point)
+
+    - inquiry: Initial vendor consideration/outreach
+    - quoted: Quote received from vendor
+    - contracted: Contract signed with vendor
+    - confirmed: Vendor confirmed for the wedding date
+    - completed: Services delivered successfully
+    - cancelled: Assignment cancelled at any stage
+    """
+    INQUIRY = "inquiry"
+    QUOTED = "quoted"
+    CONTRACTED = "contracted"
+    CONFIRMED = "confirmed"
+    COMPLETED = "completed"
+    CANCELLED = "cancelled"
 
 
 class PaymentLinkStatus(str, Enum):
@@ -455,7 +507,10 @@ class VendorAssignment(BaseModel):
     budget_category_id: Optional[str] = Field(None, description="Linked budget category")
 
     # Status
-    status: str = Field("inquiry", description="inquiry, quoted, contracted, confirmed, completed, cancelled")
+    status: VendorAssignmentStatus = Field(
+        default=VendorAssignmentStatus.INQUIRY,
+        description="Assignment lifecycle status"
+    )
 
     # Quick Reference (denormalized)
     vendor_name: str = Field(..., description="Vendor name")

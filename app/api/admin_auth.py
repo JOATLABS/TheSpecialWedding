@@ -45,6 +45,7 @@ async def get_current_user_profile(current_user: ExtendedAuthUser = Depends(get_
     # Serialize user_data first to handle all datetime and ObjectId fields recursively
     serialized_user_data = serialize_mongo_doc(current_user.user_data) or {}
     profile_data = {
+        "id": serialized_user_data.get("_id", ""),
         "email": current_user.email,
         "role": current_user.role,
         "is_root_admin": current_user.is_root_admin,
