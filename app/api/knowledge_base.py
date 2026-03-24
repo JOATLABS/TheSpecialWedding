@@ -2,12 +2,13 @@
 Knowledge Base API Endpoints
 Community-driven documentation system for wedding planners
 """
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, Request
 from pydantic import BaseModel, Field, field_validator
 from typing import Optional, List
 from app.dependencies.auth_extended import require_root_admin, require_admin_or_planner, ExtendedAuthUser
 from app.services.knowledge_base_service import knowledge_base_service
 from app.models.knowledge_base import KB_CATEGORIES
+from app.utils.rate_limiter import public_read_limiter, public_search_limiter, public_slug_limiter, check_rate_limit
 import logging
 
 logger = logging.getLogger(__name__)
@@ -95,6 +96,7 @@ class MarkOfficialRequest(BaseModel):
 
 @router.get("/kb/articles", tags=["Knowledge Base"])
 async def get_articles(
+    request: Request,
     page: int = Query(1, ge=1, description="Page number"),
     limit: int = Query(20, ge=1, le=50, description="Items per page"),
     category: Optional[str] = Query(None, description="Filter by category"),
@@ -107,7 +109,11 @@ async def get_articles(
     Get published KB articles with optional filtering
     - All authenticated planners can access
     - Supports search, category filter, and pagination
+    - Rate limited to 60 requests per minute per IP
     """
+    client_ip = request.client.host if request.client else "unknown"
+    check_rate_limit(client_ip, public_read_limiter)
+
     return await knowledge_base_service.get_articles(
         page=page,
         limit=limit,
@@ -121,6 +127,7 @@ async def get_articles(
 
 @router.get("/kb/articles/slug/{slug}", tags=["Knowledge Base"])
 async def get_article_by_slug(
+    request: Request,
     slug: str,
     current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
 ):
@@ -128,23 +135,33 @@ async def get_article_by_slug(
     Get a specific article by its slug
     - Increments view count on access
     - Returns full article content with author info
+    - Rate limited to 100 requests per minute per IP
     """
+    client_ip = request.client.host if request.client else "unknown"
+    check_rate_limit(client_ip, public_slug_limiter)
+
     return await knowledge_base_service.get_article_by_slug(slug, increment_view=True)
 
 
 @router.get("/kb/categories", tags=["Knowledge Base"])
 async def get_categories(
+    request: Request,
     current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
 ):
     """
     Get all KB categories with article counts
     - Used for sidebar navigation
+    - Rate limited to 60 requests per minute per IP
     """
+    client_ip = request.client.host if request.client else "unknown"
+    check_rate_limit(client_ip, public_read_limiter)
+
     return await knowledge_base_service.get_categories_with_counts()
 
 
 @router.get("/kb/search", tags=["Knowledge Base"])
 async def search_articles(
+    request: Request,
     q: str = Query(..., min_length=2, max_length=100, description="Search query"),
     limit: int = Query(20, ge=1, le=50, description="Max results"),
     current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
@@ -153,7 +170,11 @@ async def search_articles(
     Full-text search across KB articles
     - Searches title, excerpt, content, and tags
     - Returns only published articles
+    - Rate limited to 30 requests per minute per IP
     """
+    client_ip = request.client.host if request.client else "unknown"
+    check_rate_limit(client_ip, public_search_limiter)
+
     return await knowledge_base_service.search_articles(query=q, limit=limit)
 
 
@@ -176,13 +197,18 @@ async def get_my_articles(
 
 @router.get("/kb/articles/{article_id}/related", tags=["Knowledge Base"])
 async def get_related_articles(
+    request: Request,
     article_id: str,
     limit: int = Query(5, ge=1, le=10),
     current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
 ):
     """
     Get related articles based on category and tags
+    - Rate limited to 60 requests per minute per IP
     """
+    client_ip = request.client.host if request.client else "unknown"
+    check_rate_limit(client_ip, public_read_limiter)
+
     return await knowledge_base_service.get_related_articles(
         article_id=article_id,
         limit=limit
@@ -355,3 +381,21 @@ async def get_all_articles_admin(
         featured_only=False,
         official_only=False
     )
+
+
+@router.get("/admin/kb/feedback-summary", tags=["Admin KB"])
+async def get_feedback_summary(
+    current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
+):
+    """
+    Get aggregated feedback summary across all KB articles for admin review.
+
+    Returns:
+    - Global feedback statistics (total feedback, global helpfulness percentage)
+    - Top 5 most helpful articles with feedback metrics
+    - Top 5 least helpful articles for improvement focus
+    - Recent 20 feedback comments for moderation
+
+    Access: Admin and planner roles only
+    """
+    return await knowledge_base_service.get_feedback_summary()

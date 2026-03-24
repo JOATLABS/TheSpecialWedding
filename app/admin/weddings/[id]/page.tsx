@@ -42,6 +42,7 @@ export default function WeddingDetailsPage() {
  const [activeTab, setActiveTab] = useState<'events' | 'rsvp' | 'privacy' | 'registry' | 'faq' | 'theme' | 'story'>('events');
  const [syncing, setSyncing] = useState(false);
  const [guests, setGuests] = useState<Guest[]>([]);
+ const [showAdRail, setShowAdRail] = useState(false);
 
  const fetchWedding = useCallback(async () => {
  try {
@@ -332,8 +333,8 @@ export default function WeddingDetailsPage() {
  return (
  <div className="min-h-screen bg-gradient-to-br from-wedding-ivory to-rose-50 dark:from-slate-900 dark:to-slate-800 p-4 sm:p-6">
  <div className="max-w-7xl mx-auto">
- <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
- <div className="lg:col-span-3">
+ <div className={`grid grid-cols-1 ${showAdRail ? 'lg:grid-cols-4' : ''} gap-6`}>
+ <div className={showAdRail ? 'lg:col-span-3' : ''}>
  {/* Header */}
  <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-xl overflow-hidden mb-8">
  <div className="bg-gradient-to-r from-wedding-navy to-wedding-gold px-4 sm:px-8 py-4 sm:py-6">
@@ -1410,10 +1411,10 @@ export default function WeddingDetailsPage() {
 
  </div>
 
- {/* Right Sidebar - Sponsored Vendors for Wedding Management */}
- <div className="lg:col-span-1">
+ {/* Right Sidebar - Sponsored Vendors (hidden when ads disabled) */}
+ <div className={showAdRail ? 'lg:col-span-1' : 'hidden'}>
  <div className="sticky top-6">
- <CampaignSponsoredRail />
+ <CampaignSponsoredRail onVisibilityChange={setShowAdRail} />
  </div>
  </div>
  </div>

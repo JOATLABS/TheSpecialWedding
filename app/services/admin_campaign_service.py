@@ -186,6 +186,18 @@ class AdminCampaignService:
         logger.info(
             f"Campaign {campaign_id} approved by {admin_email}"
         )
+
+        # Push notification to vendor
+        try:
+            from app.services.vendor_notification_service import VendorNotificationService
+            vns = VendorNotificationService()
+            await vns.notify_vendor_campaign_approved(
+                vendor_email=updated.get("vendor_email", ""),
+                campaign_name=updated.get("campaign_name", campaign_id),
+            )
+        except Exception as e:
+            logger.warning(f"Failed to push-notify vendor on campaign approval: {e}")
+
         return _serialize(updated)
 
     async def reject_campaign(
@@ -218,6 +230,19 @@ class AdminCampaignService:
         logger.info(
             f"Campaign {campaign_id} rejected by {admin_email}"
         )
+
+        # Push notification to vendor
+        try:
+            from app.services.vendor_notification_service import VendorNotificationService
+            vns = VendorNotificationService()
+            await vns.notify_vendor_campaign_rejected(
+                vendor_email=updated.get("vendor_email", ""),
+                campaign_name=updated.get("campaign_name", campaign_id),
+                reason=review_notes,
+            )
+        except Exception as e:
+            logger.warning(f"Failed to push-notify vendor on campaign rejection: {e}")
+
         return _serialize(updated)
 
     async def request_changes(
@@ -259,6 +284,19 @@ class AdminCampaignService:
         logger.info(
             f"Campaign {campaign_id} returned to vendor with change requests by {admin_email}"
         )
+
+        # Push notification to vendor
+        try:
+            from app.services.vendor_notification_service import VendorNotificationService
+            vns = VendorNotificationService()
+            await vns.notify_vendor_campaign_changes_requested(
+                vendor_email=updated.get("vendor_email", ""),
+                campaign_name=updated.get("campaign_name", campaign_id),
+                notes=review_notes,
+            )
+        except Exception as e:
+            logger.warning(f"Failed to push-notify vendor on change request: {e}")
+
         return _serialize(updated)
 
     # ─── Creative Review ──────────────────────────────────────────

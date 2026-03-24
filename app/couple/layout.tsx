@@ -16,7 +16,7 @@ export const metadata: Metadata = {
 };
 
 export const viewport: Viewport = {
-  themeColor: '#1e3a5f',
+  themeColor: '#0f172a',
   width: 'device-width',
   initialScale: 1,
   maximumScale: 1,
@@ -24,7 +24,7 @@ export const viewport: Viewport = {
 
 export default function CoupleLayout({ children }: { children: React.ReactNode }) {
   return (
-    <div className="min-h-screen bg-gradient-to-br from-[#f8f6f3] via-white to-[#f5f0eb]">
+    <div className="min-h-screen bg-gray-50 dark:bg-slate-900">
       {children}
     </div>
   );

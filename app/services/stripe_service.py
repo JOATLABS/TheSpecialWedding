@@ -821,20 +821,30 @@ class StripeService:
         except Exception as txn_err:
             # Standalone MongoDB (no replica set) doesn't support transactions.
             # Fall back to sequential writes with a warning.
-            if "transaction" in str(txn_err).lower():
+            if "transaction" in str(txn_err).lower() or "replica" in str(txn_err).lower() or "topology" in str(txn_err).lower():
                 logger.warning(
                     "MongoDB transactions not supported (standalone mode). "
                     "Falling back to sequential writes for subscription sync."
                 )
-                await self.subscriptions_collection.update_one(
+                sub_result = await self.subscriptions_collection.update_one(
                     query, update_document, upsert=True
                 )
+                logger.info(
+                    f"Subscription upsert (fallback): query={query}, "
+                    f"matched={sub_result.matched_count}, modified={sub_result.modified_count}, "
+                    f"upserted_id={sub_result.upserted_id}"
+                )
                 if user_id and user_update_doc:
-                    await self.users_collection.update_one(
+                    user_result = await self.users_collection.update_one(
                         {"_id": ObjectId(user_id)},
                         user_update_doc,
                     )
+                    logger.info(
+                        f"User update (fallback): user_id={user_id}, "
+                        f"matched={user_result.matched_count}, modified={user_result.modified_count}"
+                    )
             else:
+                logger.error(f"Unexpected error in subscription sync transaction: {str(txn_err)}")
                 raise
 
         return {
@@ -1083,60 +1093,120 @@ class StripeService:
             event_id = event.get("id", "")
             data = event["data"]["object"]
 
-            # Idempotency check: skip already-processed events (S7)
+            # ── Idempotency check with status tracking ──────────────────
+            # Best practice: track event processing lifecycle so failed events
+            # can be debugged and retried.  Only skip events already marked
+            # "processed"; events stuck in "processing" (previous crash) are
+            # allowed to re-enter so Stripe retries succeed.
+            # Ref: https://dev.to/aniefon_umanah_ac5f21311c/building-reliable-stripe-subscriptions-in-nestjs-webhook-idempotency-and-optimistic-locking-3o91
             if event_id:
                 existing = await mongo.db["stripe_webhook_events"].find_one({"event_id": event_id})
-                if existing:
+                if existing and existing.get("status") == "processed":
                     logger.info(f"Skipping duplicate webhook event: {event_id} ({event_type})")
                     return {"status": "already_processed", "event_id": event_id, "event_type": event_type}
 
-                # Record event as being processed
-                await mongo.db["stripe_webhook_events"].insert_one({
-                    "event_id": event_id,
-                    "event_type": event_type,
-                    "processed_at": datetime.now(timezone.utc)
-                })
+                # Legacy events (pre-status-tracking) have no "status" field.
+                # Treat them as already processed to maintain backward compat.
+                if existing and "status" not in existing:
+                    logger.info(f"Skipping legacy webhook event (no status field): {event_id} ({event_type})")
+                    return {"status": "already_processed", "event_id": event_id, "event_type": event_type}
+
+                if not existing:
+                    # Record event as being processed (with status lifecycle).
+                    # Use try/except for DuplicateKeyError to handle the race
+                    # condition where two identical webhooks arrive simultaneously
+                    # and both pass the find_one check above.
+                    try:
+                        await mongo.db["stripe_webhook_events"].insert_one({
+                            "event_id": event_id,
+                            "event_type": event_type,
+                            "status": "processing",
+                            "error_message": None,
+                            "created_at": datetime.now(timezone.utc),
+                            "processed_at": None,
+                        })
+                    except Exception as insert_err:
+                        if "duplicate" in str(insert_err).lower() or "E11000" in str(insert_err):
+                            # Another concurrent request already claimed this event
+                            logger.info(f"Concurrent duplicate insert for event {event_id}, skipping")
+                            return {"status": "already_processed", "event_id": event_id, "event_type": event_type}
+                        raise
+                else:
+                    # Re-processing a previously failed/stuck event
+                    await mongo.db["stripe_webhook_events"].update_one(
+                        {"event_id": event_id},
+                        {"$set": {"status": "processing", "error_message": None}},
+                    )
 
             logger.info(f"Processing webhook event: {event_type}")
 
-            # Handle different event types
-            if event_type == "checkout.session.completed":
-                return await self._handle_checkout_completed(data)
-            elif event_type == "checkout.session.expired":
-                return await self._handle_checkout_expired(data)
-            elif event_type == "customer.subscription.created":
-                return await self._handle_subscription_created(data)
-            elif event_type == "customer.subscription.updated":
-                return await self._handle_subscription_updated(data)
-            elif event_type == "customer.subscription.deleted":
-                return await self._handle_subscription_deleted(data)
-            elif event_type == "customer.subscription.trial_will_end":
-                return await self._handle_subscription_trial_will_end(data)
-            elif event_type == "customer.updated":
-                return await self._handle_customer_updated(data)
-            elif event_type == "invoice.paid":
-                return await self._handle_invoice_paid(data)
-            elif event_type == "invoice.payment_failed":
-                return await self._handle_invoice_payment_failed(data)
-            elif event_type == "invoice.finalized":
-                return await self._handle_invoice_finalized(data)
-            elif event_type == "payment_intent.succeeded":
-                return await self._handle_payment_intent_succeeded(data)
-            elif event_type == "payment_intent.payment_failed":
-                return await self._handle_payment_intent_failed(data)
-            elif event_type == "account.updated":
-                return await self._handle_account_updated(data)
-            elif event_type in ("product.updated", "product.created"):
-                return await self._handle_product_updated(data)
-            elif event_type in ("price.created", "price.updated"):
-                return await self._handle_price_changed(data)
-            elif event_type in ("plan.created", "plan.updated"):
-                # Legacy Stripe plan events map to price/product - acknowledge them
-                logger.info(f"Acknowledged legacy plan event: {event_type} for {data.get('id')}")
-                return {"status": "acknowledged", "event_type": event_type}
-            else:
-                logger.info(f"Unhandled event type: {event_type}")
-                return {"status": "ignored", "event_type": event_type}
+            # ── Dispatch to handler with status lifecycle tracking ────
+            # On success → mark "processed"; on failure → mark "failed"
+            # with error message for debugging / manual retry.
+            result = None
+            try:
+                # Handle different event types
+                if event_type == "checkout.session.completed":
+                    result = await self._handle_checkout_completed(data)
+                elif event_type == "checkout.session.expired":
+                    result = await self._handle_checkout_expired(data)
+                elif event_type == "customer.subscription.created":
+                    result = await self._handle_subscription_created(data)
+                elif event_type == "customer.subscription.updated":
+                    result = await self._handle_subscription_updated(data)
+                elif event_type == "customer.subscription.deleted":
+                    result = await self._handle_subscription_deleted(data)
+                elif event_type == "customer.subscription.trial_will_end":
+                    result = await self._handle_subscription_trial_will_end(data)
+                elif event_type == "customer.updated":
+                    result = await self._handle_customer_updated(data)
+                elif event_type == "invoice.paid":
+                    result = await self._handle_invoice_paid(data)
+                elif event_type == "invoice.payment_failed":
+                    result = await self._handle_invoice_payment_failed(data)
+                elif event_type == "invoice.finalized":
+                    result = await self._handle_invoice_finalized(data)
+                elif event_type == "payment_intent.succeeded":
+                    result = await self._handle_payment_intent_succeeded(data)
+                elif event_type == "payment_intent.payment_failed":
+                    result = await self._handle_payment_intent_failed(data)
+                elif event_type == "account.updated":
+                    result = await self._handle_account_updated(data)
+                elif event_type in ("product.updated", "product.created"):
+                    result = await self._handle_product_updated(data)
+                elif event_type in ("price.created", "price.updated"):
+                    result = await self._handle_price_changed(data)
+                elif event_type in ("plan.created", "plan.updated"):
+                    # Legacy Stripe plan events map to price/product - acknowledge them
+                    logger.info(f"Acknowledged legacy plan event: {event_type} for {data.get('id')}")
+                    result = {"status": "acknowledged", "event_type": event_type}
+                else:
+                    logger.info(f"Unhandled event type: {event_type}")
+                    result = {"status": "ignored", "event_type": event_type}
+
+                # ── Mark event as successfully processed ──────────────
+                if event_id:
+                    await mongo.db["stripe_webhook_events"].update_one(
+                        {"event_id": event_id},
+                        {"$set": {
+                            "status": "processed",
+                            "processed_at": datetime.now(timezone.utc),
+                        }},
+                    )
+
+                return result
+
+            except Exception as handler_err:
+                # ── Mark event as failed with error detail ────────────
+                if event_id:
+                    await mongo.db["stripe_webhook_events"].update_one(
+                        {"event_id": event_id},
+                        {"$set": {
+                            "status": "failed",
+                            "error_message": str(handler_err)[:2000],
+                        }},
+                    )
+                raise
 
         except SignatureVerificationError as e:
             logger.error(f"Invalid webhook signature: {str(e)}")
@@ -1946,6 +2016,22 @@ class StripeService:
                 logger.info(f"Payment notification sent to {user_email} for {notification_type}")
             else:
                 logger.error(f"Failed to send payment notification: {result.get('error')}")
+
+            # Send push notification (non-blocking, separate from email)
+            try:
+                from app.services.planner_notification_service import PlannerNotificationService
+                pns = PlannerNotificationService()
+                if notification_type == "payment_failed":
+                    await pns._send_push_notification(
+                        planner_id=user_email,
+                        notification_type="payment_failed",
+                        title="Payment Failed",
+                        message=f"Payment of {currency} {amount:.2f} for {plan_name} failed. Please update your payment method.",
+                        action_url="/planner/billing",
+                    )
+                # payment_success push is already wired via notify_payment_received
+            except Exception as push_err:
+                logger.warning(f"Push notification for {notification_type} failed: {push_err}")
 
         except Exception as e:
             # Don't fail the webhook if notification fails

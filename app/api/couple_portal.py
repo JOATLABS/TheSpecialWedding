@@ -73,7 +73,7 @@ async def get_dashboard(couple: dict = Depends(require_couple_auth)):
 @router.get("/couple/portal/events", tags=["Couple Portal"])
 async def get_events(couple: dict = Depends(require_couple_auth)):
     """Get wedding events/timeline."""
-    wedding = await mongo.get_weddings_collection().find_one({"_id": ObjectId(couple["wedding_id"])})
+    wedding = await mongo.get_weddings_collection().find_one({"_id": couple["wedding_id"]})
     if not wedding:
         raise HTTPException(status_code=404, detail="Wedding not found")
 
@@ -334,7 +334,7 @@ async def _get_wedding_for_planner(wedding_id: str, current_user: ExtendedAuthUs
     enforce_team_permission(current_user, "manage_contracts")
     if not await check_wedding_access(current_user, wedding_id):
         raise HTTPException(status_code=403, detail="You don't have access to this wedding")
-    wedding = await mongo.get_weddings_collection().find_one({"_id": ObjectId(wedding_id)})
+    wedding = await mongo.get_weddings_collection().find_one({"_id": wedding_id})
     if not wedding:
         raise HTTPException(status_code=404, detail="Wedding not found")
     return wedding
@@ -526,7 +526,7 @@ async def add_event_note(
     if couple.get("wedding_archived"):
         raise HTTPException(status_code=403, detail="Notes are disabled for archived weddings")
 
-    wedding = await mongo.get_weddings_collection().find_one({"_id": ObjectId(couple["wedding_id"])})
+    wedding = await mongo.get_weddings_collection().find_one({"_id": couple["wedding_id"]})
     if not wedding:
         raise HTTPException(status_code=404, detail="Wedding not found")
 
@@ -567,7 +567,7 @@ async def add_item_note(
     if couple.get("wedding_archived"):
         raise HTTPException(status_code=403, detail="Notes are disabled for archived weddings")
 
-    wedding = await mongo.get_weddings_collection().find_one({"_id": ObjectId(couple["wedding_id"])})
+    wedding = await mongo.get_weddings_collection().find_one({"_id": couple["wedding_id"]})
     if not wedding:
         raise HTTPException(status_code=404, detail="Wedding not found")
 
@@ -812,7 +812,7 @@ async def couple_send_message(
         raise HTTPException(status_code=403, detail="Messaging is disabled for archived weddings")
 
     # Verify wedding exists before inserting message
-    wedding = await mongo.get_weddings_collection().find_one({"_id": ObjectId(wedding_id)}, {"_id": 1})
+    wedding = await mongo.get_weddings_collection().find_one({"_id": wedding_id}, {"_id": 1})
     if not wedding:
         raise HTTPException(status_code=404, detail="Wedding not found")
 
@@ -1092,7 +1092,7 @@ async def archive_wedding(
     enforce_team_permission(current_user, "manage_contracts")
 
     try:
-        ObjectId(wedding_id)
+        wedding_id
     except (InvalidId, Exception):
         raise HTTPException(status_code=400, detail="Invalid wedding ID format")
 
@@ -1100,7 +1100,7 @@ async def archive_wedding(
         raise HTTPException(status_code=403, detail="You don't have access to this wedding")
 
     # Check wedding exists
-    wedding = await mongo.get_weddings_collection().find_one({"_id": ObjectId(wedding_id)})
+    wedding = await mongo.get_weddings_collection().find_one({"_id": wedding_id})
     if not wedding:
         raise HTTPException(status_code=404, detail="Wedding not found")
 
@@ -1484,10 +1484,7 @@ async def schedule_meeting(
     if not await check_wedding_access(current_user, data.wedding_id):
         raise HTTPException(status_code=403, detail="You don't have access to this wedding")
 
-    try:
-        wedding_oid = ObjectId(data.wedding_id)
-    except (InvalidId, Exception):
-        raise HTTPException(status_code=400, detail="Invalid wedding ID format")
+    wedding_oid = data.wedding_id
 
     wedding = await mongo.get_weddings_collection().find_one(
         {"_id": wedding_oid}, {"couple_names": 1}
@@ -1657,7 +1654,7 @@ async def list_meetings_couple(couple: dict = Depends(require_couple_auth)):
     if not planner_email:
         # Fallback: look up from wedding
         wedding = await mongo.get_weddings_collection().find_one(
-            {"_id": ObjectId(wedding_id)}, {"assigned_planner_email": 1}
+            {"_id": wedding_id}, {"assigned_planner_email": 1}
         )
         planner_email = wedding.get("assigned_planner_email") if wedding else None
 
@@ -1699,7 +1696,7 @@ async def list_registries_couple(couple: dict = Depends(require_couple_auth)):
 
     wedding_id = couple.get("wedding_id")
     wedding = await mongo.get_weddings_collection().find_one(
-        {"_id": ObjectId(wedding_id)}, {"registries": 1}
+        {"_id": wedding_id}, {"registries": 1}
     )
     if not wedding:
         raise HTTPException(status_code=404, detail="Wedding not found")
@@ -1714,7 +1711,7 @@ async def add_registry_couple(body: RegistryItemRequest, couple: dict = Depends(
         raise HTTPException(status_code=403, detail="Cannot modify archived wedding")
 
     wedding_id = couple.get("wedding_id")
-    wedding_oid = ObjectId(wedding_id)
+    wedding_oid = wedding_id
 
     registry_item = {
         "name": body.name.strip(),
@@ -1745,7 +1742,7 @@ async def update_registry_couple(
         raise HTTPException(status_code=403, detail="Cannot modify archived wedding")
 
     wedding_id = couple.get("wedding_id")
-    wedding_oid = ObjectId(wedding_id)
+    wedding_oid = wedding_id
 
     # Verify index is valid
     wedding = await mongo.get_weddings_collection().find_one(
@@ -1783,7 +1780,7 @@ async def delete_registry_couple(
         raise HTTPException(status_code=403, detail="Cannot modify archived wedding")
 
     wedding_id = couple.get("wedding_id")
-    wedding_oid = ObjectId(wedding_id)
+    wedding_oid = wedding_id
 
     wedding = await mongo.get_weddings_collection().find_one(
         {"_id": wedding_oid}, {"registries": 1}
@@ -1828,7 +1825,7 @@ async def list_faqs_couple(couple: dict = Depends(require_couple_auth)):
 
     wedding_id = couple.get("wedding_id")
     wedding = await mongo.get_weddings_collection().find_one(
-        {"_id": ObjectId(wedding_id)}, {"faqs": 1}
+        {"_id": wedding_id}, {"faqs": 1}
     )
     if not wedding:
         raise HTTPException(status_code=404, detail="Wedding not found")
@@ -1843,7 +1840,7 @@ async def add_faq_couple(body: FAQItemRequest, couple: dict = Depends(require_co
         raise HTTPException(status_code=403, detail="Cannot modify archived wedding")
 
     wedding_id = couple.get("wedding_id")
-    wedding_oid = ObjectId(wedding_id)
+    wedding_oid = wedding_id
 
     faq_item = {
         "question": body.question.strip(),
@@ -1875,7 +1872,7 @@ async def update_faq_couple(
         raise HTTPException(status_code=403, detail="Cannot modify archived wedding")
 
     wedding_id = couple.get("wedding_id")
-    wedding_oid = ObjectId(wedding_id)
+    wedding_oid = wedding_id
 
     wedding = await mongo.get_weddings_collection().find_one(
         {"_id": wedding_oid}, {"faqs": 1}
@@ -1913,7 +1910,7 @@ async def delete_faq_couple(
         raise HTTPException(status_code=403, detail="Cannot modify archived wedding")
 
     wedding_id = couple.get("wedding_id")
-    wedding_oid = ObjectId(wedding_id)
+    wedding_oid = wedding_id
 
     wedding = await mongo.get_weddings_collection().find_one(
         {"_id": wedding_oid}, {"faqs": 1}

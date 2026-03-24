@@ -59,9 +59,6 @@ export function PaymentHistoryPanel({
     const map = new Map<string, string>();
     categories.forEach((category) => {
       map.set(category.id, category.name);
-      if (category._id && !map.has(category._id)) {
-        map.set(category._id, category.name);
-      }
     });
     return map;
   }, [categories]);
@@ -184,7 +181,7 @@ export function PaymentHistoryPanel({
               >
                 <option value="all">All categories</option>
                 {categories.map((category) => {
-                  const optionValue = category.id || category._id;
+                  const optionValue = category.id;
                   if (!optionValue) {
                     return null;
                   }

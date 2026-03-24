@@ -59,7 +59,7 @@ export function DialogContent({ className = '', children }: DialogContentProps) 
   if (!context.open) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center">
+    <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto p-4">
       {/* Backdrop */}
       <div
         className="fixed inset-0 bg-black/50"
@@ -68,7 +68,7 @@ export function DialogContent({ className = '', children }: DialogContentProps) 
 
       {/* Content */}
       <div
-        className={`relative bg-white dark:bg-gray-800 rounded-lg shadow-lg p-6 w-full max-w-lg mx-4 ${className}`}
+        className={`relative bg-white dark:bg-gray-800 rounded-lg shadow-lg p-6 w-full max-h-[90vh] overflow-y-auto mx-4 ${className}`}
         onClick={(e) => e.stopPropagation()}
       >
         {children}

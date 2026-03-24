@@ -91,6 +91,8 @@ export default function BudgetDashboard() {
   const [vendorAssignments, setVendorAssignments] = useState<VendorAssignment[]>([]);
   const [selectedVendorId, setSelectedVendorId] = useState<string>('');
 
+  const [showAdRail, setShowAdRail] = useState(false);
+
   // AI Budget Insights
   const [aiInsights, setAiInsights] = useState<AIInsight[]>([]);
   const [aiInsightsLoading, setAiInsightsLoading] = useState(false);
@@ -257,7 +259,7 @@ export default function BudgetDashboard() {
 
       // Handle vendor assignment if a vendor was selected
       if (selectedVendorId) {
-        await handleVendorAssignment(newCategory.id || newCategory._id);
+        await handleVendorAssignment(newCategory.id);
       }
 
       setShowCategoryModal(false);
@@ -334,7 +336,7 @@ export default function BudgetDashboard() {
     });
     // Set the selected vendor if there's an existing assignment
     const existingAssignment = vendorAssignments.find(
-      a => a.budget_category_id === (category.id || category._id)
+      a => a.budget_category_id === (category.id)
     );
     setSelectedVendorId(existingAssignment?.vendor_profile_id || '');
     setShowCategoryModal(true);
@@ -416,7 +418,7 @@ export default function BudgetDashboard() {
       return;
     }
 
-    const categoryId = activeCategory.id || activeCategory._id;
+    const categoryId = activeCategory.id;
     if (!categoryId) {
       toast.error('This category is missing an identifier. Please refresh and try again.');
       return;
@@ -517,9 +519,9 @@ export default function BudgetDashboard() {
         </Button>
       </PageHeader>
 
-      <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
-      {/* Main Content — 3 columns on desktop */}
-      <div className="lg:col-span-3 space-y-6">
+      <div className={`grid grid-cols-1 ${showAdRail ? 'lg:grid-cols-4' : ''} gap-6`}>
+      {/* Main Content — expands to full width when ad rail hidden */}
+      <div className={`${showAdRail ? 'lg:col-span-3' : ''} space-y-6`}>
 
       {/* Wedding Selection */}
       <div className="bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-4">
@@ -745,10 +747,10 @@ export default function BudgetDashboard() {
             ) : (
               <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
                 {filteredCategories.map((category) => {
-                  const assignment = getAssignedVendorForCategory(category.id || category._id);
+                  const assignment = getAssignedVendorForCategory(category.id);
                   return (
                     <BudgetCategoryCard
-                      key={category.id || category._id}
+                      key={category.id}
                       category={category}
                       assignedVendor={assignment ? {
                         vendor_name: assignment.vendor_name,
@@ -907,7 +909,7 @@ export default function BudgetDashboard() {
         category={activeCategory}
         suggestedVendorName={
           activeCategory
-            ? getAssignedVendorForCategory(activeCategory.id || activeCategory._id)?.vendor_name
+            ? getAssignedVendorForCategory(activeCategory.id)?.vendor_name
             : undefined
         }
         isOpen={showPaymentModal}
@@ -924,10 +926,10 @@ export default function BudgetDashboard() {
       </div>
       {/* End lg:col-span-3 main content */}
 
-      {/* Right Sidebar — Sponsored Vendors Rail */}
-      <div className="lg:col-span-1">
+      {/* Right Sidebar — Sponsored Vendors Rail (hidden when ads disabled) */}
+      <div className={showAdRail ? 'lg:col-span-1' : 'hidden'}>
         <div className="sticky top-6">
-          <CampaignSponsoredRail />
+          <CampaignSponsoredRail onVisibilityChange={setShowAdRail} />
         </div>
       </div>
 

@@ -54,6 +54,14 @@ def validated_skip(skip: int = Query(0, ge=0, le=100000)) -> int:
     """
     Validate skip parameter for pagination.
 
+    DEPRECATED: Use cursor-based pagination for new endpoints.
+    See app.utils.cursor_pagination for CursorPage, cursor_paginate(),
+    validated_cursor(), and validated_cursor_limit() implementations.
+
+    Offset-based pagination (skip/limit) has O(n) performance at scale
+    because MongoDB must scan and discard all skipped documents. Cursor-based
+    pagination uses document position markers for O(1) performance.
+
     Args:
         skip: Number of items to skip (default 0, min 0, max 100000)
 

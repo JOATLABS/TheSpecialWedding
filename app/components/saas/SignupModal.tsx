@@ -355,14 +355,14 @@ export const SignupModal: React.FC<SignupModalProps> = ({ isOpen, onClose, selec
                 <input type="text" name="fake_username" tabIndex={-1} autoComplete="username" />
                 <input type="password" name="fake_password" tabIndex={-1} autoComplete="current-password" />
               </div>
-              {step === 1 ? (
-                <>
+              {/* Step 1 fields — hidden (not unmounted) on step 2 so react-hook-form retains values */}
+              <div className={step === 1 ? '' : 'hidden'}>
                   <div>
                     <h2 className="text-xl font-bold text-white mb-1">Create your account</h2>
                     <p className="text-sm text-slate-400">Enter your email and create a password</p>
                   </div>
 
-                  <div>
+                  <div className="mt-4">
                     <label className="block text-sm font-medium text-slate-300 mb-1">Email</label>
                     <input
                       type="email"
@@ -374,7 +374,7 @@ export const SignupModal: React.FC<SignupModalProps> = ({ isOpen, onClose, selec
                     {errors.email && <p className="mt-1 text-xs text-red-400">{errors.email.message}</p>}
                   </div>
 
-                  <div>
+                  <div className="mt-4">
                     <label className="block text-sm font-medium text-slate-300 mb-1">Password</label>
                     <input
                       type="password"
@@ -393,7 +393,7 @@ export const SignupModal: React.FC<SignupModalProps> = ({ isOpen, onClose, selec
                     {errors.password && <p className="mt-1 text-xs text-red-400">{errors.password.message}</p>}
                   </div>
 
-                  <div>
+                  <div className="mt-4">
                     <label className="block text-sm font-medium text-slate-300 mb-1">Confirm Password</label>
                     <input
                       type="password"
@@ -411,12 +411,12 @@ export const SignupModal: React.FC<SignupModalProps> = ({ isOpen, onClose, selec
                   <button
                     type="button"
                     onClick={handleNext}
-                    className="w-full py-3 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-semibold transition-all"
+                    className="w-full mt-4 py-3 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-semibold transition-all"
                   >
                     Continue
                   </button>
-                </>
-              ) : (
+              </div>
+              {step === 2 && (
                 <>
                   <div className="flex items-center gap-2 mb-2">
                     <button

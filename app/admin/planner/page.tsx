@@ -73,6 +73,7 @@ export default function WeddingPlannerDashboard() {
  // Onboarding modal state
  const [isOnboardingOpen, setIsOnboardingOpen] = useState(false);
  const [hasUserDismissedOnboarding, setHasUserDismissedOnboarding] = useState(false);
+ const [showAdRail, setShowAdRail] = useState(false);
 
  const fetchMyWeddings = useCallback(async () => {
  try {
@@ -244,8 +245,8 @@ export default function WeddingPlannerDashboard() {
  description="Here's what's happening with your weddings today."
  />
 
- <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
- <div className="lg:col-span-3">
+ <div className={`grid grid-cols-1 ${showAdRail ? 'lg:grid-cols-4' : ''} gap-6`}>
+ <div className={showAdRail ? 'lg:col-span-3' : ''}>
  <div className="space-y-6">
 
  {/* Team Member Access Notice */}
@@ -724,10 +725,10 @@ export default function WeddingPlannerDashboard() {
  </div>
  </div>
 
- {/* Right Sidebar - Sponsored Vendors */}
- <div className="lg:col-span-1">
+ {/* Right Sidebar - Sponsored Vendors (hidden when ads disabled) */}
+ <div className={showAdRail ? 'lg:col-span-1' : 'hidden'}>
  <div className="sticky top-6">
- <CampaignSponsoredRail />
+ <CampaignSponsoredRail onVisibilityChange={setShowAdRail} />
  </div>
  </div>
  </div>

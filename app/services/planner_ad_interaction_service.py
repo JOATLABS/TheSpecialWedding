@@ -353,6 +353,19 @@ class PlannerAdInteractionService:
             except Exception as e:
                 logger.error(f"CPL billing failed for add_to_directory lead: {e}")
 
+        # ── 6. Push notification to vendor ──
+        try:
+            from app.services.vendor_notification_service import VendorNotificationService
+            vns = VendorNotificationService()
+            await vns.notify_vendor_new_lead(
+                vendor_email=campaign.get("vendor_email", ""),
+                planner_name=planner_email,
+                lead_type="add_to_directory",
+                campaign_name=campaign.get("campaign_name", ""),
+            )
+        except Exception as e:
+            logger.warning(f"Failed to push-notify vendor on add_to_directory lead: {e}")
+
         logger.info(
             f"Planner {planner_email} added vendor {vendor_name} "
             f"to directory from campaign {campaign_id}"
@@ -510,6 +523,19 @@ class PlannerAdInteractionService:
                 logger.info(f"Quote request email sent to {vendor_email}")
             except Exception as e:
                 logger.error(f"Failed to send quote request email: {e}")
+
+        # ── 4b. Push notification to vendor ──
+        try:
+            from app.services.vendor_notification_service import VendorNotificationService
+            vns = VendorNotificationService()
+            await vns.notify_vendor_new_lead(
+                vendor_email=vendor_email,
+                planner_name=planner_name,
+                lead_type="quote_request",
+                campaign_name=campaign.get("campaign_name", ""),
+            )
+        except Exception as e:
+            logger.warning(f"Failed to push-notify vendor on quote_request lead: {e}")
 
         # ── 5. Auto-add vendor to directory if not already present ──
         directory_entry = None

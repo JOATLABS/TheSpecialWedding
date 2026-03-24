@@ -1,5 +1,160 @@
 # Vendor Advertising Feature — Changelog
 
+## Phase 10.3: Notification Shared-Resource Refactor + Ad Enable/Disable Layout Fix
+**Date:** 2026-03-23
+**Version:** 7.3.0
+
+### Overview
+
+Two areas of work: (1) eliminating duplicated notification infrastructure in the vendor portal by wiring it into the existing shared admin endpoints, and (2) fixing a layout bug where disabling ads via the admin config left 25% dead whitespace on all planner pages with ad rails.
+
+### 1. Vendor Portal Notification Refactor — Use Shared Endpoints
+**Problem:** Phase 10.2 created 5 duplicate notification endpoints in `vendor_signup.py` that replicated `notification_management.py`. The vendor portal also had its own notification dropdown, polling logic, and state management instead of reusing the shared patterns (Sidebar nav item → dedicated page → shared API endpoints).
+
+**Fix:**
+- **`app/dependencies/auth_extended.py`** — Broadened `require_admin_or_planner` to include `is_advertising_vendor`, so vendors can use the shared `/admin/user/notifications/*` endpoints
+- **`app/api/vendor_signup.py`** — Removed 5 duplicate notification endpoints + unused `Query` import. Vendors now use `notification_management.py` endpoints via broadened auth. Web-push endpoints (vendor-specific) remain.
+- **`app/portal/ads/layout.tsx`** — Stripped all notification polling/state/dropdown code (`fetchNotifCount`, `unreadCount`, 30s interval, `notifications-updated` listener, dropdown JSX, bell in mobile header). Added `Notifications` as a simple nav item linking to `/portal/ads/notifications` (matches `plannerNavItems` pattern in `Sidebar.tsx`). Fixed login endpoint from nonexistent `/auth/login` to `/admin/token` with profile verification.
+- **`app/portal/ads/notifications/page.tsx`** — New page using shared `/admin/user/notifications` endpoints. Supports mark-read, mark-all-read, dismiss, unread filter. Matches existing vendor portal style (same heading sizes, card patterns, loading spinner as Leads page).
+
+### 2. Hardcoded Role Fix in NotificationService SSE Broadcasts
+**Problem:** `mark_notification_read()` and `mark_all_notifications_read()` in `notification_service.py` hardcoded `"wedding_planner"` when recalculating counts for SSE broadcast. Vendors marking notifications as read got incorrect unread counts.
+
+**Fix:**
+- **`app/services/notification_service.py`** — Both methods now accept `user_role` parameter (default `"wedding_planner"` for backward compat) and pass it to `get_user_notification_count()`
+- **`app/api/notification_management.py`** — Both endpoints now pass `current_user.role` through to the service
+
+### 3. `target_audience` Fix
+- **`app/services/vendor_notification_service.py`** — Corrected `target_audience` from `"vendors"` to `"advertising_vendors"` on all 7 vendor-facing notification methods. `NotificationService.get_user_notifications()` filters by `user_role + "s"` → `"advertising_vendors"` for vendor role.
+
+### 4. Ad Enable/Disable Layout Fix
+**Problem:** When root admin disables ads (`ads_enabled = false` in Platform Config), `CampaignSponsoredRail` silently returns `null` (API returns 403, component catches error, no cards → returns null). But the parent pages' `<div className="lg:col-span-1">` wrapper still renders, leaving 25% of screen width as dead whitespace on 4 planner pages: Dashboard, Vendors, Budget, Weddings/[id].
+
+**Fix:**
+- **`app/admin/vendors/components/CampaignSponsoredRail.tsx`** — Added `onVisibilityChange` callback prop. Fires `onVisibilityChange(true/false)` after loading completes, reporting whether cards are visible.
+- **All 4 parent pages** (`planner/page.tsx`, `vendors/page.tsx`, `budget/page.tsx`, `weddings/[id]/page.tsx`):
+  - Added `showAdRail` state (default `true`)
+  - Grid toggles between `lg:grid-cols-4` (ads on) and single-column (ads off)
+  - Main content toggles between `lg:col-span-3` and full-width
+  - Rail column uses `hidden` class when empty (component stays mounted for re-detection)
+  - Passed `onVisibilityChange={setShowAdRail}` to `CampaignSponsoredRail`
+
+| Page | Grid (ads on) | Grid (ads off) |
+|------|--------------|----------------|
+| Planner Dashboard | `lg:grid-cols-4` / `col-span-3` + `col-span-1` | Full width |
+| Vendors | `lg:grid-cols-4` / `col-span-3` + `col-span-1` | Full width |
+| Budget | `lg:grid-cols-4` / `col-span-3` + `col-span-1` | Full width |
+| Weddings/[id] | `lg:grid-cols-4` / `col-span-3` + `col-span-1` | Full width |
+
+### 5. Dead Code Cleanup
+- Removed `VendorNotificationService.notify_admin_new_vendor_signup()` call from `vendor_signup_service._notify_admin_new_signup()` (was a no-op — caller already handles via `NotificationService`)
+
+---
+
+## Phase 10.2: Full Notification Wiring — All Three Channels × All Three Portals (Superseded by 10.3)
+**Date:** 2026-03-23
+**Version:** 7.2.0
+*Note: Phase 10.3 corrected the notification architecture to use shared endpoints instead of duplicates.*
+
+### Overview
+
+Complete notification wiring across all three portals (Admin, Vendor, Planner) and all three channels (in-portal bell, email, push). Corrects the Phase 10.1 architecture to eliminate duplicate push firing and establishes `NotificationService` as the single source of truth for in-portal + push + SSE, with `VendorNotificationService` as a thin orchestrator that only adds email delivery on top.
+
+### Architecture (Corrected)
+
+```
+Event (e.g. campaign approved)
+  └─► VendorNotificationService
+        ├─► _create_notification()
+        │     └─► NotificationService.create_notification()
+        │           ├─ DB insert (in-portal bell icon)
+        │           ├─ SSE broadcast (real-time UI update)
+        │           └─ WebPush to user_id or root_admin
+        └─► _send_email()
+              └─► ResendEmailService.send_email()
+```
+
+No duplicate push — `VendorNotificationService` never calls `WebPushService` directly.
+
+### 1. VendorNotificationService — Rewritten as Thin Orchestrator
+**File: `app/services/vendor_notification_service.py`**
+- `_create_notification()` delegates to `NotificationService.create_notification()` (handles in-portal + push + SSE)
+- `_send_email()` delegates to `ResendEmailService.send_email()` (vendor email delivery)
+- Each convenience method calls both in parallel via `asyncio.gather()`
+- `target_audience` corrected from `"vendors"` to `"advertising_vendors"` to match `NotificationService.get_user_notifications()` role filter (`user_role + "s"`)
+- Dark-theme email template via `_render_vendor_email()` static method
+- Vendor events: `campaign_approved`, `campaign_rejected`, `campaign_changes_requested`, `new_lead` (x2 types), `suspended`, `reactivated`, `budget_exhausted`
+- Admin events: `campaign_submitted`, `fraud_alert`
+- `notify_admin_new_vendor_signup()` is a no-op — caller already handles via `NotificationService`
+
+### 2. NotificationService — WebPush Integration
+**Modified: `app/services/notification_service.py`**
+- `create_notification()` now fires WebPush after DB insert
+- Pushes to `user_id` (specific user) or `root_admin` (target_audience)
+- Added helpers: `_check_push_enabled()`, `_send_push_to_user()`, `_send_push_to_admin()`
+- All push delivery is non-blocking (failures logged, never raised)
+
+### 3. Vendor Notification API Endpoints (NEW)
+**Modified: `app/api/vendor_signup.py`** — 5 new notification reading endpoints:
+- `GET  /api/v1/vendors/notifications` — Get vendor's in-portal notifications (paginated)
+- `GET  /api/v1/vendors/notifications/count` — Unread / total counts
+- `PUT  /api/v1/vendors/notifications/{id}/read` — Mark single as read
+- `PUT  /api/v1/vendors/notifications/read-all` — Mark all as read
+- `PUT  /api/v1/vendors/notifications/{id}/dismiss` — Dismiss notification
+- All use `require_advertising_vendor` auth
+- All delegate to existing `NotificationService` methods (zero duplication)
+
+### 4. Vendor Portal Notification Bell UI (NEW)
+**Modified: `app/portal/ads/layout.tsx`**
+- Bell icon with unread count badge in sidebar and mobile header
+- Notification dropdown with recent notifications, read/unread state
+- Mark-as-read on click, "Mark all read" button
+- Auto-refresh count every 30 seconds via polling
+- Follows admin portal `TopHeader.tsx` pattern
+
+### 5. Vendor Push Subscription API
+**Modified: `app/api/vendor_signup.py`** — 5 push subscription endpoints:
+- `GET  /api/v1/vendors/web-push/vapid-public-key`
+- `POST /api/v1/vendors/web-push/subscribe`
+- `DELETE /api/v1/vendors/web-push/unsubscribe`
+- `GET  /api/v1/vendors/web-push/status`
+- `POST /api/v1/vendors/web-push/test`
+
+### 6. Vendor Settings — Push Toggle UI
+**Modified: `app/portal/ads/settings/page.tsx`**
+- Push notification toggle with Bell/BellOff icons
+- Browser permission request flow
+- Service worker subscription via PushManager API
+
+### 7. Event Trigger Wiring
+| Event | Service Method | Caller | Channels |
+|-------|---------------|--------|----------|
+| Campaign approved | `notify_vendor_campaign_approved()` | `admin_campaign_service.approve_campaign()` | In-portal + Push + Email |
+| Campaign rejected | `notify_vendor_campaign_rejected()` | `admin_campaign_service.reject_campaign()` | In-portal + Push + Email |
+| Changes requested | `notify_vendor_campaign_changes_requested()` | `admin_campaign_service.request_changes()` | In-portal + Push + Email |
+| New lead (directory) | `notify_vendor_new_lead()` | `planner_ad_interaction_service.add_to_directory()` | In-portal + Push + Email |
+| New lead (quote) | `notify_vendor_new_lead()` | `planner_ad_interaction_service.request_quote()` | In-portal + Push + Email |
+| Budget exhausted | `notify_vendor_budget_exhausted()` | `ad_billing_service._check_budget_enforcement()` | In-portal + Push + Email |
+| Vendor suspended | `notify_vendor_suspended()` | `vendor_signup_service.suspend_vendor()` | In-portal + Push + Email |
+| Vendor reactivated | `notify_vendor_reactivated()` | `vendor_signup_service.reactivate_vendor()` | In-portal + Push + Email |
+| Campaign submitted | `notify_admin_campaign_submitted()` | `vendor_campaign_service.submit_for_review()` | In-portal + Push |
+| Fraud detected | `notify_admin_fraud_detected()` | `ad_fraud_detection_service.check_click_event()` | In-portal + Push |
+| Vendor signup | (direct NotificationService call) | `vendor_signup_service._notify_admin_new_signup()` | In-portal + Push |
+| Payment failed | (PlannerNotificationService) | `stripe_service._send_payment_notification()` | In-portal + Push |
+
+### 8. Cleanup
+- Removed dead `VendorNotificationService.notify_admin_new_vendor_signup()` call from `vendor_signup_service._notify_admin_new_signup()` (was a no-op)
+- Fixed `target_audience` from `"vendors"` to `"advertising_vendors"` across all vendor-facing notification methods
+
+---
+
+## Phase 10.1: Push Notification Wiring (Superseded by 10.2)
+**Date:** 2026-03-23
+**Version:** 7.1.0
+*Note: This phase was superseded by Phase 10.2 which corrected architectural issues (duplicate push firing, missing email channel, missing in-portal bell UI).*
+
+---
+
 ## Phase 10: Vendor Signup / Onboarding Flow
 **Date:** 2026-03-23
 **Version:** 7.0.0

@@ -8,6 +8,12 @@ import { formatDate, formatAdminTimestamp, DEFAULT_TIMEZONE } from '@/utils/date
 import PageHeader from '../components/PageHeader';
 import { usePagination } from '@/admin/hooks/usePagination';
 import { GlassPagination } from '@/admin/components/ui/glass/GlassPagination';
+import { toast } from 'sonner';
+import {
+  ListOrdered, StickyNote, Plus, GripVertical, Trash2, Loader2,
+  ChevronDown, ChevronUp, MessageSquare, Eye, CheckCheck, AlertCircle,
+  MessageCircle, Send, X
+} from 'lucide-react';
 
 interface Wedding {
   _id: string;
@@ -72,6 +78,40 @@ interface PlannerOption {
   id: string;
 }
 
+// Types for Program/Notes modals
+interface OrderItem {
+  id: string;
+  title: string;
+  description?: string;
+  time?: string;
+  duration_minutes?: number;
+  order: number;
+  notes: EventNote[];
+}
+
+interface EventNote {
+  id: string;
+  author_role: 'planner' | 'couple';
+  author_name?: string;
+  text: string;
+  status: 'pending' | 'seen' | 'addressed';
+  reply_to?: string;
+  created_at?: string;
+}
+
+interface WeddingEvent {
+  type: string;
+  date: string;
+  details?: {
+    venue_name?: string;
+    location?: string;
+    time?: string;
+    attire?: string;
+  };
+  order_of_events: OrderItem[];
+  event_notes: EventNote[];
+}
+
 export default function AdminWeddingsPage() {
   const { token, userProfile, fetchUserProfile } = useAdmin();
   const [weddings, setWeddings] = useState<Wedding[]>([]);
@@ -89,6 +129,12 @@ export default function AdminWeddingsPage() {
   const [showBulkActions, setShowBulkActions] = useState(false);
   const [showTemplates, setShowTemplates] = useState(false);
   const [showEventDetails, setShowEventDetails] = useState(false);
+
+  // Program & Notes modal state
+  const [programModalWedding, setProgramModalWedding] = useState<Wedding | null>(null);
+  const [notesModalWedding, setNotesModalWedding] = useState<Wedding | null>(null);
+  const [modalEvents, setModalEvents] = useState<WeddingEvent[]>([]);
+  const [modalEventsLoading, setModalEventsLoading] = useState(false);
 
   const pagination = usePagination({ initialItemsPerPage: 50 });
 
@@ -379,6 +425,38 @@ export default function AdminWeddingsPage() {
     } catch (err) {
       setError('Failed to delete wedding');
     }
+  };
+
+  // Fetch events for Program/Notes modals
+  const fetchWeddingEvents = async (weddingId: string) => {
+    if (!token) return;
+    setModalEventsLoading(true);
+    try {
+      const res = await fetch(`${getApiBaseUrl()}/admin/weddings/${weddingId}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (res.ok) {
+        const wedding = await res.json();
+        setModalEvents(wedding.events || []);
+      } else {
+        console.error('Failed to fetch wedding events:', res.status);
+        toast.error('Failed to load events');
+      }
+    } catch (err) {
+      console.error('Failed to fetch events:', err);
+    } finally {
+      setModalEventsLoading(false);
+    }
+  };
+
+  const openProgramModal = (wedding: Wedding) => {
+    setProgramModalWedding(wedding);
+    fetchWeddingEvents(wedding._id);
+  };
+
+  const openNotesModal = (wedding: Wedding) => {
+    setNotesModalWedding(wedding);
+    fetchWeddingEvents(wedding._id);
   };
 
   const handleEdit = (wedding: Wedding) => {
@@ -919,7 +997,19 @@ export default function AdminWeddingsPage() {
                         </p>
                       )}
                     </div>
-                    <div className="flex gap-2 ml-4">
+                    <div className="flex gap-2 ml-4 flex-wrap">
+                      <button
+                        onClick={() => openProgramModal(wedding)}
+                        className="px-3 py-1 text-sm bg-indigo-500 text-white rounded hover:bg-indigo-600 transition"
+                      >
+                        Program
+                      </button>
+                      <button
+                        onClick={() => openNotesModal(wedding)}
+                        className="px-3 py-1 text-sm bg-amber-500 text-white rounded hover:bg-amber-600 transition"
+                      >
+                        Notes
+                      </button>
                       <Link
                         href={`/admin/weddings/${wedding._id}`}
                         className="px-3 py-1 text-sm bg-blue-500 text-white rounded hover:bg-blue-600 transition"
@@ -960,6 +1050,446 @@ export default function AdminWeddingsPage() {
             />
           </div>
         )}
+      </div>
+
+      {/* ==================== PROGRAM MODAL ==================== */}
+      {programModalWedding && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={() => setProgramModalWedding(null)}>
+          <div
+            className="bg-white dark:bg-slate-800 rounded-xl shadow-xl w-full max-w-lg max-h-[80vh] flex flex-col"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Header */}
+            <div className="flex items-center justify-between px-5 py-4 border-b border-gray-200 dark:border-gray-700">
+              <div>
+                <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Program / Run of Show</h3>
+                <p className="text-sm text-gray-500 dark:text-gray-400">{programModalWedding.couple_names}</p>
+              </div>
+              <button onClick={() => setProgramModalWedding(null)} className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Content */}
+            <div className="flex-1 overflow-y-auto px-5 py-4">
+              {modalEventsLoading ? (
+                <div className="text-center py-8 text-gray-400">
+                  <Loader2 className="w-6 h-6 mx-auto mb-2 animate-spin" />
+                  <p>Loading events...</p>
+                </div>
+              ) : (
+                <ProgramModalContent
+                  key={JSON.stringify(modalEvents.map(e => (e.order_of_events || []).map(i => i.id)))}
+                  events={modalEvents}
+                  weddingId={programModalWedding._id}
+                  token={token || ''}
+                  onRefresh={() => fetchWeddingEvents(programModalWedding._id)}
+                />
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ==================== NOTES MODAL ==================== */}
+      {notesModalWedding && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={() => setNotesModalWedding(null)}>
+          <div
+            className="bg-white dark:bg-slate-800 rounded-xl shadow-xl w-full max-w-lg max-h-[80vh] flex flex-col"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Header */}
+            <div className="flex items-center justify-between px-5 py-4 border-b border-gray-200 dark:border-gray-700">
+              <div>
+                <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Couple Notes</h3>
+                <p className="text-sm text-gray-500 dark:text-gray-400">{notesModalWedding.couple_names}</p>
+              </div>
+              <button onClick={() => setNotesModalWedding(null)} className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Content */}
+            <div className="flex-1 overflow-y-auto px-5 py-4">
+              {modalEventsLoading ? (
+                <div className="text-center py-8 text-gray-400">
+                  <Loader2 className="w-6 h-6 mx-auto mb-2 animate-spin" />
+                  <p>Loading notes...</p>
+                </div>
+              ) : (
+                <NotesModalContent
+                  events={modalEvents}
+                  weddingId={notesModalWedding._id}
+                  token={token || ''}
+                  onRefresh={() => fetchWeddingEvents(notesModalWedding._id)}
+                />
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+
+// ============================================================================
+// PROGRAM MODAL CONTENT
+// ============================================================================
+
+function ProgramModalContent({
+  events,
+  weddingId,
+  token,
+  onRefresh,
+}: {
+  events: WeddingEvent[];
+  weddingId: string;
+  token: string;
+  onRefresh: () => void;
+}) {
+  const [expandedEvent, setExpandedEvent] = useState<number | null>(events.length > 0 ? 0 : null);
+  const [addingToEvent, setAddingToEvent] = useState<number | null>(null);
+  const [newTitle, setNewTitle] = useState('');
+  const [newTime, setNewTime] = useState('');
+  const [newDuration, setNewDuration] = useState('');
+  const [newDescription, setNewDescription] = useState('');
+  const [saving, setSaving] = useState(false);
+
+  const eventTypeLabel = (type: string) => {
+    const labels: Record<string, string> = {
+      traditional: 'Traditional Ceremony',
+      white_wedding: 'White Wedding',
+      reception: 'Reception',
+      engagement: 'Engagement Party',
+      rehearsal: 'Rehearsal Dinner',
+    };
+    return labels[type] || type.charAt(0).toUpperCase() + type.slice(1).replace(/_/g, ' ');
+  };
+
+  const handleAddItem = async (eventIndex: number) => {
+    if (!newTitle.trim()) { toast.error('Title is required'); return; }
+    setSaving(true);
+    try {
+      const res = await fetch(`${getApiBaseUrl()}/couple-portal/events/${eventIndex}/order-of-events`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          wedding_id: weddingId,
+          title: newTitle.trim(),
+          time: newTime || undefined,
+          duration_minutes: newDuration ? parseInt(newDuration) : undefined,
+          description: newDescription || undefined,
+        }),
+      });
+      if (res.ok) {
+        toast.success('Item added');
+        setAddingToEvent(null);
+        setNewTitle(''); setNewTime(''); setNewDuration(''); setNewDescription('');
+        onRefresh();
+      } else {
+        const err = await res.json();
+        toast.error(err.detail || 'Failed to add item');
+      }
+    } catch { toast.error('Failed to connect'); }
+    finally { setSaving(false); }
+  };
+
+  const handleDeleteItem = async (eventIndex: number, itemId: string) => {
+    try {
+      const res = await fetch(
+        `${getApiBaseUrl()}/couple-portal/events/${eventIndex}/order-of-events/${itemId}?wedding_id=${weddingId}`,
+        { method: 'DELETE', headers: { Authorization: `Bearer ${token}` } }
+      );
+      if (res.ok) { toast.success('Item removed'); onRefresh(); }
+      else { const err = await res.json(); toast.error(err.detail || 'Failed to delete'); }
+    } catch { toast.error('Failed to connect'); }
+  };
+
+  if (events.length === 0) {
+    return (
+      <div className="text-center py-8 text-gray-400">
+        <ListOrdered className="w-10 h-10 mx-auto mb-3 opacity-50" />
+        <p>No events in this wedding yet</p>
+        <p className="text-sm mt-1">Add events to the wedding first, then manage the run of show here</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-3">
+      {events.map((event, eventIdx) => (
+        <div key={eventIdx} className="bg-gray-50 dark:bg-slate-700/50 rounded-lg overflow-hidden">
+          <button
+            onClick={() => setExpandedEvent(expandedEvent === eventIdx ? null : eventIdx)}
+            className="w-full flex items-center justify-between px-4 py-3 hover:bg-gray-100 dark:hover:bg-slate-700 transition-colors"
+          >
+            <div className="flex items-center gap-2">
+              <ListOrdered className="w-4 h-4 text-indigo-500" />
+              <div className="text-left">
+                <p className="font-medium text-sm text-gray-800 dark:text-gray-200">{eventTypeLabel(event.type)}</p>
+                <p className="text-xs text-gray-500 dark:text-gray-400">{event.date} · {event.order_of_events?.length || 0} items</p>
+              </div>
+            </div>
+            {expandedEvent === eventIdx ? <ChevronUp className="w-4 h-4 text-gray-400" /> : <ChevronDown className="w-4 h-4 text-gray-400" />}
+          </button>
+
+          {expandedEvent === eventIdx && (
+            <div className="border-t border-gray-200 dark:border-gray-600 px-4 py-3">
+              {(event.order_of_events || []).length === 0 ? (
+                <p className="text-sm text-gray-400 text-center py-3">No program items yet</p>
+              ) : (
+                <div className="space-y-2 mb-3">
+                  {(event.order_of_events || []).sort((a, b) => a.order - b.order).map((item) => (
+                    <div key={item.id} className="flex items-center gap-2 p-2.5 bg-white dark:bg-slate-800 rounded-lg group">
+                      <GripVertical className="w-3.5 h-3.5 text-gray-300 dark:text-gray-600 flex-shrink-0" />
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2">
+                          <p className="font-medium text-gray-800 dark:text-gray-200 text-sm">{item.title}</p>
+                          {item.time && <span className="text-xs text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-900/30 px-1.5 py-0.5 rounded">{item.time}</span>}
+                          {item.duration_minutes && <span className="text-xs text-gray-400">{item.duration_minutes}min</span>}
+                        </div>
+                        {item.description && <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">{item.description}</p>}
+                        {item.notes.length > 0 && (
+                          <div className="flex items-center gap-1 mt-1">
+                            <MessageSquare className="w-3 h-3 text-amber-500" />
+                            <span className="text-xs text-amber-600">{item.notes.length} note{item.notes.length > 1 ? 's' : ''}</span>
+                          </div>
+                        )}
+                      </div>
+                      <button
+                        onClick={() => handleDeleteItem(eventIdx, item.id)}
+                        className="opacity-0 group-hover:opacity-100 text-red-400 hover:text-red-600 transition-opacity"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {addingToEvent === eventIdx ? (
+                <div className="border border-indigo-200 dark:border-indigo-700 rounded-lg p-3 bg-indigo-50/50 dark:bg-indigo-900/20">
+                  <div className="grid grid-cols-2 gap-2">
+                    <div className="col-span-2">
+                      <input type="text" placeholder="Title (e.g. First Dance)" value={newTitle} onChange={(e) => setNewTitle(e.target.value)}
+                        className="w-full px-3 py-2 border border-gray-200 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-slate-700 text-gray-800 dark:text-gray-200" autoFocus />
+                    </div>
+                    <input type="text" placeholder="Time (e.g. 6:30 PM)" value={newTime} onChange={(e) => setNewTime(e.target.value)}
+                      className="px-3 py-2 border border-gray-200 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-slate-700 text-gray-800 dark:text-gray-200" />
+                    <input type="number" placeholder="Duration (min)" value={newDuration} onChange={(e) => setNewDuration(e.target.value)}
+                      className="px-3 py-2 border border-gray-200 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-slate-700 text-gray-800 dark:text-gray-200" min="1" />
+                    <div className="col-span-2">
+                      <textarea placeholder="Description (optional)" value={newDescription} onChange={(e) => setNewDescription(e.target.value)}
+                        className="w-full px-3 py-2 border border-gray-200 dark:border-gray-600 rounded-lg text-sm resize-none bg-white dark:bg-slate-700 text-gray-800 dark:text-gray-200" rows={2} />
+                    </div>
+                  </div>
+                  <div className="flex justify-end gap-2 mt-2">
+                    <button onClick={() => setAddingToEvent(null)} className="px-3 py-1.5 text-sm text-gray-600 dark:text-gray-400 hover:text-gray-800">Cancel</button>
+                    <button onClick={() => handleAddItem(eventIdx)} disabled={saving}
+                      className="px-3 py-1.5 bg-indigo-600 text-white text-sm rounded-lg hover:bg-indigo-700 disabled:opacity-50 flex items-center gap-1">
+                      {saving ? <Loader2 className="w-3 h-3 animate-spin" /> : <Plus className="w-3 h-3" />} Add
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <button onClick={() => setAddingToEvent(eventIdx)}
+                  className="w-full py-2 border border-dashed border-gray-300 dark:border-gray-600 rounded-lg text-sm text-gray-500 hover:border-indigo-400 hover:text-indigo-600 transition-colors flex items-center justify-center gap-1">
+                  <Plus className="w-4 h-4" /> Add Program Item
+                </button>
+              )}
+            </div>
+          )}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+
+// ============================================================================
+// NOTES MODAL CONTENT
+// ============================================================================
+
+function NotesModalContent({
+  events,
+  weddingId,
+  token,
+  onRefresh,
+}: {
+  events: WeddingEvent[];
+  weddingId: string;
+  token: string;
+  onRefresh: () => void;
+}) {
+  const [replyTarget, setReplyTarget] = useState<string | null>(null);
+  const [replyText, setReplyText] = useState('');
+  const [submittingReply, setSubmittingReply] = useState(false);
+
+  type NoteEntry = { note: EventNote; context: string; eventIndex: number; itemId?: string; noteId: string; };
+  const allNotes: NoteEntry[] = [];
+
+  events.forEach((event, eventIdx) => {
+    const eventLabel = {
+      traditional: 'Traditional Ceremony', white_wedding: 'White Wedding', reception: 'Reception',
+      engagement: 'Engagement Party', rehearsal: 'Rehearsal Dinner',
+    }[event.type] || event.type;
+
+    (event.event_notes || []).forEach((note) => {
+      allNotes.push({ note, context: eventLabel, eventIndex: eventIdx, noteId: note.id });
+    });
+    (event.order_of_events || []).forEach((item) => {
+      (item.notes || []).forEach((note) => {
+        allNotes.push({ note, context: `${eventLabel} → ${item.title}`, eventIndex: eventIdx, itemId: item.id, noteId: note.id });
+      });
+    });
+  });
+
+  const parentNotes = allNotes.filter(n => !n.note.reply_to);
+  const replyNotes = allNotes.filter(n => !!n.note.reply_to);
+  const repliesMap: Record<string, NoteEntry[]> = {};
+  replyNotes.forEach(entry => {
+    const parentId = entry.note.reply_to;
+    if (!parentId) return;
+    if (!repliesMap[parentId]) repliesMap[parentId] = [];
+    repliesMap[parentId].push(entry);
+  });
+  Object.values(repliesMap).forEach(replies => replies.sort((a, b) => (a.note.created_at || '').localeCompare(b.note.created_at || '')));
+  parentNotes.sort((a, b) => {
+    if (a.note.status === 'pending' && b.note.status !== 'pending') return -1;
+    if (a.note.status !== 'pending' && b.note.status === 'pending') return 1;
+    return (b.note.created_at || '').localeCompare(a.note.created_at || '');
+  });
+
+  const handleStatusUpdate = async (eventIndex: number, noteId: string, newStatus: 'seen' | 'addressed', itemId?: string) => {
+    const url = itemId
+      ? `${getApiBaseUrl()}/couple-portal/events/${eventIndex}/order-of-events/${itemId}/notes/${noteId}`
+      : `${getApiBaseUrl()}/couple-portal/events/${eventIndex}/notes/${noteId}`;
+    try {
+      const res = await fetch(url, {
+        method: 'PATCH',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ wedding_id: weddingId, status: newStatus }),
+      });
+      if (res.ok) { toast.success(`Note marked as ${newStatus}`); onRefresh(); }
+      else { const err = await res.json(); toast.error(err.detail || 'Failed to update'); }
+    } catch { toast.error('Failed to connect'); }
+  };
+
+  const handleReply = async (eventIndex: number, noteId: string, itemId?: string) => {
+    if (!replyText.trim()) return;
+    setSubmittingReply(true);
+    const url = itemId
+      ? `${getApiBaseUrl()}/couple-portal/events/${eventIndex}/order-of-events/${itemId}/notes/${noteId}/reply`
+      : `${getApiBaseUrl()}/couple-portal/events/${eventIndex}/notes/${noteId}/reply`;
+    try {
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ wedding_id: weddingId, text: replyText.trim() }),
+      });
+      if (res.ok) { toast.success('Reply sent'); setReplyTarget(null); setReplyText(''); onRefresh(); }
+      else { const err = await res.json().catch(() => ({})); toast.error(err.detail || 'Failed to send reply'); }
+    } catch { toast.error('Failed to connect'); }
+    finally { setSubmittingReply(false); }
+  };
+
+  const statusBadge = (status: string) => {
+    const styles: Record<string, string> = { pending: 'bg-amber-100 text-amber-700', seen: 'bg-blue-100 text-blue-700', addressed: 'bg-green-100 text-green-700' };
+    return styles[status] || 'bg-gray-100 text-gray-600';
+  };
+
+  const pendingCount = parentNotes.filter(n => n.note.status === 'pending').length;
+
+  if (parentNotes.length === 0) {
+    return (
+      <div className="text-center py-8 text-gray-400">
+        <StickyNote className="w-10 h-10 mx-auto mb-3 opacity-50" />
+        <p>No notes from the couple yet</p>
+        <p className="text-sm mt-1">Notes will appear here when the couple adds feedback</p>
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      {pendingCount > 0 && (
+        <p className="text-sm text-amber-600 dark:text-amber-400 mb-3">{pendingCount} pending note{pendingCount > 1 ? 's' : ''}</p>
+      )}
+      <div className="space-y-3">
+        {parentNotes.map(({ note, context, eventIndex, itemId, noteId }) => {
+          const replies = repliesMap[noteId] || [];
+          const isReplyOpen = replyTarget === noteId;
+
+          return (
+            <div key={noteId} className={`bg-gray-50 dark:bg-slate-700/50 rounded-lg p-3 ${note.status === 'pending' ? 'border border-amber-200 dark:border-amber-700' : ''}`}>
+              <div className="flex items-start justify-between gap-2">
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 mb-1">
+                    {note.status === 'pending' && <AlertCircle className="w-3.5 h-3.5 text-amber-500" />}
+                    {note.status === 'seen' && <Eye className="w-3.5 h-3.5 text-blue-500" />}
+                    {note.status === 'addressed' && <CheckCheck className="w-3.5 h-3.5 text-green-500" />}
+                    <span className="text-xs text-gray-500 dark:text-gray-400">{context}</span>
+                    <span className={`text-xs px-1.5 py-0.5 rounded-full ${statusBadge(note.status)}`}>{note.status}</span>
+                  </div>
+                  <p className="text-sm text-gray-800 dark:text-gray-200">{note.text}</p>
+                  <div className="flex items-center gap-2 mt-1.5 text-xs text-gray-400">
+                    <span>{note.author_name || note.author_role}</span>
+                    {note.created_at && <span>· {new Date(note.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}</span>}
+                  </div>
+                </div>
+                <div className="flex gap-1 flex-shrink-0">
+                  {note.status === 'pending' && (
+                    <button onClick={() => handleStatusUpdate(eventIndex, noteId, 'seen', itemId)}
+                      className="p-1 text-blue-500 hover:bg-blue-50 dark:hover:bg-blue-900/30 rounded transition-colors" title="Mark as seen">
+                      <Eye className="w-3.5 h-3.5" />
+                    </button>
+                  )}
+                  {note.status !== 'addressed' && (
+                    <button onClick={() => handleStatusUpdate(eventIndex, noteId, 'addressed', itemId)}
+                      className="p-1 text-green-500 hover:bg-green-50 dark:hover:bg-green-900/30 rounded transition-colors" title="Mark as addressed">
+                      <CheckCheck className="w-3.5 h-3.5" />
+                    </button>
+                  )}
+                  <button onClick={() => { setReplyTarget(isReplyOpen ? null : noteId); setReplyText(''); }}
+                    className={`p-1 rounded transition-colors ${isReplyOpen ? 'text-indigo-600 bg-indigo-50 dark:bg-indigo-900/30' : 'text-gray-400 hover:bg-gray-100 dark:hover:bg-slate-700'}`}
+                    title="Reply">
+                    <MessageCircle className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              </div>
+
+              {replies.length > 0 && (
+                <div className="mt-2 ml-3 border-l-2 border-indigo-100 dark:border-indigo-800 pl-3 space-y-1.5">
+                  {replies.map(({ note: reply }) => (
+                    <div key={reply.id} className="bg-white dark:bg-slate-800 rounded p-2">
+                      <p className="text-sm text-gray-700 dark:text-gray-300">{reply.text}</p>
+                      <div className="flex items-center gap-2 mt-1 text-xs text-gray-400">
+                        <span className="text-indigo-600 dark:text-indigo-400 font-medium">Planner</span>
+                        {reply.created_at && <span>· {new Date(reply.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}</span>}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {isReplyOpen && (
+                <div className="mt-2 ml-3 border-l-2 border-indigo-200 dark:border-indigo-700 pl-3">
+                  <div className="flex gap-2">
+                    <input type="text" value={replyText} onChange={(e) => setReplyText(e.target.value)}
+                      placeholder="Type your reply..." autoFocus
+                      onKeyDown={(e) => e.key === 'Enter' && !submittingReply && handleReply(eventIndex, noteId, itemId)}
+                      className="flex-1 px-3 py-1.5 border border-gray-200 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-slate-700 text-gray-800 dark:text-gray-200" />
+                    <button onClick={() => handleReply(eventIndex, noteId, itemId)} disabled={submittingReply || !replyText.trim()}
+                      className="px-3 py-1.5 bg-indigo-600 text-white rounded-lg text-sm disabled:opacity-50 flex items-center gap-1">
+                      {submittingReply ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />}
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          );
+        })}
       </div>
     </div>
   );

@@ -568,9 +568,12 @@ class VendorService:
         created_by: str
     ) -> dict:
         """Update vendor assignment status"""
-        valid_statuses = ["inquiry", "quoted", "contracted", "confirmed", "completed", "cancelled"]
-        if status not in valid_statuses:
-            raise HTTPException(status_code=400, detail=f"Invalid status. Must be one of: {valid_statuses}")
+        from app.models.vendor import VendorAssignmentStatus
+        try:
+            VendorAssignmentStatus(status)
+        except ValueError:
+            valid = [s.value for s in VendorAssignmentStatus]
+            raise HTTPException(status_code=400, detail=f"Invalid status. Must be one of: {valid}")
 
         try:
             result = await self.vendor_assignments.find_one_and_update(

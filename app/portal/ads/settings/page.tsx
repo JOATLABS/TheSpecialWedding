@@ -15,6 +15,8 @@ import {
   AlertCircle,
   Loader2,
   Save,
+  Bell,
+  BellOff,
 } from 'lucide-react';
 
 const API_BASE = getApiBaseUrl();
@@ -71,10 +73,97 @@ export default function VendorSettingsPage() {
   const [description, setDescription] = useState('');
   const [logoUrl, setLogoUrl] = useState('');
 
+  // Push notification state
+  const [pushSupported, setPushSupported] = useState(false);
+  const [pushSubscribed, setPushSubscribed] = useState(false);
+  const [pushLoading, setPushLoading] = useState(false);
+
   useEffect(() => {
     if (!token) return;
     fetchProfile();
+    checkPushStatus();
   }, [token]);
+
+  async function checkPushStatus() {
+    // Check browser support
+    if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
+      setPushSupported(false);
+      return;
+    }
+    setPushSupported(true);
+
+    try {
+      const res = await fetch(`${API_BASE}/api/v1/vendors/web-push/status`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setPushSubscribed(data.subscribed);
+      }
+    } catch {
+      // Silently fail
+    }
+  }
+
+  async function togglePush() {
+    if (!token) return;
+    setPushLoading(true);
+
+    try {
+      if (pushSubscribed) {
+        // Unsubscribe
+        const res = await fetch(`${API_BASE}/api/v1/vendors/web-push/unsubscribe`, {
+          method: 'DELETE',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({}),
+        });
+        if (res.ok) {
+          setPushSubscribed(false);
+          toast.success('Push notifications disabled');
+        }
+      } else {
+        // Get VAPID key
+        const keyRes = await fetch(`${API_BASE}/api/v1/vendors/web-push/vapid-public-key`);
+        if (!keyRes.ok) throw new Error('Push not configured on server');
+        const { vapid_public_key } = await keyRes.json();
+
+        // Request permission
+        const permission = await Notification.requestPermission();
+        if (permission !== 'granted') {
+          toast.error('Notification permission denied');
+          return;
+        }
+
+        // Subscribe via service worker
+        const registration = await navigator.serviceWorker.ready;
+        const subscription = await registration.pushManager.subscribe({
+          userVisibleOnly: true,
+          applicationServerKey: vapid_public_key,
+        });
+
+        // Send subscription to server
+        const subRes = await fetch(`${API_BASE}/api/v1/vendors/web-push/subscribe`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({ subscription: subscription.toJSON() }),
+        });
+        if (!subRes.ok) throw new Error('Failed to save subscription');
+
+        setPushSubscribed(true);
+        toast.success('Push notifications enabled');
+      }
+    } catch (err: any) {
+      toast.error(err.message || 'Failed to toggle push notifications');
+    } finally {
+      setPushLoading(false);
+    }
+  }
 
   async function fetchProfile() {
     try {
@@ -317,6 +406,43 @@ export default function VendorSettingsPage() {
             placeholder="https://example.com/logo.png"
           />
         </div>
+
+        {/* Push Notifications */}
+        {pushSupported && (
+          <div className="flex items-center justify-between py-3 px-4 border border-slate-200 dark:border-slate-600 rounded-lg">
+            <div className="flex items-center gap-2">
+              {pushSubscribed ? (
+                <Bell className="w-4 h-4 text-emerald-500" />
+              ) : (
+                <BellOff className="w-4 h-4 text-slate-400" />
+              )}
+              <div>
+                <p className="text-sm font-medium text-slate-700 dark:text-slate-200">
+                  Push Notifications
+                </p>
+                <p className="text-xs text-slate-500 dark:text-slate-400">
+                  {pushSubscribed
+                    ? 'You will receive browser notifications for new leads and campaign updates.'
+                    : 'Enable to get instant browser alerts for new leads and campaign updates.'}
+                </p>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={togglePush}
+              disabled={pushLoading}
+              className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-primary-500 ${
+                pushSubscribed ? 'bg-emerald-500' : 'bg-slate-300 dark:bg-slate-600'
+              }`}
+            >
+              <span
+                className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                  pushSubscribed ? 'translate-x-6' : 'translate-x-1'
+                }`}
+              />
+            </button>
+          </div>
+        )}
 
         {/* Submit */}
         <button

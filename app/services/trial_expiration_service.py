@@ -178,36 +178,71 @@ class TrialExpirationService:
             logger.error(f"Error in trial warning check: {str(e)}")
             return {"error": str(e)}
 
-    async def send_trial_warning_email(self, user: dict, days_remaining: int) -> bool:
-        """Send trial warning email to user"""
-        try:
-            if not self.email_service.configured:
+    async def send_trial_warning_email(self, user: dict, days_remaining: int, max_retries: int = 2) -> bool:
+        """Send trial warning email to user with retry logic.
+
+        Args:
+            user: User document from MongoDB
+            days_remaining: Number of days until trial expires
+            max_retries: Maximum retry attempts on transient failures (default 2)
+
+        Returns:
+            True if email sent successfully, False otherwise
+        """
+        import asyncio
+
+        if not self.email_service.configured:
+            logger.warning("Email service not configured — skipping trial warning email")
+            return False
+
+        email = user.get("email")
+        if not email:
+            logger.error(f"User {user.get('_id')} has no email address — skipping trial warning")
+            return False
+
+        first_name = user.get("first_name", "")
+
+        html_content = self._generate_trial_warning_email_html(
+            email=email,
+            first_name=first_name,
+            days_remaining=days_remaining
+        )
+
+        subject = f"Your Special Wedding Trial Expires in {days_remaining} Day{'s' if days_remaining != 1 else ''}"
+
+        for attempt in range(max_retries + 1):
+            try:
+                result = await self.email_service.send_email(
+                    to_email=email,
+                    subject=subject,
+                    html_content=html_content,
+                    from_name="Special Wedding Team",
+                    email_type="trial_warning"
+                )
+
+                if result.get("success", False):
+                    return True
+
+                # Non-retryable failure (e.g. invalid email)
+                error_msg = result.get("error", "Unknown error")
+                logger.error(f"Trial warning email to {email} failed: {error_msg}")
                 return False
 
-            email = user["email"]
-            first_name = user.get("first_name", "")
+            except Exception as e:
+                if attempt < max_retries:
+                    wait_s = (attempt + 1) * 2  # 2s, 4s backoff
+                    logger.warning(
+                        f"Trial warning email to {email} failed (attempt {attempt + 1}/{max_retries + 1}), "
+                        f"retrying in {wait_s}s: {e}"
+                    )
+                    await asyncio.sleep(wait_s)
+                else:
+                    logger.error(
+                        f"Trial warning email to {email} failed after {max_retries + 1} attempts: {e}"
+                    )
+                    return False
 
-            html_content = self._generate_trial_warning_email_html(
-                email=email,
-                first_name=first_name,
-                days_remaining=days_remaining
-            )
-
-            subject = f" Your Special Wedding Trial Expires in {days_remaining} Days"
-
-            result = await self.email_service.send_email(
-                to_email=email,
-                subject=subject,
-                html_content=html_content,
-                from_name="Special Wedding Team",
-                email_type="trial_warning"
-            )
-
-            return result.get("success", False)
-
-        except Exception as e:
-            logger.error(f"Error sending trial warning email to {user.get('email', 'unknown')}: {str(e)}")
-            return False
+        return False
 
     async def send_trial_expired_email(self, user: dict) -> bool:
         """Send trial expired email to user"""

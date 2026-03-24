@@ -191,11 +191,12 @@ async def get_sponsored_cards(
     filtered to exclude vendors the planner already added.
     """
     planner_email = _get_planner_email(current_user)
+    planner_id = _get_planner_id(current_user)
     cat_list = [c.strip() for c in categories.split(",")] if categories else None
 
     cards = await service.get_sponsored_cards(
         planner_email=planner_email,
-        planner_id=str(current_user.user_id),
+        planner_id=planner_id,
         planner_location=location,
         categories=cat_list,
         limit=limit,

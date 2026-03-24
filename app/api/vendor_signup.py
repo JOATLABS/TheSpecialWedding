@@ -14,7 +14,7 @@ Routes:
 """
 
 import logging
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field, field_validator
 from typing import Optional, List
 import re
@@ -155,3 +155,148 @@ async def update_vendor_profile(
     """Update vendor profile fields."""
     updates = {k: v for k, v in data.model_dump().items() if v is not None}
     return await service.update_vendor_profile(current_user.email, updates)
+
+
+# =============================================================================
+# VENDOR WEB PUSH SUBSCRIPTION ENDPOINTS
+# =============================================================================
+
+class VendorPushSubscriptionKeys(BaseModel):
+    """VAPID keys from browser push subscription."""
+    p256dh: str
+    auth: str
+
+
+class VendorPushSubscription(BaseModel):
+    """Push subscription from browser's PushManager."""
+    endpoint: str
+    keys: VendorPushSubscriptionKeys
+    expirationTime: Optional[int] = None
+
+
+class VendorSubscribeRequest(BaseModel):
+    """Wrapper for push subscription from vendor frontend."""
+    subscription: VendorPushSubscription
+
+
+class VendorUnsubscribeRequest(BaseModel):
+    """Request to unsubscribe from push notifications."""
+    endpoint: str = ""
+
+
+@router.get("/web-push/vapid-public-key")
+async def vendor_get_vapid_public_key():
+    """Get the VAPID public key for vendor push subscription."""
+    from app.services.web_push_service import web_push_service
+    public_key = web_push_service.get_public_key()
+    if not public_key:
+        raise HTTPException(
+            status_code=503,
+            detail="Push notifications not configured on this server",
+        )
+    return {"vapid_public_key": public_key}
+
+
+@router.post("/web-push/subscribe")
+async def vendor_subscribe_to_push(
+    body: VendorSubscribeRequest,
+    request: Request,
+    current_user: ExtendedAuthUser = Depends(require_advertising_vendor),
+):
+    """Subscribe vendor to push notifications."""
+    from app.services.web_push_service import web_push_service
+    user_agent = request.headers.get("User-Agent")
+
+    subscription_data = {
+        "endpoint": body.subscription.endpoint,
+        "keys": body.subscription.keys.model_dump(),
+        "expirationTime": body.subscription.expirationTime,
+    }
+
+    success = await web_push_service.save_subscription(
+        user_id=current_user.email,
+        subscription=subscription_data,
+        user_agent=user_agent,
+    )
+
+    if not success:
+        raise HTTPException(status_code=500, detail="Failed to save subscription")
+
+    return {"success": True, "message": "Subscribed to push notifications"}
+
+
+@router.delete("/web-push/unsubscribe")
+async def vendor_unsubscribe_from_push(
+    body: Optional[VendorUnsubscribeRequest] = None,
+    current_user: ExtendedAuthUser = Depends(require_advertising_vendor),
+):
+    """Unsubscribe vendor from push notifications."""
+    from app.services.web_push_service import web_push_service
+
+    if body and body.endpoint:
+        success = await web_push_service.remove_subscription(body.endpoint)
+        return {
+            "success": success,
+            "message": "Subscription removed" if success else "Subscription not found",
+        }
+    else:
+        count = await web_push_service.remove_user_subscriptions(current_user.email)
+        return {"success": True, "message": f"Removed {count} subscription(s)"}
+
+
+@router.get("/web-push/status")
+async def vendor_get_push_status(
+    current_user: ExtendedAuthUser = Depends(require_advertising_vendor),
+):
+    """Check if the current vendor has push notifications enabled."""
+    from app.services.web_push_service import web_push_service
+    is_subscribed = await web_push_service.check_user_subscribed(current_user.email)
+    is_enabled = web_push_service.enabled
+
+    return {
+        "enabled": is_enabled,
+        "subscribed": is_subscribed,
+        "message": (
+            "Push notifications are active" if is_subscribed
+            else "Not subscribed to push notifications" if is_enabled
+            else "Push notifications not configured on server"
+        ),
+    }
+
+
+@router.post("/web-push/test")
+async def vendor_send_test_notification(
+    current_user: ExtendedAuthUser = Depends(require_advertising_vendor),
+):
+    """Send a test push notification to the current vendor."""
+    from app.services.web_push_service import web_push_service
+
+    if not web_push_service.enabled:
+        raise HTTPException(status_code=503, detail="Push notifications not configured")
+
+    result = await web_push_service.send_notification(
+        user_id=current_user.email,
+        title="Test Notification",
+        body="Push notifications are working!",
+        url="/portal/ads",
+        tag="test-notification",
+    )
+
+    if not result.get("success"):
+        raise HTTPException(
+            status_code=400,
+            detail=result.get("error", "No active subscriptions found"),
+        )
+
+    return {
+        "success": True,
+        "message": f"Test notification sent to {result.get('sent', 0)} device(s)",
+    }
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Vendor In-Portal Notifications
+# Vendors use the shared /admin/user/notifications/* endpoints from
+# notification_management.py. The require_admin_or_planner dependency now
+# includes advertising_vendor, so no duplicate endpoints are needed here.
+# ═══════════════════════════════════════════════════════════════════════════════

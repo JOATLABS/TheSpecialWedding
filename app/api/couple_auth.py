@@ -138,6 +138,7 @@ async def couple_login(data: CoupleLoginRequest):
         "access_token": access_token,
         "token_type": "bearer",
         "couple": {
+            "id": str(couple["_id"]),
             "email": couple["email"],
             "partner1_name": couple.get("partner1_name"),
             "partner2_name": couple.get("partner2_name"),

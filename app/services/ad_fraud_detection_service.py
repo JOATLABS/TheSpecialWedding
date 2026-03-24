@@ -91,6 +91,19 @@ class AdFraudDetectionService:
                 f"planner={planner_id} campaign={campaign_id}"
             )
 
+        # Push-notify admin about fraud signals
+        if signals:
+            try:
+                from app.services.vendor_notification_service import VendorNotificationService
+                vns = VendorNotificationService()
+                await vns.notify_admin_fraud_detected(
+                    signal_type=signals[0]["signal_type"],
+                    planner_id=planner_id,
+                    campaign_id=campaign_id,
+                )
+            except Exception as e:
+                logger.warning(f"Failed to push-notify admin on fraud signal: {e}")
+
         return signals[0] if signals else None
 
     async def _check_click_velocity(

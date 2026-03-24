@@ -338,10 +338,12 @@ async def require_vendor(current_user: ExtendedAuthUser = Depends(get_current_us
 
 
 async def require_admin_or_planner(current_user: ExtendedAuthUser = Depends(get_current_user_extended)) -> ExtendedAuthUser:
-    """Require root admin, wedding planner, or team member access"""
+    """Require root admin, wedding planner, team member, or advertising vendor access"""
     if current_user.is_root_admin or current_user.is_wedding_planner:
         return current_user
     if current_user.is_team_member and current_user.team_permissions is not None:
+        return current_user
+    if current_user.is_advertising_vendor:
         return current_user
     raise HTTPException(
         status_code=status.HTTP_403_FORBIDDEN,

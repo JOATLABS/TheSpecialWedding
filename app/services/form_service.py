@@ -86,6 +86,7 @@ class FormService:
             form_doc = {
                 "_id": form_id,
                 "name": InputSanitizer.sanitize_text(sanitized_data['name'], 100),
+                "form_type": sanitized_data.get('form_type', 'general'),
                 "settings": sanitized_data['settings'],
                 "fields": sanitized_data['fields'],
                 "created_by": creator_email,

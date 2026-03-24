@@ -22,7 +22,7 @@ class CouplePortalService:
         Aggregates wedding info, guest stats, budget summary, events, and planner info.
         """
         # Get wedding
-        wedding = await mongo.get_weddings_collection().find_one({"_id": ObjectId(wedding_id)})
+        wedding = await mongo.get_weddings_collection().find_one({"_id": wedding_id})
         if not wedding:
             return None
 
@@ -329,7 +329,7 @@ class CouplePortalService:
         Preserves couple login but marks as archived.
         """
         try:
-            wedding = await mongo.get_weddings_collection().find_one({"_id": ObjectId(wedding_id)})
+            wedding = await mongo.get_weddings_collection().find_one({"_id": wedding_id})
             if not wedding:
                 return {"error": "Wedding not found"}
 
