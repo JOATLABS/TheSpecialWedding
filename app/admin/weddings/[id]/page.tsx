@@ -9,10 +9,18 @@ import { Wedding, WeddingEvent, RegistryItem, FAQItem, OurStory, WeddingPartyMem
 import { formatAdminTimestamp, DEFAULT_TIMEZONE } from '@/utils/dateFormat';
 import { PaymentCollectionButton } from '@/components/payments/PaymentCollectionButton';
 import { CampaignSponsoredRail } from '../../vendors/components/CampaignSponsoredRail';
-import {
-  Users, Mail, Send, RefreshCw, Plus, Loader2, ShieldOff, ShieldCheck,
-  HeartHandshake
-} from 'lucide-react';
+// Direct imports — avoids Turbopack barrel-evaluation bug with lucide-react
+// (Turbopack instantiates ALL 900+ icon module factories when importing from the barrel,
+// and message-circle.js factory fails during this process)
+import Users from 'lucide-react/dist/esm/icons/users';
+import Mail from 'lucide-react/dist/esm/icons/mail';
+import Send from 'lucide-react/dist/esm/icons/send';
+import RefreshCw from 'lucide-react/dist/esm/icons/refresh-cw';
+import Plus from 'lucide-react/dist/esm/icons/plus';
+import Loader2 from 'lucide-react/dist/esm/icons/loader-2';
+import ShieldOff from 'lucide-react/dist/esm/icons/shield-off';
+import ShieldCheck from 'lucide-react/dist/esm/icons/shield-check';
+import HeartHandshake from 'lucide-react/dist/esm/icons/heart-handshake';
 import { toast } from 'sonner';
 
 

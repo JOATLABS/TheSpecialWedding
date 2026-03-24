@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import Image from 'next/image';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { Menu, X } from 'lucide-react';
@@ -41,12 +42,13 @@ export default function SaasNav() {
         <div className="flex items-center justify-between h-16">
           {/* Logo / Brand — left-aligned */}
           <Link href="/" className="flex items-center group flex-shrink-0">
-            <img
+            <Image
               src="/logo.svg"
               alt="The Special Wedding"
               width={160}
               height={40}
               className="block shrink-0"
+              priority
             />
           </Link>
 

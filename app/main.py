@@ -631,8 +631,25 @@ async def add_cache_headers(request: Request, call_next):
     if settings.enable_cache_headers:
         path = request.url.path
 
-        if any(path.endswith(ext) for ext in ['.css', '.js', '.png', '.jpg', '.jpeg', '.gif', '.ico', '.woff', '.woff2']):
+        # Next.js build chunks (_next/static) contain content-hashed filenames
+        # so they can be cached forever safely — the hash changes on rebuild.
+        # But during development, _next/ paths must NOT be cached or HMR
+        # will serve stale module factories ("module factory is not available").
+        is_nextjs_asset = "/_next/" in path
+
+        if is_nextjs_asset:
+            if settings.is_development():
+                # Dev: never cache JS/CSS chunks — Turbopack HMR needs fresh loads
+                response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+            else:
+                # Prod: _next/static files have content hashes, safe to cache long
+                response.headers["Cache-Control"] = f"public, max-age={settings.static_cache_max_age}, immutable"
+        elif any(path.endswith(ext) for ext in ['.png', '.jpg', '.jpeg', '.gif', '.ico', '.woff', '.woff2', '.svg']):
+            # Truly static binary assets — safe to cache
             response.headers["Cache-Control"] = f"public, max-age={settings.static_cache_max_age}"
+        elif any(path.endswith(ext) for ext in ['.css', '.js']):
+            # Non-Next.js CSS/JS (custom static files) — moderate cache
+            response.headers["Cache-Control"] = "public, max-age=3600"
         elif request.method in ("POST", "PUT", "PATCH", "DELETE"):
             # Mutations must never be cached
             response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
