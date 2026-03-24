@@ -267,8 +267,17 @@ export default function VendorManagementPage() {
     e.preventDefault();
     if (!token) return;
 
+    // Auto-prepend https:// if user entered a bare domain
+    const vendorData = { ...newVendor };
+    if (vendorData.website && vendorData.website.trim()) {
+      const w = vendorData.website.trim();
+      if (!/^https?:\/\//i.test(w)) {
+        vendorData.website = `https://${w}`;
+      }
+    }
+
     try {
-      await createVendorProfile(token, newVendor);
+      await createVendorProfile(token, vendorData);
       toast.success('Vendor added to directory');
       setShowAddVendor(false);
       setNewVendor({
@@ -942,9 +951,10 @@ export default function VendorManagementPage() {
                 <div>
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Website</label>
                   <input
-                    type="url"
+                    type="text"
                     value={newVendor.website}
                     onChange={(e) => setNewVendor({ ...newVendor, website: e.target.value })}
+                    placeholder="e.g. joatlabs.dev"
                     className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100"
                   />
                 </div>

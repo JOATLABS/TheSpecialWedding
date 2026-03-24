@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { getApiBaseUrl } from '@/utils/env';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
@@ -9,6 +9,11 @@ import { Wedding, WeddingEvent, RegistryItem, FAQItem, OurStory, WeddingPartyMem
 import { formatAdminTimestamp, DEFAULT_TIMEZONE } from '@/utils/dateFormat';
 import { PaymentCollectionButton } from '@/components/payments/PaymentCollectionButton';
 import { CampaignSponsoredRail } from '../../vendors/components/CampaignSponsoredRail';
+import {
+  Users, Mail, Send, RefreshCw, Plus, Loader2, ShieldOff, ShieldCheck,
+  MessageCircle, Bell, Eye, HeartHandshake
+} from 'lucide-react';
+import { toast } from 'sonner';
 
 
 // Wedding party group mappings for sync
@@ -39,7 +44,7 @@ export default function WeddingDetailsPage() {
  const [loading, setLoading] = useState(true);
  const [saving, setSaving] = useState(false);
  const [error, setError] = useState<string>('');
- const [activeTab, setActiveTab] = useState<'events' | 'rsvp' | 'privacy' | 'registry' | 'faq' | 'theme' | 'story'>('events');
+ const [activeTab, setActiveTab] = useState<'events' | 'rsvp' | 'privacy' | 'registry' | 'faq' | 'theme' | 'story' | 'couple'>('events');
  const [syncing, setSyncing] = useState(false);
  const [guests, setGuests] = useState<Guest[]>([]);
  const [showAdRail, setShowAdRail] = useState(false);
@@ -386,17 +391,18 @@ export default function WeddingDetailsPage() {
  <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-xl overflow-hidden mb-8">
  <div className="border-b border-gray-200 dark:border-gray-700">
  <nav className="flex overflow-x-auto scrollbar-hide">
- {(['events', 'rsvp', 'privacy', 'registry', 'faq', 'theme', 'story'] as const).map((tab) => (
+ {(['events', 'rsvp', 'privacy', 'registry', 'faq', 'theme', 'story', 'couple'] as const).map((tab) => (
  <button
  key={tab}
  onClick={() => setActiveTab(tab)}
- className={`px-3 sm:px-6 py-3 sm:py-4 text-xs sm:text-sm font-medium capitalize whitespace-nowrap ${
+ className={`px-3 sm:px-6 py-3 sm:py-4 text-xs sm:text-sm font-medium capitalize whitespace-nowrap flex items-center gap-1.5 ${
  activeTab === tab
  ? 'text-wedding-navy dark:text-wedding-gold border-b-2 border-wedding-rose dark:border-wedding-gold'
  : 'text-gray-600 dark:text-gray-400 hover:text-wedding-navy dark:hover:text-gray-200'
  }`}
  >
- {tab === 'rsvp' ? 'RSVP' : tab === 'faq' ? 'FAQ' : tab === 'story' ? 'Story' : tab}
+ {tab === 'couple' && <HeartHandshake className="w-4 h-4" />}
+ {tab === 'rsvp' ? 'RSVP' : tab === 'faq' ? 'FAQ' : tab === 'story' ? 'Story' : tab === 'couple' ? 'Couple' : tab}
  </button>
  ))}
  </nav>
@@ -1409,6 +1415,11 @@ export default function WeddingDetailsPage() {
  </div>
  )}
 
+ {/* Couple Tab */}
+ {activeTab === 'couple' && (
+ <CoupleTab weddingId={weddingId} token={token || ''} />
+ )}
+
  </div>
 
  {/* Right Sidebar - Sponsored Vendors (hidden when ads disabled) */}
@@ -1423,4 +1434,450 @@ export default function WeddingDetailsPage() {
  </div>
  </div>
  );
+}
+
+
+// ============================================================================
+// COUPLE TAB — Manages couple access, messaging, and digest emails
+// ============================================================================
+
+interface CoupleUser {
+  id: string;
+  email: string;
+  partner1_name?: string;
+  partner2_name?: string;
+  wedding_id: string;
+  is_active: boolean;
+  setup_completed: boolean;
+  last_login?: string;
+  created_at?: string;
+}
+
+interface PlannerMessage {
+  id: string;
+  sender_role: 'couple' | 'planner';
+  sender_name: string;
+  content: string;
+  read_by_couple: boolean;
+  created_at?: string;
+}
+
+function CoupleTab({ weddingId, token }: { weddingId: string; token: string }) {
+  const [couples, setCouples] = useState<CoupleUser[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [showInviteForm, setShowInviteForm] = useState(false);
+  const [inviteEmail, setInviteEmail] = useState('');
+  const [invitePartner1, setInvitePartner1] = useState('');
+  const [invitePartner2, setInvitePartner2] = useState('');
+  const [inviting, setInviting] = useState(false);
+
+  // Messages state
+  const [messages, setMessages] = useState<PlannerMessage[]>([]);
+  const [msgLoading, setMsgLoading] = useState(true);
+  const [newMessage, setNewMessage] = useState('');
+  const [sending, setSending] = useState(false);
+  const [sendingDigest, setSendingDigest] = useState(false);
+
+  const fetchCouples = useCallback(async () => {
+    if (!token || !weddingId) return;
+    try {
+      const res = await fetch(`${getApiBaseUrl()}/admin/couple-portal/couples?wedding_id=${weddingId}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setCouples(data.couples || []);
+      }
+    } catch (err) {
+      console.error('Failed to fetch couples', err);
+    } finally {
+      setLoading(false);
+    }
+  }, [token, weddingId]);
+
+  const fetchMessages = useCallback(async () => {
+    if (!weddingId || !token) return;
+    try {
+      const res = await fetch(`${getApiBaseUrl()}/couple-portal/messages?wedding_id=${weddingId}&limit=100`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setMessages(data.messages || []);
+      }
+    } catch {
+      toast.error('Failed to load messages');
+    } finally {
+      setMsgLoading(false);
+    }
+  }, [weddingId, token]);
+
+  useEffect(() => {
+    fetchCouples();
+  }, [fetchCouples]);
+
+  useEffect(() => {
+    setMsgLoading(true);
+    fetchMessages();
+  }, [fetchMessages]);
+
+  // Invite couple
+  const handleInvite = async () => {
+    if (!inviteEmail || !invitePartner1) {
+      toast.error('Email and partner name are required');
+      return;
+    }
+    setInviting(true);
+    try {
+      const res = await fetch(`${getApiBaseUrl()}/admin/couple-portal/invite`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email: inviteEmail,
+          partner1_name: invitePartner1,
+          partner2_name: invitePartner2 || undefined,
+          wedding_id: weddingId,
+        }),
+      });
+      if (res.ok) {
+        toast.success('Invitation sent!');
+        setShowInviteForm(false);
+        setInviteEmail('');
+        setInvitePartner1('');
+        setInvitePartner2('');
+        fetchCouples();
+      } else {
+        const err = await res.json();
+        toast.error(err.detail || 'Failed to send invitation');
+      }
+    } catch {
+      toast.error('Failed to connect to server');
+    } finally {
+      setInviting(false);
+    }
+  };
+
+  // Revoke/Restore access
+  const handleToggleAccess = async (coupleId: string, isActive: boolean) => {
+    const action = isActive ? 'revoke' : 'restore';
+    try {
+      const res = await fetch(`${getApiBaseUrl()}/couple-portal/couples/${coupleId}/${action}`, {
+        method: 'PATCH',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      });
+      if (res.ok) {
+        toast.success(`Access ${action}d`);
+        fetchCouples();
+      } else {
+        const err = await res.json();
+        toast.error(err.detail || `Failed to ${action} access`);
+      }
+    } catch {
+      toast.error('Failed to connect');
+    }
+  };
+
+  // Resend invite
+  const handleResend = async (coupleId: string) => {
+    try {
+      const res = await fetch(`${getApiBaseUrl()}/admin/couple-portal/resend-invite`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ couple_id: coupleId }),
+      });
+      if (res.ok) {
+        toast.success('Invitation resent');
+      } else {
+        const err = await res.json();
+        toast.error(err.detail || 'Failed to resend');
+      }
+    } catch {
+      toast.error('Failed to connect');
+    }
+  };
+
+  // Send message
+  const handleSend = async () => {
+    if (!newMessage.trim() || sending) return;
+    setSending(true);
+    try {
+      const res = await fetch(`${getApiBaseUrl()}/couple-portal/messages`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ wedding_id: weddingId, content: newMessage.trim() }),
+      });
+      if (res.ok) {
+        setNewMessage('');
+        await fetchMessages();
+      } else {
+        const err = await res.json();
+        toast.error(err.detail || 'Failed to send message');
+      }
+    } catch {
+      toast.error('Failed to send message');
+    } finally {
+      setSending(false);
+    }
+  };
+
+  // Send digest email
+  const handleSendDigest = async () => {
+    setSendingDigest(true);
+    try {
+      const res = await fetch(`${getApiBaseUrl()}/couple-portal/send-digest?wedding_id=${weddingId}`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const data = await res.json();
+      if (res.ok) {
+        if (data.sent) {
+          toast.success('Digest email sent to the couple');
+        } else {
+          toast.info(data.message || 'No new activity to report');
+        }
+      } else {
+        toast.error(data.detail || 'Failed to send digest');
+      }
+    } catch {
+      toast.error('Failed to send digest');
+    } finally {
+      setSendingDigest(false);
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-12">
+        <Loader2 className="w-6 h-6 animate-spin text-blue-500" />
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-8">
+      {/* Couple Access Section */}
+      <div>
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-2xl font-bold text-wedding-navy dark:text-gray-100">Couple Access</h2>
+          <button
+            onClick={() => setShowInviteForm(true)}
+            className="flex items-center gap-2 px-4 py-2 bg-wedding-sage text-white text-sm rounded-lg hover:bg-opacity-90 transition-colors"
+          >
+            <Plus className="w-4 h-4" />
+            Invite Couple
+          </button>
+        </div>
+
+        {couples.length === 0 ? (
+          <div className="text-center py-10 text-gray-400 dark:text-gray-500">
+            <Users className="w-10 h-10 mx-auto mb-3 opacity-50" />
+            <p className="font-medium">No couple linked yet</p>
+            <p className="text-sm mt-1">Invite the couple so they can view and collaborate on their wedding details.</p>
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {couples.map((couple) => (
+              <div key={couple.id} className="bg-gray-50 dark:bg-slate-700/50 rounded-xl p-4 flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className={`w-10 h-10 rounded-full flex items-center justify-center text-white text-sm font-medium ${
+                    couple.is_active ? 'bg-green-500' : couple.setup_completed ? 'bg-red-400' : 'bg-amber-400'
+                  }`}>
+                    {(couple.partner1_name || 'C').charAt(0)}
+                  </div>
+                  <div>
+                    <p className="font-medium text-gray-800 dark:text-gray-200 text-sm">
+                      {couple.partner1_name}{couple.partner2_name ? ` & ${couple.partner2_name}` : ''}
+                    </p>
+                    <p className="text-xs text-gray-500 dark:text-gray-400">{couple.email}</p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-3">
+                  <span className={`text-xs px-2 py-1 rounded-full ${
+                    couple.is_active
+                      ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
+                      : couple.setup_completed
+                      ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'
+                      : 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400'
+                  }`}>
+                    {couple.is_active ? 'Active' : couple.setup_completed ? 'Revoked' : 'Pending Setup'}
+                  </span>
+
+                  {!couple.setup_completed && (
+                    <button
+                      onClick={() => handleResend(couple.id)}
+                      className="text-xs text-blue-600 hover:underline flex items-center gap-1"
+                      title="Resend invitation email"
+                    >
+                      <RefreshCw className="w-3 h-3" />
+                      Resend
+                    </button>
+                  )}
+
+                  {couple.setup_completed && (
+                    <button
+                      onClick={() => handleToggleAccess(couple.id, couple.is_active)}
+                      className={`text-xs flex items-center gap-1 ${
+                        couple.is_active ? 'text-red-600 hover:text-red-700' : 'text-green-600 hover:text-green-700'
+                      }`}
+                    >
+                      {couple.is_active ? (
+                        <><ShieldOff className="w-3 h-3" /> Revoke Access</>
+                      ) : (
+                        <><ShieldCheck className="w-3 h-3" /> Restore Access</>
+                      )}
+                    </button>
+                  )}
+
+                  {couple.last_login && (
+                    <span className="text-xs text-gray-400 dark:text-gray-500" title="Last login">
+                      {new Date(couple.last_login).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                    </span>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Messages Section */}
+      <div>
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-2xl font-bold text-wedding-navy dark:text-gray-100">Messages</h2>
+          <button
+            onClick={handleSendDigest}
+            disabled={sendingDigest}
+            className="flex items-center gap-2 px-3 py-2 text-sm bg-amber-50 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 border border-amber-200 dark:border-amber-700 rounded-lg hover:bg-amber-100 dark:hover:bg-amber-900/50 transition-colors disabled:opacity-50"
+          >
+            {sendingDigest ? <Loader2 className="w-4 h-4 animate-spin" /> : <Bell className="w-4 h-4" />}
+            Send Digest Email
+          </button>
+        </div>
+
+        {msgLoading ? (
+          <div className="flex items-center justify-center py-12">
+            <Loader2 className="w-6 h-6 animate-spin text-blue-500" />
+          </div>
+        ) : (
+          <div className="bg-gray-50 dark:bg-slate-700/30 rounded-xl border border-gray-200 dark:border-gray-700 flex flex-col" style={{ height: '45vh', minHeight: '300px' }}>
+            {/* Messages area */}
+            <div className="flex-1 overflow-y-auto p-4 space-y-3">
+              {messages.length === 0 ? (
+                <div className="flex flex-col items-center justify-center h-full text-gray-400 dark:text-gray-500">
+                  <MessageCircle className="w-12 h-12 mb-3 opacity-50" />
+                  <p className="text-sm font-medium">No messages yet</p>
+                  <p className="text-xs mt-1">Send a message to start a conversation with the couple.</p>
+                </div>
+              ) : (
+                messages.map((msg) => {
+                  const isPlanner = msg.sender_role === 'planner';
+                  return (
+                    <div key={msg.id} className={`flex ${isPlanner ? 'justify-end' : 'justify-start'}`}>
+                      <div className={`max-w-[75%] rounded-2xl px-4 py-2.5 ${
+                        isPlanner
+                          ? 'bg-wedding-navy text-white rounded-br-md'
+                          : 'bg-white dark:bg-slate-700 text-gray-800 dark:text-gray-200 rounded-bl-md shadow-sm'
+                      }`}>
+                        {!isPlanner && (
+                          <p className="text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">{msg.sender_name}</p>
+                        )}
+                        <p className="text-sm whitespace-pre-wrap">{msg.content}</p>
+                        <div className={`flex items-center gap-1.5 mt-1 ${isPlanner ? 'justify-end' : ''}`}>
+                          <span className={`text-xs ${isPlanner ? 'text-white/50' : 'text-gray-400 dark:text-gray-500'}`}>
+                            {msg.created_at ? new Date(msg.created_at).toLocaleTimeString('en-US', {
+                              hour: 'numeric', minute: '2-digit', hour12: true,
+                            }) : ''}
+                          </span>
+                          {isPlanner && msg.read_by_couple && (
+                            <Eye className="w-3 h-3 text-white/50" />
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+
+            {/* Input area */}
+            <div className="border-t border-gray-200 dark:border-gray-700 p-3 flex gap-2">
+              <input
+                type="text"
+                value={newMessage}
+                onChange={(e) => setNewMessage(e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend(); } }}
+                placeholder="Type a message to the couple..."
+                className="flex-1 px-4 py-2.5 border border-gray-200 dark:border-gray-600 rounded-full text-sm focus:outline-none focus:ring-2 focus:ring-wedding-navy/20 focus:border-wedding-navy bg-white dark:bg-slate-700 text-gray-800 dark:text-gray-200"
+                disabled={sending}
+              />
+              <button
+                onClick={handleSend}
+                disabled={!newMessage.trim() || sending}
+                className="w-10 h-10 flex items-center justify-center bg-wedding-navy text-white rounded-full hover:bg-wedding-navy/90 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                {sending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Invite Modal */}
+      {showInviteForm && (
+        <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
+          <div className="bg-white dark:bg-slate-800 rounded-xl shadow-xl w-full max-w-md p-6">
+            <h3 className="text-lg font-semibold text-gray-800 dark:text-gray-200 mb-4">Invite Couple</h3>
+            <div className="space-y-3">
+              <div>
+                <label className="block text-sm text-gray-600 dark:text-gray-400 mb-1">Email *</label>
+                <input
+                  type="email"
+                  value={inviteEmail}
+                  onChange={(e) => setInviteEmail(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-200 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-slate-700 text-gray-800 dark:text-gray-200"
+                  placeholder="couple@email.com"
+                />
+              </div>
+              <div>
+                <label className="block text-sm text-gray-600 dark:text-gray-400 mb-1">Partner 1 Name *</label>
+                <input
+                  type="text"
+                  value={invitePartner1}
+                  onChange={(e) => setInvitePartner1(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-200 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-slate-700 text-gray-800 dark:text-gray-200"
+                  placeholder="First partner's name"
+                />
+              </div>
+              <div>
+                <label className="block text-sm text-gray-600 dark:text-gray-400 mb-1">Partner 2 Name</label>
+                <input
+                  type="text"
+                  value={invitePartner2}
+                  onChange={(e) => setInvitePartner2(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-200 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-slate-700 text-gray-800 dark:text-gray-200"
+                  placeholder="Second partner's name"
+                />
+              </div>
+            </div>
+            <div className="flex justify-end gap-3 mt-6">
+              <button
+                onClick={() => setShowInviteForm(false)}
+                className="px-4 py-2 text-sm text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleInvite}
+                disabled={inviting}
+                className="px-4 py-2 bg-wedding-sage text-white text-sm rounded-lg hover:bg-opacity-90 disabled:opacity-50 flex items-center gap-2"
+              >
+                {inviting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+                Send Invitation
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
 }
