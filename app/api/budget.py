@@ -243,7 +243,7 @@ async def get_vendor_quotes(
         service_category = validated_string_filter(service_category, max_length=100)
 
         quotes = await budget_service.get_vendor_quotes(wedding_id, service_category)
-        return dict_response(data={"quotes": quotes}, meta={"count": len(quotes)})
+        return dict_response(data={"quotes": quotes, "count": len(quotes)})
 
     except PermissionError as e:
         raise HTTPException(status_code=403, detail=str(e))
@@ -365,7 +365,7 @@ async def get_budget_templates(
         wedding_type = validated_string_filter(wedding_type, max_length=50)
 
         templates = await budget_service.get_budget_templates(wedding_type)
-        return dict_response(data={"templates": templates}, meta={"count": len(templates)})
+        return dict_response(data={"templates": templates, "count": len(templates)})
 
     except Exception as e:
         logger.error(f"Failed to get budget templates: {str(e)}")
@@ -526,7 +526,7 @@ async def get_payment_history(
             raise HTTPException(status_code=403, detail="Access to this wedding denied")
 
         payments = await budget_service.get_payment_history(wedding_id)
-        return dict_response(data={"payments": payments}, meta={"count": len(payments)})
+        return dict_response(data={"payments": payments, "count": len(payments)})
 
     except PermissionError as e:
         raise HTTPException(status_code=403, detail=str(e))

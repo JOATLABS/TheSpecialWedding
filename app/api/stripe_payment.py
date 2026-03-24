@@ -483,7 +483,13 @@ async def create_payment_intent(
         # Ensure planner is authorized for the wedding if wedding_id provided
         if request.wedding_id and not current_user.is_root_admin:
             from app.core.database import mongo
-            wedding = await mongo.db["weddings"].find_one({"_id": ObjectId(request.wedding_id)})
+            # Try string ID first (wedding IDs are stored as strings like "wedding_XXXXX")
+            wedding = await mongo.db["weddings"].find_one({"_id": request.wedding_id})
+            if not wedding:
+                try:
+                    wedding = await mongo.db["weddings"].find_one({"_id": ObjectId(request.wedding_id)})
+                except Exception:
+                    pass
             if not wedding:
                 raise HTTPException(status_code=404, detail="Wedding not found")
 
@@ -572,24 +578,37 @@ async def get_payment_requests(
         cursor = mongo.db["payment_requests"].find({"user_id": user_id}).sort("created_at", -1)
         requests = await cursor.to_list(length=100)
 
-        # Collect wedding IDs to fetch titles
-        wedding_ids = set()
+        # Collect wedding IDs to fetch titles (support both string and ObjectId formats)
+        string_wedding_ids = set()
+        objectid_wedding_ids = set()
         for req in requests:
             if req.get("wedding_id"):
+                string_wedding_ids.add(req["wedding_id"])
                 try:
-                    wedding_ids.add(ObjectId(req["wedding_id"]))
+                    objectid_wedding_ids.add(ObjectId(req["wedding_id"]))
                 except Exception:
-                    pass  # Invalid ObjectId, skip
+                    pass
 
-        # Fetch wedding titles in bulk
+        # Fetch wedding titles in bulk (try both ID formats)
         wedding_titles = {}
-        if wedding_ids:
+        if string_wedding_ids:
+            # Try string IDs first
             weddings_cursor = mongo.db["weddings"].find(
-                {"_id": {"$in": list(wedding_ids)}},
+                {"_id": {"$in": list(string_wedding_ids)}},
                 {"_id": 1, "title": 1}
             )
-            weddings = await weddings_cursor.to_list(length=len(wedding_ids))
+            weddings = await weddings_cursor.to_list(length=len(string_wedding_ids))
             wedding_titles = {str(w["_id"]): w.get("title", "Untitled Wedding") for w in weddings}
+
+            # Fallback: try ObjectId format for any not found
+            if objectid_wedding_ids and len(wedding_titles) < len(string_wedding_ids):
+                weddings_cursor = mongo.db["weddings"].find(
+                    {"_id": {"$in": list(objectid_wedding_ids)}},
+                    {"_id": 1, "title": 1}
+                )
+                weddings = await weddings_cursor.to_list(length=len(objectid_wedding_ids))
+                for w in weddings:
+                    wedding_titles[str(w["_id"])] = w.get("title", "Untitled Wedding")
 
         # Enrich requests with wedding_title and convert ObjectId to str
         for req in requests:

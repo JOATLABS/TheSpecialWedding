@@ -303,7 +303,7 @@ async def get_guest_activity(
                 },
             })
 
-        return dict_response(data={"activities": activities}, meta={"total": len(activities)})
+        return dict_response(data={"activities": activities, "total": len(activities)})
 
     except HTTPException:
         raise

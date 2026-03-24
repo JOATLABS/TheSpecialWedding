@@ -84,9 +84,12 @@ export function useGuests(weddingId: string, options: UseGuestsOptions = {}): Us
 
       const data = await res.json();
 
+      // API returns { guests: [...], total, page, pages, limit }
+      const guestList: any[] = Array.isArray(data) ? data : (data.guests || []);
+
       // Only update state if this is still the current wedding
       if (currentWeddingIdRef.current === weddingId) {
-        setGuests(data.map((g: any) => ({
+        setGuests(guestList.map((g: any) => ({
           id: g.id || g._id,
           wedding_id: g.wedding_id,
           name: g.name,

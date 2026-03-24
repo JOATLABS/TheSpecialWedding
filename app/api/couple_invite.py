@@ -168,11 +168,12 @@ async def invite_couple(
     """
 
     try:
-        from app.services.email_service import email_service
-        await email_service.send_email(
-            to=data.email.lower().strip(),
+        from app.services.email_service_resend import ResendEmailService
+        _email_svc = ResendEmailService()
+        await _email_svc.send_email(
+            to_email=data.email.lower().strip(),
             subject=f"You're Invited to Your Wedding Portal - {wedding.get('couple_names', 'Your Wedding')}",
-            html=html_content
+            html_content=html_content
         )
         email_sent = True
     except Exception as e:
@@ -226,7 +227,8 @@ async def resend_invite(
 
     # Send email (reuse same template logic)
     try:
-        from app.services.email_service import email_service
+        from app.services.email_service_resend import ResendEmailService
+        _email_svc = ResendEmailService()
         wedding = await mongo.get_weddings_collection().find_one({"_id": couple["wedding_id"]})
         planner_name = f"{(current_user.user_data or {}).get('first_name', '')} {(current_user.user_data or {}).get('last_name', '')}".strip()
         if not planner_name:
@@ -258,10 +260,10 @@ async def resend_invite(
         </div>
         """
 
-        await email_service.send_email(
-            to=couple["email"],
+        await _email_svc.send_email(
+            to_email=couple["email"],
             subject=f"Reminder: Set Up Your Wedding Portal",
-            html=html_content
+            html_content=html_content
         )
         email_sent = True
     except Exception as e:

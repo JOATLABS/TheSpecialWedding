@@ -4,16 +4,17 @@ import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { getApiBaseUrl } from '@/utils/env';
 import { toast } from 'sonner';
+import CoupleSidebar, { type CoupleSection } from '../components/CoupleSidebar';
+import CoupleTopHeader from '../components/CoupleTopHeader';
 import {
   Heart, Calendar, Users, DollarSign, FileText, Bell,
-  Clock, MapPin, ChevronRight, LogOut, Loader2,
-  CheckCircle, AlertCircle, XCircle, TrendingUp,
-  Sparkles, Phone, Mail, Building2, Archive,
+  Clock, MapPin, ChevronRight, Loader2,
+  CheckCircle, AlertCircle, Sparkles, Phone, Mail, Building2, Archive,
   ClipboardList, Send, ChevronDown, ChevronUp,
   MessageSquare, StickyNote, FileSignature, Eye,
-  MessageCircle, CalendarClock, Repeat,
+  MessageCircle,
   Gift, HelpCircle, QrCode, BellRing, Plus,
-  Pencil, Trash2, ExternalLink, Download, BellOff
+  Pencil, Trash2, ExternalLink, Download, BellOff,
 } from 'lucide-react';
 
 // ============================================================================
@@ -168,8 +169,6 @@ interface DashboardData {
   updates: UpdateItem[];
 }
 
-type TabType = 'overview' | 'timeline' | 'payments' | 'contracts' | 'forms' | 'updates' | 'messages' | 'meetings' | 'registry' | 'faq';
-
 // ============================================================================
 // HELPERS
 // ============================================================================
@@ -208,13 +207,13 @@ function eventTypeLabel(type: string): string {
 
 function paymentStatusColor(status: string): string {
   const colors: Record<string, string> = {
-    succeeded: 'bg-green-100 text-green-700',
-    scheduled: 'bg-blue-100 text-blue-700',
-    processing: 'bg-yellow-100 text-yellow-700',
-    failed: 'bg-red-100 text-red-700',
-    cancelled: 'bg-gray-100 text-gray-500',
+    succeeded: 'bg-green-100 dark:bg-green-950/30 text-green-700 dark:text-green-400',
+    scheduled: 'bg-blue-100 dark:bg-blue-950/30 text-blue-700 dark:text-blue-400',
+    processing: 'bg-yellow-100 dark:bg-yellow-950/30 text-yellow-700 dark:text-yellow-400',
+    failed: 'bg-red-100 dark:bg-red-950/30 text-red-700 dark:text-red-400',
+    cancelled: 'bg-slate-100 dark:bg-slate-700 text-slate-500 dark:text-slate-400',
   };
-  return colors[status] || 'bg-gray-100 text-gray-600';
+  return colors[status] || 'bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-400';
 }
 
 // ============================================================================
@@ -225,8 +224,24 @@ export default function CoupleDashboardPage() {
   const router = useRouter();
   const [loading, setLoading] = useState(true);
   const [data, setData] = useState<DashboardData | null>(null);
-  const [activeTab, setActiveTab] = useState<TabType>('overview');
+  const [activeSection, setActiveSection] = useState<CoupleSection>('dashboard');
   const [unreadMessages, setUnreadMessages] = useState(0);
+
+  // Sidebar state
+  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [isMobile, setIsMobile] = useState(false);
+
+  useEffect(() => {
+    const handleResize = () => {
+      const mobile = window.innerWidth < 1024;
+      setIsMobile(mobile);
+      if (mobile) setSidebarOpen(false);
+      else setSidebarOpen(true);
+    };
+    handleResize();
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
 
   const fetchDashboard = useCallback(async () => {
     const token = localStorage.getItem('couple_token');
@@ -266,7 +281,7 @@ export default function CoupleDashboardPage() {
           setUnreadMessages(unreadData.unread_count || 0);
         }
       } catch { /* non-critical */ }
-    } catch (err) {
+    } catch {
       toast.error('Failed to connect to server');
     } finally {
       setLoading(false);
@@ -277,7 +292,7 @@ export default function CoupleDashboardPage() {
     fetchDashboard();
   }, [fetchDashboard]);
 
-  // Register service worker for PWA + push (Sprint 6)
+  // Register service worker for PWA + push
   useEffect(() => {
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.register('/sw.js').catch((err) => {
@@ -296,7 +311,7 @@ export default function CoupleDashboardPage() {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <div className="text-center">
-          <Loader2 className="w-10 h-10 animate-spin text-slate-900 dark:text-white mx-auto mb-4" />
+          <Loader2 className="w-10 h-10 animate-spin text-primary-500 mx-auto mb-4" />
           <p className="text-slate-600 dark:text-slate-400">Loading your wedding portal...</p>
         </div>
       </div>
@@ -308,145 +323,128 @@ export default function CoupleDashboardPage() {
       <div className="min-h-screen flex items-center justify-center">
         <div className="text-center">
           <AlertCircle className="w-10 h-10 text-red-400 mx-auto mb-4" />
-          <p className="text-slate-700 dark:text-slate-300 mb-4">Could not load your dashboard</p>
-          <button onClick={fetchDashboard} className="text-slate-900 dark:text-white font-medium hover:underline">Try Again</button>
+          <p className="text-slate-700 dark:text-slate-300 mb-4">We couldn&apos;t load your dashboard right now.</p>
+          <div className="flex items-center justify-center gap-3">
+            <button
+              onClick={fetchDashboard}
+              className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-sm font-medium transition-colors"
+            >
+              Try Again
+            </button>
+            <button
+              onClick={handleLogout}
+              className="px-4 py-2 bg-slate-600 hover:bg-slate-700 text-white rounded-lg text-sm font-medium transition-colors"
+            >
+              Sign Out
+            </button>
+          </div>
         </div>
       </div>
     );
   }
 
-  const days = data.wedding?.date ? daysUntil(data.wedding.date) : null;
-
-  const tabs: { key: TabType; label: string; icon: React.ReactNode; count?: number }[] = [
-    { key: 'overview', label: 'Overview', icon: <Heart className="w-4 h-4" /> },
-    { key: 'timeline', label: 'Timeline', icon: <Calendar className="w-4 h-4" />, count: data.wedding?.events?.length },
-    { key: 'payments', label: 'Payments', icon: <DollarSign className="w-4 h-4" />, count: data.contract?.payments?.length },
-    { key: 'contracts', label: 'Contract', icon: <FileSignature className="w-4 h-4" /> },
-    { key: 'forms', label: 'Forms', icon: <ClipboardList className="w-4 h-4" />, count: data.forms?.filter(f => f.status === 'pending').length },
-    { key: 'updates', label: 'Updates', icon: <Bell className="w-4 h-4" />, count: data.updates?.length },
-    { key: 'messages', label: 'Messages', icon: <MessageCircle className="w-4 h-4" />, count: unreadMessages || undefined },
-    { key: 'meetings', label: 'Meetings', icon: <CalendarClock className="w-4 h-4" /> },
-    { key: 'registry', label: 'Registry', icon: <Gift className="w-4 h-4" />, count: data.wedding?.registries?.length || undefined },
-    { key: 'faq', label: 'FAQ', icon: <HelpCircle className="w-4 h-4" />, count: data.wedding?.faqs?.length || undefined },
-  ];
+  const pendingForms = data.forms?.filter(f => f.status === 'pending').length || 0;
 
   return (
-    <div className="min-h-screen flex flex-col">
-      {/* Header */}
-      <header className="sticky top-0 z-30 bg-white/80 dark:bg-slate-900/80 backdrop-blur-xl border-b border-slate-200/50 dark:border-slate-700/50">
-        <div className="flex items-center justify-between h-16 px-4 sm:px-6 lg:px-8">
-          <h1 className="text-xl font-semibold text-slate-900 dark:text-white">
-            {data.wedding?.couple_names || 'Your Wedding'}
-          </h1>
-          <button
-            onClick={handleLogout}
-            className="flex items-center gap-2 text-slate-700 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white transition-colors text-sm"
-          >
-            <LogOut className="w-4 h-4" />
-            <span className="hidden sm:inline">Sign Out</span>
-          </button>
-        </div>
-      </header>
+    <div className="min-h-screen overflow-x-hidden bg-light-bg dark:bg-dark-bg text-light-text dark:text-dark-text font-sans transition-colors duration-300">
+      <CoupleSidebar
+        isOpen={sidebarOpen}
+        setIsOpen={setSidebarOpen}
+        isMobile={isMobile}
+        activeSection={activeSection}
+        onSectionChange={setActiveSection}
+        onLogout={handleLogout}
+        unreadInbox={unreadMessages}
+        pendingForms={pendingForms}
+      />
 
-      {/* Archived Banner */}
-      {data.archived && (
-        <div className="bg-amber-50 dark:bg-amber-950/30 border-b border-amber-200 dark:border-amber-800/50 px-4 py-3">
-          <div className="flex items-center gap-3 text-amber-700 dark:text-amber-600">
-            <Archive className="w-5 h-5 flex-shrink-0" />
-            <p className="text-sm">This wedding has been completed and archived. You can still view your wedding details and memories.</p>
+      <div
+        className="relative z-10 flex flex-col min-h-screen transition-[margin] duration-300 ease-out"
+        style={{
+          marginLeft: !isMobile ? (sidebarOpen ? '18rem' : '5rem') : '0',
+        }}
+      >
+        <CoupleTopHeader
+          onMenuClick={() => setSidebarOpen(!sidebarOpen)}
+          coupleName={data.wedding?.couple_names}
+          onLogout={handleLogout}
+        />
+
+        {/* Archived Banner */}
+        {data.archived && (
+          <div className="bg-amber-50 dark:bg-amber-950/30 border-b border-amber-200 dark:border-amber-800/50 px-4 py-3">
+            <div className="flex items-center gap-3 text-amber-700 dark:text-amber-400">
+              <Archive className="w-5 h-5 flex-shrink-0" />
+              <p className="text-sm">This wedding has been completed and archived. You can still view all your details and memories.</p>
+            </div>
           </div>
-        </div>
-      )}
+        )}
 
-      {/* Main Content Area with Tabs */}
-      <div className="flex-1 flex flex-col">
-        {/* Tab Navigation */}
-        <div className="border-b border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800">
-          <nav className="flex gap-1 overflow-x-auto -mb-px scrollbar-hide px-4 sm:px-6 lg:px-8">
-            {tabs.map((tab) => (
-              <button
-                key={tab.key}
-                onClick={() => setActiveTab(tab.key)}
-                className={`flex items-center gap-1.5 sm:gap-2 px-2.5 sm:px-4 py-4 text-xs sm:text-sm font-medium whitespace-nowrap border-b-2 transition-colors ${
-                  activeTab === tab.key
-                    ? 'border-slate-900 dark:border-white text-slate-900 dark:text-white'
-                    : 'border-transparent text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
-                }`}
-              >
-                {tab.icon}
-                {tab.label}
-                {tab.count !== undefined && tab.count > 0 && (
-                  <span className={`text-xs px-1.5 py-0.5 rounded-full ${
-                    activeTab === tab.key ? 'bg-slate-900 dark:bg-white text-white dark:text-slate-900' : 'bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-400'
-                  }`}>
-                    {tab.count}
-                  </span>
-                )}
-              </button>
-            ))}
-          </nav>
-        </div>
-
-        {/* Tab Content */}
-        <main className="flex-1 p-4 sm:p-6 lg:p-8 space-y-6">
-        {activeTab === 'overview' && <OverviewTab data={data} days={days} />}
-        {activeTab === 'timeline' && <TimelineTab events={data.wedding?.events || []} timezone={data.wedding?.timezone} onNoteAdded={fetchDashboard} />}
-        {activeTab === 'payments' && <PaymentsTab contract={data.contract} />}
-        {activeTab === 'contracts' && <ContractTab />}
-        {activeTab === 'forms' && <FormsTab forms={data.forms || []} />}
-        {activeTab === 'updates' && <UpdatesTab updates={data.updates || []} />}
-        {activeTab === 'messages' && <MessagesTab onMessageSent={() => { setUnreadMessages(0); }} onMessagesRead={() => { setUnreadMessages(0); }} archived={!!data.archived} />}
-        {activeTab === 'meetings' && <MeetingsTab />}
-        {activeTab === 'registry' && <RegistryTab registries={data.wedding?.registries || []} archived={!!data.archived} onUpdated={fetchDashboard} />}
-        {activeTab === 'faq' && <FAQTab faqs={data.wedding?.faqs || []} archived={!!data.archived} onUpdated={fetchDashboard} />}
+        <main className="flex-1 p-4 sm:p-6 lg:p-8 space-y-6 overflow-x-hidden">
+          {activeSection === 'dashboard' && <DashboardSection data={data} />}
+          {activeSection === 'timeline' && <TimelineSection events={data.wedding?.events || []} timezone={data.wedding?.timezone} onNoteAdded={fetchDashboard} />}
+          {activeSection === 'payments' && <PaymentsSection contract={data.contract} />}
+          {activeSection === 'forms' && <FormsSection forms={data.forms || []} />}
+          {activeSection === 'inbox' && (
+            <InboxSection
+              updates={data.updates || []}
+              onMessageSent={() => setUnreadMessages(0)}
+              onMessagesRead={() => setUnreadMessages(0)}
+              archived={!!data.archived}
+            />
+          )}
+          {activeSection === 'registry' && <RegistrySection registries={data.wedding?.registries || []} archived={!!data.archived} onUpdated={fetchDashboard} />}
+          {activeSection === 'faq' && <FAQSection faqs={data.wedding?.faqs || []} archived={!!data.archived} onUpdated={fetchDashboard} />}
         </main>
       </div>
     </div>
   );
 }
 
+
 // ============================================================================
-// TAB COMPONENTS
+// SECTION: DASHBOARD (Overview)
 // ============================================================================
 
-function OverviewTab({ data, days }: { data: DashboardData; days: number | null }) {
+function DashboardSection({ data }: { data: DashboardData }) {
+  const days = data.wedding?.date ? daysUntil(data.wedding.date) : null;
   const stats = data.guest_stats;
   const budget = data.budget_summary;
   const budgetPercent = budget.total_budget > 0 ? Math.min(100, (budget.total_spent / budget.total_budget) * 100) : 0;
 
   return (
     <div className="space-y-6">
-      {/* Countdown Card */}
+      {/* Countdown */}
       {days !== null && days > 0 && !data.archived && (
         <div className="bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700 p-6">
-          <p className="text-slate-600 dark:text-slate-400 text-sm font-medium mb-2">Counting Down</p>
-          <div className="text-5xl sm:text-6xl font-semibold text-slate-900 dark:text-white mb-2">{days}</div>
-          <p className="text-slate-700 dark:text-slate-300">days until your wedding</p>
-          <p className="text-slate-500 dark:text-slate-400 text-sm mt-2">{data.wedding?.date ? formatDate(data.wedding.date) : ''}</p>
+          <p className="text-slate-500 dark:text-slate-400 text-sm font-medium mb-2">Your big day is</p>
+          <div className="text-5xl sm:text-6xl font-semibold text-slate-900 dark:text-white mb-1">{days}</div>
+          <p className="text-slate-600 dark:text-slate-300">days away</p>
+          <p className="text-slate-400 dark:text-slate-500 text-sm mt-2">{data.wedding?.date ? formatDate(data.wedding.date) : ''}</p>
         </div>
       )}
 
       {/* Quick Stats */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
         <div className="bg-white dark:bg-slate-800 rounded-xl p-4 border border-slate-200 dark:border-slate-700 shadow-sm">
-          <Users className="w-5 h-5 text-slate-900 dark:text-slate-300 mb-2" />
+          <Users className="w-5 h-5 text-indigo-500 mb-2" />
           <div className="text-2xl font-semibold text-slate-900 dark:text-white">{stats.total_invited}</div>
-          <div className="text-xs text-slate-600 dark:text-slate-400">Guests Invited</div>
+          <div className="text-xs text-slate-500 dark:text-slate-400">Guests invited</div>
         </div>
         <div className="bg-white dark:bg-slate-800 rounded-xl p-4 border border-slate-200 dark:border-slate-700 shadow-sm">
           <CheckCircle className="w-5 h-5 text-green-500 mb-2" />
           <div className="text-2xl font-semibold text-slate-900 dark:text-white">{stats.confirmed}</div>
-          <div className="text-xs text-slate-600 dark:text-slate-400">Confirmed</div>
+          <div className="text-xs text-slate-500 dark:text-slate-400">Confirmed</div>
         </div>
         <div className="bg-white dark:bg-slate-800 rounded-xl p-4 border border-slate-200 dark:border-slate-700 shadow-sm">
           <Clock className="w-5 h-5 text-amber-500 mb-2" />
           <div className="text-2xl font-semibold text-slate-900 dark:text-white">{stats.pending}</div>
-          <div className="text-xs text-slate-600 dark:text-slate-400">Pending</div>
+          <div className="text-xs text-slate-500 dark:text-slate-400">Awaiting response</div>
         </div>
         <div className="bg-white dark:bg-slate-800 rounded-xl p-4 border border-slate-200 dark:border-slate-700 shadow-sm">
-          <DollarSign className="w-5 h-5 text-amber-500 mb-2" />
+          <DollarSign className="w-5 h-5 text-emerald-500 mb-2" />
           <div className="text-2xl font-semibold text-slate-900 dark:text-white">{formatCurrency(budget.total_budget)}</div>
-          <div className="text-xs text-slate-600 dark:text-slate-400">Total Budget</div>
+          <div className="text-xs text-slate-500 dark:text-slate-400">Total budget</div>
         </div>
       </div>
 
@@ -454,18 +452,18 @@ function OverviewTab({ data, days }: { data: DashboardData; days: number | null 
       {budget.total_budget > 0 && (
         <div className="bg-white dark:bg-slate-800 rounded-xl p-6 border border-slate-200 dark:border-slate-700 shadow-sm">
           <div className="flex items-center justify-between mb-3">
-            <h3 className="font-semibold text-slate-900 dark:text-white">Budget Progress</h3>
-            <span className="text-sm text-slate-600 dark:text-slate-400">{budgetPercent.toFixed(0)}% spent</span>
+            <h3 className="font-semibold text-slate-900 dark:text-white">Budget progress</h3>
+            <span className="text-sm text-slate-500 dark:text-slate-400">{budgetPercent.toFixed(0)}% spent</span>
           </div>
           <div className="w-full bg-slate-200 dark:bg-slate-700 rounded-full h-3 mb-3">
             <div
-              className="h-3 rounded-full transition-all bg-slate-900 dark:bg-white"
+              className={`h-3 rounded-full transition-all ${budgetPercent > 90 ? 'bg-red-500' : budgetPercent > 70 ? 'bg-amber-500' : 'bg-indigo-500'}`}
               style={{ width: `${budgetPercent}%` }}
             />
           </div>
           <div className="flex justify-between text-sm">
-            <span className="text-slate-600 dark:text-slate-400">Spent: {formatCurrency(budget.total_spent)}</span>
-            <span className="text-slate-600 dark:text-slate-400">Remaining: {formatCurrency(budget.remaining)}</span>
+            <span className="text-slate-500 dark:text-slate-400">Spent: {formatCurrency(budget.total_spent)}</span>
+            <span className="text-slate-500 dark:text-slate-400">Remaining: {formatCurrency(budget.remaining)}</span>
           </div>
         </div>
       )}
@@ -475,7 +473,7 @@ function OverviewTab({ data, days }: { data: DashboardData; days: number | null 
         {data.wedding?.venue && (
           <div className="bg-white dark:bg-slate-800 rounded-xl p-6 border border-slate-200 dark:border-slate-700 shadow-sm">
             <div className="flex items-center gap-3 mb-3">
-              <MapPin className="w-5 h-5 text-slate-700 dark:text-slate-300" />
+              <MapPin className="w-5 h-5 text-indigo-500" />
               <h3 className="font-semibold text-slate-900 dark:text-white">Venue</h3>
             </div>
             <p className="text-slate-700 dark:text-slate-300">{data.wedding.venue}</p>
@@ -485,21 +483,21 @@ function OverviewTab({ data, days }: { data: DashboardData; days: number | null 
         {data.planner && (
           <div className="bg-white dark:bg-slate-800 rounded-xl p-6 border border-slate-200 dark:border-slate-700 shadow-sm">
             <div className="flex items-center gap-3 mb-3">
-              <Building2 className="w-5 h-5 text-slate-700 dark:text-slate-300" />
-              <h3 className="font-semibold text-slate-900 dark:text-white">Your Planner</h3>
+              <Building2 className="w-5 h-5 text-indigo-500" />
+              <h3 className="font-semibold text-slate-900 dark:text-white">Your planner</h3>
             </div>
             <p className="text-slate-900 dark:text-white font-medium">{data.planner.name || data.planner.company}</p>
             {data.planner.company && data.planner.name && (
-              <p className="text-slate-600 dark:text-slate-400 text-sm">{data.planner.company}</p>
+              <p className="text-slate-500 dark:text-slate-400 text-sm">{data.planner.company}</p>
             )}
             <div className="mt-3 space-y-1">
               {data.planner.email && (
-                <a href={`mailto:${data.planner.email}`} className="flex items-center gap-2 text-sm text-slate-700 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white transition-colors">
+                <a href={`mailto:${data.planner.email}`} className="flex items-center gap-2 text-sm text-slate-600 dark:text-slate-300 hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors">
                   <Mail className="w-3.5 h-3.5" /> {data.planner.email}
                 </a>
               )}
               {data.planner.phone && (
-                <a href={`tel:${data.planner.phone}`} className="flex items-center gap-2 text-sm text-slate-700 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white transition-colors">
+                <a href={`tel:${data.planner.phone}`} className="flex items-center gap-2 text-sm text-slate-600 dark:text-slate-300 hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors">
                   <Phone className="w-3.5 h-3.5" /> {data.planner.phone}
                 </a>
               )}
@@ -508,7 +506,7 @@ function OverviewTab({ data, days }: { data: DashboardData; days: number | null 
         )}
       </div>
 
-      {/* QR Code + Push Notifications Quick Actions */}
+      {/* QR Code + Push Notifications */}
       <div className="grid sm:grid-cols-2 gap-4">
         <QRCodeWidget />
         <PushNotificationWidget />
@@ -517,16 +515,16 @@ function OverviewTab({ data, days }: { data: DashboardData; days: number | null 
       {/* Upcoming Events Preview */}
       {data.wedding?.events?.length > 0 && (
         <div className="bg-white dark:bg-slate-800 rounded-xl p-6 border border-slate-200 dark:border-slate-700 shadow-sm">
-          <h3 className="font-semibold text-slate-900 dark:text-white mb-4">Upcoming Events</h3>
+          <h3 className="font-semibold text-slate-900 dark:text-white mb-4">Coming up</h3>
           <div className="space-y-3">
             {data.wedding.events.slice(0, 3).map((event, i) => (
               <div key={i} className="flex items-center gap-4 p-3 rounded-lg bg-slate-50 dark:bg-slate-700/50">
-                <div className="w-12 h-12 bg-slate-900 dark:bg-slate-600 rounded-lg flex items-center justify-center text-white text-xs font-medium">
+                <div className="w-12 h-12 bg-indigo-600 dark:bg-indigo-500 rounded-lg flex items-center justify-center text-white text-xs font-medium">
                   {new Date(event.date + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
                 </div>
                 <div className="flex-1 min-w-0">
                   <p className="font-medium text-slate-900 dark:text-white text-sm">{eventTypeLabel(event.type)}</p>
-                  <p className="text-xs text-slate-600 dark:text-slate-400 truncate">
+                  <p className="text-xs text-slate-500 dark:text-slate-400 truncate">
                     {event.details?.venue_name && `${event.details.venue_name}`}
                     {event.details?.time && ` · ${event.details.time}`}
                   </p>
@@ -541,7 +539,12 @@ function OverviewTab({ data, days }: { data: DashboardData; days: number | null 
   );
 }
 
-function TimelineTab({ events, timezone, onNoteAdded }: { events: WeddingEvent[]; timezone?: string; onNoteAdded?: () => void }) {
+
+// ============================================================================
+// SECTION: TIMELINE
+// ============================================================================
+
+function TimelineSection({ events, timezone, onNoteAdded }: { events: WeddingEvent[]; timezone?: string; onNoteAdded?: () => void }) {
   const [expandedEvent, setExpandedEvent] = useState<number | null>(null);
   const [noteText, setNoteText] = useState('');
   const [noteTarget, setNoteTarget] = useState<{ eventIndex: number; itemId?: string } | null>(null);
@@ -549,9 +552,10 @@ function TimelineTab({ events, timezone, onNoteAdded }: { events: WeddingEvent[]
 
   if (!events || events.length === 0) {
     return (
-      <div className="text-center py-12 text-slate-400 dark:text-slate-500">
-        <Calendar className="w-10 h-10 mx-auto mb-3 opacity-50" />
-        <p>No events scheduled yet</p>
+      <div className="text-center py-16">
+        <Calendar className="w-12 h-12 text-slate-300 dark:text-slate-600 mx-auto mb-3" />
+        <p className="text-slate-600 dark:text-slate-400 font-medium">No events scheduled yet</p>
+        <p className="text-sm text-slate-400 dark:text-slate-500 mt-1">Your planner will add events as they&apos;re confirmed.</p>
       </div>
     );
   }
@@ -580,10 +584,10 @@ function TimelineTab({ events, timezone, onNoteAdded }: { events: WeddingEvent[]
         onNoteAdded?.();
       } else {
         const err = await res.json();
-        toast.error(err.detail || 'Failed to add note');
+        toast.error(err.detail || 'Could not add note. Please try again.');
       }
     } catch {
-      toast.error('Failed to connect');
+      toast.error('Connection error — please check your internet and try again.');
     } finally {
       setSubmittingNote(false);
     }
@@ -591,15 +595,16 @@ function TimelineTab({ events, timezone, onNoteAdded }: { events: WeddingEvent[]
 
   const noteStatusBadge = (status: string) => {
     switch (status) {
-      case 'pending': return <span className="text-xs px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700">Pending</span>;
-      case 'seen': return <span className="text-xs px-1.5 py-0.5 rounded-full bg-blue-100 text-blue-700">Seen</span>;
-      case 'addressed': return <span className="text-xs px-1.5 py-0.5 rounded-full bg-green-100 text-green-700">Addressed</span>;
+      case 'pending': return <span className="text-xs px-1.5 py-0.5 rounded-full bg-amber-100 dark:bg-amber-950/30 text-amber-700 dark:text-amber-400">Pending</span>;
+      case 'seen': return <span className="text-xs px-1.5 py-0.5 rounded-full bg-blue-100 dark:bg-blue-950/30 text-blue-700 dark:text-blue-400">Seen</span>;
+      case 'addressed': return <span className="text-xs px-1.5 py-0.5 rounded-full bg-green-100 dark:bg-green-950/30 text-green-700 dark:text-green-400">Done</span>;
       default: return null;
     }
   };
 
   return (
     <div className="space-y-4">
+      <h2 className="text-lg font-semibold text-slate-900 dark:text-white">Your wedding events</h2>
       {events.map((event, eventIdx) => {
         const orderItems = (event.order_of_events || []).sort((a, b) => a.order - b.order);
         const eventNotes = event.event_notes || [];
@@ -608,12 +613,12 @@ function TimelineTab({ events, timezone, onNoteAdded }: { events: WeddingEvent[]
         return (
           <div key={eventIdx} className="bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm overflow-hidden">
             {/* Event Header */}
-            <div className="bg-slate-900 dark:bg-slate-700 px-6 py-3 flex items-center justify-between">
-              <p className="text-slate-100 dark:text-slate-200 text-sm font-medium">{eventTypeLabel(event.type)}</p>
+            <div className="bg-indigo-600 dark:bg-indigo-500/90 px-6 py-3 flex items-center justify-between">
+              <p className="text-white text-sm font-medium">{eventTypeLabel(event.type)}</p>
               {(orderItems.length > 0 || eventNotes.length > 0) && (
                 <button
                   onClick={() => setExpandedEvent(isExpanded ? null : eventIdx)}
-                  className="text-slate-300 dark:text-slate-400 hover:text-white text-xs flex items-center gap-1"
+                  className="text-indigo-200 hover:text-white text-xs flex items-center gap-1 transition-colors"
                 >
                   {orderItems.length > 0 && `${orderItems.length} items`}
                   {isExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
@@ -628,7 +633,7 @@ function TimelineTab({ events, timezone, onNoteAdded }: { events: WeddingEvent[]
                   <Calendar className="w-5 h-5 text-slate-400 dark:text-slate-500 mt-0.5" />
                   <div>
                     <p className="text-sm font-medium text-slate-900 dark:text-white">{formatDate(event.date)}</p>
-                    {event.details?.time && <p className="text-sm text-slate-600 dark:text-slate-400">{event.details.time}</p>}
+                    {event.details?.time && <p className="text-sm text-slate-500 dark:text-slate-400">{event.details.time}</p>}
                   </div>
                 </div>
                 {event.details?.venue_name && (
@@ -636,14 +641,14 @@ function TimelineTab({ events, timezone, onNoteAdded }: { events: WeddingEvent[]
                     <MapPin className="w-5 h-5 text-slate-400 dark:text-slate-500 mt-0.5" />
                     <div>
                       <p className="text-sm font-medium text-slate-900 dark:text-white">{event.details.venue_name}</p>
-                      {event.details.location && <p className="text-sm text-slate-600 dark:text-slate-400">{event.details.location}</p>}
+                      {event.details.location && <p className="text-sm text-slate-500 dark:text-slate-400">{event.details.location}</p>}
                     </div>
                   </div>
                 )}
               </div>
               {event.details?.attire && (
                 <div className="mt-4 p-3 bg-slate-50 dark:bg-slate-700/50 rounded-lg">
-                  <p className="text-sm text-slate-700 dark:text-slate-300"><span className="font-medium">Attire:</span> {event.details.attire}</p>
+                  <p className="text-sm text-slate-700 dark:text-slate-300"><span className="font-medium">Dress code:</span> {event.details.attire}</p>
                 </div>
               )}
             </div>
@@ -651,11 +656,10 @@ function TimelineTab({ events, timezone, onNoteAdded }: { events: WeddingEvent[]
             {/* Expanded: Order of Events + Notes */}
             {isExpanded && (
               <div className="border-t border-slate-200 dark:border-slate-700 px-6 py-4 space-y-4">
-                {/* Order of Events Items */}
                 {orderItems.length > 0 && (
                   <div>
                     <h4 className="text-sm font-semibold text-slate-900 dark:text-white mb-3 flex items-center gap-2">
-                      <Clock className="w-4 h-4" /> Run of Show
+                      <Clock className="w-4 h-4" /> Run of show
                     </h4>
                     <div className="space-y-2">
                       {orderItems.map((item) => (
@@ -668,53 +672,52 @@ function TimelineTab({ events, timezone, onNoteAdded }: { events: WeddingEvent[]
                             )}
                             <div className="flex-1">
                               <p className="text-sm font-medium text-slate-900 dark:text-white">{item.title}</p>
-                              {item.description && <p className="text-xs text-slate-600 dark:text-slate-400 mt-0.5">{item.description}</p>}
-                              {item.duration_minutes && <p className="text-xs text-slate-500 dark:text-slate-500">{item.duration_minutes} minutes</p>}
+                              {item.description && <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">{item.description}</p>}
+                              {item.duration_minutes && <p className="text-xs text-slate-400 dark:text-slate-500">{item.duration_minutes} min</p>}
                             </div>
                             <button
                               onClick={() => setNoteTarget({ eventIndex: eventIdx, itemId: item.id })}
-                              className="text-slate-400 dark:text-slate-500 hover:text-slate-900 dark:hover:text-white transition-colors p-1"
-                              title="Add a note"
+                              className="text-slate-400 dark:text-slate-500 hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors p-1"
+                              title="Leave a note for your planner"
                             >
                               <MessageSquare className="w-4 h-4" />
                             </button>
                           </div>
 
-                          {/* Item-level notes (threaded with planner replies) */}
+                          {/* Item-level notes */}
                           {item.notes.length > 0 && (() => {
-                            const parentItemNotes = item.notes.filter(n => !n.reply_to);
-                            const itemReplies = item.notes.filter(n => !!n.reply_to);
-                            const itemRepliesMap: Record<string, EventNote[]> = {};
-                            itemReplies.forEach(r => {
-                              const replyTo = r.reply_to;
-                              if (!replyTo) return;
-                              if (!itemRepliesMap[replyTo]) itemRepliesMap[replyTo] = [];
-                              itemRepliesMap[replyTo].push(r);
+                            const parentNotes = item.notes.filter(n => !n.reply_to);
+                            const replies = item.notes.filter(n => !!n.reply_to);
+                            const repliesMap: Record<string, EventNote[]> = {};
+                            replies.forEach(r => {
+                              if (r.reply_to) {
+                                if (!repliesMap[r.reply_to]) repliesMap[r.reply_to] = [];
+                                repliesMap[r.reply_to].push(r);
+                              }
                             });
-                            return (parentItemNotes.length > 0 || itemReplies.length > 0) ? (
+                            return parentNotes.length > 0 ? (
                               <div className="mt-2 ml-[72px] space-y-1.5">
-                                {parentItemNotes.map((note) => (
+                                {parentNotes.map((note) => (
                                   <div key={note.id}>
                                     <div className="flex items-start gap-2 text-xs">
                                       <StickyNote className="w-3 h-3 text-amber-400 mt-0.5 flex-shrink-0" />
                                       <div className="flex-1">
-                                        <span className="text-gray-600">{note.text}</span>
+                                        <span className="text-slate-600 dark:text-slate-300">{note.text}</span>
                                         <div className="flex items-center gap-1.5 mt-0.5">
-                                          <span className="text-gray-400">{note.author_name || note.author_role}</span>
+                                          <span className="text-slate-400 dark:text-slate-500">{note.author_name || note.author_role}</span>
                                           {noteStatusBadge(note.status)}
                                         </div>
                                       </div>
                                     </div>
-                                    {/* Planner replies */}
-                                    {(itemRepliesMap[note.id] || []).map(reply => (
+                                    {(repliesMap[note.id] || []).map(reply => (
                                       <div key={reply.id} className="ml-5 mt-1 flex items-start gap-2 text-xs">
                                         <MessageCircle className="w-3 h-3 text-blue-400 mt-0.5 flex-shrink-0" />
                                         <div className="flex-1">
-                                          <span className="text-gray-600">{reply.text}</span>
+                                          <span className="text-slate-600 dark:text-slate-300">{reply.text}</span>
                                           <div className="flex items-center gap-1.5 mt-0.5">
                                             <span className="font-medium text-slate-900 dark:text-white">Planner</span>
                                             {reply.created_at && (
-                                              <span className="text-gray-400">· {new Date(reply.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</span>
+                                              <span className="text-slate-400 dark:text-slate-500">· {new Date(reply.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</span>
                                             )}
                                           </div>
                                         </div>
@@ -726,22 +729,22 @@ function TimelineTab({ events, timezone, onNoteAdded }: { events: WeddingEvent[]
                             ) : null;
                           })()}
 
-                          {/* Inline note form for this item */}
+                          {/* Inline note form */}
                           {noteTarget?.eventIndex === eventIdx && noteTarget?.itemId === item.id && (
                             <div className="mt-2 ml-[72px] flex gap-2">
                               <input
                                 type="text"
                                 value={noteText}
                                 onChange={(e) => setNoteText(e.target.value)}
-                                placeholder="Add a note for your planner..."
-                                className="flex-1 px-3 py-1.5 border border-slate-300 dark:border-slate-600 rounded-lg text-xs bg-white dark:bg-slate-700 text-slate-900 dark:text-white placeholder-slate-500 dark:placeholder-slate-400"
+                                placeholder="Leave a note for your planner..."
+                                className="flex-1 px-3 py-1.5 border border-slate-300 dark:border-slate-600 rounded-lg text-xs bg-white dark:bg-slate-700 text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-slate-500 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none"
                                 autoFocus
                                 onKeyDown={(e) => e.key === 'Enter' && handleSubmitNote(eventIdx, item.id)}
                               />
                               <button
                                 onClick={() => handleSubmitNote(eventIdx, item.id)}
                                 disabled={submittingNote || !noteText.trim()}
-                                className="px-3 py-1.5 bg-slate-900 dark:bg-slate-700 text-white rounded-lg text-xs disabled:opacity-50 flex items-center gap-1"
+                                className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs disabled:opacity-50 flex items-center gap-1 transition-colors"
                               >
                                 {submittingNote ? <Loader2 className="w-3 h-3 animate-spin" /> : <Send className="w-3 h-3" />}
                               </button>
@@ -759,44 +762,39 @@ function TimelineTab({ events, timezone, onNoteAdded }: { events: WeddingEvent[]
                   </div>
                 )}
 
-                {/* Event-level notes (threaded with planner replies) */}
+                {/* Event-level notes */}
                 {eventNotes.length > 0 && (() => {
-                  const parentEventNotes = eventNotes.filter(n => !n.reply_to);
-                  const eventReplies = eventNotes.filter(n => !!n.reply_to);
-                  const eventRepliesMap: Record<string, EventNote[]> = {};
-                  eventReplies.forEach(r => {
-                    const replyTo = r.reply_to;
-                    if (!replyTo) return;
-                    if (!eventRepliesMap[replyTo]) eventRepliesMap[replyTo] = [];
-                    eventRepliesMap[replyTo].push(r);
+                  const parentNotes = eventNotes.filter(n => !n.reply_to);
+                  const replies = eventNotes.filter(n => !!n.reply_to);
+                  const repliesMap: Record<string, EventNote[]> = {};
+                  replies.forEach(r => {
+                    if (r.reply_to) {
+                      if (!repliesMap[r.reply_to]) repliesMap[r.reply_to] = [];
+                      repliesMap[r.reply_to].push(r);
+                    }
                   });
-                  return (parentEventNotes.length > 0 || eventReplies.length > 0) ? (
+                  return parentNotes.length > 0 ? (
                     <div>
                       <h4 className="text-sm font-semibold text-slate-900 dark:text-white mb-2 flex items-center gap-2">
-                        <StickyNote className="w-4 h-4" /> General Notes
+                        <StickyNote className="w-4 h-4" /> Notes
                       </h4>
                       <div className="space-y-2">
-                        {parentEventNotes.map((note) => (
+                        {parentNotes.map((note) => (
                           <div key={note.id}>
                             <div className="p-3 bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800/50 rounded-lg">
                               <p className="text-sm text-slate-900 dark:text-amber-100">{note.text}</p>
-                              <div className="flex items-center gap-2 mt-1.5 text-xs text-slate-600 dark:text-amber-700">
+                              <div className="flex items-center gap-2 mt-1.5 text-xs text-slate-500 dark:text-amber-600">
                                 <span>{note.author_name || note.author_role}</span>
                                 {noteStatusBadge(note.status)}
-                                {note.created_at && (
-                                  <span>· {new Date(note.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</span>
-                                )}
+                                {note.created_at && <span>· {new Date(note.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</span>}
                               </div>
                             </div>
-                            {/* Planner replies threaded below */}
-                            {(eventRepliesMap[note.id] || []).map(reply => (
+                            {(repliesMap[note.id] || []).map(reply => (
                               <div key={reply.id} className="ml-4 mt-1.5 p-2.5 bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800/50 rounded-lg">
                                 <p className="text-sm text-slate-900 dark:text-blue-100">{reply.text}</p>
-                                <div className="flex items-center gap-2 mt-1 text-xs text-slate-600 dark:text-blue-700">
+                                <div className="flex items-center gap-2 mt-1 text-xs text-slate-500 dark:text-blue-600">
                                   <span className="font-medium">Planner</span>
-                                  {reply.created_at && (
-                                    <span>· {new Date(reply.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</span>
-                                  )}
+                                  {reply.created_at && <span>· {new Date(reply.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</span>}
                                 </div>
                               </div>
                             ))}
@@ -814,15 +812,15 @@ function TimelineTab({ events, timezone, onNoteAdded }: { events: WeddingEvent[]
                       type="text"
                       value={noteText}
                       onChange={(e) => setNoteText(e.target.value)}
-                      placeholder="Add a general note for this event..."
-                      className="flex-1 px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg text-sm bg-white dark:bg-slate-700 text-slate-900 dark:text-white placeholder-slate-500 dark:placeholder-slate-400"
+                      placeholder="Leave a note about this event..."
+                      className="flex-1 px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg text-sm bg-white dark:bg-slate-700 text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-slate-500 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none"
                       autoFocus
                       onKeyDown={(e) => e.key === 'Enter' && handleSubmitNote(eventIdx)}
                     />
                     <button
                       onClick={() => handleSubmitNote(eventIdx)}
                       disabled={submittingNote || !noteText.trim()}
-                      className="px-4 py-2 bg-slate-900 dark:bg-slate-700 text-white rounded-lg text-sm disabled:opacity-50 flex items-center gap-1"
+                      className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-sm disabled:opacity-50 flex items-center gap-1 transition-colors"
                     >
                       {submittingNote ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
                     </button>
@@ -831,23 +829,23 @@ function TimelineTab({ events, timezone, onNoteAdded }: { events: WeddingEvent[]
                 ) : (
                   <button
                     onClick={() => setNoteTarget({ eventIndex: eventIdx })}
-                    className="w-full py-2 border border-dashed border-slate-300 dark:border-slate-600 rounded-lg text-sm text-slate-500 dark:text-slate-400 hover:border-slate-900 dark:hover:border-white hover:text-slate-900 dark:hover:text-white transition-colors flex items-center justify-center gap-1"
+                    className="w-full py-2 border border-dashed border-slate-300 dark:border-slate-600 rounded-lg text-sm text-slate-500 dark:text-slate-400 hover:border-indigo-400 dark:hover:border-indigo-500 hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors flex items-center justify-center gap-1"
                   >
                     <MessageSquare className="w-4 h-4" />
-                    Add a Note
+                    Add a note
                   </button>
                 )}
               </div>
             )}
 
-            {/* If there are items but not expanded, show a hint */}
+            {/* Collapse hint */}
             {!isExpanded && orderItems.length > 0 && (
               <button
                 onClick={() => setExpandedEvent(eventIdx)}
-                className="w-full border-t border-slate-200 dark:border-slate-700 px-6 py-2.5 text-sm text-slate-900 dark:text-white hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors flex items-center justify-center gap-1"
+                className="w-full border-t border-slate-200 dark:border-slate-700 px-6 py-2.5 text-sm text-indigo-600 dark:text-indigo-400 hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors flex items-center justify-center gap-1"
               >
                 <Clock className="w-4 h-4" />
-                View Run of Show ({orderItems.length} items)
+                View run of show ({orderItems.length} items)
                 <ChevronDown className="w-4 h-4" />
               </button>
             )}
@@ -858,108 +856,14 @@ function TimelineTab({ events, timezone, onNoteAdded }: { events: WeddingEvent[]
   );
 }
 
-function PaymentsTab({ contract }: { contract?: ContractInfo | null }) {
-  if (!contract) {
-    return (
-      <div className="text-center py-12 text-slate-400 dark:text-slate-500">
-        <DollarSign className="w-10 h-10 mx-auto mb-3 opacity-50" />
-        <p>No payment schedule yet</p>
-        <p className="text-sm mt-1">Your planner will set this up soon</p>
-      </div>
-    );
-  }
 
-  return (
-    <div className="space-y-6">
-      {/* Payment Summary */}
-      <div className="bg-white dark:bg-slate-800 rounded-xl p-6 border border-slate-200 dark:border-slate-700 shadow-sm">
-        <h3 className="font-semibold text-slate-900 dark:text-white mb-4">Payment Summary — {contract.package_name}</h3>
-        <div className="grid grid-cols-3 gap-4 text-center">
-          <div>
-            <div className="text-2xl font-semibold text-slate-900 dark:text-white">{formatCurrency(contract.summary.total_amount)}</div>
-            <div className="text-xs text-slate-600 dark:text-slate-400">Total</div>
-          </div>
-          <div>
-            <div className="text-2xl font-semibold text-green-600 dark:text-green-400">{formatCurrency(contract.summary.paid_amount)}</div>
-            <div className="text-xs text-slate-600 dark:text-slate-400">Paid</div>
-          </div>
-          <div>
-            <div className="text-2xl font-semibold text-amber-600 dark:text-amber-400">{formatCurrency(contract.summary.remaining)}</div>
-            <div className="text-xs text-slate-600 dark:text-slate-400">Remaining</div>
-          </div>
-        </div>
-      </div>
+// ============================================================================
+// SECTION: PAYMENTS (merged Payments + Contract)
+// ============================================================================
 
-      {/* Payment List */}
-      <div className="space-y-3">
-        {contract.payments.map((payment) => (
-          <div key={payment.id} className="bg-white dark:bg-slate-800 rounded-xl p-5 border border-slate-200 dark:border-slate-700 shadow-sm flex items-center justify-between">
-            <div>
-              <p className="font-medium text-slate-900 dark:text-white">{payment.name}</p>
-              <p className="text-sm text-slate-600 dark:text-slate-400">
-                Due: {payment.due_date ? new Date(payment.due_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : 'TBD'}
-              </p>
-            </div>
-            <div className="text-right">
-              <p className="font-semibold text-slate-900 dark:text-white">{formatCurrency(payment.amount, payment.currency)}</p>
-              <span className={`text-xs px-2 py-0.5 rounded-full ${paymentStatusColor(payment.status)}`}>
-                {payment.status === 'succeeded' ? 'Paid' : payment.status.charAt(0).toUpperCase() + payment.status.slice(1)}
-              </span>
-            </div>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function FormsTab({ forms }: { forms: FormItem[] }) {
-  const router = useRouter();
-
-  if (!forms || forms.length === 0) {
-    return (
-      <div className="text-center py-12 text-slate-400 dark:text-slate-500">
-        <ClipboardList className="w-10 h-10 mx-auto mb-3 opacity-50" />
-        <p>No forms to fill out yet</p>
-        <p className="text-sm mt-1">Your planner will share forms when needed</p>
-      </div>
-    );
-  }
-
-  return (
-    <div className="space-y-3">
-      {forms.map((form) => (
-        <div key={form.id} className="bg-white dark:bg-slate-800 rounded-xl p-5 border border-slate-200 dark:border-slate-700 shadow-sm">
-          <div className="flex items-center justify-between">
-            <div className="flex-1 min-w-0">
-              <div className="flex items-center gap-2 mb-1">
-                <h3 className="font-medium text-slate-900 dark:text-white">{form.title}</h3>
-                <span className={`text-xs px-2 py-0.5 rounded-full ${
-                  form.status === 'submitted' ? 'bg-green-100 dark:bg-green-950/30 text-green-700 dark:text-green-400' : 'bg-amber-100 dark:bg-amber-950/30 text-amber-700 dark:text-amber-400'
-                }`}>
-                  {form.status === 'submitted' ? 'Submitted' : 'Pending'}
-                </span>
-              </div>
-              {form.description && <p className="text-sm text-slate-600 dark:text-slate-400 truncate">{form.description}</p>}
-            </div>
-            <button
-              onClick={() => router.push(`/couple/forms/${form.id}`)}
-              className="ml-4 flex items-center gap-1.5 text-sm text-slate-900 dark:text-white font-medium hover:opacity-70"
-            >
-              {form.status === 'submitted' ? 'Edit' : 'Fill Out'}
-              <ChevronRight className="w-4 h-4" />
-            </button>
-          </div>
-        </div>
-      ))}
-    </div>
-  );
-}
-
-function ContractTab() {
-  const router = useRouter();
-  const [loading, setLoading] = useState(true);
-  const [contract, setContract] = useState<ContractDetail | null>(null);
+function PaymentsSection({ contract }: { contract?: ContractInfo | null }) {
+  const [contractDetail, setContractDetail] = useState<ContractDetail | null>(null);
+  const [loadingContract, setLoadingContract] = useState(true);
 
   useEffect(() => {
     const fetchContract = async () => {
@@ -971,155 +875,406 @@ function ContractTab() {
         });
         if (res.ok) {
           const data = await res.json();
-          setContract(data.contract || null);
+          setContractDetail(data.contract || null);
         }
       } catch (err) {
         console.error('Failed to fetch contract', err);
       } finally {
-        setLoading(false);
+        setLoadingContract(false);
       }
     };
     fetchContract();
   }, []);
 
-  if (loading) {
+  if (!contract && loadingContract) {
     return (
-      <div className="text-center py-12">
-        <Loader2 className="w-8 h-8 animate-spin text-slate-900 dark:text-white mx-auto" />
+      <div className="text-center py-16">
+        <Loader2 className="w-8 h-8 animate-spin text-indigo-500 mx-auto" />
       </div>
     );
   }
 
   if (!contract) {
     return (
-      <div className="text-center py-12 text-slate-400 dark:text-slate-500">
-        <FileSignature className="w-10 h-10 mx-auto mb-3 opacity-50" />
-        <p>No contract available yet</p>
-        <p className="text-sm mt-1">Your planner will share the contract when it is ready</p>
+      <div className="text-center py-16">
+        <DollarSign className="w-12 h-12 text-slate-300 dark:text-slate-600 mx-auto mb-3" />
+        <p className="text-slate-600 dark:text-slate-400 font-medium">No payment schedule yet</p>
+        <p className="text-sm text-slate-400 dark:text-slate-500 mt-1">Your planner will set this up once your package is confirmed.</p>
       </div>
     );
   }
 
   const contractStatusLabel = (status: string) => {
     const labels: Record<string, { text: string; style: string }> = {
-      draft: { text: 'Draft', style: 'bg-gray-100 text-gray-600' },
-      sent: { text: 'Awaiting Signature', style: 'bg-amber-100 text-amber-700' },
-      viewed: { text: 'Viewed', style: 'bg-blue-100 text-blue-700' },
-      signed: { text: 'Signed', style: 'bg-green-100 text-green-700' },
-      active: { text: 'Active', style: 'bg-green-100 text-green-700' },
-      completed: { text: 'Completed', style: 'bg-emerald-100 text-emerald-700' },
-      cancelled: { text: 'Cancelled', style: 'bg-red-100 text-red-700' },
+      draft: { text: 'Draft', style: 'bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-400' },
+      sent: { text: 'Awaiting Signature', style: 'bg-amber-100 dark:bg-amber-950/30 text-amber-700 dark:text-amber-400' },
+      viewed: { text: 'Viewed', style: 'bg-blue-100 dark:bg-blue-950/30 text-blue-700 dark:text-blue-400' },
+      signed: { text: 'Signed', style: 'bg-green-100 dark:bg-green-950/30 text-green-700 dark:text-green-400' },
+      active: { text: 'Active', style: 'bg-green-100 dark:bg-green-950/30 text-green-700 dark:text-green-400' },
+      completed: { text: 'Completed', style: 'bg-emerald-100 dark:bg-emerald-950/30 text-emerald-700 dark:text-emerald-400' },
+      cancelled: { text: 'Cancelled', style: 'bg-red-100 dark:bg-red-950/30 text-red-700 dark:text-red-400' },
     };
-    return labels[status] || { text: status, style: 'bg-gray-100 text-gray-600' };
+    return labels[status] || { text: status, style: 'bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-400' };
   };
-
-  const statusInfo = contractStatusLabel(contract.status);
 
   return (
     <div className="space-y-6">
-      {/* Contract Header */}
-      <div className="bg-white dark:bg-slate-800 rounded-xl p-6 border border-slate-200 dark:border-slate-700 shadow-sm">
-        <div className="flex items-start justify-between mb-4">
-          <div>
-            <h3 className="text-lg font-semibold text-slate-900 dark:text-white">{contract.package_name || 'Wedding Package'}</h3>
-            {contract.couple_name && <p className="text-sm text-slate-600 dark:text-slate-400 mt-0.5">{contract.couple_name}</p>}
-          </div>
-          <span className={`text-xs px-2.5 py-1 rounded-full font-medium ${statusInfo.style}`}>
-            {statusInfo.text}
-          </span>
-        </div>
-
-        {/* Key Dates */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-sm">
-          {contract.sent_at && (
-            <div>
-              <p className="text-slate-600 dark:text-slate-400 text-xs">Sent</p>
-              <p className="text-slate-900 dark:text-white">{new Date(contract.sent_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</p>
-            </div>
-          )}
-          {contract.viewed_at && (
-            <div>
-              <p className="text-slate-600 dark:text-slate-400 text-xs">Viewed</p>
-              <p className="text-slate-900 dark:text-white">{new Date(contract.viewed_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</p>
-            </div>
-          )}
-          {contract.signed_at && (
-            <div>
-              <p className="text-slate-600 dark:text-slate-400 text-xs">Signed</p>
-              <p className="text-slate-900 dark:text-white">{new Date(contract.signed_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</p>
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* Payment Summary */}
-      {contract.summary && (
+      {/* Contract Summary Card */}
+      {contractDetail && (
         <div className="bg-white dark:bg-slate-800 rounded-xl p-6 border border-slate-200 dark:border-slate-700 shadow-sm">
-          <h3 className="font-semibold text-slate-900 dark:text-white mb-4">Payment Summary</h3>
-          <div className="grid grid-cols-3 gap-4 text-center">
+          <div className="flex items-start justify-between mb-4">
             <div>
-              <div className="text-2xl font-semibold text-slate-900 dark:text-white">{formatCurrency(contract.summary.total_amount)}</div>
-              <div className="text-xs text-slate-600 dark:text-slate-400">Total</div>
+              <h3 className="text-lg font-semibold text-slate-900 dark:text-white">{contractDetail.package_name || 'Wedding Package'}</h3>
+              {contractDetail.couple_name && <p className="text-sm text-slate-500 dark:text-slate-400 mt-0.5">{contractDetail.couple_name}</p>}
             </div>
-            <div>
-              <div className="text-2xl font-semibold text-green-600 dark:text-green-400">{formatCurrency(contract.summary.paid_amount)}</div>
-              <div className="text-xs text-slate-600 dark:text-slate-400">Paid</div>
-            </div>
-            <div>
-              <div className="text-2xl font-semibold text-amber-600 dark:text-amber-400">{formatCurrency(contract.summary.remaining)}</div>
-              <div className="text-xs text-slate-600 dark:text-slate-400">Remaining</div>
-            </div>
+            <span className={`text-xs px-2.5 py-1 rounded-full font-medium ${contractStatusLabel(contractDetail.status).style}`}>
+              {contractStatusLabel(contractDetail.status).text}
+            </span>
+          </div>
+
+          {/* Key Dates */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-sm">
+            {contractDetail.sent_at && (
+              <div>
+                <p className="text-slate-400 dark:text-slate-500 text-xs">Sent</p>
+                <p className="text-slate-900 dark:text-white">{new Date(contractDetail.sent_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</p>
+              </div>
+            )}
+            {contractDetail.viewed_at && (
+              <div>
+                <p className="text-slate-400 dark:text-slate-500 text-xs">Viewed</p>
+                <p className="text-slate-900 dark:text-white">{new Date(contractDetail.viewed_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</p>
+              </div>
+            )}
+            {contractDetail.signed_at && (
+              <div>
+                <p className="text-slate-400 dark:text-slate-500 text-xs">Signed</p>
+                <p className="text-slate-900 dark:text-white">{new Date(contractDetail.signed_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</p>
+              </div>
+            )}
           </div>
         </div>
       )}
 
+      {/* Payment Summary */}
+      <div className="bg-white dark:bg-slate-800 rounded-xl p-6 border border-slate-200 dark:border-slate-700 shadow-sm">
+        <h3 className="font-semibold text-slate-900 dark:text-white mb-4">Payment overview</h3>
+        <div className="grid grid-cols-3 gap-4 text-center">
+          <div>
+            <div className="text-2xl font-semibold text-slate-900 dark:text-white">{formatCurrency(contract.summary.total_amount)}</div>
+            <div className="text-xs text-slate-500 dark:text-slate-400">Total</div>
+          </div>
+          <div>
+            <div className="text-2xl font-semibold text-green-600 dark:text-green-400">{formatCurrency(contract.summary.paid_amount)}</div>
+            <div className="text-xs text-slate-500 dark:text-slate-400">Paid</div>
+          </div>
+          <div>
+            <div className="text-2xl font-semibold text-amber-600 dark:text-amber-400">{formatCurrency(contract.summary.remaining)}</div>
+            <div className="text-xs text-slate-500 dark:text-slate-400">Remaining</div>
+          </div>
+        </div>
+      </div>
+
       {/* Contract Sections */}
-      {contract.sections && contract.sections.length > 0 && (
+      {contractDetail?.sections && contractDetail.sections.length > 0 && (
         <div className="space-y-4">
-          {contract.sections.map((section, idx) => (
+          <h3 className="font-semibold text-slate-900 dark:text-white">Contract details</h3>
+          {contractDetail.sections.map((section, idx) => (
             <div key={idx} className="bg-white dark:bg-slate-800 rounded-xl p-6 border border-slate-200 dark:border-slate-700 shadow-sm">
-              <h3 className="font-semibold text-slate-900 dark:text-white mb-3">{section.title}</h3>
-              <div className="text-sm text-slate-700 dark:text-slate-300 leading-relaxed whitespace-pre-wrap">{section.content}</div>
+              <h4 className="font-semibold text-slate-900 dark:text-white mb-3">{section.title}</h4>
+              <div className="text-sm text-slate-600 dark:text-slate-300 leading-relaxed whitespace-pre-wrap">{section.content}</div>
             </div>
           ))}
         </div>
       )}
 
       {/* Payment Schedule */}
-      {contract.payments && contract.payments.length > 0 && (
-        <div>
-          <h3 className="font-semibold text-slate-900 dark:text-white mb-3">Payment Schedule</h3>
-          <div className="space-y-3">
-            {contract.payments.map((payment) => (
-              <div key={payment.id} className="bg-white dark:bg-slate-800 rounded-xl p-5 border border-slate-200 dark:border-slate-700 shadow-sm flex items-center justify-between">
-                <div>
-                  <p className="font-medium text-slate-900 dark:text-white">{payment.name}</p>
-                  <p className="text-sm text-slate-600 dark:text-slate-400">
-                    Due: {payment.due_date ? new Date(payment.due_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : 'TBD'}
-                  </p>
-                </div>
-                <div className="text-right">
-                  <p className="font-semibold text-slate-900 dark:text-white">{formatCurrency(payment.amount, payment.currency)}</p>
-                  <span className={`text-xs px-2 py-0.5 rounded-full ${paymentStatusColor(payment.status)}`}>
-                    {payment.status === 'succeeded' ? 'Paid' : payment.status.charAt(0).toUpperCase() + payment.status.slice(1)}
-                  </span>
+      <div>
+        <h3 className="font-semibold text-slate-900 dark:text-white mb-3">Payment schedule</h3>
+        <div className="space-y-3">
+          {contract.payments.map((payment) => (
+            <div key={payment.id} className="bg-white dark:bg-slate-800 rounded-xl p-5 border border-slate-200 dark:border-slate-700 shadow-sm flex items-center justify-between">
+              <div>
+                <p className="font-medium text-slate-900 dark:text-white">{payment.name}</p>
+                <p className="text-sm text-slate-500 dark:text-slate-400">
+                  Due {payment.due_date ? new Date(payment.due_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : 'TBD'}
+                </p>
+              </div>
+              <div className="text-right">
+                <p className="font-semibold text-slate-900 dark:text-white">{formatCurrency(payment.amount, payment.currency)}</p>
+                <span className={`text-xs px-2 py-0.5 rounded-full ${paymentStatusColor(payment.status)}`}>
+                  {payment.status === 'succeeded' ? 'Paid' : payment.status.charAt(0).toUpperCase() + payment.status.slice(1)}
+                </span>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+
+// ============================================================================
+// SECTION: FORMS
+// ============================================================================
+
+function FormsSection({ forms }: { forms: FormItem[] }) {
+  const router = useRouter();
+
+  if (!forms || forms.length === 0) {
+    return (
+      <div className="text-center py-16">
+        <ClipboardList className="w-12 h-12 text-slate-300 dark:text-slate-600 mx-auto mb-3" />
+        <p className="text-slate-600 dark:text-slate-400 font-medium">No forms to fill out</p>
+        <p className="text-sm text-slate-400 dark:text-slate-500 mt-1">Your planner will share forms here when they need information from you.</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      <h2 className="text-lg font-semibold text-slate-900 dark:text-white">Your forms</h2>
+      {forms.map((form) => (
+        <div key={form.id} className="bg-white dark:bg-slate-800 rounded-xl p-5 border border-slate-200 dark:border-slate-700 shadow-sm">
+          <div className="flex items-center justify-between">
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-2 mb-1">
+                <h3 className="font-medium text-slate-900 dark:text-white">{form.title}</h3>
+                <span className={`text-xs px-2 py-0.5 rounded-full ${
+                  form.status === 'submitted'
+                    ? 'bg-green-100 dark:bg-green-950/30 text-green-700 dark:text-green-400'
+                    : 'bg-amber-100 dark:bg-amber-950/30 text-amber-700 dark:text-amber-400'
+                }`}>
+                  {form.status === 'submitted' ? 'Submitted' : 'Needs your input'}
+                </span>
+              </div>
+              {form.description && <p className="text-sm text-slate-500 dark:text-slate-400 truncate">{form.description}</p>}
+            </div>
+            <button
+              onClick={() => router.push(`/couple/forms/${form.id}`)}
+              className="ml-4 flex items-center gap-1.5 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-medium rounded-lg transition-colors"
+            >
+              {form.status === 'submitted' ? 'Review' : 'Fill out'}
+              <ChevronRight className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+
+// ============================================================================
+// SECTION: INBOX (merged Messages + Updates)
+// ============================================================================
+
+interface MessageItem {
+  id: string;
+  sender_role: 'couple' | 'planner';
+  sender_name: string;
+  content: string;
+  read_by_planner: boolean;
+  created_at?: string;
+}
+
+function InboxSection({ updates, onMessageSent, onMessagesRead, archived = false }: {
+  updates: UpdateItem[];
+  onMessageSent: () => void;
+  onMessagesRead: () => void;
+  archived?: boolean;
+}) {
+  const [inboxTab, setInboxTab] = useState<'messages' | 'updates'>('messages');
+
+  return (
+    <div className="space-y-4">
+      <h2 className="text-lg font-semibold text-slate-900 dark:text-white">Inbox</h2>
+
+      {/* Sub-tab toggle */}
+      <div className="flex gap-1 bg-slate-100 dark:bg-slate-800 p-1 rounded-lg w-fit">
+        <button
+          onClick={() => setInboxTab('messages')}
+          className={`px-4 py-2 text-sm font-medium rounded-md transition-colors ${
+            inboxTab === 'messages'
+              ? 'bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-sm'
+              : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300'
+          }`}
+        >
+          Messages
+        </button>
+        <button
+          onClick={() => setInboxTab('updates')}
+          className={`px-4 py-2 text-sm font-medium rounded-md transition-colors ${
+            inboxTab === 'updates'
+              ? 'bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-sm'
+              : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300'
+          }`}
+        >
+          Updates {updates.length > 0 && <span className="ml-1 text-xs bg-slate-200 dark:bg-slate-600 px-1.5 py-0.5 rounded-full">{updates.length}</span>}
+        </button>
+      </div>
+
+      {inboxTab === 'messages' && (
+        <MessagesContent onMessageSent={onMessageSent} onMessagesRead={onMessagesRead} archived={archived} />
+      )}
+      {inboxTab === 'updates' && (
+        <UpdatesContent updates={updates} />
+      )}
+    </div>
+  );
+}
+
+function MessagesContent({ onMessageSent, onMessagesRead, archived = false }: { onMessageSent: () => void; onMessagesRead: () => void; archived?: boolean }) {
+  const [messages, setMessages] = useState<MessageItem[]>([]);
+  const [msgLoading, setMsgLoading] = useState(true);
+  const [newMessage, setNewMessage] = useState('');
+  const [sending, setSending] = useState(false);
+  const messagesEndRef = useCallback((node: HTMLDivElement | null) => {
+    if (node) node.scrollIntoView({ behavior: 'smooth' });
+  }, []);
+
+  const fetchMessages = useCallback(async () => {
+    const token = localStorage.getItem('couple_token');
+    if (!token) return;
+
+    try {
+      const res = await fetch(`${getApiBaseUrl()}/couple/portal/messages?limit=100`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setMessages(data.messages || []);
+        onMessagesRead();
+      }
+    } catch {
+      toast.error('Could not load messages. Please try again.');
+    } finally {
+      setMsgLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchMessages();
+  }, [fetchMessages]);
+
+  const handleSend = async () => {
+    if (!newMessage.trim() || sending) return;
+    const token = localStorage.getItem('couple_token');
+    if (!token) return;
+
+    setSending(true);
+    try {
+      const res = await fetch(`${getApiBaseUrl()}/couple/portal/messages`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ content: newMessage.trim() }),
+      });
+
+      if (res.ok) {
+        setNewMessage('');
+        onMessageSent();
+        await fetchMessages();
+      } else {
+        const err = await res.json();
+        toast.error(err.detail || 'Message not sent. Please try again.');
+      }
+    } catch {
+      toast.error('Connection error — please check your internet.');
+    } finally {
+      setSending(false);
+    }
+  };
+
+  if (msgLoading) {
+    return (
+      <div className="flex items-center justify-center py-12">
+        <Loader2 className="w-6 h-6 animate-spin text-indigo-500" />
+      </div>
+    );
+  }
+
+  return (
+    <div className="bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm flex flex-col" style={{ height: 'calc(100vh - 320px)', minHeight: '400px', maxHeight: '700px' }}>
+      {/* Messages area */}
+      <div className="flex-1 overflow-y-auto p-4 space-y-3">
+        {messages.length === 0 ? (
+          <div className="flex flex-col items-center justify-center h-full text-slate-400 dark:text-slate-500">
+            <MessageCircle className="w-12 h-12 mb-3 opacity-50" />
+            <p className="text-sm font-medium">No messages yet</p>
+            <p className="text-xs mt-1">Send a message to start a conversation with your planner.</p>
+          </div>
+        ) : (
+          messages.map((msg) => {
+            const isCouple = msg.sender_role === 'couple';
+            return (
+              <div key={msg.id} className={`flex ${isCouple ? 'justify-end' : 'justify-start'}`}>
+                <div className={`max-w-[75%] rounded-2xl px-4 py-2.5 ${
+                  isCouple
+                    ? 'bg-indigo-600 text-white rounded-br-md'
+                    : 'bg-slate-100 dark:bg-slate-700 text-slate-900 dark:text-white rounded-bl-md'
+                }`}>
+                  {!isCouple && (
+                    <p className="text-xs font-medium text-slate-500 dark:text-slate-400 mb-1">{msg.sender_name}</p>
+                  )}
+                  <p className="text-sm whitespace-pre-wrap">{msg.content}</p>
+                  <div className={`flex items-center gap-1.5 mt-1 ${isCouple ? 'justify-end' : ''}`}>
+                    <span className={`text-xs ${isCouple ? 'text-white/50' : 'text-slate-400 dark:text-slate-500'}`}>
+                      {msg.created_at ? new Date(msg.created_at).toLocaleTimeString('en-US', {
+                        hour: 'numeric', minute: '2-digit', hour12: true,
+                      }) : ''}
+                    </span>
+                    {isCouple && msg.read_by_planner && (
+                      <Eye className="w-3 h-3 text-white/50" />
+                    )}
+                  </div>
                 </div>
               </div>
-            ))}
-          </div>
+            );
+          })
+        )}
+        <div ref={messagesEndRef} />
+      </div>
+
+      {/* Input area */}
+      {archived ? (
+        <div className="border-t border-slate-200 dark:border-slate-700 p-3 bg-slate-50 dark:bg-slate-700/50">
+          <p className="text-sm text-slate-500 dark:text-slate-400 text-center flex items-center justify-center gap-2">
+            <Archive className="w-4 h-4" />
+            Messaging is disabled for archived weddings.
+          </p>
+        </div>
+      ) : (
+        <div className="border-t border-slate-200 dark:border-slate-700 p-3 flex gap-2">
+          <input
+            type="text"
+            value={newMessage}
+            onChange={(e) => setNewMessage(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend(); } }}
+            placeholder="Type a message..."
+            className="flex-1 px-4 py-2.5 border border-slate-300 dark:border-slate-600 rounded-full text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 bg-white dark:bg-slate-700 text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-slate-500"
+            disabled={sending}
+          />
+          <button
+            onClick={handleSend}
+            disabled={!newMessage.trim() || sending}
+            className="w-10 h-10 flex items-center justify-center bg-indigo-600 hover:bg-indigo-700 text-white rounded-full transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            {sending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+          </button>
         </div>
       )}
     </div>
   );
 }
 
-function UpdatesTab({ updates }: { updates: UpdateItem[] }) {
+function UpdatesContent({ updates }: { updates: UpdateItem[] }) {
   if (!updates || updates.length === 0) {
     return (
-      <div className="text-center py-12 text-slate-400 dark:text-slate-500">
-        <Bell className="w-10 h-10 mx-auto mb-3 opacity-50" />
-        <p>No updates yet</p>
-        <p className="text-sm mt-1">Your planner will share updates here</p>
+      <div className="text-center py-12">
+        <Bell className="w-12 h-12 text-slate-300 dark:text-slate-600 mx-auto mb-3" />
+        <p className="text-slate-600 dark:text-slate-400 font-medium">No updates yet</p>
+        <p className="text-sm text-slate-400 dark:text-slate-500 mt-1">Your planner will post updates and milestones here.</p>
       </div>
     );
   }
@@ -1140,7 +1295,7 @@ function UpdatesTab({ updates }: { updates: UpdateItem[] }) {
           update.is_milestone ? 'border-amber-400 dark:border-amber-600' : 'border-slate-200 dark:border-slate-700'
         }`}>
           {update.is_milestone && (
-            <div className="bg-gradient-to-r from-amber-500 to-orange-500 dark:from-amber-600 dark:to-orange-600 px-4 py-1.5">
+            <div className="bg-gradient-to-r from-amber-500 to-orange-500 px-4 py-1.5">
               <div className="flex items-center gap-1.5 text-white text-xs font-medium">
                 <Sparkles className="w-3.5 h-3.5" />
                 MILESTONE
@@ -1151,14 +1306,14 @@ function UpdatesTab({ updates }: { updates: UpdateItem[] }) {
             <div className="flex items-start justify-between mb-2">
               <h3 className="font-medium text-slate-900 dark:text-white">{update.title}</h3>
               {update.category && (
-                <span className={`text-xs px-2 py-0.5 rounded-full ${categoryColors[update.category] || 'bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300'}`}>
+                <span className={`text-xs px-2 py-0.5 rounded-full ${categoryColors[update.category] || 'bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-400'}`}>
                   {update.category}
                 </span>
               )}
             </div>
-            <p className="text-sm text-slate-700 dark:text-slate-300 whitespace-pre-wrap">{update.content}</p>
-            <div className="mt-3 flex items-center gap-2 text-xs text-slate-600 dark:text-slate-400">
-              {update.created_by && <span>From: {update.created_by}</span>}
+            <p className="text-sm text-slate-600 dark:text-slate-300 whitespace-pre-wrap">{update.content}</p>
+            <div className="mt-3 flex items-center gap-2 text-xs text-slate-400 dark:text-slate-500">
+              {update.created_by && <span>{update.created_by}</span>}
               {update.created_at && (
                 <span>· {new Date(update.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</span>
               )}
@@ -1172,502 +1327,7 @@ function UpdatesTab({ updates }: { updates: UpdateItem[] }) {
 
 
 // ============================================================================
-// MESSAGES TAB (Sprint 3)
-// ============================================================================
-
-interface MessageItem {
-  id: string;
-  sender_role: 'couple' | 'planner';
-  sender_name: string;
-  content: string;
-  read_by_planner: boolean;
-  created_at?: string;
-}
-
-function MessagesTab({ onMessageSent, onMessagesRead, archived = false }: { onMessageSent: () => void; onMessagesRead: () => void; archived?: boolean }) {
-  const [messages, setMessages] = useState<MessageItem[]>([]);
-  const [msgLoading, setMsgLoading] = useState(true);
-  const [newMessage, setNewMessage] = useState('');
-  const [sending, setSending] = useState(false);
-  const messagesEndRef = useCallback((node: HTMLDivElement | null) => {
-    if (node) node.scrollIntoView({ behavior: 'smooth' });
-  }, []);
-
-  const fetchMessages = useCallback(async () => {
-    const token = localStorage.getItem('couple_token');
-    if (!token) return;
-
-    try {
-      const res = await fetch(`${getApiBaseUrl()}/couple/portal/messages?limit=100`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      if (res.ok) {
-        const data = await res.json();
-        setMessages(data.messages || []);
-        onMessagesRead(); // Clear unread badge — backend marks read on fetch
-      }
-    } catch {
-      toast.error('Failed to load messages');
-    } finally {
-      setMsgLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    fetchMessages();
-  }, [fetchMessages]);
-
-  const handleSend = async () => {
-    if (!newMessage.trim() || sending) return;
-    const token = localStorage.getItem('couple_token');
-    if (!token) return;
-
-    setSending(true);
-    try {
-      const res = await fetch(`${getApiBaseUrl()}/couple/portal/messages`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({ content: newMessage.trim() }),
-      });
-
-      if (res.ok) {
-        setNewMessage('');
-        onMessageSent();
-        await fetchMessages();
-      } else {
-        const err = await res.json();
-        toast.error(err.detail || 'Failed to send message');
-      }
-    } catch {
-      toast.error('Failed to send message');
-    } finally {
-      setSending(false);
-    }
-  };
-
-  if (msgLoading) {
-    return (
-      <div className="flex items-center justify-center py-12">
-        <Loader2 className="w-6 h-6 animate-spin text-slate-900 dark:text-white" />
-      </div>
-    );
-  }
-
-  return (
-    <div className="bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm flex flex-col" style={{ height: 'calc(100vh - 280px)', minHeight: '400px', maxHeight: '700px' }}>
-      {/* Messages area */}
-      <div className="flex-1 overflow-y-auto p-4 space-y-3">
-        {messages.length === 0 ? (
-          <div className="flex flex-col items-center justify-center h-full text-slate-400 dark:text-slate-500">
-            <MessageCircle className="w-12 h-12 mb-3 opacity-50" />
-            <p className="text-sm">No messages yet</p>
-            <p className="text-xs mt-1">Send a message to your planner to start the conversation</p>
-          </div>
-        ) : (
-          messages.map((msg, idx) => {
-            const isCouple = msg.sender_role === 'couple';
-            return (
-              <div key={msg.id} className={`flex ${isCouple ? 'justify-end' : 'justify-start'}`}>
-                <div className={`max-w-[75%] rounded-2xl px-4 py-2.5 ${
-                  isCouple
-                    ? 'bg-slate-900 dark:bg-slate-700 text-white rounded-br-md'
-                    : 'bg-slate-100 dark:bg-slate-700 text-slate-900 dark:text-white rounded-bl-md'
-                }`}>
-                  {!isCouple && (
-                    <p className="text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">{msg.sender_name}</p>
-                  )}
-                  <p className="text-sm whitespace-pre-wrap">{msg.content}</p>
-                  <div className={`flex items-center gap-1.5 mt-1 ${isCouple ? 'justify-end' : ''}`}>
-                    <span className={`text-xs ${isCouple ? 'text-white/50' : 'text-slate-600 dark:text-slate-400'}`}>
-                      {msg.created_at ? new Date(msg.created_at).toLocaleTimeString('en-US', {
-                        hour: 'numeric', minute: '2-digit', hour12: true,
-                      }) : ''}
-                    </span>
-                    {isCouple && msg.read_by_planner && (
-                      <Eye className="w-3 h-3 text-white/50" />
-                    )}
-                  </div>
-                </div>
-              </div>
-            );
-          })
-        )}
-        <div ref={messagesEndRef} />
-      </div>
-
-      {/* Input area */}
-      {/* Input area — disabled for archived weddings */}
-      {archived ? (
-        <div className="border-t border-slate-200 dark:border-slate-700 p-3 bg-slate-50 dark:bg-slate-700/50">
-          <p className="text-sm text-slate-600 dark:text-slate-400 text-center flex items-center justify-center gap-2">
-            <Archive className="w-4 h-4" />
-            Messaging is disabled for archived weddings
-          </p>
-        </div>
-      ) : (
-        <div className="border-t border-slate-200 dark:border-slate-700 p-3 flex gap-2">
-          <input
-            type="text"
-            value={newMessage}
-            onChange={(e) => setNewMessage(e.target.value)}
-            onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend(); } }}
-            placeholder="Type a message to your planner..."
-            className="flex-1 px-4 py-2.5 border border-slate-300 dark:border-slate-600 rounded-full text-sm focus:outline-none focus:ring-2 focus:ring-slate-900/20 dark:focus:ring-white/20 focus:border-slate-900 dark:focus:border-white bg-white dark:bg-slate-700 text-slate-900 dark:text-white placeholder-slate-500 dark:placeholder-slate-400"
-            disabled={sending}
-          />
-          <button
-            onClick={handleSend}
-            disabled={!newMessage.trim() || sending}
-            className="w-10 h-10 flex items-center justify-center bg-slate-900 dark:bg-slate-700 text-white rounded-full hover:bg-slate-800 dark:hover:bg-slate-600 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-          >
-            {sending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
-          </button>
-        </div>
-      )}
-    </div>
-  );
-}
-
-
-// ============================================================================
-// MEETINGS TAB — Couple views upcoming meetings with planner
-// ============================================================================
-
-interface CoupleMeeting {
-  id: string;
-  title: string;
-  description?: string;
-  start_date: string;
-  end_date?: string;
-  is_recurring: boolean;
-  status: string;
-}
-
-function MeetingsTab() {
-  const [meetings, setMeetings] = useState<CoupleMeeting[]>([]);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    const fetchMeetings = async () => {
-      const token = localStorage.getItem('couple_token');
-      if (!token) return;
-      try {
-        const res = await fetch(`${getApiBaseUrl()}/couple/portal/meetings`, {
-          headers: { Authorization: `Bearer ${token}` },
-        });
-        if (res.ok) {
-          const data = await res.json();
-          setMeetings(data.meetings || []);
-        } else if (res.status !== 401) {
-          toast.error('Failed to load meetings');
-        }
-      } catch {
-        toast.error('Failed to load meetings');
-      } finally {
-        setLoading(false);
-      }
-    };
-    fetchMeetings();
-  }, []);
-
-  if (loading) {
-    return <div className="flex items-center justify-center py-16"><Loader2 className="w-6 h-6 animate-spin text-slate-400 dark:text-slate-500" /></div>;
-  }
-
-  if (meetings.length === 0) {
-    return (
-      <div className="text-center py-12 text-slate-400 dark:text-slate-500">
-        <CalendarClock className="w-10 h-10 mx-auto mb-3 opacity-50" />
-        <p>No upcoming meetings</p>
-        <p className="text-sm mt-1">Your planner will schedule check-ins here</p>
-      </div>
-    );
-  }
-
-  return (
-    <div className="max-w-2xl mx-auto space-y-3">
-      <h2 className="text-lg font-semibold text-slate-900 dark:text-white mb-4 flex items-center gap-2">
-        <CalendarClock className="w-5 h-5" /> Upcoming Meetings
-      </h2>
-      {meetings.map((m) => (
-        <div key={m.id} className="bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm p-4">
-          <div className="flex items-center gap-2 mb-1">
-            <h3 className="text-sm font-medium text-slate-900 dark:text-white">{m.title}</h3>
-            {m.is_recurring && (
-              <span className="text-xs px-1.5 py-0.5 rounded-full bg-purple-100 dark:bg-purple-950/30 text-purple-700 dark:text-purple-400 flex items-center gap-0.5">
-                <Repeat className="w-3 h-3" /> Recurring
-              </span>
-            )}
-          </div>
-          {m.description && <p className="text-xs text-slate-600 dark:text-slate-400 mb-2">{m.description}</p>}
-          <div className="flex items-center gap-2 text-xs text-slate-600 dark:text-slate-400">
-            <Calendar className="w-3.5 h-3.5" />
-            <span>{new Date(m.start_date).toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}</span>
-          </div>
-          <div className="flex items-center gap-2 text-xs text-slate-600 dark:text-slate-400 mt-1">
-            <Clock className="w-3.5 h-3.5" />
-            <span>{new Date(m.start_date).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}</span>
-            {m.end_date && <span>– {new Date(m.end_date).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}</span>}
-          </div>
-        </div>
-      ))}
-    </div>
-  );
-}
-
-
-// ============================================================================
-// SPRINT 6: QR CODE WIDGET (Overview tab — reuses guest_export_service)
-// ============================================================================
-
-function QRCodeWidget() {
-  const [qrUrl, setQrUrl] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
-
-  const generateQR = async () => {
-    setLoading(true);
-    try {
-      const token = localStorage.getItem('couple_token');
-      const res = await fetch(`${getApiBaseUrl()}/couple/portal/qr-code`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-
-      if (!res.ok) throw new Error('Failed to generate QR code');
-
-      const blob = await res.blob();
-      const objectUrl = URL.createObjectURL(blob);
-      setQrUrl(objectUrl);
-    } catch {
-      toast.error('Could not generate QR code');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const downloadQR = () => {
-    if (!qrUrl) return;
-    const a = document.createElement('a');
-    a.href = qrUrl;
-    a.download = 'wedding-portal-qr.png';
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-  };
-
-  return (
-    <div className="bg-white dark:bg-slate-800 rounded-xl p-6 border border-slate-200 dark:border-slate-700 shadow-sm">
-      <div className="flex items-center gap-3 mb-3">
-        <QrCode className="w-5 h-5 text-slate-900 dark:text-slate-300" />
-        <h3 className="font-medium text-slate-900 dark:text-white">Portal QR Code</h3>
-      </div>
-      <p className="text-xs text-slate-600 dark:text-slate-400 mb-3">Share quick access to your wedding portal</p>
-
-      {qrUrl ? (
-        <div className="text-center">
-          <img
-            src={qrUrl}
-            alt="Wedding portal QR code"
-            width={160}
-            height={160}
-            className="mx-auto rounded-lg border border-slate-200 dark:border-slate-700"
-          />
-          <button
-            onClick={downloadQR}
-            className="flex items-center gap-1.5 mx-auto mt-3 text-xs font-medium text-slate-900 dark:text-white hover:opacity-70 transition-opacity"
-            aria-label="Download QR code as PNG"
-          >
-            <Download className="w-3.5 h-3.5" /> Download PNG
-          </button>
-        </div>
-      ) : (
-        <button
-          onClick={generateQR}
-          disabled={loading}
-          className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 border border-slate-300 dark:border-slate-600 rounded-lg text-sm text-slate-700 dark:text-white font-medium transition-colors disabled:opacity-50"
-        >
-          {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <QrCode className="w-4 h-4" />}
-          Generate QR Code
-        </button>
-      )}
-    </div>
-  );
-}
-
-
-// ============================================================================
-// SPRINT 6: PUSH NOTIFICATION WIDGET (Overview tab)
-// ============================================================================
-
-function PushNotificationWidget() {
-  const [pushStatus, setPushStatus] = useState<'loading' | 'unsupported' | 'denied' | 'subscribed' | 'unsubscribed'>('loading');
-  const [subscribing, setSubscribing] = useState(false);
-
-  useEffect(() => {
-    checkStatus();
-  }, []);
-
-  const checkStatus = async () => {
-    // Check browser support
-    if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
-      setPushStatus('unsupported');
-      return;
-    }
-
-    if (Notification.permission === 'denied') {
-      setPushStatus('denied');
-      return;
-    }
-
-    // Check server subscription status
-    try {
-      const token = localStorage.getItem('couple_token');
-      const res = await fetch(`${getApiBaseUrl()}/couple/portal/push/status`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      if (res.ok) {
-        const data = await res.json();
-        if (!data.enabled) {
-          setPushStatus('unsupported');
-        } else {
-          setPushStatus(data.subscribed ? 'subscribed' : 'unsubscribed');
-        }
-      } else {
-        setPushStatus('unsubscribed');
-      }
-    } catch {
-      setPushStatus('unsubscribed');
-    }
-  };
-
-  const handleSubscribe = async () => {
-    setSubscribing(true);
-    try {
-      // Request notification permission
-      const permission = await Notification.requestPermission();
-      if (permission !== 'granted') {
-        setPushStatus('denied');
-        toast.error('Notification permission denied');
-        return;
-      }
-
-      // Get VAPID public key
-      const token = localStorage.getItem('couple_token');
-      const keyRes = await fetch(`${getApiBaseUrl()}/web-push/vapid-public-key`);
-      if (!keyRes.ok) throw new Error('Push not configured');
-      const { vapid_public_key } = await keyRes.json();
-
-      // Register service worker and subscribe
-      const registration = await navigator.serviceWorker.ready;
-      const subscription = await registration.pushManager.subscribe({
-        userVisibleOnly: true,
-        applicationServerKey: vapid_public_key,
-      });
-
-      // Send subscription to backend
-      const subRes = await fetch(`${getApiBaseUrl()}/couple/portal/push/subscribe`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ subscription: subscription.toJSON() }),
-      });
-
-      if (!subRes.ok) throw new Error('Failed to save subscription');
-
-      setPushStatus('subscribed');
-      toast.success('Push notifications enabled');
-    } catch (e: any) {
-      toast.error(e.message || 'Could not enable notifications');
-    } finally {
-      setSubscribing(false);
-    }
-  };
-
-  const handleUnsubscribe = async () => {
-    setSubscribing(true);
-    try {
-      const registration = await navigator.serviceWorker.ready;
-      const subscription = await registration.pushManager.getSubscription();
-
-      if (subscription) {
-        const token = localStorage.getItem('couple_token');
-        await fetch(`${getApiBaseUrl()}/couple/portal/push/unsubscribe`, {
-          method: 'DELETE',
-          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-          body: JSON.stringify({ endpoint: subscription.endpoint }),
-        });
-        await subscription.unsubscribe();
-      }
-
-      setPushStatus('unsubscribed');
-      toast.success('Push notifications disabled');
-    } catch {
-      toast.error('Could not disable notifications');
-    } finally {
-      setSubscribing(false);
-    }
-  };
-
-  return (
-    <div className="bg-white dark:bg-slate-800 rounded-xl p-6 border border-slate-200 dark:border-slate-700 shadow-sm">
-      <div className="flex items-center gap-3 mb-3">
-        {pushStatus === 'subscribed' ? (
-          <BellRing className="w-5 h-5 text-green-500" />
-        ) : (
-          <BellOff className="w-5 h-5 text-slate-400 dark:text-slate-500" />
-        )}
-        <h3 className="font-medium text-slate-900 dark:text-white">Push Notifications</h3>
-      </div>
-      <p className="text-xs text-slate-600 dark:text-slate-400 mb-3">Get alerts for updates, messages, and meetings</p>
-
-      {pushStatus === 'loading' && (
-        <div className="flex items-center gap-2 text-sm text-slate-600 dark:text-slate-400">
-          <Loader2 className="w-4 h-4 animate-spin" /> Checking...
-        </div>
-      )}
-
-      {pushStatus === 'unsupported' && (
-        <p className="text-xs text-slate-600 dark:text-slate-400">Push notifications are not available in this browser.</p>
-      )}
-
-      {pushStatus === 'denied' && (
-        <p className="text-xs text-amber-600 dark:text-amber-500">Notifications blocked. Please enable them in your browser settings.</p>
-      )}
-
-      {pushStatus === 'subscribed' && (
-        <div>
-          <div className="flex items-center gap-2 text-xs text-green-600 dark:text-green-400 mb-3">
-            <CheckCircle className="w-3.5 h-3.5" /> Notifications active
-          </div>
-          <button
-            onClick={handleUnsubscribe}
-            disabled={subscribing}
-            className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-red-100 dark:bg-red-950/30 hover:bg-red-200 dark:hover:bg-red-900/50 text-red-700 dark:text-red-400 text-xs font-medium rounded-lg transition-colors disabled:opacity-50"
-          >
-            {subscribing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <BellOff className="w-3.5 h-3.5" />}
-            Disable Notifications
-          </button>
-        </div>
-      )}
-
-      {pushStatus === 'unsubscribed' && (
-        <button
-          onClick={handleSubscribe}
-          disabled={subscribing}
-          className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-slate-900 dark:bg-slate-700 hover:bg-slate-800 dark:hover:bg-slate-600 text-white text-sm font-medium rounded-lg transition-colors disabled:opacity-50"
-        >
-          {subscribing ? <Loader2 className="w-4 h-4 animate-spin" /> : <BellRing className="w-4 h-4" />}
-          Enable Notifications
-        </button>
-      )}
-    </div>
-  );
-}
-
-
-// ============================================================================
-// SPRINT 6: REGISTRY TAB (CRUD — syncs to wedding model)
+// SECTION: REGISTRY
 // ============================================================================
 
 interface RegistryItem {
@@ -1676,12 +1336,12 @@ interface RegistryItem {
   color?: string;
 }
 
-function RegistryTab({ registries, archived, onUpdated }: { registries: RegistryItem[]; archived: boolean; onUpdated: () => void }) {
+function RegistrySection({ registries, archived, onUpdated }: { registries: RegistryItem[]; archived: boolean; onUpdated: () => void }) {
   const [showForm, setShowForm] = useState(false);
   const [editIndex, setEditIndex] = useState<number | null>(null);
   const [name, setName] = useState('');
   const [url, setUrl] = useState('');
-  const [color, setColor] = useState('bg-gray-600');
+  const [color, setColor] = useState('bg-indigo-600');
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState<number | null>(null);
 
@@ -1694,14 +1354,14 @@ function RegistryTab({ registries, archived, onUpdated }: { registries: Registry
     { value: 'bg-indigo-600', label: 'Indigo' },
     { value: 'bg-purple-600', label: 'Purple' },
     { value: 'bg-pink-600', label: 'Pink' },
-    { value: 'bg-gray-600', label: 'Gray' },
+    { value: 'bg-slate-600', label: 'Slate' },
     { value: 'bg-slate-900', label: 'Navy' },
   ];
 
   const resetForm = () => {
     setName('');
     setUrl('');
-    setColor('bg-gray-600');
+    setColor('bg-indigo-600');
     setShowForm(false);
     setEditIndex(null);
   };
@@ -1710,7 +1370,7 @@ function RegistryTab({ registries, archived, onUpdated }: { registries: Registry
     const item = registries[index];
     setName(item.name);
     setUrl(item.url);
-    setColor(item.color || 'bg-gray-600');
+    setColor(item.color || 'bg-indigo-600');
     setEditIndex(index);
     setShowForm(true);
   };
@@ -1733,14 +1393,14 @@ function RegistryTab({ registries, archived, onUpdated }: { registries: Registry
 
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
-        throw new Error(err.detail || 'Failed to save registry');
+        throw new Error(err.detail || 'Could not save registry');
       }
 
       toast.success(isEdit ? 'Registry updated' : 'Registry added');
       resetForm();
       onUpdated();
     } catch (e: any) {
-      toast.error(e.message || 'Something went wrong');
+      toast.error(e.message || 'Something went wrong. Please try again.');
     } finally {
       setSaving(false);
     }
@@ -1757,13 +1417,13 @@ function RegistryTab({ registries, archived, onUpdated }: { registries: Registry
 
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
-        throw new Error(err.detail || 'Failed to delete');
+        throw new Error(err.detail || 'Could not remove registry');
       }
 
       toast.success('Registry removed');
       onUpdated();
     } catch (e: any) {
-      toast.error(e.message || 'Something went wrong');
+      toast.error(e.message || 'Something went wrong. Please try again.');
     } finally {
       setDeleting(null);
     }
@@ -1771,63 +1431,61 @@ function RegistryTab({ registries, archived, onUpdated }: { registries: Registry
 
   return (
     <div className="max-w-3xl mx-auto">
-      <div className="flex items-center justify-between mb-6">
-        <h2 className="text-lg font-semibold text-slate-900 dark:text-white flex items-center gap-2">
-          <Gift className="w-5 h-5" /> Wedding Registry
-        </h2>
+      <div className="flex items-center justify-between mb-4">
+        <h2 className="text-lg font-semibold text-slate-900 dark:text-white">Gift registry</h2>
         {!archived && !showForm && (
           <button
             onClick={() => { resetForm(); setShowForm(true); }}
-            className="flex items-center gap-1.5 text-sm font-medium text-slate-900 dark:text-white hover:opacity-70 transition-opacity"
-            aria-label="Add new registry item"
+            className="flex items-center gap-1.5 px-3 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-medium rounded-lg transition-colors"
+            aria-label="Add a new registry"
           >
-            <Plus className="w-4 h-4" /> Add Registry
+            <Plus className="w-4 h-4" /> Add registry
           </button>
         )}
       </div>
 
-      <p className="text-sm text-slate-600 dark:text-slate-400 mb-4">Your presence is the greatest gift, but if you&apos;d like to celebrate with us, we&apos;re registered at:</p>
+      <p className="text-sm text-slate-500 dark:text-slate-400 mb-6">Your guests can find your registries here. Add links to any store where you&apos;re registered.</p>
 
       {/* Add/Edit Form */}
       {showForm && (
-        <div className="bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm p-5 mb-6" role="form" aria-label={editIndex !== null ? 'Edit registry item' : 'Add registry item'}>
-          <h3 className="text-sm font-semibold text-slate-900 dark:text-white mb-3">{editIndex !== null ? 'Edit Registry' : 'Add Registry'}</h3>
+        <div className="bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm p-5 mb-6" role="form" aria-label={editIndex !== null ? 'Edit registry' : 'Add registry'}>
+          <h3 className="text-sm font-semibold text-slate-900 dark:text-white mb-3">{editIndex !== null ? 'Edit registry' : 'New registry'}</h3>
           <div className="space-y-3">
             <div>
-              <label htmlFor="reg-name" className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">Registry Name</label>
+              <label htmlFor="reg-name" className="block text-xs font-medium text-slate-600 dark:text-slate-300 mb-1">Store name</label>
               <input
                 id="reg-name"
                 type="text"
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 placeholder="e.g., Target, Amazon, Zola"
-                className="w-full px-3 py-2 text-sm border border-slate-300 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-slate-900/20 dark:focus:ring-white/20 focus:border-slate-900 dark:focus:border-white outline-none bg-white dark:bg-slate-700 text-slate-900 dark:text-white placeholder-slate-500 dark:placeholder-slate-400"
+                className="w-full px-3 py-2 text-sm border border-slate-300 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none bg-white dark:bg-slate-700 text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-slate-500"
                 aria-required="true"
               />
             </div>
             <div>
-              <label htmlFor="reg-url" className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">Registry URL</label>
+              <label htmlFor="reg-url" className="block text-xs font-medium text-slate-600 dark:text-slate-300 mb-1">Registry link</label>
               <input
                 id="reg-url"
                 type="url"
                 value={url}
                 onChange={(e) => setUrl(e.target.value)}
                 placeholder="https://www.target.com/gift-registry/..."
-                className="w-full px-3 py-2 text-sm border border-slate-300 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-slate-900/20 dark:focus:ring-white/20 focus:border-slate-900 dark:focus:border-white outline-none bg-white dark:bg-slate-700 text-slate-900 dark:text-white placeholder-slate-500 dark:placeholder-slate-400"
+                className="w-full px-3 py-2 text-sm border border-slate-300 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none bg-white dark:bg-slate-700 text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-slate-500"
                 aria-required="true"
               />
             </div>
             <div>
-              <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">Button Color</label>
+              <label className="block text-xs font-medium text-slate-600 dark:text-slate-300 mb-1">Button color</label>
               <div className="flex flex-wrap gap-2">
                 {colorOptions.map((c) => (
                   <button
                     key={c.value}
                     type="button"
                     onClick={() => setColor(c.value)}
-                    className={`w-8 h-8 rounded-full ${c.value} transition-all ${color === c.value ? 'ring-2 ring-offset-2 ring-slate-900 dark:ring-white scale-110' : 'opacity-60 hover:opacity-100'}`}
+                    className={`w-8 h-8 rounded-full ${c.value} transition-all ${color === c.value ? 'ring-2 ring-offset-2 ring-indigo-500 dark:ring-indigo-400 scale-110' : 'opacity-60 hover:opacity-100'}`}
                     title={c.label}
-                    aria-label={`Select ${c.label} color`}
+                    aria-label={`Select ${c.label}`}
                     aria-pressed={color === c.value}
                   />
                 ))}
@@ -1837,15 +1495,12 @@ function RegistryTab({ registries, archived, onUpdated }: { registries: Registry
               <button
                 onClick={handleSave}
                 disabled={saving || !name.trim() || !url.trim()}
-                className="flex items-center gap-1.5 px-4 py-2 bg-slate-900 dark:bg-slate-700 text-white text-sm font-medium rounded-lg hover:bg-slate-800 dark:hover:bg-slate-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                className="flex items-center gap-1.5 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-medium rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
               >
                 {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle className="w-4 h-4" />}
                 {editIndex !== null ? 'Update' : 'Save'}
               </button>
-              <button
-                onClick={resetForm}
-                className="px-4 py-2 text-sm text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white transition-colors"
-              >
+              <button onClick={resetForm} className="px-4 py-2 text-sm text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-white transition-colors">
                 Cancel
               </button>
             </div>
@@ -1855,10 +1510,10 @@ function RegistryTab({ registries, archived, onUpdated }: { registries: Registry
 
       {/* Registry Grid */}
       {registries.length === 0 && !showForm ? (
-        <div className="text-center py-12">
-          <Gift className="w-10 h-10 text-slate-300 dark:text-slate-600 mx-auto mb-3" />
+        <div className="text-center py-16">
+          <Gift className="w-12 h-12 text-slate-300 dark:text-slate-600 mx-auto mb-3" />
           <p className="text-slate-600 dark:text-slate-400 font-medium">No registries added yet</p>
-          {!archived && <p className="text-sm text-slate-600 dark:text-slate-400 mt-1">Click &quot;Add Registry&quot; to get started</p>}
+          {!archived && <p className="text-sm text-slate-400 dark:text-slate-500 mt-1">Click &quot;Add registry&quot; to share where guests can find your wish list.</p>}
         </div>
       ) : (
         <div className={`grid gap-4 ${registries.length === 1 ? 'grid-cols-1 max-w-xs mx-auto' : registries.length === 2 ? 'grid-cols-1 sm:grid-cols-2' : 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-3'}`}>
@@ -1869,26 +1524,17 @@ function RegistryTab({ registries, archived, onUpdated }: { registries: Registry
                 href={reg.url}
                 target="_blank"
                 rel="noopener noreferrer"
-                className={`${reg.color || 'bg-slate-600'} text-white px-6 py-2.5 rounded-lg hover:opacity-90 transition-opacity inline-flex items-center gap-2 text-sm font-medium`}
+                className={`${reg.color || 'bg-indigo-600'} text-white px-6 py-2.5 rounded-lg hover:opacity-90 transition-opacity inline-flex items-center gap-2 text-sm font-medium`}
                 aria-label={`View ${reg.name} registry (opens in new tab)`}
               >
-                View Registry <ExternalLink className="w-3.5 h-3.5" />
+                View registry <ExternalLink className="w-3.5 h-3.5" />
               </a>
               {!archived && (
                 <div className="flex items-center justify-center gap-2 mt-3 opacity-0 group-hover:opacity-100 transition-opacity">
-                  <button
-                    onClick={() => startEdit(i)}
-                    className="text-xs text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white flex items-center gap-1 transition-colors"
-                    aria-label={`Edit ${reg.name}`}
-                  >
+                  <button onClick={() => startEdit(i)} className="text-xs text-slate-500 dark:text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400 flex items-center gap-1 transition-colors" aria-label={`Edit ${reg.name}`}>
                     <Pencil className="w-3 h-3" /> Edit
                   </button>
-                  <button
-                    onClick={() => handleDelete(i)}
-                    disabled={deleting === i}
-                    className="text-xs text-slate-600 dark:text-slate-400 hover:text-red-500 dark:hover:text-red-400 flex items-center gap-1 transition-colors disabled:opacity-50"
-                    aria-label={`Delete ${reg.name}`}
-                  >
+                  <button onClick={() => handleDelete(i)} disabled={deleting === i} className="text-xs text-slate-500 dark:text-slate-400 hover:text-red-500 dark:hover:text-red-400 flex items-center gap-1 transition-colors disabled:opacity-50" aria-label={`Delete ${reg.name}`}>
                     {deleting === i ? <Loader2 className="w-3 h-3 animate-spin" /> : <Trash2 className="w-3 h-3" />} Delete
                   </button>
                 </div>
@@ -1903,7 +1549,7 @@ function RegistryTab({ registries, archived, onUpdated }: { registries: Registry
 
 
 // ============================================================================
-// SPRINT 6: FAQ TAB (CRUD — syncs to wedding model)
+// SECTION: FAQ
 // ============================================================================
 
 interface FAQItem {
@@ -1913,7 +1559,7 @@ interface FAQItem {
   link_label?: string | null;
 }
 
-function FAQTab({ faqs, archived, onUpdated }: { faqs: FAQItem[]; archived: boolean; onUpdated: () => void }) {
+function FAQSection({ faqs, archived, onUpdated }: { faqs: FAQItem[]; archived: boolean; onUpdated: () => void }) {
   const [showForm, setShowForm] = useState(false);
   const [editIndex, setEditIndex] = useState<number | null>(null);
   const [question, setQuestion] = useState('');
@@ -1925,22 +1571,15 @@ function FAQTab({ faqs, archived, onUpdated }: { faqs: FAQItem[]; archived: bool
   const [expandedIndex, setExpandedIndex] = useState<number | null>(null);
 
   const resetForm = () => {
-    setQuestion('');
-    setAnswer('');
-    setLinkUrl('');
-    setLinkLabel('');
-    setShowForm(false);
-    setEditIndex(null);
+    setQuestion(''); setAnswer(''); setLinkUrl(''); setLinkLabel('');
+    setShowForm(false); setEditIndex(null);
   };
 
   const startEdit = (index: number) => {
     const item = faqs[index];
-    setQuestion(item.question);
-    setAnswer(item.answer);
-    setLinkUrl(item.link_url || '');
-    setLinkLabel(item.link_label || '');
-    setEditIndex(index);
-    setShowForm(true);
+    setQuestion(item.question); setAnswer(item.answer);
+    setLinkUrl(item.link_url || ''); setLinkLabel(item.link_label || '');
+    setEditIndex(index); setShowForm(true);
   };
 
   const handleSave = async () => {
@@ -1965,14 +1604,13 @@ function FAQTab({ faqs, archived, onUpdated }: { faqs: FAQItem[]; archived: bool
 
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
-        throw new Error(err.detail || 'Failed to save FAQ');
+        throw new Error(err.detail || 'Could not save FAQ');
       }
 
       toast.success(isEdit ? 'FAQ updated' : 'FAQ added');
-      resetForm();
-      onUpdated();
+      resetForm(); onUpdated();
     } catch (e: any) {
-      toast.error(e.message || 'Something went wrong');
+      toast.error(e.message || 'Something went wrong. Please try again.');
     } finally {
       setSaving(false);
     }
@@ -1986,16 +1624,13 @@ function FAQTab({ faqs, archived, onUpdated }: { faqs: FAQItem[]; archived: bool
         method: 'DELETE',
         headers: { Authorization: `Bearer ${token}` },
       });
-
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
-        throw new Error(err.detail || 'Failed to delete');
+        throw new Error(err.detail || 'Could not remove FAQ');
       }
-
-      toast.success('FAQ removed');
-      onUpdated();
+      toast.success('FAQ removed'); onUpdated();
     } catch (e: any) {
-      toast.error(e.message || 'Something went wrong');
+      toast.error(e.message || 'Something went wrong. Please try again.');
     } finally {
       setDeleting(null);
     }
@@ -2003,89 +1638,72 @@ function FAQTab({ faqs, archived, onUpdated }: { faqs: FAQItem[]; archived: bool
 
   return (
     <div className="max-w-3xl mx-auto">
-      <div className="flex items-center justify-between mb-6">
-        <h2 className="text-lg font-semibold text-slate-900 dark:text-white flex items-center gap-2">
-          <HelpCircle className="w-5 h-5" /> Frequently Asked Questions
-        </h2>
+      <div className="flex items-center justify-between mb-4">
+        <h2 className="text-lg font-semibold text-slate-900 dark:text-white">Frequently asked questions</h2>
         {!archived && !showForm && (
           <button
             onClick={() => { resetForm(); setShowForm(true); }}
-            className="flex items-center gap-1.5 text-sm font-medium text-slate-900 dark:text-white hover:opacity-70 transition-opacity"
-            aria-label="Add new FAQ item"
+            className="flex items-center gap-1.5 px-3 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-medium rounded-lg transition-colors"
+            aria-label="Add a new FAQ"
           >
             <Plus className="w-4 h-4" /> Add FAQ
           </button>
         )}
       </div>
 
-      <p className="text-sm text-slate-600 dark:text-slate-400 mb-4">These FAQs will appear on your wedding page for your guests. Add questions and answers to help them prepare.</p>
+      <p className="text-sm text-slate-500 dark:text-slate-400 mb-6">Help your guests prepare by answering common questions about your wedding day.</p>
 
       {/* Add/Edit Form */}
       {showForm && (
-        <div className="bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm p-5 mb-6" role="form" aria-label={editIndex !== null ? 'Edit FAQ item' : 'Add FAQ item'}>
-          <h3 className="text-sm font-semibold text-slate-900 dark:text-white mb-3">{editIndex !== null ? 'Edit FAQ' : 'Add FAQ'}</h3>
+        <div className="bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm p-5 mb-6" role="form" aria-label={editIndex !== null ? 'Edit FAQ' : 'Add FAQ'}>
+          <h3 className="text-sm font-semibold text-slate-900 dark:text-white mb-3">{editIndex !== null ? 'Edit FAQ' : 'New FAQ'}</h3>
           <div className="space-y-3">
             <div>
-              <label htmlFor="faq-q" className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">Question</label>
+              <label htmlFor="faq-q" className="block text-xs font-medium text-slate-600 dark:text-slate-300 mb-1">Question</label>
               <input
-                id="faq-q"
-                type="text"
-                value={question}
-                onChange={(e) => setQuestion(e.target.value)}
+                id="faq-q" type="text" value={question} onChange={(e) => setQuestion(e.target.value)}
                 placeholder="e.g., What should I wear?"
-                className="w-full px-3 py-2 text-sm border border-slate-300 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-slate-900/20 dark:focus:ring-white/20 focus:border-slate-900 dark:focus:border-white outline-none bg-white dark:bg-slate-700 text-slate-900 dark:text-white placeholder-slate-500 dark:placeholder-slate-400"
+                className="w-full px-3 py-2 text-sm border border-slate-300 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none bg-white dark:bg-slate-700 text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-slate-500"
                 aria-required="true"
               />
             </div>
             <div>
-              <label htmlFor="faq-a" className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">Answer</label>
+              <label htmlFor="faq-a" className="block text-xs font-medium text-slate-600 dark:text-slate-300 mb-1">Answer</label>
               <textarea
-                id="faq-a"
-                value={answer}
-                onChange={(e) => setAnswer(e.target.value)}
-                placeholder="Your answer here..."
+                id="faq-a" value={answer} onChange={(e) => setAnswer(e.target.value)}
+                placeholder="Your answer..."
                 rows={3}
-                className="w-full px-3 py-2 text-sm border border-slate-300 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-slate-900/20 dark:focus:ring-white/20 focus:border-slate-900 dark:focus:border-white outline-none resize-none bg-white dark:bg-slate-700 text-slate-900 dark:text-white placeholder-slate-500 dark:placeholder-slate-400"
+                className="w-full px-3 py-2 text-sm border border-slate-300 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none resize-none bg-white dark:bg-slate-700 text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-slate-500"
                 aria-required="true"
               />
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <label htmlFor="faq-link" className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">Link URL (optional)</label>
+                <label htmlFor="faq-link" className="block text-xs font-medium text-slate-600 dark:text-slate-300 mb-1">Link URL (optional)</label>
                 <input
-                  id="faq-link"
-                  type="url"
-                  value={linkUrl}
-                  onChange={(e) => setLinkUrl(e.target.value)}
+                  id="faq-link" type="url" value={linkUrl} onChange={(e) => setLinkUrl(e.target.value)}
                   placeholder="https://..."
-                  className="w-full px-3 py-2 text-sm border border-slate-300 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-slate-900/20 dark:focus:ring-white/20 focus:border-slate-900 dark:focus:border-white outline-none bg-white dark:bg-slate-700 text-slate-900 dark:text-white placeholder-slate-500 dark:placeholder-slate-400"
+                  className="w-full px-3 py-2 text-sm border border-slate-300 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none bg-white dark:bg-slate-700 text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-slate-500"
                 />
               </div>
               <div>
-                <label htmlFor="faq-label" className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">Link Label (optional)</label>
+                <label htmlFor="faq-label" className="block text-xs font-medium text-slate-600 dark:text-slate-300 mb-1">Link label (optional)</label>
                 <input
-                  id="faq-label"
-                  type="text"
-                  value={linkLabel}
-                  onChange={(e) => setLinkLabel(e.target.value)}
-                  placeholder="e.g., Book Hotel Room"
-                  className="w-full px-3 py-2 text-sm border border-slate-300 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-slate-900/20 dark:focus:ring-white/20 focus:border-slate-900 dark:focus:border-white outline-none bg-white dark:bg-slate-700 text-slate-900 dark:text-white placeholder-slate-500 dark:placeholder-slate-400"
+                  id="faq-label" type="text" value={linkLabel} onChange={(e) => setLinkLabel(e.target.value)}
+                  placeholder="e.g., Book hotel room"
+                  className="w-full px-3 py-2 text-sm border border-slate-300 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none bg-white dark:bg-slate-700 text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-slate-500"
                 />
               </div>
             </div>
             <div className="flex gap-2 pt-2">
               <button
-                onClick={handleSave}
-                disabled={saving || !question.trim() || !answer.trim()}
-                className="flex items-center gap-1.5 px-4 py-2 bg-slate-900 dark:bg-slate-700 text-white text-sm font-medium rounded-lg hover:bg-slate-800 dark:hover:bg-slate-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                onClick={handleSave} disabled={saving || !question.trim() || !answer.trim()}
+                className="flex items-center gap-1.5 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-medium rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
               >
                 {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle className="w-4 h-4" />}
                 {editIndex !== null ? 'Update' : 'Save'}
               </button>
-              <button
-                onClick={resetForm}
-                className="px-4 py-2 text-sm text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white transition-colors"
-              >
+              <button onClick={resetForm} className="px-4 py-2 text-sm text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-white transition-colors">
                 Cancel
               </button>
             </div>
@@ -2095,15 +1713,15 @@ function FAQTab({ faqs, archived, onUpdated }: { faqs: FAQItem[]; archived: bool
 
       {/* FAQ List */}
       {faqs.length === 0 && !showForm ? (
-        <div className="text-center py-12">
-          <HelpCircle className="w-10 h-10 text-slate-300 dark:text-slate-600 mx-auto mb-3" />
-          <p className="text-slate-600 dark:text-slate-400 font-medium">No FAQs added yet</p>
-          {!archived && <p className="text-sm text-slate-600 dark:text-slate-400 mt-1">Click &quot;Add FAQ&quot; to help your guests prepare</p>}
+        <div className="text-center py-16">
+          <HelpCircle className="w-12 h-12 text-slate-300 dark:text-slate-600 mx-auto mb-3" />
+          <p className="text-slate-600 dark:text-slate-400 font-medium">No FAQs yet</p>
+          {!archived && <p className="text-sm text-slate-400 dark:text-slate-500 mt-1">Add questions and answers to help your guests know what to expect.</p>}
         </div>
       ) : (
         <div className="space-y-3">
           {faqs.map((faq, i) => (
-            <div key={i} className="bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm overflow-hidden group">
+            <div key={i} className="bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm overflow-hidden">
               <button
                 onClick={() => setExpandedIndex(expandedIndex === i ? null : i)}
                 className="w-full px-5 py-4 flex items-center justify-between text-left"
@@ -2115,32 +1733,21 @@ function FAQTab({ faqs, archived, onUpdated }: { faqs: FAQItem[]; archived: bool
               </button>
               {expandedIndex === i && (
                 <div id={`faq-answer-${i}`} className="px-5 pb-4 border-t border-slate-100 dark:border-slate-700">
-                  <p className="text-sm text-slate-700 dark:text-slate-300 leading-relaxed mt-3">{faq.answer}</p>
+                  <p className="text-sm text-slate-600 dark:text-slate-300 leading-relaxed mt-3">{faq.answer}</p>
                   {faq.link_url && faq.link_label && (
                     <a
-                      href={faq.link_url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="inline-flex items-center gap-2 mt-3 px-4 py-2 bg-slate-900 dark:bg-slate-700 text-white text-xs font-medium rounded-lg hover:bg-slate-800 dark:hover:bg-slate-600 transition-colors"
+                      href={faq.link_url} target="_blank" rel="noopener noreferrer"
+                      className="inline-flex items-center gap-2 mt-3 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-medium rounded-lg transition-colors"
                     >
                       {faq.link_label} <ExternalLink className="w-3 h-3" />
                     </a>
                   )}
                   {!archived && (
                     <div className="flex items-center gap-3 mt-3 pt-3 border-t border-slate-100 dark:border-slate-700">
-                      <button
-                        onClick={(e) => { e.stopPropagation(); startEdit(i); }}
-                        className="text-xs text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white flex items-center gap-1 transition-colors"
-                        aria-label={`Edit FAQ: ${faq.question}`}
-                      >
+                      <button onClick={(e) => { e.stopPropagation(); startEdit(i); }} className="text-xs text-slate-500 dark:text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400 flex items-center gap-1 transition-colors" aria-label={`Edit: ${faq.question}`}>
                         <Pencil className="w-3 h-3" /> Edit
                       </button>
-                      <button
-                        onClick={(e) => { e.stopPropagation(); handleDelete(i); }}
-                        disabled={deleting === i}
-                        className="text-xs text-slate-600 dark:text-slate-400 hover:text-red-500 dark:hover:text-red-400 flex items-center gap-1 transition-colors disabled:opacity-50"
-                        aria-label={`Delete FAQ: ${faq.question}`}
-                      >
+                      <button onClick={(e) => { e.stopPropagation(); handleDelete(i); }} disabled={deleting === i} className="text-xs text-slate-500 dark:text-slate-400 hover:text-red-500 dark:hover:text-red-400 flex items-center gap-1 transition-colors disabled:opacity-50" aria-label={`Delete: ${faq.question}`}>
                         {deleting === i ? <Loader2 className="w-3 h-3 animate-spin" /> : <Trash2 className="w-3 h-3" />} Delete
                       </button>
                     </div>
@@ -2150,6 +1757,173 @@ function FAQTab({ faqs, archived, onUpdated }: { faqs: FAQItem[]; archived: bool
             </div>
           ))}
         </div>
+      )}
+    </div>
+  );
+}
+
+
+// ============================================================================
+// WIDGETS
+// ============================================================================
+
+function QRCodeWidget() {
+  const [qrUrl, setQrUrl] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+
+  const generateQR = async () => {
+    setLoading(true);
+    try {
+      const token = localStorage.getItem('couple_token');
+      const res = await fetch(`${getApiBaseUrl()}/couple/portal/qr-code`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) throw new Error('Failed to generate QR code');
+      const blob = await res.blob();
+      setQrUrl(URL.createObjectURL(blob));
+    } catch {
+      toast.error('Could not generate QR code. Please try again.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const downloadQR = () => {
+    if (!qrUrl) return;
+    const a = document.createElement('a');
+    a.href = qrUrl;
+    a.download = 'wedding-portal-qr.png';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+  };
+
+  return (
+    <div className="bg-white dark:bg-slate-800 rounded-xl p-6 border border-slate-200 dark:border-slate-700 shadow-sm">
+      <div className="flex items-center gap-3 mb-3">
+        <QrCode className="w-5 h-5 text-indigo-500" />
+        <h3 className="font-medium text-slate-900 dark:text-white">Portal QR code</h3>
+      </div>
+      <p className="text-xs text-slate-500 dark:text-slate-400 mb-3">Share quick access to your wedding portal with guests.</p>
+
+      {qrUrl ? (
+        <div className="text-center">
+          <img src={qrUrl} alt="Wedding portal QR code" width={160} height={160} className="mx-auto rounded-lg border border-slate-200 dark:border-slate-700" />
+          <button onClick={downloadQR} className="flex items-center gap-1.5 mx-auto mt-3 text-xs font-medium text-indigo-600 dark:text-indigo-400 hover:opacity-70 transition-opacity" aria-label="Download QR code as PNG">
+            <Download className="w-3.5 h-3.5" /> Download PNG
+          </button>
+        </div>
+      ) : (
+        <button
+          onClick={generateQR}
+          disabled={loading}
+          className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 border border-slate-200 dark:border-slate-600 rounded-lg text-sm text-slate-700 dark:text-white font-medium transition-colors disabled:opacity-50"
+        >
+          {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <QrCode className="w-4 h-4" />}
+          Generate QR code
+        </button>
+      )}
+    </div>
+  );
+}
+
+function PushNotificationWidget() {
+  const [pushStatus, setPushStatus] = useState<'loading' | 'unsupported' | 'denied' | 'subscribed' | 'unsubscribed'>('loading');
+  const [subscribing, setSubscribing] = useState(false);
+
+  useEffect(() => { checkStatus(); }, []);
+
+  const checkStatus = async () => {
+    if (!('serviceWorker' in navigator) || !('PushManager' in window)) { setPushStatus('unsupported'); return; }
+    if (Notification.permission === 'denied') { setPushStatus('denied'); return; }
+
+    try {
+      const token = localStorage.getItem('couple_token');
+      const res = await fetch(`${getApiBaseUrl()}/couple/portal/push/status`, { headers: { Authorization: `Bearer ${token}` } });
+      if (res.ok) {
+        const data = await res.json();
+        setPushStatus(!data.enabled ? 'unsupported' : data.subscribed ? 'subscribed' : 'unsubscribed');
+      } else {
+        setPushStatus('unsubscribed');
+      }
+    } catch { setPushStatus('unsubscribed'); }
+  };
+
+  const handleSubscribe = async () => {
+    setSubscribing(true);
+    try {
+      const permission = await Notification.requestPermission();
+      if (permission !== 'granted') { setPushStatus('denied'); toast.error('Notification permission denied'); return; }
+
+      const token = localStorage.getItem('couple_token');
+      const keyRes = await fetch(`${getApiBaseUrl()}/web-push/vapid-public-key`);
+      if (!keyRes.ok) throw new Error('Push not configured');
+      const { vapid_public_key } = await keyRes.json();
+
+      const registration = await navigator.serviceWorker.ready;
+      const subscription = await registration.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: vapid_public_key });
+
+      const subRes = await fetch(`${getApiBaseUrl()}/couple/portal/push/subscribe`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ subscription: subscription.toJSON() }),
+      });
+      if (!subRes.ok) throw new Error('Failed to save subscription');
+
+      setPushStatus('subscribed');
+      toast.success('Push notifications enabled');
+    } catch (e: any) {
+      toast.error(e.message || 'Could not enable notifications');
+    } finally { setSubscribing(false); }
+  };
+
+  const handleUnsubscribe = async () => {
+    setSubscribing(true);
+    try {
+      const registration = await navigator.serviceWorker.ready;
+      const subscription = await registration.pushManager.getSubscription();
+      if (subscription) {
+        const token = localStorage.getItem('couple_token');
+        await fetch(`${getApiBaseUrl()}/couple/portal/push/unsubscribe`, {
+          method: 'DELETE',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+          body: JSON.stringify({ endpoint: subscription.endpoint }),
+        });
+        await subscription.unsubscribe();
+      }
+      setPushStatus('unsubscribed');
+      toast.success('Push notifications disabled');
+    } catch { toast.error('Could not disable notifications'); }
+    finally { setSubscribing(false); }
+  };
+
+  return (
+    <div className="bg-white dark:bg-slate-800 rounded-xl p-6 border border-slate-200 dark:border-slate-700 shadow-sm">
+      <div className="flex items-center gap-3 mb-3">
+        {pushStatus === 'subscribed' ? <BellRing className="w-5 h-5 text-green-500" /> : <BellOff className="w-5 h-5 text-slate-400 dark:text-slate-500" />}
+        <h3 className="font-medium text-slate-900 dark:text-white">Push notifications</h3>
+      </div>
+      <p className="text-xs text-slate-500 dark:text-slate-400 mb-3">Get notified about updates, messages, and important dates.</p>
+
+      {pushStatus === 'loading' && <div className="flex items-center gap-2 text-sm text-slate-500 dark:text-slate-400"><Loader2 className="w-4 h-4 animate-spin" /> Checking...</div>}
+      {pushStatus === 'unsupported' && <p className="text-xs text-slate-500 dark:text-slate-400">Push notifications aren&apos;t available in this browser.</p>}
+      {pushStatus === 'denied' && <p className="text-xs text-amber-600 dark:text-amber-400">Notifications are blocked. Enable them in your browser settings to receive updates.</p>}
+
+      {pushStatus === 'subscribed' && (
+        <div>
+          <div className="flex items-center gap-2 text-xs text-green-600 dark:text-green-400 mb-3"><CheckCircle className="w-3.5 h-3.5" /> Notifications active</div>
+          <button onClick={handleUnsubscribe} disabled={subscribing} className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-red-100 dark:bg-red-950/30 hover:bg-red-200 dark:hover:bg-red-900/50 text-red-700 dark:text-red-400 text-xs font-medium rounded-lg transition-colors disabled:opacity-50">
+            {subscribing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <BellOff className="w-3.5 h-3.5" />}
+            Turn off notifications
+          </button>
+        </div>
+      )}
+
+      {pushStatus === 'unsubscribed' && (
+        <button onClick={handleSubscribe} disabled={subscribing} className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-medium rounded-lg transition-colors disabled:opacity-50">
+          {subscribing ? <Loader2 className="w-4 h-4 animate-spin" /> : <BellRing className="w-4 h-4" />}
+          Turn on notifications
+        </button>
       )}
     </div>
   );

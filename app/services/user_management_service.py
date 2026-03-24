@@ -874,13 +874,34 @@ class UserManagementService:
     async def verify_email(self, token: str) -> dict:
         """Verify email address using verification token"""
         try:
-            # Find user with matching verification token
+            # Find user with matching verification token that hasn't been verified yet
             user = await self.users_collection.find_one({
                 "email_verification_token": token,
                 "email_verified": False
             })
 
+            # If not found, check if the user was already verified (e.g. by the
+            # Stripe checkout webhook which sets email_verified=True).  The token
+            # is still present in the document so we can locate the user.
             if not user:
+                already_verified = await self.users_collection.find_one({
+                    "email_verification_token": token,
+                    "email_verified": True
+                })
+                if already_verified:
+                    # Clean up the token now that the user clicked the link
+                    await self.users_collection.update_one(
+                        {"_id": already_verified["_id"]},
+                        {"$unset": {
+                            "email_verification_token": "",
+                            "verification_token_expires": ""
+                        }}
+                    )
+                    return {
+                        "message": "Email verified successfully! Your account is now active. You can log in.",
+                        "email": already_verified["email"],
+                        "verified_at": datetime.now(timezone.utc).isoformat()
+                    }
                 raise HTTPException(status_code=400, detail="Invalid or expired verification token")
 
             # Check if token has expired

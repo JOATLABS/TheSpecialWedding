@@ -239,7 +239,8 @@ async def couple_forgot_password(data: CoupleForgotPasswordRequest):
     # Send reset email via email_service (reuses existing Resend service)
     try:
         from app.core.settings import settings
-        from app.services.email_service import email_service
+        from app.services.email_service_resend import ResendEmailService
+        email_service = ResendEmailService()
 
         frontend_url = getattr(settings, 'frontend_url', None) or "https://thespecialwedding.io"
         reset_link = f"{frontend_url}/couple/reset-password?token={reset_token}"
@@ -287,9 +288,9 @@ async def couple_forgot_password(data: CoupleForgotPasswordRequest):
         """
 
         await email_service.send_email(
-            to=email,
+            to_email=email,
             subject="Reset Your Wedding Portal Password",
-            html=html_content
+            html_content=html_content
         )
     except Exception as e:
         logger.error(f"Failed to send couple password reset email: {e}")
