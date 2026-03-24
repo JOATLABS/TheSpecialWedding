@@ -2,10 +2,10 @@
 
 import React, { useState, useEffect, Suspense } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
+import NextImage from 'next/image';
 import { getApiBaseUrl } from '@/utils/env';
 import { toast, Toaster } from 'sonner';
 import { Loader2, Eye, EyeOff, Shield, CheckCircle2, AlertCircle } from 'lucide-react';
-import NextImage from 'next/image';
 
 interface InviteInfo {
   email: string;
@@ -245,6 +245,7 @@ function AcceptInviteContent() {
             width={180}
             height={45}
             className="h-10 w-auto mx-auto mb-3"
+            unoptimized
             priority
           />
           <p className="text-sm text-slate-500">You&apos;ve been invited to join a team</p>

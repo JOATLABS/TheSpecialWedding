@@ -1,6 +1,6 @@
 'use client';
 
-import { AdminProvider } from '@/contexts/AdminContext';
+import { AdminProvider, useAdmin } from '@/contexts/AdminContext';
 import { ThemeProvider } from '@/contexts/ThemeContext';
 import { SSEProvider } from '@/contexts/SSEContext';
 import { ConfirmDialogProvider } from '@/components/ui/ConfirmDialog';
@@ -19,6 +19,7 @@ function AdminLayoutContent({ children }: { children: React.ReactNode }) {
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [isMobile, setIsMobile] = useState(false);
   const pathname = usePathname();
+  const { userProfile } = useAdmin();
 
   // Check if current page is a public page - should not show sidebar/header
   const isLoginPage = pathname === '/admin/login';
@@ -97,8 +98,8 @@ function AdminLayoutContent({ children }: { children: React.ReactNode }) {
         </main>
       </div>
 
-      {/* AI Chat Widget - Available on all admin pages */}
-      <AIChatWidget />
+      {/* AI Chat Widget - Only for planners and their team members (paid feature) */}
+      {(userProfile?.is_wedding_planner || userProfile?.is_team_member) && <AIChatWidget />}
 
       <Toaster position="top-right" richColors theme="system" />
     </div>

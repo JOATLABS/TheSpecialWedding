@@ -6,33 +6,29 @@ import NextImage from 'next/image';
 import { usePathname } from 'next/navigation';
 import { useAdmin } from '@/contexts/AdminContext';
 import {
-  LayoutDashboard,
-  Users,
-  UserPlus,
-  Wallet,
-  LogOut,
-  ChevronLeft,
-  Heart,
   Bell,
-  FileText,
-  Store,
-  HelpCircle,
-  X,
-  CreditCard,
-  Layers,
-  Server,
   Calendar,
+  ChevronLeft,
+  CreditCard,
+  ExternalLink,
+  FileText,
+  Heart,
+  HelpCircle,
   Image,
-  Package,
+  Layers,
+  LayoutDashboard,
   LayoutGrid,
+  LogOut,
   Mail,
   Megaphone,
-  Trophy,
-
+  Package,
   PlusCircle,
-  ExternalLink,
-  HeartHandshake,
-  type LucideIcon
+  Server,
+  Store,
+  UserPlus,
+  Users,
+  Wallet,
+  X,
 } from 'lucide-react';
 
 interface SidebarProps {
@@ -40,6 +36,10 @@ interface SidebarProps {
   setIsOpen: (open: boolean) => void;
   isMobile: boolean;
 }
+
+type LucideIcon = React.ForwardRefExoticComponent<
+  Omit<React.SVGProps<SVGSVGElement>, 'ref'> & { size?: number | string } & React.RefAttributes<SVGSVGElement>
+>;
 
 interface NavItem {
   name: string;
@@ -72,7 +72,6 @@ const plannerNavItems: NavItem[] = [
   { name: 'Calendar', href: '/admin/planner/calendar', icon: Calendar },
   { name: 'Weddings', href: '/admin/weddings', icon: Heart },
   { name: 'Packages', href: '/admin/packages', icon: Package },
-  { name: 'Couple Portal', href: '/admin/couple-portal', icon: HeartHandshake },
   { name: 'Guests', href: '/admin/guests', icon: Users },
   { name: 'Inbox', href: '/admin/inbox', icon: Mail },
   { name: 'Gallery', href: '/admin/gallery/upload', icon: Image },
@@ -187,6 +186,7 @@ export default function Sidebar({ isOpen, setIsOpen, isMobile }: SidebarProps) {
                 width={140}
                 height={36}
                 className="h-9 w-auto"
+                unoptimized
                 priority
               />
             ) : (

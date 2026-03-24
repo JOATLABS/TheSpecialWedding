@@ -41,25 +41,21 @@ export default function MessageBubble({
   return (
     <div className={`flex ${isSelf ? 'justify-end' : 'justify-start'}`}>
       <div
-        className={`max-w-[75%] rounded-2xl px-4 py-2.5 text-sm ${
+        className={`max-w-[75%] px-3.5 py-2.5 rounded-2xl text-sm ${
           isSelf
             ? colors.self
-            : 'bg-slate-100 dark:bg-slate-700 text-slate-900 dark:text-white rounded-bl-md'
+            : 'bg-gray-100 dark:bg-slate-700 text-gray-900 dark:text-white rounded-bl-md'
         }`}
       >
         {!isSelf && senderName && (
-          <p className="text-xs font-medium text-slate-500 dark:text-slate-400 mb-1">
-            {senderName}
-          </p>
+          <p className="text-xs font-medium mb-1 opacity-70">{senderName}</p>
         )}
         <p className="whitespace-pre-wrap">{content}</p>
         {timestamp && (
           <div className={`flex items-center gap-1.5 mt-1 ${isSelf ? 'justify-end' : ''}`}>
-            <span
-              className={`text-xs ${
-                isSelf ? colors.selfTime : 'text-slate-400 dark:text-slate-500'
-              }`}
-            >
+            <span className={`text-[10px] ${
+              isSelf ? colors.selfTime : 'text-gray-400'
+            }`}>
               {timestamp}
             </span>
             {isSelf && showReadIndicator && isRead && (

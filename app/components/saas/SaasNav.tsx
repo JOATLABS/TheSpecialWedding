@@ -48,6 +48,7 @@ export default function SaasNav() {
               width={200}
               height={50}
               className="h-10 w-auto"
+              unoptimized
               priority
             />
           </Link>
