@@ -72,7 +72,7 @@ A comprehensive, standardized frontend error handling system for the WeddingWebA
 - Common patterns and recipes
 - Troubleshooting
 
-**`app/admin/guests/MIGRATION_EXAMPLE.ts`** (250+ lines)
+**`app/admin/guests/MIGRATION_EXAMPLE.tsx`** (250+ lines)
 - Real-world example of migrating a complex page
 - Before/after code comparison
 - Benefits explanation
@@ -300,7 +300,7 @@ jest.mock('@/hooks/useFetch', () => ({
 **Documentation:**
 - `app/hooks/API_ERROR_HANDLING.md` - Complete reference
 - `FRONTEND_ERROR_HANDLING_SETUP.md` - Setup guide
-- `app/admin/guests/MIGRATION_EXAMPLE.ts` - Real example
+- `app/admin/guests/MIGRATION_EXAMPLE.tsx` - Real example
 
 **Code:**
 - `app/hooks/*.ts` - Hook implementations

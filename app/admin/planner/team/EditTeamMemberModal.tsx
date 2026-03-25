@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { useAdmin } from '@/contexts/AdminContext';
 import { getApiBaseUrl } from '@/utils/env';
@@ -80,20 +80,20 @@ export default function EditTeamMemberModal({ member, onClose, onSuccess }: Prop
   }, [baseUrl, token]);
 
   // Form reset function (resets temporary changes but next open will re-initialize from member prop)
-  const resetForm = () => {
+  const resetForm = useCallback(() => {
     setRole(member.role);
     setPermissions({ ...member.permissions });
     setWeddingAccess(member.wedding_access as 'all' | 'assigned');
     setAssignedWeddingIds([...member.assigned_wedding_ids]);
     setShowWeddingPicker(false);
     setSubmitting(false);
-  };
+  }, [member]);
 
   // Close handler that resets form state
-  const handleClose = () => {
+  const handleClose = useCallback(() => {
     resetForm();
     onClose();
-  };
+  }, [onClose, resetForm]);
 
   // Focus trap and keyboard handling
   useEffect(() => {
@@ -125,7 +125,7 @@ export default function EditTeamMemberModal({ member, onClose, onSuccess }: Prop
 
     modal.addEventListener('keydown', handleTab);
     return () => modal.removeEventListener('keydown', handleTab);
-  }, []);
+  }, [handleClose]);
 
   const handleRoleChange = async (newRole: string) => {
     if (newRole === role) return;

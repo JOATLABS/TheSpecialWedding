@@ -7,7 +7,7 @@
     "dev": "node scripts/ensure-deps.mjs && next dev --webpack",
     "build": "next build --webpack",
     "start": "next start",
-    "lint": "next lint",
+    "lint": "ESLINT_USE_FLAT_CONFIG=false eslint . --ext .js,.jsx,.ts,.tsx --ignore-pattern 'docs/**'",
     "test": "tsx --test tests/**/*.test.ts",
     "changelog": "conventional-changelog -p angular -i CHANGELOG.md -s",
     "changelog:auto": "auto-changelog -p --commit-limit false",

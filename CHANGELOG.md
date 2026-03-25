@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased] - 2026-03-25
+
+### Changed
+
+- **Lint warning cleanup** (`/app/admin/guests/page.tsx`, `/app/admin/platform/page.tsx`, `/app/admin/support/page.tsx`, `/app/admin/users/page.tsx`, `/app/admin/vendors/page.tsx`, `/app/couple/dashboard/page.tsx`) — Stabilized hook dependencies, pagination callbacks, and callback props so the frontend now passes ESLint without React hook warnings.
+
 ## [2.28.0] - 2026-03-24 — Planner Inbox, Couple Messaging, AI Chat Gating, Cache Fixes
 
 ### Added

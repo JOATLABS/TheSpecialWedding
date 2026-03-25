@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useVendorAuth } from '../layout';
 import { getApiBaseUrl } from '@/utils/env';
 import { toast } from 'sonner';
@@ -78,13 +78,7 @@ export default function VendorSettingsPage() {
   const [pushSubscribed, setPushSubscribed] = useState(false);
   const [pushLoading, setPushLoading] = useState(false);
 
-  useEffect(() => {
-    if (!token) return;
-    fetchProfile();
-    checkPushStatus();
-  }, [token]);
-
-  async function checkPushStatus() {
+  const checkPushStatus = useCallback(async () => {
     // Check browser support
     if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
       setPushSupported(false);
@@ -103,7 +97,7 @@ export default function VendorSettingsPage() {
     } catch {
       // Silently fail
     }
-  }
+  }, [token]);
 
   async function togglePush() {
     if (!token) return;
@@ -165,7 +159,7 @@ export default function VendorSettingsPage() {
     }
   }
 
-  async function fetchProfile() {
+  const fetchProfile = useCallback(async () => {
     try {
       const res = await fetch(`${API_BASE}/api/v1/vendors/profile`, {
         headers: { Authorization: `Bearer ${token}` },
@@ -185,7 +179,13 @@ export default function VendorSettingsPage() {
     } finally {
       setLoading(false);
     }
-  }
+  }, [token]);
+
+  useEffect(() => {
+    if (!token) return;
+    fetchProfile();
+    checkPushStatus();
+  }, [token, fetchProfile, checkPushStatus]);
 
   async function handleSave(e: React.FormEvent) {
     e.preventDefault();

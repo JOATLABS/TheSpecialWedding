@@ -140,6 +140,11 @@ export default function AdminUsersPage() {
   const [successToast, setSuccessToast] = useState<{ message: string; emailStatus?: string } | null>(null);
 
   const pagination = usePagination({ initialItemsPerPage: 50 });
+  const {
+    currentPage,
+    itemsPerPage,
+    setTotalItems: setPaginationTotalItems,
+  } = pagination;
 
   // Access control - ROOT ADMIN only
   useEffect(() => {
@@ -156,7 +161,7 @@ export default function AdminUsersPage() {
 
     try {
       const baseUrl = getApiBaseUrl();
-      const response = await fetch(`${baseUrl}/users?role=wedding_planner&page=${pagination.currentPage}&limit=${pagination.itemsPerPage}`, {
+      const response = await fetch(`${baseUrl}/users?role=wedding_planner&page=${currentPage}&limit=${itemsPerPage}`, {
         headers: {
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json',
@@ -169,14 +174,14 @@ export default function AdminUsersPage() {
 
       const data = await response.json();
       setPlanners(data.users || data || []);
-      pagination.setTotalItems(data.total || (data.users || data || []).length);
+      setPaginationTotalItems(data.total || (data.users || data || []).length);
     } catch (err) {
       console.error('Error fetching planners:', err);
       setError('Failed to load planners. Please try again.');
     } finally {
       setLoading(false);
     }
-  }, [token, pagination.currentPage, pagination.itemsPerPage]);
+  }, [token, currentPage, itemsPerPage, setPaginationTotalItems]);
 
   const fetchTrialSettings = useCallback(async () => {
     try {

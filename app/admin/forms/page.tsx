@@ -206,7 +206,13 @@ export default function FormsManagementPage(): ReactElement {
   };
 
   const handleDeleteCustomTemplate = async (templateId: string, templateName: string) => {
-    if (!confirm(`Delete template "${templateName}"? This cannot be undone.`)) return;
+    const confirmed = await confirm({
+      title: 'Delete template?',
+      message: `Delete template "${templateName}"? This cannot be undone.`,
+      confirmText: 'Delete template',
+      variant: 'danger',
+    });
+    if (!confirmed) return;
     try {
       const res = await fetch(`${formsApi.resolveBaseUrl()}/couple-portal/form-templates/${templateId}`, {
         method: 'DELETE',

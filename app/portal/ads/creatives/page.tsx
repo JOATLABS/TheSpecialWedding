@@ -16,7 +16,7 @@ import {
   type CreateCreativeRequest,
 } from '@/services/campaignAdvertisingApi';
 import {
-  Image,
+  Image as ImageIcon,
   Plus,
   Star,
   RefreshCw,
@@ -218,7 +218,7 @@ export default function VendorCreativesPage() {
       {/* Creative Grid */}
       {creatives.length === 0 ? (
         <div className="text-center py-12 bg-white dark:bg-slate-800/95 rounded-2xl shadow-lg border border-slate-200 dark:border-slate-700">
-          <Image size={40} className="mx-auto text-slate-300 mb-3" />
+          <ImageIcon size={40} className="mx-auto text-slate-300 mb-3" aria-hidden="true" />
           <h3 className="text-sm font-medium text-slate-900 dark:text-white">No ad creatives yet</h3>
           <p className="text-sm text-slate-500 mt-1 max-w-sm mx-auto">Creatives are the headline, description, and call-to-action that planners see in your ads. Create one to get started.</p>
         </div>

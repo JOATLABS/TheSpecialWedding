@@ -15,7 +15,7 @@ export function useTables(weddingId: string) {
    * Handle auth-related response statuses consistently with AdminContext.
    * Returns true if the response was handled (caller should return early).
    */
-  const handleAuthResponse = (response: Response): boolean => {
+  const handleAuthResponse = useCallback((response: Response): boolean => {
     if (response.status === 401) {
       logout();
       return true;
@@ -25,9 +25,9 @@ export function useTables(weddingId: string) {
       return true;
     }
     return false;
-  };
+  }, [logout]);
 
-  const getHeaders = (includeContentType = false): Record<string, string> => {
+  const getHeaders = useCallback((includeContentType = false): Record<string, string> => {
     const headers: Record<string, string> = {};
     if (token) {
       headers['Authorization'] = `Bearer ${token}`;
@@ -36,7 +36,7 @@ export function useTables(weddingId: string) {
       headers['Content-Type'] = 'application/json';
     }
     return headers;
-  };
+  }, [token]);
 
   const fetchTables = useCallback(async () => {
     if (!weddingId || !token) return;
@@ -55,7 +55,7 @@ export function useTables(weddingId: string) {
     } finally {
       setLoading(false);
     }
-  }, [weddingId, token, logout]);
+  }, [weddingId, token, getHeaders, handleAuthResponse]);
 
   const createTable = async (data: CreateTableRequest) => {
     try {

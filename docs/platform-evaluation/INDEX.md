@@ -29,5 +29,5 @@ Documentation generated during the platform-wide evaluation and remediation spri
 
 ## Migration Examples
 
-- **MIGRATION_EXAMPLE.ts** — Example: migrating a component to the new error handling hooks
+- **MIGRATION_EXAMPLE.tsx** — Example: migrating a component to the new error handling hooks
 - **EXAMPLE_IMPLEMENTATION.tsx** — Example: full component implementation with new patterns

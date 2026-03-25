@@ -1,87 +1,15 @@
 'use client';
 
 import React from 'react';
+import Image from 'next/image';
 import Link from 'next/link';
 import SaasNav from '../components/saas/SaasNav';
+import { MARKETING_FEATURES } from '../data/marketingFeatures';
 
 /* ═══════════════════════════════════════════════════════════
    Feature data
    ═══════════════════════════════════════════════════════════ */
-
-const features = [
-  {
-    icon: '👥',
-    title: 'Guest Management',
-    desc: 'RSVPs, plus-ones, groups, dietary needs \u2014 one live view for 200+ guests across multiple events.',
-    ai: false,
-  },
-  {
-    icon: '🪑',
-    title: 'Seating Orchestrator',
-    desc: 'Drag-and-drop seating across sections and tables. Constraints, group rules, and real-time headcounts.',
-    ai: false,
-  },
-  {
-    icon: '📝',
-    title: 'Contract Canvas',
-    desc: 'AI-generated clauses, placeholders, and e-sign \u2014 build contracts from scratch or templates.',
-    ai: true,
-  },
-  {
-    icon: '💰',
-    title: 'Budget Tracker',
-    desc: 'Track every dollar with category breakdowns. AI cash flow predictions tell you when payments are due.',
-    ai: true,
-  },
-  {
-    icon: '🤝',
-    title: 'Vendor CRM',
-    desc: 'Contracts, payments, and communication for every vendor in one hub. Role-based access for collaboration.',
-    ai: false,
-  },
-  {
-    icon: '🏷️',
-    title: 'Service Packages',
-    desc: 'Build bookable tiers with AI pricing suggestions. Send professional proposals with one click.',
-    ai: true,
-  },
-  {
-    icon: '📅',
-    title: 'Planning Calendar',
-    desc: 'Tasks, deadlines, and Google Calendar sync. Assign to team members with due dates and reminders.',
-    ai: false,
-  },
-  {
-    icon: '💳',
-    title: 'Payment Management',
-    desc: 'Incoming and outgoing payments, Stripe integration, forecasts, and AI cash flow predictions.',
-    ai: true,
-  },
-  {
-    icon: '📨',
-    title: 'Reminders & Invites',
-    desc: 'SMS and email \u2014 event reminders, RSVP nudges, custom messages. Automated or manual.',
-    ai: false,
-  },
-  {
-    icon: '📸',
-    title: 'Photo Gallery',
-    desc: 'Upload, organize, and share wedding photos with clients. Privacy controls per gallery.',
-    ai: false,
-  },
-  {
-    icon: '📋',
-    title: 'Forms Canvas',
-    desc: 'Drag-and-drop intake forms, questionnaires, and feedback. AI-assisted field suggestions.',
-    ai: true,
-  },
-  {
-    icon: '⚙️',
-    title: 'Wedding Configuration',
-    desc: 'Events, privacy, RSVP settings, branding \u2014 all customizable per wedding, per client.',
-    ai: false,
-  },
-];
+const features = MARKETING_FEATURES;
 
 type ComparisonRow = {
   feature: string;
@@ -128,10 +56,10 @@ export default function FeaturesPage() {
             Why The Special Wedding
           </p>
           <h1 className="text-3xl font-semibold text-white sm:text-4xl md:text-5xl leading-tight">
-            13 tools. One platform.<br />Zero tool juggling.
+            {features.length} tools. One platform.<br />Zero tool juggling.
           </h1>
           <p className="mt-5 text-base text-slate-300 max-w-2xl mx-auto">
-            Everything a professional wedding planner needs to manage guests, vendors, budgets, contracts, and day-of execution \u2014 with AI that actually saves time.
+            The planner dashboard, couple portal, inbox, forms, payments, and every operational layer around them are designed to work together instead of fighting each other.
           </p>
           <div className="mt-8 flex flex-wrap justify-center gap-3">
             <a
@@ -154,23 +82,38 @@ export default function FeaturesPage() {
       <section className="mx-auto max-w-6xl px-6 py-12 sm:px-10">
         <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
           {features.map((f) => (
-            <div
+            <article
               key={f.title}
               className="group rounded-2xl border border-white/8 bg-white/[0.03] p-7 transition hover:border-wedding-rose/30"
             >
+              <div className="relative mb-5 aspect-[16/10] overflow-hidden rounded-2xl border border-white/10 bg-slate-900/70">
+                <Image
+                  src={f.image}
+                  alt={`${f.title} screenshot`}
+                  fill
+                  sizes="(min-width: 1024px) 30vw, (min-width: 640px) 45vw, 90vw"
+                  className="object-cover object-top transition duration-500 group-hover:scale-[1.02]"
+                />
+              </div>
               <div className="flex items-start justify-between gap-3">
-                <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-wedding-rose/10 text-xl">
-                  {f.icon}
+                <div className="flex items-start gap-3">
+                  <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-wedding-rose/10 text-xl">
+                    {f.icon}
+                  </div>
+                  <div>
+                    <p className="text-[10px] uppercase tracking-[0.25em] text-slate-500">{f.category}</p>
+                    <h3 className="mt-1 text-base font-semibold text-white">{f.title}</h3>
+                  </div>
                 </div>
                 {f.ai && (
-                  <span className="rounded-full bg-wedding-rose/15 border border-wedding-rose/30 px-2.5 py-0.5 text-[10px] font-semibold uppercase tracking-[0.2em] text-wedding-rose">
+                  <span className="rounded-full border border-wedding-rose/30 bg-wedding-rose/15 px-2.5 py-0.5 text-[10px] font-semibold uppercase tracking-[0.2em] text-wedding-rose">
                     AI
                   </span>
                 )}
               </div>
-              <h3 className="mt-4 text-base font-semibold text-white">{f.title}</h3>
-              <p className="mt-2 text-sm text-slate-400 leading-relaxed">{f.desc}</p>
-            </div>
+              <p className="mt-4 text-sm font-medium text-slate-300">{f.tagline}</p>
+              <p className="mt-2 text-sm leading-relaxed text-slate-400">{f.description}</p>
+            </article>
           ))}
         </div>
       </section>

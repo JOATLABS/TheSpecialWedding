@@ -33,98 +33,98 @@ interface OnboardingStep {
 const ONBOARDING_STEPS: OnboardingStep[] = [
   {
     id: 'welcome',
-    title: 'Welcome to The Special Wedding!',
-    description: 'Your all-in-one platform for managing weddings. Let\'s take a quick tour of the key features that will help you deliver exceptional wedding experiences.',
+    title: 'Welcome to Planner HQ',
+    description: 'Your dashboard now brings together wedding health, couple collaboration, AI guidance, and operations tooling in one place. This tour highlights the fastest way to work through it.',
     icon: <Sparkles className="w-12 h-12 text-purple-500" />,
     features: [
-      'Manage multiple weddings from one dashboard',
-      'Streamline guest communication',
-      'Track budgets and vendors',
-      'AI-powered assistance'
+      'See portfolio-wide activity without bouncing between modules',
+      'Guide couples through their own shared portal experience',
+      'Manage payments, forms, contracts, and messaging from connected tools',
+      'Use AI insights to surface the next best action for each wedding',
     ]
   },
   {
     id: 'dashboard',
-    title: 'Your Dashboard',
-    description: 'Your command center for all wedding operations. Get a bird\'s-eye view of everything happening across your weddings.',
+    title: 'Your Dashboard Pulse',
+    description: 'The planner dashboard is the command surface for the workday. It shows summary stats, quick-launch actions, AI insights, progress tracking, and the recent activity stream side by side.',
     icon: <LayoutDashboard className="w-12 h-12 text-blue-500" />,
     features: [
-      'View RSVP statistics at a glance',
-      'Track wedding progress and timelines',
-      'Access AI-powered insights',
-      'Quick actions for common tasks'
+      'Review guest, RSVP, and wedding totals at a glance',
+      'Jump straight into guests, reminders, and gallery uploads',
+      'Read AI insights for the selected wedding without leaving the dashboard',
+      'Track wedding progress and recent activity from one screen',
     ]
   },
   {
     id: 'weddings',
-    title: 'Wedding Management',
-    description: 'Create and manage weddings with ease. Each wedding gets its own dedicated space with customizable settings.',
+    title: 'Wedding Operations',
+    description: 'Every wedding still has its own workspace, but the dashboard now makes it easier to jump into the ones that need attention and manage them as a portfolio instead of isolated records.',
     icon: <Heart className="w-12 h-12 text-pink-500" />,
     features: [
-      'Create multi-event weddings',
-      'Customize wedding websites',
-      'Manage event details and venues',
-      'Generate unique guest URLs'
+      'Open the right wedding directly from the dashboard list',
+      'Monitor progress percentages and days remaining per couple',
+      'Launch each wedding website or workspace in one click',
+      'Keep event details, venues, and RSVP context connected to the same record',
     ]
   },
   {
-    id: 'guests',
-    title: 'Guest Management',
-    description: 'Keep track of every guest, their preferences, and their RSVP status. Import guests in bulk or add them one by one.',
+    id: 'couples',
+    title: 'Couple Collaboration',
+    description: 'The platform now gives couples their own portal for forms, payments, updates, FAQ content, registry links, and day-of context, so you stop managing approvals through fragmented messages.',
     icon: <Users className="w-12 h-12 text-green-500" />,
     features: [
-      'Add guests individually or import in bulk',
-      'Organize guests into groups',
-      'Manage plus-ones and dietary preferences',
-      'Track attendance for multiple events'
+      'Share a guided dashboard with each couple',
+      'Keep forms, FAQs, registry links, and updates in one portal',
+      'Let couples review payment status without extra follow-up',
+      'Reduce back-and-forth by keeping the couple experience wired to your data',
     ]
   },
   {
-    id: 'rsvp',
-    title: 'RSVP & Invitations',
-    description: 'Send beautiful invitations via SMS or email and track responses in real-time. Automate reminders to increase response rates.',
+    id: 'inbox',
+    title: 'Messaging & Activity',
+    description: 'Planner communication now lives in a cleaner workflow. The split-panel inbox and recent activity stream make it easier to see what changed, who needs a response, and what was already handled.',
     icon: <Mail className="w-12 h-12 text-indigo-500" />,
     features: [
-      'Send SMS & email invitations',
-      'Track RSVP responses instantly',
-      'Schedule automated reminders',
-      'View delivery and read status'
+      'Reply to couples from a dedicated inbox instead of scattered threads',
+      'Track unread message counts across the platform',
+      'Review project activity without digging through wedding records',
+      'Keep updates, notes, and communication attached to the right account',
     ]
   },
   {
-    id: 'budget',
-    title: 'Budget Tracking',
-    description: 'Keep wedding finances under control. Track expenses, payments, and get AI-powered budget recommendations.',
+    id: 'business',
+    title: 'Packages, Contracts & Payments',
+    description: 'Business workflows are now more connected, from AI-assisted packages and contracts to payment schedules couples can review inside their portal.',
     icon: <DollarSign className="w-12 h-12 text-yellow-500" />,
     features: [
-      'Set and track budgets by category',
-      'Record payments and expenses',
-      'Get AI budget insights',
-      'Generate financial reports'
+      'Create and preview service packages from the planner workspace',
+      'Generate polished contracts with AI-assisted drafting',
+      'Track payments, balances, and billing milestones in one place',
+      'Give couples visibility into what is due without extra admin work',
     ]
   },
   {
     id: 'support',
-    title: 'Help & Support',
-    description: 'You\'re never alone! Access our Knowledge Base for guides and FAQs, or create a support ticket if you need personalized help.',
+    title: 'Team Readiness & Support',
+    description: 'As your studio grows, the platform now supports tighter internal coordination through team access controls, knowledge base content, and operational visibility.',
     icon: <HelpCircle className="w-12 h-12 text-cyan-500" />,
     features: [
-      'Browse Knowledge Base articles',
-      'Create support tickets',
-      'Contribute your own guides',
-      'Get email notifications on updates'
+      'Assign planners only to the weddings they should touch',
+      'Use the knowledge base to reduce repeated training and support requests',
+      'Spot opportunities and activity from the dashboard without context switching',
+      'Keep the whole team working from the same source of truth',
     ]
   },
   {
     id: 'ready',
-    title: 'You\'re All Set!',
-    description: 'You now know the basics. Start by creating your first wedding or explore the dashboard to get familiar with the platform.',
+    title: 'You\'re Ready',
+    description: 'Start each day from the planner dashboard. It is now the fastest path to wedding triage, couple communication, financial follow-up, and team coordination.',
     icon: <CheckCircle className="w-12 h-12 text-green-500" />,
     features: [
-      'Create your first wedding',
-      'Import your guest list',
-      'Send out invitations',
-      'Track everything in one place'
+      'Review AI insights before jumping into detail pages',
+      'Use the inbox and activity feed as your operational heartbeat',
+      'Drive couples back into the portal for forms, approvals, and updates',
+      'Keep weddings moving forward from one connected system',
     ]
   }
 ];

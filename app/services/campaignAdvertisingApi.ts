@@ -63,6 +63,7 @@ export interface AdCampaign {
   reviewed_at?: string;
   reviewed_by?: string;
   review_notes?: string;
+  is_free_tier?: boolean;
   vendor_category?: string;
   vendor_service_area?: string;
   vendor_logo_url?: string;
@@ -329,6 +330,7 @@ export interface VendorAccountSummary {
   vendor_email: string;
   vendor_name: string;
   status: VendorAccountStatus;
+  is_free_tier?: boolean;
   campaigns_count: number;
   active_campaigns: number;
   total_impressions: number;

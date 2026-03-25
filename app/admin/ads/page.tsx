@@ -84,6 +84,7 @@ import {
   Database,
   ToggleLeft,
   Save,
+  type LucideIcon,
 } from 'lucide-react';
 
 // =============================================================================
@@ -163,7 +164,7 @@ export default function AdminAdsPage() {
 function StatCard({ label, value, icon: Icon, color = 'text-slate-600' }: {
   label: string;
   value: string | number;
-  icon: React.ElementType;
+  icon: LucideIcon;
   color?: string;
 }) {
   return (
@@ -194,7 +195,7 @@ function StatusBadge({ status, getLabel, getColor }: {
 }
 
 function EmptyState({ icon: Icon, title, description }: {
-  icon: React.ElementType;
+  icon: LucideIcon;
   title: string;
   description: string;
 }) {

@@ -14,7 +14,7 @@
 - [ ] Read FRONTEND_ERROR_HANDLING_SETUP.md
 - [ ] Review API_ERROR_HANDLING.md examples
 - [ ] Study EXAMPLE_IMPLEMENTATION.tsx
-- [ ] Review MIGRATION_EXAMPLE.ts
+- [ ] Review MIGRATION_EXAMPLE.tsx
 
 ### Local Testing
 - [ ] Test useApi with successful request
@@ -172,7 +172,7 @@ git push origin main --force
 ### Day 2-3: Learning
 1. Team reads API_ERROR_HANDLING.md
 2. Team studies EXAMPLE_IMPLEMENTATION.tsx
-3. Team reviews MIGRATION_EXAMPLE.ts
+3. Team reviews MIGRATION_EXAMPLE.tsx
 
 ### Day 4-5: Hands-On
 1. Each team member tries useApi in test component
@@ -307,7 +307,7 @@ git push origin main --force
 - Setup: See FRONTEND_ERROR_HANDLING_SETUP.md
 - Usage: See API_ERROR_HANDLING.md
 - Example: See EXAMPLE_IMPLEMENTATION.tsx
-- Migration: See MIGRATION_EXAMPLE.ts
+- Migration: See MIGRATION_EXAMPLE.tsx
 
 ## Contacts
 
@@ -318,7 +318,7 @@ git push origin main --force
 - See API_ERROR_HANDLING.md
 
 **Questions about migration:**
-- See MIGRATION_EXAMPLE.ts and SETUP.md
+- See MIGRATION_EXAMPLE.tsx and SETUP.md
 
 **Questions about architecture:**
 - See ERROR_HANDLING_SUMMARY.md

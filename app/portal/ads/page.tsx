@@ -24,6 +24,7 @@ import {
   ArrowRight,
   RefreshCw,
   BarChart3,
+  type LucideIcon,
 } from 'lucide-react';
 
 export default function VendorOverviewPage() {
@@ -173,7 +174,7 @@ export default function VendorOverviewPage() {
 function KPICard({ label, value, icon: Icon, color }: {
   label: string;
   value: string | number;
-  icon: React.ElementType;
+  icon: LucideIcon;
   color: string;
 }) {
   return (

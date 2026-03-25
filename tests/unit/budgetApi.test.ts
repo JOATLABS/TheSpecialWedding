@@ -20,8 +20,7 @@ describe('budgetApi payments', () => {
     if (originalFetch) {
       globalThis.fetch = originalFetch;
     } else {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      delete (globalThis as any).fetch;
+      delete (globalThis as typeof globalThis & { fetch?: typeof fetch }).fetch;
     }
   });
 
