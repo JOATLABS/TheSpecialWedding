@@ -34,7 +34,7 @@ export function ConfirmDialogProvider({ children }: { children: ReactNode }) {
     message: '',
   });
 
-  const resolveRef = useRef<(value: boolean) => void>();
+  const resolveRef = useRef<((value: boolean) => void) | null>(null);
   const confirmButtonRef = useRef<HTMLButtonElement>(null);
 
   const confirm = useCallback((options: ConfirmDialogOptions): Promise<boolean> => {

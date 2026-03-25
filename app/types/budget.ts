@@ -47,6 +47,7 @@ export interface VendorQuote {
 
 export interface BudgetTemplate {
   id: string;
+  _id?: string;
   name: string;
   description?: string;
   wedding_type: string;

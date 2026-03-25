@@ -23,11 +23,12 @@ import {
   DollarSign,
   Calendar,
   Send,
+  type LucideIcon,
 } from 'lucide-react';
 
 type WizardStep = 'basics' | 'targeting' | 'creative' | 'budget' | 'schedule' | 'review';
 
-const STEPS: { id: WizardStep; label: string; icon: React.ElementType }[] = [
+const STEPS: { id: WizardStep; label: string; icon: LucideIcon }[] = [
   { id: 'basics', label: 'Basics', icon: Megaphone },
   { id: 'targeting', label: 'Targeting', icon: Target },
   { id: 'creative', label: 'Creative', icon: Image },

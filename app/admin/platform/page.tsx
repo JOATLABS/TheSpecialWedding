@@ -174,6 +174,12 @@ export default function PlatformInfrastructurePage() {
 
   // Page-based pagination
   const errorPagination = usePagination({ initialItemsPerPage: 50 });
+  const {
+    currentPage: errorCurrentPage,
+    itemsPerPage: errorItemsPerPage,
+    setPage: setErrorPage,
+    setTotalItems: setErrorTotalItems,
+  } = errorPagination;
 
   // Access control - ROOT ADMIN only
   useEffect(() => {
@@ -224,8 +230,8 @@ export default function PlatformInfrastructurePage() {
       if (!token) return;
 
       const params = new URLSearchParams({
-        page: errorPagination.currentPage.toString(),
-        limit: errorPagination.itemsPerPage.toString(),
+        page: errorCurrentPage.toString(),
+        limit: errorItemsPerPage.toString(),
         ...(severityFilter !== 'all' && { severity: severityFilter }),
         ...(acknowledgedFilter !== 'all' && { acknowledged: acknowledgedFilter })
       });
@@ -240,14 +246,14 @@ export default function PlatformInfrastructurePage() {
       if (response.ok) {
         const data = await response.json();
         setAllErrors(data.errors || []);
-        errorPagination.setTotalItems(data.total || 0);
+        setErrorTotalItems(data.total || 0);
       }
     } catch (err) {
       console.error('Error fetching errors:', err);
     } finally {
       setLoadingErrors(false);
     }
-  }, [errorPagination.currentPage, errorPagination.itemsPerPage, severityFilter, acknowledgedFilter]);
+  }, [errorCurrentPage, errorItemsPerPage, severityFilter, acknowledgedFilter, setErrorTotalItems]);
 
   useEffect(() => {
     fetchMetrics();
@@ -266,8 +272,8 @@ export default function PlatformInfrastructurePage() {
 
   // Reset to page 1 when filters change
   useEffect(() => {
-    errorPagination.setPage(1);
-  }, [severityFilter, acknowledgedFilter]);
+    setErrorPage(1);
+  }, [severityFilter, acknowledgedFilter, setErrorPage]);
 
   const handleAcknowledgeError = async (errorId: string) => {
     setAcknowledgingIds(prev => new Set(prev).add(errorId));

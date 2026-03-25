@@ -174,7 +174,6 @@ export default function Sidebar({ isOpen, setIsOpen, isMobile }: SidebarProps) {
         style={{ width: isOpen ? '18rem' : '5rem' }}
         role="navigation"
         aria-label="Main navigation"
-        aria-expanded={isOpen}
       >
         {/* Logo Section */}
         <div className="flex items-center justify-between h-16 px-3 border-b border-slate-200/50 dark:border-slate-700/50">

@@ -358,7 +358,7 @@ app/
 └── admin/
     ├── guests/
     │   ├── page.tsx                 # (To be migrated)
-    │   └── MIGRATION_EXAMPLE.ts     # Example migration
+    │   └── MIGRATION_EXAMPLE.tsx    # Example migration
     ├── team/
     │   └── page.tsx                 # (To be migrated)
     └── dashboard/
@@ -369,7 +369,7 @@ app/
 
 For detailed usage examples, see:
 - `app/hooks/API_ERROR_HANDLING.md` - Complete usage guide
-- `app/admin/guests/MIGRATION_EXAMPLE.ts` - Real-world example
+- `app/admin/guests/MIGRATION_EXAMPLE.tsx` - Real-world example
 
 ## Next Steps
 

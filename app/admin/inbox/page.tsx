@@ -321,7 +321,7 @@ export default function InboxPage() {
 
   // ==================== BUILD UNIFIED LIST ====================
 
-  const getWeddingLabel = (weddingId?: string): string => {
+  const getWeddingLabel = useCallback((weddingId?: string): string => {
     if (!weddingId) return '';
     const w = weddings.find(w => w._id === weddingId);
     if (!w) return '';
@@ -329,7 +329,7 @@ export default function InboxPage() {
     const p2 = [w.partner2_first_name, w.partner2_last_name].filter(Boolean).join(' ');
     if (p1 && p2) return `${p1} & ${p2}`;
     return p1 || p2 || w.slug || weddingId;
-  };
+  }, [weddings]);
 
   const buildUnifiedList = useCallback((): InboxItem[] => {
     const items: InboxItem[] = [];
@@ -379,7 +379,7 @@ export default function InboxPage() {
     });
 
     return items;
-  }, [emails, couples, coupleUnreads, weddings]);
+  }, [emails, couples, coupleUnreads, getWeddingLabel]);
 
   const allItems = buildUnifiedList();
 

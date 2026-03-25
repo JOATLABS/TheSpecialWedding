@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { useAdmin } from '@/contexts/AdminContext';
 import { getApiBaseUrl } from '@/utils/env';
@@ -55,7 +55,7 @@ export default function InviteTeamMemberModal({ onClose, onSuccess }: Props) {
   }, [baseUrl, token]);
 
   // Form reset function
-  const resetForm = () => {
+  const resetForm = useCallback(() => {
     setEmail('');
     setRole('editor');
     setPermissions({ ...ROLE_DEFAULTS.editor });
@@ -63,13 +63,13 @@ export default function InviteTeamMemberModal({ onClose, onSuccess }: Props) {
     setAssignedWeddingIds([]);
     setShowWeddingPicker(false);
     setSubmitting(false);
-  };
+  }, []);
 
   // Close handler that resets form state
-  const handleClose = () => {
+  const handleClose = useCallback(() => {
     resetForm();
     onClose();
-  };
+  }, [onClose, resetForm]);
 
   // Focus trap and keyboard handling
   useEffect(() => {
@@ -101,7 +101,7 @@ export default function InviteTeamMemberModal({ onClose, onSuccess }: Props) {
 
     modal.addEventListener('keydown', handleTab);
     return () => modal.removeEventListener('keydown', handleTab);
-  }, []);
+  }, [handleClose]);
 
   const handleRoleChange = (newRole: string) => {
     setRole(newRole);

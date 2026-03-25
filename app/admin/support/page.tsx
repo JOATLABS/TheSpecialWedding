@@ -80,6 +80,11 @@ export default function SupportPage() {
   });
 
   const pagination = usePagination({ initialItemsPerPage: 50 });
+  const {
+    currentPage,
+    itemsPerPage,
+    setTotalItems: setPaginationTotalItems,
+  } = pagination;
 
   const isRootAdmin = userProfile?.is_root_admin;
 
@@ -91,14 +96,14 @@ export default function SupportPage() {
       // Fetch support tickets
       try {
         const endpoint = isRootAdmin ? '/admin/tickets' : '/admin/my-tickets';
-        const url = `${endpoint}?page=${pagination.currentPage}&limit=${pagination.itemsPerPage}`;
+        const url = `${endpoint}?page=${currentPage}&limit=${itemsPerPage}`;
         const ticketsResponse = await apiRequest<{ tickets: SupportTicket[], total?: number, page?: number }>(
           url,
           'GET'
         );
         fetchedTickets = ticketsResponse?.tickets ?? [];
         setTickets(fetchedTickets);
-        pagination.setTotalItems(ticketsResponse?.total || fetchedTickets.length);
+        setPaginationTotalItems(ticketsResponse?.total || fetchedTickets.length);
       } catch (error) {
         console.warn('Support tickets endpoint not available');
         setTickets([]);
@@ -133,7 +138,7 @@ export default function SupportPage() {
     } finally {
       setLoading(false);
     }
-  }, [apiRequest, isRootAdmin, pagination.currentPage, pagination.itemsPerPage]);
+  }, [apiRequest, isRootAdmin, currentPage, itemsPerPage, setPaginationTotalItems]);
 
   useEffect(() => {
     fetchData();

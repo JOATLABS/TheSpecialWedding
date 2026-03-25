@@ -48,6 +48,23 @@ class CoupleResetPasswordRequest(BaseModel):
     password: str = Field(..., min_length=8, max_length=128)
 
 
+class CoupleOnboardingUpdateRequest(BaseModel):
+    """Update persisted onboarding completion for the couple portal."""
+    completed: bool = Field(..., description="Whether onboarding has been completed")
+    steps_completed: Optional[list[str]] = Field(None, description="Completed onboarding step identifiers")
+
+
+def _serialize_onboarding_fields(couple: dict) -> dict:
+    return {
+        "onboarding_completed": couple.get("onboarding_completed", False),
+        "onboarding_completed_at": (
+            couple.get("onboarding_completed_at").isoformat()
+            if couple.get("onboarding_completed_at") else None
+        ),
+        "onboarding_steps_completed": couple.get("onboarding_steps_completed", []),
+    }
+
+
 # ============================================================================
 # PUBLIC ENDPOINTS (No auth required)
 # ============================================================================
@@ -97,7 +114,8 @@ async def setup_couple_password(data: CoupleSetupPasswordRequest):
             "email": couple["email"],
             "partner1_name": couple.get("partner1_name"),
             "partner2_name": couple.get("partner2_name"),
-            "wedding_id": couple.get("wedding_id")
+            "wedding_id": couple.get("wedding_id"),
+            **_serialize_onboarding_fields(couple),
         }
     }
 
@@ -142,7 +160,8 @@ async def couple_login(data: CoupleLoginRequest):
             "email": couple["email"],
             "partner1_name": couple.get("partner1_name"),
             "partner2_name": couple.get("partner2_name"),
-            "wedding_id": couple.get("wedding_id")
+            "wedding_id": couple.get("wedding_id"),
+            **_serialize_onboarding_fields(couple),
         }
     }
 
@@ -188,7 +207,43 @@ async def get_couple_profile(couple: dict = Depends(require_couple_auth)):
         "is_active": couple.get("is_active", False),
         "setup_completed": couple.get("setup_completed", False),
         "last_login": couple.get("last_login", "").isoformat() if couple.get("last_login") else None,
-        "created_at": couple.get("created_at", "").isoformat() if couple.get("created_at") else None
+        "created_at": couple.get("created_at", "").isoformat() if couple.get("created_at") else None,
+        **_serialize_onboarding_fields(couple),
+    }
+
+
+@router.get("/couple/profile/onboarding", tags=["Couple Auth"])
+async def get_couple_onboarding_status(couple: dict = Depends(require_couple_auth)):
+    """Get the current couple portal onboarding state."""
+    return _serialize_onboarding_fields(couple)
+
+
+@router.put("/couple/profile/onboarding", tags=["Couple Auth"])
+async def update_couple_onboarding_status(
+    onboarding_data: CoupleOnboardingUpdateRequest,
+    couple: dict = Depends(require_couple_auth),
+):
+    """Persist couple portal onboarding completion and visited steps."""
+    update_data = {
+        "onboarding_completed": onboarding_data.completed,
+        "updated_at": datetime.now(timezone.utc),
+    }
+
+    if onboarding_data.completed:
+        update_data["onboarding_completed_at"] = datetime.now(timezone.utc)
+
+    if onboarding_data.steps_completed is not None:
+        update_data["onboarding_steps_completed"] = onboarding_data.steps_completed
+
+    await mongo.db["couple_users"].update_one(
+        {"_id": couple["_id"]},
+        {"$set": update_data}
+    )
+
+    return {
+        "message": "Couple onboarding status updated",
+        "onboarding_completed": onboarding_data.completed,
+        "onboarding_steps_completed": onboarding_data.steps_completed or [],
     }
 
 

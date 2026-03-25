@@ -6,6 +6,7 @@ import { getApiBaseUrl } from '@/utils/env';
 import { toast } from 'sonner';
 import CoupleSidebar, { type CoupleSection } from '../components/CoupleSidebar';
 import CoupleTopHeader from '../components/CoupleTopHeader';
+import CoupleOnboardingModal from '../components/CoupleOnboardingModal';
 import PageHeader from '@/components/ui/PageHeader';
 import MessageBubble from '@/components/ui/MessageBubble';
 import ChatInput from '@/components/ui/ChatInput';
@@ -231,10 +232,18 @@ export default function CoupleDashboardPage() {
   const [data, setData] = useState<DashboardData | null>(null);
   const [activeSection, setActiveSection] = useState<CoupleSection>('dashboard');
   const [unreadMessages, setUnreadMessages] = useState(0);
+  const [isOnboardingOpen, setIsOnboardingOpen] = useState(false);
+  const [hasUserDismissedOnboarding, setHasUserDismissedOnboarding] = useState(false);
 
   // Sidebar state
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [isMobile, setIsMobile] = useState(false);
+  const handleMessageSent = useCallback(() => {
+    setUnreadMessages(0);
+  }, []);
+  const handleMessagesRead = useCallback(() => {
+    setUnreadMessages(0);
+  }, []);
 
   useEffect(() => {
     const handleResize = () => {
@@ -286,12 +295,27 @@ export default function CoupleDashboardPage() {
           setUnreadMessages(unreadData.unread_count || 0);
         }
       } catch { /* non-critical */ }
+
+      if (!hasUserDismissedOnboarding) {
+        try {
+          const onboardingRes = await fetch(`${getApiBaseUrl()}/couple/profile/onboarding`, {
+            headers: { Authorization: `Bearer ${token}` },
+          });
+
+          if (onboardingRes.ok) {
+            const onboardingData = await onboardingRes.json();
+            setIsOnboardingOpen(!onboardingData.onboarding_completed);
+          }
+        } catch {
+          /* non-critical */
+        }
+      }
     } catch {
       toast.error('Failed to connect to server');
     } finally {
       setLoading(false);
     }
-  }, [router]);
+  }, [hasUserDismissedOnboarding, router]);
 
   useEffect(() => {
     fetchDashboard();
@@ -310,6 +334,11 @@ export default function CoupleDashboardPage() {
     localStorage.removeItem('couple_token');
     localStorage.removeItem('couple_data');
     router.push('/couple/login');
+  };
+
+  const handleOnboardingComplete = () => {
+    setHasUserDismissedOnboarding(true);
+    setIsOnboardingOpen(false);
   };
 
   if (loading) {
@@ -393,8 +422,8 @@ export default function CoupleDashboardPage() {
           {activeSection === 'inbox' && (
             <InboxSection
               updates={data.updates || []}
-              onMessageSent={() => setUnreadMessages(0)}
-              onMessagesRead={() => setUnreadMessages(0)}
+              onMessageSent={handleMessageSent}
+              onMessagesRead={handleMessagesRead}
               archived={!!data.archived}
             />
           )}
@@ -402,6 +431,11 @@ export default function CoupleDashboardPage() {
           {activeSection === 'faq' && <FAQSection faqs={data.wedding?.faqs || []} archived={!!data.archived} onUpdated={fetchDashboard} />}
         </main>
       </div>
+
+      <CoupleOnboardingModal
+        isOpen={isOnboardingOpen}
+        onComplete={handleOnboardingComplete}
+      />
     </div>
   );
 }
@@ -1133,7 +1167,7 @@ function InboxSection({ updates, onMessageSent, onMessagesRead, archived = false
     } finally {
       setMsgLoading(false);
     }
-  }, []);
+  }, [onMessagesRead]);
 
   useEffect(() => { fetchMessages(); }, [fetchMessages]);
 

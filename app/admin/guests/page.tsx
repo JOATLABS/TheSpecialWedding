@@ -132,6 +132,12 @@ export default function AdminGuestsPage() {
 
   // Pagination state
   const pagination = usePagination({ initialItemsPerPage: 50 });
+  const {
+    currentPage,
+    itemsPerPage,
+    setPage: setPaginationPage,
+    setTotalItems: setPaginationTotalItems,
+  } = pagination;
 
   // Modal states
   const [editingGuest, setEditingGuest] = useState<Guest | null>(null);
@@ -220,7 +226,7 @@ export default function AdminGuestsPage() {
 
       // Fetch guests with pagination
       const guestsResponse = await fetch(
-        `${baseUrl}/admin/guests?wedding_id=${selectedWedding}&page=${pagination.currentPage}&limit=${pagination.itemsPerPage}`,
+        `${baseUrl}/admin/guests?wedding_id=${selectedWedding}&page=${currentPage}&limit=${itemsPerPage}`,
         { headers: { 'Authorization': `Bearer ${token}` } }
       );
 
@@ -230,7 +236,7 @@ export default function AdminGuestsPage() {
         const guestData = guestsData.guests || guestsData || [];
         normalizedGuests = Array.isArray(guestData) ? guestData : [];
         setGuests(normalizedGuests);
-        pagination.setTotalItems(guestsData.total || normalizedGuests.length);
+        setPaginationTotalItems(guestsData.total || normalizedGuests.length);
       } else {
         setGuests([]);
       }
@@ -275,7 +281,7 @@ export default function AdminGuestsPage() {
     } finally {
       setLoading(false);
     }
-  }, [selectedWedding, token, pagination.currentPage, pagination.itemsPerPage]);
+  }, [selectedWedding, token, currentPage, itemsPerPage, setPaginationTotalItems]);
 
   useEffect(() => {
     fetchWeddings();
@@ -453,9 +459,8 @@ export default function AdminGuestsPage() {
 
   // Reset pagination to page 1 when filters change
   useEffect(() => {
-    pagination.setPage(1);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [searchTerm, activeTab, filterGroup, filterRole]);
+    setPaginationPage(1);
+  }, [searchTerm, activeTab, filterGroup, filterRole, setPaginationPage]);
 
   const filteredAndSortedGuests = useMemo(() => {
     let result = guests.filter(guest => {
@@ -529,7 +534,7 @@ export default function AdminGuestsPage() {
     });
 
     return result;
-  }, [guests, searchTerm, activeTab, filterGroup, filterRole, sortField, sortDirection, rsvps, plusOnes, getPlusOnesForGuest]);
+  }, [guests, searchTerm, activeTab, filterGroup, filterRole, sortField, sortDirection, rsvps, getPlusOnesForGuest]);
 
   // ==================== SELECTION HANDLERS ====================
 

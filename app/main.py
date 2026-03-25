@@ -510,7 +510,8 @@ app.include_router(saas_config_router, prefix="/saas", tags=["Subscription"])
 app.include_router(testimonials_router, prefix="/saas", tags=["Testimonials"])
 app.include_router(public_contact_router, tags=["Sales"])
 app.include_router(guest_verification_router, tags=["Guest"])
-app.include_router(forms_router, tags=["Forms"])  # Public form submission endpoints
+app.include_router(forms_router, tags=["Forms"])  # Legacy + public form endpoints
+app.include_router(forms_router, prefix="/admin", tags=["Forms"])  # Canonical admin form endpoints used by the frontend
 app.include_router(vendor_forms_router, prefix="/vendor-form", tags=["Vendor Forms"])  # Public vendor forms
 app.include_router(vendor_dashboard_router, prefix="/vendor", tags=["Vendor Dashboard"])
 app.include_router(vendor_management_router, prefix="/admin", tags=["Vendor Contracts"])  # Vendor management endpoints (admin only)
@@ -557,7 +558,7 @@ admin_routers = [
     # saas_config_router - already registered publicly with route-level auth
     (budget_router, "Budget"),
     (planner_metrics_router, "Metrics"),
-    # forms_router - already registered publicly with route-level auth
+    # forms_router - mounted above with /admin prefix and public-compatible aliases
     (trial_management_router, "Admin"),
     # vendor_forms_router - already registered publicly with route-level auth
     # vendor_management_router - registered at /admin prefix (line ~300)

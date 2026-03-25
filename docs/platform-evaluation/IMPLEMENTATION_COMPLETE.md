@@ -75,7 +75,7 @@ All files have been created and are ready to use in the WeddingWebApp.
 | FRONTEND_ERROR_HANDLING_SETUP.md | 403 | Complete setup guide |
 | ERROR_HANDLING_DEPLOYMENT.md | 324 | Deployment checklist |
 | API_ERROR_HANDLING.md | 366 | Detailed usage guide |
-| MIGRATION_EXAMPLE.ts | 344 | Real-world migration example |
+| MIGRATION_EXAMPLE.tsx | 344 | Real-world migration example |
 | EXAMPLE_IMPLEMENTATION.tsx | 478 | Complete example component |
 | IMPLEMENTATION_COMPLETE.md | This file | Completion status |
 
@@ -103,7 +103,7 @@ WeddingWebApp/
 │   │   └── APIContext.tsx               ✓ Existing (legacy)
 │   └── admin/
 │       └── guests/
-│           ├── MIGRATION_EXAMPLE.ts     ✓ New (reference)
+│           ├── MIGRATION_EXAMPLE.tsx    ✓ New (reference)
 │           └── EXAMPLE_IMPLEMENTATION.tsx ✓ New (example)
 ├── ERROR_HANDLING_SUMMARY.md            ✓ New
 ├── FRONTEND_ERROR_HANDLING_SETUP.md     ✓ New
@@ -120,7 +120,7 @@ WeddingWebApp/
 
 ### 2. Study Examples (1 hour)
 1. Study `EXAMPLE_IMPLEMENTATION.tsx` - complete working example
-2. Study `MIGRATION_EXAMPLE.ts` - before/after comparison
+2. Study `MIGRATION_EXAMPLE.tsx` - before/after comparison
 3. Review code comments in hook files
 
 ### 3. Try One Hook (1 hour)
@@ -302,7 +302,7 @@ See the appropriate documentation:
 | Question | See |
 |----------|-----|
 | How do I use useApi? | API_ERROR_HANDLING.md |
-| How do I migrate a page? | MIGRATION_EXAMPLE.ts |
+| How do I migrate a page? | MIGRATION_EXAMPLE.tsx |
 | How do I deploy this? | ERROR_HANDLING_DEPLOYMENT.md |
 | What are common patterns? | EXAMPLE_IMPLEMENTATION.tsx |
 | How does pagination work? | API_ERROR_HANDLING.md (usePaginatedFetch) |
@@ -330,7 +330,7 @@ See the appropriate documentation:
 ✓ API_ERROR_HANDLING.md - Usage guide
 ✓ ERROR_HANDLING_DEPLOYMENT.md - Deployment
 ✓ EXAMPLE_IMPLEMENTATION.tsx - Complete example
-✓ MIGRATION_EXAMPLE.ts - Migration example
+✓ MIGRATION_EXAMPLE.tsx - Migration example
 
 **Total: 13 files, ~2,600 lines of code and documentation**
 

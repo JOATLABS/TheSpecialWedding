@@ -119,6 +119,12 @@ export default function VendorManagementPage() {
 
   // Pagination
   const pagination = usePagination({ initialItemsPerPage: 50 });
+  const {
+    skip: vendorSkip,
+    itemsPerPage: vendorItemsPerPage,
+    setPage: setVendorPage,
+    setTotalItems: setVendorTotalItems,
+  } = pagination;
 
   // AI Functions
   const fetchAiRecommendations = async () => {
@@ -211,8 +217,8 @@ export default function VendorManagementPage() {
           search: searchQuery || undefined,
           category: categoryFilter || undefined,
           is_preferred: preferredOnly ? true : undefined,
-          skip: pagination.skip,
-          limit: pagination.itemsPerPage,
+          skip: vendorSkip,
+          limit: vendorItemsPerPage,
         }),
         getContracts(token),
         getPaymentMilestones(token),
@@ -233,7 +239,7 @@ export default function VendorManagementPage() {
       if (vendorsResult.status === 'fulfilled') {
         const vendorList = vendorsResult.value || [];
         setVendors(vendorList);
-        pagination.setTotalItems(vendorList.length);
+        setVendorTotalItems(vendorList.length);
       }
       if (contractsResult.status === 'fulfilled') setContracts(contractsResult.value);
       if (milestonesResult.status === 'fulfilled') setMilestones(milestonesResult.value);
@@ -243,8 +249,7 @@ export default function VendorManagementPage() {
     } finally {
       setLoading(false);
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [token, searchQuery, categoryFilter, preferredOnly, pagination.currentPage, pagination.itemsPerPage]);
+  }, [token, searchQuery, categoryFilter, preferredOnly, vendorSkip, vendorItemsPerPage, setVendorTotalItems]);
 
   useEffect(() => {
     if (!userProfile) {
@@ -258,8 +263,8 @@ export default function VendorManagementPage() {
 
   // Reset to page 1 when filters change
   useEffect(() => {
-    pagination.setPage(1);
-  }, [searchQuery, categoryFilter, preferredOnly]);
+    setVendorPage(1);
+  }, [searchQuery, categoryFilter, preferredOnly, setVendorPage]);
 
 
   // Handle add vendor

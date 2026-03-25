@@ -11,19 +11,12 @@ import PetalCanvas from "./components/ui/PetalCanvas";
 import InfiniteScrollWrapper from "./components/ui/InfiniteScrollWrapper";
 import { SignupModal } from "./components/saas/SignupModal";
 import SaasNav from "./components/saas/SaasNav";
+import { MARKETING_FEATURES } from "./data/marketingFeatures";
 import { ThemeConfig } from "./types/wedding";
 
 /* ═══════════════════════════════════════════════════════════
    Types
    ═══════════════════════════════════════════════════════════ */
-
-type ShowcaseFeature = {
-  id: string;
-  title: string;
-  tagline: string;
-  image: string;
-  category: string;
-};
 
 type Testimonial = {
   quote: string;
@@ -51,99 +44,7 @@ type FAQ = {
    13 features mapped to real dashboard screenshots
    ═══════════════════════════════════════════════════════════ */
 
-const showcaseFeatures: ShowcaseFeature[] = [
-  {
-    id: "guests",
-    title: "Guest Management",
-    tagline: "242 guests, RSVPs, plus-ones, groups — one live view.",
-    image: "/guest_management_view.png",
-    category: "Planning",
-  },
-  {
-    id: "calendar",
-    title: "Planning Calendar",
-    tagline: "Tasks, deadlines, and Google Calendar sync built in.",
-    image: "/calendar_management.png",
-    category: "Planning",
-  },
-  {
-    id: "budget",
-    title: "Budget Tracker",
-    tagline: "Track every dollar — $80k budget, $55k remaining, zero guesswork.",
-    image: "/budget_management_dark_mode.png",
-    category: "Finance",
-  },
-  {
-    id: "seating",
-    title: "Seating Orchestrator",
-    tagline: "Drag guests to tables. 240 seated across 5 sections, 10 tables.",
-    image: "/seating.png",
-    category: "Planning",
-  },
-  {
-    id: "packages",
-    title: "Service Packages",
-    tagline: "Build bookable tiers with AI pricing suggestions.",
-    image: "/create_package_flow_with_ai_pricing_suggestion.png",
-    category: "Business",
-  },
-  {
-    id: "vendor",
-    title: "Vendor Management",
-    tagline: "CRM, contracts, and payments — every vendor in one hub.",
-    image: "/vendor_management.png",
-    category: "Business",
-  },
-  {
-    id: "contracts",
-    title: "Contract Canvas",
-    tagline: "AI-generated clauses, placeholders, and e-sign — built from scratch.",
-    image: "/contract_canvas.png",
-    category: "Business",
-  },
-  {
-    id: "payments",
-    title: "Payment Management",
-    tagline: "Incoming, outgoing, forecasts — with AI cash flow predictions.",
-    image: "/payment_management.png",
-    category: "Finance",
-  },
-  {
-    id: "gallery",
-    title: "Photo Gallery",
-    tagline: "Upload, organize, and share wedding photos with clients.",
-    image: "/gallery_management.png",
-    category: "Experience",
-  },
-  {
-    id: "forms",
-    title: "Forms Canvas",
-    tagline: "Drag-and-drop intake forms, questionnaires, and feedback — AI-assisted.",
-    image: "/forms_canvas.png",
-    category: "Experience",
-  },
-  {
-    id: "reminders",
-    title: "Reminders & Invites",
-    tagline: "SMS and email — event reminders, RSVP nudges, custom messages.",
-    image: "/reminders.png",
-    category: "Communication",
-  },
-  {
-    id: "config",
-    title: "Wedding Configuration",
-    tagline: "Events, privacy, RSVP settings, branding — all customizable per wedding.",
-    image: "/wedding_config1.png",
-    category: "Setup",
-  },
-  {
-    id: "support",
-    title: "Knowledge Base",
-    tagline: "Guides, tutorials, and troubleshooting — searchable and categorized.",
-    image: "/knowledgebase.png",
-    category: "Support",
-  },
-];
+const showcaseFeatures = MARKETING_FEATURES;
 
 /* ═══════════════════════════════════════════════════════════
    Metrics + Replacements (hardcoded for speed)
@@ -275,12 +176,12 @@ function FeatureShowcase({ isClone }: { isClone: boolean }) {
   return (
     <section className="relative mx-auto max-w-7xl px-6 py-16 sm:px-10 lg:px-16">
       <div className="text-center mb-12">
-        <p className="text-xs uppercase tracking-[0.5em] text-wedding-rose/80 mb-4">13 tools in one platform</p>
+        <p className="text-xs uppercase tracking-[0.5em] text-wedding-rose/80 mb-4">{showcaseFeatures.length} tools in one platform</p>
         <h2 className="text-3xl font-semibold text-white sm:text-4xl">
           Your wedding planning command center.
         </h2>
         <p className="mt-4 max-w-2xl mx-auto text-base text-slate-300">
-          Guests, budgets, vendors, seating, contracts, and more — explore each feature below.
+          Dashboards, inbox, couple portals, payments, forms, and more. Explore the platform through real product screens below.
         </p>
       </div>
 
