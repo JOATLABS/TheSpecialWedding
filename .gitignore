@@ -81,3 +81,4 @@ Special Wedding Root Admin Platform Error Page .pdf
 .mypy_cache
 .service-manager
 .pytest_cache
+tests/backend/test_platform_metrics.py

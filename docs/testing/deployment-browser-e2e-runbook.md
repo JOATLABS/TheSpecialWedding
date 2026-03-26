@@ -127,6 +127,13 @@ Expected result:
 2. The `document.cookie.includes(...)` checks return `false`
 3. Authenticated API requests still succeed after hard refresh
 
+Important:
+
+1. Do not treat `document.cookie` as proof that cookie-backed auth is broken. `HttpOnly` auth cookies are intentionally invisible to JavaScript and should not appear there.
+2. If you need to verify the auth cookie itself, use the browser `Application` panel or inspect the `Set-Cookie` header on login or refresh responses in the `Network` tab.
+3. The pass condition is:
+   no auth token in `localStorage` or `sessionStorage`, successful authenticated rereads after refresh, and loss of access after logout.
+
 ### Write Validation Ladder
 
 For any frontend action that is supposed to create or update data, validate it in this order:
@@ -454,10 +461,11 @@ Verify the cookie-backed auth rewrite did not break the main couple portal workf
 
 1. Dashboard data loads without a 401 or broken state
 2. Onboarding progress persists after completion or dismissal
-3. Form submissions save and re-open correctly
-4. Inbox messages send and appear after refresh
-5. Registry and FAQ mutations persist after refresh
-6. Payments and contract summary render if the account has seeded data
+3. The budget card reflects the same wedding budget configured from the planner side
+4. Form submissions save and re-open correctly
+5. Inbox messages send and appear after refresh
+6. Registry and FAQ mutations persist after refresh
+7. Payments and contract summary render if the account has seeded data
 
 ### Network Checks
 
@@ -477,16 +485,21 @@ Use these checks during the couple portal flow:
 1. Onboarding:
    Confirm `PUT /couple/profile/onboarding` succeeds, refresh the dashboard, and verify the modal stays completed or dismissed.
    If you have DB access, confirm the `couple_users` document updated `onboarding_completed`, `onboarding_completed_at`, and `onboarding_steps_completed`.
-2. Forms:
+2. Budget:
+   Confirm the budget figures on `/couple/dashboard` match the planner-side wedding budget before approving the build.
+   The couple dashboard should follow the planner budget source of truth: `weddings.total_budget` as the overall total, with spend derived from `budget_categories.actual_spent`.
+   If you have DB access, compare the dashboard against the target `weddings` document and related `budget_categories` records for that `wedding_id`.
+   If `weddings.total_budget` is set and the couple dashboard still shows `$0`, fail the build.
+3. Forms:
    Confirm the submit response succeeds, reload `/couple/forms/[formId]`, and verify the saved answers rehydrate into the form.
    If you have DB access, confirm the `form_submissions` document for that `form_id` and `submitted_by` contains the updated `responses`.
-3. Messages:
+4. Messages:
    Confirm the message appears immediately, then refresh and verify it still appears in the thread history.
    If you have DB access, confirm a new `couple_messages` document exists with the matching `wedding_id`, `sender_email`, and `content`.
-4. Registry:
+5. Registry:
    After add, edit, and delete, refresh the dashboard each time and verify the registry list matches the latest action.
    If you have DB access, confirm the `weddings.registries` array reflects the final state.
-5. FAQ:
+6. FAQ:
    After add, edit, and delete, refresh the dashboard each time and verify the FAQ list matches the latest action.
    If you have DB access, confirm the `weddings.faqs` array reflects the final state.
 
@@ -625,17 +638,31 @@ Verify root-admin platform diagnostics still work after the auth cleanup.
 
 1. Log in as root admin.
 2. Open `/admin/platform`.
-3. Switch to the errors tab.
-4. Open one error detail page.
-5. Acknowledge the error.
-6. Return to the list and confirm the state updates.
+3. Set the shared `Error window` control to `24 hours`, then note the counts in the health summary.
+4. Switch to the errors tab.
+5. Confirm the `Total Errors`, `Critical`, `Warnings`, and `Other Severities` cards reconcile with the selected window and filters.
+6. Open one error detail page.
+7. Acknowledge the error.
+8. Return to the list and confirm the state updates.
 
 ### Expected Results
 
 1. Error list loads
-2. Error detail page loads
-3. Acknowledge action succeeds
-4. The list and detail state stay consistent after refresh
+2. Health summary and Errors tab use the same selected error window
+3. With `All Severities` and `All Status`, `Total Errors` equals `Critical + Warnings + Other Severities`
+4. Error detail page loads
+5. Acknowledge action succeeds
+6. The list and detail state stay consistent after refresh
+
+### Scope Validation
+
+Validate the scope explicitly before marking this scenario passed.
+
+1. The `Error window` selector controls both the `Health` tab error summary and the `Errors` tab list.
+2. With `All Severities` and `All Status`, the health-tab `Total Errors` value should match the Errors-tab `Total Errors` value for the same selected window.
+3. Inside the `Errors` tab, the cards summarize the full filtered result set, not just the visible page.
+4. If you change `Severity` or `Status`, verify the cards and total update together for the filtered result.
+5. A valid pass now requires the counts to reconcile for the selected window and active filters.
 
 ## 14. Cross-Role Isolation Check
 
