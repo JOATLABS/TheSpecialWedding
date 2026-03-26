@@ -111,15 +111,27 @@ export default function BudgetTemplatesPage() {
   };
 
   const fetchWeddings = useCallback(async () => {
+    if (!token) return;
+
     try {
       const baseUrl = getApiBaseUrl();
-      const response = await fetch(`${baseUrl}/weddings`);
+      const response = await fetch(`${baseUrl}/admin/planner/weddings`, {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to load weddings');
+      }
+
       const data = await response.json();
       setWeddings(Array.isArray(data) ? data : []);
     } catch (err) {
       console.error('Failed to load weddings');
     }
-  }, []);
+  }, [token]);
 
   useEffect(() => {
     if (token) {

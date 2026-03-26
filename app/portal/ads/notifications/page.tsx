@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useCallback } from 'react';
-import { useVendorAuth } from '../layout';
+import { useVendorAuth } from '../components/VendorAuthContext';
 import { getApiBaseUrl } from '@/utils/env';
 import { toast } from 'sonner';
 import {

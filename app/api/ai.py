@@ -784,6 +784,8 @@ async def get_dashboard_insights(
             AIContentBlockedError, AIServiceUnavailableError, AIQuotaExceededError,
             AITimeoutError, AIInvalidResponseError) as e:
         handle_ai_error(e)
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Error generating dashboard insights: {str(e)}")
         raise HTTPException(status_code=500, detail="Failed to generate insights")

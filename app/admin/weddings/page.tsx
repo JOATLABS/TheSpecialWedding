@@ -5,6 +5,7 @@ import { getApiBaseUrl } from '@/utils/env';
 import Link from 'next/link';
 import { useAdmin } from '@/contexts/AdminContext';
 import { formatDate, formatAdminTimestamp, DEFAULT_TIMEZONE } from '@/utils/dateFormat';
+import { EVENT_TIME_FORMAT_HINT, getEventTimeValidationMessage, normalizeEventTimeInput } from '@/utils/eventTime';
 import PageHeader from '../components/PageHeader';
 import { usePagination } from '@/admin/hooks/usePagination';
 import { GlassPagination } from '@/admin/components/ui/glass/GlassPagination';
@@ -119,6 +120,7 @@ export default function AdminWeddingsPage() {
   const [planners, setPlanners] = useState<PlannerOption[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string>('');
+  const [eventTimeErrors, setEventTimeErrors] = useState<Record<number, string>>({});
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [filter, setFilter] = useState<'all' | 'assigned' | 'unassigned'>('all');
@@ -338,8 +340,46 @@ export default function AdminWeddingsPage() {
       .substring(0, 50);
   };
 
+  const buildEventTimeErrors = (events: WeddingForm['events']): Record<number, string> => {
+    return events.reduce<Record<number, string>>((acc, event, index) => {
+      const message = getEventTimeValidationMessage(event.details?.time);
+      if (message) acc[index] = message;
+      return acc;
+    }, {});
+  };
+
+  const clearEventTimeError = (index: number) => {
+    setEventTimeErrors((prev) => {
+      if (!(index in prev)) return prev;
+      const next = { ...prev };
+      delete next[index];
+      return next;
+    });
+  };
+
+  const reindexEventTimeErrorsAfterRemoval = (index: number) => {
+    setEventTimeErrors((prev) => {
+      const next: Record<number, string> = {};
+      Object.entries(prev).forEach(([key, value]) => {
+        const numericKey = Number(key);
+        if (numericKey < index) next[numericKey] = value;
+        if (numericKey > index) next[numericKey - 1] = value;
+      });
+      return next;
+    });
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+
+    const nextEventTimeErrors = buildEventTimeErrors(formData.events);
+    if (Object.keys(nextEventTimeErrors).length > 0) {
+      setEventTimeErrors(nextEventTimeErrors);
+      setError('Fix the invalid event time fields before saving.');
+      toast.error('Fix the invalid event time fields before saving.');
+      return;
+    }
+
     setLoading(true);
     setError('');
 
@@ -351,12 +391,23 @@ export default function AdminWeddingsPage() {
 
       const method = editingId ? 'PUT' : 'POST';
 
+      const normalizedEvents = formData.events.map((event) => ({
+        ...event,
+        details: event.details
+          ? { ...event.details, time: normalizeEventTimeInput(event.details.time) || undefined }
+          : event.details,
+      }));
+
       // Prepare the wedding data
       const weddingData = editingId 
-        ? formData 
+        ? {
+          ...formData,
+          events: normalizedEvents
+        }
         : {
           _id: `wedding_${Date.now()}`,
           ...formData,
+          events: normalizedEvents,
           slug: generateSlug(formData.couple_names),
           created_at: new Date().toISOString()
         };
@@ -395,6 +446,7 @@ export default function AdminWeddingsPage() {
       setShowForm(false);
       setEditingId(null);
       setShowEventDetails(false);
+      setEventTimeErrors({});
       fetchWeddings();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to save wedding');
@@ -460,6 +512,7 @@ export default function AdminWeddingsPage() {
   };
 
   const handleEdit = (wedding: Wedding) => {
+    setEventTimeErrors({});
     setFormData({
       couple_names: wedding.couple_names,
       date: wedding.date,
@@ -483,6 +536,7 @@ export default function AdminWeddingsPage() {
   };
 
   const removeEvent = (index: number) => {
+    reindexEventTimeErrorsAfterRemoval(index);
     setFormData({
       ...formData,
       events: formData.events.filter((_, i) => i !== index)
@@ -508,7 +562,10 @@ export default function AdminWeddingsPage() {
         }
       >
         <button
-          onClick={() => setShowForm(true)}
+          onClick={() => {
+            setEventTimeErrors({});
+            setShowForm(true);
+          }}
           className="px-4 py-2 bg-wedding-rose text-white font-semibold rounded-lg hover:bg-wedding-gold transition"
         >
           + Add Wedding
@@ -746,11 +803,42 @@ export default function AdminWeddingsPage() {
                               const newEvents = [...formData.events];
                               if (!newEvents[index].details) newEvents[index].details = {};
                               newEvents[index].details!.time = e.target.value;
+                              if (eventTimeErrors[index]) {
+                                const message = getEventTimeValidationMessage(e.target.value);
+                                if (message) {
+                                  setEventTimeErrors((prev) => ({ ...prev, [index]: message }));
+                                } else {
+                                  clearEventTimeError(index);
+                                }
+                              }
                               setFormData({...formData, events: newEvents});
                             }}
-                            className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 dark:text-gray-100-lg text-sm"
+                            onBlur={(e) => {
+                              const normalizedTime = normalizeEventTimeInput(e.target.value);
+                              const newEvents = [...formData.events];
+                              if (!newEvents[index].details) newEvents[index].details = {};
+                              newEvents[index].details!.time = normalizedTime;
+                              setFormData({...formData, events: newEvents});
+
+                              const message = getEventTimeValidationMessage(normalizedTime);
+                              if (message) {
+                                setEventTimeErrors((prev) => ({ ...prev, [index]: message }));
+                              } else {
+                                clearEventTimeError(index);
+                              }
+                            }}
+                            aria-invalid={Boolean(eventTimeErrors[index])}
+                            className={`w-full px-3 py-2 border rounded bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 dark:text-gray-100-lg text-sm ${
+                              eventTimeErrors[index]
+                                ? 'border-red-500 dark:border-red-400'
+                                : 'border-gray-300 dark:border-gray-600'
+                            }`}
                             placeholder="e.g., 3:00 PM"
+                            title={EVENT_TIME_FORMAT_HINT}
                           />
+                          {eventTimeErrors[index] && (
+                            <p className="mt-1 text-xs text-red-600 dark:text-red-300">{eventTimeErrors[index]}</p>
+                          )}
                         </div>
                         <div className="md:col-span-2">
                           <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Location/Address</label>
@@ -1010,12 +1098,14 @@ export default function AdminWeddingsPage() {
                       >
                         Notes
                       </button>
-                      <Link
-                        href={`/admin/weddings/${wedding._id}`}
-                        className="px-3 py-1 text-sm bg-blue-500 text-white rounded hover:bg-blue-600 transition"
-                      >
-                        Configure
-                      </Link>
+                      {!userProfile?.is_root_admin && (
+                        <Link
+                          href={`/admin/weddings/${wedding._id}`}
+                          className="px-3 py-1 text-sm bg-blue-500 text-white rounded hover:bg-blue-600 transition"
+                        >
+                          Configure
+                        </Link>
+                      )}
                       <button
                         onClick={() => handleEdit(wedding)}
                         className="px-3 py-1 text-sm bg-wedding-gold text-white rounded hover:bg-wedding-rose transition"

@@ -1,6 +1,7 @@
 from fastapi import HTTPException
 from app.core.database import mongo
 from app.models.wedding import WeddingModel
+from app.utils.event_time import normalize_optional_event_time
 from app.utils.serializers import serialize_mongo_doc
 from app.utils.id_utils import normalize_doc_id
 from typing import List, Dict, Any, Union, Optional
@@ -13,6 +14,30 @@ from bson import ObjectId
 class WeddingService:
     def __init__(self):
         self.collection = mongo.db["weddings"]
+
+    def _normalize_event_times(self, wedding_data: Dict[str, Any]) -> Dict[str, Any]:
+        events = wedding_data.get("events")
+        if not isinstance(events, list):
+            return wedding_data
+
+        for index, event in enumerate(events):
+            if not isinstance(event, dict):
+                continue
+
+            details = event.get("details")
+            if not isinstance(details, dict) or "time" not in details:
+                continue
+
+            try:
+                details["time"] = normalize_optional_event_time(details.get("time"))
+            except ValueError as exc:
+                event_label = str(event.get("type") or f"event {index + 1}").replace("_", " ")
+                raise HTTPException(
+                    status_code=422,
+                    detail=f"Invalid time for {event_label}: {exc}",
+                )
+
+        return wedding_data
 
     async def _ensure_unique_slug(self, base_slug: str) -> str:
         """Ensure slug is unique by appending a number suffix if needed"""
@@ -41,6 +66,8 @@ class WeddingService:
                 wedding_dict = wedding
             else:
                 wedding_dict = wedding.model_dump(by_alias=True)
+
+            wedding_dict = self._normalize_event_times(wedding_dict)
 
             # Normalize _id to string for storage consistency
             if "_id" in wedding_dict and not isinstance(wedding_dict["_id"], str):
@@ -226,6 +253,7 @@ class WeddingService:
         try:
             # Remove _id from update data if present
             wedding_data.pop("_id", None)
+            wedding_data = self._normalize_event_times(wedding_data)
 
             result = await self.collection.update_one(
                 {"_id": wedding_id}, {"$set": wedding_data}

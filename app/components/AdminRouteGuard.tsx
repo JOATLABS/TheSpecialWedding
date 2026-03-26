@@ -11,6 +11,18 @@ const BILLING_PATHS = [
   '/admin/billing',
 ];
 
+function getRootAdminRedirect(path: string): string | null {
+  if (path === '/admin/planner' || path.startsWith('/admin/planner/')) {
+    return '/admin';
+  }
+
+  if (/^\/admin\/weddings\/[^/]+(?:\/.*)?$/.test(path)) {
+    return '/admin/weddings';
+  }
+
+  return null;
+}
+
 function isAllowedForExpired(path: string): boolean {
   if (BILLING_PATHS.some((p) => path === p || path.startsWith(p + '/'))) return true;
   if (path.startsWith('/admin/team/accept')) return true;
@@ -38,6 +50,14 @@ export default function AdminRouteGuard({ children }: { children: React.ReactNod
 
     // Subscription gate: redirect expired/blocked planners to billing
     if (isAuthenticated && userProfile) {
+      if (userProfile.is_root_admin) {
+        const redirectPath = getRootAdminRedirect(pathname);
+        if (redirectPath && redirectPath !== pathname) {
+          router.replace(redirectPath);
+          return;
+        }
+      }
+
       const ud = userProfile.user_data || {};
       const status = ud.subscription_status || userProfile.subscription_status;
       const isPlanner = userProfile.is_wedding_planner;
@@ -68,6 +88,13 @@ export default function AdminRouteGuard({ children }: { children: React.ReactNod
 
   // Don't render feature pages for blocked planners — they'll be redirected
   if (isAuthenticated && userProfile) {
+    if (userProfile.is_root_admin) {
+      const redirectPath = getRootAdminRedirect(pathname);
+      if (redirectPath && redirectPath !== pathname) {
+        return null;
+      }
+    }
+
     const ud = userProfile.user_data || {};
     const status = ud.subscription_status || userProfile.subscription_status;
     const isPlanner = userProfile.is_wedding_planner;

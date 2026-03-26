@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
-import { useVendorAuth } from './layout';
+import { useVendorAuth } from './components/VendorAuthContext';
 import { toast } from 'sonner';
 import {
   listVendorCampaigns,

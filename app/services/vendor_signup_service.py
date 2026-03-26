@@ -98,7 +98,7 @@ class VendorSignupService:
     """Manages the full vendor signup → approval → onboarding lifecycle."""
 
     def __init__(self, db=None):
-        self.db = db or mongo.db
+        self.db = db if db is not None else mongo.db
         self.users = self.db["users"]
         self.email_service = ResendEmailService()
         self.notification_service = NotificationService()

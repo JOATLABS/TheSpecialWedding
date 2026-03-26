@@ -10,6 +10,8 @@ import { formatAdminTimestamp, formatAdminDate, DEFAULT_TIMEZONE } from '@/utils
 import PageHeader from '../components/PageHeader';
 import { usePagination } from '@/admin/hooks/usePagination';
 import { GlassPagination } from '@/admin/components/ui/glass/GlassPagination';
+import { Card } from '@/components/ui/Card';
+import { Button } from '@/components/ui/Button';
 import {
   Users,
   UserPlus,
@@ -39,7 +41,8 @@ import {
   ChevronUp,
   Ban,
   CheckCircle,
-  AlertTriangle
+  AlertTriangle,
+  type LucideIcon
 } from 'lucide-react';
 
 interface Planner {
@@ -107,6 +110,87 @@ interface InvitationStats {
   total: number;
 }
 
+interface PlannerDetail extends Planner {
+  subscription_status?: string;
+  trial_end_date?: string;
+  updated_at?: string;
+  last_login?: string;
+  email_verified?: boolean;
+  max_weddings?: number;
+  support_phone?: string;
+}
+
+const PLANNER_STAT_CARD_TONES: Record<
+  'blue' | 'emerald' | 'amber' | 'violet',
+  {
+    iconWrapper: string;
+    icon: string;
+    value: string;
+    helper: string;
+  }
+> = {
+  blue: {
+    iconWrapper: 'bg-blue-100 dark:bg-blue-900/30',
+    icon: 'text-blue-600 dark:text-blue-400',
+    value: 'text-slate-900 dark:text-white',
+    helper: 'text-blue-600 dark:text-blue-400',
+  },
+  emerald: {
+    iconWrapper: 'bg-emerald-100 dark:bg-emerald-900/30',
+    icon: 'text-emerald-600 dark:text-emerald-400',
+    value: 'text-emerald-600 dark:text-emerald-400',
+    helper: 'text-emerald-600 dark:text-emerald-400',
+  },
+  amber: {
+    iconWrapper: 'bg-amber-100 dark:bg-amber-900/30',
+    icon: 'text-amber-600 dark:text-amber-400',
+    value: 'text-amber-600 dark:text-amber-400',
+    helper: 'text-amber-600 dark:text-amber-400',
+  },
+  violet: {
+    iconWrapper: 'bg-violet-100 dark:bg-violet-900/30',
+    icon: 'text-violet-600 dark:text-violet-400',
+    value: 'text-violet-600 dark:text-violet-400',
+    helper: 'text-violet-600 dark:text-violet-400',
+  },
+};
+
+function PlannerMetricCard({
+  label,
+  value,
+  helper,
+  icon: Icon,
+  tone,
+  onClick,
+}: {
+  label: string;
+  value: string | number;
+  helper: string;
+  icon: LucideIcon;
+  tone: keyof typeof PLANNER_STAT_CARD_TONES;
+  onClick?: () => void;
+}) {
+  const toneClasses = PLANNER_STAT_CARD_TONES[tone];
+
+  return (
+    <Card
+      className={`h-full p-5 ${onClick ? 'cursor-pointer transition-shadow hover:shadow-xl' : ''}`}
+      {...(onClick ? { onClick } : {})}
+    >
+      <div className="flex items-start justify-between gap-4">
+        <div className="space-y-2">
+          <p className="text-sm font-medium text-slate-500 dark:text-slate-400">{label}</p>
+          <p className={`text-3xl font-semibold ${toneClasses.value}`}>{value}</p>
+          <p className={`text-xs font-medium ${toneClasses.helper}`}>{helper}</p>
+        </div>
+        <div className={`flex h-12 w-12 items-center justify-center rounded-xl ${toneClasses.iconWrapper}`}>
+          <Icon className={`h-6 w-6 ${toneClasses.icon}`} />
+        </div>
+      </div>
+    </Card>
+  );
+}
+
 export default function AdminUsersPage() {
   const router = useRouter();
   const { token, userProfile } = useAdmin();
@@ -116,6 +200,9 @@ export default function AdminUsersPage() {
   const [searchTerm, setSearchTerm] = useState('');
   const [filterStatus, setFilterStatus] = useState<'all' | 'active' | 'suspended'>('all');
   const [showInviteModal, setShowInviteModal] = useState(false);
+  const [showPlannerDetailModal, setShowPlannerDetailModal] = useState(false);
+  const [plannerDetail, setPlannerDetail] = useState<PlannerDetail | null>(null);
+  const [plannerDetailLoading, setPlannerDetailLoading] = useState(false);
   const [inviteLoading, setInviteLoading] = useState(false);
   const [inviteForm, setInviteForm] = useState<InviteFormData>({
     email: '',
@@ -510,6 +597,52 @@ export default function AdminUsersPage() {
     }
   };
 
+  const handleViewPlannerDetails = useCallback(async (planner: Planner) => {
+    if (!token) return;
+
+    const plannerId = planner.id || planner._id;
+    if (!plannerId) {
+      toast.error('Planner ID is missing for this record.');
+      return;
+    }
+
+    setActionMenuOpen(null);
+    setPlannerDetail({
+      ...planner,
+      id: plannerId,
+      company_name: planner.company_name || planner.organization,
+    });
+    setShowPlannerDetailModal(true);
+    setPlannerDetailLoading(true);
+
+    try {
+      const baseUrl = getApiBaseUrl();
+      const response = await fetch(`${baseUrl}/users/${plannerId}`, {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.detail || 'Failed to load planner details');
+      }
+
+      const detail = await response.json();
+      setPlannerDetail({
+        ...planner,
+        ...detail,
+        id: detail.id || detail._id || plannerId,
+      });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to load planner details';
+      toast.error(message);
+    } finally {
+      setPlannerDetailLoading(false);
+    }
+  }, [token]);
+
   // Filter planners based on search and status
   const filteredPlanners = planners.filter(planner => {
     const displayName = planner.name || `${planner.first_name || ''} ${planner.last_name || ''}`.trim() || planner.email;
@@ -564,6 +697,25 @@ export default function AdminUsersPage() {
     }
   };
 
+  const dashboardPanelClass =
+    'rounded-2xl border border-slate-200 bg-white shadow-lg dark:border-slate-700 dark:bg-slate-800/95';
+  const dashboardPanelSubtleClass =
+    'rounded-xl border border-slate-200 bg-slate-50 dark:border-slate-700 dark:bg-slate-800/70';
+  const dashboardInputClass =
+    'w-full rounded-lg border border-slate-200 bg-white px-4 py-2.5 text-slate-900 placeholder-slate-400 shadow-sm transition-colors focus:border-wedding-rose focus:outline-none focus:ring-2 focus:ring-wedding-rose/20 dark:border-slate-600 dark:bg-slate-700 dark:text-white dark:placeholder-slate-400';
+  const dashboardSecondaryButtonClass =
+    'rounded-lg border border-slate-200 bg-white text-slate-600 shadow-sm transition-colors hover:bg-slate-50 hover:text-slate-900 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-300 dark:hover:bg-slate-600 dark:hover:text-white';
+  const dashboardPrimaryButtonClass =
+    'rounded-lg bg-wedding-rose px-4 py-2.5 text-white shadow-sm transition-colors hover:bg-wedding-gold';
+  const dashboardMutedTextClass = 'text-slate-500 dark:text-slate-400';
+  const dashboardStrongTextClass = 'text-slate-900 dark:text-white';
+  const plannerTimezone = plannerDetail?.timezone || DEFAULT_TIMEZONE;
+  const plannerStatusLabel = plannerDetail?.is_suspended
+    ? 'Suspended'
+    : plannerDetail?.is_active
+      ? 'Active'
+      : 'Inactive';
+
   return (
     <div className="space-y-6">
       <PageHeader
@@ -587,23 +739,23 @@ export default function AdminUsersPage() {
               initial={{ opacity: 0, y: -10 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -10 }}
-              className="fixed top-4 right-4 z-50 bg-emerald-500/10 border border-emerald-500/20 backdrop-blur-sm rounded-2xl p-4 shadow-lg max-w-md"
+              className="fixed top-4 right-4 z-50 max-w-md rounded-2xl border border-emerald-200 bg-emerald-50 p-4 shadow-lg shadow-emerald-100/80 dark:border-emerald-500/20 dark:bg-emerald-500/10 dark:shadow-none dark:backdrop-blur-sm"
             >
               <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl bg-emerald-500/20 flex items-center justify-center">
+                <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-100 dark:bg-emerald-500/20">
                   {successToast.emailStatus === 'sent' ? (
-                    <CheckCircle className="w-5 h-5 text-emerald-400" />
+                    <CheckCircle className="h-5 w-5 text-emerald-600 dark:text-emerald-400" />
                   ) : successToast.emailStatus === 'failed' ? (
-                    <AlertTriangle className="w-5 h-5 text-amber-400" />
+                    <AlertTriangle className="h-5 w-5 text-amber-600 dark:text-amber-400" />
                   ) : (
-                    <CheckCircle className="w-5 h-5 text-emerald-400" />
+                    <CheckCircle className="h-5 w-5 text-emerald-600 dark:text-emerald-400" />
                   )}
                 </div>
                 <div className="flex-1">
-                  <p className="text-emerald-300">{successToast.message}</p>
+                  <p className="text-emerald-800 dark:text-emerald-300">{successToast.message}</p>
                   {successToast.emailStatus && (
-                    <p className="text-xs text-slate-400 mt-1 flex items-center gap-1">
-                      <Mail className="w-3 h-3" />
+                    <p className="mt-1 flex items-center gap-1 text-xs text-slate-500 dark:text-slate-400">
+                      <Mail className="h-3 w-3" />
                       Email status: {' '}
                       <span className={successToast.emailStatus === 'sent' ? 'text-emerald-400' : successToast.emailStatus === 'failed' ? 'text-red-400' : 'text-amber-400'}>
                         {successToast.emailStatus}
@@ -611,8 +763,8 @@ export default function AdminUsersPage() {
                     </p>
                   )}
                 </div>
-                <button onClick={() => setSuccessToast(null)} className="text-emerald-400 hover:text-emerald-300">
-                  <X className="w-5 h-5" />
+                <button onClick={() => setSuccessToast(null)} className="text-emerald-600 hover:text-emerald-700 dark:text-emerald-400 dark:hover:text-emerald-300">
+                  <X className="h-5 w-5" />
                 </button>
               </div>
             </motion.div>
@@ -626,15 +778,15 @@ export default function AdminUsersPage() {
               initial={{ opacity: 0, y: -10 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -10 }}
-              className="bg-red-500/10 border border-red-500/20 backdrop-blur-sm rounded-2xl p-4"
+              className="rounded-2xl border border-red-200 bg-red-50 p-4 shadow-sm dark:border-red-500/20 dark:bg-red-500/10 dark:shadow-none dark:backdrop-blur-sm"
             >
               <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl bg-red-500/20 flex items-center justify-center">
-                  <AlertCircle className="w-5 h-5 text-red-400" />
+                <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-red-100 dark:bg-red-500/20">
+                  <AlertCircle className="h-5 w-5 text-red-600 dark:text-red-400" />
                 </div>
-                <p className="text-red-300 flex-1">{error}</p>
-                <button onClick={() => setError('')} className="text-red-400 hover:text-red-300">
-                  <X className="w-5 h-5" />
+                <p className="flex-1 text-red-700 dark:text-red-300">{error}</p>
+                <button onClick={() => setError('')} className="text-red-600 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300">
+                  <X className="h-5 w-5" />
                 </button>
               </div>
             </motion.div>
@@ -647,7 +799,7 @@ export default function AdminUsersPage() {
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.1 }}
-            className="group relative overflow-hidden rounded-2xl bg-white/5 dark:bg-slate-800/50 backdrop-blur-sm border border-white/10 p-6 hover:bg-white/10 transition-all"
+            className={`${dashboardPanelClass} group relative overflow-hidden p-6 transition-all hover:border-slate-300 hover:shadow-md dark:hover:border-white/15 dark:hover:bg-white/10`}
           >
             <div className="absolute top-0 right-0 w-32 h-32 bg-gradient-to-br from-blue-500/20 to-cyan-500/20 rounded-full blur-2xl group-hover:scale-150 transition-transform" />
             <div className="relative flex items-center gap-4">
@@ -655,8 +807,8 @@ export default function AdminUsersPage() {
                 <Users className="w-7 h-7 text-white" />
               </div>
               <div>
-                <p className="text-sm text-slate-400 font-medium">Total Planners</p>
-                <p className="text-4xl font-bold text-white">{totalPlanners}</p>
+                <p className={`text-sm font-medium ${dashboardMutedTextClass}`}>Total Planners</p>
+                <p className={`text-4xl font-bold ${dashboardStrongTextClass}`}>{totalPlanners}</p>
               </div>
             </div>
           </motion.div>
@@ -665,7 +817,7 @@ export default function AdminUsersPage() {
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.2 }}
-            className="group relative overflow-hidden rounded-2xl bg-white/5 dark:bg-slate-800/50 backdrop-blur-sm border border-white/10 p-6 hover:bg-white/10 transition-all"
+            className={`${dashboardPanelClass} group relative overflow-hidden p-6 transition-all hover:border-slate-300 hover:shadow-md dark:hover:border-white/15 dark:hover:bg-white/10`}
           >
             <div className="absolute top-0 right-0 w-32 h-32 bg-gradient-to-br from-emerald-500/20 to-green-500/20 rounded-full blur-2xl group-hover:scale-150 transition-transform" />
             <div className="relative flex items-center gap-4">
@@ -673,8 +825,8 @@ export default function AdminUsersPage() {
                 <CheckCircle2 className="w-7 h-7 text-white" />
               </div>
               <div>
-                <p className="text-sm text-slate-400 font-medium">Active</p>
-                <p className="text-4xl font-bold text-emerald-400">{activePlanners}</p>
+                <p className={`text-sm font-medium ${dashboardMutedTextClass}`}>Active</p>
+                <p className="text-4xl font-bold text-emerald-500 dark:text-emerald-400">{activePlanners}</p>
               </div>
             </div>
           </motion.div>
@@ -683,7 +835,7 @@ export default function AdminUsersPage() {
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.3 }}
-            className="group relative overflow-hidden rounded-2xl bg-white/5 dark:bg-slate-800/50 backdrop-blur-sm border border-white/10 p-6 hover:bg-white/10 transition-all"
+            className={`${dashboardPanelClass} group relative overflow-hidden p-6 transition-all hover:border-slate-300 hover:shadow-md dark:hover:border-white/15 dark:hover:bg-white/10`}
           >
             <div className="absolute top-0 right-0 w-32 h-32 bg-gradient-to-br from-amber-500/20 to-orange-500/20 rounded-full blur-2xl group-hover:scale-150 transition-transform" />
             <div className="relative flex items-center gap-4">
@@ -691,8 +843,8 @@ export default function AdminUsersPage() {
                 <XCircle className="w-7 h-7 text-white" />
               </div>
               <div>
-                <p className="text-sm text-slate-400 font-medium">Suspended</p>
-                <p className="text-4xl font-bold text-amber-400">{suspendedPlanners}</p>
+                <p className={`text-sm font-medium ${dashboardMutedTextClass}`}>Suspended</p>
+                <p className="text-4xl font-bold text-amber-500 dark:text-amber-400">{suspendedPlanners}</p>
               </div>
             </div>
           </motion.div>
@@ -701,7 +853,7 @@ export default function AdminUsersPage() {
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.4 }}
-            className="group relative overflow-hidden rounded-2xl bg-white/5 dark:bg-slate-800/50 backdrop-blur-sm border border-white/10 p-6 hover:bg-white/10 transition-all cursor-pointer"
+            className={`${dashboardPanelClass} group relative cursor-pointer overflow-hidden p-6 transition-all hover:border-slate-300 hover:shadow-md dark:hover:border-white/15 dark:hover:bg-white/10`}
             onClick={() => setShowPendingInvitations(!showPendingInvitations)}
           >
             <div className="absolute top-0 right-0 w-32 h-32 bg-gradient-to-br from-violet-500/20 to-purple-500/20 rounded-full blur-2xl group-hover:scale-150 transition-transform" />
@@ -710,12 +862,12 @@ export default function AdminUsersPage() {
                 <Send className="w-7 h-7 text-white" />
               </div>
               <div>
-                <p className="text-sm text-slate-400 font-medium">Pending Invites</p>
-                <p className="text-4xl font-bold text-violet-400">{invitationStats.pending}</p>
+                <p className={`text-sm font-medium ${dashboardMutedTextClass}`}>Pending Invites</p>
+                <p className="text-4xl font-bold text-violet-500 dark:text-violet-400">{invitationStats.pending}</p>
               </div>
             </div>
             {invitationStats.pending > 0 && (
-              <div className="absolute bottom-2 right-2 text-violet-400">
+              <div className="absolute bottom-2 right-2 text-violet-500 dark:text-violet-400">
                 {showPendingInvitations ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
               </div>
             )}
@@ -735,19 +887,19 @@ export default function AdminUsersPage() {
               <motion.div
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
-                className="rounded-2xl bg-violet-500/5 backdrop-blur-sm border border-violet-500/20 overflow-hidden"
+                className="overflow-hidden rounded-2xl border border-violet-200 bg-white shadow-sm dark:border-violet-500/20 dark:bg-violet-500/5 dark:shadow-none dark:backdrop-blur-sm"
               >
-                <div className="px-6 py-4 border-b border-violet-500/20 flex items-center justify-between">
+                <div className="flex items-center justify-between border-b border-violet-200 px-6 py-4 dark:border-violet-500/20">
                   <div className="flex items-center gap-3">
-                    <Send className="w-5 h-5 text-violet-400" />
-                    <h3 className="font-semibold text-white">Pending Invitations</h3>
-                    <span className="px-2 py-0.5 text-xs bg-violet-500/20 text-violet-400 rounded-full">
+                    <Send className="h-5 w-5 text-violet-500 dark:text-violet-400" />
+                    <h3 className="font-semibold text-slate-900 dark:text-white">Pending Invitations</h3>
+                    <span className="rounded-full bg-violet-100 px-2 py-0.5 text-xs text-violet-700 dark:bg-violet-500/20 dark:text-violet-400">
                       {pendingInvitations.length}
                     </span>
                   </div>
                   <button
                     onClick={() => setShowPendingInvitations(false)}
-                    className="text-slate-400 hover:text-white transition-colors"
+                    className="text-slate-500 transition-colors hover:text-slate-900 dark:text-slate-400 dark:hover:text-white"
                   >
                     <X className="w-5 h-5" />
                   </button>
@@ -756,40 +908,40 @@ export default function AdminUsersPage() {
                 <div className="overflow-x-auto">
                   <table className="w-full">
                     <thead>
-                      <tr className="border-b border-violet-500/10">
-                        <th className="px-6 py-3 text-left text-xs font-semibold text-slate-400 uppercase tracking-wider">
+                      <tr className="border-b border-violet-100 dark:border-violet-500/10">
+                        <th className="px-6 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
                           Email
                         </th>
-                        <th className="px-6 py-3 text-center text-xs font-semibold text-slate-400 uppercase tracking-wider">
+                        <th className="px-6 py-3 text-center text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
                           Plan
                         </th>
-                        <th className="px-6 py-3 text-center text-xs font-semibold text-slate-400 uppercase tracking-wider">
+                        <th className="px-6 py-3 text-center text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
                           Trial
                         </th>
-                        <th className="px-6 py-3 text-center text-xs font-semibold text-slate-400 uppercase tracking-wider">
+                        <th className="px-6 py-3 text-center text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
                           Email Status
                         </th>
-                        <th className="px-6 py-3 text-center text-xs font-semibold text-slate-400 uppercase tracking-wider">
+                        <th className="px-6 py-3 text-center text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
                           Sent
                         </th>
-                        <th className="px-6 py-3 text-center text-xs font-semibold text-slate-400 uppercase tracking-wider">
+                        <th className="px-6 py-3 text-center text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
                           Expires
                         </th>
-                        <th className="px-6 py-3 text-right text-xs font-semibold text-slate-400 uppercase tracking-wider">
+                        <th className="px-6 py-3 text-right text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
                           Actions
                         </th>
                       </tr>
                     </thead>
-                    <tbody className="divide-y divide-violet-500/5">
+                    <tbody className="divide-y divide-violet-100 dark:divide-violet-500/5">
                       {pendingInvitations.map((invitation) => (
-                        <tr key={invitation._id} className="hover:bg-violet-500/5 transition-colors">
+                        <tr key={invitation._id} className="transition-colors hover:bg-violet-50 dark:hover:bg-violet-500/5">
                           <td className="px-6 py-4">
                             <div className="flex items-center gap-3">
-                              <div className="w-8 h-8 rounded-lg bg-violet-500/20 flex items-center justify-center">
-                                <Mail className="w-4 h-4 text-violet-400" />
+                              <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-violet-100 dark:bg-violet-500/20">
+                                <Mail className="h-4 w-4 text-violet-600 dark:text-violet-400" />
                               </div>
                               <div>
-                                <p className="font-medium text-white">{invitation.email}</p>
+                                <p className="font-medium text-slate-900 dark:text-white">{invitation.email}</p>
                                 {invitation.invite_data?.company_name && (
                                   <p className="text-xs text-slate-500">{invitation.invite_data.company_name}</p>
                                 )}
@@ -797,12 +949,12 @@ export default function AdminUsersPage() {
                             </div>
                           </td>
                           <td className="px-6 py-4 text-center">
-                            <span className="px-2 py-1 text-xs bg-slate-500/20 text-slate-300 rounded-lg">
+                            <span className="rounded-lg bg-slate-100 px-2 py-1 text-xs text-slate-700 dark:bg-slate-500/20 dark:text-slate-300">
                               {invitation.plan_name || 'Default'}
                             </span>
                           </td>
                           <td className="px-6 py-4 text-center">
-                            <span className="text-sm text-slate-300">
+                            <span className="text-sm text-slate-700 dark:text-slate-300">
                               {invitation.invite_data?.trial_days || 0} days
                             </span>
                           </td>
@@ -828,12 +980,12 @@ export default function AdminUsersPage() {
                             </span>
                           </td>
                           <td className="px-6 py-4 text-center">
-                            <span className="text-sm text-slate-400">
+                            <span className="text-sm text-slate-600 dark:text-slate-400">
                               {formatAdminTimestamp(invitation.created_at)}
                             </span>
                           </td>
                           <td className="px-6 py-4 text-center">
-                            <span className="text-sm text-slate-400">
+                            <span className="text-sm text-slate-600 dark:text-slate-400">
                               {formatAdminDate(invitation.expires_at)}
                             </span>
                           </td>
@@ -842,7 +994,7 @@ export default function AdminUsersPage() {
                               <button
                                 onClick={() => handleResendInvitation(invitation._id)}
                                 disabled={resendingId === invitation._id}
-                                className="p-2 rounded-lg bg-violet-500/20 text-violet-400 hover:bg-violet-500/30 transition-all disabled:opacity-50"
+                                className="rounded-lg bg-violet-100 p-2 text-violet-700 transition-all hover:bg-violet-200 disabled:opacity-50 dark:bg-violet-500/20 dark:text-violet-400 dark:hover:bg-violet-500/30"
                                 title="Resend Invitation"
                               >
                                 {resendingId === invitation._id ? (
@@ -854,7 +1006,7 @@ export default function AdminUsersPage() {
                               <button
                                 onClick={() => handleCancelInvitation(invitation._id)}
                                 disabled={cancellingId === invitation._id}
-                                className="p-2 rounded-lg bg-red-500/20 text-red-400 hover:bg-red-500/30 transition-all disabled:opacity-50"
+                                className="rounded-lg bg-red-100 p-2 text-red-700 transition-all hover:bg-red-200 disabled:opacity-50 dark:bg-red-500/20 dark:text-red-400 dark:hover:bg-red-500/30"
                                 title="Cancel Invitation"
                               >
                                 {cancellingId === invitation._id ? (
@@ -880,7 +1032,7 @@ export default function AdminUsersPage() {
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.5 }}
-          className="rounded-2xl bg-white/5 dark:bg-slate-800/50 backdrop-blur-sm border border-white/10 p-6"
+          className={`${dashboardPanelClass} p-6`}
         >
           <div className="flex flex-col lg:flex-row gap-4 items-center justify-between">
             {/* Search */}
@@ -891,13 +1043,13 @@ export default function AdminUsersPage() {
                 placeholder="Search by name, email, or company..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                className="w-full pl-12 pr-4 py-3 bg-white/5 border border-white/10 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-primary-500/50 focus:border-primary-500/50 transition-all"
+                className={`${dashboardInputClass} pl-12`}
               />
             </div>
 
             {/* Filter Buttons */}
             <div className="flex items-center gap-2">
-              <div className="flex bg-white/5 rounded-xl p-1 border border-white/10">
+              <div className="flex rounded-xl border border-slate-200 bg-slate-100 p-1 dark:border-white/10 dark:bg-white/5">
                 {(['all', 'active', 'suspended'] as const).map((status) => (
                   <button
                     key={status}
@@ -908,8 +1060,8 @@ export default function AdminUsersPage() {
                           ? 'bg-emerald-500 text-white shadow-lg'
                           : status === 'suspended'
                           ? 'bg-amber-500 text-white shadow-lg'
-                          : 'bg-white/20 text-white shadow-lg'
-                        : 'text-slate-400 hover:text-white hover:bg-white/10'
+                          : 'bg-white text-slate-900 shadow-sm dark:bg-white/20 dark:text-white dark:shadow-lg'
+                        : 'text-slate-500 hover:text-slate-900 hover:bg-white dark:text-slate-400 dark:hover:text-white dark:hover:bg-white/10'
                     }`}
                   >
                     {status.charAt(0).toUpperCase() + status.slice(1)}
@@ -919,7 +1071,7 @@ export default function AdminUsersPage() {
 
               <button
                 onClick={fetchPlanners}
-                className="p-3 bg-white/5 border border-white/10 rounded-xl text-slate-400 hover:text-white hover:bg-white/10 transition-all"
+                className={`${dashboardSecondaryButtonClass} p-3`}
                 title="Refresh"
               >
                 <RefreshCw className={`w-5 h-5 ${loading ? 'animate-spin' : ''}`} />
@@ -933,20 +1085,20 @@ export default function AdminUsersPage() {
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.6 }}
-          className="rounded-2xl bg-white/5 dark:bg-slate-800/50 backdrop-blur-sm border border-white/10"
+          className={dashboardPanelClass}
         >
           {loading ? (
             <div className="flex flex-col items-center justify-center py-20">
               <div className="w-16 h-16 rounded-full border-4 border-primary-500/30 border-t-primary-500 animate-spin mb-4" />
-              <p className="text-slate-400">Loading planners...</p>
+              <p className={dashboardMutedTextClass}>Loading planners...</p>
             </div>
           ) : filteredPlanners.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-20">
-              <div className="w-20 h-20 rounded-full bg-slate-800 flex items-center justify-center mb-4">
-                <Users className="w-10 h-10 text-slate-600" />
+              <div className="mb-4 flex h-20 w-20 items-center justify-center rounded-full bg-slate-100 dark:bg-slate-800">
+                <Users className="h-10 w-10 text-slate-400 dark:text-slate-600" />
               </div>
-              <p className="text-slate-400 mb-2">No planners found</p>
-              <p className="text-slate-500 text-sm mb-6">Get started by inviting your first planner</p>
+              <p className={`mb-2 ${dashboardMutedTextClass}`}>No planners found</p>
+              <p className="mb-6 text-sm text-slate-500">Get started by inviting your first planner</p>
               <button
                 onClick={() => setShowInviteModal(true)}
                 className="flex items-center gap-2 px-6 py-3 bg-gradient-to-r from-primary-500 to-secondary-500 text-white rounded-xl font-semibold"
@@ -969,31 +1121,31 @@ export default function AdminUsersPage() {
               <div className="overflow-visible">
               <table className="w-full">
                 <thead>
-                  <tr className="border-b border-white/10">
-                    <th className="px-6 py-4 text-left text-xs font-semibold text-slate-400 uppercase tracking-wider">
+                  <tr className="border-b border-slate-200 dark:border-white/10">
+                    <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
                       Planner
                     </th>
-                    <th className="px-6 py-4 text-left text-xs font-semibold text-slate-400 uppercase tracking-wider">
+                    <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
                       Contact
                     </th>
-                    <th className="px-6 py-4 text-center text-xs font-semibold text-slate-400 uppercase tracking-wider">
+                    <th className="px-6 py-4 text-center text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
                       Status
                     </th>
-                    <th className="px-6 py-4 text-center text-xs font-semibold text-slate-400 uppercase tracking-wider">
+                    <th className="px-6 py-4 text-center text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
                       Weddings
                     </th>
-                    <th className="px-6 py-4 text-center text-xs font-semibold text-slate-400 uppercase tracking-wider">
+                    <th className="px-6 py-4 text-center text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
                       Plan
                     </th>
-                    <th className="px-6 py-4 text-center text-xs font-semibold text-slate-400 uppercase tracking-wider">
+                    <th className="px-6 py-4 text-center text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
                       Joined
                     </th>
-                    <th className="px-6 py-4 text-right text-xs font-semibold text-slate-400 uppercase tracking-wider">
+                    <th className="px-6 py-4 text-right text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
                       Actions
                     </th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-white/5">
+                <tbody className="divide-y divide-slate-100 dark:divide-white/5">
                   {filteredPlanners.map((planner, index) => {
                     const plannerId = planner.id || planner._id || '';
                     const displayName = getPlannerDisplayName(planner);
@@ -1006,7 +1158,7 @@ export default function AdminUsersPage() {
                         initial={{ opacity: 0, y: 10 }}
                         animate={{ opacity: 1, y: 0 }}
                         transition={{ delay: index * 0.05 }}
-                        className="group hover:bg-white/5 transition-colors"
+                        className="group transition-colors hover:bg-slate-50 dark:hover:bg-white/5"
                       >
                         {/* Planner Info */}
                         <td className="px-6 py-5">
@@ -1016,11 +1168,11 @@ export default function AdminUsersPage() {
                                 {initials}
                               </div>
                               {planner.is_active && !planner.is_suspended && (
-                                <div className="absolute -bottom-1 -right-1 w-4 h-4 bg-emerald-500 rounded-full border-2 border-slate-900" />
+                                <div className="absolute -bottom-1 -right-1 h-4 w-4 rounded-full border-2 border-white bg-emerald-500 dark:border-slate-900" />
                               )}
                             </div>
                             <div>
-                              <p className="font-semibold text-white group-hover:text-primary-400 transition-colors">
+                              <p className="font-semibold text-slate-900 transition-colors group-hover:text-primary-500 dark:text-white dark:group-hover:text-primary-400">
                                 {displayName}
                               </p>
                               {company && (
@@ -1036,7 +1188,7 @@ export default function AdminUsersPage() {
                         {/* Contact */}
                         <td className="px-6 py-5">
                           <div className="space-y-1.5">
-                            <p className="text-sm text-slate-300 flex items-center gap-2">
+                            <p className="flex items-center gap-2 text-sm text-slate-700 dark:text-slate-300">
                               <Mail className="w-4 h-4 text-slate-500" />
                               {planner.email}
                             </p>
@@ -1052,17 +1204,17 @@ export default function AdminUsersPage() {
                         {/* Status */}
                         <td className="px-6 py-5 text-center">
                           {planner.is_suspended ? (
-                            <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold bg-amber-500/20 text-amber-400 border border-amber-500/30">
+                            <span className="inline-flex items-center gap-1.5 rounded-full border border-amber-200 bg-amber-50 px-3 py-1.5 text-xs font-semibold text-amber-700 dark:border-amber-500/30 dark:bg-amber-500/20 dark:text-amber-400">
                               <XCircle className="w-3.5 h-3.5" />
                               Suspended
                             </span>
                           ) : planner.is_active ? (
-                            <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
+                            <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-xs font-semibold text-emerald-700 dark:border-emerald-500/30 dark:bg-emerald-500/20 dark:text-emerald-400">
                               <CheckCircle2 className="w-3.5 h-3.5" />
                               Active
                             </span>
                           ) : (
-                            <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold bg-slate-500/20 text-slate-400 border border-slate-500/30">
+                            <span className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-slate-100 px-3 py-1.5 text-xs font-semibold text-slate-600 dark:border-slate-500/30 dark:bg-slate-500/20 dark:text-slate-400">
                               Inactive
                             </span>
                           )}
@@ -1070,9 +1222,9 @@ export default function AdminUsersPage() {
 
                         {/* Weddings */}
                         <td className="px-6 py-5 text-center">
-                          <div className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/5 border border-white/10">
+                          <div className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-slate-50 px-3 py-1.5 dark:border-white/10 dark:bg-white/5">
                             <Heart className="w-4 h-4 text-rose-400" />
-                            <span className="font-semibold text-white">{planner.wedding_count || 0}</span>
+                            <span className="font-semibold text-slate-900 dark:text-white">{planner.wedding_count || 0}</span>
                           </div>
                         </td>
 
@@ -1086,7 +1238,7 @@ export default function AdminUsersPage() {
 
                         {/* Joined Date */}
                         <td className="px-6 py-5 text-center">
-                          <div className="flex items-center justify-center gap-1.5 text-sm text-slate-400">
+                          <div className="flex items-center justify-center gap-1.5 text-sm text-slate-500 dark:text-slate-400">
                             <Calendar className="w-4 h-4" />
                             {planner.created_at
                               ? formatAdminDate(planner.created_at)
@@ -1103,7 +1255,7 @@ export default function AdminUsersPage() {
                                 e.stopPropagation();
                                 setActionMenuOpen(actionMenuOpen === plannerId ? null : plannerId);
                               }}
-                              className="p-2 rounded-lg bg-white/5 border border-white/10 text-slate-400 hover:text-white hover:bg-white/10 transition-all"
+                              className={`${dashboardSecondaryButtonClass} p-2`}
                             >
                               <MoreHorizontal className="w-5 h-5" />
                             </button>
@@ -1114,13 +1266,13 @@ export default function AdminUsersPage() {
                                   initial={{ opacity: 0, scale: 0.95, y: -10 }}
                                   animate={{ opacity: 1, scale: 1, y: 0 }}
                                   exit={{ opacity: 0, scale: 0.95, y: -10 }}
-                                  className="absolute right-0 mt-2 w-52 bg-slate-800 rounded-xl shadow-2xl border border-white/10 overflow-hidden z-50"
+                                  className="absolute right-0 z-50 mt-2 w-52 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-xl dark:border-white/10 dark:bg-slate-800 dark:shadow-2xl"
                                   onClick={(e) => e.stopPropagation()}
                                 >
                                   <div className="p-1">
                                     <button
-                                      onClick={() => router.push(`/admin/users/${plannerId}`)}
-                                      className="w-full flex items-center gap-3 px-4 py-3 text-sm text-slate-300 hover:bg-white/10 rounded-lg transition-colors"
+                                      onClick={() => handleViewPlannerDetails(planner)}
+                                      className="flex w-full items-center gap-3 rounded-lg px-4 py-3 text-left text-sm text-slate-700 transition-colors hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-white/10"
                                     >
                                       <Eye className="w-4 h-4" />
                                       View Details
@@ -1129,7 +1281,7 @@ export default function AdminUsersPage() {
                                     {planner.is_suspended ? (
                                       <button
                                         onClick={() => handleActivateUser(plannerId)}
-                                        className="w-full flex items-center gap-3 px-4 py-3 text-sm text-emerald-400 hover:bg-emerald-500/10 rounded-lg transition-colors"
+                                        className="flex w-full items-center gap-3 rounded-lg px-4 py-3 text-sm text-emerald-700 transition-colors hover:bg-emerald-50 dark:text-emerald-400 dark:hover:bg-emerald-500/10"
                                       >
                                         <CheckCircle2 className="w-4 h-4" />
                                         Activate User
@@ -1137,18 +1289,18 @@ export default function AdminUsersPage() {
                                     ) : (
                                       <button
                                         onClick={() => handleSuspendUser(plannerId)}
-                                        className="w-full flex items-center gap-3 px-4 py-3 text-sm text-amber-400 hover:bg-amber-500/10 rounded-lg transition-colors"
+                                        className="flex w-full items-center gap-3 rounded-lg px-4 py-3 text-sm text-amber-700 transition-colors hover:bg-amber-50 dark:text-amber-400 dark:hover:bg-amber-500/10"
                                       >
                                         <UserX className="w-4 h-4" />
                                         Suspend User
                                       </button>
                                     )}
 
-                                    <div className="my-1 border-t border-white/10" />
+                                    <div className="my-1 border-t border-slate-200 dark:border-white/10" />
 
                                     <button
                                       onClick={() => handleDeleteUser(plannerId)}
-                                      className="w-full flex items-center gap-3 px-4 py-3 text-sm text-red-400 hover:bg-red-500/10 rounded-lg transition-colors"
+                                      className="flex w-full items-center gap-3 rounded-lg px-4 py-3 text-sm text-red-700 transition-colors hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-500/10"
                                     >
                                       <Trash2 className="w-4 h-4" />
                                       Delete User
@@ -1170,13 +1322,13 @@ export default function AdminUsersPage() {
 
           {/* Table Footer */}
           {filteredPlanners.length > 0 && (
-            <div className="px-6 py-4 border-t border-white/10 flex items-center justify-between">
-              <p className="text-sm text-slate-500">
-                Showing <span className="text-white font-medium">{filteredPlanners.length}</span> of{' '}
-                <span className="text-white font-medium">{totalPlanners}</span> planners
+            <div className="flex items-center justify-between border-t border-slate-200 px-6 py-4 dark:border-white/10">
+              <p className="text-sm text-slate-500 dark:text-slate-400">
+                Showing <span className="font-medium text-slate-900 dark:text-white">{filteredPlanners.length}</span> of{' '}
+                <span className="font-medium text-slate-900 dark:text-white">{totalPlanners}</span> planners
               </p>
-              <div className="flex items-center gap-2 text-sm text-slate-400">
-                <TrendingUp className="w-4 h-4 text-emerald-400" />
+              <div className="flex items-center gap-2 text-sm text-slate-500 dark:text-slate-400">
+                <TrendingUp className="w-4 h-4 text-emerald-500 dark:text-emerald-400" />
                 {activePlanners} active this period
               </div>
             </div>
@@ -1194,6 +1346,150 @@ export default function AdminUsersPage() {
           />
         </motion.div>
 
+        {/* Planner Detail Modal */}
+        <AnimatePresence>
+          {showPlannerDetailModal && plannerDetail && (
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm"
+              onClick={() => setShowPlannerDetailModal(false)}
+            >
+              <motion.div
+                initial={{ opacity: 0, scale: 0.95, y: 20 }}
+                animate={{ opacity: 1, scale: 1, y: 0 }}
+                exit={{ opacity: 0, scale: 0.95, y: 20 }}
+                className="max-h-[75vh] w-full max-w-2xl overflow-hidden rounded-2xl border border-white/10 bg-slate-900 shadow-2xl"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <div className="relative overflow-hidden border-b border-white/10 px-6 pt-6 pb-4">
+                  <div className="absolute top-0 right-0 h-40 w-40 rounded-full bg-gradient-to-br from-primary-500/20 to-secondary-500/20 blur-2xl" />
+                  <div className="relative flex items-start justify-between gap-4">
+                    <div className="flex items-center gap-4">
+                      <div className="flex h-14 w-14 items-center justify-center rounded-xl bg-gradient-to-br from-primary-500 to-secondary-500 text-lg font-bold text-white shadow-lg shadow-primary-500/30">
+                        {getInitials(plannerDetail)}
+                      </div>
+                      <div>
+                        <h2 className="text-2xl font-bold text-white">{getPlannerDisplayName(plannerDetail)}</h2>
+                        <p className="text-sm text-slate-400">{plannerDetail.email}</p>
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => setShowPlannerDetailModal(false)}
+                      className="text-slate-400 transition-colors hover:text-white"
+                    >
+                      <X className="h-5 w-5" />
+                    </button>
+                  </div>
+                </div>
+
+                <div className="max-h-[calc(75vh-96px)] space-y-6 overflow-y-auto p-6">
+                  {plannerDetailLoading ? (
+                    <div className="flex flex-col items-center justify-center py-12">
+                      <div className="mb-3 h-10 w-10 animate-spin rounded-full border-4 border-primary-500/30 border-t-primary-500" />
+                      <p className="text-slate-400">Loading planner details...</p>
+                    </div>
+                  ) : (
+                    <>
+                      <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+                        <div className="rounded-xl border border-white/10 bg-white/5 p-4">
+                          <p className="mb-2 text-xs uppercase tracking-wide text-slate-500">Status</p>
+                          <p className="text-lg font-semibold text-white">{plannerStatusLabel}</p>
+                        </div>
+                        <div className="rounded-xl border border-white/10 bg-white/5 p-4">
+                          <p className="mb-2 text-xs uppercase tracking-wide text-slate-500">Plan</p>
+                          <p className="text-lg font-semibold text-white">
+                            {plannerDetail.subscription_tier || plannerDetail.plan_id || 'Free'}
+                          </p>
+                        </div>
+                        <div className="rounded-xl border border-white/10 bg-white/5 p-4">
+                          <p className="mb-2 text-xs uppercase tracking-wide text-slate-500">Weddings</p>
+                          <p className="text-lg font-semibold text-white">{plannerDetail.wedding_count || 0}</p>
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                        <div className="rounded-xl border border-white/10 bg-white/5 p-4">
+                          <p className="mb-3 text-xs uppercase tracking-wide text-slate-500">Account</p>
+                          <dl className="space-y-3">
+                            <div>
+                              <dt className="text-xs text-slate-500">Company</dt>
+                              <dd className="text-sm text-white">{plannerDetail.company_name || plannerDetail.organization || 'Not set'}</dd>
+                            </div>
+                            <div>
+                              <dt className="text-xs text-slate-500">Phone</dt>
+                              <dd className="text-sm text-white">{plannerDetail.phone || 'Not set'}</dd>
+                            </div>
+                            <div>
+                              <dt className="text-xs text-slate-500">Role</dt>
+                              <dd className="text-sm text-white">{plannerDetail.role || 'wedding_planner'}</dd>
+                            </div>
+                            <div>
+                              <dt className="text-xs text-slate-500">Email verified</dt>
+                              <dd className="text-sm text-white">{plannerDetail.email_verified ? 'Yes' : 'No'}</dd>
+                            </div>
+                          </dl>
+                        </div>
+
+                        <div className="rounded-xl border border-white/10 bg-white/5 p-4">
+                          <p className="mb-3 text-xs uppercase tracking-wide text-slate-500">Billing & Access</p>
+                          <dl className="space-y-3">
+                            <div>
+                              <dt className="text-xs text-slate-500">Subscription status</dt>
+                              <dd className="text-sm text-white">{plannerDetail.subscription_status || 'Unknown'}</dd>
+                            </div>
+                            <div>
+                              <dt className="text-xs text-slate-500">Trial ends</dt>
+                              <dd className="text-sm text-white">
+                                {plannerDetail.trial_end_date ? formatAdminTimestamp(plannerDetail.trial_end_date, plannerTimezone) : 'N/A'}
+                              </dd>
+                            </div>
+                            <div>
+                              <dt className="text-xs text-slate-500">Timezone</dt>
+                              <dd className="text-sm text-white">{plannerTimezone}</dd>
+                            </div>
+                            <div>
+                              <dt className="text-xs text-slate-500">Max weddings</dt>
+                              <dd className="text-sm text-white">
+                                {typeof plannerDetail.max_weddings === 'number' ? plannerDetail.max_weddings : 'Not set'}
+                              </dd>
+                            </div>
+                          </dl>
+                        </div>
+                      </div>
+
+                      <div className="rounded-xl border border-white/10 bg-white/5 p-4">
+                        <p className="mb-3 text-xs uppercase tracking-wide text-slate-500">Timestamps</p>
+                        <dl className="grid grid-cols-1 gap-4 md:grid-cols-3">
+                          <div>
+                            <dt className="text-xs text-slate-500">Joined</dt>
+                            <dd className="text-sm text-white">
+                              {plannerDetail.created_at ? formatAdminTimestamp(plannerDetail.created_at, plannerTimezone) : 'N/A'}
+                            </dd>
+                          </div>
+                          <div>
+                            <dt className="text-xs text-slate-500">Updated</dt>
+                            <dd className="text-sm text-white">
+                              {plannerDetail.updated_at ? formatAdminTimestamp(plannerDetail.updated_at, plannerTimezone) : 'N/A'}
+                            </dd>
+                          </div>
+                          <div>
+                            <dt className="text-xs text-slate-500">Last login</dt>
+                            <dd className="text-sm text-white">
+                              {plannerDetail.last_login ? formatAdminTimestamp(plannerDetail.last_login, plannerTimezone) : 'N/A'}
+                            </dd>
+                          </div>
+                        </dl>
+                      </div>
+                    </>
+                  )}
+                </div>
+              </motion.div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
         {/* Invite Modal */}
         <AnimatePresence>
           {showInviteModal && (
@@ -1208,7 +1504,7 @@ export default function AdminUsersPage() {
                 initial={{ opacity: 0, scale: 0.95, y: 20 }}
                 animate={{ opacity: 1, scale: 1, y: 0 }}
                 exit={{ opacity: 0, scale: 0.95, y: 20 }}
-                className="bg-slate-900 border border-white/10 rounded-2xl shadow-2xl max-w-md w-full overflow-hidden"
+                className="w-full max-w-md overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl dark:border-white/10 dark:bg-slate-900"
                 onClick={(e) => e.stopPropagation()}
               >
                 {/* Modal Header */}
@@ -1219,8 +1515,8 @@ export default function AdminUsersPage() {
                       <UserPlus className="w-7 h-7 text-white" />
                     </div>
                     <div>
-                      <h2 className="text-2xl font-bold text-white">Invite Planner</h2>
-                      <p className="text-slate-400 text-sm">Send an invitation to join your platform</p>
+                      <h2 className="text-2xl font-bold text-slate-900 dark:text-white">Invite Planner</h2>
+                      <p className="text-sm text-slate-500 dark:text-slate-400">Send an invitation to join your platform</p>
                     </div>
                   </div>
                 </div>
@@ -1230,69 +1526,69 @@ export default function AdminUsersPage() {
                   {/* Basic Info Section */}
                   <div className="grid grid-cols-2 gap-4">
                     <div className="col-span-2">
-                      <label className="block text-sm font-medium text-slate-300 mb-2">
+                      <label className="mb-2 block text-sm font-medium text-slate-700 dark:text-slate-300">
                         Email Address <span className="text-red-400">*</span>
                       </label>
                       <input
                         type="email"
                         value={inviteForm.email}
                         onChange={(e) => setInviteForm({ ...inviteForm, email: e.target.value })}
-                        className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-primary-500/50 focus:border-primary-500/50 transition-all"
+                        className={dashboardInputClass}
                         placeholder="jane@company.com"
                         required
                       />
                     </div>
 
                     <div>
-                      <label className="block text-sm font-medium text-slate-300 mb-2">
+                      <label className="mb-2 block text-sm font-medium text-slate-700 dark:text-slate-300">
                         Full Name
                       </label>
                       <input
                         type="text"
                         value={inviteForm.name}
                         onChange={(e) => setInviteForm({ ...inviteForm, name: e.target.value })}
-                        className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-primary-500/50 focus:border-primary-500/50 transition-all"
+                        className={dashboardInputClass}
                         placeholder="Jane Smith"
                       />
                     </div>
 
                     <div>
-                      <label className="block text-sm font-medium text-slate-300 mb-2">
+                      <label className="mb-2 block text-sm font-medium text-slate-700 dark:text-slate-300">
                         Company
                       </label>
                       <input
                         type="text"
                         value={inviteForm.organization}
                         onChange={(e) => setInviteForm({ ...inviteForm, organization: e.target.value })}
-                        className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-primary-500/50 focus:border-primary-500/50 transition-all"
+                        className={dashboardInputClass}
                         placeholder="Wedding Co."
                       />
                     </div>
                   </div>
 
                   {/* Trial Configuration Section */}
-                  <div className="pt-4 border-t border-white/10">
+                  <div className="border-t border-slate-200 pt-4 dark:border-white/10">
                     <div className="flex items-center gap-2 mb-4">
                       <Gift className="w-5 h-5 text-primary-400" />
-                      <h3 className="text-lg font-semibold text-white">Trial Configuration</h3>
+                      <h3 className="text-lg font-semibold text-slate-900 dark:text-white">Trial Configuration</h3>
                     </div>
 
                     <div className="space-y-4">
                       {/* Plan Selection */}
                       <div>
-                        <label className="block text-sm font-medium text-slate-300 mb-2">
+                        <label className="mb-2 block text-sm font-medium text-slate-700 dark:text-slate-300">
                           <CreditCard className="w-4 h-4 inline mr-1" />
                           Subscription Plan <span className="text-red-400">*</span>
                         </label>
                         <select
                           value={inviteForm.plan_id}
                           onChange={(e) => setInviteForm({ ...inviteForm, plan_id: e.target.value })}
-                          className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-xl text-white focus:outline-none focus:ring-2 focus:ring-primary-500/50 focus:border-primary-500/50 transition-all"
+                          className={dashboardInputClass}
                           required
                         >
-                          <option value="" className="bg-slate-800">Select a plan...</option>
+                          <option value="" className="bg-white text-slate-900 dark:bg-slate-800 dark:text-white">Select a plan...</option>
                           {availablePlans.map((plan) => (
-                            <option key={plan._id} value={plan._id} className="bg-slate-800">
+                            <option key={plan._id} value={plan._id} className="bg-white text-slate-900 dark:bg-slate-800 dark:text-white">
                               {plan.name} - ${plan.price_monthly}/mo
                             </option>
                           ))}
@@ -1301,7 +1597,7 @@ export default function AdminUsersPage() {
 
                       {/* Trial Days */}
                       <div>
-                        <label className="block text-sm font-medium text-slate-300 mb-2">
+                        <label className="mb-2 block text-sm font-medium text-slate-700 dark:text-slate-300">
                           <Clock className="w-4 h-4 inline mr-1" />
                           Trial Duration (days)
                         </label>
@@ -1313,7 +1609,7 @@ export default function AdminUsersPage() {
                             step="7"
                             value={inviteForm.trial_days}
                             onChange={(e) => setInviteForm({ ...inviteForm, trial_days: parseInt(e.target.value) })}
-                            className="flex-1 h-2 bg-white/10 rounded-lg appearance-none cursor-pointer accent-primary-500"
+                            className="h-2 flex-1 cursor-pointer appearance-none rounded-lg bg-slate-200 accent-primary-500 dark:bg-white/10"
                           />
                           <input
                             type="number"
@@ -1321,7 +1617,7 @@ export default function AdminUsersPage() {
                             max="730"
                             value={inviteForm.trial_days}
                             onChange={(e) => setInviteForm({ ...inviteForm, trial_days: parseInt(e.target.value) || 0 })}
-                            className="w-20 px-3 py-2 bg-white/5 border border-white/10 rounded-lg text-white text-center focus:outline-none focus:ring-2 focus:ring-primary-500/50"
+                            className="w-20 rounded-lg border border-slate-200 bg-white px-3 py-2 text-center text-slate-900 shadow-sm focus:outline-none focus:ring-2 focus:ring-primary-500/50 dark:border-white/10 dark:bg-white/5 dark:text-white dark:shadow-none"
                           />
                         </div>
                         <p className="text-xs text-slate-500 mt-1">
@@ -1334,7 +1630,7 @@ export default function AdminUsersPage() {
                       {/* Trial End Behavior */}
                       {inviteForm.trial_days > 0 && (
                         <div>
-                          <label className="block text-sm font-medium text-slate-300 mb-2">
+                          <label className="mb-2 block text-sm font-medium text-slate-700 dark:text-slate-300">
                             When Trial Ends Without Payment
                           </label>
                           <div className="grid grid-cols-2 gap-3">
@@ -1343,8 +1639,8 @@ export default function AdminUsersPage() {
                               onClick={() => setInviteForm({ ...inviteForm, trial_end_behavior: 'pause' })}
                               className={`p-3 rounded-xl border transition-all ${
                                 inviteForm.trial_end_behavior === 'pause'
-                                  ? 'bg-primary-500/20 border-primary-500 text-white'
-                                  : 'bg-white/5 border-white/10 text-slate-400 hover:bg-white/10'
+                                  ? 'border-blue-500 bg-blue-50 text-blue-700 dark:bg-primary-500/20 dark:text-white'
+                                  : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50 dark:border-white/10 dark:bg-white/5 dark:text-slate-400 dark:hover:bg-white/10'
                               }`}
                             >
                               <div className="font-medium">Pause</div>
@@ -1355,8 +1651,8 @@ export default function AdminUsersPage() {
                               onClick={() => setInviteForm({ ...inviteForm, trial_end_behavior: 'cancel' })}
                               className={`p-3 rounded-xl border transition-all ${
                                 inviteForm.trial_end_behavior === 'cancel'
-                                  ? 'bg-amber-500/20 border-amber-500 text-white'
-                                  : 'bg-white/5 border-white/10 text-slate-400 hover:bg-white/10'
+                                  ? 'border-amber-500 bg-amber-50 text-amber-700 dark:bg-amber-500/20 dark:text-white'
+                                  : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50 dark:border-white/10 dark:bg-white/5 dark:text-slate-400 dark:hover:bg-white/10'
                               }`}
                             >
                               <div className="font-medium">Cancel</div>
@@ -1368,13 +1664,13 @@ export default function AdminUsersPage() {
 
                       {/* Admin Notes */}
                       <div>
-                        <label className="block text-sm font-medium text-slate-300 mb-2">
+                        <label className="mb-2 block text-sm font-medium text-slate-700 dark:text-slate-300">
                           Internal Notes (optional)
                         </label>
                         <textarea
                           value={inviteForm.admin_notes}
                           onChange={(e) => setInviteForm({ ...inviteForm, admin_notes: e.target.value })}
-                          className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-primary-500/50 focus:border-primary-500/50 transition-all resize-none"
+                          className={`${dashboardInputClass} resize-none`}
                           placeholder="Partnership deal, beta tester, etc."
                           rows={2}
                           maxLength={500}
@@ -1385,12 +1681,12 @@ export default function AdminUsersPage() {
 
                   {/* Summary */}
                   {inviteForm.plan_id && inviteForm.trial_days > 0 && (
-                    <div className="p-4 bg-primary-500/10 border border-primary-500/20 rounded-xl">
+                    <div className="rounded-xl border border-blue-200 bg-blue-50 p-4 dark:border-primary-500/20 dark:bg-primary-500/10">
                       <div className="flex items-start gap-3">
                         <Gift className="w-5 h-5 text-primary-400 mt-0.5" />
                         <div className="text-sm">
-                          <p className="text-white font-medium">Trial Summary</p>
-                          <p className="text-slate-400">
+                          <p className="font-medium text-slate-900 dark:text-white">Trial Summary</p>
+                          <p className="text-slate-600 dark:text-slate-400">
                             User will receive a <span className="text-primary-400">{inviteForm.trial_days}-day</span> free trial
                             on the <span className="text-primary-400">{availablePlans.find(p => p._id === inviteForm.plan_id)?.name}</span> plan.
                             After trial ends, subscription will <span className="text-primary-400">{inviteForm.trial_end_behavior}</span> if no payment method is added.
@@ -1416,7 +1712,7 @@ export default function AdminUsersPage() {
                           admin_notes: ''
                         });
                       }}
-                      className="flex-1 px-4 py-3 bg-white/5 border border-white/10 text-slate-300 rounded-xl font-medium hover:bg-white/10 transition-all"
+                      className={`flex-1 px-4 py-3 font-medium ${dashboardSecondaryButtonClass}`}
                     >
                       Cancel
                     </button>
