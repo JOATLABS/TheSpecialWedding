@@ -1,5 +1,6 @@
 import { MetadataRoute } from 'next';
 import { getApiBaseUrl } from '@/utils/env';
+import { fetchPublishedBlogSlugs } from './resources/blog/serverApi';
 
 async function fetchVendorIds(): Promise<string[]> {
   try {
@@ -12,31 +13,6 @@ async function fetchVendorIds(): Promise<string[]> {
     return Array.isArray(data) ? data : [];
   } catch {
     return [];
-  }
-}
-
-const FALLBACK_BLOG_SLUGS = [
-  'introducing-the-special-wedding',
-  'how-to-price-wedding-planning-services',
-  'managing-200-guests',
-  'honeybook-vs-aisle-planner',
-  'wedding-planner-contract-essentials',
-  'ai-changing-wedding-planning',
-  'seating-chart-strategy',
-];
-
-async function fetchBlogSlugs(): Promise<string[]> {
-  try {
-    const baseUrl = getApiBaseUrl();
-    const res = await fetch(`${baseUrl}/api/v1/blog/slugs`, {
-      next: { revalidate: 3600 }, // Re-fetch hourly
-    });
-    if (!res.ok) return FALLBACK_BLOG_SLUGS;
-    const data = await res.json();
-    const slugs = Array.isArray(data) ? data : data?.slugs;
-    return Array.isArray(slugs) && slugs.length > 0 ? slugs : FALLBACK_BLOG_SLUGS;
-  } catch {
-    return FALLBACK_BLOG_SLUGS;
   }
 }
 
@@ -71,7 +47,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   ];
 
   // Blog post pages (dynamic from API, fallback to seed slugs)
-  const blogSlugs = await fetchBlogSlugs();
+  const blogSlugs = await fetchPublishedBlogSlugs();
   const blogPages: MetadataRoute.Sitemap = blogSlugs.map((slug) => ({
     url: `${baseUrl}/resources/blog/${slug}`,
     lastModified: new Date(),
