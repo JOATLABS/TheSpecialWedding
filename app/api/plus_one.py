@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException, Path, Body, Depends
+from fastapi import APIRouter, HTTPException, Path, Body, Depends, Query
 from app.models.plus_one import PlusOneModel
 from app.services.plus_one_service import PlusOneService
 from app.services.guest_service import GuestService
@@ -36,12 +36,20 @@ async def add_plus_one(plus_one: PlusOneModel, current_user: ExtendedAuthUser = 
 
 
 @router.get("/wedding/{wedding_id}", tags=["Plus-Ones"])
-async def get_plus_ones_by_wedding(wedding_id: str, current_user: ExtendedAuthUser = Depends(require_wedding_planner_only)):
+async def get_plus_ones_by_wedding(
+    wedding_id: str,
+    guest_ids: str | None = Query(None, description="Comma-separated guest IDs"),
+    current_user: ExtendedAuthUser = Depends(require_wedding_planner_only),
+):
     """Batch fetch all plus-ones for a wedding (avoids N+1 queries)"""
     if not await check_wedding_access(current_user, wedding_id):
         raise HTTPException(status_code=403, detail="Access to this wedding denied")
 
-    return await plus_one_service.get_plus_ones_by_wedding_id(wedding_id)
+    guest_id_list = None
+    if guest_ids is not None:
+        guest_id_list = [guest_id.strip() for guest_id in guest_ids.split(",") if guest_id.strip()]
+
+    return await plus_one_service.get_plus_ones_by_wedding_id(wedding_id, guest_id_list)
 
 
 @router.get("/{guest_id}", tags=["Plus-Ones"])

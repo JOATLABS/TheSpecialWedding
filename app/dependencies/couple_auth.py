@@ -22,10 +22,15 @@ async def require_couple_auth(request: Request) -> dict:
             ...
     """
     auth_header = request.headers.get("Authorization")
-    if not auth_header or not auth_header.startswith("Bearer "):
-        raise HTTPException(status_code=401, detail="Not authenticated")
+    token = None
 
-    token = auth_header.split(" ")[1]
+    if auth_header and auth_header.startswith("Bearer "):
+        token = auth_header.split(" ")[1]
+    else:
+        token = request.cookies.get("couple_token")
+
+    if not token:
+        raise HTTPException(status_code=401, detail="Not authenticated")
     try:
         payload = verify_token(token)
     except Exception:

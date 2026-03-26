@@ -73,7 +73,7 @@ When reporting a vulnerability, please include:
 ### Authentication & Authorization
 
 - [X] JWT-based authentication with secure tokens
-- [X] Role-based access control (ROOT_ADMIN, wedding_planner, vendor)
+- [X] Role-based access control (ROOT_ADMIN, wedding_planner, team_member, vendor, advertising_vendor, couple)
 - [X] Multi-tenant data isolation
 - [X] Email verification for new accounts
 - [X] Password complexity requirements

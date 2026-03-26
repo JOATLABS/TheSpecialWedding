@@ -54,6 +54,10 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         auth_paths = [
             "/admin/token",
             "/admin/login",
+            "/couple/login",
+            "/couple/setup-password",
+            "/couple/forgot-password",
+            "/couple/reset-password",
             "/public/register",
             "/setup/complete",
             "/otp/",
@@ -72,13 +76,23 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         Returns: (calls_per_period, period_in_seconds)
         """
         # Login endpoint: 5 attempts per minute
-        if "/admin/token" in path or "/admin/login" in path:
+        if (
+            "/admin/token" in path
+            or "/admin/login" in path
+            or "/couple/login" in path
+            or "/couple/setup-password" in path
+        ):
             return (5, 60)
         # Register endpoint: 3 attempts per minute
         elif "/public/register" in path or "/api/v1/vendors/signup" in path:
             return (3, 60)
         # Password reset endpoints: 3 attempts per minute
-        elif "/reset-password" in path or "/forgot-password" in path:
+        elif (
+            "/reset-password" in path
+            or "/forgot-password" in path
+            or "/couple/reset-password" in path
+            or "/couple/forgot-password" in path
+        ):
             return (3, 60)
         # OTP verification: 5 attempts per minute
         elif "/otp/" in path:

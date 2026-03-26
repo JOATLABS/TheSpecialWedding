@@ -241,38 +241,42 @@ export default function AdminGuestsPage() {
         setGuests([]);
       }
 
-      // Fetch RSVPs
-      try {
-        const rsvpsResponse = await fetch(
-          `${baseUrl}/admin/rsvps?wedding_id=${selectedWedding}`,
-          { headers: { 'Authorization': `Bearer ${token}` } }
-        );
-        if (rsvpsResponse.ok) {
-          const rsvpsData = await rsvpsResponse.json();
-          setRsvps(Array.isArray(rsvpsData) ? rsvpsData : []);
-        } else {
-          setRsvps([]);
-        }
-      } catch {
+      const guestIds = normalizedGuests
+        .map((guest) => guest.id || guest._id)
+        .filter((guestId): guestId is string => Boolean(guestId));
+
+      if (guestIds.length === 0) {
+        setRsvps([]);
+        setPlusOnes([]);
+        return;
+      }
+
+      const guestIdsQuery = encodeURIComponent(guestIds.join(','));
+      const [rsvpsResult, plusOnesResult] = await Promise.allSettled([
+        fetch(`${baseUrl}/admin/rsvps?wedding_id=${selectedWedding}&guest_ids=${guestIdsQuery}`, {
+          headers: { 'Authorization': `Bearer ${token}` },
+        }),
+        fetch(`${baseUrl}/admin/plus-one/wedding/${selectedWedding}?guest_ids=${guestIdsQuery}`, {
+          headers: { 'Authorization': `Bearer ${token}` },
+        }),
+      ]);
+
+      if (rsvpsResult.status === 'fulfilled' && rsvpsResult.value.ok) {
+        const rsvpsData = await rsvpsResult.value.json();
+        setRsvps(Array.isArray(rsvpsData) ? rsvpsData : []);
+      } else {
         setRsvps([]);
       }
 
-      // Fetch plus ones for wedding (batch - avoids N+1 queries)
-      // Uses /admin/ prefix to match all other admin API calls
-      try {
-        const response = await fetch(`${baseUrl}/admin/plus-one/wedding/${selectedWedding}`, {
-          headers: { 'Authorization': `Bearer ${token}` },
-        });
-
-        if (response.ok) {
-          const allPlusOnes = await response.json();
-          setPlusOnes(Array.isArray(allPlusOnes) ? allPlusOnes : []);
+      if (plusOnesResult.status === 'fulfilled' && plusOnesResult.value.ok) {
+        const allPlusOnes = await plusOnesResult.value.json();
+        setPlusOnes(Array.isArray(allPlusOnes) ? allPlusOnes : []);
+      } else {
+        if (plusOnesResult.status === 'fulfilled') {
+          console.error('[PlusOnes] Fetch failed:', plusOnesResult.value.status);
         } else {
-          console.error('[PlusOnes] Fetch failed:', response.status);
-          setPlusOnes([]);
+          console.error('[PlusOnes] Fetch error:', plusOnesResult.reason);
         }
-      } catch (err) {
-        console.error('[PlusOnes] Fetch error:', err);
         setPlusOnes([]);
       }
 
@@ -387,15 +391,37 @@ export default function AdminGuestsPage() {
 
   const normalizeId = (id: string | undefined) => id?.toString() || '';
 
+  const rsvpByGuestId = useMemo(() => {
+    const lookup = new Map<string, RSVP>();
+    for (const rsvp of rsvps) {
+      lookup.set(normalizeId(rsvp.guest_id), rsvp);
+    }
+    return lookup;
+  }, [rsvps]);
+
+  const rsvpGuestIds = useMemo(() => new Set(rsvpByGuestId.keys()), [rsvpByGuestId]);
+
+  const plusOnesByGuestId = useMemo(() => {
+    const lookup = new Map<string, PlusOne[]>();
+    for (const plusOne of plusOnes) {
+      const guestId = normalizeId(plusOne.guest_id);
+      const existing = lookup.get(guestId);
+      if (existing) {
+        existing.push(plusOne);
+      } else {
+        lookup.set(guestId, [plusOne]);
+      }
+    }
+    return lookup;
+  }, [plusOnes]);
+
   const getRSVPForGuest = (guestId: string) => {
-    const normalizedGuestId = normalizeId(guestId);
-    return rsvps.find(r => normalizeId(r.guest_id) === normalizedGuestId);
+    return rsvpByGuestId.get(normalizeId(guestId));
   };
 
   const getPlusOnesForGuest = useCallback((guestId: string) => {
-    const normalizedGuestId = normalizeId(guestId);
-    return plusOnes.filter(p => normalizeId(p.guest_id) === normalizedGuestId);
-  }, [plusOnes]);
+    return plusOnesByGuestId.get(normalizeId(guestId)) ?? [];
+  }, [plusOnesByGuestId]);
 
   const getGroupLabel = (groupId: string | undefined) => {
     if (!groupId) return '-';
@@ -474,7 +500,7 @@ export default function AdminGuestsPage() {
 
       // Tab filter
       const guestId = normalizeId(guest.id || guest._id);
-      const hasRSVP = rsvps.some(r => normalizeId(r.guest_id) === guestId);
+      const hasRSVP = rsvpGuestIds.has(guestId);
 
       if (activeTab === 'rsvp' && !hasRSVP) return false;
       if (activeTab === 'pending' && (!guest.invite_sent || hasRSVP)) return false;
@@ -517,14 +543,14 @@ export default function AdminGuestsPage() {
           break;
         case 'rsvp_status':
           // RSVP status priority: 0 = Not Invited, 1 = Pending (invited), 2 = RSVP'd
-          const aHasRSVP = rsvps.some(r => normalizeId(r.guest_id) === normalizeId(a.id || a._id));
-          const bHasRSVP = rsvps.some(r => normalizeId(r.guest_id) === normalizeId(b.id || b._id));
+          const aHasRSVP = rsvpGuestIds.has(normalizeId(a.id || a._id));
+          const bHasRSVP = rsvpGuestIds.has(normalizeId(b.id || b._id));
           aValue = aHasRSVP ? 2 : (a.invite_sent ? 1 : 0);
           bValue = bHasRSVP ? 2 : (b.invite_sent ? 1 : 0);
           break;
         case 'plus_ones':
-          aValue = getPlusOnesForGuest(a.id || a._id || '').length;
-          bValue = getPlusOnesForGuest(b.id || b._id || '').length;
+          aValue = (plusOnesByGuestId.get(normalizeId(a.id || a._id || '')) ?? []).length;
+          bValue = (plusOnesByGuestId.get(normalizeId(b.id || b._id || '')) ?? []).length;
           break;
       }
 
@@ -534,7 +560,7 @@ export default function AdminGuestsPage() {
     });
 
     return result;
-  }, [guests, searchTerm, activeTab, filterGroup, filterRole, sortField, sortDirection, rsvps, getPlusOnesForGuest]);
+  }, [guests, searchTerm, activeTab, filterGroup, filterRole, sortField, sortDirection, rsvpGuestIds, plusOnesByGuestId]);
 
   // ==================== SELECTION HANDLERS ====================
 

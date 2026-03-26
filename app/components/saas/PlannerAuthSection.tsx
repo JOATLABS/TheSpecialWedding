@@ -562,6 +562,7 @@ export function PlannerAuthSection({
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ email: values.email.trim(), password: values.password }),
+          credentials: 'include',
         });
 
         if (!response.ok) {

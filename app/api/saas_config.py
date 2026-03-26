@@ -57,8 +57,8 @@ def _is_upcoming(date_value: Any, reference: datetime) -> bool:
 def _get_default_saas_config():
     """Shared default configuration used by both admin and public endpoints.
 
-    These defaults match the hardcoded content from app/page.tsx to ensure
-    consistency when the dynamic SaasLandingPage component is used.
+    These defaults match the hardcoded content from app/page.tsx so the
+    admin-configured SaaS content stays aligned with the live homepage.
     """
     return {
         # Hero fields - matches page.tsx hero section

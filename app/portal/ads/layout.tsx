@@ -4,6 +4,7 @@ import React, { useState, useEffect, createContext, useContext, useCallback } fr
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { getApiBaseUrl } from '@/utils/env';
+import { bootstrapAdminAuthToken, clearAdminAuthStorage } from '@/utils/adminAuthStorage';
 import {
   LayoutDashboard,
   Megaphone,
@@ -22,6 +23,15 @@ import {
 import { ThemeProvider, useTheme } from '@/contexts/ThemeContext';
 
 const API_BASE = getApiBaseUrl();
+
+function clearLegacyVendorPortalStorage() {
+  if (typeof window === 'undefined') {
+    return;
+  }
+
+  localStorage.removeItem('vendor_ad_token');
+  localStorage.removeItem('vendor_ad_user');
+}
 
 // =============================================================================
 // Vendor Auth Context
@@ -90,66 +100,56 @@ function VendorPortalLayoutInner({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(true);
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
-  // Check for stored token on mount — vendor token first, then fall back to admin token
   useEffect(() => {
-    if (typeof window === 'undefined') {
-      setLoading(false);
-      return;
-    }
+    let cancelled = false;
 
-    const storedVendorToken = localStorage.getItem('vendor_ad_token');
-    const storedAdminToken = localStorage.getItem('admin_token')
-      || sessionStorage.getItem('admin_token');
+    const bootstrapVendorSession = async () => {
+      clearLegacyVendorPortalStorage();
 
-    // 1. Try vendor-specific token first
-    if (storedVendorToken) {
-      setToken(storedVendorToken);
-      fetch(`${API_BASE}/portal/ads/billing`, {
-        headers: { Authorization: `Bearer ${storedVendorToken}` },
-      })
-        .then((res) => {
-          if (res.ok) {
-            const storedUser = localStorage.getItem('vendor_ad_user');
-            if (storedUser) {
-              setUser(JSON.parse(storedUser));
-            }
-          } else {
-            localStorage.removeItem('vendor_ad_token');
-            localStorage.removeItem('vendor_ad_user');
-            setToken(null);
-            setUser(null);
-          }
-        })
-        .catch(() => {})
-        .finally(() => setLoading(false));
-      return;
-    }
+      try {
+        const accessToken = await bootstrapAdminAuthToken();
+        if (!accessToken) {
+          return;
+        }
 
-    // 2. Fall back to admin token — root admin can access vendor portal directly
-    if (storedAdminToken) {
-      fetch(`${API_BASE}/admin/profile`, {
-        headers: { Authorization: `Bearer ${storedAdminToken}` },
-      })
-        .then((res) => res.ok ? res.json() : Promise.reject())
-        .then((profile) => {
-          if (profile.is_root_admin) {
-            setToken(storedAdminToken);
-            setUser({
-              _id: profile._id || profile.id || '',
-              email: profile.email || '',
-              name: profile.company_name || profile.email || 'Root Admin',
-              role: 'root_admin',
-            });
-          }
-        })
-        .catch(() => {
-          // Admin token invalid or not root admin — fall through to login
-        })
-        .finally(() => setLoading(false));
-      return;
-    }
+        const profileRes = await fetch(`${API_BASE}/admin/profile`, {
+          headers: { Authorization: `Bearer ${accessToken}` },
+          credentials: 'include',
+        });
 
-    setLoading(false);
+        if (!profileRes.ok) {
+          clearAdminAuthStorage();
+          return;
+        }
+
+        const profile = await profileRes.json();
+        if (!profile.is_root_admin && profile.role !== 'advertising_vendor') {
+          clearAdminAuthStorage();
+          return;
+        }
+
+        if (!cancelled) {
+          setToken(accessToken);
+          setUser({
+            _id: profile._id || profile.id || '',
+            email: profile.email || '',
+            name: profile.business_name || profile.company_name || profile.email || 'Advertising Vendor',
+            role: profile.is_root_admin ? 'root_admin' : (profile.role || 'advertising_vendor'),
+            must_change_password: profile.must_change_password || false,
+          });
+        }
+      } finally {
+        if (!cancelled) {
+          setLoading(false);
+        }
+      }
+    };
+
+    bootstrapVendorSession();
+
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   const login = async (email: string, password: string) => {
@@ -158,6 +158,7 @@ function VendorPortalLayoutInner({ children }: { children: React.ReactNode }) {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ email, password }),
+      credentials: 'include',
     });
 
     if (!response.ok) {
@@ -171,6 +172,7 @@ function VendorPortalLayoutInner({ children }: { children: React.ReactNode }) {
     // Fetch profile to get vendor details (same as AdminContext pattern)
     const profileRes = await fetch(`${API_BASE}/admin/profile`, {
       headers: { Authorization: `Bearer ${accessToken}` },
+      credentials: 'include',
     });
 
     if (!profileRes.ok) {
@@ -193,15 +195,17 @@ function VendorPortalLayoutInner({ children }: { children: React.ReactNode }) {
       must_change_password: profile.must_change_password || false,
     };
     setUser(vendorUser);
-    localStorage.setItem('vendor_ad_token', accessToken);
-    localStorage.setItem('vendor_ad_user', JSON.stringify(vendorUser));
   };
 
   const logout = useCallback(() => {
+    void fetch(`${API_BASE}/admin/logout`, {
+      method: 'POST',
+      credentials: 'include',
+    }).catch(() => {});
+    clearAdminAuthStorage();
+    clearLegacyVendorPortalStorage();
     setToken(null);
     setUser(null);
-    localStorage.removeItem('vendor_ad_token');
-    localStorage.removeItem('vendor_ad_user');
   }, []);
 
   const isActive = (href: string) => {
@@ -230,7 +234,6 @@ function VendorPortalLayoutInner({ children }: { children: React.ReactNode }) {
           onPasswordChanged={() => {
             const updated = { ...user, must_change_password: false };
             setUser(updated);
-            localStorage.setItem('vendor_ad_user', JSON.stringify(updated));
           }}
           onLogout={logout}
         />

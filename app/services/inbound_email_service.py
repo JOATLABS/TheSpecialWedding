@@ -20,6 +20,7 @@ from datetime import datetime, timezone
 from typing import Dict, Optional, Any, List
 
 import aiohttp
+import bleach
 from bson import ObjectId
 from fastapi import HTTPException
 
@@ -27,6 +28,18 @@ from app.core.database import mongo
 from app.models.inbound_email import create_inbound_email_document
 
 logger = logging.getLogger(__name__)
+
+EMAIL_ALLOWED_TAGS = [
+    "a", "b", "blockquote", "br", "code", "div", "em", "i", "li", "ol",
+    "p", "pre", "span", "strong", "table", "tbody", "td", "th", "thead",
+    "tr", "u", "ul"
+]
+EMAIL_ALLOWED_ATTRIBUTES = {
+    "a": ["href", "title", "target", "rel"],
+    "td": ["colspan", "rowspan"],
+    "th": ["colspan", "rowspan"],
+}
+EMAIL_ALLOWED_PROTOCOLS = ["http", "https", "mailto"]
 
 
 class InboundEmailService:
@@ -651,7 +664,15 @@ class InboundEmailService:
         base = self._format_list_response(doc)
         content = doc.get("content") or {}
 
-        base["html_body"] = content.get("html_body")
+        raw_html_body = content.get("html_body")
+        base["html_body"] = bleach.clean(
+            raw_html_body,
+            tags=EMAIL_ALLOWED_TAGS,
+            attributes=EMAIL_ALLOWED_ATTRIBUTES,
+            protocols=EMAIL_ALLOWED_PROTOCOLS,
+            strip=True,
+            strip_comments=True,
+        ) if raw_html_body else None
         base["text_body"] = content.get("text_body")
         base["attachments"] = content.get("attachments", [])
 

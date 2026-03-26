@@ -15,7 +15,7 @@ import {
   BellRing,
   CheckCircle,
 } from 'lucide-react';
-import { getApiBaseUrl } from '@/utils/env';
+import { coupleFetch } from '@/couple/lib/auth';
 
 interface CoupleOnboardingModalProps {
   isOpen: boolean;
@@ -148,25 +148,17 @@ export default function CoupleOnboardingModal({ isOpen, onComplete }: CoupleOnbo
   const completeOnboarding = async (completed: boolean) => {
     try {
       setCompleting(true);
+      const stepsCompleted = COUPLE_ONBOARDING_STEPS
+        .slice(0, completed ? COUPLE_ONBOARDING_STEPS.length : currentStep + 1)
+        .map((step) => step.id);
 
-      const token = localStorage.getItem('couple_token');
-      if (token) {
-        const stepsCompleted = COUPLE_ONBOARDING_STEPS
-          .slice(0, completed ? COUPLE_ONBOARDING_STEPS.length : currentStep + 1)
-          .map((step) => step.id);
-
-        await fetch(`${getApiBaseUrl()}/couple/profile/onboarding`, {
-          method: 'PUT',
-          headers: {
-            'Authorization': `Bearer ${token}`,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            completed: true,
-            steps_completed: stepsCompleted,
-          }),
-        });
-      }
+      await coupleFetch('/couple/profile/onboarding', {
+        method: 'PUT',
+        body: JSON.stringify({
+          completed: true,
+          steps_completed: stepsCompleted,
+        }),
+      });
     } catch (error) {
       console.error('Error completing couple onboarding:', error);
     } finally {

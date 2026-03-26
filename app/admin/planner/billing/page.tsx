@@ -104,7 +104,7 @@ interface PaymentRequest {
 
 export default function PlannerBillingPage() {
   const router = useRouter();
-  const { userProfile, apiRequest } = useAdmin();
+  const { userProfile, apiRequest, token } = useAdmin();
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<'subscription' | 'client_payments'>('subscription');
   const [plans, setPlans] = useState<SubscriptionPlan[]>([]);
@@ -135,10 +135,6 @@ export default function PlannerBillingPage() {
     try {
       setLoading(true);
       const baseUrl = getApiBaseUrl();
-      // TODO(P3): Migrate remaining direct fetch() calls in this file to use
-      // apiRequest() from AdminContext for centralized 401/402 handling.
-      // Current direct fetch() calls bypass auto-logout on token expiry.
-      const token = localStorage.getItem('admin_token') || sessionStorage.getItem('admin_token');
 
       if (!token || !userProfile) return;
 
@@ -348,7 +344,7 @@ export default function PlannerBillingPage() {
       setLoading(false);
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [userProfile, paginationInvoices.currentPage, paginationInvoices.itemsPerPage]);
+  }, [token, userProfile, paginationInvoices.currentPage, paginationInvoices.itemsPerPage]);
 
   const generateBillingAlerts = (subscription: UserSubscription, plan: SubscriptionPlan | null | undefined) => {
     const alerts: BillingAlert[] = [];
@@ -419,7 +415,6 @@ export default function PlannerBillingPage() {
   const openBillingPortal = async (flowType?: 'payment_method_update' | 'subscription_update' | 'subscription_cancel', loadingMessage?: string) => {
     try {
       const baseUrl = getApiBaseUrl();
-      const token = localStorage.getItem('admin_token') || sessionStorage.getItem('admin_token');
 
       if (!token) {
         toast.error('Please log in to manage billing');
@@ -487,7 +482,6 @@ export default function PlannerBillingPage() {
   const handleSubscribe = async (planId: string, interval: 'monthly' | 'yearly' = 'monthly') => {
     try {
       const baseUrl = getApiBaseUrl();
-      const token = localStorage.getItem('admin_token') || sessionStorage.getItem('admin_token');
 
       if (!token) {
         toast.error('Please log in to subscribe');

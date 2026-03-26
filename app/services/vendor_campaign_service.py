@@ -520,6 +520,8 @@ class VendorCampaignService:
 
         impressions = campaign.get("impression_count", 0)
         clicks = campaign.get("click_count", 0)
+        conversions = campaign.get("conversion_count", 0)
+        spend = float(campaign.get("budget_consumed", 0) or 0)
         return {
             "campaign_id": campaign_id,
             "period_days": days,
@@ -527,8 +529,10 @@ class VendorCampaignService:
                 "impressions": impressions,
                 "clicks": clicks,
                 "leads": campaign.get("lead_count", 0),
-                "conversions": campaign.get("conversion_count", 0),
+                "conversions": conversions,
                 "ctr": round(clicks / impressions * 100, 2) if impressions > 0 else 0.0,
+                "conversion_rate": round(conversions / clicks * 100, 2) if clicks > 0 else 0.0,
+                "spend": spend,
             },
             "daily_series": daily_stats,
         }

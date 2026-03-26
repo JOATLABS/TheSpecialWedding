@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { Label } from '@/components/ui/Label';
 import { Textarea } from '@/components/ui/Textarea';
+import { useAdmin } from '@/contexts/AdminContext';
 import { Loader2, DollarSign } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -29,6 +30,7 @@ export function CollectPaymentModal({
   weddingTitle,
   onPaymentCreated,
 }: CollectPaymentModalProps) {
+  const { token } = useAdmin();
   const [loading, setLoading] = useState(false);
   const [amount, setAmount] = useState('');
   const [description, setDescription] = useState('');
@@ -43,9 +45,10 @@ export function CollectPaymentModal({
       const fetchWeddings = async () => {
         setFetchingWeddings(true);
         try {
-          const token = localStorage.getItem('admin_token') || sessionStorage.getItem('admin_token');
+          if (!token) return;
           const response = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL}/admin/weddings`, {
-             headers: { 'Authorization': `Bearer ${token}` }
+             headers: { 'Authorization': `Bearer ${token}` },
+             credentials: 'include',
           });
           if (response.ok) {
             const data = await response.json();
@@ -59,7 +62,7 @@ export function CollectPaymentModal({
       };
       fetchWeddings();
     }
-  }, [weddingId, open]);
+  }, [token, weddingId, open]);
 
   const handleCreatePayment = async () => {
     if (!amount || parseFloat(amount) <= 0) {
@@ -77,7 +80,6 @@ export function CollectPaymentModal({
     try {
       setLoading(true);
 
-      const token = localStorage.getItem('admin_token') || sessionStorage.getItem('admin_token');
       if (!token) {
         toast.error('Please log in to create payment requests');
         return;

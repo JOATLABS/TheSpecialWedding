@@ -10,6 +10,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - **Lint warning cleanup** (`/app/admin/guests/page.tsx`, `/app/admin/platform/page.tsx`, `/app/admin/support/page.tsx`, `/app/admin/users/page.tsx`, `/app/admin/vendors/page.tsx`, `/app/couple/dashboard/page.tsx`) — Stabilized hook dependencies, pagination callbacks, and callback props so the frontend now passes ESLint without React hook warnings.
+- **Blog/resources contract hardening** (`/app/resources/page.tsx`, `/app/resources/blog/[slug]/page.tsx`, `/app/admin/components/blog/BlogArticleEditor.tsx`, `/app/components/blog/MarkdownArticle.tsx`) — Unified markdown rendering between admin preview and public resources, wired `meta_title` into page metadata, aligned category display, and limited static blog fallbacks to non-production environments so deployed public content has one source of truth.
+- **Resources server-rendered blog index** (`/app/resources/page.tsx`, `/app/resources/ResourcesClient.tsx`, `/app/resources/resourcesShared.ts`, `/app/resources/blog/serverApi.ts`) — Moved the public blog-card fetch to the server with ISR, extracted shared resources/blog contracts, and kept the split-panel reader as a client shell so `/resources` ships indexed article content and crawlable article links in initial HTML without duplicating public fetch logic.
+- **Guest pagination performance** (`/app/admin/guests/page.tsx`, `/app/api/admin_rsvp.py`, `/app/api/plus_one.py`, `/app/services/admin_rsvp_service.py`, `/app/services/plus_one_service.py`) — Scoped RSVP and plus-one fetches to the currently paged guests instead of refetching wedding-wide related datasets on every page change.
+- **Authentication docs refresh** (`/docs/security/AUTHENTICATION_SYSTEM.md`, `/docs/security/SECURITY.md`) — Rewrote stale two-cookie/browser-storage documentation to match the current secure-cookie plus in-memory token bootstrap model and current role set.
 
 ## [2.28.0] - 2026-03-24 — Planner Inbox, Couple Messaging, AI Chat Gating, Cache Fixes
 

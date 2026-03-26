@@ -1,56 +1,26 @@
-import React from 'react';
 import { Metadata } from 'next';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { blogPosts, type BlogPostKey } from '../data';
 import SaasNav from '@/components/saas/SaasNav';
+import { getMarketingBlogCategory } from '@/data/blogCategories';
 import BlogArticleContent from './BlogArticleContent';
+import { fetchArticleFromAPI } from '../serverApi';
+import {
+  allowStaticFallback,
+  type PublicBlogApiArticle,
+} from '../../resourcesShared';
 
-/* ── Server-side article fetcher ── */
-
-interface APIArticle {
-  title: string;
-  content: string;
-  excerpt: string;
-  category: string;
-  date?: string;
-  created_at?: string;
-  published_at?: string;
-  estimated_read_minutes?: number;
-  readTime?: number;
-  og_image?: string;
-  card_image?: string;
-  author_name?: string;
-  meta_title?: string;
-  meta_description?: string;
-  ogDescription?: string;
-}
-
-async function fetchArticleFromAPI(slug: string): Promise<APIArticle | null> {
-  try {
-    const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL;
-    if (!baseUrl) return null;
-
-    const res = await fetch(`${baseUrl}/api/v1/blog/articles/slug/${slug}`, {
-      next: { revalidate: 60 }, // Cache for 60 seconds
-    });
-
-    if (!res.ok) return null;
-    return await res.json();
-  } catch {
-    return null;
-  }
-}
-
-function getArticleData(apiArticle: APIArticle | null, slug: string) {
-  const fallback = blogPosts[slug as BlogPostKey];
+function getArticleData(apiArticle: PublicBlogApiArticle | null, slug: string) {
+  const fallback = allowStaticFallback ? blogPosts[slug as BlogPostKey] : undefined;
 
   if (apiArticle) {
     return {
       title: apiArticle.title,
-      content: apiArticle.content,
+      metaTitle: apiArticle.meta_title || null,
+      content: apiArticle.content || '',
       excerpt: apiArticle.excerpt,
-      category: apiArticle.category,
+      category: getMarketingBlogCategory(apiArticle.category),
       date: apiArticle.created_at || apiArticle.published_at || apiArticle.date || '',
       readTime: apiArticle.estimated_read_minutes || apiArticle.readTime || 5,
       ogDescription: apiArticle.meta_description || apiArticle.ogDescription || apiArticle.excerpt,
@@ -64,6 +34,7 @@ function getArticleData(apiArticle: APIArticle | null, slug: string) {
   if (fallback) {
     return {
       title: fallback.title,
+      metaTitle: null,
       content: '',
       excerpt: fallback.excerpt,
       category: fallback.category,
@@ -222,15 +193,16 @@ export async function generateMetadata({
     : undefined;
 
   const canonicalUrl = `https://thespecialwedding.io/resources/blog/${slug}`;
+  const metadataTitle = article.metaTitle || article.title;
 
   return {
-    title: `${article.title} | The Special Wedding Blog`,
+    title: `${metadataTitle} | The Special Wedding Blog`,
     description: article.ogDescription,
     alternates: {
       canonical: canonicalUrl,
     },
     openGraph: {
-      title: article.title,
+      title: metadataTitle,
       description: article.ogDescription,
       url: canonicalUrl,
       type: 'article',
@@ -239,7 +211,7 @@ export async function generateMetadata({
     },
     twitter: {
       card: article.ogImage ? 'summary_large_image' : 'summary',
-      title: article.title,
+      title: metadataTitle,
       description: article.ogDescription,
       images: article.ogImage ? [article.ogImage] : undefined,
     },

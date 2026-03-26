@@ -26,7 +26,8 @@ export const APIProvider = ({ children }: { children: React.ReactNode }) => {
                 'Content-Type': 'application/json',
             },
             body: body !== undefined ? JSON.stringify(body) : undefined,
-            cache: 'no-store'
+            cache: 'no-store',
+            credentials: 'include',
         });
 
         if (!response.ok) {

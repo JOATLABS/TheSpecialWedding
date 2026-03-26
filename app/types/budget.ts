@@ -139,6 +139,13 @@ export interface BudgetAlert {
   resolved_at?: string;
 }
 
+export interface ApplyBudgetTemplateResult {
+  wedding_id: string;
+  template_id: string;
+  categories_created: number;
+  categories: BudgetCategory[];
+}
+
 // Form interfaces for creating/updating
 export interface CreateBudgetCategoryRequest {
   wedding_id: string;

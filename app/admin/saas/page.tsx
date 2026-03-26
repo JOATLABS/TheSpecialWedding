@@ -165,7 +165,7 @@ interface Testimonial {
 
 const SaasAdminDashboard = () => {
  const router = useRouter();
- const { userProfile } = useAdmin();
+ const { userProfile, token } = useAdmin();
  const [activeTab, setActiveTab] = useState<'overview' | 'plans' | 'reviews' | 'ad-config'>('overview');
  const [plans, setPlans] = useState<SubscriptionPlan[]>([]);
  const [planners, setPlanners] = useState<WeddingPlanner[]>([]);
@@ -187,7 +187,6 @@ const SaasAdminDashboard = () => {
   const fetchData = useCallback(async () => {
     try {
       const baseUrl = getApiBaseUrl();
-      const token = localStorage.getItem('admin_token') || sessionStorage.getItem('admin_token');
 
       if (!token) {
         setLoading(false);
@@ -199,7 +198,7 @@ const SaasAdminDashboard = () => {
         'Content-Type': 'application/json'
       };
 
-      const plansResponse = await fetch(`${baseUrl}/subscription-plans?include_inactive=true`, { headers });
+      const plansResponse = await fetch(`${baseUrl}/subscription-plans?include_inactive=true`, { headers, credentials: 'include' });
       if (plansResponse.ok) {
         const plansData = await plansResponse.json();
         console.log('[SaaS Admin] Subscription plans loaded:', plansData.length, 'plans');
@@ -210,7 +209,7 @@ const SaasAdminDashboard = () => {
         console.error('[SaaS Admin] Error details:', errorText);
       }
 
-      const plannersResponse = await fetch(`${baseUrl}/saas/wedding-planners`, { headers });
+      const plannersResponse = await fetch(`${baseUrl}/saas/wedding-planners`, { headers, credentials: 'include' });
       if (plannersResponse.ok) {
         const plannersData = await plannersResponse.json();
         setPlanners(plannersData.map((planner: any) => ({
@@ -227,7 +226,7 @@ const SaasAdminDashboard = () => {
       }
 
       // Fetch platform metrics for the Overview tab (replaces old analytics/overview + revenue calls)
-      const metricsResponse = await fetch(`${baseUrl}/saas/analytics/platform?timeframe=${metricsTimeframe}`, { headers });
+      const metricsResponse = await fetch(`${baseUrl}/saas/analytics/platform?timeframe=${metricsTimeframe}`, { headers, credentials: 'include' });
       if (metricsResponse.ok) {
         const metricsData = await metricsResponse.json();
         setMetrics(metricsData);
@@ -320,7 +319,7 @@ const SaasAdminDashboard = () => {
     } finally {
       setLoading(false);
     }
-  }, [metricsTimeframe]);
+  }, [metricsTimeframe, token]);
 
   useEffect(() => {
     fetchData();
@@ -331,13 +330,12 @@ const SaasAdminDashboard = () => {
     try {
       setMetricsLoading(true);
       const baseUrl = getApiBaseUrl();
-      const token = localStorage.getItem('admin_token') || sessionStorage.getItem('admin_token');
       if (!token) return;
       const headers = {
         'Authorization': `Bearer ${token}`,
         'Content-Type': 'application/json'
       };
-      const res = await fetch(`${baseUrl}/saas/analytics/platform?timeframe=${tf}`, { headers });
+      const res = await fetch(`${baseUrl}/saas/analytics/platform?timeframe=${tf}`, { headers, credentials: 'include' });
       if (res.ok) {
         setMetrics(await res.json());
       }
@@ -346,7 +344,7 @@ const SaasAdminDashboard = () => {
     } finally {
       setMetricsLoading(false);
     }
-  }, []);
+  }, [token]);
 
   const handleTimeframeChange = useCallback((tf: TimeframeKey) => {
     setMetricsTimeframe(tf);
@@ -386,13 +384,13 @@ const SaasAdminDashboard = () => {
 
  try {
  const baseUrl = getApiBaseUrl();
- const token = localStorage.getItem('admin_token') || sessionStorage.getItem('admin_token');
  const response = await fetch(`${baseUrl}/subscription-plans/${planId}`, {
  method: 'DELETE',
  headers: {
  'Authorization': `Bearer ${token}`,
  'Content-Type': 'application/json'
- }
+ },
+ credentials: 'include',
  });
 
  if (response.ok) {
@@ -410,7 +408,6 @@ const SaasAdminDashboard = () => {
  const handleSavePlan = async (planData: any) => {
  try {
  const baseUrl = getApiBaseUrl();
- const token = localStorage.getItem('admin_token') || sessionStorage.getItem('admin_token');
 
  const isEditing = !!editingPlan;
  const url = isEditing
@@ -425,6 +422,7 @@ const SaasAdminDashboard = () => {
  'Authorization': `Bearer ${token}`,
  'Content-Type': 'application/json'
  },
+ credentials: 'include',
  body: JSON.stringify(planData)
  });
 
@@ -434,7 +432,8 @@ const SaasAdminDashboard = () => {
  headers: {
  'Authorization': `Bearer ${token}`,
  'Content-Type': 'application/json'
- }
+ },
+ credentials: 'include',
  });
  if (plansResponse.ok) {
  const updatedPlans = await plansResponse.json();
@@ -460,13 +459,13 @@ const SaasAdminDashboard = () => {
 
  try {
  const baseUrl = getApiBaseUrl();
- const token = localStorage.getItem('admin_token') || sessionStorage.getItem('admin_token');
  const response = await fetch(`${baseUrl}/saas/wedding-planners`, {
  method: 'POST',
  headers: {
  'Authorization': `Bearer ${token}`,
  'Content-Type': 'application/json'
  },
+ credentials: 'include',
  body: JSON.stringify({
  email,
  company_name: companyName
@@ -490,7 +489,6 @@ const SaasAdminDashboard = () => {
  const handleTogglePlannerStatus = async (plannerId: string) => {
  try {
  const baseUrl = getApiBaseUrl();
- const token = localStorage.getItem('admin_token') || sessionStorage.getItem('admin_token');
  // Find the planner to get current status
  const planner = planners.find(p => p.id === plannerId);
  if (!planner) {
@@ -506,7 +504,8 @@ const SaasAdminDashboard = () => {
  headers: {
  'Authorization': `Bearer ${token}`,
  'Content-Type': 'application/json'
- }
+ },
+ credentials: 'include',
  });
 
  if (!statusResponse.ok) {
@@ -531,6 +530,7 @@ const SaasAdminDashboard = () => {
  'Authorization': `Bearer ${token}`,
  'Content-Type': 'application/json'
  },
+ credentials: 'include',
  body: JSON.stringify({
  plan_id: defaultPlan._id,
  billing_interval: 'monthly',
@@ -556,7 +556,8 @@ const SaasAdminDashboard = () => {
  headers: {
  'Authorization': `Bearer ${token}`,
  'Content-Type': 'application/json'
- }
+ },
+ credentials: 'include',
  });
  } catch (subError) {
  console.warn('Error cancelling subscription:', subError);
@@ -584,7 +585,6 @@ const SaasAdminDashboard = () => {
  const handleAssignPlan = async (plannerId: string, planId: string) => {
  try {
  const baseUrl = getApiBaseUrl();
- const token = localStorage.getItem('admin_token') || sessionStorage.getItem('admin_token');
  // First, cancel existing subscription if any
  try {
  await fetch(`${baseUrl}/users/${plannerId}/subscription`, {
@@ -592,7 +592,8 @@ const SaasAdminDashboard = () => {
  headers: {
  'Authorization': `Bearer ${token}`,
  'Content-Type': 'application/json'
- }
+ },
+ credentials: 'include',
  });
  } catch (error) {
  // Ignore if no existing subscription
@@ -604,6 +605,7 @@ const SaasAdminDashboard = () => {
  'Authorization': `Bearer ${token}`,
  'Content-Type': 'application/json'
  },
+ credentials: 'include',
  body: JSON.stringify({
  plan_id: planId,
  billing_interval: 'monthly',
@@ -1295,6 +1297,7 @@ const PlanModal = ({ isEditing, plan, onSave, onClose }: {
 // =============================================================================
 
 function CustomerReviewsTab() {
+  const { token } = useAdmin();
   const [testimonials, setTestimonials] = useState<Testimonial[]>([]);
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
@@ -1304,9 +1307,9 @@ function CustomerReviewsTab() {
   const fetchTestimonials = useCallback(async () => {
     try {
       setLoading(true);
-      const token = localStorage.getItem('admin_token') || sessionStorage.getItem('admin_token');
       const res = await fetch(`${getApiBaseUrl()}/saas/testimonials`, {
         headers: { Authorization: `Bearer ${token}` },
+        credentials: 'include',
       });
       if (res.ok) {
         setTestimonials(await res.json());
@@ -1316,16 +1319,16 @@ function CustomerReviewsTab() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [token]);
 
   useEffect(() => { fetchTestimonials(); }, [fetchTestimonials]);
 
   const handleToggle = async (id: string) => {
     try {
-      const token = localStorage.getItem('admin_token') || sessionStorage.getItem('admin_token');
       const res = await fetch(`${getApiBaseUrl()}/saas/testimonials/${id}/toggle`, {
         method: 'PUT',
         headers: { Authorization: `Bearer ${token}` },
+        credentials: 'include',
       });
       if (res.ok) {
         const data = await res.json();
@@ -1342,10 +1345,10 @@ function CustomerReviewsTab() {
   const handleDelete = async (id: string) => {
     if (!confirm('Delete this testimonial permanently?')) return;
     try {
-      const token = localStorage.getItem('admin_token') || sessionStorage.getItem('admin_token');
       const res = await fetch(`${getApiBaseUrl()}/saas/testimonials/${id}`, {
         method: 'DELETE',
         headers: { Authorization: `Bearer ${token}` },
+        credentials: 'include',
       });
       if (res.ok) {
         setTestimonials(prev => prev.filter(t => t._id !== id));
@@ -1359,7 +1362,6 @@ function CustomerReviewsTab() {
   const handleSave = async (data: Partial<Testimonial>) => {
     setSaving(true);
     try {
-      const token = localStorage.getItem('admin_token') || sessionStorage.getItem('admin_token');
       const isEdit = !!editingTestimonial;
       const url = isEdit
         ? `${getApiBaseUrl()}/saas/testimonials/${editingTestimonial!._id}`
@@ -1370,6 +1372,7 @@ function CustomerReviewsTab() {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${token}`,
         },
+        credentials: 'include',
         body: JSON.stringify(data),
       });
       if (res.ok) {
@@ -1622,16 +1625,18 @@ function TestimonialModal({
 // =============================================================================
 
 function AdPlatformConfigTab() {
+  const { token } = useAdmin();
   const [config, setConfig] = useState<PlatformConfig | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [editedConfig, setEditedConfig] = useState<Partial<PlatformConfig>>({});
 
-  const token = typeof window !== 'undefined'
-    ? (localStorage.getItem('admin_token') || sessionStorage.getItem('admin_token') || '')
-    : '';
-
   const loadData = useCallback(async () => {
+    if (!token) {
+      setLoading(false);
+      return;
+    }
+
     try {
       setLoading(true);
       const data = await getAdminConfig(token);
@@ -1647,6 +1652,11 @@ function AdPlatformConfigTab() {
   useEffect(() => { loadData(); }, [loadData]);
 
   const handleSave = async () => {
+    if (!token) {
+      toast.error('Authentication required');
+      return;
+    }
+
     try {
       setSaving(true);
       const updated = await updateAdminConfig(token, editedConfig);

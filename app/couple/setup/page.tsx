@@ -6,6 +6,7 @@ import { getApiBaseUrl } from '@/utils/env';
 import { toast } from 'sonner';
 import { GlassCard } from '@/components/ui/GlassCard';
 import { Heart, Lock, Loader2, CheckCircle, XCircle, ArrowRight, Eye, EyeOff } from 'lucide-react';
+import { clearLegacyCoupleStorage } from '@/couple/lib/auth';
 
 // ---------------------------------------------------------------------------
 // Password validation (matches admin setup-account pattern)
@@ -110,6 +111,7 @@ function CoupleSetupContent() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ token, password }),
+        credentials: 'include',
       });
 
       const data = await res.json();
@@ -119,8 +121,7 @@ function CoupleSetupContent() {
         return;
       }
 
-      localStorage.setItem('couple_token', data.access_token);
-      localStorage.setItem('couple_data', JSON.stringify(data.couple));
+      clearLegacyCoupleStorage();
       toast.success('Account setup complete! Welcome!');
       router.push('/couple/dashboard');
     } catch {

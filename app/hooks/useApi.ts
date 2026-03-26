@@ -56,6 +56,7 @@ export function useApi() {
           method,
           headers,
           cache: 'no-store',
+          credentials: 'include',
           ...(body ? { body: JSON.stringify(body) } : {}),
           ...(abortSignal ? { signal: abortSignal } : {}),
         };
