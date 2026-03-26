@@ -77,4 +77,7 @@ docs/mockups/ux_redesign/landing-page-v2-2.html
 docs/mockups/ux_redesign/landing-page-v2-3.html
 docs/PERFORMANCE_AUDIT.html
 Special Wedding Root Admin Platform Error Page .pdf
-.agents/*
+.agents
+.mypy_cache
+.service-manager
+.pytest_cache
