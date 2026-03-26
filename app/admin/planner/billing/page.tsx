@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useCallback } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { useAdmin } from '@/contexts/AdminContext';
 import { getApiBaseUrl } from '@/utils/env';
 import { formatAdminDate, DEFAULT_TIMEZONE } from '@/utils/dateFormat';
@@ -104,6 +104,7 @@ interface PaymentRequest {
 
 export default function PlannerBillingPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { userProfile, apiRequest, token } = useAdmin();
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<'subscription' | 'client_payments'>('subscription');
@@ -123,6 +124,8 @@ export default function PlannerBillingPage() {
   const [billingAlerts, setBillingAlerts] = useState<BillingAlert[]>([]);
   const [showCreatePaymentModal, setShowCreatePaymentModal] = useState(false);
   const paginationInvoices = usePagination({ initialItemsPerPage: 50 });
+  const requestedPlanId = searchParams.get('plan');
+  const requestedInterval = searchParams.get('interval') === 'yearly' ? 'yearly' : 'monthly';
 
   // Access control - only for wedding planners
   useEffect(() => {
@@ -603,6 +606,10 @@ export default function PlannerBillingPage() {
   const needsNewSubscription = !currentSubscription || !currentPlan
     || subStatus === 'expired' || subStatus === 'cancelled' || subStatus === 'suspended';
   if (needsNewSubscription) {
+    const requestedPlan = requestedPlanId
+      ? plans.find((plan) => plan._id === requestedPlanId) ?? null
+      : null;
+
     return (
       <div className="space-y-6">
         <div className="text-center py-12">
@@ -621,66 +628,86 @@ export default function PlannerBillingPage() {
           </p>
         </div>
 
+        {requestedPlan && (
+          <div className="mx-auto max-w-3xl rounded-2xl border border-blue-200 bg-blue-50 px-6 py-4 text-sm text-blue-900 dark:border-blue-900/60 dark:bg-blue-950/40 dark:text-blue-100">
+            Continuing with <span className="font-semibold">{requestedPlan.name}</span> on{' '}
+            <span className="font-semibold">{requestedInterval}</span> billing. Review the details below to start checkout.
+          </div>
+        )}
+
         <div className="grid md:grid-cols-3 gap-8 max-w-5xl mx-auto">
-          {plans.map((plan) => (
-            <Card
-              key={plan._id}
-              className={`relative flex flex-col bg-white dark:bg-gray-800 transition-all hover:shadow-lg ${
-                plan.is_featured
-                  ? 'border-2 border-blue-500 dark:border-blue-400 shadow-md'
-                  : 'border border-gray-200 dark:border-gray-700'
-              }`}
-            >
-              {plan.is_featured && (
-                <div className="absolute -top-3 left-1/2 -translate-x-1/2">
-                  <Badge className="bg-blue-500 text-white px-3 py-1">Recommended</Badge>
-                </div>
-              )}
-              <CardHeader className="text-center pb-4 pt-8">
-                <CardTitle className="text-xl font-semibold text-gray-900 dark:text-gray-100">
-                  {plan.name}
-                </CardTitle>
-                <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">{plan.description}</p>
-                <div className="mt-4">
-                  <span className="text-4xl font-bold text-gray-900 dark:text-white">
-                    ${plan.price_monthly}
-                  </span>
-                  <span className="text-gray-500 dark:text-gray-400">/mo</span>
-                  {plan.price_yearly > 0 && (
-                    <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">
-                      or ${plan.price_yearly}/yr (save ${plan.price_monthly * 12 - plan.price_yearly})
-                    </p>
-                  )}
-                </div>
-              </CardHeader>
-              <CardContent className="flex-1 flex flex-col space-y-6 px-6 pb-8">
-                <ul className="space-y-3 text-sm flex-1">
-                  {(plan.features_list && plan.features_list.length > 0 ? plan.features_list : [
-                    `${plan.max_weddings === -1 ? 'Unlimited' : plan.max_weddings} weddings`,
-                    `${plan.max_guests_per_wedding === -1 ? 'Unlimited' : plan.max_guests_per_wedding} guests per wedding`,
-                    `${plan.storage_gb} GB storage`,
-                    `${plan.staff_seats} staff seat${plan.staff_seats !== 1 ? 's' : ''}`,
-                    `${plan.ai_credits_monthly} AI credits/month`,
-                  ]).map((feature, idx) => (
-                    <li key={idx} className="flex items-start gap-2.5 text-gray-700 dark:text-gray-300">
-                      <CheckCircle2 className="w-4 h-4 text-green-500 flex-shrink-0 mt-0.5" />
-                      <span>{feature}</span>
-                    </li>
-                  ))}
-                </ul>
-                <Button
-                  onClick={() => handleSubscribe(plan._id)}
-                  className={`w-full py-3 text-base font-medium ${
-                    plan.is_featured
-                      ? 'bg-blue-600 hover:bg-blue-700 text-white'
-                      : 'bg-gray-900 dark:bg-gray-100 hover:bg-gray-800 dark:hover:bg-gray-200 text-white dark:text-gray-900'
-                  }`}
-                >
-                  Get Started
-                </Button>
-              </CardContent>
-            </Card>
-          ))}
+          {plans.map((plan) => {
+            const isRequestedPlan = requestedPlanId === plan._id;
+            const displayInterval = isRequestedPlan ? requestedInterval : 'monthly';
+            const displayPrice = displayInterval === 'yearly' && plan.price_yearly > 0
+              ? plan.price_yearly
+              : plan.price_monthly;
+            const displayCadence = displayInterval === 'yearly' ? 'yr' : 'mo';
+
+            return (
+              <Card
+                key={plan._id}
+                className={`relative flex flex-col bg-white dark:bg-gray-800 transition-all hover:shadow-lg ${
+                  isRequestedPlan
+                    ? 'border-2 border-blue-600 dark:border-blue-300 shadow-lg ring-2 ring-blue-200/70 dark:ring-blue-500/40'
+                    : plan.is_featured
+                    ? 'border-2 border-blue-500 dark:border-blue-400 shadow-md'
+                    : 'border border-gray-200 dark:border-gray-700'
+                }`}
+              >
+                {(plan.is_featured || isRequestedPlan) && (
+                  <div className="absolute -top-3 left-1/2 -translate-x-1/2">
+                    <Badge className="bg-blue-500 text-white px-3 py-1">
+                      {isRequestedPlan ? 'Selected' : 'Recommended'}
+                    </Badge>
+                  </div>
+                )}
+                <CardHeader className="text-center pb-4 pt-8">
+                  <CardTitle className="text-xl font-semibold text-gray-900 dark:text-gray-100">
+                    {plan.name}
+                  </CardTitle>
+                  <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">{plan.description}</p>
+                  <div className="mt-4">
+                    <span className="text-4xl font-bold text-gray-900 dark:text-white">
+                      ${displayPrice}
+                    </span>
+                    <span className="text-gray-500 dark:text-gray-400">/{displayCadence}</span>
+                    {plan.price_yearly > 0 && (
+                      <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">
+                        or ${plan.price_yearly}/yr (save ${plan.price_monthly * 12 - plan.price_yearly})
+                      </p>
+                    )}
+                  </div>
+                </CardHeader>
+                <CardContent className="flex-1 flex flex-col space-y-6 px-6 pb-8">
+                  <ul className="space-y-3 text-sm flex-1">
+                    {(plan.features_list && plan.features_list.length > 0 ? plan.features_list : [
+                      `${plan.max_weddings === -1 ? 'Unlimited' : plan.max_weddings} weddings`,
+                      `${plan.max_guests_per_wedding === -1 ? 'Unlimited' : plan.max_guests_per_wedding} guests per wedding`,
+                      `${plan.storage_gb} GB storage`,
+                      `${plan.staff_seats} staff seat${plan.staff_seats !== 1 ? 's' : ''}`,
+                      `${plan.ai_credits_monthly} AI credits/month`,
+                    ]).map((feature, idx) => (
+                      <li key={idx} className="flex items-start gap-2.5 text-gray-700 dark:text-gray-300">
+                        <CheckCircle2 className="w-4 h-4 text-green-500 flex-shrink-0 mt-0.5" />
+                        <span>{feature}</span>
+                      </li>
+                    ))}
+                  </ul>
+                  <Button
+                    onClick={() => handleSubscribe(plan._id, displayInterval)}
+                    className={`w-full py-3 text-base font-medium ${
+                      isRequestedPlan || plan.is_featured
+                        ? 'bg-blue-600 hover:bg-blue-700 text-white'
+                        : 'bg-gray-900 dark:bg-gray-100 hover:bg-gray-800 dark:hover:bg-gray-200 text-white dark:text-gray-900'
+                    }`}
+                  >
+                    {isRequestedPlan ? `Continue with ${displayInterval}` : 'Get Started'}
+                  </Button>
+                </CardContent>
+              </Card>
+            );
+          })}
         </div>
       </div>
     );

@@ -6,11 +6,11 @@ import type { PublicBlogApiArticle } from '../resourcesShared';
 const BLOG_REVALIDATE_SECONDS = 60;
 const isProduction = process.env.NODE_ENV === 'production';
 
-function resolveBlogApiBaseUrl(): string | null {
+function resolveBlogApiBaseUrl(failHard = false): string | null {
   try {
     return getApiBaseUrl();
   } catch (error) {
-    if (isProduction) {
+    if (failHard && isProduction) {
       throw error;
     }
 
@@ -30,10 +30,15 @@ function handleBlogFetchError<T>(fallbackValue: T, message: string, error?: unkn
   return fallbackValue;
 }
 
-export async function fetchPublishedBlogArticles(limit = 50): Promise<PublicBlogApiArticle[]> {
+export interface PublishedBlogArticlesResult {
+  articles: PublicBlogApiArticle[];
+  unavailable: boolean;
+}
+
+export async function fetchPublishedBlogArticles(limit = 50): Promise<PublishedBlogArticlesResult> {
   const baseUrl = resolveBlogApiBaseUrl();
   if (!baseUrl) {
-    return [];
+    return { articles: [], unavailable: true };
   }
 
   try {
@@ -42,21 +47,22 @@ export async function fetchPublishedBlogArticles(limit = 50): Promise<PublicBlog
     });
 
     if (!response.ok) {
-      return handleBlogFetchError(
-        [],
-        `Failed to fetch published blog articles: HTTP ${response.status}`
-      );
+      return { articles: [], unavailable: true };
     }
 
     const data = await response.json();
-    return Array.isArray(data?.articles) ? data.articles : [];
-  } catch (error) {
-    return handleBlogFetchError([], 'Failed to fetch published blog articles', error);
+    if (!Array.isArray(data?.articles)) {
+      return { articles: [], unavailable: true };
+    }
+
+    return { articles: data.articles, unavailable: false };
+  } catch {
+    return { articles: [], unavailable: true };
   }
 }
 
 export async function fetchArticleFromAPI(slug: string): Promise<PublicBlogApiArticle | null> {
-  const baseUrl = resolveBlogApiBaseUrl();
+  const baseUrl = resolveBlogApiBaseUrl(true);
   if (!baseUrl) {
     return null;
   }
@@ -95,16 +101,13 @@ export async function fetchPublishedBlogSlugs(): Promise<string[]> {
     });
 
     if (!response.ok) {
-      return handleBlogFetchError(
-        [],
-        `Failed to fetch published blog slugs: HTTP ${response.status}`
-      );
+      return [];
     }
 
     const data = await response.json();
     const slugs = Array.isArray(data) ? data : data?.slugs;
     return Array.isArray(slugs) ? slugs : [];
-  } catch (error) {
-    return handleBlogFetchError([], 'Failed to fetch published blog slugs', error);
+  } catch {
+    return [];
   }
 }
