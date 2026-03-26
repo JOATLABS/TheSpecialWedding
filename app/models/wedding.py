@@ -1,6 +1,7 @@
-from pydantic import BaseModel, Field, field_serializer
+from pydantic import BaseModel, Field, field_serializer, field_validator
 from typing import List, Optional
 from datetime import datetime
+from app.utils.event_time import normalize_optional_event_time
 
 
 class EventDetailsModel(BaseModel):
@@ -9,6 +10,11 @@ class EventDetailsModel(BaseModel):
     time: Optional[str] = Field(default=None, description="Event time (e.g., '3:00 PM')")
     attire: Optional[str] = Field(default=None, description="Dress code/attire details")
     timezone: Optional[str] = Field(default=None, description="IANA timezone for this event (e.g., 'America/Chicago')")
+
+    @field_validator("time")
+    @classmethod
+    def validate_time(cls, value: Optional[str]) -> Optional[str]:
+        return normalize_optional_event_time(value)
 
 
 class EventNoteModel(BaseModel):

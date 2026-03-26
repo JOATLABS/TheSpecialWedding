@@ -349,9 +349,11 @@ export const AdminProvider = ({ children }: { children: React.ReactNode }) => {
 
                 toast.success('Login successful');
 
-                // Use window.location.href for immediate navigation to avoid race condition with AdminRouteGuard
-                // All authenticated users go to /admin/planner (the main dashboard)
-                if (profile.is_root_admin || profile.is_wedding_planner || profile.role === 'team_member' || profile.is_team_member === true) {
+                // Use window.location.href for immediate navigation to avoid race condition with AdminRouteGuard.
+                // Root admins and planners land on different dashboard surfaces.
+                if (profile.is_root_admin) {
+                    window.location.href = '/admin';
+                } else if (profile.is_wedding_planner || profile.role === 'team_member' || profile.is_team_member === true) {
                     window.location.href = '/admin/planner';
                 } else {
                     // Unknown/undefined role — do not grant access

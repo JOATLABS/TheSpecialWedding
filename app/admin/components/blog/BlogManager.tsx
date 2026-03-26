@@ -155,7 +155,7 @@ export default function BlogManager() {
       <div>
         <button
           onClick={() => { setViewMode('list'); setSelectedArticle(null); }}
-          className="flex items-center gap-2 text-sm text-slate-400 hover:text-white mb-4 transition"
+          className="mb-4 flex items-center gap-2 text-sm text-slate-600 transition hover:text-slate-900 dark:text-slate-400 dark:hover:text-white"
         >
           <ArrowLeft className="w-4 h-4" />
           Back to articles
@@ -177,14 +177,14 @@ export default function BlogManager() {
         <div className="flex items-center gap-3">
           <BookOpen className="w-5 h-5 text-wedding-rose" />
           <div>
-            <h3 className="text-lg font-semibold text-white">Blog Articles</h3>
-            <p className="text-sm text-slate-400">{totalArticles} articles on /resources</p>
+            <h3 className="text-lg font-semibold text-slate-900 dark:text-white">Blog Articles</h3>
+            <p className="text-sm text-slate-500 dark:text-slate-400">{totalArticles} articles on /resources</p>
           </div>
         </div>
         <div className="flex items-center gap-2">
           <button
             onClick={() => { fetchArticles(currentPage); fetchCategoryCounts(); }}
-            className="flex items-center gap-2 px-3 py-2 rounded-lg bg-white/5 text-sm text-slate-300 hover:text-white transition"
+            className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 shadow-sm transition hover:bg-slate-50 dark:border-white/10 dark:bg-white/5 dark:text-slate-300 dark:shadow-none dark:hover:text-white dark:hover:bg-white/10"
           >
             <RefreshCw className="w-4 h-4" />
             Refresh
@@ -207,7 +207,7 @@ export default function BlogManager() {
           placeholder="Search articles..."
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
-          className="w-full pl-10 pr-4 py-2.5 rounded-lg bg-white/5 border border-white/10 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-wedding-rose/50"
+          className="w-full rounded-lg border border-slate-200 bg-white py-2.5 pl-10 pr-4 text-sm text-slate-900 placeholder-slate-400 shadow-sm focus:outline-none focus:border-wedding-rose/50 focus:ring-2 focus:ring-wedding-rose/15 dark:border-white/10 dark:bg-white/5 dark:text-white dark:placeholder-slate-500 dark:shadow-none"
         />
       </div>
 
@@ -231,9 +231,9 @@ export default function BlogManager() {
             </div>
           ) : articles.length === 0 ? (
             <Card className="p-12 text-center">
-              <BookOpen className="w-10 h-10 text-slate-600 mx-auto mb-3" />
-              <p className="text-slate-400 mb-2">No blog articles found.</p>
-              <p className="text-xs text-slate-500 mb-4">
+              <BookOpen className="mx-auto mb-3 h-10 w-10 text-slate-400 dark:text-slate-600" />
+              <p className="mb-2 text-slate-600 dark:text-slate-400">No blog articles found.</p>
+              <p className="mb-4 text-xs text-slate-500 dark:text-slate-500">
                 {searchQuery ? 'Try a different search term.' : 'Create your first article to get started.'}
               </p>
               <button

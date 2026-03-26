@@ -1,7 +1,8 @@
 'use client';
 
 import React, { useState, useEffect, useCallback } from 'react';
-import { useVendorAuth } from '../layout';
+import Link from 'next/link';
+import { useVendorAuth } from '../components/VendorAuthContext';
 import { getApiBaseUrl } from '@/utils/env';
 import { toast } from 'sonner';
 import {
@@ -17,7 +18,18 @@ import {
   Save,
   Bell,
   BellOff,
+  ArrowLeft,
+  Shield,
+  RefreshCw,
 } from 'lucide-react';
+import {
+  vendorCardClass,
+  vendorInputClass,
+  vendorInsetClass,
+  vendorPrimaryButtonClass,
+  vendorSecondaryButtonClass,
+  vendorTextareaClass,
+} from '../components/styles';
 
 const API_BASE = getApiBaseUrl();
 
@@ -59,10 +71,11 @@ interface VendorProfile {
 }
 
 export default function VendorSettingsPage() {
-  const { token } = useVendorAuth();
+  const { token, user } = useVendorAuth();
   const [profile, setProfile] = useState<VendorProfile | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [loadError, setLoadError] = useState('');
 
   // Form fields
   const [businessName, setBusinessName] = useState('');
@@ -77,8 +90,14 @@ export default function VendorSettingsPage() {
   const [pushSupported, setPushSupported] = useState(false);
   const [pushSubscribed, setPushSubscribed] = useState(false);
   const [pushLoading, setPushLoading] = useState(false);
+  const isRootAdminView = user?.role === 'root_admin';
 
   const checkPushStatus = useCallback(async () => {
+    if (!token || isRootAdminView) {
+      setPushSupported(false);
+      return;
+    }
+
     // Check browser support
     if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
       setPushSupported(false);
@@ -97,10 +116,10 @@ export default function VendorSettingsPage() {
     } catch {
       // Silently fail
     }
-  }, [token]);
+  }, [isRootAdminView, token]);
 
   async function togglePush() {
-    if (!token) return;
+    if (!token || isRootAdminView) return;
     setPushLoading(true);
 
     try {
@@ -160,11 +179,23 @@ export default function VendorSettingsPage() {
   }
 
   const fetchProfile = useCallback(async () => {
+    if (!token) return;
+
+    if (isRootAdminView) {
+      setLoadError('');
+      setLoading(false);
+      return;
+    }
+
     try {
+      setLoadError('');
       const res = await fetch(`${API_BASE}/api/v1/vendors/profile`, {
         headers: { Authorization: `Bearer ${token}` },
       });
-      if (!res.ok) throw new Error('Failed to load profile');
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.detail || 'Failed to load profile');
+      }
       const data: VendorProfile = await res.json();
       setProfile(data);
       setBusinessName(data.business_name || '');
@@ -175,11 +206,13 @@ export default function VendorSettingsPage() {
       setDescription(data.vendor_description || '');
       setLogoUrl(data.logo_url || '');
     } catch (err: any) {
-      toast.error(err.message);
+      const message = err.message || 'Failed to load profile';
+      setLoadError(message);
+      toast.error(message);
     } finally {
       setLoading(false);
     }
-  }, [token]);
+  }, [isRootAdminView, token]);
 
   useEffect(() => {
     if (!token) return;
@@ -189,7 +222,10 @@ export default function VendorSettingsPage() {
 
   async function handleSave(e: React.FormEvent) {
     e.preventDefault();
-    if (!token) return;
+    if (!token || isRootAdminView) {
+      toast.info('Switch to a vendor account to edit vendor profile settings.');
+      return;
+    }
     setSaving(true);
 
     try {
@@ -243,6 +279,92 @@ export default function VendorSettingsPage() {
   }
 
   const completeness = profile?.profile_completeness;
+
+  if (isRootAdminView) {
+    return (
+      <div className="mx-auto max-w-4xl space-y-6">
+        <div>
+          <h1 className="flex items-center gap-2 text-2xl font-bold text-slate-900 dark:text-white">
+            <Settings className="h-6 w-6" />
+            Business Profile
+          </h1>
+          <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+            Vendor profile settings are only available when signed in as an advertising vendor.
+          </p>
+        </div>
+
+        <section className={`${vendorCardClass} p-6 sm:p-8`}>
+          <div className={`${vendorInsetClass} flex flex-col gap-4 p-5 sm:flex-row sm:items-start sm:justify-between`}>
+            <div className="space-y-2">
+              <div className="flex items-center gap-2 text-slate-900 dark:text-white">
+                <Shield className="h-5 w-5 text-wedding-gold" />
+                <h2 className="text-lg font-semibold">Root admin preview mode</h2>
+              </div>
+              <p className="max-w-2xl text-sm leading-6 text-slate-600 dark:text-slate-300">
+                You&apos;re viewing the vendor portal shell as a platform admin. This account does not have a vendor
+                business profile, so there is nothing to load or edit on this page.
+              </p>
+              <p className="text-sm text-slate-500 dark:text-slate-400">
+                To test vendor settings, sign in with an `advertising_vendor` account or create one from the admin ads
+                workspace.
+              </p>
+            </div>
+
+            <div className="flex flex-wrap gap-3">
+              <Link href="/admin/ads" className={vendorSecondaryButtonClass}>
+                <ArrowLeft className="h-4 w-4" />
+                Back to Admin
+              </Link>
+              <Link href="/portal/ads/campaigns" className={vendorPrimaryButtonClass}>
+                View Vendor Campaigns
+              </Link>
+            </div>
+          </div>
+        </section>
+      </div>
+    );
+  }
+
+  if (!loading && loadError && !profile) {
+    return (
+      <div className="mx-auto max-w-4xl space-y-6">
+        <div>
+          <h1 className="flex items-center gap-2 text-2xl font-bold text-slate-900 dark:text-white">
+            <Settings className="h-6 w-6" />
+            Business Profile
+          </h1>
+          <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+            Complete your profile to start creating advertising campaigns.
+          </p>
+        </div>
+
+        <section className={`${vendorCardClass} p-6 sm:p-8`}>
+          <div className="rounded-2xl border border-red-200 bg-red-50/80 p-5 dark:border-red-900/60 dark:bg-red-950/30">
+            <div className="flex items-start gap-3">
+              <AlertCircle className="mt-0.5 h-5 w-5 shrink-0 text-red-500" />
+              <div className="space-y-3">
+                <div>
+                  <h2 className="text-base font-semibold text-red-700 dark:text-red-300">We couldn&apos;t load your vendor profile</h2>
+                  <p className="mt-1 text-sm text-red-600 dark:text-red-400">{loadError}</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setLoading(true);
+                    void fetchProfile();
+                  }}
+                  className={vendorSecondaryButtonClass}
+                >
+                  <RefreshCw className="h-4 w-4" />
+                  Try Again
+                </button>
+              </div>
+            </div>
+          </div>
+        </section>
+      </div>
+    );
+  }
 
   return (
     <div className="max-w-3xl mx-auto space-y-6">
@@ -300,7 +422,7 @@ export default function VendorSettingsPage() {
       )}
 
       {/* Profile Form */}
-      <form onSubmit={handleSave} className="bg-white dark:bg-slate-800 rounded-2xl shadow-lg border border-slate-200 dark:border-slate-700 p-6 space-y-5">
+      <form onSubmit={handleSave} className={`${vendorCardClass} p-6 space-y-5`}>
         {/* Business Name */}
         <div>
           <label className="flex items-center gap-1.5 text-sm font-medium text-slate-700 dark:text-slate-200 mb-1.5">
@@ -311,7 +433,7 @@ export default function VendorSettingsPage() {
             type="text"
             value={businessName}
             onChange={(e) => setBusinessName(e.target.value)}
-            className="w-full px-3 py-2.5 border border-slate-200 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-slate-900 dark:text-white text-sm focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+            className={vendorInputClass}
             placeholder="Your Business Name"
           />
         </div>
@@ -325,7 +447,7 @@ export default function VendorSettingsPage() {
           <select
             value={category}
             onChange={(e) => setCategory(e.target.value)}
-            className="w-full px-3 py-2.5 border border-slate-200 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-slate-900 dark:text-white text-sm focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+            className={vendorInputClass}
           >
             <option value="">Select a category...</option>
             {VENDOR_CATEGORIES.map((cat) => (
@@ -344,7 +466,7 @@ export default function VendorSettingsPage() {
             type="text"
             value={location}
             onChange={(e) => setLocation(e.target.value)}
-            className="w-full px-3 py-2.5 border border-slate-200 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-slate-900 dark:text-white text-sm focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+            className={vendorInputClass}
             placeholder="e.g. New York, NY"
           />
         </div>
@@ -360,7 +482,7 @@ export default function VendorSettingsPage() {
               type="tel"
               value={phone}
               onChange={(e) => setPhone(e.target.value)}
-              className="w-full px-3 py-2.5 border border-slate-200 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-slate-900 dark:text-white text-sm focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+              className={vendorInputClass}
               placeholder="+1-555-0123"
             />
           </div>
@@ -373,7 +495,7 @@ export default function VendorSettingsPage() {
               type="url"
               value={website}
               onChange={(e) => setWebsite(e.target.value)}
-              className="w-full px-3 py-2.5 border border-slate-200 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-slate-900 dark:text-white text-sm focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+              className={vendorInputClass}
               placeholder="https://..."
             />
           </div>
@@ -388,7 +510,7 @@ export default function VendorSettingsPage() {
             value={description}
             onChange={(e) => setDescription(e.target.value)}
             rows={4}
-            className="w-full px-3 py-2.5 border border-slate-200 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-slate-900 dark:text-white text-sm focus:ring-2 focus:ring-primary-500 focus:border-primary-500 resize-none"
+            className={vendorTextareaClass}
             placeholder="Tell wedding planners about your services..."
           />
         </div>
@@ -402,7 +524,7 @@ export default function VendorSettingsPage() {
             type="url"
             value={logoUrl}
             onChange={(e) => setLogoUrl(e.target.value)}
-            className="w-full px-3 py-2.5 border border-slate-200 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-slate-900 dark:text-white text-sm focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+            className={vendorInputClass}
             placeholder="https://example.com/logo.png"
           />
         </div>
@@ -448,7 +570,7 @@ export default function VendorSettingsPage() {
         <button
           type="submit"
           disabled={saving}
-          className="w-full py-2.5 bg-primary-500 hover:bg-primary-600 text-white font-medium rounded-lg transition-colors disabled:opacity-50 text-sm flex items-center justify-center gap-2"
+          className={`w-full ${vendorPrimaryButtonClass}`}
         >
           {saving ? (
             <>

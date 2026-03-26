@@ -102,6 +102,9 @@ const TABS: { id: TabId; label: string }[] = [
   { id: 'config', label: 'Platform Config' },
 ];
 
+const ADS_PANEL_CLASS =
+  'bg-white dark:bg-slate-800/95 rounded-xl shadow-md border border-slate-200 dark:border-slate-700';
+
 // =============================================================================
 // Main Page Component
 // =============================================================================
@@ -121,7 +124,7 @@ export default function AdminAdsPage() {
   if (!userProfile?.is_root_admin) return null;
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-5">
       <PageHeader
         title="Advertising Platform"
         description="Manage ad campaigns, review creatives, and monitor platform monetization"
@@ -129,12 +132,12 @@ export default function AdminAdsPage() {
 
       {/* Tab Navigation */}
       <div className="border-b border-gray-200 dark:border-gray-700">
-        <nav className="flex space-x-8">
+        <nav className="scrollbar-thin -mb-px flex min-w-max gap-4 overflow-x-auto pb-1 pr-2 sm:gap-6 lg:gap-8">
           {TABS.map((tab) => (
             <button
               key={tab.id}
               onClick={() => setActiveTab(tab.id)}
-              className={`py-4 px-1 border-b-2 font-medium text-sm ${
+              className={`shrink-0 whitespace-nowrap border-b-2 px-1 py-3 text-sm font-medium ${
                 activeTab === tab.id
                   ? 'border-wedding-rose text-wedding-rose'
                   : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
@@ -168,14 +171,14 @@ function StatCard({ label, value, icon: Icon, color = 'text-slate-600' }: {
   color?: string;
 }) {
   return (
-    <Card className="p-6">
+    <Card className="h-full p-4 sm:p-5">
       <div className="flex items-center justify-between">
         <div>
           <p className="text-sm font-medium text-gray-500 dark:text-gray-400">{label}</p>
-          <p className="text-2xl font-bold text-gray-900 dark:text-gray-100 mt-1">{value}</p>
+          <p className="mt-1 text-2xl font-bold text-gray-900 dark:text-gray-100">{value}</p>
         </div>
-        <div className={`p-3 bg-slate-100 dark:bg-slate-700 rounded-lg ${color}`}>
-          <Icon className="w-6 h-6" />
+        <div className={`rounded-lg bg-slate-100 p-2.5 dark:bg-slate-700 ${color}`}>
+          <Icon className="h-5 w-5" />
         </div>
       </div>
     </Card>
@@ -200,8 +203,8 @@ function EmptyState({ icon: Icon, title, description }: {
   description: string;
 }) {
   return (
-    <div className="text-center py-12 bg-gray-50 dark:bg-slate-700 rounded-lg border-2 border-dashed border-gray-300 dark:border-gray-600">
-      <Icon className="mx-auto h-12 w-12 text-gray-400 mb-2" />
+    <div className="rounded-xl border-2 border-dashed border-gray-300 bg-gray-50 px-4 py-8 text-center dark:border-gray-600 dark:bg-slate-700">
+      <Icon className="mx-auto mb-2 h-10 w-10 text-gray-400" />
       <h3 className="text-sm font-medium text-gray-900 dark:text-gray-100">{title}</h3>
       <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">{description}</p>
     </div>
@@ -210,7 +213,7 @@ function EmptyState({ icon: Icon, title, description }: {
 
 function LoadingSpinner() {
   return (
-    <div className="flex items-center justify-center py-24">
+    <div className="flex items-center justify-center py-16">
       <div className="text-center">
         <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
         <p className="text-gray-600 dark:text-gray-400">Loading...</p>
@@ -296,10 +299,10 @@ function CreativeReviewTab({ token }: { token: string }) {
   if (loading) return <LoadingSpinner />;
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-5">
       {/* Status Counts */}
       {counts && (
-        <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-3">
+        <div className="grid grid-cols-2 gap-3 md:grid-cols-4 xl:grid-cols-7">
           <StatCard label="Pending" value={counts.pending_review} icon={Clock} color="text-amber-500" />
           <StatCard label="Active" value={counts.active} icon={CheckCircle2} color="text-emerald-500" />
           <StatCard label="Paused" value={counts.paused} icon={Pause} color="text-orange-500" />
@@ -311,12 +314,12 @@ function CreativeReviewTab({ token }: { token: string }) {
       )}
 
       {/* Filter */}
-      <div className="flex items-center gap-2">
+      <div className="flex flex-wrap items-center gap-2">
         <Filter size={16} className="text-slate-400" />
         <select
           value={reviewFilter}
           onChange={(e) => setReviewFilter(e.target.value)}
-          className="text-sm border border-slate-200 dark:border-slate-600 rounded-lg px-3 py-1.5 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200"
+          className="min-w-[190px] text-sm border border-slate-200 dark:border-slate-600 rounded-lg px-3 py-1.5 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200"
         >
           <option value="pending_review">Pending Review</option>
           <option value="active">Active</option>
@@ -335,16 +338,16 @@ function CreativeReviewTab({ token }: { token: string }) {
         {campaigns.length === 0 ? (
           <EmptyState icon={Megaphone} title="No campaigns to review" description={`No ${reviewFilter.replace('_', ' ')} campaigns found.`} />
         ) : (
-          <div className="space-y-4">
+          <div className="space-y-3">
             {campaigns.map((campaign) => (
-              <div key={campaign._id} className="bg-white dark:bg-slate-800/95 rounded-2xl shadow-lg border border-slate-200 dark:border-slate-700 p-6">
+              <div key={campaign._id} className={`${ADS_PANEL_CLASS} p-4 sm:p-5`}>
                 <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-4">
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-3 mb-2">
                       <h3 className="text-base font-semibold text-slate-900 dark:text-white truncate">{campaign.campaign_name}</h3>
                       <StatusBadge status={campaign.status} getLabel={getCampaignStatusLabel} getColor={getCampaignStatusColor} />
                     </div>
-                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-sm text-slate-600 dark:text-slate-400">
+                    <div className="grid grid-cols-1 gap-2 text-sm text-slate-600 dark:text-slate-400 sm:grid-cols-2 xl:grid-cols-4">
                       <div><span className="text-slate-400">Vendor:</span> {campaign.vendor_name}</div>
                       <div><span className="text-slate-400">Goal:</span> {campaign.goal.replace('_', ' ')}</div>
                       <div><span className="text-slate-400">Category:</span> {campaign.vendor_category || 'Not set'}</div>
@@ -354,17 +357,17 @@ function CreativeReviewTab({ token }: { token: string }) {
                       <p className="text-sm text-slate-500 dark:text-slate-400 mt-2 line-clamp-2">{campaign.campaign_description}</p>
                     )}
                     {campaign.target_categories.length > 0 && (
-                      <div className="flex flex-wrap gap-1.5 mt-2">
-                        {campaign.target_categories.map((cat) => (
-                          <span key={cat} className="px-2 py-0.5 bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 rounded-md text-xs">{cat}</span>
-                        ))}
+                    <div className="mt-2 flex flex-wrap gap-1.5">
+                      {campaign.target_categories.map((cat) => (
+                        <span key={cat} className="px-2 py-0.5 bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 rounded-md text-xs">{cat}</span>
+                      ))}
                       </div>
                     )}
                   </div>
 
                   {/* Review Actions */}
                   {reviewFilter === 'pending_review' && (
-                    <div className="flex flex-col gap-2 lg:min-w-[200px]">
+                    <div className="flex flex-col gap-2 lg:min-w-[220px]">
                       <textarea
                         placeholder="Review notes (optional)..."
                         value={reviewNotes[campaign._id] || ''}
@@ -410,15 +413,15 @@ function CreativeReviewTab({ token }: { token: string }) {
         {creatives.length === 0 ? (
           <EmptyState icon={Image} title="No creatives to review" description="All creatives have been reviewed." />
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
             {creatives.map((creative) => (
-              <div key={creative._id} className="bg-white dark:bg-slate-800/95 rounded-2xl shadow-lg border border-slate-200 dark:border-slate-700 overflow-hidden">
+              <div key={creative._id} className={`${ADS_PANEL_CLASS} overflow-hidden`}>
                 {creative.image_url && (
                   <div className="aspect-video bg-slate-100 dark:bg-slate-700 relative">
                     <img src={creative.image_url} alt={creative.image_alt_text || creative.headline} className="w-full h-full object-cover" />
                   </div>
                 )}
-                <div className="p-4">
+                <div className="p-3.5 sm:p-4">
                   <div className="flex items-center justify-between mb-2">
                     <h4 className="font-semibold text-sm text-slate-900 dark:text-white truncate">{creative.headline}</h4>
                     <StatusBadge status={creative.review_status} getLabel={getCreativeStatusLabel} getColor={getCreativeStatusColor} />
@@ -530,7 +533,7 @@ function CampaignMonitorTab({ token }: { token: string }) {
   if (loading) return <LoadingSpinner />;
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-5">
       {/* Fraud Signals Alert */}
       {fraudSignals.length > 0 && (
         <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-xl p-4">
@@ -586,7 +589,7 @@ function CampaignMonitorTab({ token }: { token: string }) {
       </div>
 
       {/* Campaign Table */}
-      <div className="bg-white dark:bg-slate-800/95 rounded-2xl shadow-lg border border-slate-200 dark:border-slate-700 overflow-hidden">
+      <div className={`${ADS_PANEL_CLASS} overflow-hidden`}>
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
@@ -714,7 +717,7 @@ function RevenueDashboardTab({ token }: { token: string }) {
   if (!revenue) return <EmptyState icon={DollarSign} title="No data" description="Revenue data is not available yet." />;
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-5">
       {/* Period Selector */}
       <div className="flex items-center gap-2">
         {[7, 14, 30, 90].map((d) => (
@@ -733,13 +736,13 @@ function RevenueDashboardTab({ token }: { token: string }) {
       </div>
 
       {/* KPI Cards */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
         <StatCard label="Revenue" value={formatCurrency(revenue.total_revenue)} icon={DollarSign} color="text-emerald-500" />
         <StatCard label="Impressions" value={formatNumber(revenue.total_impressions)} icon={Eye} color="text-blue-500" />
         <StatCard label="Clicks" value={formatNumber(revenue.total_clicks)} icon={MousePointerClick} color="text-purple-500" />
         <StatCard label="Leads" value={formatNumber(revenue.total_leads)} icon={Users} color="text-amber-500" />
       </div>
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
         <StatCard label="Conversions" value={formatNumber(revenue.total_conversions)} icon={TrendingUp} color="text-emerald-500" />
         <StatCard label="Active Campaigns" value={revenue.active_campaigns} icon={Megaphone} color="text-primary-500" />
         <StatCard label="Active Vendors" value={revenue.active_vendors} icon={Building2} color="text-indigo-500" />
@@ -748,7 +751,7 @@ function RevenueDashboardTab({ token }: { token: string }) {
 
       {/* Daily Trend (simple table for now — Recharts can be added later) */}
       {revenue.daily_series && revenue.daily_series.length > 0 && (
-        <div className="bg-white dark:bg-slate-800/95 rounded-2xl shadow-lg border border-slate-200 dark:border-slate-700 p-6">
+        <div className={`${ADS_PANEL_CLASS} p-4 sm:p-5`}>
           <h3 className="text-base font-semibold text-slate-900 dark:text-white mb-4">Daily Trend</h3>
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
@@ -779,7 +782,7 @@ function RevenueDashboardTab({ token }: { token: string }) {
 
       {/* Free Tier Vendors */}
       {!freeTierLoading && (
-        <div className="bg-white dark:bg-slate-800/95 rounded-2xl shadow-lg border border-slate-200 dark:border-slate-700 p-6">
+        <div className={`${ADS_PANEL_CLASS} p-4 sm:p-5`}>
           <h3 className="text-base font-semibold text-slate-900 dark:text-white mb-4">Free Tier Vendors ({freeTierVendors.length})</h3>
           {freeTierVendors.length === 0 ? (
             <p className="text-sm text-slate-500 dark:text-slate-400">No vendors currently on free tier.</p>
@@ -881,7 +884,7 @@ function VendorAccountsTab({ token }: { token: string }) {
   if (loading) return <LoadingSpinner />;
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-5">
       {/* Filter */}
       <div className="flex items-center gap-3">
         <select
@@ -902,9 +905,9 @@ function VendorAccountsTab({ token }: { token: string }) {
       {vendors.length === 0 ? (
         <EmptyState icon={Building2} title="No vendor accounts" description="No advertising vendors have registered yet." />
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
           {vendors.map((vendor) => (
-            <div key={vendor.vendor_id} className="bg-white dark:bg-slate-800/95 rounded-2xl shadow-lg border border-slate-200 dark:border-slate-700 p-6">
+            <div key={vendor.vendor_id} className={`${ADS_PANEL_CLASS} p-4 sm:p-5`}>
               <div className="flex items-start justify-between mb-3">
                 <div className="min-w-0">
                   <h3 className="text-sm font-semibold text-slate-900 dark:text-white truncate">{vendor.vendor_name}</h3>
@@ -1012,12 +1015,12 @@ function PlannerFeedbackTab({ token }: { token: string }) {
   if (loading) return <LoadingSpinner />;
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-3">
       {feedback.length === 0 ? (
         <EmptyState icon={MessageSquare} title="No feedback yet" description="Planners haven't submitted any feedback about ads." />
       ) : (
         feedback.map((entry) => (
-          <div key={entry._id} className="bg-white dark:bg-slate-800/95 rounded-2xl shadow-lg border border-slate-200 dark:border-slate-700 p-6">
+          <div key={entry._id} className={`${ADS_PANEL_CLASS} p-4 sm:p-5`}>
             <div className="flex items-start justify-between mb-2">
               <div>
                 <span className="text-sm font-medium text-slate-900 dark:text-white">{entry.planner_email}</span>
@@ -1160,15 +1163,15 @@ function PlatformConfigTab({ token }: { token: string }) {
   const getVal = (field: string) => (field in editConfig ? (editConfig as any)[field] : (config as any)[field]);
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-5">
       {/* Sub-tab nav + Save */}
-      <div className="flex items-center justify-between">
-        <div className="flex border-b border-slate-200 dark:border-slate-700">
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+        <div className="scrollbar-thin -mb-px flex min-w-max overflow-x-auto border-b border-slate-200 dark:border-slate-700">
           {(['settings', 'export', 'pipeline'] as ConfigSubTab[]).map((tab) => (
             <button
               key={tab}
               onClick={() => setSubTab(tab)}
-              className={`px-5 py-2.5 text-sm font-semibold border-b-2 -mb-px ${
+              className={`-mb-px shrink-0 whitespace-nowrap border-b-2 px-5 py-2.5 text-sm font-semibold ${
                 subTab === tab
                   ? 'border-wedding-sage text-wedding-sage'
                   : 'border-transparent text-slate-400 hover:text-slate-600'
@@ -1196,9 +1199,9 @@ function PlatformConfigTab({ token }: { token: string }) {
 
       {/* ─── Settings sub-tab ─── */}
       {subTab === 'settings' && (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
           {/* Feature Flags */}
-          <div className="bg-white dark:bg-slate-800/95 rounded-2xl shadow-lg border border-slate-200 dark:border-slate-700 p-5">
+          <div className={`${ADS_PANEL_CLASS} p-4 sm:p-5`}>
             <h3 className="text-sm font-semibold text-slate-900 dark:text-white mb-4">Feature Flags</h3>
             <div className="space-y-3">
               {[
@@ -1226,7 +1229,7 @@ function PlatformConfigTab({ token }: { token: string }) {
           </div>
 
           {/* Serving Limits */}
-          <div className="bg-white dark:bg-slate-800/95 rounded-2xl shadow-lg border border-slate-200 dark:border-slate-700 p-5">
+          <div className={`${ADS_PANEL_CLASS} p-4 sm:p-5`}>
             <h3 className="text-sm font-semibold text-slate-900 dark:text-white mb-4">Serving Limits</h3>
             <div className="space-y-3">
               {[
@@ -1250,7 +1253,7 @@ function PlatformConfigTab({ token }: { token: string }) {
           </div>
 
           {/* Fraud Detection */}
-          <div className="bg-white dark:bg-slate-800/95 rounded-2xl shadow-lg border border-slate-200 dark:border-slate-700 p-5">
+          <div className={`${ADS_PANEL_CLASS} p-4 sm:p-5`}>
             <h3 className="text-sm font-semibold text-slate-900 dark:text-white mb-4">Fraud Detection</h3>
             <div className="space-y-3">
               {[
@@ -1285,7 +1288,7 @@ function PlatformConfigTab({ token }: { token: string }) {
           </div>
 
           {/* Vendor Signup */}
-          <div className="bg-white dark:bg-slate-800/95 rounded-2xl shadow-lg border border-slate-200 dark:border-slate-700 p-5">
+          <div className={`${ADS_PANEL_CLASS} p-4 sm:p-5`}>
             <h3 className="text-sm font-semibold text-slate-900 dark:text-white mb-4">Vendor Signup</h3>
             <div className="space-y-3">
               <div className="flex items-center justify-between">
@@ -1331,14 +1334,14 @@ function PlatformConfigTab({ token }: { token: string }) {
 
       {/* ─── Export sub-tab ─── */}
       {subTab === 'export' && (
-        <div className="space-y-6">
+        <div className="space-y-5">
           <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-xl p-4 text-sm text-blue-700 dark:text-blue-300">
             Export data as JSON. Select the data set and date range, then click Export.
           </div>
 
-          <div className="bg-white dark:bg-slate-800/95 rounded-2xl shadow-lg border border-slate-200 dark:border-slate-700 p-5">
+          <div className={`${ADS_PANEL_CLASS} p-4 sm:p-5`}>
             <h3 className="text-sm font-semibold text-slate-900 dark:text-white mb-4">Export Data</h3>
-            <div className="flex flex-wrap gap-3 items-end mb-6">
+            <div className="mb-5 flex flex-wrap items-end gap-3">
               <div>
                 <label className="block text-xs font-semibold text-slate-500 mb-1">Data Set</label>
                 <select
@@ -1396,7 +1399,7 @@ function PlatformConfigTab({ token }: { token: string }) {
             )}
           </div>
 
-          <div className="bg-white dark:bg-slate-800/95 rounded-2xl shadow-lg border border-slate-200 dark:border-slate-700 p-5">
+          <div className={`${ADS_PANEL_CLASS} p-4 sm:p-5`}>
             <h3 className="text-sm font-semibold text-slate-900 dark:text-white mb-3">Quick Exports</h3>
             <div className="flex flex-wrap gap-2">
               {[
@@ -1419,8 +1422,8 @@ function PlatformConfigTab({ token }: { token: string }) {
 
       {/* ─── Pipeline sub-tab ─── */}
       {subTab === 'pipeline' && (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          <div className="bg-white dark:bg-slate-800/95 rounded-2xl shadow-lg border border-slate-200 dark:border-slate-700 p-5">
+        <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+          <div className={`${ADS_PANEL_CLASS} p-4 sm:p-5`}>
             <h3 className="text-sm font-semibold text-slate-900 dark:text-white mb-4">Rollup Pipeline Status</h3>
             {pipeline ? (
               <div className="space-y-3">
@@ -1454,7 +1457,7 @@ function PlatformConfigTab({ token }: { token: string }) {
             )}
           </div>
 
-          <div className="bg-white dark:bg-slate-800/95 rounded-2xl shadow-lg border border-slate-200 dark:border-slate-700 p-5">
+          <div className={`${ADS_PANEL_CLASS} p-4 sm:p-5`}>
             <h3 className="text-sm font-semibold text-slate-900 dark:text-white mb-4">Collection Stats</h3>
             {pipeline?.collections ? (
               <div className="space-y-2">

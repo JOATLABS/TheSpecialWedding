@@ -26,6 +26,16 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/planner/ads/preferences", tags=["Planner Ad Preferences"])
 
 
+def _get_planner_id(user: ExtendedAuthUser) -> str:
+    """Extract a stable planner identifier for ad preference records."""
+    if user.parent_planner_id:
+        return str(user.parent_planner_id)
+
+    data = user.user_data or {}
+    uid = data.get("_id")
+    return str(uid) if uid else user.email
+
+
 # =============================================================================
 # GET PREFERENCES
 # =============================================================================
@@ -38,12 +48,13 @@ router = APIRouter(prefix="/planner/ads/preferences", tags=["Planner Ad Preferen
 async def get_preferences(
     user: ExtendedAuthUser = Depends(get_current_user_extended),
 ):
+    planner_id = _get_planner_id(user)
     doc = await mongo.db["planner_ad_preferences"].find_one(
-        {"planner_id": str(user.user_id)}
+        {"planner_id": planner_id}
     )
     if not doc:
         return {
-            "planner_id": str(user.user_id),
+            "planner_id": planner_id,
             "hidden_vendor_ids": [],
             "suppressed_categories": [],
             "reduced_frequency": False,
@@ -65,7 +76,7 @@ async def hide_vendor(
     vendor_id: str = Body(..., embed=True),
     user: ExtendedAuthUser = Depends(get_current_user_extended),
 ):
-    planner_id = str(user.user_id)
+    planner_id = _get_planner_id(user)
     now = datetime.now(timezone.utc)
 
     await mongo.db["planner_ad_preferences"].update_one(
@@ -107,7 +118,7 @@ async def unhide_vendor(
     vendor_id: str = Body(..., embed=True),
     user: ExtendedAuthUser = Depends(get_current_user_extended),
 ):
-    planner_id = str(user.user_id)
+    planner_id = _get_planner_id(user)
 
     await mongo.db["planner_ad_preferences"].update_one(
         {"planner_id": planner_id},
@@ -132,7 +143,7 @@ async def suppress_category(
     category: str = Body(..., embed=True),
     user: ExtendedAuthUser = Depends(get_current_user_extended),
 ):
-    planner_id = str(user.user_id)
+    planner_id = _get_planner_id(user)
     now = datetime.now(timezone.utc)
 
     await mongo.db["planner_ad_preferences"].update_one(
@@ -173,7 +184,7 @@ async def unsuppress_category(
     category: str = Body(..., embed=True),
     user: ExtendedAuthUser = Depends(get_current_user_extended),
 ):
-    planner_id = str(user.user_id)
+    planner_id = _get_planner_id(user)
 
     await mongo.db["planner_ad_preferences"].update_one(
         {"planner_id": planner_id},
@@ -198,7 +209,7 @@ async def toggle_frequency(
     reduced_frequency: bool = Body(..., embed=True),
     user: ExtendedAuthUser = Depends(get_current_user_extended),
 ):
-    planner_id = str(user.user_id)
+    planner_id = _get_planner_id(user)
     now = datetime.now(timezone.utc)
 
     await mongo.db["planner_ad_preferences"].update_one(

@@ -1,8 +1,9 @@
 'use client';
 
-import React, { useState, useEffect, createContext, useContext, useCallback } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
-import { usePathname, useRouter } from 'next/navigation';
+import NextImage from 'next/image';
+import { usePathname } from 'next/navigation';
 import { getApiBaseUrl } from '@/utils/env';
 import { bootstrapAdminAuthToken, clearAdminAuthStorage } from '@/utils/adminAuthStorage';
 import {
@@ -19,8 +20,19 @@ import {
   Sun,
   Moon,
   Bell,
+  ExternalLink,
 } from 'lucide-react';
 import { ThemeProvider, useTheme } from '@/contexts/ThemeContext';
+import { Toaster } from 'sonner';
+import {
+  vendorInputClass,
+  vendorPrimaryButtonClass,
+  vendorSurfaceClass,
+} from './components/styles';
+import {
+  VendorAuthContext,
+  type VendorUser,
+} from './components/VendorAuthContext';
 
 const API_BASE = getApiBaseUrl();
 
@@ -31,38 +43,6 @@ function clearLegacyVendorPortalStorage() {
 
   localStorage.removeItem('vendor_ad_token');
   localStorage.removeItem('vendor_ad_user');
-}
-
-// =============================================================================
-// Vendor Auth Context
-// =============================================================================
-
-interface VendorUser {
-  _id: string;
-  email: string;
-  name: string;
-  role: string;
-  must_change_password?: boolean;
-}
-
-interface VendorAuthContextType {
-  token: string | null;
-  user: VendorUser | null;
-  loading: boolean;
-  login: (email: string, password: string) => Promise<void>;
-  logout: () => void;
-}
-
-const VendorAuthContext = createContext<VendorAuthContextType>({
-  token: null,
-  user: null,
-  loading: true,
-  login: async () => {},
-  logout: () => {},
-});
-
-export function useVendorAuth() {
-  return useContext(VendorAuthContext);
 }
 
 // =============================================================================
@@ -93,12 +73,12 @@ export default function VendorPortalLayout({ children }: { children: React.React
 
 function VendorPortalLayoutInner({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
-  const router = useRouter();
-  const { setTheme, resolvedTheme } = useTheme();
+  const isPublicPage = pathname === '/portal/ads/signup';
   const [token, setToken] = useState<string | null>(null);
   const [user, setUser] = useState<VendorUser | null>(null);
   const [loading, setLoading] = useState(true);
-  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [isMobile, setIsMobile] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -150,6 +130,18 @@ function VendorPortalLayoutInner({ children }: { children: React.ReactNode }) {
     return () => {
       cancelled = true;
     };
+  }, []);
+
+  useEffect(() => {
+    const handleResize = () => {
+      const mobile = window.innerWidth < 1024;
+      setIsMobile(mobile);
+      setSidebarOpen(!mobile);
+    };
+
+    handleResize();
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
   }, []);
 
   const login = async (email: string, password: string) => {
@@ -215,11 +207,26 @@ function VendorPortalLayoutInner({ children }: { children: React.ReactNode }) {
 
   const authValue = { token, user, loading, login, logout };
 
+  if (isPublicPage) {
+    return (
+      <VendorAuthContext.Provider value={authValue}>
+        <div className="min-h-screen bg-light-bg text-light-text transition-colors duration-300 dark:bg-dark-bg dark:text-dark-text font-sans">
+          <PortalBackground />
+          <main className="relative z-10 min-h-screen">
+            {children}
+          </main>
+          <Toaster position="top-right" richColors theme="system" />
+        </div>
+      </VendorAuthContext.Provider>
+    );
+  }
+
   // Show login if not authenticated
   if (!loading && !token) {
     return (
       <VendorAuthContext.Provider value={authValue}>
         <LoginPage onLogin={login} />
+        <Toaster position="top-right" richColors theme="system" />
       </VendorAuthContext.Provider>
     );
   }
@@ -237,6 +244,7 @@ function VendorPortalLayoutInner({ children }: { children: React.ReactNode }) {
           }}
           onLogout={logout}
         />
+        <Toaster position="top-right" richColors theme="system" />
       </VendorAuthContext.Provider>
     );
   }
@@ -244,139 +252,300 @@ function VendorPortalLayoutInner({ children }: { children: React.ReactNode }) {
   // Loading state
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-slate-50">
-        <div className="animate-spin w-8 h-8 border-2 border-primary-500 border-t-transparent rounded-full" />
+      <div className="min-h-screen bg-light-bg text-light-text transition-colors duration-300 dark:bg-dark-bg dark:text-dark-text font-sans">
+        <PortalBackground />
+        <div className="relative z-10 flex min-h-screen items-center justify-center">
+          <div className={`${vendorSurfaceClass} flex items-center gap-3 px-6 py-4 text-sm text-slate-600 dark:text-slate-300`}>
+            <div className="h-5 w-5 animate-spin rounded-full border-2 border-primary-500 border-t-transparent" />
+            Loading vendor workspace...
+          </div>
+        </div>
       </div>
     );
   }
 
   return (
     <VendorAuthContext.Provider value={authValue}>
-      <div className="min-h-screen bg-slate-50 dark:bg-slate-900 flex">
-        {/* Mobile Sidebar Overlay */}
-        {sidebarOpen && (
-          <div
-            className="fixed inset-0 bg-black/50 z-40 lg:hidden"
-            onClick={() => setSidebarOpen(false)}
-          />
-        )}
+      <div className="min-h-screen overflow-x-hidden bg-light-bg text-light-text transition-colors duration-300 dark:bg-dark-bg dark:text-dark-text font-sans">
+        <PortalBackground />
 
-        {/* Sidebar */}
-        <aside
-          className={`
-            fixed top-0 left-0 z-50 h-screen w-64
-            bg-white dark:bg-slate-800 border-r border-slate-200 dark:border-slate-700
-            flex flex-col transition-transform duration-300
-            lg:translate-x-0 lg:static
-            ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'}
-          `}
+        <VendorSidebar
+          user={user}
+          isOpen={sidebarOpen}
+          isMobile={isMobile}
+          onClose={() => setSidebarOpen(false)}
+          onToggle={() => setSidebarOpen(!sidebarOpen)}
+          onLogout={logout}
+          isActive={isActive}
+        />
+
+        <div
+          className="relative z-10 flex min-h-screen flex-col transition-[margin] duration-300 ease-out"
+          style={{ marginLeft: !isMobile ? (sidebarOpen ? '18rem' : '5rem') : '0' }}
         >
-          {/* Logo */}
-          <div className="h-16 flex items-center justify-between px-4 border-b border-slate-200 dark:border-slate-700">
-            <Link href="/portal/ads" className="flex items-center gap-2">
-              <Megaphone size={24} className="text-primary-500" />
-              <span className="text-lg font-semibold text-slate-900 dark:text-white">Ad Portal</span>
-            </Link>
-            <button
-              onClick={() => setSidebarOpen(false)}
-              className="lg:hidden p-2 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg"
-            >
-              <X size={20} />
-            </button>
-          </div>
+          <VendorTopHeader
+            user={user}
+            onMenuClick={() => setSidebarOpen(!sidebarOpen)}
+          />
 
-          {/* Admin mode indicator */}
-          {user?.role === 'root_admin' && (
-            <div className="mx-3 mt-3 px-3 py-2 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg">
-              <p className="text-[10px] font-bold uppercase tracking-wider text-amber-600 dark:text-amber-400">Admin Mode</p>
-              <Link
-                href="/admin/ads"
-                className="text-xs text-amber-700 dark:text-amber-300 hover:underline"
-              >
-                ← Back to Admin
-              </Link>
-            </div>
-          )}
-
-          {/* Navigation */}
-          <nav className="flex-1 py-4 px-3 space-y-1 overflow-y-auto">
-            {navItems.map((item) => {
-              const Icon = item.icon;
-              const active = isActive(item.href);
-              return (
-                <Link
-                  key={item.href}
-                  href={item.href}
-                  onClick={() => setSidebarOpen(false)}
-                  className={`
-                    flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-colors
-                    ${active
-                      ? 'bg-primary-50 dark:bg-primary-900/20 text-primary-600 dark:text-primary-400'
-                      : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700'
-                    }
-                  `}
-                >
-                  <Icon size={20} />
-                  {item.name}
-                </Link>
-              );
-            })}
-          </nav>
-
-          {/* User / Logout */}
-          <div className="p-3 border-t border-slate-200 dark:border-slate-700">
-            {user && (
-              <div className="px-3 py-2 mb-2">
-                <p className="text-sm font-medium text-slate-900 dark:text-white truncate">{user.name}</p>
-                <p className="text-xs text-slate-500 truncate">{user.email}</p>
-              </div>
-            )}
-            <button
-              onClick={() => setTheme(resolvedTheme === 'dark' ? 'light' : 'dark')}
-              className="flex items-center gap-3 w-full px-3 py-2.5 rounded-xl text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors text-sm"
-              aria-label={`Switch to ${resolvedTheme === 'dark' ? 'light' : 'dark'} theme`}
-            >
-              {resolvedTheme === 'dark' ? <Sun size={20} className="text-amber-500" /> : <Moon size={20} />}
-              {resolvedTheme === 'dark' ? 'Light Mode' : 'Dark Mode'}
-            </button>
-            <button
-              onClick={logout}
-              className="flex items-center gap-3 w-full px-3 py-2.5 rounded-xl text-slate-600 dark:text-slate-400 hover:bg-red-50 dark:hover:bg-red-900/20 hover:text-red-600 transition-colors text-sm"
-            >
-              <LogOut size={20} />
-              Logout
-            </button>
-          </div>
-        </aside>
-
-        {/* Main Content */}
-        <div className="flex-1 min-w-0">
-          {/* Mobile Header */}
-          <div className="lg:hidden h-16 flex items-center px-4 border-b border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800">
-            <button
-              onClick={() => setSidebarOpen(true)}
-              className="p-2 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg mr-3"
-            >
-              <Menu size={20} />
-            </button>
-            <span className="text-lg font-semibold text-slate-900 dark:text-white flex-1">Ad Portal</span>
-            <button
-              onClick={() => setTheme(resolvedTheme === 'dark' ? 'light' : 'dark')}
-              className="p-2 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg"
-              aria-label={`Switch to ${resolvedTheme === 'dark' ? 'light' : 'dark'} theme`}
-            >
-              {resolvedTheme === 'dark' ? <Sun size={20} className="text-amber-500" /> : <Moon size={20} className="text-slate-600" />}
-            </button>
-          </div>
-
-          {/* Page Content */}
-          <main className="p-4 sm:p-6 lg:p-8">
+          <main className="flex-1 overflow-x-hidden p-4 sm:p-6 lg:p-8">
             {children}
           </main>
         </div>
       </div>
+      <Toaster position="top-right" richColors theme="system" />
     </VendorAuthContext.Provider>
   );
+}
+
+function PortalBackground() {
+  return (
+    <div className="fixed inset-0 z-0 pointer-events-none overflow-hidden opacity-40 dark:opacity-20" aria-hidden="true">
+      <div className="absolute left-[-10%] top-[-10%] h-[40%] w-[40%] rounded-full bg-primary-400/30 blur-[100px] animate-float" />
+      <div
+        className="absolute bottom-[-10%] right-[-10%] h-[40%] w-[40%] rounded-full bg-secondary-400/30 blur-[100px] animate-float"
+        style={{ animationDelay: '-3s' }}
+      />
+    </div>
+  );
+}
+
+function VendorSidebar({
+  user,
+  isOpen,
+  isMobile,
+  onClose,
+  onToggle,
+  onLogout,
+  isActive,
+}: {
+  user: VendorUser | null;
+  isOpen: boolean;
+  isMobile: boolean;
+  onClose: () => void;
+  onToggle: () => void;
+  onLogout: () => void;
+  isActive: (href: string) => boolean;
+}) {
+  return (
+    <>
+      {isMobile && isOpen && (
+        <div
+          onClick={onClose}
+          className="fixed inset-0 z-40 bg-black/50 transition-opacity duration-200 lg:hidden"
+          aria-hidden="true"
+        />
+      )}
+
+      <aside
+        className={`
+          fixed left-0 top-0 z-50 flex h-screen flex-col border-r border-slate-200/50 bg-white/80 backdrop-blur-xl transition-[width,transform] duration-300 ease-out dark:border-slate-700/50 dark:bg-slate-900/80
+          ${isMobile ? (isOpen ? 'translate-x-0' : '-translate-x-full') : ''}
+        `}
+        style={{ width: isOpen ? '18rem' : '5rem' }}
+        role="navigation"
+        aria-label="Vendor portal navigation"
+      >
+        <div className="flex h-16 items-center justify-between border-b border-slate-200/50 px-3 dark:border-slate-700/50">
+          <Link href="/portal/ads" className="mr-2 flex min-w-0 flex-1 items-center">
+            {isOpen ? (
+              <div className="flex items-center gap-3">
+                <img
+                  src="/logo.svg"
+                  alt="The Special Wedding"
+                  width={144}
+                  height={36}
+                  className="block shrink-0"
+                />
+                <span className="rounded-full border border-primary-200 bg-primary-50 px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.2em] text-primary-600 dark:border-primary-800 dark:bg-primary-900/20 dark:text-primary-300">
+                  Ads
+                </span>
+              </div>
+            ) : (
+              <NextImage
+                src="/favicon.svg"
+                alt="The Special Wedding"
+                width={32}
+                height={32}
+                className="h-8 w-8"
+                priority
+              />
+            )}
+          </Link>
+
+          {isMobile ? (
+            <button
+              onClick={onClose}
+              className="rounded-lg p-2 transition-colors hover:bg-slate-100 dark:hover:bg-slate-800"
+              aria-label="Close sidebar"
+            >
+              <X size={20} />
+            </button>
+          ) : (
+            <button
+              onClick={onToggle}
+              className="rounded-lg p-2 transition-colors hover:bg-slate-100 dark:hover:bg-slate-800"
+              aria-label={isOpen ? 'Collapse sidebar' : 'Expand sidebar'}
+              aria-expanded={isOpen}
+            >
+              <ChevronLeft className={`h-5 w-5 transition-transform ${!isOpen ? 'rotate-180' : ''}`} />
+            </button>
+          )}
+        </div>
+
+        <nav className="flex-1 space-y-1 overflow-y-auto px-3 py-4" aria-label="Vendor portal pages">
+          {navItems.map((item) => {
+            const Icon = item.icon;
+            const active = isActive(item.href);
+
+            return (
+              <Link
+                key={item.href}
+                href={item.href}
+                onClick={() => isMobile && onClose()}
+                className={`
+                  flex items-center gap-3 rounded-xl px-3 py-2.5 transition-colors duration-200
+                  ${active
+                    ? 'bg-primary-50 text-primary-600 dark:bg-primary-900/20 dark:text-primary-400'
+                    : 'text-slate-600 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800'
+                  }
+                `}
+                aria-current={active ? 'page' : undefined}
+                title={!isOpen ? item.name : undefined}
+              >
+                <Icon size={20} className={active ? 'text-primary-500' : ''} aria-hidden="true" />
+                {isOpen && (
+                  <span className="flex-1 overflow-hidden whitespace-nowrap text-sm font-medium text-left">
+                    {item.name}
+                  </span>
+                )}
+              </Link>
+            );
+          })}
+
+          {user?.role === 'root_admin' && isOpen && (
+            <>
+              <p className="px-3 pt-4 pb-1 text-[10px] font-bold uppercase tracking-widest text-slate-400 dark:text-slate-500">
+                Shortcuts
+              </p>
+              <Link
+                href="/admin/ads"
+                className="flex items-center gap-3 rounded-xl px-3 py-2.5 text-wedding-gold transition-colors duration-200 hover:bg-amber-50 dark:hover:bg-amber-900/10"
+              >
+                <ExternalLink size={20} className="text-wedding-gold" aria-hidden="true" />
+                <span className="text-sm font-medium">Back to Admin</span>
+                <span className="ml-auto rounded bg-wedding-gold px-1.5 py-0.5 text-[9px] font-extrabold uppercase tracking-wide text-slate-900">
+                  Admin
+                </span>
+              </Link>
+            </>
+          )}
+        </nav>
+
+        <div className="border-t border-slate-200/50 p-3 dark:border-slate-700/50">
+          {isOpen && user && (
+            <div className="mb-2 rounded-xl border border-white/40 bg-white/50 px-3 py-2 dark:border-slate-700 dark:bg-slate-800/60">
+              <p className="truncate text-sm font-medium text-slate-900 dark:text-white">{user.name}</p>
+              <p className="truncate text-xs text-slate-500 dark:text-slate-400">{user.email}</p>
+            </div>
+          )}
+          <button
+            onClick={onLogout}
+            className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-slate-600 transition-colors hover:bg-red-50 hover:text-red-600 dark:text-slate-400 dark:hover:bg-red-900/20 dark:hover:text-red-400"
+            aria-label="Sign out"
+            title="Sign out"
+          >
+            <LogOut size={20} aria-hidden="true" />
+            {isOpen && <span className="text-sm font-medium">Sign Out</span>}
+          </button>
+        </div>
+      </aside>
+    </>
+  );
+}
+
+function VendorTopHeader({
+  user,
+  onMenuClick,
+}: {
+  user: VendorUser | null;
+  onMenuClick: () => void;
+}) {
+  const { resolvedTheme, setTheme } = useTheme();
+
+  return (
+    <header className="sticky top-0 z-30 border-b border-slate-200/50 bg-white/80 backdrop-blur-xl dark:border-slate-700/50 dark:bg-slate-900/80" role="banner">
+      <div className="flex h-16 items-center justify-between px-4 sm:px-6 lg:px-8">
+        <div className="flex items-center gap-4">
+          <button
+            onClick={onMenuClick}
+            className="rounded-lg p-2 transition-colors hover:bg-slate-100 dark:hover:bg-slate-800 lg:hidden"
+            aria-label="Toggle navigation menu"
+          >
+            <Menu size={20} className="text-slate-600 dark:text-slate-400" aria-hidden="true" />
+          </button>
+
+          <div className="hidden sm:block">
+            <p className="text-[10px] font-bold uppercase tracking-[0.28em] text-primary-500/80 dark:text-primary-300/80">
+              Ad Platform
+            </p>
+            <p className="text-sm font-medium text-slate-600 dark:text-slate-300">
+              Vendor Portal
+            </p>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setTheme(resolvedTheme === 'dark' ? 'light' : 'dark')}
+            className="rounded-lg p-2 transition-colors hover:bg-slate-100 dark:hover:bg-slate-800"
+            aria-label={`Switch to ${resolvedTheme === 'dark' ? 'light' : 'dark'} theme`}
+            title={`Switch to ${resolvedTheme === 'dark' ? 'light' : 'dark'} theme`}
+          >
+            {resolvedTheme === 'dark' ? (
+              <Sun size={20} className="text-amber-500" aria-hidden="true" />
+            ) : (
+              <Moon size={20} className="text-slate-600" aria-hidden="true" />
+            )}
+          </button>
+
+          <Link
+            href="/portal/ads/notifications"
+            className="rounded-lg p-2 transition-colors hover:bg-slate-100 dark:hover:bg-slate-800"
+            aria-label="Open notifications"
+            title="Notifications"
+          >
+            <Bell size={20} className="text-slate-600 dark:text-slate-400" aria-hidden="true" />
+          </Link>
+
+          {user && (
+            <div className="ml-1 hidden items-center gap-3 rounded-xl border border-white/40 bg-white/60 px-3 py-2 dark:border-slate-700 dark:bg-slate-800/60 sm:flex">
+              <div className="flex h-8 w-8 items-center justify-center rounded-full bg-gradient-to-br from-primary-400 to-secondary-400 text-sm font-semibold text-white">
+                {getUserInitials(user)}
+              </div>
+              <div className="min-w-0">
+                <p className="truncate text-sm font-medium text-slate-900 dark:text-white">{user.name}</p>
+                <p className="truncate text-xs text-slate-500 dark:text-slate-400">
+                  {user.role === 'root_admin' ? 'Root Admin' : 'Advertising Vendor'}
+                </p>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    </header>
+  );
+}
+
+function getUserInitials(user: VendorUser) {
+  const base = user.name || user.email || 'Vendor';
+  const parts = base.trim().split(/\s+/).filter(Boolean);
+
+  if (parts.length >= 2) {
+    return `${parts[0][0]}${parts[1][0]}`.toUpperCase();
+  }
+
+  return base.slice(0, 2).toUpperCase();
 }
 
 // =============================================================================

@@ -5,7 +5,7 @@ import { getApiBaseUrl } from '@/utils/env';
 import { useRouter } from 'next/navigation';
 import { useAdmin } from '@/contexts/AdminContext';
 import { Card } from '@/components/ui/Card';
-import { formatDateTime } from '@/utils/dateFormat';
+import { formatAdminTimestamp, DEFAULT_TIMEZONE } from '@/utils/dateFormat';
 import { toast } from 'sonner';
 import PageHeader from '../components/PageHeader';
 import { usePagination } from '@/admin/hooks/usePagination';
@@ -186,6 +186,7 @@ const formatErrorWindowLabel = (days: number) => {
 export default function PlatformInfrastructurePage() {
   const router = useRouter();
   const { userProfile, token, isLoading: authLoading } = useAdmin();
+  const adminTimezone = userProfile?.user_data?.timezone || DEFAULT_TIMEZONE;
   const [metrics, setMetrics] = useState<PlatformMetrics | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -572,13 +573,7 @@ export default function PlatformInfrastructurePage() {
       {/* Last Updated */}
       <div className="flex items-center gap-2 text-sm text-gray-500 dark:text-gray-400">
         <Clock className="w-4 h-4" />
-        Last updated: {formatDateTime(metrics.generated_at, {
-          month: 'short',
-          day: 'numeric',
-          hour: 'numeric',
-          minute: '2-digit',
-          second: '2-digit'
-        })}
+        Last updated: {formatAdminTimestamp(metrics.generated_at, adminTimezone)}
       </div>
 
       {/* Tabs */}
@@ -1109,7 +1104,7 @@ export default function PlatformInfrastructurePage() {
                         </td>
                         <td className="px-3 py-3">
                           <p className="text-xs text-gray-500 dark:text-gray-400 whitespace-nowrap">
-                            {formatDateTime(err.timestamp, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}
+                            {formatAdminTimestamp(err.timestamp, adminTimezone)}
                           </p>
                         </td>
                         <td className="px-3 py-3">
@@ -1274,7 +1269,7 @@ export default function PlatformInfrastructurePage() {
                   <p className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-2">Last Backup</p>
                   {metrics.backups.last_backup_date ? (
                     <p className="text-lg font-semibold text-gray-900 dark:text-gray-100">
-                      {formatDateTime(metrics.backups.last_backup_date, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}
+                      {formatAdminTimestamp(metrics.backups.last_backup_date, adminTimezone)}
                     </p>
                   ) : (
                     <p className="text-lg text-gray-500 dark:text-gray-400">No backups yet</p>

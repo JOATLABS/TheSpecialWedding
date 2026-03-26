@@ -41,7 +41,7 @@ export default function BlogArticleList({
           <button
             onClick={() => onPageChange(currentPage - 1)}
             disabled={currentPage <= 1}
-            className="inline-flex items-center gap-1 px-3 py-2 text-sm font-medium text-slate-300 bg-slate-800 border border-slate-600 rounded-lg hover:bg-slate-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 shadow-sm transition-colors hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-300 dark:shadow-none dark:hover:bg-slate-700"
           >
             <ChevronLeft className="w-4 h-4" />
             Previous
@@ -68,7 +68,7 @@ export default function BlogArticleList({
                       className={`w-10 h-10 text-sm font-medium rounded-lg transition-colors ${
                         page === currentPage
                           ? 'bg-wedding-rose text-white'
-                          : 'text-slate-300 bg-slate-800 border border-slate-600 hover:bg-slate-700'
+                          : 'border border-slate-200 bg-white text-slate-700 shadow-sm hover:bg-slate-50 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-300 dark:shadow-none dark:hover:bg-slate-700'
                       }`}
                     >
                       {page}
@@ -81,7 +81,7 @@ export default function BlogArticleList({
           <button
             onClick={() => onPageChange(currentPage + 1)}
             disabled={currentPage >= totalPages}
-            className="inline-flex items-center gap-1 px-3 py-2 text-sm font-medium text-slate-300 bg-slate-800 border border-slate-600 rounded-lg hover:bg-slate-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 shadow-sm transition-colors hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-300 dark:shadow-none dark:hover:bg-slate-700"
           >
             Next
             <ChevronRight className="w-4 h-4" />

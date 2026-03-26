@@ -7,6 +7,7 @@ import Link from 'next/link';
 import { useAdmin } from '@/contexts/AdminContext';
 import { Wedding, WeddingEvent, RegistryItem, FAQItem, OurStory, WeddingPartyMember, PrivacySettings, WeddingPartySyncSettings } from '@/types/wedding';
 import { formatAdminTimestamp, DEFAULT_TIMEZONE } from '@/utils/dateFormat';
+import { EVENT_TIME_FORMAT_HINT, getEventTimeValidationMessage, normalizeEventTimeInput } from '@/utils/eventTime';
 import { PaymentCollectionButton } from '@/components/payments/PaymentCollectionButton';
 import { CampaignSponsoredRail } from '../../vendors/components/CampaignSponsoredRail';
 // Direct imports — avoids Turbopack barrel-evaluation bug with lucide-react
@@ -43,16 +44,17 @@ interface Guest {
 }
 
 export default function WeddingDetailsPage() {
- const { token } = useAdmin();
+ const { token, userProfile, isLoading: authLoading } = useAdmin();
  const params = useParams();
  const router = useRouter();
  const weddingId = params.id as string;
 
  const [wedding, setWedding] = useState<Wedding | null>(null);
- const [loading, setLoading] = useState(true);
- const [saving, setSaving] = useState(false);
- const [error, setError] = useState<string>('');
- const [activeTab, setActiveTab] = useState<'events' | 'rsvp' | 'privacy' | 'registry' | 'faq' | 'theme' | 'story' | 'couple'>('events');
+	 const [loading, setLoading] = useState(true);
+	 const [saving, setSaving] = useState(false);
+	 const [error, setError] = useState<string>('');
+	 const [eventTimeErrors, setEventTimeErrors] = useState<Record<number, string>>({});
+	 const [activeTab, setActiveTab] = useState<'events' | 'rsvp' | 'privacy' | 'registry' | 'faq' | 'theme' | 'story' | 'couple'>('events');
  const [syncing, setSyncing] = useState(false);
  const [guests, setGuests] = useState<Guest[]>([]);
  const [showAdRail, setShowAdRail] = useState(false);
@@ -121,8 +123,44 @@ export default function WeddingDetailsPage() {
  }, [token, weddingId]);
 
  useEffect(() => {
+ if (authLoading || !userProfile) return;
+
+ if (userProfile.is_root_admin) {
+ router.replace('/admin/weddings');
+ return;
+ }
+
  fetchWedding();
- }, [fetchWedding]);
+	 }, [authLoading, fetchWedding, router, userProfile]);
+
+	 const buildEventTimeErrors = (events: WeddingEvent[]): Record<number, string> => {
+	 return events.reduce<Record<number, string>>((acc, event, index) => {
+	 const message = getEventTimeValidationMessage(event.details?.time);
+	 if (message) acc[index] = message;
+	 return acc;
+	 }, {});
+	 };
+
+	 const clearEventTimeError = (index: number) => {
+	 setEventTimeErrors((prev) => {
+	 if (!(index in prev)) return prev;
+	 const next = { ...prev };
+	 delete next[index];
+	 return next;
+	 });
+	 };
+
+	 const reindexEventTimeErrorsAfterRemoval = (index: number) => {
+	 setEventTimeErrors((prev) => {
+	 const next: Record<number, string> = {};
+	 Object.entries(prev).forEach(([key, value]) => {
+	 const numericKey = Number(key);
+	 if (numericKey < index) next[numericKey] = value;
+	 if (numericKey > index) next[numericKey - 1] = value;
+	 });
+	 return next;
+	 });
+	 };
 
  // Fetch guests for wedding party sync
  const fetchGuests = useCallback(async () => {
@@ -220,22 +258,41 @@ export default function WeddingDetailsPage() {
    }
  };
 
- const saveWedding = async () => {
- if (!wedding) return;
+	 const saveWedding = async () => {
+	 if (!wedding) return;
 
- setSaving(true);
- setError('');
+	 const nextEventTimeErrors = buildEventTimeErrors(wedding.events);
+	 if (Object.keys(nextEventTimeErrors).length > 0) {
+	 setEventTimeErrors(nextEventTimeErrors);
+	 setError('Fix the invalid event time fields before saving.');
+	 toast.error('Fix the invalid event time fields before saving.');
+	 return;
+	 }
 
- try {
- const baseUrl = getApiBaseUrl();
- const response = await fetch(`${baseUrl}/admin/weddings/${weddingId}`, {
- method: 'PUT',
+	 setSaving(true);
+	 setError('');
+
+	 try {
+	 const normalizedWedding = {
+	 ...wedding,
+	 events: wedding.events.map((event) => ({
+	 ...event,
+	 details: event.details
+	 ? { ...event.details, time: normalizeEventTimeInput(event.details.time) || undefined }
+	 : event.details,
+	 })),
+	 };
+	 setWedding(normalizedWedding);
+
+	 const baseUrl = getApiBaseUrl();
+	 const response = await fetch(`${baseUrl}/admin/weddings/${weddingId}`, {
+	 method: 'PUT',
  headers: {
  'Authorization': `Bearer ${token}`,
  'Content-Type': 'application/json',
  },
- body: JSON.stringify(wedding),
- });
+	 body: JSON.stringify(normalizedWedding),
+	 });
 
  if (!response.ok) {
  throw new Error('Failed to save wedding details');
@@ -251,12 +308,20 @@ export default function WeddingDetailsPage() {
  };
 
  // Event management functions
- const updateEvent = (index: number, event: WeddingEvent) => {
- if (!wedding) return;
- const newEvents = [...wedding.events];
- newEvents[index] = event;
- setWedding({ ...wedding, events: newEvents });
- };
+	 const updateEvent = (index: number, event: WeddingEvent) => {
+	 if (!wedding) return;
+	 const newEvents = [...wedding.events];
+	 newEvents[index] = event;
+	 setWedding({ ...wedding, events: newEvents });
+	 if (eventTimeErrors[index]) {
+	 const message = getEventTimeValidationMessage(event.details?.time);
+	 if (message) {
+	 setEventTimeErrors((prev) => ({ ...prev, [index]: message }));
+	 } else {
+	 clearEventTimeError(index);
+	 }
+	 }
+	 };
 
  const addEvent = () => {
  if (!wedding) return;
@@ -266,11 +331,12 @@ export default function WeddingDetailsPage() {
  });
  };
 
- const removeEvent = (index: number) => {
- if (!wedding) return;
- setWedding({
- ...wedding,
- events: wedding.events.filter((_, i) => i !== index)
+	 const removeEvent = (index: number) => {
+	 if (!wedding) return;
+	 reindexEventTimeErrorsAfterRemoval(index);
+	 setWedding({
+	 ...wedding,
+	 events: wedding.events.filter((_, i) => i !== index)
  });
  };
 
@@ -322,7 +388,7 @@ export default function WeddingDetailsPage() {
  });
  };
 
- if (loading) {
+ if (authLoading || userProfile?.is_root_admin || loading) {
  return (
  <div className="min-h-screen bg-gradient-to-br from-wedding-ivory to-rose-50 dark:from-slate-900 dark:to-slate-800 p-6 flex items-center justify-center">
  <div className="animate-spin h-12 w-12 border-4 border-wedding-rose border-t-transparent rounded-full"></div>
@@ -494,17 +560,39 @@ export default function WeddingDetailsPage() {
  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
  Time
  </label>
- <input
- type="text"
- value={event.details?.time || ''}
- onChange={(e) => updateEvent(index, {
- ...event,
- details: { ...event.details, time: e.target.value }
- })}
- className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100"
- placeholder="e.g., 3:00 PM"
- />
- </div>
+	 <input
+	 type="text"
+	 value={event.details?.time || ''}
+	 onChange={(e) => updateEvent(index, {
+	 ...event,
+	 details: { ...event.details, time: e.target.value }
+	 })}
+	 onBlur={(e) => {
+	 const normalizedTime = normalizeEventTimeInput(e.target.value);
+	 updateEvent(index, {
+	 ...event,
+	 details: { ...event.details, time: normalizedTime }
+	 });
+	 const message = getEventTimeValidationMessage(normalizedTime);
+	 if (message) {
+	 setEventTimeErrors((prev) => ({ ...prev, [index]: message }));
+	 } else {
+	 clearEventTimeError(index);
+	 }
+	 }}
+	 aria-invalid={Boolean(eventTimeErrors[index])}
+	 className={`w-full px-3 py-2 border rounded bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 ${
+	 eventTimeErrors[index]
+	 ? 'border-red-500 dark:border-red-400'
+	 : 'border-gray-300 dark:border-gray-600'
+	 }`}
+	 placeholder="e.g., 3:00 PM"
+	 title={EVENT_TIME_FORMAT_HINT}
+	 />
+	 {eventTimeErrors[index] && (
+	 <p className="mt-1 text-xs text-red-600 dark:text-red-300">{eventTimeErrors[index]}</p>
+	 )}
+	 </div>
 
  <div className="lg:col-span-2">
  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
