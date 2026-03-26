@@ -73,6 +73,7 @@ export default function AdminBillingDashboard() {
   // ROOT_ADMIN access control
   useEffect(() => {
     if (userProfile && !userProfile.is_root_admin) {
+      setLoading(false);
       router.push('/admin');
     }
   }, [userProfile, router]);
@@ -80,6 +81,12 @@ export default function AdminBillingDashboard() {
   const fetchBillingData = useCallback(async () => {
     try {
       setLoading(true);
+
+      if (userProfile && !userProfile.is_root_admin) {
+        setLoading(false);
+        return;
+      }
+
       const baseUrl = getApiBaseUrl();
       if (!token) {
         setError('Authentication required');
@@ -160,11 +167,15 @@ export default function AdminBillingDashboard() {
     } finally {
       setLoading(false);
     }
-  }, [token]);
+  }, [token, userProfile]);
 
   useEffect(() => {
+    if (!userProfile || !userProfile.is_root_admin) {
+      return;
+    }
+
     fetchBillingData();
-  }, [fetchBillingData]);
+  }, [fetchBillingData, userProfile]);
 
   const getStatusBadge = (status: string) => {
     const config: Record<string, { bg: string; text: string; icon: React.ReactNode }> = {

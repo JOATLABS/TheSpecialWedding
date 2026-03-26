@@ -2,7 +2,7 @@
 
 **Purpose:** manual browser validation for deployment readiness after auth, security, contract-alignment, and portal changes.
 
-**Last Updated:** March 25, 2026
+**Last Updated:** March 26, 2026
 
 **Primary Browser:** Chrome latest
 
@@ -16,7 +16,7 @@ Run this test plan before promoting a build from staging to production when any 
 2. Planner, couple, or vendor portal login flows
 3. Planner inbox or couple inbox rendering
 4. Budget templates, campaign stats, or guest management
-5. Homepage, features page, or resources/blog public surfaces
+5. Homepage, pricing, features page, or resources/blog public surfaces
 
 This runbook is intentionally risk-based. It focuses on the flows most likely to break deployment readiness:
 
@@ -24,7 +24,26 @@ This runbook is intentionally risk-based. It focuses on the flows most likely to
 2. High-risk planner and couple portal workflows
 3. Security regressions around token exposure and inbox HTML rendering
 4. Frontend/backend contract regressions in budget and advertising surfaces
-5. Public marketing and SEO-critical routes
+5. Public marketing, pricing, and SEO-critical routes
+
+## 1A. Testing Principle
+
+This runbook is for functional end-to-end validation, not visual QA alone.
+
+Use visual checks only as the first signal that a screen rendered. Do not mark a scenario as passed just because the UI looks correct. A scenario is only valid when you confirm:
+
+1. the user can actually perform the intended action
+2. the correct request is sent
+3. the backend accepts it successfully
+4. the updated state can be reread after refresh
+5. persisted data matches the expected result when DB access is available
+
+For read-only screens such as homepage, features, resources, and dashboard views, the test still needs to confirm more than appearance:
+
+1. the page loads without runtime or network failures
+2. the data shown matches the active backend configuration or seeded fixture
+3. links, filters, tabs, modals, and retry states behave correctly
+4. refresh and direct-entry routes still work
 
 ## 2. Environment Setup
 
@@ -77,6 +96,8 @@ Seed or confirm the following data exists:
 5. One budget template that can be applied to a wedding
 6. One advertising campaign with impressions, clicks, conversions, and spend
 7. One inbox item created from an external email or seeded email payload
+8. One planner account with no active subscription, or an expired/cancelled subscription, for billing preselection testing
+9. One active public subscription plan ID that can be inserted into `/admin/planner/billing?plan=<plan_id>&interval=yearly`
 
 ## 3. Tester Preparation
 
@@ -106,15 +127,108 @@ Expected result:
 2. The `document.cookie.includes(...)` checks return `false`
 3. Authenticated API requests still succeed after hard refresh
 
+### Write Validation Ladder
+
+For any frontend action that is supposed to create or update data, validate it in this order:
+
+1. Confirm the UI accepts the action and shows the expected success state.
+2. Confirm the mutation request returns `200`, `201`, or the expected success status in the Network tab.
+3. Confirm the response body contains the expected identifiers, counts, or confirmation message.
+4. Hard refresh the page and confirm the new state is still present from a fresh read.
+5. If you have MongoDB access, verify the persisted document in Compass or `mongosh`.
+
+If step 1 passes but steps 2 through 5 do not, treat it as a failed deployment check. The goal is not just that the frontend looked successful for one render, but that the write actually persisted and can be read back.
+
+### Optional Persistence Map
+
+Use this map when you need to prove that a frontend action updated the database correctly. This app uses MongoDB collections and embedded documents rather than SQL tables.
+
+| Flow | Mutation to Watch | Fresh Read to Confirm | Mongo Persistence Target |
+|---|---|---|---|
+| Couple onboarding completion | `PUT /couple/profile/onboarding` | `GET /couple/profile/onboarding` after refresh | `couple_users` document for that couple. Check `onboarding_completed`, `onboarding_completed_at`, `onboarding_steps_completed`. |
+| Couple form submission | `POST /couple/portal/forms/submit` | Reload `/couple/forms/[formId]` or refetch the form submission | `form_submissions` document keyed by `form_id` and `submitted_by`. Check `responses`, `updated_at`, `submitted_by_type: "couple"`. |
+| Couple message send | `POST /couple/portal/messages` | `GET /couple/portal/messages` after refresh | `couple_messages` document keyed by `wedding_id`. Check `sender_role: "couple"`, `sender_email`, `content`, `created_at`. |
+| Couple registry add/edit/delete | `POST|PUT|DELETE /couple/portal/registries/*` | `GET /couple/portal/registries` after refresh | Embedded `registries` array on the related `weddings` document. |
+| Couple FAQ add/edit/delete | `POST|PUT|DELETE /couple/portal/faqs/*` | `GET /couple/portal/faqs` after refresh | Embedded `faqs` array on the related `weddings` document. |
+| Budget template apply | `POST /admin/weddings/{wedding_id}/budget/apply-template` | Reload the wedding budget screen and confirm categories | `budget_categories` collection for that `wedding_id`, plus the `weddings` document fields `total_budget` and `budget_template_applied`. |
+| Public pricing read path | `GET /public/subscription-plans` | Compare homepage cards and signup modal plan choices | `subscription_plans` collection filtered to active plans. Public response should match active plan names, prices, and feature highlights. |
+| Resources/blog public read path | `GET /api/v1/blog/articles`, `GET /api/v1/blog/articles/slug/{slug}` | Reload `/resources` and the direct `/resources/blog/[slug]` page | `blog_articles` collection. Article must have `status: "published"` and the matching `slug`. |
+
+### Optional MongoDB Check Tips
+
+If you have direct DB access, prefer verifying by business key instead of copying raw `_id` values from the UI:
+
+1. Couple onboarding: search `couple_users` by `email`
+2. Couple form submission: search `form_submissions` by `form_id` and `submitted_by`
+3. Couple messages: search `couple_messages` by `wedding_id` and recent `created_at`
+4. Registry and FAQ changes: inspect the target `weddings` document by `_id`
+5. Budget template apply: inspect `budget_categories` by `wedding_id`
+6. Public pricing: inspect active documents in `subscription_plans`
+7. Public blog/resources: inspect published documents in `blog_articles`
+
+### Optional `mongosh` Examples
+
+Use these only if you have local or staging MongoDB access. Replace placeholders with real values from the tested scenario.
+
+```javascript
+// Couple onboarding
+db.couple_users.findOne(
+  { email: "couple@example.com" },
+  { onboarding_completed: 1, onboarding_completed_at: 1, onboarding_steps_completed: 1 }
+)
+
+// Couple form submission
+db.form_submissions.findOne(
+  { form_id: "FORM_ID", submitted_by: "couple@example.com" },
+  { responses: 1, updated_at: 1, submitted_by_type: 1 }
+)
+
+// Couple message send
+db.couple_messages.find(
+  { wedding_id: "WEDDING_ID", sender_email: "couple@example.com" }
+).sort({ created_at: -1 }).limit(3)
+
+// Registry / FAQ persistence on the wedding document
+db.weddings.findOne(
+  { _id: "WEDDING_ID" },
+  { registries: 1, faqs: 1, total_budget: 1, budget_template_applied: 1 }
+)
+
+// Budget template apply
+db.budget_categories.find(
+  { wedding_id: "WEDDING_ID" }
+).sort({ created_at: -1 }).limit(20)
+
+// Public pricing
+db.subscription_plans.find(
+  { is_active: true },
+  { name: 1, price_monthly: 1, price_yearly: 1, is_featured: 1, display_order: 1 }
+).sort({ display_order: 1 })
+
+// Published blog articles
+db.blog_articles.find(
+  { status: "published" },
+  { slug: 1, title: 1, updated_at: 1, published_at: 1 }
+).sort({ published_at: -1 }).limit(20)
+```
+
+If you do not have DB access, the minimum acceptable proof is:
+
+1. successful mutation response in the Network tab
+2. hard refresh
+3. fresh read endpoint or page still showing the updated state
+4. no console or network errors during the reread
+
 ## 4. Pass / Fail Standard
 
 A scenario passes only if all of these are true:
 
 1. The UI completes the flow without a visible error state
-2. No blocking console errors appear
-3. The expected network request succeeds with the expected status
-4. The resulting screen state matches the backend action
-5. No token is exposed in browser storage
+2. The tested functionality behaves correctly, not just visually
+3. No blocking console errors appear
+4. The expected network request succeeds with the expected status
+5. The resulting screen state matches the backend action
+6. No token is exposed in browser storage
 
 A deployment should be blocked if any of these fail:
 
@@ -124,41 +238,55 @@ A deployment should be blocked if any of these fail:
 4. Inbox HTML executes script or unsanitized markup
 5. Budget template apply or campaign stats show obviously incorrect data
 6. Public homepage or features page fails to render
+7. A screen looks correct but the underlying action, reread, or persistence check fails
 
 ## 5. Scenario A: Public Routes, Marketing, and SEO Surfaces
 
 ### Objective
 
-Verify that public discovery pages render correctly and remain indexable.
+Verify that public discovery pages function correctly, render correctly, and remain indexable.
 
 ### Steps
 
 1. Load `/`.
 2. Verify hero, features section, pricing/CTA sections, and feature images render without broken assets.
-3. Open `/features`.
-4. Verify the feature list matches the homepage feature section in copy and imagery.
-5. Open `/resources`.
-6. Open at least one blog detail page from `/resources/blog/[slug]`.
-7. Inspect page source or DevTools for title, description, canonical, and social metadata.
-8. Load `/robots.txt`.
-9. Load `/sitemap.xml`.
+3. In the homepage pricing section, confirm the visible plan names and prices match the currently active root-admin-configured plans.
+4. Click one non-Agency pricing CTA such as `Start your free trial`.
+5. Confirm the signup modal opens with the clicked plan preselected.
+6. Click the Agency pricing CTA and confirm it opens the sales email flow or `mailto:` target.
+7. Open `/features`.
+8. Verify the feature list matches the homepage feature section in copy and imagery.
+9. Open `/resources`.
+10. In the split-panel blog experience, click one article card and confirm the reader panel loads that article.
+11. Use `Open article page` from one card and confirm the direct `/resources/blog/[slug]` page loads.
+12. If the blog API is unavailable in the environment, or can be simulated safely, confirm `/resources` shows an explicit unavailable state with a retry action instead of a misleading empty-results state.
+13. Inspect page source or DevTools for title, description, canonical, and social metadata.
+14. Load `/robots.txt`.
+15. Load `/sitemap.xml`.
+16. Open one blog URL returned by `sitemap.xml` and confirm it resolves to a live article page.
 
 ### Expected Results
 
 1. No 404 or broken image placeholders on homepage or features page
-2. Homepage and features page describe the same current feature set
-3. Resources index and blog detail pages load correctly
-4. Metadata is present and relevant
-5. `robots.txt` and `sitemap.xml` return 200
+2. Homepage pricing reflects the current active plan configuration
+3. Clicking a non-Agency homepage pricing CTA opens the signup modal with the correct plan selected
+4. Agency CTA opens the expected sales email flow
+5. Homepage and features page describe the same current feature set
+6. Resources split-panel and direct blog detail pages both load correctly
+7. If the blog feed is unavailable, `/resources` shows an explicit unavailable state and retry action rather than pretending there are zero articles
+8. Metadata is present and relevant
+9. `robots.txt` and `sitemap.xml` return 200
+10. Blog URLs emitted by `sitemap.xml` resolve to live article pages
 
 ### Evidence
 
 Capture:
 
 1. Homepage screenshot
-2. Features page screenshot
-3. One blog detail screenshot
-4. Metadata screenshot or copy of the inspected tags
+2. Pricing modal screenshot after clicking a plan CTA
+3. Features page screenshot
+4. One blog detail screenshot
+5. Metadata screenshot or copy of the inspected tags
 
 ## 6. Scenario B: Planner Login, Session, and Logout
 
@@ -197,6 +325,26 @@ Verify:
 2. `GET /admin/profile` returns success after login
 3. `POST /admin/logout` returns success on logout
 
+### B2. Planner Billing Preselection Flow
+
+Use a planner account without an active subscription, or with an expired/cancelled subscription, for this check.
+
+1. While authenticated as that planner, open `/admin/planner/billing?plan=<valid_plan_id>&interval=yearly`.
+2. Confirm the plan-selection state appears instead of the subscribed dashboard.
+3. Confirm the requested plan card is visually highlighted.
+4. Confirm the helper banner mentions the selected plan and the yearly interval.
+5. Confirm the highlighted card button reads `Continue with yearly`.
+6. Click the highlighted button.
+7. Inspect the checkout-session network request body.
+
+Expected results:
+
+1. The selected-plan banner renders without a crash or blank state
+2. The correct plan card is highlighted
+3. The highlighted card shows the requested interval and CTA copy
+4. `POST /stripe/create-checkout-session` sends the requested `plan_id` and `billing_interval`
+5. The user is redirected into the billing checkout flow successfully
+
 ## 7. Scenario C: Root Admin Access and Restricted Admin Pages
 
 ### Objective
@@ -210,15 +358,17 @@ Verify the root admin can access platform-only screens and that the session beha
 3. Open `/admin/saas`.
 4. Open `/admin/billing`.
 5. Open `/portal/ads` from the same authenticated browser.
-6. Hard refresh each page at least once.
-7. Log out and verify access is removed.
+6. On `/admin/saas`, confirm the active subscription plans shown there match the public homepage pricing cards.
+7. Hard refresh each page at least once.
+8. Log out and verify access is removed.
 
 ### Expected Results
 
 1. Root admin can access root-admin pages
 2. Root admin can enter the vendor advertising portal
-3. Refresh does not break the session
-4. Logout removes access everywhere
+3. Root-admin-managed plan configuration matches the public pricing surface
+4. Refresh does not break the session
+5. Logout removes access everywhere
 
 ## 8. Scenario D: Couple Invite, Setup, Login, and Reset Flow
 
@@ -320,6 +470,26 @@ Spot-check these requests:
 5. `POST|PUT|DELETE /couple/portal/registries/*`
 6. `POST|PUT|DELETE /couple/portal/faqs/*`
 
+### Persistence Validation for Scenario E
+
+Use these checks during the couple portal flow:
+
+1. Onboarding:
+   Confirm `PUT /couple/profile/onboarding` succeeds, refresh the dashboard, and verify the modal stays completed or dismissed.
+   If you have DB access, confirm the `couple_users` document updated `onboarding_completed`, `onboarding_completed_at`, and `onboarding_steps_completed`.
+2. Forms:
+   Confirm the submit response succeeds, reload `/couple/forms/[formId]`, and verify the saved answers rehydrate into the form.
+   If you have DB access, confirm the `form_submissions` document for that `form_id` and `submitted_by` contains the updated `responses`.
+3. Messages:
+   Confirm the message appears immediately, then refresh and verify it still appears in the thread history.
+   If you have DB access, confirm a new `couple_messages` document exists with the matching `wedding_id`, `sender_email`, and `content`.
+4. Registry:
+   After add, edit, and delete, refresh the dashboard each time and verify the registry list matches the latest action.
+   If you have DB access, confirm the `weddings.registries` array reflects the final state.
+5. FAQ:
+   After add, edit, and delete, refresh the dashboard each time and verify the FAQ list matches the latest action.
+   If you have DB access, confirm the `weddings.faqs` array reflects the final state.
+
 ## 10. Scenario F: Vendor Advertising Portal Login and Session
 
 ### Objective
@@ -400,6 +570,12 @@ Expected results:
 2. Budget categories appear correctly
 3. No frontend exception occurs after the API response returns
 
+Validation detail:
+
+1. Inspect the `POST /admin/weddings/{wedding_id}/budget/apply-template` response and confirm it reports `categories_created` greater than `0`.
+2. Reload the budget view and verify the newly created categories are still present from a fresh read.
+3. If you have DB access, confirm new `budget_categories` documents exist for that `wedding_id` and the `weddings` document reflects `total_budget` and `budget_template_applied`.
+
 ### H2. Advertising Campaign Stats Contract
 
 1. Log in as advertising vendor or root admin in the vendor portal.
@@ -412,6 +588,11 @@ Expected results:
 1. Stats load without runtime errors
 2. Spend and conversion rate are present
 3. Totals look internally consistent
+
+Validation detail:
+
+1. Confirm the stats values do not change unexpectedly across a hard refresh unless the underlying seeded data changed.
+2. If you have DB or seed-data access, compare the rendered totals against the known campaign fixture before approving the build.
 
 ### H3. Guest Management Performance Check
 
@@ -428,6 +609,11 @@ Expected results:
 2. Pagination works consistently
 3. No console errors appear
 4. The page does not refetch obviously redundant full-page data on every small interaction
+
+Validation detail:
+
+1. In the Network tab, verify guest-list pagination and filter changes do not trigger unrelated wedding-wide data reloads on every click.
+2. Confirm the visible guest rows after each filter/sort action still match the RSVP and plus-one data shown in the row UI.
 
 ## 13. Scenario I: Platform Error Detail and Acknowledge Flow
 
@@ -494,9 +680,11 @@ Approve deployment only if all items below are true:
 7. Budget template apply passes
 8. Advertising campaign stats display correctly
 9. Guest management remains responsive on a large wedding
-10. Homepage, features, resources, `robots.txt`, and `sitemap.xml` pass
-11. No auth token is stored in browser storage
-12. No blocking console or network issues remain
+10. Homepage pricing CTA, signup-plan preselection, and Agency sales CTA pass
+11. Planner billing preselection via `plan` and `interval` passes
+12. Homepage, features, resources, `robots.txt`, and `sitemap.xml` pass
+13. No auth token is stored in browser storage
+14. No blocking console or network issues remain
 
 ## 17. Test Report Template
 
