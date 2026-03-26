@@ -178,9 +178,13 @@ function FAQItem({
 
 interface ResourcesClientProps {
   initialBlogPosts: BlogPost[];
+  initialBlogUnavailable?: boolean;
 }
 
-export default function ResourcesClient({ initialBlogPosts }: ResourcesClientProps) {
+export default function ResourcesClient({
+  initialBlogPosts,
+  initialBlogUnavailable = false,
+}: ResourcesClientProps) {
   const [activeTab, setActiveTab] = useState<'blog' | 'faq'>('blog');
   const [blogFilter, setBlogFilter] = useState('All');
   const [faqFilter, setFaqFilter] = useState('All');
@@ -189,9 +193,34 @@ export default function ResourcesClient({ initialBlogPosts }: ResourcesClientPro
   const [selectedPost, setSelectedPost] = useState<string | null>(null);
   const [selectedPostData, setSelectedPostData] = useState<BlogPost | null>(null);
   const [loadingArticle, setLoadingArticle] = useState(false);
+  const [loadingBlogList, setLoadingBlogList] = useState(false);
+  const [blogUnavailable, setBlogUnavailable] = useState(initialBlogUnavailable);
+  const [blogPosts, setBlogPosts] = useState(initialBlogPosts);
   const rightPanelRef = useRef<HTMLDivElement>(null);
 
-  const blogPosts = initialBlogPosts;
+  const refreshBlogPosts = useCallback(async () => {
+    setLoadingBlogList(true);
+
+    try {
+      const baseUrl = getApiBaseUrl();
+      const response = await fetch(`${baseUrl}/api/v1/blog/articles?limit=50`);
+      if (!response.ok) {
+        throw new Error(`API ${response.status}`);
+      }
+
+      const data = await response.json();
+      if (!Array.isArray(data?.articles)) {
+        throw new Error('Malformed blog article response');
+      }
+
+      setBlogPosts(data.articles.map(apiArticleToBlogPost));
+      setBlogUnavailable(false);
+    } catch {
+      setBlogUnavailable(true);
+    } finally {
+      setLoadingBlogList(false);
+    }
+  }, []);
 
   const selectPost = useCallback(
     async (slug: string) => {
@@ -260,6 +289,12 @@ export default function ResourcesClient({ initialBlogPosts }: ResourcesClientPro
       rightPanelRef.current.scrollTop = 0;
     }
   }, [selectedPost]);
+
+  useEffect(() => {
+    if (initialBlogUnavailable && initialBlogPosts.length === 0) {
+      void refreshBlogPosts();
+    }
+  }, [initialBlogUnavailable, initialBlogPosts.length, refreshBlogPosts]);
 
   return (
     <main className="min-h-screen bg-slate-950 text-white">
@@ -365,7 +400,26 @@ export default function ResourcesClient({ initialBlogPosts }: ResourcesClientPro
                         onSelect={selectPost}
                       />
                     ))}
-                    {filteredPosts.length === 0 && (
+                    {blogUnavailable && blogPosts.length === 0 && !loadingBlogList && (
+                      <div className="rounded-2xl border border-amber-500/20 bg-amber-500/10 px-4 py-5 text-center">
+                        <p className="text-sm font-medium text-amber-200">
+                          Blog articles are temporarily unavailable.
+                        </p>
+                        <button
+                          type="button"
+                          onClick={() => void refreshBlogPosts()}
+                          className="mt-3 text-xs font-medium text-wedding-rose transition hover:text-wedding-blush"
+                        >
+                          Retry loading articles
+                        </button>
+                      </div>
+                    )}
+                    {loadingBlogList && blogPosts.length === 0 && (
+                      <div className="py-8 text-center">
+                        <p className="text-sm text-slate-500">Loading articles...</p>
+                      </div>
+                    )}
+                    {!blogUnavailable && !loadingBlogList && filteredPosts.length === 0 && (
                       <div className="py-8 text-center">
                         <p className="text-sm text-slate-500">No articles match your search.</p>
                       </div>
@@ -519,7 +573,29 @@ export default function ResourcesClient({ initialBlogPosts }: ResourcesClientPro
                     onSelect={selectPost}
                   />
                 ))}
-                {filteredPosts.length === 0 && (
+                {blogUnavailable && blogPosts.length === 0 && !loadingBlogList && (
+                  <div className="col-span-full rounded-2xl border border-amber-500/20 bg-amber-500/10 px-6 py-10 text-center">
+                    <p className="text-base font-medium text-amber-200">
+                      Blog articles are temporarily unavailable.
+                    </p>
+                    <p className="mt-2 text-sm text-amber-100/80">
+                      The FAQ tab is still available. You can also retry the blog feed now.
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => void refreshBlogPosts()}
+                      className="mt-4 rounded-full border border-wedding-rose/30 px-4 py-2 text-sm font-medium text-wedding-rose transition hover:border-wedding-rose/50 hover:text-wedding-blush"
+                    >
+                      Retry loading articles
+                    </button>
+                  </div>
+                )}
+                {loadingBlogList && blogPosts.length === 0 && (
+                  <div className="col-span-full py-16 text-center">
+                    <p className="text-slate-500">Loading articles...</p>
+                  </div>
+                )}
+                {!blogUnavailable && !loadingBlogList && filteredPosts.length === 0 && (
                   <div className="col-span-full py-16 text-center">
                     <p className="text-slate-500">No articles match your search.</p>
                   </div>

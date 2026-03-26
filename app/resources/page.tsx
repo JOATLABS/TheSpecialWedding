@@ -9,7 +9,7 @@ import {
 export const revalidate = 60;
 
 export default async function ResourcesPage() {
-  const articles = await fetchPublishedBlogArticles(50);
+  const { articles, unavailable } = await fetchPublishedBlogArticles(50);
   const initialBlogPosts =
     articles.length > 0
       ? articles.map(apiArticleToBlogPost)
@@ -17,5 +17,10 @@ export default async function ResourcesPage() {
         ? fallbackBlogCards
         : [];
 
-  return <ResourcesClient initialBlogPosts={initialBlogPosts} />;
+  return (
+    <ResourcesClient
+      initialBlogPosts={initialBlogPosts}
+      initialBlogUnavailable={unavailable && !allowStaticFallback}
+    />
+  );
 }
