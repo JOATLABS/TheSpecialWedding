@@ -157,7 +157,7 @@ type AcknowledgedFilter = 'all' | 'true' | 'false';
 
 export default function PlatformInfrastructurePage() {
   const router = useRouter();
-  const { userProfile } = useAdmin();
+  const { userProfile, token } = useAdmin();
   const [metrics, setMetrics] = useState<PlatformMetrics | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -191,7 +191,6 @@ export default function PlatformInfrastructurePage() {
   const fetchMetrics = useCallback(async () => {
     try {
       const baseUrl = getApiBaseUrl();
-      const token = localStorage.getItem('admin_token') || sessionStorage.getItem('admin_token');
 
       if (!token) {
         setError('Authentication required. Please log in.');
@@ -203,7 +202,8 @@ export default function PlatformInfrastructurePage() {
         headers: {
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json'
-        }
+        },
+        credentials: 'include',
       });
 
       if (!response.ok) {
@@ -219,13 +219,12 @@ export default function PlatformInfrastructurePage() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [token]);
 
   const fetchAllErrors = useCallback(async () => {
     try {
       setLoadingErrors(true);
       const baseUrl = getApiBaseUrl();
-      const token = localStorage.getItem('admin_token') || sessionStorage.getItem('admin_token');
 
       if (!token) return;
 
@@ -240,7 +239,8 @@ export default function PlatformInfrastructurePage() {
         headers: {
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json'
-        }
+        },
+        credentials: 'include',
       });
 
       if (response.ok) {
@@ -253,7 +253,7 @@ export default function PlatformInfrastructurePage() {
     } finally {
       setLoadingErrors(false);
     }
-  }, [errorCurrentPage, errorItemsPerPage, severityFilter, acknowledgedFilter, setErrorTotalItems]);
+  }, [errorCurrentPage, errorItemsPerPage, severityFilter, acknowledgedFilter, setErrorTotalItems, token]);
 
   useEffect(() => {
     fetchMetrics();
@@ -279,14 +279,14 @@ export default function PlatformInfrastructurePage() {
     setAcknowledgingIds(prev => new Set(prev).add(errorId));
     try {
       const baseUrl = getApiBaseUrl();
-      const token = localStorage.getItem('admin_token') || sessionStorage.getItem('admin_token');
 
       const response = await fetch(`${baseUrl}/admin/platform/errors/${errorId}/acknowledge`, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json'
-        }
+        },
+        credentials: 'include',
       });
 
       if (response.ok) {
@@ -325,7 +325,6 @@ export default function PlatformInfrastructurePage() {
     setAcknowledgingAll(true);
     try {
       const baseUrl = getApiBaseUrl();
-      const token = localStorage.getItem('admin_token') || sessionStorage.getItem('admin_token');
 
       // Use bulk acknowledge endpoint for better performance
       const response = await fetch(`${baseUrl}/admin/platform/errors/acknowledge-bulk`, {
@@ -334,6 +333,7 @@ export default function PlatformInfrastructurePage() {
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json'
         },
+        credentials: 'include',
         body: JSON.stringify({
           error_ids: unacknowledgedErrors.map(e => e.error_id)
         })

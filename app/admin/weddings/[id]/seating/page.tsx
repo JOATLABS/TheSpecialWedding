@@ -3,6 +3,7 @@
 import React, { useEffect, useState, Suspense } from 'react';
 import dynamic from 'next/dynamic';
 import { useParams } from 'next/navigation';
+import { useAdmin } from '@/contexts/AdminContext';
 import { useTables } from '@/admin/hooks/useTables';
 import { useGuests } from '@/admin/hooks/useGuests';
 import { SeatingCanvas } from '@/admin/components/seating/SeatingCanvas';
@@ -49,6 +50,7 @@ interface AISuggestion {
 
 export default function SeatingPage() {
   const params = useParams();
+  const { token } = useAdmin();
   const weddingId = params?.id as string;
 
   const {
@@ -159,7 +161,6 @@ export default function SeatingPage() {
     setAiError(null);
 
     try {
-      const token = localStorage.getItem('admin_token');
       const response = await fetch(
         `${process.env.NEXT_PUBLIC_API_BASE_URL}/admin/ai/weddings/${weddingId}/seating-optimize`,
         {
@@ -168,6 +169,7 @@ export default function SeatingPage() {
             'Content-Type': 'application/json',
             Authorization: `Bearer ${token}`
           },
+          credentials: 'include',
           body: JSON.stringify({
             guests: guests.map((g: any) => ({
               id: g.id,

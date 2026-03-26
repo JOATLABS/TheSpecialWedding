@@ -6,6 +6,7 @@ import { getApiBaseUrl } from '@/utils/env';
 import { toast } from 'sonner';
 import { Heart, Lock, Loader2, ArrowLeft, AlertCircle, CheckCircle } from 'lucide-react';
 import Link from 'next/link';
+import { clearLegacyCoupleStorage } from '@/couple/lib/auth';
 
 function ResetPasswordForm() {
   const router = useRouter();
@@ -63,14 +64,13 @@ function ResetPasswordForm() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ token, password }),
+        credentials: 'include',
       });
 
       const data = await res.json();
 
       if (res.ok) {
-        // Auto-login after reset
-        localStorage.setItem('couple_token', data.access_token);
-        localStorage.setItem('couple_data', JSON.stringify(data.couple));
+        clearLegacyCoupleStorage();
         toast.success('Password reset successfully!');
         router.push('/couple/dashboard');
       } else {

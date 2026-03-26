@@ -3,6 +3,7 @@ from bson import ObjectId
 from app.core.database import mongo
 from app.models.plus_one import PlusOneModel
 from datetime import datetime, timezone
+from typing import List, Optional
 import logging
 from app.utils.id_utils import to_object_id, to_str_id, normalize_doc_id
 
@@ -92,12 +93,21 @@ class PlusOneService:
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Failed to retrieve plus-ones: {str(e)}")
 
-    async def get_plus_ones_by_wedding_id(self, wedding_id: str):
+    async def get_plus_ones_by_wedding_id(self, wedding_id: str, guest_ids: Optional[List[str]] = None):
         try:
             # 1. Get all guest IDs for this wedding
             guest_collection = mongo.get_guest_collection()
+            guest_query = {"wedding_id": wedding_id}
+
+            if guest_ids is not None:
+                if not guest_ids:
+                    return []
+                guest_query["_id"] = {
+                    "$in": [to_object_id(guest_id, "guest_id") for guest_id in guest_ids]
+                }
+
             guests = await guest_collection.find(
-                {"wedding_id": wedding_id},
+                guest_query,
                 projection={"_id": 1}
             ).to_list(length=None)
 

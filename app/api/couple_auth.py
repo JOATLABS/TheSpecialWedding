@@ -7,18 +7,26 @@ Couples are invited by planners via magic link email.
 Sprint 1: Setup, login, verify, profile
 Sprint 3: Forgot password, password reset
 """
-from fastapi import APIRouter, HTTPException, Request, Depends
+from fastapi import APIRouter, HTTPException, Request, Depends, Response
 from pydantic import BaseModel, Field
 from typing import Optional
 from datetime import datetime, timezone, timedelta
 from app.core.database import mongo
-from app.utils.auth_utils import get_password_hash, verify_password, create_access_token, DUMMY_PASSWORD_HASH
+from app.utils.auth_utils import (
+    DUMMY_PASSWORD_HASH,
+    clear_auth_cookie,
+    create_access_token,
+    get_password_hash,
+    set_auth_cookie,
+    verify_password,
+)
 from app.dependencies.couple_auth import require_couple_auth
 import secrets
 import logging
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
+COUPLE_ACCESS_TOKEN_MAX_AGE = 24 * 60 * 60
 
 
 # ============================================================================
@@ -65,12 +73,34 @@ def _serialize_onboarding_fields(couple: dict) -> dict:
     }
 
 
+def _serialize_couple_payload(couple: dict) -> dict:
+    return {
+        "email": couple["email"],
+        "partner1_name": couple.get("partner1_name"),
+        "partner2_name": couple.get("partner2_name"),
+        "wedding_id": couple.get("wedding_id"),
+        **_serialize_onboarding_fields(couple),
+    }
+
+
+def _set_couple_session_cookie(response: Response, email: str) -> str:
+    token_data = {"sub": email, "role": "couple"}
+    access_token = create_access_token(data=token_data, expires_delta=timedelta(hours=24))
+    set_auth_cookie(
+        response,
+        "couple_token",
+        access_token,
+        max_age=COUPLE_ACCESS_TOKEN_MAX_AGE,
+    )
+    return access_token
+
+
 # ============================================================================
 # PUBLIC ENDPOINTS (No auth required)
 # ============================================================================
 
 @router.post("/couple/setup-password", tags=["Couple Auth"])
-async def setup_couple_password(data: CoupleSetupPasswordRequest):
+async def setup_couple_password(data: CoupleSetupPasswordRequest, response: Response):
     """
     Couple sets their password using the invite token from the magic link.
     This completes the couple's account setup.
@@ -100,9 +130,7 @@ async def setup_couple_password(data: CoupleSetupPasswordRequest):
         }}
     )
 
-    # Generate JWT token so they're logged in immediately
-    token_data = {"sub": couple["email"], "role": "couple"}
-    access_token = create_access_token(data=token_data, expires_delta=timedelta(hours=24))
+    access_token = _set_couple_session_cookie(response, couple["email"])
 
     logger.info(f"Couple account setup completed: {couple['email']}")
 
@@ -110,18 +138,12 @@ async def setup_couple_password(data: CoupleSetupPasswordRequest):
         "message": "Account setup complete! Welcome to your wedding portal.",
         "access_token": access_token,
         "token_type": "bearer",
-        "couple": {
-            "email": couple["email"],
-            "partner1_name": couple.get("partner1_name"),
-            "partner2_name": couple.get("partner2_name"),
-            "wedding_id": couple.get("wedding_id"),
-            **_serialize_onboarding_fields(couple),
-        }
+        "couple": _serialize_couple_payload(couple),
     }
 
 
 @router.post("/couple/login", tags=["Couple Auth"])
-async def couple_login(data: CoupleLoginRequest):
+async def couple_login(data: CoupleLoginRequest, response: Response):
     """
     Couple logs into their portal.
     """
@@ -147,8 +169,7 @@ async def couple_login(data: CoupleLoginRequest):
         {"$set": {"last_login": datetime.now(timezone.utc)}}
     )
 
-    token_data = {"sub": couple["email"], "role": "couple"}
-    access_token = create_access_token(data=token_data, expires_delta=timedelta(hours=24))
+    access_token = _set_couple_session_cookie(response, couple["email"])
 
     logger.info(f"Couple logged in: {couple['email']}")
 
@@ -157,11 +178,7 @@ async def couple_login(data: CoupleLoginRequest):
         "token_type": "bearer",
         "couple": {
             "id": str(couple["_id"]),
-            "email": couple["email"],
-            "partner1_name": couple.get("partner1_name"),
-            "partner2_name": couple.get("partner2_name"),
-            "wedding_id": couple.get("wedding_id"),
-            **_serialize_onboarding_fields(couple),
+            **_serialize_couple_payload(couple),
         }
     }
 
@@ -394,7 +411,7 @@ async def validate_couple_reset_token(token: str):
 
 
 @router.post("/couple/reset-password", tags=["Couple Auth"])
-async def couple_reset_password(data: CoupleResetPasswordRequest):
+async def couple_reset_password(data: CoupleResetPasswordRequest, response: Response):
     """
     Reset the couple's password using a valid reset token.
     Uses atomic compare-and-swap to consume the token in a single operation,
@@ -429,9 +446,7 @@ async def couple_reset_password(data: CoupleResetPasswordRequest):
 
     couple = result
 
-    # Generate JWT so they're logged in immediately after reset
-    token_data = {"sub": couple["email"], "role": "couple"}
-    access_token = create_access_token(data=token_data, expires_delta=timedelta(hours=24))
+    access_token = _set_couple_session_cookie(response, couple["email"])
 
     logger.info(f"Couple password reset completed: {couple['email']}")
 
@@ -439,10 +454,12 @@ async def couple_reset_password(data: CoupleResetPasswordRequest):
         "message": "Password reset successfully. You are now logged in.",
         "access_token": access_token,
         "token_type": "bearer",
-        "couple": {
-            "email": couple["email"],
-            "partner1_name": couple.get("partner1_name"),
-            "partner2_name": couple.get("partner2_name"),
-            "wedding_id": couple.get("wedding_id"),
-        }
+        "couple": _serialize_couple_payload(couple),
     }
+
+
+@router.post("/couple/logout", tags=["Couple Auth"])
+async def couple_logout(response: Response):
+    """Clear the authenticated couple session cookie."""
+    clear_auth_cookie(response, "couple_token")
+    return {"success": True}

@@ -2,9 +2,9 @@
 
 import { useState, useEffect } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import { getApiBaseUrl } from '@/utils/env';
 import { toast } from 'sonner';
 import { ArrowLeft, Loader2, Send, CheckCircle } from 'lucide-react';
+import { coupleFetch } from '@/couple/lib/auth';
 
 interface FormField {
   id: string;
@@ -40,17 +40,9 @@ export default function CoupleFormPage() {
   const [responses, setResponses] = useState<Record<string, any>>({});
 
   useEffect(() => {
-    const token = localStorage.getItem('couple_token');
-    if (!token) {
-      router.push('/couple/login');
-      return;
-    }
-
     const fetchForm = async () => {
       try {
-        const res = await fetch(`${getApiBaseUrl()}/couple/portal/forms/${formId}`, {
-          headers: { Authorization: `Bearer ${token}` },
-        });
+        const res = await coupleFetch(`/couple/portal/forms/${formId}`);
 
         if (res.status === 401) {
           router.push('/couple/login');
@@ -80,17 +72,10 @@ export default function CoupleFormPage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    const token = localStorage.getItem('couple_token');
-    if (!token) return;
-
     setSubmitting(true);
     try {
-      const res = await fetch(`${getApiBaseUrl()}/couple/portal/forms/submit`, {
+      const res = await coupleFetch('/couple/portal/forms/submit', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
-        },
         body: JSON.stringify({ form_id: formId, responses }),
       });
 

@@ -3,7 +3,11 @@
 import React, { createContext, useContext, useEffect, useState, useCallback } from 'react';
 import { getApiBaseUrl } from '@/utils/env';
 import { toast } from 'sonner';
-import { clearAdminAuthStorage, persistAdminAuthToken } from '@/utils/adminAuthStorage';
+import {
+    bootstrapAdminAuthToken,
+    clearAdminAuthStorage,
+    persistAdminAuthToken,
+} from '@/utils/adminAuthStorage';
 
 export interface UserProfile {
     id?: string;
@@ -47,26 +51,24 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     const [isLoading, setIsLoading] = useState(true);
 
     useEffect(() => {
-        // Check localStorage first
-        let stored = localStorage.getItem('admin_token');
+        let cancelled = false;
 
-        // If not in localStorage, check sessionStorage
-        if (!stored) {
-            stored = sessionStorage.getItem('admin_token');
-        }
+        const bootstrapAuth = async () => {
+            const hydratedToken = await bootstrapAdminAuthToken();
+            if (!cancelled && hydratedToken) {
+                setToken(hydratedToken);
+            }
 
-        // If not in storage, check cookies as fallback
-        if (!stored) {
-            const match = document.cookie.match(/admin_token=([^;]+)/);
-            stored = match ? match[1] : null;
-        }
+            if (!cancelled) {
+                setIsLoading(false);
+            }
+        };
 
-        if (stored) {
-            setToken(stored);
-        }
+        bootstrapAuth();
 
-        // Mark loading as complete - auth check is done
-        setIsLoading(false);
+        return () => {
+            cancelled = true;
+        };
     }, []);
 
     const fetchUserProfile = useCallback(async () => {
@@ -82,7 +84,8 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
                     'Cache-Control': 'no-cache, no-store, must-revalidate',
                     'Pragma': 'no-cache'
                 },
-                cache: 'no-store' // Force fresh request, no caching
+                cache: 'no-store', // Force fresh request, no caching
+                credentials: 'include',
             });
 
             if (response.ok) {
@@ -115,6 +118,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ email, password }),
+                credentials: 'include',
             });
 
             if (!res.ok) {
@@ -134,6 +138,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
                     'Authorization': `Bearer ${access_token}`,
                     'Content-Type': 'application/json',
                 },
+                credentials: 'include',
             });
 
             if (profileResponse.ok) {
@@ -174,6 +179,12 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     };
 
     const logout = () => {
+        const baseUrl = getApiBaseUrl();
+        void fetch(`${baseUrl}/admin/logout`, {
+            method: 'POST',
+            credentials: 'include',
+        }).catch(() => {});
+
         // Clear all possible storage locations
         clearAdminAuthStorage();
         localStorage.clear(); // Clear ALL localStorage, not just admin_token

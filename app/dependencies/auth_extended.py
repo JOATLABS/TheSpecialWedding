@@ -61,7 +61,7 @@ def invalidate_team_cache_by_owner(owner_id: str) -> None:
         _team_cache.pop(k, None)
 
 # Security scheme
-security = HTTPBearer(auto_error=True)
+security = HTTPBearer(auto_error=False)
 
 # JWT settings
 SECRET_KEY = os.getenv("SECRET_KEY")
@@ -92,11 +92,20 @@ class ExtendedAuthUser:
 
 
 async def get_current_user_extended(
-    credentials: HTTPAuthorizationCredentials = Depends(security),
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(security),
     request: Request = None,
 ) -> ExtendedAuthUser:
     """Get current authenticated user supporting both legacy and new auth systems"""
-    token = credentials.credentials
+    token = credentials.credentials if credentials else None
+    if not token and request is not None:
+        token = request.cookies.get("admin_token")
+
+    if not token:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Not authenticated",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
     try:
         payload = verify_token(token)
         email = payload.get("sub")

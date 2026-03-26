@@ -5,7 +5,13 @@ import { getApiBaseUrl } from '@/utils/env';
 import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
 
-import { clearAdminAuthStorage, persistAdminAuthToken, isTokenExpired, getTokenExpiresInMs } from '@/utils/adminAuthStorage';
+import {
+    bootstrapAdminAuthToken,
+    clearAdminAuthStorage,
+    getTokenExpiresInMs,
+    persistAdminAuthToken,
+    wasAdminSessionRemembered,
+} from '@/utils/adminAuthStorage';
 
 interface UserProfile {
     id?: string;
@@ -65,39 +71,36 @@ export const AdminProvider = ({ children }: { children: React.ReactNode }) => {
     const [isLoading, setIsLoading] = useState(true);
 
     useEffect(() => {
-        // Check localStorage first
-        let stored = localStorage.getItem('admin_token');
+        let cancelled = false;
 
-        // If not in localStorage, check sessionStorage
-        if (!stored) {
-            stored = sessionStorage.getItem('admin_token');
-        }
+        const bootstrapAuth = async () => {
+            const hydratedToken = await bootstrapAdminAuthToken();
 
-        // If not in storage, check cookies as fallback
-        if (!stored) {
-            const match = document.cookie.match(/admin_token=([^;]+)/);
-            stored = match ? match[1] : null;
-        }
-
-        if (stored) {
-            // Check if the JWT has expired before trusting it.
-            // Cookies/localStorage can outlive the JWT's 60-minute exp claim,
-            // so a stale token in storage would otherwise cause the entire admin
-            // UI to mount and fire authenticated requests that all return 401.
-            if (isTokenExpired(stored)) {
-                clearAdminAuthStorage();
-            } else {
-                setToken(stored);
+            if (!cancelled && hydratedToken) {
+                setToken(hydratedToken);
             }
-        }
 
-        // Mark loading as complete - auth check is done
-        setIsLoading(false);
+            if (!cancelled) {
+                setIsLoading(false);
+            }
+        };
+
+        bootstrapAuth();
+
+        return () => {
+            cancelled = true;
+        };
     }, []);
 
     // ---- logout must be defined before fetchUserProfile & apiRequest ----
     // Both call logout() on 401/403, so it needs to be in scope first.
     const logout = useCallback(() => {
+        const baseUrl = getApiBaseUrl();
+        void fetch(`${baseUrl}/admin/logout`, {
+            method: 'POST',
+            credentials: 'include',
+        }).catch(() => {});
+
         // Clear admin-specific storage (localStorage, sessionStorage, cookie)
         clearAdminAuthStorage();
 
@@ -124,7 +127,8 @@ export const AdminProvider = ({ children }: { children: React.ReactNode }) => {
                     'Cache-Control': 'no-cache, no-store, must-revalidate',
                     'Pragma': 'no-cache'
                 },
-                cache: 'no-store' // Force fresh request, no caching
+                cache: 'no-store', // Force fresh request, no caching
+                credentials: 'include',
             });
 
             if (response.ok) {
@@ -141,7 +145,8 @@ export const AdminProvider = ({ children }: { children: React.ReactNode }) => {
                                 'Cache-Control': 'no-cache, no-store, must-revalidate',
                                 'Pragma': 'no-cache'
                             },
-                            cache: 'no-store'
+                            cache: 'no-store',
+                            credentials: 'include',
                         });
 
                         if (permissionsResponse.ok) {
@@ -212,14 +217,12 @@ export const AdminProvider = ({ children }: { children: React.ReactNode }) => {
                         'Authorization': `Bearer ${token}`,
                         'Content-Type': 'application/json',
                     },
+                    credentials: 'include',
                 });
 
                 if (res.ok) {
                     const { access_token } = await res.json();
-                    // Persist the new token in storage (keep the same remember-me
-                    // preference — if it was in localStorage it stays there)
-                    const wasRemembered = !!localStorage.getItem('admin_token');
-                    persistAdminAuthToken(access_token, wasRemembered);
+                    persistAdminAuthToken(access_token, wasAdminSessionRemembered());
                     // Update React state — this triggers the effect again,
                     // scheduling the NEXT refresh, and also causes TopHeader
                     // to reconnect SSE with the fresh token.
@@ -246,6 +249,7 @@ export const AdminProvider = ({ children }: { children: React.ReactNode }) => {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ email, password }),
+                credentials: 'include',
             });
 
             if (!res.ok) {
@@ -274,6 +278,7 @@ export const AdminProvider = ({ children }: { children: React.ReactNode }) => {
                             'Authorization': `Bearer ${access_token}`,
                             'Content-Type': 'application/json',
                         },
+                        credentials: 'include',
                     });
                     if (refreshRes.ok) {
                         const { access_token: fresh } = await refreshRes.json();
@@ -299,6 +304,7 @@ export const AdminProvider = ({ children }: { children: React.ReactNode }) => {
                     'Authorization': `Bearer ${activeToken}`,
                     'Content-Type': 'application/json',
                 },
+                credentials: 'include',
             });
 
             if (profileResponse.ok) {
@@ -313,6 +319,7 @@ export const AdminProvider = ({ children }: { children: React.ReactNode }) => {
                                 'Authorization': `Bearer ${activeToken}`,
                                 'Content-Type': 'application/json',
                             },
+                            credentials: 'include',
                         });
 
                         if (permissionsResponse.ok) {
@@ -367,6 +374,7 @@ export const AdminProvider = ({ children }: { children: React.ReactNode }) => {
                         'Authorization': `Bearer ${access_token}`,
                         'Content-Type': 'application/json',
                     },
+                    credentials: 'include',
                 });
 
                 if (retryProfile.ok) {
@@ -404,7 +412,8 @@ export const AdminProvider = ({ children }: { children: React.ReactNode }) => {
                 'Content-Type': 'application/json',
             },
             body: body !== undefined ? JSON.stringify(body) : undefined,
-            cache: 'no-store'
+            cache: 'no-store',
+            credentials: 'include',
         });
 
         if (!response.ok) {

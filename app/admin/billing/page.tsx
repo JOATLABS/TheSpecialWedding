@@ -62,7 +62,7 @@ interface RecentEvent {
 
 export default function AdminBillingDashboard() {
   const router = useRouter();
-  const { userProfile } = useAdmin();
+  const { userProfile, token } = useAdmin();
   const [loading, setLoading] = useState(true);
   const [metrics, setMetrics] = useState<BillingMetrics | null>(null);
   const [subscriptions, setSubscriptions] = useState<SubscriptionSummary[]>([]);
@@ -81,8 +81,6 @@ export default function AdminBillingDashboard() {
     try {
       setLoading(true);
       const baseUrl = getApiBaseUrl();
-      const token = localStorage.getItem('admin_token') || sessionStorage.getItem('admin_token');
-
       if (!token) {
         setError('Authentication required');
         setLoading(false);
@@ -95,7 +93,7 @@ export default function AdminBillingDashboard() {
       };
 
       // Fetch platform metrics which includes business/billing data
-      const metricsResponse = await fetch(`${baseUrl}/admin/platform/health`, { headers });
+      const metricsResponse = await fetch(`${baseUrl}/admin/platform/health`, { headers, credentials: 'include' });
 
       if (metricsResponse.ok) {
         const metricsData = await metricsResponse.json();
@@ -122,7 +120,7 @@ export default function AdminBillingDashboard() {
       }
 
       // Fetch all subscriptions
-      const subsResponse = await fetch(`${baseUrl}/subscriptions`, { headers });
+      const subsResponse = await fetch(`${baseUrl}/subscriptions`, { headers, credentials: 'include' });
       if (subsResponse.ok) {
         const subsData = await subsResponse.json();
         setSubscriptions(Array.isArray(subsData) ? subsData : subsData.subscriptions || []);
@@ -162,7 +160,7 @@ export default function AdminBillingDashboard() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [token]);
 
   useEffect(() => {
     fetchBillingData();

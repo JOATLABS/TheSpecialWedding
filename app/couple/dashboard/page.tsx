@@ -2,7 +2,6 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
-import { getApiBaseUrl } from '@/utils/env';
 import { toast } from 'sonner';
 import CoupleSidebar, { type CoupleSection } from '../components/CoupleSidebar';
 import CoupleTopHeader from '../components/CoupleTopHeader';
@@ -22,6 +21,7 @@ import {
   Gift, HelpCircle, QrCode, BellRing, Plus,
   Pencil, Trash2, ExternalLink, Download, BellOff,
 } from 'lucide-react';
+import { coupleFetch, logoutCoupleSession } from '@/couple/lib/auth';
 
 // ============================================================================
 // TYPES
@@ -258,20 +258,11 @@ export default function CoupleDashboardPage() {
   }, []);
 
   const fetchDashboard = useCallback(async () => {
-    const token = localStorage.getItem('couple_token');
-    if (!token) {
-      router.push('/couple/login');
-      return;
-    }
-
     try {
-      const res = await fetch(`${getApiBaseUrl()}/couple/portal/dashboard`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
+      const res = await coupleFetch('/couple/portal/dashboard');
 
       if (res.status === 401) {
-        localStorage.removeItem('couple_token');
-        localStorage.removeItem('couple_data');
+        await logoutCoupleSession();
         router.push('/couple/login');
         return;
       }
@@ -287,9 +278,7 @@ export default function CoupleDashboardPage() {
 
       // Fetch unread message count
       try {
-        const unreadRes = await fetch(`${getApiBaseUrl()}/couple/portal/messages/unread-count`, {
-          headers: { Authorization: `Bearer ${token}` },
-        });
+        const unreadRes = await coupleFetch('/couple/portal/messages/unread-count');
         if (unreadRes.ok) {
           const unreadData = await unreadRes.json();
           setUnreadMessages(unreadData.unread_count || 0);
@@ -298,9 +287,7 @@ export default function CoupleDashboardPage() {
 
       if (!hasUserDismissedOnboarding) {
         try {
-          const onboardingRes = await fetch(`${getApiBaseUrl()}/couple/profile/onboarding`, {
-            headers: { Authorization: `Bearer ${token}` },
-          });
+          const onboardingRes = await coupleFetch('/couple/profile/onboarding');
 
           if (onboardingRes.ok) {
             const onboardingData = await onboardingRes.json();
@@ -330,9 +317,8 @@ export default function CoupleDashboardPage() {
     }
   }, []);
 
-  const handleLogout = () => {
-    localStorage.removeItem('couple_token');
-    localStorage.removeItem('couple_data');
+  const handleLogout = async () => {
+    await logoutCoupleSession();
     router.push('/couple/login');
   };
 
@@ -605,18 +591,15 @@ function TimelineSection({ events, timezone, onNoteAdded }: { events: WeddingEve
 
   const handleSubmitNote = async (eventIndex: number, itemId?: string) => {
     if (!noteText.trim()) return;
-    const token = localStorage.getItem('couple_token');
-    if (!token) return;
 
     setSubmittingNote(true);
     try {
-      const url = itemId
-        ? `${getApiBaseUrl()}/couple/portal/events/${eventIndex}/order-of-events/${itemId}/notes`
-        : `${getApiBaseUrl()}/couple/portal/events/${eventIndex}/notes`;
+      const path = itemId
+        ? `/couple/portal/events/${eventIndex}/order-of-events/${itemId}/notes`
+        : `/couple/portal/events/${eventIndex}/notes`;
 
-      const res = await fetch(url, {
+      const res = await coupleFetch(path, {
         method: 'POST',
-        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
         body: JSON.stringify({ text: noteText.trim() }),
       });
 
@@ -910,12 +893,8 @@ function PaymentsSection({ contract }: { contract?: ContractInfo | null }) {
 
   useEffect(() => {
     const fetchContract = async () => {
-      const token = localStorage.getItem('couple_token');
-      if (!token) return;
       try {
-        const res = await fetch(`${getApiBaseUrl()}/couple/portal/contracts`, {
-          headers: { Authorization: `Bearer ${token}` },
-        });
+        const res = await coupleFetch('/couple/portal/contracts');
         if (res.ok) {
           const data = await res.json();
           setContractDetail(data.contract || null);
@@ -1150,11 +1129,8 @@ function InboxSection({ updates, onMessageSent, onMessagesRead, archived = false
   }, []);
 
   const fetchMessages = useCallback(async () => {
-    const token = localStorage.getItem('couple_token');
-    if (!token) return;
     try {
-      const res = await fetch(`${getApiBaseUrl()}/couple/portal/messages?limit=100`, {
-        headers: { Authorization: `Bearer ${token}` },
+      const res = await coupleFetch('/couple/portal/messages?limit=100', {
         cache: 'no-store',
       });
       if (res.ok) {
@@ -1173,13 +1149,10 @@ function InboxSection({ updates, onMessageSent, onMessagesRead, archived = false
 
   const handleSend = async () => {
     if (!newMessage.trim() || sending) return;
-    const token = localStorage.getItem('couple_token');
-    if (!token) return;
     setSending(true);
     try {
-      const res = await fetch(`${getApiBaseUrl()}/couple/portal/messages`, {
+      const res = await coupleFetch('/couple/portal/messages', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
         body: JSON.stringify({ content: newMessage.trim() }),
       });
       if (res.ok) {
@@ -1369,15 +1342,13 @@ function RegistrySection({ registries, archived, onUpdated }: { registries: Regi
     if (!name.trim() || !url.trim()) return;
     setSaving(true);
     try {
-      const token = localStorage.getItem('couple_token');
       const isEdit = editIndex !== null;
       const endpoint = isEdit
-        ? `${getApiBaseUrl()}/couple/portal/registries/${editIndex}`
-        : `${getApiBaseUrl()}/couple/portal/registries`;
+        ? `/couple/portal/registries/${editIndex}`
+        : '/couple/portal/registries';
 
-      const res = await fetch(endpoint, {
+      const res = await coupleFetch(endpoint, {
         method: isEdit ? 'PUT' : 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
         body: JSON.stringify({ name: name.trim(), url: url.trim(), color }),
       });
 
@@ -1399,10 +1370,8 @@ function RegistrySection({ registries, archived, onUpdated }: { registries: Regi
   const handleDelete = async (index: number) => {
     setDeleting(index);
     try {
-      const token = localStorage.getItem('couple_token');
-      const res = await fetch(`${getApiBaseUrl()}/couple/portal/registries/${index}`, {
+      const res = await coupleFetch(`/couple/portal/registries/${index}`, {
         method: 'DELETE',
-        headers: { Authorization: `Bearer ${token}` },
       });
 
       if (!res.ok) {
@@ -1573,19 +1542,17 @@ function FAQSection({ faqs, archived, onUpdated }: { faqs: FAQItem[]; archived: 
     if (!question.trim() || !answer.trim()) return;
     setSaving(true);
     try {
-      const token = localStorage.getItem('couple_token');
       const isEdit = editIndex !== null;
       const endpoint = isEdit
-        ? `${getApiBaseUrl()}/couple/portal/faqs/${editIndex}`
-        : `${getApiBaseUrl()}/couple/portal/faqs`;
+        ? `/couple/portal/faqs/${editIndex}`
+        : '/couple/portal/faqs';
 
       const body: any = { question: question.trim(), answer: answer.trim() };
       if (linkUrl.trim()) body.link_url = linkUrl.trim();
       if (linkLabel.trim()) body.link_label = linkLabel.trim();
 
-      const res = await fetch(endpoint, {
+      const res = await coupleFetch(endpoint, {
         method: isEdit ? 'PUT' : 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
         body: JSON.stringify(body),
       });
 
@@ -1606,10 +1573,8 @@ function FAQSection({ faqs, archived, onUpdated }: { faqs: FAQItem[]; archived: 
   const handleDelete = async (index: number) => {
     setDeleting(index);
     try {
-      const token = localStorage.getItem('couple_token');
-      const res = await fetch(`${getApiBaseUrl()}/couple/portal/faqs/${index}`, {
+      const res = await coupleFetch(`/couple/portal/faqs/${index}`, {
         method: 'DELETE',
-        headers: { Authorization: `Bearer ${token}` },
       });
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
@@ -1758,10 +1723,7 @@ function QRCodeWidget() {
   const generateQR = async () => {
     setLoading(true);
     try {
-      const token = localStorage.getItem('couple_token');
-      const res = await fetch(`${getApiBaseUrl()}/couple/portal/qr-code`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
+      const res = await coupleFetch('/couple/portal/qr-code');
       if (!res.ok) throw new Error('Failed to generate QR code');
       const blob = await res.blob();
       setQrUrl(URL.createObjectURL(blob));
@@ -1822,8 +1784,7 @@ function PushNotificationWidget() {
     if (Notification.permission === 'denied') { setPushStatus('denied'); return; }
 
     try {
-      const token = localStorage.getItem('couple_token');
-      const res = await fetch(`${getApiBaseUrl()}/couple/portal/push/status`, { headers: { Authorization: `Bearer ${token}` } });
+      const res = await coupleFetch('/couple/portal/push/status');
       if (res.ok) {
         const data = await res.json();
         setPushStatus(!data.enabled ? 'unsupported' : data.subscribed ? 'subscribed' : 'unsubscribed');
@@ -1839,17 +1800,15 @@ function PushNotificationWidget() {
       const permission = await Notification.requestPermission();
       if (permission !== 'granted') { setPushStatus('denied'); toast.error('Notification permission denied'); return; }
 
-      const token = localStorage.getItem('couple_token');
-      const keyRes = await fetch(`${getApiBaseUrl()}/web-push/vapid-public-key`);
+      const keyRes = await coupleFetch('/web-push/vapid-public-key');
       if (!keyRes.ok) throw new Error('Push not configured');
       const { vapid_public_key } = await keyRes.json();
 
       const registration = await navigator.serviceWorker.ready;
       const subscription = await registration.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: vapid_public_key });
 
-      const subRes = await fetch(`${getApiBaseUrl()}/couple/portal/push/subscribe`, {
+      const subRes = await coupleFetch('/couple/portal/push/subscribe', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
         body: JSON.stringify({ subscription: subscription.toJSON() }),
       });
       if (!subRes.ok) throw new Error('Failed to save subscription');
@@ -1867,10 +1826,8 @@ function PushNotificationWidget() {
       const registration = await navigator.serviceWorker.ready;
       const subscription = await registration.pushManager.getSubscription();
       if (subscription) {
-        const token = localStorage.getItem('couple_token');
-        await fetch(`${getApiBaseUrl()}/couple/portal/push/unsubscribe`, {
+        await coupleFetch('/couple/portal/push/unsubscribe', {
           method: 'DELETE',
-          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
           body: JSON.stringify({ endpoint: subscription.endpoint }),
         });
         await subscription.unsubscribe();

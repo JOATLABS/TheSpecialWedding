@@ -1,8 +1,9 @@
 "use client";
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Button } from '@/components/ui/Button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/Card';
+import { useAdmin } from '@/contexts/AdminContext';
 import { Loader2, CheckCircle2, AlertCircle, ExternalLink } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -34,6 +35,7 @@ const SUPPORTED_COUNTRIES = [
 ];
 
 export default function StripeConnectCard() {
+  const { token } = useAdmin();
   const [loading, setLoading] = useState(true);
   const [connectStatus, setConnectStatus] = useState<{
     status: string;
@@ -43,19 +45,15 @@ export default function StripeConnectCard() {
   } | null>(null);
   const [selectedCountry, setSelectedCountry] = useState('US');
 
-  useEffect(() => {
-    checkStatus();
-  }, []);
-
-  const checkStatus = async () => {
+  const checkStatus = useCallback(async () => {
     try {
-      const token = localStorage.getItem('admin_token');
       if (!token) return;
 
       const response = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL}/stripe/connect/status`, {
         headers: {
           'Authorization': `Bearer ${token}`
-        }
+        },
+        credentials: 'include',
       });
 
       if (response.ok) {
@@ -67,19 +65,22 @@ export default function StripeConnectCard() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [token]);
+
+  useEffect(() => {
+    checkStatus();
+  }, [checkStatus]);
 
   const handleConnect = async () => {
     try {
       setLoading(true);
-      const token = localStorage.getItem('admin_token');
-
       const response = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL}/stripe/connect/onboard`, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json'
         },
+        credentials: 'include',
         body: JSON.stringify({
           country: selectedCountry,
           return_url: `${window.location.origin}/admin/planner/billing`,

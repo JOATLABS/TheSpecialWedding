@@ -4,6 +4,9 @@ This directory contains testing-related documentation for the Wedding Web Applic
 
 ## Available Documentation
 
+### [Deployment Browser E2E Runbook](./deployment-browser-e2e-runbook.md)
+Detailed manual browser runbook for deployment validation across planner, root admin, couple, and vendor flows. Includes auth/session checks, inbox XSS validation, contract-alignment checks, guest performance checks, and public route verification.
+
 ### [ID Attributes Enhancement](./id-attributes-enhancement.md)
 Comprehensive documentation of ID attributes added to interactive elements for improved automation testing compatibility. Includes:
 - Before/after code examples for all modified elements

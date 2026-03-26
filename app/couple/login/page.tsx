@@ -8,6 +8,7 @@ import { Heart, Loader2 } from 'lucide-react';
 import { GlassCard } from '@/components/ui/GlassCard';
 import { Button } from '@/components/ui/Button';
 import Link from 'next/link';
+import { clearLegacyCoupleStorage } from '@/couple/lib/auth';
 
 const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -97,6 +98,7 @@ export default function CoupleLoginPage() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email: email.trim(), password }),
+        credentials: 'include',
       });
 
       const data = await res.json();
@@ -106,8 +108,7 @@ export default function CoupleLoginPage() {
         return;
       }
 
-      localStorage.setItem('couple_token', data.access_token);
-      localStorage.setItem('couple_data', JSON.stringify(data.couple));
+      clearLegacyCoupleStorage();
       toast.success('Welcome back!');
       router.push('/couple/dashboard');
     } catch {

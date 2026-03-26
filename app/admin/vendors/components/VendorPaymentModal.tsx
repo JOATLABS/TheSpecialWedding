@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { Label } from '@/components/ui/Label';
 import { Textarea } from '@/components/ui/Textarea';
+import { useAdmin } from '@/contexts/AdminContext';
 import { Loader2, DollarSign, Send, Calendar, Mail, Link2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { createPaymentLink, sendPaymentLink, type PayerType, type RecipientType } from '@/services/vendorManagementApi';
@@ -44,6 +45,7 @@ export function VendorPaymentModal({
   coupleNames,
   onPaymentLinkCreated,
 }: VendorPaymentModalProps) {
+  const { token } = useAdmin();
   const [loading, setLoading] = useState(false);
   const [amount, setAmount] = useState('');
   const [description, setDescription] = useState('');
@@ -90,7 +92,6 @@ export function VendorPaymentModal({
     try {
       setLoading(true);
 
-      const token = localStorage.getItem('admin_token');
       if (!token) {
         toast.error('Please log in to create payment links');
         return;
