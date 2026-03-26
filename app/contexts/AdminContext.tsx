@@ -185,12 +185,16 @@ export const AdminProvider = ({ children }: { children: React.ReactNode }) => {
         }
     }, [token, logout]);
 
-    // Automatically fetch user profile when token is set
+    // Always refresh the profile when the active token changes so role-sensitive
+    // pages never act on a stale profile from a previous session.
     useEffect(() => {
-        if (token && !userProfile) {
-            fetchUserProfile();
+        if (!token) {
+            setUserProfile(null);
+            return;
         }
-    }, [fetchUserProfile, token, userProfile]);
+
+        fetchUserProfile();
+    }, [fetchUserProfile, token]);
 
     // ---- Automatic token refresh ----
     // Schedule a refresh ~5 minutes before the JWT expires so the session
@@ -243,6 +247,8 @@ export const AdminProvider = ({ children }: { children: React.ReactNode }) => {
         try {
         // SECURITY: Clear any existing sessions first to prevent session mixing
         clearAdminAuthStorage();
+            setToken(null);
+            setUserProfile(null);
             const baseUrl = getApiBaseUrl();
             const loginUrl = `${baseUrl}/admin/token`;
             const res = await fetch(loginUrl, {

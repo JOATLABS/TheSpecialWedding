@@ -77,7 +77,7 @@ async def get_admin_metrics_overview(
         from app.api.admin_platform_metrics import get_platform_health
 
         # Get live health data from the comprehensive health endpoint
-        live_health = await get_platform_health(current_user)
+        live_health = await get_platform_health(current_user=current_user)
 
         # Format as a snapshot response for dashboard compatibility
         now = datetime.now(timezone.utc)

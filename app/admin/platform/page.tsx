@@ -68,9 +68,25 @@ interface ErrorSummary {
 }
 
 interface ErrorMetrics {
-  total_24h: number;
-  critical_24h: number;
+  window_days: number;
+  total: number;
+  critical: number;
+  warning: number;
+  other: number;
+  unacknowledged: number;
+  acknowledged: number;
+  total_24h?: number | null;
+  critical_24h?: number | null;
   recent_errors: ErrorSummary[];
+}
+
+interface ErrorScopeSummary {
+  total: number;
+  critical: number;
+  warning: number;
+  other: number;
+  unacknowledged: number;
+  acknowledged: number;
 }
 
 interface EndpointPerformance {
@@ -152,12 +168,24 @@ interface PlatformMetrics {
 }
 
 type TabType = 'health' | 'errors' | 'performance' | 'backups';
-type SeverityFilter = 'all' | 'critical' | 'warning';
+type SeverityFilter = 'all' | 'critical' | 'warning' | 'other';
 type AcknowledgedFilter = 'all' | 'true' | 'false';
+
+const ERROR_WINDOW_OPTIONS = [
+  { value: 1, label: '24 hours' },
+  { value: 7, label: '7 days' },
+  { value: 30, label: '30 days' },
+  { value: 90, label: '90 days' },
+];
+
+const formatErrorWindowLabel = (days: number) => {
+  if (days <= 1) return '24h';
+  return `${days}d`;
+};
 
 export default function PlatformInfrastructurePage() {
   const router = useRouter();
-  const { userProfile, token } = useAdmin();
+  const { userProfile, token, isLoading: authLoading } = useAdmin();
   const [metrics, setMetrics] = useState<PlatformMetrics | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -166,6 +194,8 @@ export default function PlatformInfrastructurePage() {
 
   // Error filtering state
   const [allErrors, setAllErrors] = useState<ErrorSummary[]>([]);
+  const [errorSummary, setErrorSummary] = useState<ErrorScopeSummary | null>(null);
+  const [errorWindowDays, setErrorWindowDays] = useState(1);
   const [severityFilter, setSeverityFilter] = useState<SeverityFilter>('all');
   const [acknowledgedFilter, setAcknowledgedFilter] = useState<AcknowledgedFilter>('all');
   const [loadingErrors, setLoadingErrors] = useState(false);
@@ -183,15 +213,23 @@ export default function PlatformInfrastructurePage() {
 
   // Access control - ROOT ADMIN only
   useEffect(() => {
+    if (authLoading) {
+      return;
+    }
+
     if (userProfile && !userProfile.is_root_admin) {
       setLoading(false);
-      router.push('/admin/planner');
+      router.replace('/admin/planner');
     }
-  }, [userProfile, router]);
+  }, [authLoading, userProfile, router]);
 
   const fetchMetrics = useCallback(async () => {
     try {
-      if (userProfile && !userProfile.is_root_admin) {
+      if (authLoading || !userProfile) {
+        return;
+      }
+
+      if (!userProfile.is_root_admin) {
         setLoading(false);
         return;
       }
@@ -204,13 +242,23 @@ export default function PlatformInfrastructurePage() {
         return;
       }
 
-      const response = await fetch(`${baseUrl}/admin/platform/health`, {
+      const params = new URLSearchParams({
+        days: errorWindowDays.toString(),
+      });
+
+      const response = await fetch(`${baseUrl}/admin/platform/health?${params}`, {
         headers: {
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json'
         },
         credentials: 'include',
       });
+
+      if (response.status === 403) {
+        setLoading(false);
+        router.replace('/admin/planner');
+        return;
+      }
 
       if (!response.ok) {
         throw new Error(`Failed to fetch metrics: ${response.statusText}`);
@@ -225,20 +273,26 @@ export default function PlatformInfrastructurePage() {
     } finally {
       setLoading(false);
     }
-  }, [token, userProfile]);
+  }, [authLoading, errorWindowDays, router, token, userProfile]);
 
   const fetchAllErrors = useCallback(async () => {
     try {
       setLoadingErrors(true);
+
+      if (authLoading || !userProfile) {
+        return;
+      }
+
       const baseUrl = getApiBaseUrl();
 
-      if (userProfile && !userProfile.is_root_admin) {
+      if (!userProfile.is_root_admin) {
         return;
       }
 
       if (!token) return;
 
       const params = new URLSearchParams({
+        days: errorWindowDays.toString(),
         page: errorCurrentPage.toString(),
         limit: errorItemsPerPage.toString(),
         ...(severityFilter !== 'all' && { severity: severityFilter }),
@@ -253,19 +307,29 @@ export default function PlatformInfrastructurePage() {
         credentials: 'include',
       });
 
+      if (response.status === 403) {
+        router.replace('/admin/planner');
+        return;
+      }
+
       if (response.ok) {
         const data = await response.json();
         setAllErrors(data.errors || []);
-        setErrorTotalItems(data.total || 0);
+        setErrorTotalItems(data.summary?.total ?? data.total ?? 0);
+        setErrorSummary(data.summary || null);
       }
     } catch (err) {
       console.error('Error fetching errors:', err);
     } finally {
       setLoadingErrors(false);
     }
-  }, [errorCurrentPage, errorItemsPerPage, severityFilter, acknowledgedFilter, setErrorTotalItems, token, userProfile]);
+  }, [authLoading, errorCurrentPage, errorItemsPerPage, errorWindowDays, severityFilter, acknowledgedFilter, router, setErrorTotalItems, token, userProfile]);
 
   useEffect(() => {
+    if (authLoading) {
+      return;
+    }
+
     if (!userProfile || !userProfile.is_root_admin) {
       return;
     }
@@ -276,9 +340,13 @@ export default function PlatformInfrastructurePage() {
       const interval = setInterval(fetchMetrics, 30000);
       return () => clearInterval(interval);
     }
-  }, [fetchMetrics, autoRefresh, userProfile]);
+  }, [authLoading, fetchMetrics, autoRefresh, userProfile]);
 
   useEffect(() => {
+    if (authLoading) {
+      return;
+    }
+
     if (!userProfile || !userProfile.is_root_admin) {
       return;
     }
@@ -286,12 +354,12 @@ export default function PlatformInfrastructurePage() {
     if (activeTab === 'errors') {
       fetchAllErrors();
     }
-  }, [activeTab, fetchAllErrors, userProfile]);
+  }, [activeTab, authLoading, fetchAllErrors, userProfile]);
 
   // Reset to page 1 when filters change
   useEffect(() => {
     setErrorPage(1);
-  }, [severityFilter, acknowledgedFilter, setErrorPage]);
+  }, [severityFilter, acknowledgedFilter, errorWindowDays, setErrorPage]);
 
   const handleAcknowledgeError = async (errorId: string) => {
     setAcknowledgingIds(prev => new Set(prev).add(errorId));
@@ -410,7 +478,7 @@ export default function PlatformInfrastructurePage() {
     return { text: 'Healthy', color: 'text-green-600 dark:text-green-400' };
   };
 
-  if (loading) {
+  if (authLoading || loading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <div className="text-center">
@@ -445,9 +513,20 @@ export default function PlatformInfrastructurePage() {
 
   if (!metrics) return null;
 
+  const selectedErrorWindowLabel = formatErrorWindowLabel(errorWindowDays);
+  const healthErrorWindowLabel = formatErrorWindowLabel(metrics.errors?.window_days || errorWindowDays);
+  const fullScopeErrorSummary: ErrorScopeSummary = errorSummary ?? {
+    total: errorPagination.totalItems,
+    critical: 0,
+    warning: 0,
+    other: 0,
+    unacknowledged: 0,
+    acknowledged: 0,
+  };
+
   const tabs = [
     { id: 'health' as TabType, label: 'System Health', icon: Activity },
-    { id: 'errors' as TabType, label: `Errors (${metrics.errors?.total_24h || 0})`, icon: AlertTriangle },
+    { id: 'errors' as TabType, label: 'Errors', icon: AlertTriangle },
     { id: 'performance' as TabType, label: 'Performance', icon: Zap },
     { id: 'backups' as TabType, label: 'Backups', icon: Shield },
   ];
@@ -458,6 +537,20 @@ export default function PlatformInfrastructurePage() {
         title="Platform Infrastructure"
         description="System health, errors, performance, and backups"
       >
+        <label className="flex items-center gap-2 text-sm text-slate-500 dark:text-slate-400">
+          <span>Error window</span>
+          <select
+            value={errorWindowDays}
+            onChange={(e) => setErrorWindowDays(Number(e.target.value))}
+            className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-200"
+          >
+            {ERROR_WINDOW_OPTIONS.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+        </label>
         <label className="flex items-center gap-2 text-sm text-slate-500 dark:text-slate-400">
           <input
             type="checkbox"
@@ -772,7 +865,14 @@ export default function PlatformInfrastructurePage() {
           {/* Quick Error Summary */}
           <Card className="p-6">
             <div className="flex items-center justify-between mb-4">
-              <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100">Error Summary (24h)</h3>
+              <div>
+                <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
+                  Error Summary ({healthErrorWindowLabel})
+                </h3>
+                <p className="text-sm text-gray-500 dark:text-gray-400">
+                  These totals use the same selected error window as the Errors tab.
+                </p>
+              </div>
               <button
                 onClick={() => setActiveTab('errors')}
                 className="text-sm text-primary-600 dark:text-primary-400 hover:underline flex items-center gap-1"
@@ -780,14 +880,14 @@ export default function PlatformInfrastructurePage() {
                 View all errors <ChevronRight className="w-4 h-4" />
               </button>
             </div>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-4">
               <div className="flex items-center gap-4 p-4 bg-gray-50 dark:bg-slate-800 rounded-lg">
                 <div className="w-12 h-12 bg-red-100 dark:bg-red-900/30 rounded-lg flex items-center justify-center">
                   <AlertTriangle className="w-6 h-6 text-red-600 dark:text-red-400" />
                 </div>
                 <div>
                   <p className="text-sm font-medium text-gray-500 dark:text-gray-400">Total Errors</p>
-                  <p className="text-2xl font-bold text-gray-900 dark:text-gray-100">{metrics.errors?.total_24h || 0}</p>
+                  <p className="text-2xl font-bold text-gray-900 dark:text-gray-100">{metrics.errors?.total || 0}</p>
                 </div>
               </div>
               <div className="flex items-center gap-4 p-4 bg-gray-50 dark:bg-slate-800 rounded-lg">
@@ -796,18 +896,34 @@ export default function PlatformInfrastructurePage() {
                 </div>
                 <div>
                   <p className="text-sm font-medium text-gray-500 dark:text-gray-400">Critical</p>
-                  <p className="text-2xl font-bold text-gray-900 dark:text-gray-100">{metrics.errors?.critical_24h || 0}</p>
+                  <p className="text-2xl font-bold text-gray-900 dark:text-gray-100">{metrics.errors?.critical || 0}</p>
                 </div>
               </div>
               <div className="flex items-center gap-4 p-4 bg-gray-50 dark:bg-slate-800 rounded-lg">
-                <div className="w-12 h-12 bg-green-100 dark:bg-green-900/30 rounded-lg flex items-center justify-center">
-                  <CheckCircle className="w-6 h-6 text-green-600 dark:text-green-400" />
+                <div className="w-12 h-12 bg-yellow-100 dark:bg-yellow-900/30 rounded-lg flex items-center justify-center">
+                  <AlertTriangle className="w-6 h-6 text-yellow-600 dark:text-yellow-400" />
                 </div>
                 <div>
-                  <p className="text-sm font-medium text-gray-500 dark:text-gray-400">Status</p>
-                  <p className="text-2xl font-bold text-gray-900 dark:text-gray-100">
-                    {(metrics.errors?.total_24h || 0) === 0 ? 'Healthy' : 'Issues'}
-                  </p>
+                  <p className="text-sm font-medium text-gray-500 dark:text-gray-400">Warnings</p>
+                  <p className="text-2xl font-bold text-gray-900 dark:text-gray-100">{metrics.errors?.warning || 0}</p>
+                </div>
+              </div>
+              <div className="flex items-center gap-4 p-4 bg-gray-50 dark:bg-slate-800 rounded-lg">
+                <div className="w-12 h-12 bg-blue-100 dark:bg-blue-900/30 rounded-lg flex items-center justify-center">
+                  <Bell className="w-6 h-6 text-blue-600 dark:text-blue-300" />
+                </div>
+                <div>
+                  <p className="text-sm font-medium text-gray-500 dark:text-gray-400">Other Severities</p>
+                  <p className="text-2xl font-bold text-gray-900 dark:text-gray-100">{metrics.errors?.other || 0}</p>
+                </div>
+              </div>
+              <div className="flex items-center gap-4 p-4 bg-gray-50 dark:bg-slate-800 rounded-lg">
+                <div className="w-12 h-12 bg-slate-200 dark:bg-slate-700 rounded-lg flex items-center justify-center">
+                  <CheckCircle className="w-6 h-6 text-slate-700 dark:text-slate-200" />
+                </div>
+                <div>
+                  <p className="text-sm font-medium text-gray-500 dark:text-gray-400">Unacknowledged</p>
+                  <p className="text-2xl font-bold text-gray-900 dark:text-gray-100">{metrics.errors?.unacknowledged || 0}</p>
                 </div>
               </div>
             </div>
@@ -830,6 +946,7 @@ export default function PlatformInfrastructurePage() {
                   <option value="all">All Severities</option>
                   <option value="critical">Critical Only</option>
                   <option value="warning">Warning Only</option>
+                  <option value="other">Other Only</option>
                 </select>
               </div>
               <div>
@@ -873,10 +990,12 @@ export default function PlatformInfrastructurePage() {
           </Card>
 
           {/* Error Statistics */}
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
             <Card className="p-4">
               <p className="text-sm font-medium text-gray-500 dark:text-gray-400">
-                {severityFilter !== 'all' || acknowledgedFilter !== 'all' ? 'Total Matching' : 'Total Errors (30d)'}
+                {severityFilter !== 'all' || acknowledgedFilter !== 'all'
+                  ? `Total Matching (${selectedErrorWindowLabel})`
+                  : `Total Errors (${selectedErrorWindowLabel})`}
               </p>
               <p className="text-2xl font-bold text-gray-900 dark:text-gray-100 mt-1">{errorPagination.totalItems}</p>
               {errorPagination.totalPages > 1 && (
@@ -886,24 +1005,34 @@ export default function PlatformInfrastructurePage() {
               )}
             </Card>
             <Card className="p-4">
-              <p className="text-sm font-medium text-gray-500 dark:text-gray-400">Critical (this page)</p>
+              <p className="text-sm font-medium text-gray-500 dark:text-gray-400">Critical</p>
               <p className="text-2xl font-bold text-red-600 dark:text-red-400 mt-1">
-                {allErrors.filter(e => e.severity === 'critical').length}
+                {fullScopeErrorSummary.critical}
               </p>
             </Card>
             <Card className="p-4">
-              <p className="text-sm font-medium text-gray-500 dark:text-gray-400">Warnings (this page)</p>
+              <p className="text-sm font-medium text-gray-500 dark:text-gray-400">Warnings</p>
               <p className="text-2xl font-bold text-yellow-600 dark:text-yellow-400 mt-1">
-                {allErrors.filter(e => e.severity === 'warning').length}
+                {fullScopeErrorSummary.warning}
               </p>
             </Card>
             <Card className="p-4">
-              <p className="text-sm font-medium text-gray-500 dark:text-gray-400">Unacknowledged (this page)</p>
+              <p className="text-sm font-medium text-gray-500 dark:text-gray-400">Other Severities</p>
+              <p className="text-2xl font-bold text-blue-600 dark:text-blue-400 mt-1">
+                {fullScopeErrorSummary.other}
+              </p>
+            </Card>
+            <Card className="p-4">
+              <p className="text-sm font-medium text-gray-500 dark:text-gray-400">Unacknowledged</p>
               <p className="text-2xl font-bold text-gray-900 dark:text-gray-100 mt-1">
-                {allErrors.filter(e => !e.acknowledged).length}
+                {fullScopeErrorSummary.unacknowledged}
               </p>
             </Card>
           </div>
+
+          <p className="text-sm text-gray-500 dark:text-gray-400">
+            The cards above summarize the full filtered result set for the selected error window. They should reconcile with the total count shown for this tab.
+          </p>
 
           {/* Errors Table */}
           {loadingErrors ? (
@@ -952,7 +1081,9 @@ export default function PlatformInfrastructurePage() {
                           <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${
                             err.severity === 'critical'
                               ? 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400'
-                              : 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-400'
+                              : err.severity === 'warning'
+                                ? 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-400'
+                                : 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300'
                           }`}>
                             {err.severity}
                           </span>

@@ -62,7 +62,7 @@ interface RecentEvent {
 
 export default function AdminBillingDashboard() {
   const router = useRouter();
-  const { userProfile, token } = useAdmin();
+  const { userProfile, token, isLoading: authLoading } = useAdmin();
   const [loading, setLoading] = useState(true);
   const [metrics, setMetrics] = useState<BillingMetrics | null>(null);
   const [subscriptions, setSubscriptions] = useState<SubscriptionSummary[]>([]);
@@ -72,17 +72,25 @@ export default function AdminBillingDashboard() {
 
   // ROOT_ADMIN access control
   useEffect(() => {
+    if (authLoading) {
+      return;
+    }
+
     if (userProfile && !userProfile.is_root_admin) {
       setLoading(false);
-      router.push('/admin');
+      router.replace('/admin');
     }
-  }, [userProfile, router]);
+  }, [authLoading, userProfile, router]);
 
   const fetchBillingData = useCallback(async () => {
     try {
       setLoading(true);
 
-      if (userProfile && !userProfile.is_root_admin) {
+      if (authLoading || !userProfile) {
+        return;
+      }
+
+      if (!userProfile.is_root_admin) {
         setLoading(false);
         return;
       }
@@ -101,6 +109,12 @@ export default function AdminBillingDashboard() {
 
       // Fetch platform metrics which includes business/billing data
       const metricsResponse = await fetch(`${baseUrl}/admin/platform/health`, { headers, credentials: 'include' });
+
+      if (metricsResponse.status === 403) {
+        setLoading(false);
+        router.replace('/admin');
+        return;
+      }
 
       if (metricsResponse.ok) {
         const metricsData = await metricsResponse.json();
@@ -167,15 +181,19 @@ export default function AdminBillingDashboard() {
     } finally {
       setLoading(false);
     }
-  }, [token, userProfile]);
+  }, [authLoading, router, token, userProfile]);
 
   useEffect(() => {
+    if (authLoading) {
+      return;
+    }
+
     if (!userProfile || !userProfile.is_root_admin) {
       return;
     }
 
     fetchBillingData();
-  }, [fetchBillingData, userProfile]);
+  }, [authLoading, fetchBillingData, userProfile]);
 
   const getStatusBadge = (status: string) => {
     const config: Record<string, { bg: string; text: string; icon: React.ReactNode }> = {
@@ -233,7 +251,7 @@ export default function AdminBillingDashboard() {
     statusFilter === 'all' || sub.status === statusFilter
   );
 
-  if (loading) {
+  if (authLoading || loading) {
     return (
       <div className="flex items-center justify-center py-24">
         <div className="text-center">

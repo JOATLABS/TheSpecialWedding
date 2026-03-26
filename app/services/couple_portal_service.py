@@ -115,22 +115,22 @@ class CouplePortalService:
             return {"total_invited": 0, "confirmed": 0, "declined": 0, "pending": 0}
 
     async def _get_budget_summary(self, wedding_id: str) -> Dict[str, Any]:
-        """Get budget totals (not line items)."""
+        """Get budget totals using the same sources as the planner budget surface."""
         try:
-            budget_collection = mongo.db["budgets"]
-            budget = await budget_collection.find_one({"wedding_id": wedding_id})
+            wedding = await mongo.db["weddings"].find_one(
+                {"_id": wedding_id},
+                {"total_budget": 1},
+            )
+            categories_cursor = mongo.db["budget_categories"].find(
+                {"wedding_id": wedding_id},
+                {"budgeted_amount": 1, "actual_spent": 1},
+            )
+            categories = await categories_cursor.to_list(length=500)
 
-            if not budget:
-                return {"total_budget": 0, "total_spent": 0, "remaining": 0}
-
-            total_budget = budget.get("total_budget", 0)
-            total_spent = 0
-
-            # Sum up spent amounts from categories
-            for category in budget.get("categories", []):
-                for item in category.get("items", []):
-                    if item.get("status") in ("paid", "deposit_paid"):
-                        total_spent += item.get("actual_cost", 0) or item.get("estimated_cost", 0)
+            wedding_total_budget = wedding.get("total_budget", 0) if wedding else 0
+            categories_total_budget = sum(category.get("budgeted_amount", 0) or 0 for category in categories)
+            total_budget = wedding_total_budget if wedding_total_budget > 0 else categories_total_budget
+            total_spent = sum(category.get("actual_spent", 0) or 0 for category in categories)
 
             return {
                 "total_budget": total_budget,
