@@ -184,12 +184,18 @@ export default function PlatformInfrastructurePage() {
   // Access control - ROOT ADMIN only
   useEffect(() => {
     if (userProfile && !userProfile.is_root_admin) {
+      setLoading(false);
       router.push('/admin/planner');
     }
   }, [userProfile, router]);
 
   const fetchMetrics = useCallback(async () => {
     try {
+      if (userProfile && !userProfile.is_root_admin) {
+        setLoading(false);
+        return;
+      }
+
       const baseUrl = getApiBaseUrl();
 
       if (!token) {
@@ -219,12 +225,16 @@ export default function PlatformInfrastructurePage() {
     } finally {
       setLoading(false);
     }
-  }, [token]);
+  }, [token, userProfile]);
 
   const fetchAllErrors = useCallback(async () => {
     try {
       setLoadingErrors(true);
       const baseUrl = getApiBaseUrl();
+
+      if (userProfile && !userProfile.is_root_admin) {
+        return;
+      }
 
       if (!token) return;
 
@@ -253,22 +263,30 @@ export default function PlatformInfrastructurePage() {
     } finally {
       setLoadingErrors(false);
     }
-  }, [errorCurrentPage, errorItemsPerPage, severityFilter, acknowledgedFilter, setErrorTotalItems, token]);
+  }, [errorCurrentPage, errorItemsPerPage, severityFilter, acknowledgedFilter, setErrorTotalItems, token, userProfile]);
 
   useEffect(() => {
+    if (!userProfile || !userProfile.is_root_admin) {
+      return;
+    }
+
     fetchMetrics();
 
     if (autoRefresh) {
       const interval = setInterval(fetchMetrics, 30000);
       return () => clearInterval(interval);
     }
-  }, [fetchMetrics, autoRefresh]);
+  }, [fetchMetrics, autoRefresh, userProfile]);
 
   useEffect(() => {
+    if (!userProfile || !userProfile.is_root_admin) {
+      return;
+    }
+
     if (activeTab === 'errors') {
       fetchAllErrors();
     }
-  }, [activeTab, fetchAllErrors]);
+  }, [activeTab, fetchAllErrors, userProfile]);
 
   // Reset to page 1 when filters change
   useEffect(() => {
