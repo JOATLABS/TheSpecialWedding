@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { getApiBaseUrl } from '@/utils/env';
 import { toast } from 'sonner';
@@ -83,6 +83,14 @@ export default function CoupleLoginPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const message = params.get('message');
+    if (message) {
+      toast.error(message);
+    }
+  }, []);
 
   const disableSubmit = !emailPattern.test(email) || password.length === 0 || loading;
 

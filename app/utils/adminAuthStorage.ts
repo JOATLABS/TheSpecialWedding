@@ -8,6 +8,7 @@ declare global {
 }
 
 let bootstrapPromise: Promise<string | null> | null = null;
+let refreshPromise: Promise<{ status: 'success'; token: string } | { status: 'unauthenticated' | 'error' }> | null = null;
 
 function clearLegacyAdminStorage(): void {
   if (typeof window === 'undefined') {
@@ -121,27 +122,12 @@ export async function bootstrapAdminAuthToken(): Promise<string | null> {
 
   bootstrapPromise = (async () => {
     try {
-      const response = await fetch(`${getApiBaseUrl()}/admin/token/refresh`, {
-        method: 'POST',
-        credentials: 'include',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-      });
-
-      if (!response.ok) {
+      const result = await refreshAdminAuthToken(existingToken);
+      if (result.status !== 'success') {
         return null;
       }
-
-      const payload = await response.json();
-      const freshToken = payload?.access_token;
-
-      if (typeof freshToken !== 'string' || isTokenExpired(freshToken)) {
-        return null;
-      }
-
-      persistAdminAuthToken(freshToken, remembered);
-      return freshToken;
+      persistAdminAuthToken(result.token, remembered);
+      return result.token;
     } catch {
       return null;
     } finally {
@@ -162,4 +148,50 @@ export function getTokenExpiresInMs(token: string | null): number {
   if (!payload || typeof payload.exp !== 'number') return 0;
   const msUntilExpiry = payload.exp * 1000 - Date.now();
   return Math.max(0, msUntilExpiry);
+}
+
+export async function refreshAdminAuthToken(
+  _currentToken?: string | null,
+): Promise<{ status: 'success'; token: string } | { status: 'unauthenticated' | 'error' }> {
+  if (refreshPromise) {
+    return refreshPromise;
+  }
+
+  refreshPromise = (async () => {
+    try {
+      const response = await fetch(`${getApiBaseUrl()}/admin/token/refresh`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      });
+
+      if (response.status === 401 || response.status === 403) {
+        return { status: 'unauthenticated' as const };
+      }
+
+      if (!response.ok) {
+        return { status: 'error' as const };
+      }
+
+      const payload = await response.json();
+      const freshToken = payload?.access_token;
+
+      if (typeof freshToken !== 'string' || isTokenExpired(freshToken)) {
+        return { status: 'unauthenticated' as const };
+      }
+
+      return {
+        status: 'success' as const,
+        token: freshToken,
+      };
+    } catch {
+      return { status: 'error' as const };
+    } finally {
+      refreshPromise = null;
+    }
+  })();
+
+  return refreshPromise;
 }
