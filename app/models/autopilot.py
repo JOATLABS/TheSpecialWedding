@@ -135,6 +135,10 @@ class Contract(MongoModel):
     couple: CoupleInfo
     wedding_date: Optional[date] = None
     venue: Optional[str] = Field(None, max_length=200)
+    planner_name: Optional[str] = Field(None, max_length=200)
+    planner_email: Optional[str] = Field(None, max_length=254)
+    planner_phone: Optional[str] = Field(None, max_length=50)
+    planner_logo: Optional[str] = None
 
     # Package snapshot (in case package is updated later)
     package_snapshot: dict = Field(default_factory=dict)

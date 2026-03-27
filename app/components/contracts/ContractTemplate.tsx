@@ -30,8 +30,11 @@ interface PackageSnapshot {
 }
 
 interface CoupleInfo {
-  name: string;
+  partner1_name: string;
   email: string;
+  partner2_name?: string;
+  display_name?: string;
+  name?: string;
   partner_name?: string;
   partner_email?: string;
   phone?: string;
@@ -74,7 +77,12 @@ export default function ContractTemplate({
   const formatDate = (dateString?: string) => {
     if (!dateString) return 'TBD';
     try {
-      return new Date(dateString).toLocaleDateString('en-US', {
+      const dateOnlyMatch = dateString.match(/^(\d{4})-(\d{2})-(\d{2})/);
+      const parsedDate = dateOnlyMatch
+        ? new Date(Number(dateOnlyMatch[1]), Number(dateOnlyMatch[2]) - 1, Number(dateOnlyMatch[3]))
+        : new Date(dateString);
+
+      return parsedDate.toLocaleDateString('en-US', {
         weekday: 'long',
         year: 'numeric',
         month: 'long',
@@ -102,6 +110,9 @@ export default function ContractTemplate({
 
   const includedServices = packageSnapshot.services?.filter(s => s.included) || [];
   const isSigned = status === 'signed' || status === 'active' || status === 'completed';
+  const primaryName = couple.partner1_name || couple.name || '';
+  const secondaryName = couple.partner2_name || couple.partner_name;
+  const coupleDisplayName = couple.display_name || (secondaryName ? `${primaryName} & ${secondaryName}` : primaryName);
 
   return (
     <div className="bg-white dark:bg-slate-900 rounded-xl shadow-xl overflow-hidden print:shadow-none">
@@ -146,8 +157,7 @@ export default function ContractTemplate({
             </h2>
             <div className="space-y-2 text-slate-600 dark:text-slate-400">
               <p className="font-medium text-slate-900 dark:text-white">
-                {couple.name}
-                {couple.partner_name && ` & ${couple.partner_name}`}
+                {coupleDisplayName}
               </p>
               <p className="text-sm">{couple.email}</p>
               {couple.partner_email && (

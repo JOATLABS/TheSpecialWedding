@@ -1789,16 +1789,17 @@ class StripeService:
         if payment_intent.get("charges", {}).get("data"):
             receipt_url = payment_intent["charges"]["data"][0].get("receipt_url")
 
-        # Check if this is an autopilot scheduled payment
+        # Check if this is a contract/autopilot payment
         metadata = payment_intent.get("metadata", {})
-        if metadata.get("payment_type") == "scheduled":
+        payment_type = metadata.get("payment_type")
+        if payment_type in {"scheduled", "deposit"} or metadata.get("scheduled_payment_id") or metadata.get("payment_id"):
             from app.services.autopilot_service import autopilot_service
             await autopilot_service.handle_payment_succeeded(
                 payment_intent_id=payment_intent_id,
                 receipt_url=receipt_url
             )
-            logger.info(f"Autopilot scheduled payment {payment_intent_id} succeeded")
-            return {"status": "success", "payment_intent_id": payment_intent_id, "type": "scheduled"}
+            logger.info("Contract payment %s succeeded (type=%s)", payment_intent_id, payment_type or "unknown")
+            return {"status": "success", "payment_intent_id": payment_intent_id, "type": payment_type or "contract"}
 
         # Update payment request status in our collection
         payment_requests_collection = mongo.db["payment_requests"]
@@ -1848,17 +1849,23 @@ class StripeService:
         error_code = last_error.get("code", "unknown")
         error_message = last_error.get("message", "Payment failed")
 
-        # Check if this is an autopilot scheduled payment
+        # Check if this is a contract/autopilot payment
         metadata = payment_intent.get("metadata", {})
-        if metadata.get("payment_type") == "scheduled":
+        payment_type = metadata.get("payment_type")
+        if payment_type in {"scheduled", "deposit"} or metadata.get("scheduled_payment_id") or metadata.get("payment_id"):
             from app.services.autopilot_service import autopilot_service
             await autopilot_service.handle_payment_failed(
                 payment_intent_id=payment_intent_id,
                 error_code=error_code,
                 error_message=error_message
             )
-            logger.info(f"Autopilot scheduled payment {payment_intent_id} failed: {error_message}")
-            return {"status": "handled", "payment_intent_id": payment_intent_id, "type": "scheduled"}
+            logger.info(
+                "Contract payment %s failed (type=%s): %s",
+                payment_intent_id,
+                payment_type or "unknown",
+                error_message,
+            )
+            return {"status": "handled", "payment_intent_id": payment_intent_id, "type": payment_type or "contract"}
 
         # Update payment request status for non-autopilot payments
         payment_requests_collection = mongo.db["payment_requests"]

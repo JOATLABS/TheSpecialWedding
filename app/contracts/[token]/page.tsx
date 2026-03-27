@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useParams } from 'next/navigation';
 import { getApiBaseUrl } from '@/utils/env';
+import { preloadStripeClient } from '@/utils/stripeClient';
 import { toast } from 'sonner';
 import { Button } from '../../components/ui/Button';
 import { Card } from '../../components/ui/Card';
@@ -26,9 +27,12 @@ interface ContractData {
   id: string;
   status: string;
   couple: {
-    name: string;
+    partner1_name: string;
     email: string;
+    partner2_name?: string;
+    name?: string;
     partner_name?: string;
+    display_name?: string;
     partner_email?: string;
     phone?: string;
   };
@@ -79,6 +83,7 @@ export default function PublicContractPage() {
   // Signing flow state
   const [currentStep, setCurrentStep] = useState<SigningStep>('review');
   const [setupIntentSecret, setSetupIntentSecret] = useState<string>('');
+  const [setupCustomerId, setSetupCustomerId] = useState<string>('');
   const [paymentData, setPaymentData] = useState<PaymentMethodData | null>(null);
   const [signatureData, setSignatureData] = useState<SignatureData | null>(null);
   const [signing, setSigning] = useState(false);
@@ -120,6 +125,10 @@ export default function PublicContractPage() {
     fetchContract();
   }, [fetchContract]);
 
+  useEffect(() => {
+    preloadStripeClient().catch(() => undefined);
+  }, []);
+
   const initiatePaymentSetup = async () => {
     try {
       const baseUrl = getApiBaseUrl();
@@ -136,6 +145,7 @@ export default function PublicContractPage() {
 
       const data = await response.json();
       setSetupIntentSecret(data.client_secret);
+      setSetupCustomerId(data.customer_id || '');
       setCurrentStep('payment');
     } catch (err) {
       toast.error('Failed to initialize payment. Please try again.');
@@ -405,6 +415,7 @@ export default function PublicContractPage() {
 
             <StripePaymentCapture
               clientSecret={setupIntentSecret}
+              customerId={setupCustomerId}
               onPaymentMethodCaptured={handlePaymentMethodCaptured}
               onError={(err) => toast.error(err)}
             />
@@ -449,7 +460,7 @@ export default function PublicContractPage() {
             )}
 
             <DigitalSignature
-              coupleName={contract.couple.name}
+              coupleName={contract.couple.display_name || contract.couple.name || contract.couple.partner1_name}
               onSignatureComplete={handleSignatureComplete}
               disabled={signing}
             />
