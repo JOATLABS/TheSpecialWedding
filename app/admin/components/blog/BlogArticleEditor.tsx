@@ -328,15 +328,15 @@ export default function BlogArticleEditor({ article, onSave, onCancel }: BlogArt
             </div>
           </div>
 
-          {/* Content (Markdown) */}
+          {/* Content */}
           <div>
             <label className="mb-1.5 block text-xs font-medium text-slate-600 dark:text-slate-400">
-              Content (Markdown)
+              Content (Markdown or basic HTML)
             </label>
             <textarea
               value={content}
               onChange={(e) => setContent(e.target.value)}
-              placeholder="# Your blog post content..."
+              placeholder="# Your blog post content...\n\nOr paste sanitized editorial HTML."
               rows={20}
               className="w-full resize-y rounded-lg border border-slate-200 bg-white px-4 py-2.5 font-mono text-sm text-slate-900 placeholder-slate-400 shadow-sm focus:outline-none focus:border-wedding-rose/50 focus:ring-2 focus:ring-wedding-rose/15 dark:border-white/10 dark:bg-white/5 dark:text-white dark:placeholder-slate-500 dark:shadow-none"
             />

@@ -42,7 +42,14 @@ setup-auto-start.sh
 wedding-backend.service
 .secrets.baseline
 test-results/
-tests/
+tests/*
+!tests/backend/
+!tests/unit/
+tests/backend/*
+!tests/backend/test_blog_content_utils.py
+tests/unit/*
+!tests/unit/blogRichText.test.ts
+!tests/resources-blog-rendering.spec.ts
 
 ARCHITECTURAL_IMPROVEMENTS_COMPLETE.md
 app/middleware/security_headers.py

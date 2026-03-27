@@ -19,6 +19,7 @@ from app.models.blog import (
     BlogArticleCreateModel,
     BlogArticleUpdateModel,
 )
+from app.utils.blog_content import blog_content_word_count, sanitize_blog_content
 
 logger = logging.getLogger(__name__)
 
@@ -141,7 +142,11 @@ class BlogService:
                 slug = f"{base_slug}-{counter}"
                 counter += 1
 
-            word_count = len(data.content.split())
+            sanitized_content = sanitize_blog_content(data.content)
+            if not sanitized_content:
+                raise HTTPException(status_code=400, detail="Article content is empty after sanitization")
+
+            word_count = blog_content_word_count(sanitized_content)
             estimated_read_minutes = max(1, math.ceil(word_count / 200))
 
             now = datetime.now(timezone.utc)
@@ -150,7 +155,7 @@ class BlogService:
                 "_id": ObjectId(),
                 "title": data.title,
                 "slug": slug,
-                "content": data.content,
+                "content": sanitized_content,
                 "excerpt": data.excerpt,
                 "category": data.category,
                 "tags": [t.lower().strip() for t in data.tags if t.strip()][:15],
@@ -206,7 +211,12 @@ class BlogService:
                 raise HTTPException(status_code=400, detail="No fields to update")
 
             if "content" in update_dict:
-                word_count = len(update_dict["content"].split())
+                sanitized_content = sanitize_blog_content(update_dict["content"])
+                if not sanitized_content:
+                    raise HTTPException(status_code=400, detail="Article content is empty after sanitization")
+
+                update_dict["content"] = sanitized_content
+                word_count = blog_content_word_count(sanitized_content)
                 update_dict["estimated_read_minutes"] = max(1, math.ceil(word_count / 200))
 
             if "title" in update_dict:
