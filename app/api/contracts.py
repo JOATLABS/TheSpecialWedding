@@ -26,6 +26,15 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
+def _resolve_couple_display_name(couple: Optional[dict]) -> str:
+    couple = couple or {}
+    partner1 = (couple.get("partner1_name") or couple.get("name") or "").strip()
+    partner2 = (couple.get("partner2_name") or couple.get("partner_name") or "").strip()
+    if partner1 and partner2:
+        return f"{partner1} & {partner2}"
+    return partner1 or partner2 or "A couple"
+
+
 # ============================================================================
 # REQUEST MODELS
 # ============================================================================
@@ -864,7 +873,7 @@ async def get_public_contract(
         # Refresh contract to get updated status (skip expiry check for refresh)
         updated = await contract_service.contracts.find_one({"token": token})
         if updated:
-            contract = contract_service._serialize_contract(updated)
+            contract = await contract_service._serialize_contract_response(updated)
 
         if contract is None:
             raise HTTPException(status_code=404, detail="Contract not found")
@@ -890,6 +899,10 @@ async def get_public_contract(
             "sent_at": contract.get("sent_at"),
             "viewed_at": contract.get("viewed_at"),
             "signed_at": contract.get("signed_at"),
+            "planner_name": contract.get("planner_name"),
+            "planner_email": contract.get("planner_email"),
+            "planner_phone": contract.get("planner_phone"),
+            "planner_logo": contract.get("planner_logo"),
             "payment_method_last4": contract.get("payment_method_last4"),
             "payment_method_brand": contract.get("payment_method_brand")
         }
@@ -1089,7 +1102,7 @@ async def create_contract_setup_intent(token: str):
 
         # Get or create Stripe customer
         couple_email = contract.get("couple", {}).get("email")
-        couple_name = contract.get("couple", {}).get("name")
+        couple_name = _resolve_couple_display_name(contract.get("couple"))
 
         contract_id = contract.get("id")
         if not contract_id:
@@ -1124,7 +1137,7 @@ async def create_contract_setup_intent(token: str):
         # Create SetupIntent
         setup_intent = stripe.SetupIntent.create(
             customer=customer_id,
-            payment_method_types=["card"],
+            automatic_payment_methods={"enabled": True},
             metadata={
                 "contract_id": contract_id_str,
                 "contract_token": token
@@ -1163,6 +1176,7 @@ async def get_payment_method_details(payment_method_id: str):
 
         return {
             "id": pm.id,
+            "customer": pm.customer,
             "type": pm.type,
             "card": {
                 "brand": pm.card.brand if pm.card else None,
@@ -1319,7 +1333,7 @@ async def update_portal_payment_method(
         # Create SetupIntent for updating payment method
         setup_intent = stripe.SetupIntent.create(
             customer=customer_id,
-            payment_method_types=["card"],
+            automatic_payment_methods={"enabled": True},
             metadata={
                 "contract_id": contract_id_str,
                 "action": "update_payment_method"
@@ -1409,7 +1423,7 @@ async def confirm_payment_method_update(
             resend.api_key = settings.resend_api_key
 
             planner_email = contract.get("planner_email")
-            couple_name = contract.get("couple", {}).get("name", "A couple")
+            couple_name = _resolve_couple_display_name(contract.get("couple"))
 
             if planner_email:
                 resend.Emails.send({

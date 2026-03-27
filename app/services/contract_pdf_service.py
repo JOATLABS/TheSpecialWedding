@@ -26,6 +26,14 @@ class ContractPDFService:
         self.contracts = mongo.db["contracts"]
         self._s3_client = None
 
+    @staticmethod
+    def _resolve_couple_display(couple: Dict[str, Any]) -> str:
+        primary = (couple.get("partner1_name") or couple.get("name") or "").strip()
+        secondary = (couple.get("partner2_name") or couple.get("partner_name") or "").strip()
+        if secondary:
+            return f"{primary} & {secondary}"
+        return primary or "N/A"
+
     def _get_s3_client(self):
         """Get or create S3 client for R2 uploads."""
         if self._s3_client is None:
@@ -284,7 +292,7 @@ class ContractPDFService:
                 <div class="info-grid">
                     <div class="info-row">
                         <div class="info-label">Client</div>
-                        <div class="info-value">{couple.get('name', 'N/A')}{f" & {couple.get('partner_name')}" if couple.get('partner_name') else ""}</div>
+                        <div class="info-value">{self._resolve_couple_display(couple)}</div>
                     </div>
                     <div class="info-row">
                         <div class="info-label">Email</div>
