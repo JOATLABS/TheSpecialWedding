@@ -345,8 +345,19 @@ class PackageService:
             contract_dict = contract.model_dump(by_alias=True)
             contract_dict["wedding_date"] = to_mongo_datetime(contract.wedding_date)
             result = await self.contracts.insert_one(contract_dict)
+            created = await self.contracts.find_one({"_id": result.inserted_id})
+            serialized_contract = self._serialize_contract(created)
+            if serialized_contract is None:
+                raise ValueError("Failed to serialize created contract")
 
-            # Increment package contracts count
+            from app.services.contract_email_service import contract_email_service
+
+            email_sent = await contract_email_service.send_package_contract_email(serialized_contract)
+            if not email_sent:
+                await self.contracts.delete_one({"_id": result.inserted_id})
+                raise RuntimeError("Failed to send contract email to the couple")
+
+            # Increment package contracts count only after email succeeds
             await self.packages.update_one(
                 {"_id": ObjectId(package_id)},
                 {"$inc": {"contracts_count": 1}}
@@ -354,9 +365,7 @@ class PackageService:
 
             logger.info(f"Created contract for package {package_id} sent to {couple.email}")
 
-            # Return created contract
-            created = await self.contracts.find_one({"_id": result.inserted_id})
-            return self._serialize_contract(created)
+            return serialized_contract
 
         except Exception as e:
             logger.error(f"Failed to send package: {str(e)}")

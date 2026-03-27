@@ -1,11 +1,10 @@
 """
 Contract Email Service
 
-Sends confirmation emails when contracts are signed.
-Uses Resend for email delivery.
+Sends contract lifecycle emails using Resend.
 """
 from typing import Dict, Any, Optional
-from datetime import datetime
+from datetime import date, datetime
 import logging
 from app.core.settings import settings
 from app.core.database import mongo
@@ -38,6 +37,31 @@ class ContractEmailService:
                 logger.error(f"Failed to initialize Resend: {str(e)}")
                 raise
         return self._resend
+
+    @staticmethod
+    def _format_calendar_date(value: Any) -> str:
+        if not value:
+            return "TBD"
+
+        if isinstance(value, datetime):
+            return value.strftime("%B %d, %Y")
+
+        if isinstance(value, date):
+            return value.strftime("%B %d, %Y")
+
+        if isinstance(value, str):
+            normalized = value.strip()
+            if not normalized:
+                return "TBD"
+            try:
+                return datetime.fromisoformat(normalized.replace("Z", "+00:00")).strftime("%B %d, %Y")
+            except ValueError:
+                try:
+                    return date.fromisoformat(normalized).strftime("%B %d, %Y")
+                except ValueError:
+                    return normalized
+
+        return str(value)
 
     async def send_contract_email(
         self,
@@ -111,6 +135,131 @@ class ContractEmailService:
         except Exception as e:
             logger.error(f"Failed to send contract email to {vendor_email}: {str(e)}")
             raise
+
+    async def send_package_contract_email(self, contract: Dict[str, Any]) -> bool:
+        """
+        Send a package contract invitation to the couple for review/signing.
+
+        This uses the shared ResendEmailService so the send is recorded in
+        email_logs for operational verification.
+        """
+        try:
+            from app.services.email_service_resend import ResendEmailService
+
+            couple = contract.get("couple", {}) or {}
+            package = contract.get("package_snapshot", {}) or {}
+            planner_id = contract.get("planner_id")
+            wedding_id = contract.get("wedding_id")
+
+            couple_email = couple.get("email")
+            if not couple_email:
+                logger.error("Package contract email skipped: couple email missing")
+                return False
+
+            planner = None
+            if planner_id:
+                planner = await mongo.db["users"].find_one({"_id": planner_id}) or await mongo.db["users"].find_one({"_id": str(planner_id)})
+
+            wedding = None
+            if wedding_id:
+                wedding = await mongo.db["weddings"].find_one({"_id": wedding_id})
+
+            partner1 = couple.get("partner1_name", "").strip()
+            partner2 = (couple.get("partner2_name") or "").strip()
+            couple_display = f"{partner1} & {partner2}" if partner2 else partner1 or "there"
+
+            planner_company = (
+                (planner or {}).get("company_name")
+                or (planner or {}).get("business_name")
+                or (planner or {}).get("name")
+                or settings.resend_from_name
+            )
+            planner_email = (planner or {}).get("email")
+            wedding_date = self._format_calendar_date(contract.get("wedding_date") or (wedding or {}).get("date"))
+            venue = (wedding or {}).get("venue") or contract.get("venue") or "TBD"
+
+            total = float(package.get("total_amount", 0) or 0)
+            currency = str(package.get("currency", "usd")).upper()
+            contract_url = f"{settings.frontend_url or 'https://thespecialwedding.io'}/contracts/{contract.get('token', '')}"
+
+            services_html = ""
+            for service in package.get("services", []):
+                if service.get("included"):
+                    services_html += f"<li style=\"margin-bottom: 8px;\">{service.get('name', 'Service')}</li>"
+
+            html_content = f"""
+            <!DOCTYPE html>
+            <html>
+            <head>
+                <meta charset="UTF-8">
+            </head>
+            <body style="font-family: 'Helvetica Neue', Arial, sans-serif; line-height: 1.6; color: #1e293b; max-width: 600px; margin: 0 auto; padding: 20px;">
+                <div style="text-align: center; padding: 30px 0; border-bottom: 2px solid #6366f1;">
+                    <h1 style="color: #6366f1; margin: 0 0 10px 0;">Your wedding planning proposal is ready</h1>
+                    <p style="color: #64748b; margin: 0;">Review the package and sign online to get started</p>
+                </div>
+
+                <div style="padding: 30px 0;">
+                    <p>Hi {couple_display},</p>
+                    <p>{planner_company} shared a wedding planning package with you. You can review the details and sign your agreement online using the secure link below.</p>
+
+                    <div style="background: #f8fafc; border-radius: 12px; padding: 20px; margin: 20px 0;">
+                        <h2 style="color: #334155; margin: 0 0 15px 0; font-size: 16px;">Package Summary</h2>
+                        <p style="margin: 0;"><strong>Package:</strong> {package.get('name', 'Wedding Package')}</p>
+                        <p style="margin: 10px 0 0 0;"><strong>Investment:</strong> ${total:,.2f} {currency}</p>
+                        <p style="margin: 10px 0 0 0;"><strong>Wedding date:</strong> {wedding_date}</p>
+                        <p style="margin: 10px 0 0 0;"><strong>Venue:</strong> {venue}</p>
+                    </div>
+
+                    {f'''
+                    <h3 style="color: #334155; margin: 25px 0 15px 0;">Included Services</h3>
+                    <ul style="margin: 0; padding-left: 20px; color: #475569;">
+                        {services_html}
+                    </ul>
+                    ''' if services_html else ''}
+
+                    <div style="text-align: center; margin: 32px 0;">
+                        <a href="{contract_url}" style="display: inline-block; background: #6366f1; color: white; padding: 14px 28px; text-decoration: none; border-radius: 8px; font-weight: 600;">
+                            Review & Sign Contract
+                        </a>
+                    </div>
+
+                    <p style="color: #64748b;">If you have questions before signing, reply to this email or contact {planner_company}{f' at {planner_email}' if planner_email else ''}.</p>
+                    <p style="margin-top: 20px;">Warmly,<br>{planner_company}</p>
+                </div>
+            </body>
+            </html>
+            """
+
+            email_service = ResendEmailService()
+            result = await email_service.send_email(
+                to_email=couple_email,
+                subject=f"Review Your Wedding Planning Package - {package.get('name', 'Wedding Package')}",
+                html_content=html_content,
+                from_email=settings.resend_from_email,
+                from_name=planner_company,
+                wedding_id=str(wedding_id) if wedding_id else None,
+                email_type="package_contract_invitation",
+                wedding_slug=(wedding or {}).get("slug"),
+            )
+            if result.get("success"):
+                logger.info(
+                    "Package contract email sent to %s for contract %s",
+                    couple_email,
+                    contract.get("id") or contract.get("_id"),
+                )
+                return True
+
+            logger.error(
+                "Package contract email failed for %s: %s",
+                couple_email,
+                result.get("error", "unknown error"),
+            )
+            return False
+
+        except Exception as e:
+            logger.error(f"Failed to send package contract email: {str(e)}")
+            return False
 
     async def send_signed_confirmation(
         self,

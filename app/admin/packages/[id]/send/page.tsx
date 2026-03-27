@@ -203,7 +203,7 @@ export default function SendPackagePage() {
       // Build contract URL
       if (result.contract?.token) {
         const contractBase = typeof window !== 'undefined' ? window.location.origin : '';
-        setContractUrl(`${contractBase}/contract/${result.contract.token}`);
+        setContractUrl(`${contractBase}/contracts/${result.contract.token}`);
       }
 
       toast.success('Package sent successfully!');
