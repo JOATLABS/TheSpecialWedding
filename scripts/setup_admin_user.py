@@ -4,6 +4,8 @@ Setup Root Admin User Script
 
 Creates the root admin user on application startup if it doesn't exist.
 Uses environment variables ROOT_ADMIN_EMAIL and ROOT_ADMIN_PASSWORD.
+This script only manages the root admin account. It does not create any
+TEST_* planner, vendor, couple, or team-member accounts from `.env`.
 
 Usage:
     python scripts/setup_admin_user.py --auto-create
@@ -23,7 +25,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 
 async def setup_admin_user(auto_create: bool = False):
-    """Create root admin user if it doesn't exist."""
+    """Create the root admin user if it doesn't exist."""
 
     # Import after path setup
     from app.core.database import mongo
@@ -38,6 +40,7 @@ async def setup_admin_user(auto_create: bool = False):
         return True
 
     print(f"[INFO] Checking for root admin user: {admin_email}")
+    print("[INFO] TEST_* accounts are manual-flow fixtures and are not created by this script.")
 
     try:
         # Get collection (Motor connects lazily on first query)

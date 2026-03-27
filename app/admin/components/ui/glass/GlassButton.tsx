@@ -39,16 +39,16 @@ export function GlassButton({
     relative overflow-hidden
     inline-flex items-center justify-center gap-2
     font-medium transition-all duration-300
-    backdrop-blur-md border border-white/20
+    backdrop-blur-md border border-slate-200/80 dark:border-white/20
     shadow-[0_4px_16px_0_rgba(31,38,135,0.07)]
     disabled:opacity-50 disabled:cursor-not-allowed
   `;
 
   const variants = {
     primary: 'bg-blue-600/80 hover:bg-blue-600/90 text-white shadow-blue-500/20',
-    secondary: 'bg-white/40 hover:bg-white/60 text-gray-800 hover:shadow-lg dark:bg-slate-700/40 dark:hover:bg-slate-700/60 dark:text-gray-200 dark:border-slate-600/30',
+    secondary: 'bg-white hover:bg-slate-50 text-slate-700 hover:shadow-lg dark:bg-slate-700/40 dark:hover:bg-slate-700/60 dark:text-gray-200 dark:border-slate-600/30',
     danger: 'bg-red-500/80 hover:bg-red-500/90 text-white shadow-red-500/20',
-    ghost: 'bg-transparent hover:bg-white/20 text-gray-700 hover:text-gray-900 border-transparent dark:text-gray-300 dark:hover:text-white dark:hover:bg-white/10',
+    ghost: 'bg-transparent hover:bg-slate-100 text-slate-700 hover:text-slate-900 border-transparent dark:text-gray-300 dark:hover:text-white dark:hover:bg-white/10',
   };
 
   const sizes = {

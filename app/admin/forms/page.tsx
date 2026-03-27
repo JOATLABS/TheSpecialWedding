@@ -76,8 +76,8 @@ function CreationOptionCard({
   onSelect: () => void;
 }): ReactElement {
   const stateClass = isActive
-    ? 'border-wedding-rose/80 bg-white/80 dark:bg-slate-700/80 shadow-xl'
-    : 'border-white/40 dark:border-slate-600 bg-white/40 dark:bg-slate-800/60 hover:border-white/70 dark:hover:border-slate-500 hover:bg-white/60 dark:hover:bg-slate-700/60';
+    ? 'border-wedding-rose/70 bg-white shadow-lg ring-1 ring-wedding-rose/15 dark:border-wedding-rose/80 dark:bg-slate-700/80 dark:ring-0 dark:shadow-xl'
+    : 'border-slate-200 bg-white shadow-sm hover:border-slate-300 hover:bg-slate-50 dark:border-slate-600 dark:bg-slate-800/60 dark:shadow-lg dark:hover:border-slate-500 dark:hover:bg-slate-700/60';
 
   return (
     <label
@@ -93,7 +93,7 @@ function CreationOptionCard({
         aria-label={option.title}
       />
       <div className="flex items-center justify-between gap-3 text-wedding-navy dark:text-white">
-        <div className={`rounded-2xl p-3 ${isActive ? 'bg-wedding-rose/10 text-wedding-rose' : 'bg-white/50 dark:bg-slate-600/50 text-wedding-navy/70 dark:text-white/70'}`}>
+        <div className={`rounded-2xl p-3 ${isActive ? 'bg-wedding-rose/10 text-wedding-rose' : 'bg-slate-100 text-wedding-navy/70 dark:bg-slate-600/50 dark:text-white/70'}`}>
           {option.icon}
         </div>
         {isActive && <span className="rounded-full bg-wedding-rose/80 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-white">Selected</span>}
@@ -126,7 +126,7 @@ function FormBadge({
   children: ReactNode;
 }) {
   const toneStyles: Record<BadgeTone, string> = {
-    neutral: 'bg-white/70 dark:bg-slate-700 text-wedding-navy dark:text-white border-white/40 dark:border-slate-600',
+    neutral: 'border-slate-200 bg-slate-50 text-wedding-navy dark:border-slate-600 dark:bg-slate-700 dark:text-white',
     accent: 'bg-wedding-rose/90 text-white border-wedding-rose/40 shadow-sm',
     success: 'bg-emerald-500/90 text-white border-emerald-400/60 shadow-sm',
   };
@@ -657,31 +657,31 @@ export default function FormsManagementPage(): ReactElement {
                 leaveFrom="opacity-100 translate-y-0"
                 leaveTo="opacity-0 translate-y-6"
               >
-                <Dialog.Panel className="w-full max-w-5xl overflow-hidden rounded-[36px] border border-white/50 dark:border-slate-700 bg-white/80 dark:bg-slate-800/95 shadow-2xl backdrop-blur-xl">
+                <Dialog.Panel className="w-full max-w-5xl overflow-hidden rounded-[36px] border border-slate-200/80 bg-white/90 shadow-2xl backdrop-blur-xl dark:border-slate-700 dark:bg-slate-800/95">
                   <div className="grid gap-0 lg:grid-cols-[320px,minmax(0,1fr)]">
-                    <aside className="relative hidden overflow-hidden border-b border-white/30 bg-gradient-to-br from-wedding-rose/30 via-wedding-rose/10 to-slate-100/40 p-8 text-white lg:block lg:border-r">
-                      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top,_rgba(255,255,255,0.35),_transparent_60%)]" />
+                    <aside className="relative hidden overflow-hidden border-b border-slate-200 bg-gradient-to-br from-rose-100 via-rose-50 to-slate-100 p-8 text-slate-900 lg:block lg:border-r dark:border-white/30 dark:from-wedding-rose/30 dark:via-wedding-rose/10 dark:to-slate-100/40 dark:text-white">
+                      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top,_rgba(255,255,255,0.65),_transparent_60%)] dark:bg-[radial-gradient(circle_at_top,_rgba(255,255,255,0.35),_transparent_60%)]" />
                       <div className="relative space-y-6">
-                        <p className="text-xs font-semibold uppercase tracking-[0.4em] text-white/80">Creation studio</p>
-                        <h2 className="text-2xl font-semibold leading-snug text-white">
+                        <p className="text-xs font-semibold uppercase tracking-[0.4em] text-slate-500 dark:text-white/80">Creation studio</p>
+                        <h2 className="text-2xl font-semibold leading-snug text-wedding-navy dark:text-white">
                           Choose the launch path that fits this moment
                         </h2>
-                        <ul className="space-y-4 text-sm text-white/80">
+                        <ul className="space-y-4 text-sm text-slate-600 dark:text-white/80">
                           <li className="flex items-start gap-2">
-                            <span className="mt-1 h-2.5 w-2.5 rounded-full bg-white/70" aria-hidden="true" />
+                            <span className="mt-1 h-2.5 w-2.5 rounded-full bg-wedding-rose/60 dark:bg-white/70" aria-hidden="true" />
                             <span>Template flows include 2025 compliance copy, section logic, and Apple Glass elevation tokens.</span>
                           </li>
                           <li className="flex items-start gap-2">
-                            <span className="mt-1 h-2.5 w-2.5 rounded-full bg-white/70" aria-hidden="true" />
+                            <span className="mt-1 h-2.5 w-2.5 rounded-full bg-wedding-rose/60 dark:bg-white/70" aria-hidden="true" />
                             <span>Blank canvases auto-enable accessibility guardrails, grid alignment, and vendor field presets.</span>
                           </li>
                           <li className="flex items-start gap-2">
-                            <span className="mt-1 h-2.5 w-2.5 rounded-full bg-white/70" aria-hidden="true" />
+                            <span className="mt-1 h-2.5 w-2.5 rounded-full bg-wedding-rose/60 dark:bg-white/70" aria-hidden="true" />
                             <span>Duplications preserve analytics integrity, unread badges, and audit history for the original form.</span>
                           </li>
                         </ul>
-                        <div className="rounded-3xl border border-white/40 bg-white/20 p-4 text-xs text-white/80 backdrop-blur">
-                          <p className="font-semibold uppercase tracking-wide text-white">Best practice insight</p>
+                        <div className="rounded-3xl border border-rose-200 bg-white/70 p-4 text-xs text-slate-600 backdrop-blur dark:border-white/40 dark:bg-white/20 dark:text-white/80">
+                          <p className="font-semibold uppercase tracking-wide text-wedding-navy dark:text-white">Best practice insight</p>
                           <p className="mt-2">
                             Align each workflow with a single outcome. Use analytics tagging post-launch to track drop-off and iterate.
                           </p>

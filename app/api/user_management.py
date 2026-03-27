@@ -168,13 +168,20 @@ async def invite_user(invite_data: UserInviteModel, current_user: ExtendedAuthUs
 @router.get("/users", tags=["ROOT_ADMIN"])
 async def list_users(
     role: Optional[str] = None,
+    status: Optional[str] = Query(None),
     page: int = Query(1, ge=1, le=10000),
     limit: int = Query(50, ge=1, le=100),
     search: Optional[str] = Query(None),
     current_user: ExtendedAuthUser = Depends(require_root_admin)
 ):
     """List all users with optional role filter, pagination, and search - ROOT_ADMIN only"""
-    result = await user_service.list_users(role_filter=role, page=page, limit=limit, search=search)
+    result = await user_service.list_users(
+        role_filter=role,
+        page=page,
+        limit=limit,
+        search=search,
+        status_filter=status,
+    )
     return result
 
 
@@ -193,7 +200,7 @@ async def update_user(user_id: str, update_data: UserUpdateModel, current_user: 
 @router.delete("/users/{user_id}", tags=["ROOT_ADMIN"])
 async def delete_user(user_id: str, current_user: ExtendedAuthUser = Depends(require_root_admin)):
     """Delete user - ROOT_ADMIN only"""
-    return await user_service.delete_user(user_id)
+    return await user_service.delete_user(user_id, actor_email=current_user.email)
 
 
 @router.post("/users/{user_id}/assign-wedding", tags=["ROOT_ADMIN"])
@@ -211,7 +218,7 @@ async def unassign_wedding_from_planner(user_id: str, wedding_id: str, current_u
 @router.post("/users/{user_id}/suspend", tags=["ROOT_ADMIN"])
 async def suspend_user(user_id: str, current_user: ExtendedAuthUser = Depends(require_root_admin)):
     """Suspend a user account - ROOT_ADMIN only"""
-    return await user_service.suspend_user(user_id)
+    return await user_service.suspend_user(user_id, actor_email=current_user.email)
 
 
 @router.post("/users/{user_id}/activate", tags=["ROOT_ADMIN"])

@@ -18,11 +18,13 @@ from typing import Dict, Any, Optional
 from datetime import datetime, timezone
 import json
 import logging
+from fastapi import HTTPException
 from app.core.settings import settings
 from app.core.database import mongo
 from app.services.ai_cache_service import ai_cache_service
 from app.services.subscription_service import SubscriptionService
 from app.services.notification_service import NotificationService
+from app.utils.id_utils import to_object_id
 
 logger = logging.getLogger(__name__)
 
@@ -805,7 +807,26 @@ class AIService:
             for name, config in AI_FEATURES.items()
         }
 
-    async def _select_model_and_check_credits(self, user_id: str) -> Dict[str, Any]:
+    async def _is_root_admin_user(self, user_id: str) -> bool:
+        """Return True when the usage-tracked user belongs to the configured root admin."""
+        try:
+            user = await self.subscription_service.users_collection.find_one(
+                {"_id": to_object_id(user_id, "user_id")},
+                {"role": 1, "email": 1}
+            )
+        except (HTTPException, ValueError, TypeError):
+            return False
+        except Exception as e:
+            logger.warning(f"Failed to resolve AI user role for {user_id}: {e}")
+            return False
+
+        if not user:
+            return False
+
+        root_admin_email = settings.root_admin_email or "thedeveloper@thespecialwedding.io"
+        return user.get("role") == "ROOT_ADMIN" and user.get("email") == root_admin_email
+
+    async def _select_model_and_check_credits(self, user_id: str, bypass_limits: Optional[bool] = None) -> Dict[str, Any]:
         """
         Select the appropriate model based on user's credit level and return credit status.
 
@@ -825,6 +846,11 @@ class AIService:
         }
 
         try:
+            if bypass_limits is None:
+                bypass_limits = await self._is_root_admin_user(user_id)
+            if bypass_limits:
+                return result
+
             # Get user's subscription and usage stats
             subscription = await self.subscription_service.get_user_subscription(user_id)
             if not subscription:
@@ -865,7 +891,7 @@ class AIService:
             logger.warning(f"Error checking credit level for model selection: {e}")
             return result
 
-    async def check_credits(self, user_id: str, feature: str) -> Dict[str, Any]:
+    async def check_credits(self, user_id: str, feature: str, bypass_limits: Optional[bool] = None) -> Dict[str, Any]:
         """
         Check if user has enough AI credits for a feature.
 
@@ -876,6 +902,16 @@ class AIService:
             raise ValueError(f"Unknown AI feature: {feature}")
 
         credits_needed = AI_FEATURES[feature]["credits"]
+
+        if bypass_limits is None:
+            bypass_limits = await self._is_root_admin_user(user_id)
+        if bypass_limits:
+            return {
+                "allowed": True,
+                "credits_needed": 0,
+                "credits_remaining": None,
+                "message": None,
+            }
 
         # Use existing subscription service to check limits
         result = await self.subscription_service.check_usage_limits(
@@ -979,8 +1015,10 @@ class AIService:
                     "model_used": "cached"
                 }
 
+        is_root_admin = await self._is_root_admin_user(user_id)
+
         # Check credits before making API call
-        credits_check = await self.check_credits(user_id, feature)
+        credits_check = await self.check_credits(user_id, feature, bypass_limits=is_root_admin)
         if not credits_check["allowed"]:
             raise InsufficientCreditsError(
                 message=credits_check["message"] or "Insufficient AI credits",
@@ -989,7 +1027,7 @@ class AIService:
             )
 
         # Select model based on credit level and get credit status for warnings
-        credit_status = await self._select_model_and_check_credits(user_id)
+        credit_status = await self._select_model_and_check_credits(user_id, bypass_limits=is_root_admin)
         model = credit_status["model"]
 
         # Make AI API call
@@ -997,12 +1035,13 @@ class AIService:
             response = await self._call_gemini(feature, prompt, context, model)
             latency_ms = (datetime.now(timezone.utc) - start_time).total_seconds() * 1000
 
-            # Deduct credits
-            await self.subscription_service.increment_usage(
-                user_id=user_id,
-                resource_type="ai_credits",
-                amount=feature_config["credits"]
-            )
+            # Root admin uses these tools operationally and should not consume planner credits.
+            if not is_root_admin:
+                await self.subscription_service.increment_usage(
+                    user_id=user_id,
+                    resource_type="ai_credits",
+                    amount=feature_config["credits"]
+                )
 
             # Cache response if cacheable (use key_context for stable cache keys)
             if feature_config["cacheable"] and feature_config["ttl_hours"] > 0:
@@ -1026,7 +1065,9 @@ class AIService:
             )
 
             # Calculate updated credits after deduction
-            updated_remaining = (credit_status["credits_remaining"] or 0) - feature_config["credits"]
+            updated_remaining = None
+            if credit_status["credits_remaining"] is not None:
+                updated_remaining = credit_status["credits_remaining"] - feature_config["credits"]
             updated_percent = None
             if credit_status["credits_limit"] and credit_status["credits_limit"] > 0:
                 updated_percent = round((updated_remaining / credit_status["credits_limit"]) * 100, 1)
@@ -1034,9 +1075,9 @@ class AIService:
             result = {
                 "response": response,
                 "cached": False,
-                "credits_used": feature_config["credits"],
+                "credits_used": 0 if is_root_admin else feature_config["credits"],
                 "model_used": model,
-                "credits_remaining": max(0, updated_remaining),
+                "credits_remaining": None if credit_status["credits_remaining"] is None else max(0, updated_remaining),
                 "credits_percent": updated_percent
             }
 
@@ -1149,20 +1190,20 @@ class AIService:
                 max_output_tokens=2048,  # Reasonable limit for responses
                 safety_settings=[
                     types.SafetySetting(
-                        category='HARM_CATEGORY_HARASSMENT',
-                        threshold='BLOCK_ONLY_HIGH',
+                        category="HARM_CATEGORY_HARASSMENT",
+                        threshold="BLOCK_ONLY_HIGH",
                     ),
                     types.SafetySetting(
-                        category='HARM_CATEGORY_HATE_SPEECH',
-                        threshold='BLOCK_ONLY_HIGH',
+                        category="HARM_CATEGORY_HATE_SPEECH",
+                        threshold="BLOCK_ONLY_HIGH",
                     ),
                     types.SafetySetting(
-                        category='HARM_CATEGORY_SEXUALLY_EXPLICIT',
-                        threshold='BLOCK_MEDIUM_AND_ABOVE',
+                        category="HARM_CATEGORY_SEXUALLY_EXPLICIT",
+                        threshold="BLOCK_MEDIUM_AND_ABOVE",
                     ),
                     types.SafetySetting(
-                        category='HARM_CATEGORY_DANGEROUS_CONTENT',
-                        threshold='BLOCK_ONLY_HIGH',
+                        category="HARM_CATEGORY_DANGEROUS_CONTENT",
+                        threshold="BLOCK_ONLY_HIGH",
                     ),
                 ]
             )

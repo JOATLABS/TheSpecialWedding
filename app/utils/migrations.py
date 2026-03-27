@@ -452,3 +452,72 @@ async def migration_006_activity_log_indexes(db):
     )
 
     logger.info("All TTL indexes created successfully")
+
+
+@migration_registry.register(
+    "007",
+    "Repair team invite token consumption",
+    "Unsets consumed team invite tokens and repairs partially accepted team-member invites left pending by null-token index conflicts"
+)
+async def migration_007_repair_team_invites(db):
+    """Repair team-member records that were left inconsistent by invite_token=null collisions."""
+    team_members = db["team_members"]
+    users = db["users"]
+    now = datetime.now(timezone.utc)
+
+    # Sparse unique indexes still include explicit null values, so accepted invites
+    # must remove invite_token entirely rather than store null.
+    null_token_result = await team_members.update_many(
+        {"invite_token": None},
+        {
+            "$unset": {
+                "invite_token": "",
+                "invite_token_expires_at": "",
+            },
+            "$set": {"updated_at": now},
+        },
+    )
+    logger.info(
+        "Unset null team invite tokens on %s records",
+        null_token_result.modified_count,
+    )
+
+    repaired = 0
+    cursor = team_members.find({
+        "status": {"$in": ["pending", "accepting"]},
+        "user_id": None,
+    })
+    async for member in cursor:
+        user = await users.find_one({
+            "email": member.get("email"),
+            "role": "team_member",
+            "parent_planner_id": member.get("owner_id"),
+            "team_member_id": str(member.get("_id")),
+        })
+        if not user:
+            continue
+
+        accepted_at = user.get("created_at") or member.get("updated_at") or now
+        if isinstance(accepted_at, datetime) and accepted_at.tzinfo is None:
+            accepted_at = accepted_at.replace(tzinfo=timezone.utc)
+
+        await team_members.update_one(
+            {"_id": member["_id"]},
+            {
+                "$set": {
+                    "user_id": str(user["_id"]),
+                    "first_name": user.get("first_name"),
+                    "last_name": user.get("last_name"),
+                    "status": "active",
+                    "accepted_at": accepted_at,
+                    "updated_at": now,
+                },
+                "$unset": {
+                    "invite_token": "",
+                    "invite_token_expires_at": "",
+                },
+            },
+        )
+        repaired += 1
+
+    logger.info("Repaired %s partially accepted team-member invites", repaired)

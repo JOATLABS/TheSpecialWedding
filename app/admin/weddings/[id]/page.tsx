@@ -425,7 +425,7 @@ export default function WeddingDetailsPage() {
  <div className="flex gap-2 sm:gap-3 w-full sm:w-auto">
  <Link
  href="/admin/weddings"
- className="bg-white/20 text-white px-4 sm:px-6 py-2 sm:py-3 rounded-lg font-semibold hover:bg-white/30 transition-colors text-sm sm:text-base flex-1 sm:flex-initial text-center"
+ className="rounded-lg border border-white/70 bg-white/90 px-4 py-2 text-center text-sm font-semibold text-wedding-navy shadow-sm transition-colors hover:bg-white sm:flex-initial sm:px-6 sm:py-3 sm:text-base flex-1 dark:border-white/20 dark:bg-white/10 dark:text-white dark:hover:bg-white/20"
  >
  Back
  </Link>
@@ -440,12 +440,12 @@ export default function WeddingDetailsPage() {
  weddingTitle={wedding?.couple_names || 'Wedding'}
  variant="outline"
  size="default"
- className="bg-white/20 text-white border-white/30 hover:bg-white/30 text-sm sm:text-base"
+ className="border-white/70 bg-white/90 text-sm text-wedding-navy hover:bg-white sm:text-base dark:border-white/20 dark:bg-white/10 dark:text-white dark:hover:bg-white/20"
  />
  <button
  onClick={saveWedding}
  disabled={saving}
- className="bg-white text-wedding-navy px-4 sm:px-6 py-2 sm:py-3 rounded-lg font-semibold hover:bg-gray-50 dark:bg-transparent transition-colors disabled:opacity-50 text-sm sm:text-base flex-1 sm:flex-initial"
+ className="rounded-lg bg-wedding-navy px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-wedding-navy/90 disabled:opacity-50 sm:flex-initial sm:px-6 sm:py-3 sm:text-base flex-1 dark:bg-white dark:text-wedding-navy dark:hover:bg-slate-100"
  >
  {saving ? 'Saving...' : 'Save Changes'}
  </button>

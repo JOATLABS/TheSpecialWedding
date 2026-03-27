@@ -16,10 +16,6 @@ import {
   Trash2,
   Send,
   Loader2,
-  Shield,
-  CheckCircle2,
-  Clock,
-  XCircle,
 } from 'lucide-react';
 import { useConfirmDialog } from '@/components/ui/ConfirmDialog';
 import InviteTeamMemberModal from './InviteTeamMemberModal';
@@ -268,9 +264,9 @@ export default function TeamManagementPage() {
   };
 
   const roleStyles: Record<string, string> = {
-    admin: 'bg-wedding-rose/15 text-wedding-rose',
-    editor: 'bg-wedding-sage/15 text-wedding-sage',
-    viewer: 'bg-slate-500/15 text-slate-400',
+    admin: 'bg-rose-50 text-rose-700 dark:bg-wedding-rose/15 dark:text-wedding-rose',
+    editor: 'bg-teal-50 text-teal-700 dark:bg-wedding-sage/15 dark:text-wedding-sage',
+    viewer: 'bg-slate-100 text-slate-600 dark:bg-slate-500/15 dark:text-slate-400',
   };
 
   const statusDotColors: Record<string, string> = {
@@ -278,6 +274,12 @@ export default function TeamManagementPage() {
     pending: 'bg-wedding-gold',
     deactivated: 'bg-red-400',
   };
+
+  const surfaceCardClass =
+    'rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-700/30 dark:bg-slate-800/50 dark:shadow-none dark:backdrop-blur-sm';
+
+  const iconActionClass =
+    'w-8 h-8 rounded-lg border border-slate-200 bg-white flex items-center justify-center transition-colors disabled:opacity-50 disabled:cursor-not-allowed dark:border-slate-700/50 dark:bg-slate-900/40';
 
   const formatLastActive = (member: TeamMember) => {
     if (member.status === 'pending') {
@@ -301,7 +303,7 @@ export default function TeamManagementPage() {
       <div className="flex items-center justify-center h-[60vh]">
         <div className="text-center">
           <Loader2 className="w-8 h-8 animate-spin text-wedding-rose mx-auto" />
-          <p className="mt-3 text-slate-400 text-sm">Loading team...</p>
+          <p className="mt-3 text-sm text-slate-600 dark:text-slate-400">Loading team...</p>
         </div>
       </div>
     );
@@ -312,15 +314,15 @@ export default function TeamManagementPage() {
       {/* Page Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
-          <h1 className="text-2xl sm:text-3xl font-bold text-slate-100">Team Management</h1>
-          <p className="text-sm text-slate-400 mt-1">Manage your team members, roles, and permissions</p>
+          <h1 className="text-2xl font-bold text-slate-900 dark:text-slate-100 sm:text-3xl">Team Management</h1>
+          <p className="mt-1 text-sm text-slate-600 dark:text-slate-400">Manage your team members, roles, and permissions</p>
         </div>
         <div className="flex items-center gap-3">
           {seatsInfo && (
-            <div className="flex items-center gap-2 bg-wedding-rose/10 border border-wedding-rose/20 px-4 py-2 rounded-xl text-sm text-wedding-rose">
+            <div className="flex items-center gap-2 rounded-xl border border-rose-200 bg-rose-50 px-4 py-2 text-sm text-rose-700 dark:border-wedding-rose/20 dark:bg-wedding-rose/10 dark:text-wedding-rose">
               <Users size={16} />
               <span>
-                <strong className="text-lg">{seatsInfo.used_seats}</strong> / {seatsInfo.total_seats} seats
+                <strong className="text-lg font-semibold">{seatsInfo.used_seats}</strong> / {seatsInfo.total_seats} seats
               </span>
             </div>
           )}
@@ -329,15 +331,15 @@ export default function TeamManagementPage() {
               onClick={() => setShowInviteModal(true)}
               disabled={seatsInfo ? seatsInfo.available_seats <= 0 : false}
               data-testid="invite-member-btn"
-              className="flex items-center gap-2 bg-gradient-to-r from-wedding-rose to-[#c48e8e] text-slate-900 font-semibold px-5 py-2.5 rounded-xl text-sm hover:shadow-lg hover:shadow-wedding-rose/20 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+              className="flex items-center gap-2 rounded-xl bg-gradient-to-r from-wedding-rose to-[#c48e8e] px-5 py-2.5 text-sm font-semibold text-slate-950 shadow-sm transition-all hover:shadow-lg hover:shadow-wedding-rose/20 disabled:cursor-not-allowed disabled:opacity-50"
             >
               <UserPlus size={16} />
               Invite Team Member
             </button>
             {seatsInfo && seatsInfo.available_seats <= 0 && (
-              <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-3 py-1.5 bg-slate-900 border border-slate-700 text-slate-300 text-xs rounded-lg whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none shadow-lg">
+              <div className="pointer-events-none absolute bottom-full left-1/2 mb-2 -translate-x-1/2 whitespace-nowrap rounded-lg border border-slate-800 bg-slate-950 px-3 py-1.5 text-xs text-slate-100 opacity-0 shadow-lg transition-opacity group-hover:opacity-100 dark:border-slate-700 dark:bg-slate-900">
                 No seats available. Upgrade your plan or remove a member.
-                <div className="absolute top-full left-1/2 -translate-x-1/2 -mt-px border-4 border-transparent border-t-slate-900" />
+                <div className="absolute left-1/2 top-full -mt-px -translate-x-1/2 border-4 border-transparent border-t-slate-950 dark:border-t-slate-900" />
               </div>
             )}
           </div>
@@ -346,31 +348,31 @@ export default function TeamManagementPage() {
 
       {/* Stats Row */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-        <div className="bg-slate-800/50 border border-slate-700/30 rounded-2xl p-5 backdrop-blur-sm" data-testid="stat-total">
-          <p className="text-xs text-slate-500 uppercase tracking-wider mb-1.5">Total Members</p>
+        <div className={`${surfaceCardClass} p-5`} data-testid="stat-total">
+          <p className="mb-1.5 text-xs uppercase tracking-wider text-slate-500 dark:text-slate-400">Total Members</p>
           <p className="text-2xl font-bold text-wedding-rose">{members.length}</p>
         </div>
-        <div className="bg-slate-800/50 border border-slate-700/30 rounded-2xl p-5 backdrop-blur-sm" data-testid="stat-active">
-          <p className="text-xs text-slate-500 uppercase tracking-wider mb-1.5">Active</p>
+        <div className={`${surfaceCardClass} p-5`} data-testid="stat-active">
+          <p className="mb-1.5 text-xs uppercase tracking-wider text-slate-500 dark:text-slate-400">Active</p>
           <p className="text-2xl font-bold text-wedding-sage">{activeCount}</p>
         </div>
-        <div className="bg-slate-800/50 border border-slate-700/30 rounded-2xl p-5 backdrop-blur-sm" data-testid="stat-pending">
-          <p className="text-xs text-slate-500 uppercase tracking-wider mb-1.5">Pending Invites</p>
+        <div className={`${surfaceCardClass} p-5`} data-testid="stat-pending">
+          <p className="mb-1.5 text-xs uppercase tracking-wider text-slate-500 dark:text-slate-400">Pending Invites</p>
           <p className="text-2xl font-bold text-wedding-gold">{pendingCount}</p>
         </div>
-        <div className="bg-slate-800/50 border border-slate-700/30 rounded-2xl p-5 backdrop-blur-sm" data-testid="stat-remaining">
-          <p className="text-xs text-slate-500 uppercase tracking-wider mb-1.5">Seats Remaining</p>
-          <p className="text-2xl font-bold text-slate-400">{seatsInfo ? seatsInfo.available_seats : '—'}</p>
+        <div className={`${surfaceCardClass} p-5`} data-testid="stat-remaining">
+          <p className="mb-1.5 text-xs uppercase tracking-wider text-slate-500 dark:text-slate-400">Seats Remaining</p>
+          <p className="text-2xl font-bold text-slate-700 dark:text-slate-300">{seatsInfo ? seatsInfo.available_seats : '—'}</p>
         </div>
       </div>
 
       {/* Table */}
-      <div className="bg-slate-800/50 border border-slate-700/30 rounded-2xl backdrop-blur-sm overflow-hidden">
+      <div className={`${surfaceCardClass} overflow-hidden`}>
         {/* Table header bar */}
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 p-4 border-b border-slate-700/30">
+        <div className="flex flex-col gap-3 border-b border-slate-200 p-4 dark:border-slate-700/30 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex items-center gap-3">
-            <h2 className="font-semibold text-slate-200">Team Members</h2>
-            <div className="flex bg-slate-900/60 rounded-lg p-0.5 border border-slate-700/30">
+            <h2 className="font-semibold text-slate-900 dark:text-slate-200">Team Members</h2>
+            <div className="flex rounded-lg border border-slate-200 bg-slate-100 p-0.5 dark:border-slate-700/30 dark:bg-slate-900/60">
               {(['all', 'active', 'pending', 'deactivated'] as const).map((tab) => (
                 <button
                   key={tab}
@@ -381,8 +383,8 @@ export default function TeamManagementPage() {
                   data-testid={`tab-${tab}`}
                   className={`px-3 py-1 rounded-md text-xs font-medium transition-colors capitalize ${
                     statusFilter === tab
-                      ? 'bg-wedding-rose/15 text-wedding-rose'
-                      : 'text-slate-500 hover:text-slate-300'
+                      ? 'bg-white text-wedding-rose shadow-sm dark:bg-wedding-rose/15 dark:text-wedding-rose dark:shadow-none'
+                      : 'text-slate-500 hover:text-slate-700 dark:text-slate-500 dark:hover:text-slate-300'
                   }`}
                 >
                   {tab}
@@ -390,8 +392,8 @@ export default function TeamManagementPage() {
               ))}
             </div>
           </div>
-          <div className="flex items-center gap-2 bg-slate-900/60 border border-slate-700/30 rounded-lg px-3 py-2">
-            <Search size={14} className="text-slate-500" />
+          <div className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 dark:border-slate-700/30 dark:bg-slate-900/60">
+            <Search size={14} className="text-slate-400 dark:text-slate-500" />
             <input
               type="text"
               value={searchQuery}
@@ -401,7 +403,7 @@ export default function TeamManagementPage() {
               }}
               placeholder="Search members..."
               data-testid="member-search"
-              className="bg-transparent border-none text-sm text-slate-200 placeholder:text-slate-600 outline-none w-48"
+              className="w-48 border-none bg-transparent text-sm text-slate-700 outline-none placeholder:text-slate-400 dark:text-slate-200 dark:placeholder:text-slate-600"
             />
           </div>
         </div>
@@ -409,8 +411,8 @@ export default function TeamManagementPage() {
         {/* Table content */}
         {filteredMembers.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-16 text-center">
-            <Users className="w-10 h-10 text-slate-600 mb-3" />
-            <p className="text-slate-400 text-sm">
+            <Users className="mb-3 h-10 w-10 text-slate-300 dark:text-slate-600" />
+            <p className="text-sm text-slate-500 dark:text-slate-400">
               {members.length === 0 ? 'No team members yet. Invite your first teammate!' : 'No members match your filters.'}
             </p>
           </div>
@@ -428,18 +430,18 @@ export default function TeamManagementPage() {
             <div className="overflow-x-auto">
               <table className="w-full">
               <thead>
-                <tr className="border-b border-slate-700/30">
-                  <th className="text-left px-5 py-3 text-xs uppercase tracking-wider text-slate-500 font-medium">Member</th>
-                  <th className="text-left px-5 py-3 text-xs uppercase tracking-wider text-slate-500 font-medium">Role</th>
-                  <th className="text-left px-5 py-3 text-xs uppercase tracking-wider text-slate-500 font-medium">Status</th>
-                  <th className="text-left px-5 py-3 text-xs uppercase tracking-wider text-slate-500 font-medium">Wedding Access</th>
-                  <th className="text-left px-5 py-3 text-xs uppercase tracking-wider text-slate-500 font-medium">Last Active</th>
-                  <th className="text-left px-5 py-3 text-xs uppercase tracking-wider text-slate-500 font-medium">Actions</th>
+                <tr className="border-b border-slate-200 dark:border-slate-700/30">
+                  <th className="px-5 py-3 text-left text-xs font-medium uppercase tracking-wider text-slate-500">Member</th>
+                  <th className="px-5 py-3 text-left text-xs font-medium uppercase tracking-wider text-slate-500">Role</th>
+                  <th className="px-5 py-3 text-left text-xs font-medium uppercase tracking-wider text-slate-500">Status</th>
+                  <th className="px-5 py-3 text-left text-xs font-medium uppercase tracking-wider text-slate-500">Wedding Access</th>
+                  <th className="px-5 py-3 text-left text-xs font-medium uppercase tracking-wider text-slate-500">Last Active</th>
+                  <th className="px-5 py-3 text-left text-xs font-medium uppercase tracking-wider text-slate-500">Actions</th>
                 </tr>
               </thead>
               <tbody>
                 {filteredMembers.map((member) => (
-                  <tr key={member.id} data-testid={`member-row-${member.id}`} className="border-b border-slate-700/10 hover:bg-slate-700/10 transition-colors">
+                  <tr key={member.id} data-testid={`member-row-${member.id}`} className="border-b border-slate-100 transition-colors hover:bg-slate-50 dark:border-slate-700/10 dark:hover:bg-slate-700/10">
                     <td className="px-5 py-4">
                       <div className="flex items-center gap-3">
                         <div
@@ -450,19 +452,19 @@ export default function TeamManagementPage() {
                           {getInitials(member)}
                         </div>
                         <div>
-                          <p className="text-sm font-medium text-slate-200">
+                          <p className="text-sm font-medium text-slate-900 dark:text-slate-200">
                             {member.first_name && member.last_name
                               ? `${member.first_name} ${member.last_name}`
                               : '—'}
                           </p>
-                          <p className="text-xs text-slate-500">{member.email}</p>
+                          <p className="text-xs text-slate-500 dark:text-slate-400">{member.email}</p>
                         </div>
                       </div>
                     </td>
                     <td className="px-5 py-4">
                       <span
                         className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold ${
-                          roleStyles[member.role] || 'bg-slate-500/15 text-slate-400'
+                          roleStyles[member.role] || 'bg-slate-100 text-slate-600 dark:bg-slate-500/15 dark:text-slate-400'
                         }`}
                       >
                         {member.role.charAt(0).toUpperCase() + member.role.slice(1)}
@@ -474,25 +476,25 @@ export default function TeamManagementPage() {
                           className={`w-2 h-2 rounded-full ${statusDotColors[member.status] || 'bg-slate-500'}`}
                           aria-label={`Status: ${member.status}`}
                         />
-                        <span className="text-slate-300 capitalize">{member.status}</span>
+                        <span className="capitalize text-slate-700 dark:text-slate-300">{member.status}</span>
                       </span>
                     </td>
                     <td className="px-5 py-4">
-                      <span className="text-sm text-slate-400">
+                      <span className="text-sm text-slate-500 dark:text-slate-400">
                         {member.wedding_access === 'all' ? (
-                          <><strong className="text-slate-200">All</strong> weddings</>
+                          <><strong className="text-slate-900 dark:text-slate-200">All</strong> weddings</>
                         ) : (
-                          <><strong className="text-slate-200">{member.assigned_wedding_ids.length}</strong> assigned</>
+                          <><strong className="text-slate-900 dark:text-slate-200">{member.assigned_wedding_ids.length}</strong> assigned</>
                         )}
                       </span>
                     </td>
                     <td className="px-5 py-4">
-                      <span className="text-xs text-slate-500">{formatLastActive(member)}</span>
+                      <span className="text-xs text-slate-500 dark:text-slate-400">{formatLastActive(member)}</span>
                     </td>
                     <td className="px-5 py-4">
                       <div className="flex items-center gap-1.5">
                         {actionLoading[member.id] ? (
-                          <Loader2 size={16} className="animate-spin text-slate-400" />
+                          <Loader2 size={16} className="animate-spin text-slate-500 dark:text-slate-400" />
                         ) : (
                           <>
                             {member.status === 'pending' && (
@@ -503,7 +505,7 @@ export default function TeamManagementPage() {
                                   title="Resend Invite"
                                   data-testid={`resend-${member.id}`}
                                   aria-label={`Resend invite to ${member.email}`}
-                                  className="w-8 h-8 rounded-lg border border-slate-700/50 bg-slate-900/40 flex items-center justify-center text-wedding-gold hover:bg-slate-700/30 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                                  className={`${iconActionClass} text-amber-600 hover:border-amber-200 hover:bg-amber-50 dark:text-wedding-gold dark:hover:border-slate-600/50 dark:hover:bg-slate-700/30`}
                                 >
                                   <Send size={14} />
                                 </button>
@@ -513,7 +515,7 @@ export default function TeamManagementPage() {
                                   title="Remove"
                                   data-testid={`remove-${member.id}`}
                                   aria-label={`Remove ${member.email}`}
-                                  className="w-8 h-8 rounded-lg border border-slate-700/50 bg-slate-900/40 flex items-center justify-center text-slate-400 hover:text-red-400 hover:bg-slate-700/30 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                                  className={`${iconActionClass} text-slate-500 hover:border-rose-200 hover:bg-rose-50 hover:text-rose-600 dark:text-slate-400 dark:hover:border-slate-600/50 dark:hover:bg-slate-700/30 dark:hover:text-red-400`}
                                 >
                                   <Trash2 size={14} />
                                 </button>
@@ -527,7 +529,7 @@ export default function TeamManagementPage() {
                                   title="Edit"
                                   data-testid={`edit-${member.id}`}
                                   aria-label={`Edit ${member.email}`}
-                                  className="w-8 h-8 rounded-lg border border-slate-700/50 bg-slate-900/40 flex items-center justify-center text-slate-400 hover:text-slate-200 hover:bg-slate-700/30 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                                  className={`${iconActionClass} text-slate-500 hover:border-slate-300 hover:bg-slate-50 hover:text-slate-700 dark:text-slate-400 dark:hover:border-slate-600/50 dark:hover:bg-slate-700/30 dark:hover:text-slate-200`}
                                 >
                                   <Pencil size={14} />
                                 </button>
@@ -537,7 +539,7 @@ export default function TeamManagementPage() {
                                   title="Deactivate"
                                   data-testid={`deactivate-${member.id}`}
                                   aria-label={`Deactivate ${member.email}`}
-                                  className="w-8 h-8 rounded-lg border border-slate-700/50 bg-slate-900/40 flex items-center justify-center text-slate-400 hover:text-red-400 hover:bg-slate-700/30 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                                  className={`${iconActionClass} text-slate-500 hover:border-rose-200 hover:bg-rose-50 hover:text-rose-600 dark:text-slate-400 dark:hover:border-slate-600/50 dark:hover:bg-slate-700/30 dark:hover:text-red-400`}
                                 >
                                   <Ban size={14} />
                                 </button>
@@ -551,7 +553,7 @@ export default function TeamManagementPage() {
                                   title="Reactivate"
                                   data-testid={`reactivate-${member.id}`}
                                   aria-label={`Reactivate ${member.email}`}
-                                  className="w-8 h-8 rounded-lg border border-slate-700/50 bg-slate-900/40 flex items-center justify-center text-slate-400 hover:text-green-400 hover:bg-slate-700/30 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                                  className={`${iconActionClass} text-slate-500 hover:border-emerald-200 hover:bg-emerald-50 hover:text-emerald-600 dark:text-slate-400 dark:hover:border-slate-600/50 dark:hover:bg-slate-700/30 dark:hover:text-green-400`}
                                 >
                                   <RotateCcw size={14} />
                                 </button>
@@ -561,7 +563,7 @@ export default function TeamManagementPage() {
                                   title="Remove"
                                   data-testid={`remove-${member.id}`}
                                   aria-label={`Remove ${member.email}`}
-                                  className="w-8 h-8 rounded-lg border border-slate-700/50 bg-slate-900/40 flex items-center justify-center text-slate-400 hover:text-red-400 hover:bg-slate-700/30 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                                  className={`${iconActionClass} text-slate-500 hover:border-rose-200 hover:bg-rose-50 hover:text-rose-600 dark:text-slate-400 dark:hover:border-slate-600/50 dark:hover:bg-slate-700/30 dark:hover:text-red-400`}
                                 >
                                   <Trash2 size={14} />
                                 </button>

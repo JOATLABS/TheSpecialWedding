@@ -98,10 +98,14 @@ python scripts/seed_subscription_plans.py
 # 5. Create root admin user
 python scripts/setup_admin_user.py
 
-# 6. Start the backend
+# 6. Create planner/vendor/couple/team-member test accounts manually
+#    through the frontend flows when needed. The TEST_* values in .env
+#    are fixture credentials for manual QA, not auto-seeded users.
+
+# 7. Start the backend
 uvicorn app.main:app --reload --port 8000
 
-# 7. Start the frontend (separate terminal)
+# 8. Start the frontend (separate terminal)
 npm run dev
 ```
 

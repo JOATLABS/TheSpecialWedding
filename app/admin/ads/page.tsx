@@ -27,10 +27,6 @@ import {
   setVendorFreeTier,
   listFreeTierVendors,
   getCampaignBilling,
-  getAdminConfig,
-  updateAdminConfig,
-  getAdminPipelineStatus,
-  exportAdminData,
   getCampaignStatusLabel,
   getCampaignStatusColor,
   getCreativeStatusLabel,
@@ -49,8 +45,6 @@ import {
   type CampaignStatus,
   type FreeTierStatus,
   type CampaignBillingSummary,
-  type PlatformConfig,
-  type PipelineStatus,
   approveVendorAccount,
   suspendVendorAccount,
   reactivateVendorAccount,
@@ -73,17 +67,12 @@ import {
   Shield,
   Building2,
   RefreshCw,
-  ChevronDown,
   Image,
   FileText,
   Activity,
   Search,
   Filter,
-  Settings,
-  Download,
-  Database,
-  ToggleLeft,
-  Save,
+  ArrowUpRight,
   type LucideIcon,
 } from 'lucide-react';
 
@@ -91,7 +80,7 @@ import {
 // Tab configuration
 // =============================================================================
 
-type TabId = 'creative-review' | 'campaigns' | 'revenue' | 'vendors' | 'feedback' | 'config';
+type TabId = 'creative-review' | 'campaigns' | 'revenue' | 'vendors' | 'feedback';
 
 const TABS: { id: TabId; label: string }[] = [
   { id: 'creative-review', label: 'Creative Review' },
@@ -99,7 +88,6 @@ const TABS: { id: TabId; label: string }[] = [
   { id: 'revenue', label: 'Revenue Dashboard' },
   { id: 'vendors', label: 'Vendor Accounts' },
   { id: 'feedback', label: 'Planner Feedback' },
-  { id: 'config', label: 'Platform Config' },
 ];
 
 const ADS_PANEL_CLASS =
@@ -128,7 +116,15 @@ export default function AdminAdsPage() {
       <PageHeader
         title="Advertising Platform"
         description="Manage ad campaigns, review creatives, and monitor platform monetization"
-      />
+      >
+        <button
+          onClick={() => router.push('/admin/saas?tab=ad-config')}
+          className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 shadow-sm transition hover:border-slate-300 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:border-slate-600 dark:hover:bg-slate-700"
+        >
+          Manage Ad Config
+          <ArrowUpRight className="h-4 w-4" />
+        </button>
+      </PageHeader>
 
       {/* Tab Navigation */}
       <div className="border-b border-gray-200 dark:border-gray-700">
@@ -155,7 +151,6 @@ export default function AdminAdsPage() {
       {activeTab === 'revenue' && <RevenueDashboardTab token={token!} />}
       {activeTab === 'vendors' && <VendorAccountsTab token={token!} />}
       {activeTab === 'feedback' && <PlannerFeedbackTab token={token!} />}
-      {activeTab === 'config' && <PlatformConfigTab token={token!} />}
     </div>
   );
 }
@@ -1037,442 +1032,6 @@ function PlannerFeedbackTab({ token }: { token: string }) {
             <p className="text-sm text-slate-600 dark:text-slate-300">{entry.message}</p>
           </div>
         ))
-      )}
-    </div>
-  );
-}
-
-// =============================================================================
-// Tab 7: Platform Config
-// =============================================================================
-
-type ConfigSubTab = 'settings' | 'export' | 'pipeline';
-
-const DATASETS = [
-  { value: 'vendor_accounts', label: 'Vendor Accounts (all vendors)' },
-  { value: 'active_campaigns', label: 'Active Campaigns' },
-  { value: 'all_campaigns', label: 'All Campaigns (incl. completed)' },
-  { value: 'campaign_performance', label: 'Campaign Performance Metrics' },
-  { value: 'ad_events', label: 'Ad Events (raw)' },
-  { value: 'ad_leads', label: 'Ad Leads' },
-  { value: 'planner_feedback', label: 'Planner Feedback (hides/suppressions)' },
-  { value: 'campaign_daily_stats', label: 'Campaign Daily Stats (rollups)' },
-  { value: 'placement_daily_stats', label: 'Placement Daily Stats' },
-  { value: 'fraud_signals', label: 'Fraud Signals' },
-];
-
-const DATE_RANGES = [
-  { value: 'last_7_days', label: 'Last 7 days' },
-  { value: 'last_30_days', label: 'Last 30 days' },
-  { value: 'last_90_days', label: 'Last 90 days' },
-  { value: 'all_time', label: 'All time' },
-];
-
-function PlatformConfigTab({ token }: { token: string }) {
-  const [subTab, setSubTab] = useState<ConfigSubTab>('settings');
-  const [config, setConfig] = useState<PlatformConfig | null>(null);
-  const [editConfig, setEditConfig] = useState<Partial<PlatformConfig>>({});
-  const [pipeline, setPipeline] = useState<PipelineStatus | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
-  const [dirty, setDirty] = useState(false);
-
-  // Export state
-  const [exportDataset, setExportDataset] = useState('vendor_accounts');
-  const [exportDateRange, setExportDateRange] = useState('last_30_days');
-  const [exportFormat, setExportFormat] = useState('json');
-  const [exportResult, setExportResult] = useState<any>(null);
-  const [exporting, setExporting] = useState(false);
-
-  const loadConfig = useCallback(async () => {
-    try {
-      setLoading(true);
-      const data = await getAdminConfig(token);
-      setConfig(data);
-      setEditConfig({});
-      setDirty(false);
-    } catch (err: any) {
-      toast.error(err.message);
-    } finally {
-      setLoading(false);
-    }
-  }, [token]);
-
-  const loadPipeline = useCallback(async () => {
-    try {
-      const data = await getAdminPipelineStatus(token);
-      setPipeline(data);
-    } catch (err: any) {
-      toast.error(err.message);
-    }
-  }, [token]);
-
-  useEffect(() => { loadConfig(); }, [loadConfig]);
-  useEffect(() => {
-    if (subTab === 'pipeline') loadPipeline();
-  }, [subTab, loadPipeline]);
-
-  const updateField = (field: string, value: any) => {
-    setEditConfig((prev) => ({ ...prev, [field]: value }));
-    setDirty(true);
-  };
-
-  const handleSave = async () => {
-    if (!dirty || Object.keys(editConfig).length === 0) return;
-    try {
-      setSaving(true);
-      const updated = await updateAdminConfig(token, editConfig);
-      setConfig(updated);
-      setEditConfig({});
-      setDirty(false);
-      toast.success('Platform config saved');
-    } catch (err: any) {
-      toast.error(err.message);
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const handleExport = async () => {
-    try {
-      setExporting(true);
-      const result = await exportAdminData(token, exportDataset, exportDateRange, exportFormat);
-      setExportResult(result);
-      toast.success(`Exported ${result.row_count} rows`);
-    } catch (err: any) {
-      toast.error(err.message);
-    } finally {
-      setExporting(false);
-    }
-  };
-
-  const downloadExport = () => {
-    if (!exportResult) return;
-    const blob = new Blob([JSON.stringify(exportResult.rows, null, 2)], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `${exportResult.dataset}_${exportResult.date_range}.json`;
-    a.click();
-    URL.revokeObjectURL(url);
-  };
-
-  if (loading) return <LoadingSpinner />;
-  if (!config) return <EmptyState icon={Settings} title="Config unavailable" description="Could not load platform config." />;
-
-  const getVal = (field: string) => (field in editConfig ? (editConfig as any)[field] : (config as any)[field]);
-
-  return (
-    <div className="space-y-5">
-      {/* Sub-tab nav + Save */}
-      <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-        <div className="scrollbar-thin -mb-px flex min-w-max overflow-x-auto border-b border-slate-200 dark:border-slate-700">
-          {(['settings', 'export', 'pipeline'] as ConfigSubTab[]).map((tab) => (
-            <button
-              key={tab}
-              onClick={() => setSubTab(tab)}
-              className={`-mb-px shrink-0 whitespace-nowrap border-b-2 px-5 py-2.5 text-sm font-semibold ${
-                subTab === tab
-                  ? 'border-wedding-sage text-wedding-sage'
-                  : 'border-transparent text-slate-400 hover:text-slate-600'
-              }`}
-            >
-              {tab === 'settings' ? 'Settings' : tab === 'export' ? 'Data Export' : 'Data Pipeline'}
-            </button>
-          ))}
-        </div>
-        {subTab === 'settings' && (
-          <button
-            onClick={handleSave}
-            disabled={!dirty || saving}
-            className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition ${
-              dirty
-                ? 'bg-wedding-sage text-white hover:bg-wedding-sage/90'
-                : 'bg-slate-100 text-slate-400 cursor-not-allowed'
-            }`}
-          >
-            <Save className="w-4 h-4" />
-            {saving ? 'Saving...' : 'Save Changes'}
-          </button>
-        )}
-      </div>
-
-      {/* ─── Settings sub-tab ─── */}
-      {subTab === 'settings' && (
-        <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
-          {/* Feature Flags */}
-          <div className={`${ADS_PANEL_CLASS} p-4 sm:p-5`}>
-            <h3 className="text-sm font-semibold text-slate-900 dark:text-white mb-4">Feature Flags</h3>
-            <div className="space-y-3">
-              {[
-                { field: 'ads_enabled', label: 'Ads Enabled' },
-                { field: 'show_sponsored_badge', label: 'Show Sponsored Badge' },
-                { field: 'enable_event_tracking', label: 'Enable Event Tracking' },
-                { field: 'require_creative_review', label: 'Require Creative Review' },
-                { field: 'auto_approve_returning_vendors', label: 'Auto-approve Returning Vendors' },
-              ].map(({ field, label }) => (
-                <div key={field} className="flex items-center justify-between">
-                  <span className="text-xs text-slate-600 dark:text-slate-300">{label}</span>
-                  <button
-                    onClick={() => updateField(field, !getVal(field))}
-                    className={`px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                      getVal(field)
-                        ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400'
-                        : 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'
-                    }`}
-                  >
-                    {getVal(field) ? 'ON' : 'OFF'}
-                  </button>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          {/* Serving Limits */}
-          <div className={`${ADS_PANEL_CLASS} p-4 sm:p-5`}>
-            <h3 className="text-sm font-semibold text-slate-900 dark:text-white mb-4">Serving Limits</h3>
-            <div className="space-y-3">
-              {[
-                { field: 'max_sponsored_per_page', label: 'Max Sponsored Per Page' },
-                { field: 'impressions_per_session', label: 'Impressions Per Session' },
-                { field: 'freq_cap_per_campaign_planner_day', label: 'Freq Cap (per campaign/planner/day)' },
-                { field: 'review_sla_hours', label: 'Review SLA (hours)' },
-                { field: 'max_campaigns_per_vendor', label: 'Max Campaigns Per Vendor' },
-              ].map(({ field, label }) => (
-                <div key={field} className="flex items-center justify-between">
-                  <span className="text-xs text-slate-600 dark:text-slate-300">{label}</span>
-                  <input
-                    type="number"
-                    value={getVal(field)}
-                    onChange={(e) => updateField(field, parseInt(e.target.value) || 0)}
-                    className="w-20 text-right text-xs font-semibold px-2 py-1 rounded border border-slate-200 dark:border-slate-600 bg-slate-50 dark:bg-slate-700 text-slate-900 dark:text-white"
-                  />
-                </div>
-              ))}
-            </div>
-          </div>
-
-          {/* Fraud Detection */}
-          <div className={`${ADS_PANEL_CLASS} p-4 sm:p-5`}>
-            <h3 className="text-sm font-semibold text-slate-900 dark:text-white mb-4">Fraud Detection</h3>
-            <div className="space-y-3">
-              {[
-                { field: 'max_clicks_per_planner_campaign_hour', label: 'Max Clicks/Planner/Campaign/Hour', type: 'number' },
-                { field: 'hide_rate_auto_pause_threshold', label: 'Hide Rate Auto-Pause', type: 'number' },
-                { field: 'click_velocity_window_minutes', label: 'Click Velocity Window (min)', type: 'number' },
-              ].map(({ field, label }) => (
-                <div key={field} className="flex items-center justify-between">
-                  <span className="text-xs text-slate-600 dark:text-slate-300">{label}</span>
-                  <input
-                    type="number"
-                    value={getVal(field)}
-                    onChange={(e) => updateField(field, parseInt(e.target.value) || 0)}
-                    className="w-20 text-right text-xs font-semibold px-2 py-1 rounded border border-slate-200 dark:border-slate-600 bg-slate-50 dark:bg-slate-700 text-slate-900 dark:text-white"
-                  />
-                </div>
-              ))}
-              <div className="flex items-center justify-between">
-                <span className="text-xs text-slate-600 dark:text-slate-300">Auto-Void Suspicious Clicks</span>
-                <button
-                  onClick={() => updateField('auto_void_suspicious_clicks', !getVal('auto_void_suspicious_clicks'))}
-                  className={`px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                    getVal('auto_void_suspicious_clicks')
-                      ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400'
-                      : 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'
-                  }`}
-                >
-                  {getVal('auto_void_suspicious_clicks') ? 'ON' : 'OFF'}
-                </button>
-              </div>
-            </div>
-          </div>
-
-          {/* Vendor Signup */}
-          <div className={`${ADS_PANEL_CLASS} p-4 sm:p-5`}>
-            <h3 className="text-sm font-semibold text-slate-900 dark:text-white mb-4">Vendor Signup</h3>
-            <div className="space-y-3">
-              <div className="flex items-center justify-between">
-                <span className="text-xs text-slate-600 dark:text-slate-300">Vendor Domain</span>
-                <input
-                  type="text"
-                  value={getVal('vendor_domain')}
-                  onChange={(e) => updateField('vendor_domain', e.target.value)}
-                  className="w-52 text-right text-xs font-semibold px-2 py-1 rounded border border-slate-200 dark:border-slate-600 bg-slate-50 dark:bg-slate-700 text-slate-900 dark:text-white"
-                />
-              </div>
-              {[
-                { field: 'auto_approve_signups', label: 'Auto-approve Signups' },
-                { field: 'require_profile_completion', label: 'Require Profile Completion' },
-              ].map(({ field, label }) => (
-                <div key={field} className="flex items-center justify-between">
-                  <span className="text-xs text-slate-600 dark:text-slate-300">{label}</span>
-                  <button
-                    onClick={() => updateField(field, !getVal(field))}
-                    className={`px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                      getVal(field)
-                        ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400'
-                        : 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'
-                    }`}
-                  >
-                    {getVal(field) ? 'ON' : 'OFF'}
-                  </button>
-                </div>
-              ))}
-              <div className="flex items-center justify-between">
-                <span className="text-xs text-slate-600 dark:text-slate-300">Min Images for Campaign</span>
-                <input
-                  type="number"
-                  value={getVal('min_images_for_campaign')}
-                  onChange={(e) => updateField('min_images_for_campaign', parseInt(e.target.value) || 0)}
-                  className="w-20 text-right text-xs font-semibold px-2 py-1 rounded border border-slate-200 dark:border-slate-600 bg-slate-50 dark:bg-slate-700 text-slate-900 dark:text-white"
-                />
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ─── Export sub-tab ─── */}
-      {subTab === 'export' && (
-        <div className="space-y-5">
-          <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-xl p-4 text-sm text-blue-700 dark:text-blue-300">
-            Export data as JSON. Select the data set and date range, then click Export.
-          </div>
-
-          <div className={`${ADS_PANEL_CLASS} p-4 sm:p-5`}>
-            <h3 className="text-sm font-semibold text-slate-900 dark:text-white mb-4">Export Data</h3>
-            <div className="mb-5 flex flex-wrap items-end gap-3">
-              <div>
-                <label className="block text-xs font-semibold text-slate-500 mb-1">Data Set</label>
-                <select
-                  value={exportDataset}
-                  onChange={(e) => setExportDataset(e.target.value)}
-                  className="px-3 py-2 border border-slate-200 dark:border-slate-600 rounded-lg text-sm bg-white dark:bg-slate-700 text-slate-900 dark:text-white min-w-[220px]"
-                >
-                  {DATASETS.map((d) => (
-                    <option key={d.value} value={d.value}>{d.label}</option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <label className="block text-xs font-semibold text-slate-500 mb-1">Date Range</label>
-                <select
-                  value={exportDateRange}
-                  onChange={(e) => setExportDateRange(e.target.value)}
-                  className="px-3 py-2 border border-slate-200 dark:border-slate-600 rounded-lg text-sm bg-white dark:bg-slate-700 text-slate-900 dark:text-white min-w-[150px]"
-                >
-                  {DATE_RANGES.map((d) => (
-                    <option key={d.value} value={d.value}>{d.label}</option>
-                  ))}
-                </select>
-              </div>
-              <button
-                onClick={handleExport}
-                disabled={exporting}
-                className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium bg-wedding-sage text-white hover:bg-wedding-sage/90 transition disabled:opacity-50"
-              >
-                <Download className="w-4 h-4" />
-                {exporting ? 'Exporting...' : 'Export'}
-              </button>
-            </div>
-
-            {exportResult && (
-              <div>
-                <div className="flex items-center justify-between mb-2">
-                  <span className="text-xs text-slate-500">
-                    {exportResult.row_count} rows · {exportResult.dataset} · {exportResult.date_range}
-                  </span>
-                  <button
-                    onClick={downloadExport}
-                    className="text-xs text-wedding-sage hover:underline"
-                  >
-                    Download JSON
-                  </button>
-                </div>
-                <div className="max-h-64 overflow-auto rounded-lg border border-slate-200 dark:border-slate-600">
-                  <pre className="text-xs p-3 text-slate-600 dark:text-slate-300">
-                    {JSON.stringify(exportResult.rows.slice(0, 5), null, 2)}
-                    {exportResult.rows.length > 5 && `\n\n... and ${exportResult.rows.length - 5} more rows`}
-                  </pre>
-                </div>
-              </div>
-            )}
-          </div>
-
-          <div className={`${ADS_PANEL_CLASS} p-4 sm:p-5`}>
-            <h3 className="text-sm font-semibold text-slate-900 dark:text-white mb-3">Quick Exports</h3>
-            <div className="flex flex-wrap gap-2">
-              {[
-                { dataset: 'vendor_accounts', label: 'Vendor List' },
-                { dataset: 'campaign_performance', label: 'Campaign Metrics' },
-                { dataset: 'ad_leads', label: 'Lead Report' },
-              ].map(({ dataset, label }) => (
-                <button
-                  key={dataset}
-                  onClick={() => { setExportDataset(dataset); handleExport(); }}
-                  className="px-3 py-1.5 text-xs font-medium border border-slate-200 dark:border-slate-600 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 transition"
-                >
-                  {label} (JSON)
-                </button>
-              ))}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ─── Pipeline sub-tab ─── */}
-      {subTab === 'pipeline' && (
-        <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
-          <div className={`${ADS_PANEL_CLASS} p-4 sm:p-5`}>
-            <h3 className="text-sm font-semibold text-slate-900 dark:text-white mb-4">Rollup Pipeline Status</h3>
-            {pipeline ? (
-              <div className="space-y-3">
-                <div className="flex items-center justify-between">
-                  <span className="text-xs text-slate-600 dark:text-slate-300">Status</span>
-                  <span className={`px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                    pipeline.rollup_health === 'healthy'
-                      ? 'bg-emerald-100 text-emerald-700'
-                      : pipeline.rollup_health === 'stale'
-                        ? 'bg-amber-100 text-amber-700'
-                        : 'bg-red-100 text-red-700'
-                  }`}>
-                    {pipeline.rollup_health?.charAt(0).toUpperCase() + pipeline.rollup_health?.slice(1)}
-                  </span>
-                </div>
-                <div className="flex items-center justify-between">
-                  <span className="text-xs text-slate-600 dark:text-slate-300">Last Rollup</span>
-                  <span className="text-xs font-semibold text-slate-900 dark:text-white">
-                    {pipeline.last_rollup_at ? new Date(pipeline.last_rollup_at).toLocaleString() : 'Never'}
-                  </span>
-                </div>
-                {pipeline.ttl_policies && Object.entries(pipeline.ttl_policies).map(([col, days]) => (
-                  <div key={col} className="flex items-center justify-between">
-                    <span className="text-xs text-slate-600 dark:text-slate-300">TTL ({col})</span>
-                    <span className="text-xs font-semibold text-slate-900 dark:text-white">{days} days</span>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <p className="text-xs text-slate-400">Loading pipeline data...</p>
-            )}
-          </div>
-
-          <div className={`${ADS_PANEL_CLASS} p-4 sm:p-5`}>
-            <h3 className="text-sm font-semibold text-slate-900 dark:text-white mb-4">Collection Stats</h3>
-            {pipeline?.collections ? (
-              <div className="space-y-2">
-                {Object.entries(pipeline.collections).map(([name, stats]) => (
-                  <div key={name} className="flex items-center justify-between">
-                    <span className="text-xs text-slate-600 dark:text-slate-300 font-mono">{name}</span>
-                    <span className="text-xs font-semibold text-slate-900 dark:text-white">{formatNumber(stats.count)} docs</span>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <p className="text-xs text-slate-400">Loading collection stats...</p>
-            )}
-          </div>
-        </div>
       )}
     </div>
   );

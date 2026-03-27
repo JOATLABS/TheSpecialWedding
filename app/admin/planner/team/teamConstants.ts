@@ -1,8 +1,8 @@
 // Shared team management constants
 export const ROLES = [
-  { value: 'admin', label: 'Admin', desc: 'Full access to everything', color: 'text-wedding-rose' },
-  { value: 'editor', label: 'Editor', desc: 'Create & edit content', color: 'text-wedding-sage' },
-  { value: 'viewer', label: 'Viewer', desc: 'Read-only access', color: 'text-slate-400' },
+  { value: 'admin', label: 'Admin', desc: 'Full access to everything', color: 'text-rose-700 dark:text-wedding-rose' },
+  { value: 'editor', label: 'Editor', desc: 'Create & edit content', color: 'text-teal-700 dark:text-wedding-sage' },
+  { value: 'viewer', label: 'Viewer', desc: 'Read-only access', color: 'text-slate-700 dark:text-slate-300' },
 ];
 
 export const ALL_PERMISSIONS = [

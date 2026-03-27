@@ -87,6 +87,19 @@ If you prefer to set up manually or the script fails:
    python scripts/setup_admin_user.py --auto-create
    ```
 
+7. **Create test accounts manually through the frontend flows when needed**
+
+   The `TEST_*` entries in `.env` are manual QA fixtures only.
+
+   They are not created by startup scripts or app startup. Use them when testing:
+   - planner signup
+   - subscription / payment checkout
+   - vendor signup
+   - couple invite + setup
+   - team member invite + acceptance
+
+   Only the root admin is bootstrap-created automatically.
+
 ## Starting Development
 
 After setup, use the generated scripts:
