@@ -1421,13 +1421,7 @@ async def create_campaign_platform_indexes():
             unique=True,
             sparse=True,
         )
-        # TTL index: auto-delete ad events older than 90 days
-        # Rollup data is preserved in campaign_day_stats and placement_day_stats
-        await ad_events.create_index(
-            [("created_at", ASCENDING)],
-            name="idx_ad_events_ttl_90d",
-            expireAfterSeconds=90 * 24 * 60 * 60,  # 90 days
-        )
+        # TTL index already created in create_advertising_indexes() as idx_ad_events_ttl
         # Fraud detection + event dedup: event_type + campaign + planner + time
         # Field order matches dedup query in planner_ad_interaction_service._is_duplicate_event
         await ad_events.create_index(
@@ -1441,7 +1435,7 @@ async def create_campaign_platform_indexes():
             name="idx_ad_events_session_date",
             sparse=True,
         )
-        logger.info("Campaign platform ad_events indexes created (5)")
+        logger.info("Campaign platform ad_events indexes created (4)")
     except Exception as e:
         logger.error(f"Error creating campaign ad_events indexes: {str(e)}")
 
@@ -1469,7 +1463,7 @@ async def create_campaign_platform_indexes():
     await vendor_profiles.create_index(
         [("created_by", 1), ("source_campaign_id", 1)],
         unique=True,
-        partialFilterExpression={"source_campaign_id": {"$exists": True, "$ne": None}},
+        partialFilterExpression={"source_campaign_id": {"$type": "string"}},
         name="idx_sponsored_ad_dedup",
     )
 
