@@ -37,6 +37,13 @@ const HISTORY_OPTIONS = [
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null;
 
+const getResponseData = (payload: unknown): Record<string, unknown> => {
+  if (isRecord(payload) && isRecord(payload.data)) {
+    return payload.data;
+  }
+  return isRecord(payload) ? payload : {};
+};
+
 const getValueFromPaths = (
   source: Record<string, unknown>,
   paths: Array<Array<string>>,
@@ -155,7 +162,8 @@ export default function AdminMetricsDashboard() {
       if (!response.ok) return;
 
       const payload = await response.json();
-      setRecentActivities(payload.activities || []);
+      const data = getResponseData(payload);
+      setRecentActivities(Array.isArray(data.activities) ? (data.activities as AdminActivity[]) : []);
     } catch (err) {
       console.error('Error loading recent activities', err);
       setRecentActivities([]);

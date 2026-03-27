@@ -2,17 +2,20 @@
 
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { getApiBaseUrl } from '@/utils/env';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { useAdmin } from '@/contexts/AdminContext';
 import { Card } from '../../components/ui/Card';
 import { formatDate, formatDateTime } from '@/utils/dateFormat';
 import PageHeader from '../components/PageHeader';
 import { toast } from 'sonner';
-import { Settings } from 'lucide-react';
+import { Settings, Download, Database, RefreshCw, Save } from 'lucide-react';
 import {
   getAdminConfig,
+  getAdminPipelineStatus,
+  exportAdminData,
   updateAdminConfig,
   type PlatformConfig,
+  type PipelineStatus,
 } from '@/services/campaignAdvertisingApi';
 
 interface SubscriptionPlan {
@@ -141,10 +144,6 @@ function formatNumber(amount: number): string {
   return new Intl.NumberFormat('en-US').format(amount);
 }
 
-function formatPercentage(value: number): string {
-  return `${value.toFixed(1)}%`;
-}
-
 /* Landing page content (hero, features, stats, theme, etc.) is now hardcoded
    in app/page.tsx for performance. The SaaS Content and Theme tabs have been
    removed. Subscription plans, analytics, and customer reviews remain admin-configurable. */
@@ -165,6 +164,7 @@ interface Testimonial {
 
 const SaasAdminDashboard = () => {
  const router = useRouter();
+ const searchParams = useSearchParams();
  const { userProfile, token } = useAdmin();
  const [activeTab, setActiveTab] = useState<'overview' | 'plans' | 'reviews' | 'ad-config'>('overview');
  const [plans, setPlans] = useState<SubscriptionPlan[]>([]);
@@ -325,6 +325,13 @@ const SaasAdminDashboard = () => {
     fetchData();
   }, [fetchData]);
 
+  useEffect(() => {
+    const requestedTab = searchParams.get('tab');
+    if (requestedTab === 'overview' || requestedTab === 'plans' || requestedTab === 'reviews' || requestedTab === 'ad-config') {
+      setActiveTab(requestedTab);
+    }
+  }, [searchParams]);
+
   // Refetch only platform metrics when timeframe changes (without re-fetching plans/planners)
   const fetchMetricsOnly = useCallback(async (tf: TimeframeKey) => {
     try {
@@ -350,6 +357,14 @@ const SaasAdminDashboard = () => {
     setMetricsTimeframe(tf);
     fetchMetricsOnly(tf);
   }, [fetchMetricsOnly]);
+
+  const openAccountsDirectory = useCallback((role?: string) => {
+    if (!role || role === 'all') {
+      router.push('/admin/users');
+      return;
+    }
+    router.push(`/admin/users?role=${encodeURIComponent(role)}`);
+  }, [router]);
 
   // Memoised derived data for the overview tab
   const roleBreakdown = useMemo(() => {
@@ -707,15 +722,21 @@ const SaasAdminDashboard = () => {
        <section className="space-y-4">
          <h2 className="text-xl font-semibold text-gray-900 dark:text-white">User Growth</h2>
          <div className="grid gap-6 md:grid-cols-2 xl:grid-cols-4">
-           <Card className="p-6">
+           <button
+             type="button"
+             onClick={() => openAccountsDirectory('all')}
+             className="w-full text-left"
+           >
+           <Card className="p-6 transition-shadow hover:shadow-xl">
              <p className="text-sm font-medium text-gray-500 dark:text-gray-400">Total Accounts</p>
              <p className="mt-2 text-3xl font-bold text-gray-900 dark:text-white">{formatNumber(metrics.users.total)}</p>
              <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">Active Roles: {roleBreakdown.length}</p>
            </Card>
+           </button>
            <Card className="p-6">
              <p className="text-sm font-medium text-gray-500 dark:text-gray-400">Active This Period</p>
              <p className="mt-2 text-3xl font-bold text-gray-900 dark:text-white">{formatNumber(metrics.users.active)}</p>
-             <p className="mt-1 text-xs text-green-600 dark:text-green-400">Growth {formatPercentage(metrics.users.growth_rate)}</p>
+             <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">Signed in during the selected timeframe</p>
            </Card>
            <Card className="p-6">
              <p className="text-sm font-medium text-gray-500 dark:text-gray-400">New Accounts</p>
@@ -726,9 +747,14 @@ const SaasAdminDashboard = () => {
              <p className="text-sm font-medium text-gray-500 dark:text-gray-400">Role Distribution</p>
              <div className="mt-3 flex flex-wrap gap-2 text-xs">
                {roleBreakdown.map(({ role, count }) => (
-                 <span key={role} className="rounded-full bg-gray-100 dark:bg-slate-700 px-3 py-1 text-gray-900 dark:text-white shadow-sm">
+                 <button
+                   key={role}
+                   type="button"
+                   onClick={() => openAccountsDirectory(role)}
+                   className="rounded-full bg-gray-100 dark:bg-slate-700 px-3 py-1 text-gray-900 dark:text-white shadow-sm transition-colors hover:bg-gray-200 dark:hover:bg-slate-600"
+                 >
                    {role.replace('_', ' ')} · {formatNumber(count)}
-                 </span>
+                 </button>
                ))}
                {roleBreakdown.length === 0 && <span className="text-gray-500 dark:text-gray-400">No accounts recorded.</span>}
              </div>
@@ -744,6 +770,9 @@ const SaasAdminDashboard = () => {
              <p className="text-sm font-medium text-gray-500 dark:text-gray-400">Active Subscriptions</p>
              <p className="mt-2 text-3xl font-bold text-gray-900 dark:text-white">
                {formatNumber(metrics.subscriptions.status_breakdown.active)}
+             </p>
+             <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+               Total subscription records {formatNumber(metrics.subscriptions.total)}
              </p>
              <ul className="mt-3 space-y-1 text-sm text-gray-600 dark:text-gray-400">
                {statusBreakdown.map(({ status, count }) => (
@@ -764,6 +793,9 @@ const SaasAdminDashboard = () => {
              </p>
              <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
                Yearly Contracts {formatCurrency(metrics.subscriptions.yearly_recurring_revenue)}
+             </p>
+             <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+               Trials excluded from recurring revenue totals
              </p>
            </Card>
            <Card className="p-6">
@@ -1624,12 +1656,40 @@ function TestimonialModal({
 // Ad Platform Configuration Tab
 // =============================================================================
 
+type AdConfigSubTab = 'settings' | 'export' | 'pipeline';
+
+const AD_EXPORT_DATASETS = [
+  { value: 'vendor_accounts', label: 'Vendor Accounts (all vendors)' },
+  { value: 'active_campaigns', label: 'Active Campaigns' },
+  { value: 'all_campaigns', label: 'All Campaigns (incl. completed)' },
+  { value: 'campaign_performance', label: 'Campaign Performance Metrics' },
+  { value: 'ad_events', label: 'Ad Events (raw)' },
+  { value: 'ad_leads', label: 'Ad Leads' },
+  { value: 'planner_feedback', label: 'Planner Feedback (hides/suppressions)' },
+  { value: 'campaign_daily_stats', label: 'Campaign Daily Stats (rollups)' },
+  { value: 'placement_daily_stats', label: 'Placement Daily Stats' },
+  { value: 'fraud_signals', label: 'Fraud Signals' },
+];
+
+const AD_EXPORT_DATE_RANGES = [
+  { value: 'last_7_days', label: 'Last 7 days' },
+  { value: 'last_30_days', label: 'Last 30 days' },
+  { value: 'last_90_days', label: 'Last 90 days' },
+  { value: 'all_time', label: 'All time' },
+];
+
 function AdPlatformConfigTab() {
   const { token } = useAdmin();
+  const [subTab, setSubTab] = useState<AdConfigSubTab>('settings');
   const [config, setConfig] = useState<PlatformConfig | null>(null);
+  const [pipeline, setPipeline] = useState<PipelineStatus | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [editedConfig, setEditedConfig] = useState<Partial<PlatformConfig>>({});
+  const [exportDataset, setExportDataset] = useState('vendor_accounts');
+  const [exportDateRange, setExportDateRange] = useState('last_30_days');
+  const [exportResult, setExportResult] = useState<Awaited<ReturnType<typeof exportAdminData>> | null>(null);
+  const [exporting, setExporting] = useState(false);
 
   const loadData = useCallback(async () => {
     if (!token) {
@@ -1651,6 +1711,30 @@ function AdPlatformConfigTab() {
 
   useEffect(() => { loadData(); }, [loadData]);
 
+  const loadPipeline = useCallback(async () => {
+    if (!token) {
+      return;
+    }
+
+    try {
+      const data = await getAdminPipelineStatus(token);
+      setPipeline(data);
+    } catch (err: any) {
+      toast.error(err.message);
+    }
+  }, [token]);
+
+  useEffect(() => {
+    if (subTab === 'pipeline') {
+      loadPipeline();
+    }
+  }, [loadPipeline, subTab]);
+
+  const isDirty = useMemo(() => {
+    if (!config) return false;
+    return JSON.stringify(editedConfig) !== JSON.stringify(config);
+  }, [config, editedConfig]);
+
   const handleSave = async () => {
     if (!token) {
       toast.error('Authentication required');
@@ -1661,6 +1745,7 @@ function AdPlatformConfigTab() {
       setSaving(true);
       const updated = await updateAdminConfig(token, editedConfig);
       setConfig(updated);
+      setEditedConfig(updated);
       toast.success('Configuration saved');
     } catch (err: any) {
       toast.error(err.message);
@@ -1701,105 +1786,354 @@ function AdPlatformConfigTab() {
     }
   };
 
+  const setStringField = (key: keyof PlatformConfig, value: string) => {
+    setEditedConfig((prev) => ({ ...prev, [key]: value }));
+  };
+
+  const handleExport = async () => {
+    if (!token) {
+      toast.error('Authentication required');
+      return;
+    }
+
+    try {
+      setExporting(true);
+      const result = await exportAdminData(token, exportDataset, exportDateRange, 'json');
+      setExportResult(result);
+      toast.success(`Exported ${result.row_count} rows`);
+    } catch (err: any) {
+      toast.error(err.message);
+    } finally {
+      setExporting(false);
+    }
+  };
+
+  const downloadExport = () => {
+    if (!exportResult) return;
+    const blob = new Blob([JSON.stringify(exportResult.rows, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `${exportResult.dataset}_${exportResult.date_range}.json`;
+    link.click();
+    URL.revokeObjectURL(url);
+  };
+
   return (
     <div className="space-y-6">
-      <Card className="p-6">
-        <h3 className="text-lg font-medium text-gray-900 dark:text-gray-100 mb-4">Display Settings</h3>
-        <div className="space-y-4">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm font-medium text-gray-700 dark:text-gray-200">Max Sponsored Per Page</p>
-              <p className="text-xs text-gray-500 dark:text-gray-400">Maximum number of sponsored ads shown per page</p>
-            </div>
-            <input
-              type="number"
-              value={editedConfig.max_sponsored_per_page ?? 3}
-              onChange={(e) => setNumberField('max_sponsored_per_page', e.target.value)}
-              className="w-20 text-sm text-center border border-gray-300 dark:border-gray-600 rounded-lg px-2 py-1.5 bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100"
-              min={1}
-              max={10}
-            />
-          </div>
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm font-medium text-gray-700 dark:text-gray-200">Show Sponsored Badge</p>
-              <p className="text-xs text-gray-500 dark:text-gray-400">Display &ldquo;Sponsored&rdquo; badge on ad cards</p>
-            </div>
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+        <div className="scrollbar-thin -mb-px flex min-w-max overflow-x-auto border-b border-gray-200 dark:border-gray-700">
+          {(['settings', 'export', 'pipeline'] as AdConfigSubTab[]).map((tab) => (
             <button
-              onClick={() => toggleField('show_sponsored_badge')}
-              className={`relative w-11 h-6 rounded-full transition-colors ${editedConfig.show_sponsored_badge ? 'bg-blue-500' : 'bg-gray-300 dark:bg-gray-600'}`}
+              key={tab}
+              onClick={() => setSubTab(tab)}
+              className={`-mb-px shrink-0 whitespace-nowrap border-b-2 px-5 py-2.5 text-sm font-medium ${
+                subTab === tab
+                  ? 'border-wedding-rose text-wedding-rose'
+                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 dark:text-gray-400 dark:hover:text-gray-200'
+              }`}
             >
-              <span className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full transition-transform ${editedConfig.show_sponsored_badge ? 'translate-x-5' : ''}`} />
+              {tab === 'settings' ? 'Settings' : tab === 'export' ? 'Data Export' : 'Data Pipeline'}
             </button>
-          </div>
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm font-medium text-gray-700 dark:text-gray-200">Enable Tracking</p>
-              <p className="text-xs text-gray-500 dark:text-gray-400">Track impressions, clicks, and conversions</p>
-            </div>
-            <button
-              onClick={() => toggleField('enable_tracking')}
-              className={`relative w-11 h-6 rounded-full transition-colors ${editedConfig.enable_tracking ? 'bg-blue-500' : 'bg-gray-300 dark:bg-gray-600'}`}
-            >
-              <span className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full transition-transform ${editedConfig.enable_tracking ? 'translate-x-5' : ''}`} />
-            </button>
-          </div>
+          ))}
         </div>
-      </Card>
 
-      <Card className="p-6">
-        <h3 className="text-lg font-medium text-gray-900 dark:text-gray-100 mb-4">Review Settings</h3>
-        <div className="space-y-4">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm font-medium text-gray-700 dark:text-gray-200">Require Review</p>
-              <p className="text-xs text-gray-500 dark:text-gray-400">All campaigns must be reviewed before going live</p>
-            </div>
-            <button
-              onClick={() => toggleField('require_review')}
-              className={`relative w-11 h-6 rounded-full transition-colors ${editedConfig.require_review ? 'bg-blue-500' : 'bg-gray-300 dark:bg-gray-600'}`}
-            >
-              <span className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full transition-transform ${editedConfig.require_review ? 'translate-x-5' : ''}`} />
-            </button>
-          </div>
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm font-medium text-gray-700 dark:text-gray-200">Auto-Approve Returning Vendors</p>
-              <p className="text-xs text-gray-500 dark:text-gray-400">Skip review for vendors with previously approved campaigns</p>
-            </div>
-            <button
-              onClick={() => toggleField('auto_approve_returning_vendors')}
-              className={`relative w-11 h-6 rounded-full transition-colors ${editedConfig.auto_approve_returning_vendors ? 'bg-blue-500' : 'bg-gray-300 dark:bg-gray-600'}`}
-            >
-              <span className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full transition-transform ${editedConfig.auto_approve_returning_vendors ? 'translate-x-5' : ''}`} />
-            </button>
-          </div>
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm font-medium text-gray-700 dark:text-gray-200">Review SLA (hours)</p>
-              <p className="text-xs text-gray-500 dark:text-gray-400">Target time to review submitted campaigns</p>
-            </div>
-            <input
-              type="number"
-              value={editedConfig.review_sla_hours ?? 24}
-              onChange={(e) => setNumberField('review_sla_hours', e.target.value)}
-              className="w-20 text-sm text-center border border-gray-300 dark:border-gray-600 rounded-lg px-2 py-1.5 bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100"
-              min={1}
-              max={168}
-            />
-          </div>
-        </div>
-      </Card>
-
-      <div className="flex justify-end">
-        <button
-          onClick={handleSave}
-          disabled={saving}
-          className="px-6 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg transition-colors disabled:opacity-50"
-        >
-          {saving ? 'Saving...' : 'Save Configuration'}
-        </button>
+        {subTab === 'settings' && (
+          <button
+            onClick={handleSave}
+            disabled={!isDirty || saving}
+            className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-5 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            <Save className="h-4 w-4" />
+            {saving ? 'Saving...' : 'Save Configuration'}
+          </button>
+        )}
       </div>
+
+      {subTab === 'settings' && (
+        <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
+          <Card className="p-6">
+            <h3 className="mb-4 text-lg font-medium text-gray-900 dark:text-gray-100">Feature Flags</h3>
+            <div className="space-y-4">
+              {[
+                ['ads_enabled', 'Ads Enabled', 'Master toggle for the advertising platform'],
+                ['show_sponsored_badge', 'Show Sponsored Badge', 'Display “Sponsored” labels on placement cards'],
+                ['enable_event_tracking', 'Enable Event Tracking', 'Track impressions, clicks, and conversions'],
+                ['require_creative_review', 'Require Creative Review', 'Require campaign review before ads go live'],
+                ['auto_approve_returning_vendors', 'Auto-Approve Returning Vendors', 'Skip review for previously approved vendors'],
+              ].map(([field, label, hint]) => (
+                <div key={field} className="flex items-center justify-between gap-4">
+                  <div>
+                    <p className="text-sm font-medium text-gray-700 dark:text-gray-200">{label}</p>
+                    <p className="text-xs text-gray-500 dark:text-gray-400">{hint}</p>
+                  </div>
+                  <button
+                    onClick={() => toggleField(field as keyof PlatformConfig)}
+                    className={`relative h-6 w-11 rounded-full transition-colors ${
+                      editedConfig[field as keyof PlatformConfig] ? 'bg-blue-500' : 'bg-gray-300 dark:bg-gray-600'
+                    }`}
+                  >
+                    <span
+                      className={`absolute left-0.5 top-0.5 h-5 w-5 rounded-full bg-white transition-transform ${
+                        editedConfig[field as keyof PlatformConfig] ? 'translate-x-5' : ''
+                      }`}
+                    />
+                  </button>
+                </div>
+              ))}
+            </div>
+          </Card>
+
+          <Card className="p-6">
+            <h3 className="mb-4 text-lg font-medium text-gray-900 dark:text-gray-100">Serving Limits</h3>
+            <div className="space-y-4">
+              {[
+                ['max_sponsored_per_page', 'Max Sponsored Per Page', 1, 10],
+                ['impressions_per_session', 'Impressions Per Session', 1, 50],
+                ['freq_cap_per_campaign_planner_day', 'Frequency Cap Per Planner / Day', 1, 20],
+                ['review_sla_hours', 'Review SLA (hours)', 1, 168],
+                ['max_campaigns_per_vendor', 'Max Campaigns Per Vendor', 1, 50],
+              ].map(([field, label, min, max]) => (
+                <div key={field} className="flex items-center justify-between gap-4">
+                  <p className="text-sm font-medium text-gray-700 dark:text-gray-200">{label}</p>
+                  <input
+                    type="number"
+                    value={editedConfig[field as keyof PlatformConfig] ?? ''}
+                    onChange={(e) => setNumberField(field as keyof PlatformConfig, e.target.value)}
+                    className="w-24 rounded-lg border border-gray-300 bg-white px-2 py-1.5 text-right text-sm text-gray-900 dark:border-gray-600 dark:bg-slate-700 dark:text-gray-100"
+                    min={min as number}
+                    max={max as number}
+                  />
+                </div>
+              ))}
+            </div>
+          </Card>
+
+          <Card className="p-6">
+            <h3 className="mb-4 text-lg font-medium text-gray-900 dark:text-gray-100">Fraud Detection</h3>
+            <div className="space-y-4">
+              {[
+                ['max_clicks_per_planner_campaign_hour', 'Max Clicks / Planner / Campaign / Hour'],
+                ['hide_rate_auto_pause_threshold', 'Hide Rate Auto-Pause Threshold'],
+                ['click_velocity_window_minutes', 'Click Velocity Window (minutes)'],
+              ].map(([field, label]) => (
+                <div key={field} className="flex items-center justify-between gap-4">
+                  <p className="text-sm font-medium text-gray-700 dark:text-gray-200">{label}</p>
+                  <input
+                    type="number"
+                    value={editedConfig[field as keyof PlatformConfig] ?? ''}
+                    onChange={(e) => setNumberField(field as keyof PlatformConfig, e.target.value)}
+                    className="w-24 rounded-lg border border-gray-300 bg-white px-2 py-1.5 text-right text-sm text-gray-900 dark:border-gray-600 dark:bg-slate-700 dark:text-gray-100"
+                  />
+                </div>
+              ))}
+              <div className="flex items-center justify-between gap-4">
+                <div>
+                  <p className="text-sm font-medium text-gray-700 dark:text-gray-200">Auto-Void Suspicious Clicks</p>
+                  <p className="text-xs text-gray-500 dark:text-gray-400">Automatically void clicks from suspected fraud patterns</p>
+                </div>
+                <button
+                  onClick={() => toggleField('auto_void_suspicious_clicks')}
+                  className={`relative h-6 w-11 rounded-full transition-colors ${
+                    editedConfig.auto_void_suspicious_clicks ? 'bg-blue-500' : 'bg-gray-300 dark:bg-gray-600'
+                  }`}
+                >
+                  <span className={`absolute left-0.5 top-0.5 h-5 w-5 rounded-full bg-white transition-transform ${editedConfig.auto_void_suspicious_clicks ? 'translate-x-5' : ''}`} />
+                </button>
+              </div>
+            </div>
+          </Card>
+
+          <Card className="p-6">
+            <h3 className="mb-4 text-lg font-medium text-gray-900 dark:text-gray-100">Vendor Signup</h3>
+            <div className="space-y-4">
+              <div className="flex items-center justify-between gap-4">
+                <div>
+                  <p className="text-sm font-medium text-gray-700 dark:text-gray-200">Vendor Domain</p>
+                  <p className="text-xs text-gray-500 dark:text-gray-400">Domain used to route approved vendors into the ad portal</p>
+                </div>
+                <input
+                  type="text"
+                  value={editedConfig.vendor_domain ?? ''}
+                  onChange={(e) => setStringField('vendor_domain', e.target.value)}
+                  className="w-64 rounded-lg border border-gray-300 bg-white px-2 py-1.5 text-right text-sm text-gray-900 dark:border-gray-600 dark:bg-slate-700 dark:text-gray-100"
+                />
+              </div>
+              {[
+                ['auto_approve_signups', 'Auto-Approve Signups', 'Approve new advertising vendors without manual review'],
+                ['require_profile_completion', 'Require Profile Completion', 'Block campaign creation until onboarding profile is complete'],
+              ].map(([field, label, hint]) => (
+                <div key={field} className="flex items-center justify-between gap-4">
+                  <div>
+                    <p className="text-sm font-medium text-gray-700 dark:text-gray-200">{label}</p>
+                    <p className="text-xs text-gray-500 dark:text-gray-400">{hint}</p>
+                  </div>
+                  <button
+                    onClick={() => toggleField(field as keyof PlatformConfig)}
+                    className={`relative h-6 w-11 rounded-full transition-colors ${
+                      editedConfig[field as keyof PlatformConfig] ? 'bg-blue-500' : 'bg-gray-300 dark:bg-gray-600'
+                    }`}
+                  >
+                    <span
+                      className={`absolute left-0.5 top-0.5 h-5 w-5 rounded-full bg-white transition-transform ${
+                        editedConfig[field as keyof PlatformConfig] ? 'translate-x-5' : ''
+                      }`}
+                    />
+                  </button>
+                </div>
+              ))}
+              <div className="flex items-center justify-between gap-4">
+                <p className="text-sm font-medium text-gray-700 dark:text-gray-200">Minimum Images Per Campaign</p>
+                <input
+                  type="number"
+                  value={editedConfig.min_images_for_campaign ?? ''}
+                  onChange={(e) => setNumberField('min_images_for_campaign', e.target.value)}
+                  className="w-24 rounded-lg border border-gray-300 bg-white px-2 py-1.5 text-right text-sm text-gray-900 dark:border-gray-600 dark:bg-slate-700 dark:text-gray-100"
+                  min={0}
+                  max={20}
+                />
+              </div>
+            </div>
+          </Card>
+        </div>
+      )}
+
+      {subTab === 'export' && (
+        <div className="space-y-6">
+          <Card className="p-6">
+            <div className="mb-5 flex flex-wrap items-end gap-4">
+              <div>
+                <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                  Data Set
+                </label>
+                <select
+                  value={exportDataset}
+                  onChange={(e) => setExportDataset(e.target.value)}
+                  className="min-w-[240px] rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 dark:border-gray-600 dark:bg-slate-700 dark:text-gray-100"
+                >
+                  {AD_EXPORT_DATASETS.map((item) => (
+                    <option key={item.value} value={item.value}>{item.label}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                  Date Range
+                </label>
+                <select
+                  value={exportDateRange}
+                  onChange={(e) => setExportDateRange(e.target.value)}
+                  className="min-w-[180px] rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 dark:border-gray-600 dark:bg-slate-700 dark:text-gray-100"
+                >
+                  {AD_EXPORT_DATE_RANGES.map((item) => (
+                    <option key={item.value} value={item.value}>{item.label}</option>
+                  ))}
+                </select>
+              </div>
+              <button
+                onClick={handleExport}
+                disabled={exporting}
+                className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-5 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                <Download className="h-4 w-4" />
+                {exporting ? 'Exporting...' : 'Export JSON'}
+              </button>
+            </div>
+
+            {exportResult ? (
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <p className="text-sm text-gray-500 dark:text-gray-400">
+                    {exportResult.row_count} rows exported from {exportResult.dataset} ({exportResult.date_range})
+                  </p>
+                  <button
+                    onClick={downloadExport}
+                    className="text-sm font-medium text-blue-600 hover:underline dark:text-blue-400"
+                  >
+                    Download file
+                  </button>
+                </div>
+                <div className="max-h-80 overflow-auto rounded-lg border border-gray-200 bg-gray-50 dark:border-gray-700 dark:bg-slate-800">
+                  <pre className="p-4 text-xs text-gray-700 dark:text-gray-200">
+                    {JSON.stringify(exportResult.rows.slice(0, 5), null, 2)}
+                    {exportResult.rows.length > 5 ? `\n\n... and ${exportResult.rows.length - 5} more rows` : ''}
+                  </pre>
+                </div>
+              </div>
+            ) : (
+              <p className="text-sm text-gray-500 dark:text-gray-400">
+                Export ad-platform data sets as JSON from this central SaaS configuration tab.
+              </p>
+            )}
+          </Card>
+        </div>
+      )}
+
+      {subTab === 'pipeline' && (
+        <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
+          <Card className="p-6">
+            <div className="mb-4 flex items-center justify-between">
+              <h3 className="text-lg font-medium text-gray-900 dark:text-gray-100">Rollup Pipeline Status</h3>
+              <button
+                onClick={loadPipeline}
+                className="rounded-lg p-2 text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-700 dark:text-gray-400 dark:hover:bg-slate-700 dark:hover:text-gray-200"
+                title="Refresh pipeline status"
+              >
+                <RefreshCw className="h-4 w-4" />
+              </button>
+            </div>
+            {pipeline ? (
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <span className="text-sm text-gray-500 dark:text-gray-400">Health</span>
+                  <span className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${
+                    pipeline.rollup_health === 'healthy'
+                      ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400'
+                      : pipeline.rollup_health === 'stale'
+                        ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400'
+                        : 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'
+                  }`}>
+                    {pipeline.rollup_health}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-sm text-gray-500 dark:text-gray-400">Last Rollup</span>
+                  <span className="text-sm font-medium text-gray-900 dark:text-gray-100">
+                    {pipeline.last_rollup_at ? new Date(pipeline.last_rollup_at).toLocaleString() : 'Never'}
+                  </span>
+                </div>
+                {Object.entries(pipeline.ttl_policies ?? {}).map(([collection, days]) => (
+                  <div key={collection} className="flex items-center justify-between">
+                    <span className="text-sm text-gray-500 dark:text-gray-400">TTL ({collection})</span>
+                    <span className="text-sm font-medium text-gray-900 dark:text-gray-100">{days} days</span>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="text-sm text-gray-500 dark:text-gray-400">Pipeline status not available.</p>
+            )}
+          </Card>
+
+          <Card className="p-6">
+            <div className="mb-4 flex items-center gap-2">
+              <Database className="h-5 w-5 text-gray-500 dark:text-gray-400" />
+              <h3 className="text-lg font-medium text-gray-900 dark:text-gray-100">Collection Stats</h3>
+            </div>
+            {pipeline?.collections ? (
+              <div className="space-y-2">
+                {Object.entries(pipeline.collections).map(([name, stats]) => (
+                  <div key={name} className="flex items-center justify-between">
+                    <span className="font-mono text-sm text-gray-500 dark:text-gray-400">{name}</span>
+                    <span className="text-sm font-medium text-gray-900 dark:text-gray-100">{formatNumber(stats.count)} docs</span>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="text-sm text-gray-500 dark:text-gray-400">Collection stats not available.</p>
+            )}
+          </Card>
+        </div>
+      )}
     </div>
   );
 }

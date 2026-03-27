@@ -7,6 +7,8 @@ declare global {
   }
 }
 
+let bootstrapPromise: Promise<string | null> | null = null;
+
 function clearLegacyAdminStorage(): void {
   if (typeof window === 'undefined') {
     return;
@@ -111,33 +113,43 @@ export async function bootstrapAdminAuthToken(): Promise<string | null> {
     return existingToken;
   }
 
-  clearAdminAuthStorage();
-
-  try {
-    const response = await fetch(`${getApiBaseUrl()}/admin/token/refresh`, {
-      method: 'POST',
-      credentials: 'include',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-    });
-
-    if (!response.ok) {
-      return null;
-    }
-
-    const payload = await response.json();
-    const freshToken = payload?.access_token;
-
-    if (typeof freshToken !== 'string' || isTokenExpired(freshToken)) {
-      return null;
-    }
-
-    persistAdminAuthToken(freshToken, wasAdminSessionRemembered());
-    return freshToken;
-  } catch {
-    return null;
+  if (bootstrapPromise) {
+    return bootstrapPromise;
   }
+
+  const remembered = wasAdminSessionRemembered();
+
+  bootstrapPromise = (async () => {
+    try {
+      const response = await fetch(`${getApiBaseUrl()}/admin/token/refresh`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      });
+
+      if (!response.ok) {
+        return null;
+      }
+
+      const payload = await response.json();
+      const freshToken = payload?.access_token;
+
+      if (typeof freshToken !== 'string' || isTokenExpired(freshToken)) {
+        return null;
+      }
+
+      persistAdminAuthToken(freshToken, remembered);
+      return freshToken;
+    } catch {
+      return null;
+    } finally {
+      bootstrapPromise = null;
+    }
+  })();
+
+  return bootstrapPromise;
 }
 
 /**

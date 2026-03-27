@@ -239,6 +239,31 @@ class TeamManagementService:
             "invite_token_expires_at": doc.get("invite_token_expires_at"),
         }
 
+    @staticmethod
+    def _build_team_activation_update(
+        user_id: str,
+        first_name: Optional[str],
+        last_name: Optional[str],
+        accepted_at: datetime,
+    ) -> dict:
+        """Finalize an accepted invite and consume its token without leaving null-index collisions."""
+        return {
+            "$set": {
+                "user_id": user_id,
+                "first_name": first_name,
+                "last_name": last_name,
+                "status": TeamMemberStatus.ACTIVE.value,
+                "accepted_at": accepted_at,
+                "updated_at": accepted_at,
+            },
+            # Sparse unique indexes still index explicit null values, so the
+            # consumed invite token must be removed entirely instead of set to null.
+            "$unset": {
+                "invite_token": "",
+                "invite_token_expires_at": "",
+            },
+        }
+
     # ─── Seat Enforcement ─────────────────────────────────────────────────
 
     async def check_seat_limit(self, owner_id: str, owner_email: str) -> Dict[str, Any]:
@@ -573,7 +598,10 @@ class TeamManagementService:
         if is_expired:
             await self.team_collection.update_one(
                 {"_id": doc["_id"]},
-                {"$set": {"invite_token": None, "updated_at": datetime.now(timezone.utc)}}
+                {
+                    "$set": {"updated_at": datetime.now(timezone.utc)},
+                    "$unset": {"invite_token": "", "invite_token_expires_at": ""},
+                }
             )
 
         # Lookup planner company info
@@ -627,6 +655,7 @@ class TeamManagementService:
                 raise HTTPException(status_code=400, detail="This invitation has already been accepted")
             raise HTTPException(status_code=404, detail="Invitation not found or already used")
 
+        created_user_object_id = None
         try:
             # Check token expiry
             expires_at = doc.get("invite_token_expires_at")
@@ -647,6 +676,33 @@ class TeamManagementService:
             # Check if email already has an account
             existing_user = await self.users_collection.find_one({"email": doc["email"]})
             if existing_user:
+                # Recover gracefully if a previous acceptance created the user
+                # but failed to finalize the team_members document.
+                if (
+                    existing_user.get("role") == "team_member"
+                    and str(existing_user.get("team_member_id") or "") == str(doc["_id"])
+                    and existing_user.get("parent_planner_id") == doc["owner_id"]
+                ):
+                    accepted_at = existing_user.get("created_at") or now
+                    if isinstance(accepted_at, datetime) and accepted_at.tzinfo is None:
+                        accepted_at = accepted_at.replace(tzinfo=timezone.utc)
+
+                    await self.team_collection.update_one(
+                        {"_id": doc["_id"]},
+                        self._build_team_activation_update(
+                            user_id=to_str_id(existing_user["_id"]),
+                            first_name=existing_user.get("first_name") or first_name.strip(),
+                            last_name=existing_user.get("last_name") or last_name.strip(),
+                            accepted_at=accepted_at,
+                        ),
+                    )
+
+                    logger.info(
+                        f"Recovered partial team invite acceptance for {doc['email']} "
+                        f"under owner {doc['owner_id']}"
+                    )
+                    return {"success": True, "message": "Invitation accepted. You can now log in."}
+
                 # Rollback: set back to pending
                 await self.team_collection.update_one(
                     {"_id": doc["_id"]},
@@ -682,23 +738,18 @@ class TeamManagementService:
             }
 
             user_result = await self.users_collection.insert_one(user_doc)
+            created_user_object_id = user_result.inserted_id
             new_user_id = to_str_id(user_result.inserted_id)
 
             # Finalize: set to ACTIVE and consume token
             await self.team_collection.update_one(
                 {"_id": doc["_id"]},
-                {
-                    "$set": {
-                        "user_id": new_user_id,
-                        "first_name": first_name.strip(),
-                        "last_name": last_name.strip(),
-                        "status": TeamMemberStatus.ACTIVE.value,
-                        "accepted_at": now,
-                        "invite_token": None,
-                        "invite_token_expires_at": None,
-                        "updated_at": now,
-                    }
-                },
+                self._build_team_activation_update(
+                    user_id=new_user_id,
+                    first_name=first_name.strip(),
+                    last_name=last_name.strip(),
+                    accepted_at=now,
+                ),
             )
 
             logger.info(
@@ -726,6 +777,15 @@ class TeamManagementService:
         except HTTPException:
             raise
         except Exception as e:
+            if created_user_object_id is not None:
+                try:
+                    await self.users_collection.delete_one({"_id": created_user_object_id})
+                except Exception as rollback_error:
+                    logger.error(
+                        "[TeamMgmt:accept] Failed to roll back created team member user %s: %s",
+                        created_user_object_id,
+                        rollback_error,
+                    )
             # Unexpected error: rollback the transitional state
             await self.team_collection.update_one(
                 {"_id": doc["_id"]},

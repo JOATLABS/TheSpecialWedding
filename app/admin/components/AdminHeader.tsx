@@ -97,7 +97,7 @@ export default function AdminHeader() {
         {/* Mobile Menu Button */}
         <button
           onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-          className="lg:hidden p-2 rounded-lg hover:bg-white/10 transition"
+          className="lg:hidden rounded-lg p-2 transition hover:bg-slate-100 dark:hover:bg-white/10"
           aria-label={mobileMenuOpen ? 'Close navigation menu' : 'Open navigation menu'}
           aria-expanded={mobileMenuOpen}
           aria-controls="mobile-nav-menu"
@@ -130,13 +130,13 @@ export default function AdminHeader() {
 
       {/* Mobile Navigation Menu */}
       {mobileMenuOpen && (
-        <div className="lg:hidden glass border-t border-white/10" id="mobile-nav-menu" role="navigation" aria-label="Mobile navigation">
+        <div className="glass border-t border-slate-200 dark:border-white/10 lg:hidden" id="mobile-nav-menu" role="navigation" aria-label="Mobile navigation">
           <nav className="flex flex-col px-4 py-2 font-medium">
             {navLinks.map((link) => (
               <Link
                 key={link.href}
                 href={link.href}
-                className="py-3 px-2 hover:bg-white/10 rounded-lg transition"
+                className="rounded-lg px-2 py-3 transition hover:bg-slate-100 dark:hover:bg-white/10"
                 onClick={() => setMobileMenuOpen(false)}
               >
                 {link.label}
@@ -147,7 +147,7 @@ export default function AdminHeader() {
                 logout();
                 setMobileMenuOpen(false);
               }}
-              className="py-3 px-2 text-red-500 hover:bg-white/10 rounded-lg transition text-left"
+              className="rounded-lg px-2 py-3 text-left text-red-500 transition hover:bg-red-50 dark:hover:bg-white/10"
             >
               Logout
             </button>

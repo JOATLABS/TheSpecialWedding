@@ -54,8 +54,7 @@ interface SupportMetrics {
   open_tickets: number;
   in_progress_tickets?: number;
   resolved_today: number;
-  avg_response_time: number;
-  satisfaction_score: number;
+  avg_resolution_time_hours: number;
   urgent_tickets?: number;
 }
 
@@ -92,6 +91,7 @@ export default function SupportPage() {
     try {
       setLoading(true);
       let fetchedTickets: SupportTicket[] = [];
+      let fetchedTicketTotal = 0;
 
       // Fetch support tickets
       try {
@@ -102,8 +102,9 @@ export default function SupportPage() {
           'GET'
         );
         fetchedTickets = ticketsResponse?.tickets ?? [];
+        fetchedTicketTotal = ticketsResponse?.total || fetchedTickets.length;
         setTickets(fetchedTickets);
-        setPaginationTotalItems(ticketsResponse?.total || fetchedTickets.length);
+        setPaginationTotalItems(fetchedTicketTotal);
       } catch (error) {
         console.warn('Support tickets endpoint not available');
         setTickets([]);
@@ -112,22 +113,36 @@ export default function SupportPage() {
       // Fetch metrics (ROOT_ADMIN only)
       if (isRootAdmin) {
         try {
-          const metricsResponse = await apiRequest<SupportMetrics>('/admin/metrics/dashboard', 'GET');
-          setMetrics(metricsResponse ?? {
-            total_tickets: 0,
-            open_tickets: 0,
-            resolved_today: 0,
-            avg_response_time: 0,
-            satisfaction_score: 0
+          const [metricsResponse, analyticsResponse] = await Promise.all([
+            apiRequest<{
+              open_tickets?: number;
+              in_progress_tickets?: number;
+              resolved_today?: number;
+              urgent_tickets?: number;
+            }>('/admin/metrics/dashboard', 'GET'),
+            apiRequest<{
+              total_tickets?: number;
+              avg_resolution_time_hours?: number;
+            }>('/admin/analytics?period=30d', 'GET'),
+          ]);
+
+          setMetrics({
+            total_tickets: analyticsResponse?.total_tickets ?? fetchedTicketTotal,
+            open_tickets: metricsResponse?.open_tickets ?? fetchedTickets.filter(t => t.status === 'open').length,
+            in_progress_tickets: metricsResponse?.in_progress_tickets ?? fetchedTickets.filter(t => t.status === 'in_progress').length,
+            resolved_today: metricsResponse?.resolved_today ?? 0,
+            avg_resolution_time_hours: analyticsResponse?.avg_resolution_time_hours ?? 0,
+            urgent_tickets: metricsResponse?.urgent_tickets ?? 0,
           });
         } catch (error) {
           console.warn('Support metrics endpoint not available');
           setMetrics({
-            total_tickets: fetchedTickets.length,
+            total_tickets: fetchedTicketTotal,
             open_tickets: fetchedTickets.filter(t => t.status === 'open').length,
+            in_progress_tickets: fetchedTickets.filter(t => t.status === 'in_progress').length,
             resolved_today: 0,
-            avg_response_time: 0,
-            satisfaction_score: 0
+            avg_resolution_time_hours: 0,
+            urgent_tickets: fetchedTickets.filter(t => t.priority === 'urgent' && ['open', 'in_progress'].includes(t.status)).length,
           });
         }
       }
@@ -556,8 +571,8 @@ export default function SupportPage() {
             <Card className="p-6">
               <div className="flex items-center justify-between">
                 <div>
-                  <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400">Avg Response</h3>
-                  <p className="text-3xl font-bold text-yellow-600 dark:text-yellow-400 mt-1">{metrics.avg_response_time}h</p>
+                  <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400">In Progress</h3>
+                  <p className="text-3xl font-bold text-yellow-600 dark:text-yellow-400 mt-1">{metrics.in_progress_tickets || 0}</p>
                 </div>
                 <div className="p-3 bg-yellow-100 dark:bg-yellow-900/30 rounded-lg">
                   <Clock className="w-6 h-6 text-yellow-600 dark:text-yellow-400" />
@@ -568,8 +583,8 @@ export default function SupportPage() {
             <Card className="p-6">
               <div className="flex items-center justify-between">
                 <div>
-                  <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400">Satisfaction</h3>
-                  <p className="text-3xl font-bold text-purple-600 dark:text-purple-400 mt-1">{metrics.satisfaction_score}/5</p>
+                  <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400">Avg Resolution</h3>
+                  <p className="text-3xl font-bold text-purple-600 dark:text-purple-400 mt-1">{metrics.avg_resolution_time_hours.toFixed(1)}h</p>
                 </div>
                 <div className="p-3 bg-purple-100 dark:bg-purple-900/30 rounded-lg">
                   <TrendingUp className="w-6 h-6 text-purple-600 dark:text-purple-400" />

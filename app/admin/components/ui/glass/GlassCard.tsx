@@ -37,12 +37,12 @@ export function GlassCard({
   variant = 'default',
   ...props
 }: GlassCardProps) {
-  const baseStyles = "bg-white/70 dark:bg-slate-900/60 backdrop-blur-xl border border-white/50 dark:border-slate-700/50 shadow-sm rounded-2xl transition-all duration-300 relative overflow-hidden";
+  const baseStyles = "bg-white/85 dark:bg-slate-900/60 backdrop-blur-xl border border-slate-200/80 dark:border-slate-700/50 shadow-sm rounded-2xl transition-all duration-300 relative overflow-hidden";
 
   const variants = {
     default: "",
-    'hover-lift': "hover:shadow-xl hover:-translate-y-1 hover:border-white/80 dark:hover:border-slate-600",
-    interactive: "cursor-pointer hover:bg-white/80 dark:hover:bg-slate-800/80 active:scale-[0.98]"
+    'hover-lift': "hover:shadow-xl hover:-translate-y-1 hover:border-slate-300 dark:hover:border-slate-600",
+    interactive: "cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800/80 active:scale-[0.98]"
   };
 
   return (
@@ -52,7 +52,7 @@ export function GlassCard({
       className={cn(baseStyles, variants[variant], className)}
       {...props}
     >
-      <div className="absolute inset-0 bg-gradient-to-br from-white/40 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none" />
+      <div className="absolute inset-0 bg-gradient-to-br from-slate-100/70 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none dark:from-white/10" />
       {children}
     </motion.div>
   );

@@ -27,10 +27,10 @@ export function GlassTable<T>({
   onRowClick
 }: GlassTableProps<T>) {
   return (
-    <div className="w-full overflow-hidden rounded-xl border border-white/50 dark:border-slate-700/50 shadow-sm bg-white/40 dark:bg-slate-900/40 backdrop-blur-md" role="region" aria-label="Data table">
+    <div className="w-full overflow-hidden rounded-xl border border-slate-200/80 dark:border-slate-700/50 shadow-sm bg-white/85 dark:bg-slate-900/40 backdrop-blur-md" role="region" aria-label="Data table">
       <div className="overflow-x-auto custom-scrollbar">
         <table className="w-full text-left text-sm" role="table">
-          <thead className="bg-slate-50/80 dark:bg-slate-800/80 backdrop-blur-sm border-b border-slate-200 dark:border-slate-700" role="rowgroup">
+          <thead className="border-b border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/80 backdrop-blur-sm" role="rowgroup">
             <tr role="row">
               {columns.map((col, index) => (
                 <th
@@ -47,10 +47,10 @@ export function GlassTable<T>({
               ))}
             </tr>
           </thead>
-          <tbody className="divide-y divide-slate-100 dark:divide-slate-800" role="rowgroup">
+          <tbody className="divide-y divide-slate-200/80 dark:divide-slate-800" role="rowgroup">
             {isLoading ? (
               <tr role="row">
-                <td colSpan={columns.length} className="px-6 py-8 text-center text-slate-500" role="cell">
+                <td colSpan={columns.length} className="px-6 py-8 text-center text-slate-500 dark:text-slate-400" role="cell">
                   <div className="flex items-center justify-center gap-2" aria-label="Loading data">
                     <div className="w-2 h-2 bg-primary-500 rounded-full animate-bounce" style={{ animationDelay: '0s' }} aria-hidden="true" />
                     <div className="w-2 h-2 bg-primary-500 rounded-full animate-bounce" style={{ animationDelay: '0.1s' }} aria-hidden="true" />
@@ -60,7 +60,7 @@ export function GlassTable<T>({
               </tr>
             ) : data.length === 0 ? (
               <tr role="row">
-                <td colSpan={columns.length} className="px-6 py-8 text-center text-slate-500 italic" role="cell">
+                <td colSpan={columns.length} className="px-6 py-8 text-center italic text-slate-500 dark:text-slate-400" role="cell">
                   {emptyMessage}
                 </td>
               </tr>
@@ -79,7 +79,7 @@ export function GlassTable<T>({
                   }}
                   className={cn(
                     "group transition-colors duration-200",
-                    onRowClick ? "cursor-pointer hover:bg-primary-50/50 dark:hover:bg-primary-900/10 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary-500" : "hover:bg-slate-50/30 dark:hover:bg-slate-800/30"
+                    onRowClick ? "cursor-pointer hover:bg-primary-50 dark:hover:bg-primary-900/10 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary-500" : "hover:bg-slate-50 dark:hover:bg-slate-800/30"
                   )}
                 >
                   {columns.map((col, idx) => (

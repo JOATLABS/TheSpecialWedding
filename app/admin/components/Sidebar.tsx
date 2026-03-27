@@ -56,7 +56,7 @@ const adminNavItems: NavItem[] = [
   { name: 'Dashboard', href: '/admin', icon: LayoutDashboard },
   { name: 'Platform', href: '/admin/platform', icon: Server },
   { name: 'SaaS Management', href: '/admin/saas', icon: Layers },
-  { name: 'Planners', href: '/admin/users', icon: Users },
+  { name: 'Accounts', href: '/admin/users', icon: Users },
   { name: 'Billing', href: '/admin/billing', icon: CreditCard },
   { name: 'Ad Platform', href: '/admin/ads', icon: Megaphone },
   { name: 'Notifications', href: '/admin/notifications', icon: Bell },

@@ -1,6 +1,7 @@
 'use client';
 
 import React, { createContext, useContext, useEffect, useState, useCallback } from 'react';
+import { flushSync } from 'react-dom';
 import { getApiBaseUrl } from '@/utils/env';
 import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
@@ -290,17 +291,10 @@ export const AdminProvider = ({ children }: { children: React.ReactNode }) => {
                         const { access_token: fresh } = await refreshRes.json();
                         persistAdminAuthToken(fresh, rememberMe);
                         activeToken = fresh;
-                        setToken(fresh);
-                    } else {
-                        // Refresh failed but login token is still valid — use it
-                        setToken(access_token);
                     }
                 } catch {
                     // Network error on refresh — proceed with login token
-                    setToken(access_token);
                 }
-            } else {
-                setToken(access_token);
             }
 
             // Fetch user profile to determine redirect location
@@ -345,16 +339,22 @@ export const AdminProvider = ({ children }: { children: React.ReactNode }) => {
                     }
                 }
 
-                setUserProfile(profile);
-
                 toast.success('Login successful');
 
-                // Use window.location.href for immediate navigation to avoid race condition with AdminRouteGuard.
-                // Root admins and planners land on different dashboard surfaces.
+                // Commit authenticated state before navigating so route guards,
+                // SSE, and page-level fetches never see a half-finished login.
+                flushSync(() => {
+                    setToken(activeToken);
+                    setUserProfile(profile);
+                });
+
+                // Use a client-side transition here. A hard browser reload
+                // throws away the in-memory access token before the destination
+                // route can hydrate, which caused the first-login bounce loop.
                 if (profile.is_root_admin) {
-                    window.location.href = '/admin';
+                    router.replace('/admin');
                 } else if (profile.is_wedding_planner || profile.role === 'team_member' || profile.is_team_member === true) {
-                    window.location.href = '/admin/planner';
+                    router.replace('/admin/planner');
                 } else {
                     // Unknown/undefined role — do not grant access
                     console.error('Login rejected: unrecognized user role', profile.role, profile);
@@ -387,11 +387,14 @@ export const AdminProvider = ({ children }: { children: React.ReactNode }) => {
 
                 if (retryProfile.ok) {
                     const profile = await retryProfile.json();
-                    setUserProfile(profile);
+                    flushSync(() => {
+                        setToken(activeToken);
+                        setUserProfile(profile);
+                    });
                 }
 
                 toast.warning(detail);
-                window.location.href = '/admin/planner/billing';
+                router.replace('/admin/planner/billing');
                 return;
             } else {
                 // Profile fetch failed — do not grant access without a confirmed role

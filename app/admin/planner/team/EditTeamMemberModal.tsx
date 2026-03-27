@@ -227,26 +227,26 @@ export default function EditTeamMemberModal({ member, onClose, onSuccess }: Prop
 
   const modalContent = (
     <div className="fixed inset-0 z-[9999] flex items-center justify-center" onClick={handleClose}>
-      <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
+      <div className="absolute inset-0 bg-slate-950/45 backdrop-blur-sm dark:bg-black/60" />
       <div
         ref={modalRef}
         role="dialog"
         aria-modal="true"
         aria-labelledby="modal-title"
         data-testid="edit-modal"
-        className="relative z-[10000] bg-slate-800 border border-slate-700/50 rounded-2xl w-full max-w-[560px] max-h-[85vh] overflow-y-auto shadow-2xl mx-4"
+        className="relative z-[10000] mx-4 max-h-[85vh] w-full max-w-[560px] overflow-y-auto rounded-2xl border border-slate-200 bg-white shadow-2xl dark:border-slate-700/50 dark:bg-slate-800"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
         <div className="flex items-center justify-between p-6 pb-0">
           <div>
-            <h2 id="modal-title" className="text-xl font-bold text-slate-100">Edit Team Member</h2>
-            <p className="text-sm text-slate-500 mt-0.5">{memberName}</p>
+            <h2 id="modal-title" className="text-xl font-bold text-slate-900 dark:text-slate-100">Edit Team Member</h2>
+            <p className="mt-0.5 text-sm text-slate-500 dark:text-slate-400">{memberName}</p>
           </div>
           <button
             onClick={handleClose}
             aria-label="Close modal"
-            className="w-8 h-8 rounded-lg bg-slate-700/50 flex items-center justify-center text-slate-400 hover:text-slate-200 transition-colors"
+            className="flex h-8 w-8 items-center justify-center rounded-lg bg-slate-100 text-slate-500 transition-colors hover:bg-slate-200 hover:text-slate-700 dark:bg-slate-700/50 dark:text-slate-400 dark:hover:bg-slate-700 dark:hover:text-slate-200"
           >
             <X size={16} />
           </button>
@@ -256,7 +256,7 @@ export default function EditTeamMemberModal({ member, onClose, onSuccess }: Prop
         <div className="p-6 space-y-5">
           {/* Role Selector */}
           <div>
-            <label className="block text-xs font-medium text-slate-400 mb-1.5">Role</label>
+            <label className="mb-1.5 block text-xs font-medium text-slate-700 dark:text-slate-400">Role</label>
             <div className="grid grid-cols-3 gap-2.5" data-testid="role-selector">
               {ROLES.map((r) => (
                 <button
@@ -264,12 +264,12 @@ export default function EditTeamMemberModal({ member, onClose, onSuccess }: Prop
                   onClick={() => handleRoleChange(r.value)}
                   className={`border-2 rounded-xl p-3.5 text-center transition-all ${
                     role === r.value
-                      ? 'border-wedding-rose bg-wedding-rose/5'
-                      : 'border-slate-700/30 hover:border-slate-600/50'
+                      ? 'border-wedding-rose bg-rose-50 dark:bg-wedding-rose/5'
+                      : 'border-slate-200 hover:border-slate-300 dark:border-slate-700/30 dark:hover:border-slate-600/50'
                   }`}
                 >
                   <p className={`font-semibold text-sm ${r.color}`}>{r.label}</p>
-                  <p className="text-[11px] text-slate-500 mt-0.5">{r.desc}</p>
+                  <p className="mt-0.5 text-[11px] text-slate-500 dark:text-slate-400">{r.desc}</p>
                 </button>
               ))}
             </div>
@@ -277,7 +277,7 @@ export default function EditTeamMemberModal({ member, onClose, onSuccess }: Prop
 
           {/* Permissions */}
           <div>
-            <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2.5">
+            <p className="mb-2.5 text-xs font-semibold uppercase tracking-wider text-slate-500">
               Permissions
             </p>
             <div className="grid grid-cols-2 gap-2">
@@ -285,11 +285,11 @@ export default function EditTeamMemberModal({ member, onClose, onSuccess }: Prop
                 <button
                   key={perm.key}
                   onClick={() => togglePermission(perm.key)}
-                  className="flex items-center gap-2.5 p-2.5 rounded-lg bg-slate-900/40 border border-slate-700/20 text-sm text-left"
+                  className="flex items-center gap-2.5 rounded-lg border border-slate-200 bg-slate-50 p-2.5 text-left text-sm transition-colors hover:border-slate-300 dark:border-slate-700/20 dark:bg-slate-900/40 dark:hover:border-slate-600/40"
                 >
                   <div
                     className={`w-8 h-[18px] rounded-full relative transition-colors flex-shrink-0 ${
-                      permissions[perm.key] ? 'bg-wedding-rose' : 'bg-slate-600'
+                      permissions[perm.key] ? 'bg-wedding-rose' : 'bg-slate-300 dark:bg-slate-600'
                     }`}
                   >
                     <div
@@ -298,7 +298,7 @@ export default function EditTeamMemberModal({ member, onClose, onSuccess }: Prop
                       }`}
                     />
                   </div>
-                  <span className="text-slate-300 text-xs">{perm.label}</span>
+                  <span className="text-xs text-slate-700 dark:text-slate-300">{perm.label}</span>
                 </button>
               ))}
             </div>
@@ -306,7 +306,7 @@ export default function EditTeamMemberModal({ member, onClose, onSuccess }: Prop
 
           {/* Wedding Access */}
           <div>
-            <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2.5">
+            <p className="mb-2.5 text-xs font-semibold uppercase tracking-wider text-slate-500">
               Wedding Access
             </p>
             <div className="grid grid-cols-2 gap-2.5">
@@ -314,23 +314,23 @@ export default function EditTeamMemberModal({ member, onClose, onSuccess }: Prop
                 onClick={() => setWeddingAccess('all')}
                 className={`border-2 rounded-xl p-3 text-center transition-all ${
                   weddingAccess === 'all'
-                    ? 'border-wedding-sage bg-wedding-sage/5'
-                    : 'border-slate-700/30 hover:border-slate-600/50'
+                    ? 'border-wedding-sage bg-emerald-50 dark:bg-wedding-sage/5'
+                    : 'border-slate-200 hover:border-slate-300 dark:border-slate-700/30 dark:hover:border-slate-600/50'
                 }`}
               >
-                <p className="font-semibold text-sm text-slate-200">All Weddings</p>
-                <p className="text-[11px] text-slate-500 mt-0.5">Access every wedding</p>
+                <p className="text-sm font-semibold text-slate-900 dark:text-slate-200">All Weddings</p>
+                <p className="mt-0.5 text-[11px] text-slate-500 dark:text-slate-400">Access every wedding</p>
               </button>
               <button
                 onClick={() => setWeddingAccess('assigned')}
                 className={`border-2 rounded-xl p-3 text-center transition-all ${
                   weddingAccess === 'assigned'
-                    ? 'border-wedding-sage bg-wedding-sage/5'
-                    : 'border-slate-700/30 hover:border-slate-600/50'
+                    ? 'border-wedding-sage bg-emerald-50 dark:bg-wedding-sage/5'
+                    : 'border-slate-200 hover:border-slate-300 dark:border-slate-700/30 dark:hover:border-slate-600/50'
                 }`}
               >
-                <p className="font-semibold text-sm text-wedding-sage">Specific Weddings</p>
-                <p className="text-[11px] text-slate-500 mt-0.5">Choose which weddings</p>
+                <p className="text-sm font-semibold text-teal-700 dark:text-wedding-sage">Specific Weddings</p>
+                <p className="mt-0.5 text-[11px] text-slate-500 dark:text-slate-400">Choose which weddings</p>
               </button>
             </div>
           </div>
@@ -338,14 +338,14 @@ export default function EditTeamMemberModal({ member, onClose, onSuccess }: Prop
           {/* Wedding picker */}
           {weddingAccess === 'assigned' && (
             <div>
-              <label className="block text-xs font-medium text-slate-400 mb-1.5">Select Weddings</label>
+              <label className="mb-1.5 block text-xs font-medium text-slate-700 dark:text-slate-400">Select Weddings</label>
               <div className="flex flex-wrap gap-2">
                 {assignedWeddingIds.map((wId) => {
                   const w = weddings.find((w) => w._id === wId);
                   return (
                     <span
                       key={wId}
-                      className="inline-flex items-center gap-1.5 bg-wedding-sage/10 border border-wedding-sage/20 px-3 py-1.5 rounded-lg text-xs text-wedding-sage"
+                      className="inline-flex items-center gap-1.5 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-xs text-emerald-700 dark:border-wedding-sage/20 dark:bg-wedding-sage/10 dark:text-wedding-sage"
                     >
                       {w ? getWeddingName(w) : wId}
                       <button
@@ -360,12 +360,12 @@ export default function EditTeamMemberModal({ member, onClose, onSuccess }: Prop
                 <div className="relative">
                   <button
                     onClick={() => setShowWeddingPicker(!showWeddingPicker)}
-                    className="inline-flex items-center gap-1 bg-slate-700/30 border border-slate-700/30 px-3 py-1.5 rounded-lg text-xs text-slate-400 hover:text-slate-200 transition-colors"
+                    className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-slate-100 px-3 py-1.5 text-xs text-slate-600 transition-colors hover:bg-slate-200 hover:text-slate-900 dark:border-slate-700/30 dark:bg-slate-700/30 dark:text-slate-400 dark:hover:bg-slate-700/50 dark:hover:text-slate-200"
                   >
                     + Add wedding
                   </button>
                   {showWeddingPicker && (
-                    <div className="absolute top-full left-0 mt-1 bg-slate-800 border border-slate-700/50 rounded-lg shadow-xl z-10 max-h-48 overflow-y-auto min-w-[200px]">
+                    <div className="absolute left-0 top-full z-10 mt-1 max-h-48 min-w-[200px] overflow-y-auto rounded-lg border border-slate-200 bg-white shadow-xl dark:border-slate-700/50 dark:bg-slate-800">
                       {weddings
                         .filter((w) => !assignedWeddingIds.includes(w._id))
                         .map((w) => (
@@ -375,13 +375,13 @@ export default function EditTeamMemberModal({ member, onClose, onSuccess }: Prop
                               setAssignedWeddingIds((prev) => [...prev, w._id]);
                               setShowWeddingPicker(false);
                             }}
-                            className="w-full text-left px-3 py-2 text-sm text-slate-300 hover:bg-slate-700/50 transition-colors"
+                            className="w-full px-3 py-2 text-left text-sm text-slate-700 transition-colors hover:bg-slate-50 dark:text-slate-300 dark:hover:bg-slate-700/50"
                           >
                             {getWeddingName(w)}
                           </button>
                         ))}
                       {weddings.filter((w) => !assignedWeddingIds.includes(w._id)).length === 0 && (
-                        <p className="px-3 py-2 text-xs text-slate-500">No more weddings to add</p>
+                        <p className="px-3 py-2 text-xs text-slate-500 dark:text-slate-400">No more weddings to add</p>
                       )}
                     </div>
                   )}
@@ -396,7 +396,7 @@ export default function EditTeamMemberModal({ member, onClose, onSuccess }: Prop
           <button
             onClick={handleClose}
             data-testid="modal-cancel"
-            className="px-5 py-2.5 rounded-xl border border-slate-700/50 text-sm text-slate-400 font-medium hover:text-slate-200 transition-colors"
+            className="rounded-xl border border-slate-300 px-5 py-2.5 text-sm font-medium text-slate-600 transition-colors hover:bg-slate-50 hover:text-slate-900 dark:border-slate-700/50 dark:text-slate-400 dark:hover:bg-slate-700/20 dark:hover:text-slate-200"
           >
             Cancel
           </button>
@@ -404,7 +404,7 @@ export default function EditTeamMemberModal({ member, onClose, onSuccess }: Prop
             onClick={handleSubmit}
             disabled={submitting}
             data-testid="modal-submit"
-            className="px-6 py-2.5 rounded-xl bg-gradient-to-r from-wedding-rose to-[#c48e8e] text-slate-900 text-sm font-semibold hover:shadow-lg hover:shadow-wedding-rose/20 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+            className="flex items-center gap-2 rounded-xl bg-gradient-to-r from-wedding-rose to-[#c48e8e] px-6 py-2.5 text-sm font-semibold text-slate-950 transition-all hover:shadow-lg hover:shadow-wedding-rose/20 disabled:cursor-not-allowed disabled:opacity-50"
           >
             {submitting ? (
               <>

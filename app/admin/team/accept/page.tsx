@@ -30,15 +30,24 @@ const PERMISSION_LABELS: Record<string, string> = {
   manage_packages: 'Manage Packages',
 };
 
+const pageBackgroundClass =
+  'min-h-screen bg-gradient-to-br from-rose-50 via-white to-sky-50 dark:from-dark-bg dark:to-slate-800';
+
+const cardClass =
+  'rounded-2xl border border-slate-200 bg-white p-8 shadow-sm dark:border-slate-700/50 dark:bg-slate-800/60 dark:shadow-none dark:backdrop-blur-xl';
+
+const inputClass =
+  'w-full rounded-lg border border-slate-300 bg-white px-3.5 py-2.5 text-sm text-slate-900 placeholder:text-slate-400 transition-colors focus:border-wedding-rose focus:outline-none dark:border-slate-700/50 dark:bg-slate-900/60 dark:text-slate-200 dark:placeholder:text-slate-600';
+
 // Next.js 16 requires useSearchParams to be inside a Suspense boundary
 export default function AcceptInvitePage() {
   return (
     <Suspense
       fallback={
-        <div className="min-h-screen bg-gradient-to-br from-dark-bg to-slate-800 flex items-center justify-center">
+        <div className={`${pageBackgroundClass} flex items-center justify-center`}>
           <div className="text-center">
             <Loader2 className="w-10 h-10 animate-spin text-wedding-rose mx-auto" />
-            <p className="mt-4 text-slate-400 text-sm">Loading invitation...</p>
+            <p className="mt-4 text-sm text-slate-600 dark:text-slate-400">Loading invitation…</p>
           </div>
         </div>
       }
@@ -175,19 +184,19 @@ function AcceptInviteContent() {
     : [];
 
   const roleColors: Record<string, string> = {
-    admin: 'bg-[rgba(212,165,165,0.15)] text-wedding-rose',
-    editor: 'bg-[rgba(168,218,220,0.15)] text-wedding-sage',
-    viewer: 'bg-slate-500/15 text-slate-400',
+    admin: 'border border-rose-200 bg-rose-50 text-rose-700 dark:border-transparent dark:bg-[rgba(212,165,165,0.15)] dark:text-wedding-rose',
+    editor: 'border border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-transparent dark:bg-[rgba(168,218,220,0.15)] dark:text-wedding-sage',
+    viewer: 'border border-slate-200 bg-slate-100 text-slate-600 dark:border-transparent dark:bg-slate-500/15 dark:text-slate-400',
   };
 
   // Loading state
   if (loading) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-dark-bg to-slate-800 flex items-center justify-center">
+      <div className={`${pageBackgroundClass} flex items-center justify-center`}>
         <Toaster position="top-right" richColors />
         <div className="text-center">
           <Loader2 className="w-10 h-10 animate-spin text-wedding-rose mx-auto" />
-          <p className="mt-4 text-slate-400 text-sm">Loading invitation...</p>
+          <p className="mt-4 text-sm text-slate-600 dark:text-slate-400">Loading invitation…</p>
         </div>
       </div>
     );
@@ -196,14 +205,14 @@ function AcceptInviteContent() {
   // Error state
   if (error) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-dark-bg to-slate-800 flex items-center justify-center p-6">
+      <div className={`${pageBackgroundClass} flex items-center justify-center p-6`}>
         <Toaster position="top-right" richColors />
         <div className="w-full max-w-md text-center">
-          <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-red-500/10 mb-6">
-            <AlertCircle className="w-8 h-8 text-red-400" />
+          <div className="mb-6 inline-flex h-16 w-16 items-center justify-center rounded-full bg-red-50 dark:bg-red-500/10">
+            <AlertCircle className="h-8 w-8 text-red-600 dark:text-red-400" />
           </div>
-          <h2 className="text-xl font-semibold text-slate-200 mb-2">Invitation Not Found</h2>
-          <p className="text-slate-400 mb-6">{error}</p>
+          <h2 className="mb-2 text-xl font-semibold text-slate-900 dark:text-slate-200">Invitation Not Found</h2>
+          <p className="mb-6 text-slate-600 dark:text-slate-400">{error}</p>
           <button
             onClick={() => router.push('/admin/login')}
             className="text-wedding-rose hover:text-wedding-rose/80 text-sm font-medium transition-colors"
@@ -218,22 +227,22 @@ function AcceptInviteContent() {
   // Success state
   if (success) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-dark-bg to-slate-800 flex items-center justify-center p-6">
+      <div className={`${pageBackgroundClass} flex items-center justify-center p-6`}>
         <Toaster position="top-right" richColors />
         <div className="w-full max-w-md text-center">
-          <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-green-500/10 mb-6">
-            <CheckCircle2 className="w-8 h-8 text-green-400" />
+          <div className="mb-6 inline-flex h-16 w-16 items-center justify-center rounded-full bg-emerald-50 dark:bg-green-500/10">
+            <CheckCircle2 className="h-8 w-8 text-emerald-600 dark:text-green-400" />
           </div>
-          <h2 className="text-xl font-semibold text-slate-200 mb-2">Welcome to the team!</h2>
-          <p className="text-slate-400 mb-2">Your account has been created successfully.</p>
-          <p className="text-slate-500 text-sm">Redirecting you to login...</p>
+          <h2 className="mb-2 text-xl font-semibold text-slate-900 dark:text-slate-200">Welcome to the team!</h2>
+          <p className="mb-2 text-slate-600 dark:text-slate-400">Your account has been created successfully.</p>
+          <p className="text-sm text-slate-500 dark:text-slate-500">Redirecting you to login…</p>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-dark-bg to-slate-800 flex items-center justify-center p-6">
+    <div className={`${pageBackgroundClass} flex items-center justify-center p-6`}>
       <Toaster position="top-right" richColors />
       <div className="w-full max-w-[480px]">
         {/* Logo */}
@@ -245,14 +254,14 @@ function AcceptInviteContent() {
             height={40}
             className="mx-auto mb-3 block"
           />
-          <p className="text-sm text-slate-500">You&apos;ve been invited to join a team</p>
+          <p className="text-sm text-slate-500 dark:text-slate-400">You&apos;ve been invited to join a team</p>
         </div>
 
         {/* Card */}
-        <div className="bg-slate-800/60 border border-slate-700/50 rounded-2xl p-8 backdrop-blur-xl">
+        <div className={cardClass}>
           {/* Invite header */}
           <div className="text-center mb-6">
-            <p className="text-slate-200 mb-2">
+            <p className="mb-2 text-slate-700 dark:text-slate-200">
               <span className="font-semibold">{inviteInfo?.company_name || inviteInfo?.planner_name || 'A wedding planner'}</span>{' '}
               invited you as
             </p>
@@ -265,21 +274,21 @@ function AcceptInviteContent() {
               {inviteInfo?.role ? inviteInfo.role.charAt(0).toUpperCase() + inviteInfo.role.slice(1) : 'Member'}
             </span>
             {inviteInfo?.email && (
-              <p className="text-xs text-slate-500 mt-2">
-                Invitation sent to <span className="text-slate-300 font-medium">{inviteInfo.email}</span>
+              <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">
+                Invitation sent to <span className="font-medium text-slate-700 dark:text-slate-300">{inviteInfo.email}</span>
               </p>
             )}
           </div>
 
           {/* Permissions display */}
           {enabledPermissions.length > 0 && (
-            <div className="bg-slate-900/40 rounded-xl p-4 mb-6">
-              <p className="text-xs text-slate-500 uppercase tracking-wider mb-2.5">Your permissions</p>
+            <div className="mb-6 rounded-xl border border-slate-200 bg-slate-50 p-4 dark:border-slate-700/40 dark:bg-slate-900/40">
+              <p className="mb-2.5 text-xs uppercase tracking-wider text-slate-500">Your permissions</p>
               <div className="flex flex-wrap gap-1.5">
                 {enabledPermissions.map((perm) => (
                   <span
                     key={perm}
-                    className="bg-wedding-sage/10 text-wedding-sage px-2.5 py-1 rounded-md text-xs font-medium"
+                    className="rounded-md border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-xs font-medium text-emerald-700 dark:border-transparent dark:bg-wedding-sage/10 dark:text-wedding-sage"
                   >
                     {perm}
                   </span>
@@ -292,48 +301,52 @@ function AcceptInviteContent() {
           <form onSubmit={handleSubmit} data-testid="accept-form">
             <div className="grid grid-cols-2 gap-3 mb-4">
               <div>
-                <label className="block text-xs font-medium text-slate-400 mb-1.5">First Name</label>
+                <label className="mb-1.5 block text-xs font-medium text-slate-700 dark:text-slate-400">First Name</label>
                 <input
                   type="text"
                   value={firstName}
                   onChange={(e) => setFirstName(e.target.value)}
-                  placeholder="First name"
+                  placeholder="First name…"
                   data-testid="first-name"
-                  className="w-full bg-slate-900/60 border border-slate-700/50 rounded-lg px-3.5 py-2.5 text-sm text-slate-200 placeholder:text-slate-600 focus:border-wedding-rose focus:outline-none transition-colors"
+                  className={inputClass}
+                  autoComplete="given-name"
                   required
                 />
               </div>
               <div>
-                <label className="block text-xs font-medium text-slate-400 mb-1.5">Last Name</label>
+                <label className="mb-1.5 block text-xs font-medium text-slate-700 dark:text-slate-400">Last Name</label>
                 <input
                   type="text"
                   value={lastName}
                   onChange={(e) => setLastName(e.target.value)}
-                  placeholder="Last name"
+                  placeholder="Last name…"
                   data-testid="last-name"
-                  className="w-full bg-slate-900/60 border border-slate-700/50 rounded-lg px-3.5 py-2.5 text-sm text-slate-200 placeholder:text-slate-600 focus:border-wedding-rose focus:outline-none transition-colors"
+                  className={inputClass}
+                  autoComplete="family-name"
                   required
                 />
               </div>
             </div>
 
             <div className="mb-4">
-              <label className="block text-xs font-medium text-slate-400 mb-1.5">Create Password</label>
+              <label className="mb-1.5 block text-xs font-medium text-slate-700 dark:text-slate-400">Create Password</label>
               <div className="relative">
                 <input
                   type={showPassword ? 'text' : 'password'}
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  placeholder="Min 8 characters"
+                  placeholder="Min 8 characters…"
                   data-testid="password-input"
-                  className="w-full bg-slate-900/60 border border-slate-700/50 rounded-lg px-3.5 py-2.5 text-sm text-slate-200 placeholder:text-slate-600 focus:border-wedding-rose focus:outline-none transition-colors pr-10"
+                  className={`${inputClass} pr-10`}
+                  autoComplete="new-password"
                   required
                   minLength={8}
                 />
                 <button
                   type="button"
                   onClick={() => setShowPassword(!showPassword)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300"
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 transition-colors hover:text-slate-700 dark:hover:text-slate-300"
+                  aria-label={showPassword ? 'Hide password' : 'Show password'}
                 >
                   {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
                 </button>
@@ -348,8 +361,8 @@ function AcceptInviteContent() {
                     { label: 'Number', met: /\d/.test(password) },
                     { label: 'Special character', met: /[!@#$%^&*(),.?":{}|<>]/.test(password) },
                   ].map(({ label, met }) => (
-                    <span key={label} className={`text-[11px] flex items-center gap-1 ${met ? 'text-green-400' : 'text-slate-500'}`}>
-                      <span className={`w-1 h-1 rounded-full inline-block ${met ? 'bg-green-400' : 'bg-slate-600'}`} />
+                    <span key={label} className={`flex items-center gap-1 text-[11px] ${met ? 'text-emerald-600 dark:text-green-400' : 'text-slate-500 dark:text-slate-400'}`}>
+                      <span className={`inline-block h-1 w-1 rounded-full ${met ? 'bg-emerald-500 dark:bg-green-400' : 'bg-slate-400 dark:bg-slate-600'}`} />
                       {label}
                     </span>
                   ))}
@@ -358,22 +371,24 @@ function AcceptInviteContent() {
             </div>
 
             <div className="mb-6">
-              <label className="block text-xs font-medium text-slate-400 mb-1.5">Confirm Password</label>
+              <label className="mb-1.5 block text-xs font-medium text-slate-700 dark:text-slate-400">Confirm Password</label>
               <div className="relative">
                 <input
                   type={showConfirmPassword ? 'text' : 'password'}
                   value={confirmPassword}
                   onChange={(e) => setConfirmPassword(e.target.value)}
-                  placeholder="Re-enter password"
+                  placeholder="Re-enter password…"
                   data-testid="confirm-password"
-                  className="w-full bg-slate-900/60 border border-slate-700/50 rounded-lg px-3.5 py-2.5 text-sm text-slate-200 placeholder:text-slate-600 focus:border-wedding-rose focus:outline-none transition-colors pr-10"
+                  className={`${inputClass} pr-10`}
+                  autoComplete="new-password"
                   required
                   minLength={8}
                 />
                 <button
                   type="button"
                   onClick={() => setShowConfirmPassword(!showConfirmPassword)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300"
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 transition-colors hover:text-slate-700 dark:hover:text-slate-300"
+                  aria-label={showConfirmPassword ? 'Hide confirm password' : 'Show confirm password'}
                 >
                   {showConfirmPassword ? <EyeOff size={16} /> : <Eye size={16} />}
                 </button>
@@ -384,12 +399,12 @@ function AcceptInviteContent() {
               type="submit"
               disabled={submitting}
               data-testid="accept-submit"
-              className="w-full bg-gradient-to-r from-wedding-rose to-[#c48e8e] text-slate-900 font-semibold py-3 rounded-xl text-sm hover:shadow-lg hover:shadow-wedding-rose/20 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+              className="flex w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-wedding-rose to-[#c48e8e] py-3 text-sm font-semibold text-slate-950 transition-all hover:shadow-lg hover:shadow-wedding-rose/20 disabled:cursor-not-allowed disabled:opacity-50"
             >
               {submitting ? (
                 <>
                   <Loader2 className="w-4 h-4 animate-spin" />
-                  Creating Account...
+                  Creating Account…
                 </>
               ) : (
                 'Join Team'
@@ -398,7 +413,7 @@ function AcceptInviteContent() {
           </form>
         </div>
 
-        <p className="text-center text-xs text-slate-600 mt-6">
+        <p className="mt-6 text-center text-xs text-slate-600 dark:text-slate-400">
           Already have an account?{' '}
           <button
             onClick={() => router.push('/admin/login')}

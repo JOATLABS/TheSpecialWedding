@@ -29,7 +29,7 @@ interface SubscriptionSummary {
   company_name?: string;
   plan_id: string;
   plan_name?: string;
-  status: string;
+  status?: string;
   billing_interval: string;
   amount: number;
   current_period_start: string;
@@ -45,6 +45,8 @@ interface BillingMetrics {
   active_subscriptions: number;
   trial_subscriptions: number;
   cancelled_subscriptions: number;
+  pending_checkout_subscriptions: number;
+  unknown_status_subscriptions: number;
   past_due_subscriptions: number;
   churn_rate: number;
   conversion_rate: number;
@@ -59,6 +61,14 @@ interface RecentEvent {
   timestamp: string;
   user_email?: string;
 }
+
+const normalizeSubscriptionStatus = (status?: string | null): string => {
+  const normalized = status?.trim().toLowerCase();
+  if (!normalized) return 'unknown';
+  if (normalized === 'trialing') return 'trial';
+  if (normalized === 'canceled') return 'cancelled';
+  return normalized;
+};
 
 export default function AdminBillingDashboard() {
   const router = useRouter();
@@ -116,36 +126,60 @@ export default function AdminBillingDashboard() {
         return;
       }
 
+      let businessMetrics: Record<string, number> = {};
       if (metricsResponse.ok) {
         const metricsData = await metricsResponse.json();
-
-        // Extract billing metrics from platform metrics
-        const businessMetrics = metricsData.business || {};
-        setMetrics({
-          mrr: businessMetrics.mrr || 0,
-          arr: businessMetrics.arr || 0,
-          mrr_growth: 0, // Would need historical data
-          total_subscriptions: (businessMetrics.active_subscriptions || 0) +
-                              (businessMetrics.trial_subscriptions || 0) +
-                              (businessMetrics.canceled_subscriptions || 0),
-          active_subscriptions: businessMetrics.active_subscriptions || 0,
-          trial_subscriptions: businessMetrics.trial_subscriptions || 0,
-          cancelled_subscriptions: businessMetrics.canceled_subscriptions || 0,
-          past_due_subscriptions: 0,
-          churn_rate: 0,
-          conversion_rate: businessMetrics.conversion_rate || 0,
-          average_revenue_per_user: businessMetrics.active_subscriptions > 0
-            ? (businessMetrics.mrr || 0) / businessMetrics.active_subscriptions
-            : 0
-        });
+        businessMetrics = metricsData.business || {};
       }
 
       // Fetch all subscriptions
+      let normalizedSubscriptions: SubscriptionSummary[] = [];
       const subsResponse = await fetch(`${baseUrl}/subscriptions`, { headers, credentials: 'include' });
       if (subsResponse.ok) {
         const subsData = await subsResponse.json();
-        setSubscriptions(Array.isArray(subsData) ? subsData : subsData.subscriptions || []);
+        const rawSubscriptions = (Array.isArray(subsData) ? subsData : subsData.subscriptions || []) as SubscriptionSummary[];
+        normalizedSubscriptions = rawSubscriptions.map((sub) => ({
+          ...sub,
+          status: normalizeSubscriptionStatus(sub.status),
+        }));
+        setSubscriptions(normalizedSubscriptions);
+      } else {
+        setSubscriptions([]);
       }
+
+      const statusCounts = normalizedSubscriptions.reduce<Record<string, number>>((acc, sub) => {
+        const status = normalizeSubscriptionStatus(sub.status);
+        acc[status] = (acc[status] || 0) + 1;
+        return acc;
+      }, {});
+
+      const activeSubscriptions = statusCounts.active || 0;
+      const trialSubscriptions = statusCounts.trial || 0;
+      const cancelledSubscriptions = statusCounts.cancelled || 0;
+      const pendingCheckoutSubscriptions = statusCounts.pending_checkout || 0;
+      const pastDueSubscriptions = statusCounts.past_due || 0;
+      const unknownStatusSubscriptions = statusCounts.unknown || 0;
+      const totalSubscriptions = normalizedSubscriptions.length > 0
+        ? normalizedSubscriptions.length
+        : activeSubscriptions + trialSubscriptions + cancelledSubscriptions + pendingCheckoutSubscriptions + pastDueSubscriptions + unknownStatusSubscriptions;
+
+      setMetrics({
+        mrr: businessMetrics.mrr || 0,
+        arr: businessMetrics.arr || 0,
+        mrr_growth: 0, // Would need historical data
+        total_subscriptions: totalSubscriptions,
+        active_subscriptions: activeSubscriptions || businessMetrics.active_subscriptions || 0,
+        trial_subscriptions: trialSubscriptions || businessMetrics.trial_subscriptions || 0,
+        cancelled_subscriptions: cancelledSubscriptions || businessMetrics.canceled_subscriptions || 0,
+        pending_checkout_subscriptions: pendingCheckoutSubscriptions,
+        unknown_status_subscriptions: unknownStatusSubscriptions,
+        past_due_subscriptions: pastDueSubscriptions || businessMetrics.past_due_payments || 0,
+        churn_rate: 0,
+        conversion_rate: businessMetrics.conversion_rate || 0,
+        average_revenue_per_user: (activeSubscriptions || businessMetrics.active_subscriptions || 0) > 0
+          ? (businessMetrics.mrr || 0) / (activeSubscriptions || businessMetrics.active_subscriptions || 0)
+          : 0
+      });
 
       // Generate mock recent events (would come from webhooks/events API)
       setRecentEvents([
@@ -173,6 +207,8 @@ export default function AdminBillingDashboard() {
         active_subscriptions: 0,
         trial_subscriptions: 0,
         cancelled_subscriptions: 0,
+        pending_checkout_subscriptions: 0,
+        unknown_status_subscriptions: 0,
         past_due_subscriptions: 0,
         churn_rate: 0,
         conversion_rate: 0,
@@ -195,7 +231,8 @@ export default function AdminBillingDashboard() {
     fetchBillingData();
   }, [authLoading, fetchBillingData, userProfile]);
 
-  const getStatusBadge = (status: string) => {
+  const getStatusBadge = (status?: string | null) => {
+    const normalizedStatus = normalizeSubscriptionStatus(status);
     const config: Record<string, { bg: string; text: string; icon: React.ReactNode }> = {
       active: {
         bg: 'bg-green-100 dark:bg-green-900/30',
@@ -205,6 +242,16 @@ export default function AdminBillingDashboard() {
       trialing: {
         bg: 'bg-blue-100 dark:bg-blue-900/30',
         text: 'text-blue-800 dark:text-blue-300',
+        icon: <Clock className="w-3 h-3" />
+      },
+      trial: {
+        bg: 'bg-blue-100 dark:bg-blue-900/30',
+        text: 'text-blue-800 dark:text-blue-300',
+        icon: <Clock className="w-3 h-3" />
+      },
+      pending_checkout: {
+        bg: 'bg-indigo-100 dark:bg-indigo-900/30',
+        text: 'text-indigo-800 dark:text-indigo-300',
         icon: <Clock className="w-3 h-3" />
       },
       past_due: {
@@ -221,15 +268,20 @@ export default function AdminBillingDashboard() {
         bg: 'bg-red-100 dark:bg-red-900/30',
         text: 'text-red-800 dark:text-red-300',
         icon: <XCircle className="w-3 h-3" />
+      },
+      unknown: {
+        bg: 'bg-slate-100 dark:bg-slate-700',
+        text: 'text-slate-800 dark:text-slate-200',
+        icon: <AlertCircle className="w-3 h-3" />
       }
     };
 
-    const statusConfig = config[status] || config.active;
+    const statusConfig = config[normalizedStatus] || config.unknown;
 
     return (
       <span className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium ${statusConfig.bg} ${statusConfig.text}`}>
         {statusConfig.icon}
-        {status.charAt(0).toUpperCase() + status.slice(1)}
+        {normalizedStatus.charAt(0).toUpperCase() + normalizedStatus.slice(1).replace('_', ' ')}
       </span>
     );
   };
@@ -340,7 +392,7 @@ export default function AdminBillingDashboard() {
                   {metrics?.active_subscriptions || 0}
                 </p>
                 <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
-                  +{metrics?.trial_subscriptions || 0} in trial
+                  +{metrics?.trial_subscriptions || 0} in trial · {metrics?.pending_checkout_subscriptions || 0} pending checkout
                 </p>
               </div>
               <div className="p-3 bg-purple-100 dark:bg-purple-900/30 rounded-lg">
@@ -373,7 +425,7 @@ export default function AdminBillingDashboard() {
             <div className="flex items-center justify-between mb-6">
               <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">Subscription Status</h2>
             </div>
-            <div className="grid grid-cols-4 gap-4">
+            <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
               <div className="text-center p-4 bg-green-50 dark:bg-green-900/20 rounded-lg">
                 <p className="text-2xl font-bold text-green-600 dark:text-green-400">
                   {metrics?.active_subscriptions || 0}
@@ -384,7 +436,13 @@ export default function AdminBillingDashboard() {
                 <p className="text-2xl font-bold text-blue-600 dark:text-blue-400">
                   {metrics?.trial_subscriptions || 0}
                 </p>
-                <p className="text-sm text-gray-600 dark:text-gray-400">Trialing</p>
+                <p className="text-sm text-gray-600 dark:text-gray-400">Trial</p>
+              </div>
+              <div className="text-center p-4 bg-indigo-50 dark:bg-indigo-900/20 rounded-lg">
+                <p className="text-2xl font-bold text-indigo-600 dark:text-indigo-400">
+                  {metrics?.pending_checkout_subscriptions || 0}
+                </p>
+                <p className="text-sm text-gray-600 dark:text-gray-400">Pending Checkout</p>
               </div>
               <div className="text-center p-4 bg-yellow-50 dark:bg-yellow-900/20 rounded-lg">
                 <p className="text-2xl font-bold text-yellow-600 dark:text-yellow-400">
@@ -397,6 +455,12 @@ export default function AdminBillingDashboard() {
                   {metrics?.cancelled_subscriptions || 0}
                 </p>
                 <p className="text-sm text-gray-600 dark:text-gray-400">Cancelled</p>
+              </div>
+              <div className="text-center p-4 bg-slate-50 dark:bg-slate-700/50 rounded-lg">
+                <p className="text-2xl font-bold text-slate-700 dark:text-slate-200">
+                  {metrics?.unknown_status_subscriptions || 0}
+                </p>
+                <p className="text-sm text-gray-600 dark:text-gray-400">Unknown</p>
               </div>
             </div>
           </Card>
@@ -440,9 +504,11 @@ export default function AdminBillingDashboard() {
                 >
                   <option value="all">All Status</option>
                   <option value="active">Active</option>
-                  <option value="trialing">Trialing</option>
+                  <option value="trial">Trial</option>
+                  <option value="pending_checkout">Pending Checkout</option>
                   <option value="past_due">Past Due</option>
-                  <option value="canceled">Cancelled</option>
+                  <option value="cancelled">Cancelled</option>
+                  <option value="unknown">Unknown</option>
                 </select>
               </div>
             </div>
