@@ -113,6 +113,11 @@ export default function ContractTemplate({
   const primaryName = couple.partner1_name || couple.name || '';
   const secondaryName = couple.partner2_name || couple.partner_name;
   const coupleDisplayName = couple.display_name || (secondaryName ? `${primaryName} & ${secondaryName}` : primaryName);
+  const effectivePaymentSchedule = packageSnapshot.payment_schedule?.length
+    ? packageSnapshot.payment_schedule
+    : (packageSnapshot.total_amount || 0) > 0
+      ? [{ name: 'Full Payment', trigger: 'on_signing', amount: packageSnapshot.total_amount }]
+      : [];
 
   return (
     <div className="bg-white dark:bg-slate-900 rounded-xl shadow-xl overflow-hidden print:shadow-none">
@@ -248,14 +253,14 @@ export default function ContractTemplate({
         )}
 
         {/* Payment Schedule */}
-        {packageSnapshot.payment_schedule?.length > 0 && (
+        {effectivePaymentSchedule.length > 0 && (
           <div>
             <h2 className="flex items-center gap-2 text-xl font-semibold text-slate-900 dark:text-white mb-6">
               <DollarSign size={24} className="text-primary-500" />
               Payment Schedule
             </h2>
             <div className="space-y-3">
-              {packageSnapshot.payment_schedule.map((payment, index) => {
+              {effectivePaymentSchedule.map((payment, index) => {
                 const amount = payment.percentage
                   ? (packageSnapshot.total_amount * payment.percentage) / 100
                   : (payment.amount || 0);

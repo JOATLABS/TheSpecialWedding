@@ -71,11 +71,23 @@ interface PlannerInfo {
   profile_image_url?: string;
 }
 
+interface EventGuestBreakdown {
+  event_type: string;
+  date?: string;
+  attending: number;
+}
+
 interface GuestStats {
-  total_invited: number;
+  planned_total: number;
+  guest_list_total: number;
+  invited: number;
+  responded: number;
   confirmed: number;
   declined: number;
   pending: number;
+  not_invited: number;
+  response_rate: number;
+  event_breakdown: EventGuestBreakdown[];
 }
 
 interface BudgetSummary {
@@ -436,6 +448,9 @@ function DashboardSection({ data }: { data: DashboardData }) {
   const stats = data.guest_stats;
   const budget = data.budget_summary;
   const budgetPercent = budget.total_budget > 0 ? Math.min(100, (budget.total_spent / budget.total_budget) * 100) : 0;
+  const guestTarget = stats.planned_total || stats.guest_list_total;
+  const guestListProgress = guestTarget > 0 ? Math.min(100, (stats.guest_list_total / guestTarget) * 100) : 0;
+  const hasGuestTracker = guestTarget > 0 || stats.guest_list_total > 0 || stats.invited > 0 || stats.responded > 0;
 
   return (
     <div className="space-y-6">
@@ -451,27 +466,155 @@ function DashboardSection({ data }: { data: DashboardData }) {
       )}
 
       {/* Quick Stats */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
         <div className="bg-white dark:bg-slate-800 rounded-xl p-4 border border-slate-200 dark:border-slate-700 shadow-sm">
           <Users className="w-5 h-5 text-indigo-500 mb-2" />
-          <div className="text-2xl font-semibold text-slate-900 dark:text-white">{stats.total_invited}</div>
-          <div className="text-xs text-slate-500 dark:text-slate-400">Guests invited</div>
+          <div className="text-2xl font-semibold text-slate-900 dark:text-white">{guestTarget}</div>
+          <div className="text-xs text-slate-500 dark:text-slate-400">Guest list target</div>
+          {stats.guest_list_total > 0 && (
+            <div className="text-[11px] text-slate-400 dark:text-slate-500 mt-1">
+              {stats.guest_list_total} guests added so far
+            </div>
+          )}
+        </div>
+        <div className="bg-white dark:bg-slate-800 rounded-xl p-4 border border-slate-200 dark:border-slate-700 shadow-sm">
+          <Send className="w-5 h-5 text-sky-500 mb-2" />
+          <div className="text-2xl font-semibold text-slate-900 dark:text-white">{stats.invited}</div>
+          <div className="text-xs text-slate-500 dark:text-slate-400">Invites sent</div>
+          {stats.not_invited > 0 && (
+            <div className="text-[11px] text-slate-400 dark:text-slate-500 mt-1">
+              {stats.not_invited} still waiting to be invited
+            </div>
+          )}
+        </div>
+        <div className="bg-white dark:bg-slate-800 rounded-xl p-4 border border-slate-200 dark:border-slate-700 shadow-sm">
+          <ClipboardList className="w-5 h-5 text-violet-500 mb-2" />
+          <div className="text-2xl font-semibold text-slate-900 dark:text-white">{stats.responded}</div>
+          <div className="text-xs text-slate-500 dark:text-slate-400">Responses received</div>
+          {stats.invited > 0 && (
+            <div className="text-[11px] text-slate-400 dark:text-slate-500 mt-1">
+              {stats.response_rate.toFixed(0)}% of sent invites
+            </div>
+          )}
         </div>
         <div className="bg-white dark:bg-slate-800 rounded-xl p-4 border border-slate-200 dark:border-slate-700 shadow-sm">
           <CheckCircle className="w-5 h-5 text-green-500 mb-2" />
           <div className="text-2xl font-semibold text-slate-900 dark:text-white">{stats.confirmed}</div>
-          <div className="text-xs text-slate-500 dark:text-slate-400">Confirmed</div>
+          <div className="text-xs text-slate-500 dark:text-slate-400">Attending</div>
+        </div>
+        <div className="bg-white dark:bg-slate-800 rounded-xl p-4 border border-slate-200 dark:border-slate-700 shadow-sm">
+          <AlertCircle className="w-5 h-5 text-rose-500 mb-2" />
+          <div className="text-2xl font-semibold text-slate-900 dark:text-white">{stats.declined}</div>
+          <div className="text-xs text-slate-500 dark:text-slate-400">Declined</div>
         </div>
         <div className="bg-white dark:bg-slate-800 rounded-xl p-4 border border-slate-200 dark:border-slate-700 shadow-sm">
           <Clock className="w-5 h-5 text-amber-500 mb-2" />
           <div className="text-2xl font-semibold text-slate-900 dark:text-white">{stats.pending}</div>
           <div className="text-xs text-slate-500 dark:text-slate-400">Awaiting response</div>
         </div>
-        <div className="bg-white dark:bg-slate-800 rounded-xl p-4 border border-slate-200 dark:border-slate-700 shadow-sm">
-          <DollarSign className="w-5 h-5 text-emerald-500 mb-2" />
-          <div className="text-2xl font-semibold text-slate-900 dark:text-white">{formatCurrency(budget.total_budget)}</div>
-          <div className="text-xs text-slate-500 dark:text-slate-400">Total budget</div>
+      </div>
+
+      {/* Guest & RSVP Snapshot */}
+      <div className="bg-white dark:bg-slate-800 rounded-xl p-6 border border-slate-200 dark:border-slate-700 shadow-sm space-y-5">
+        <div className="flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <h3 className="font-semibold text-slate-900 dark:text-white">Guest tracker</h3>
+            <p className="text-sm text-slate-500 dark:text-slate-400">
+              Follow guest list progress, invite delivery, and RSVP responses without waiting on a planner update.
+            </p>
+          </div>
+          {stats.invited > 0 && (
+            <div className="text-sm text-slate-500 dark:text-slate-400">
+              Response rate <span className="font-semibold text-slate-900 dark:text-white">{stats.response_rate.toFixed(0)}%</span>
+            </div>
+          )}
         </div>
+
+        {hasGuestTracker ? (
+          <>
+            {guestTarget > 0 && (
+              <div>
+                <div className="flex items-center justify-between mb-2 text-sm">
+                  <span className="text-slate-600 dark:text-slate-300">Guest list setup</span>
+                  <span className="text-slate-500 dark:text-slate-400">
+                    {stats.guest_list_total} of {guestTarget} guests added
+                  </span>
+                </div>
+                <div className="w-full bg-slate-200 dark:bg-slate-700 rounded-full h-2.5">
+                  <div
+                    className="h-2.5 rounded-full bg-indigo-500 transition-all"
+                    style={{ width: `${guestListProgress}%` }}
+                  />
+                </div>
+              </div>
+            )}
+
+            <div className="grid gap-4 lg:grid-cols-2">
+              <div className="rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/40 p-4">
+                <h4 className="font-medium text-slate-900 dark:text-white mb-3">What couples usually want to know</h4>
+                <div className="space-y-2 text-sm">
+                  <div className="flex items-center justify-between gap-4">
+                    <span className="text-slate-500 dark:text-slate-400">Guests on your live list</span>
+                    <span className="font-medium text-slate-900 dark:text-white">{stats.guest_list_total}</span>
+                  </div>
+                  <div className="flex items-center justify-between gap-4">
+                    <span className="text-slate-500 dark:text-slate-400">Invites sent</span>
+                    <span className="font-medium text-slate-900 dark:text-white">{stats.invited}</span>
+                  </div>
+                  <div className="flex items-center justify-between gap-4">
+                    <span className="text-slate-500 dark:text-slate-400">Responses received</span>
+                    <span className="font-medium text-slate-900 dark:text-white">{stats.responded}</span>
+                  </div>
+                  <div className="flex items-center justify-between gap-4">
+                    <span className="text-slate-500 dark:text-slate-400">Attending at least one event</span>
+                    <span className="font-medium text-slate-900 dark:text-white">{stats.confirmed}</span>
+                  </div>
+                  <div className="flex items-center justify-between gap-4">
+                    <span className="text-slate-500 dark:text-slate-400">Declined all events</span>
+                    <span className="font-medium text-slate-900 dark:text-white">{stats.declined}</span>
+                  </div>
+                  <div className="flex items-center justify-between gap-4">
+                    <span className="text-slate-500 dark:text-slate-400">Still waiting to RSVP</span>
+                    <span className="font-medium text-slate-900 dark:text-white">{stats.pending}</span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/40 p-4">
+                <h4 className="font-medium text-slate-900 dark:text-white mb-3">RSVPs by event</h4>
+                {stats.event_breakdown.length > 0 ? (
+                  <div className="space-y-3">
+                    {stats.event_breakdown.map((event) => (
+                      <div key={event.event_type} className="flex items-start justify-between gap-4">
+                        <div>
+                          <p className="text-sm font-medium text-slate-900 dark:text-white">{eventTypeLabel(event.event_type)}</p>
+                          {event.date && (
+                            <p className="text-xs text-slate-500 dark:text-slate-400">{formatDate(event.date)}</p>
+                          )}
+                        </div>
+                        <div className="text-right">
+                          <p className="text-lg font-semibold text-slate-900 dark:text-white">{event.attending}</p>
+                          <p className="text-xs text-slate-500 dark:text-slate-400">attending</p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="h-full flex flex-col justify-center text-sm text-slate-500 dark:text-slate-400">
+                    <p>No event-by-event attendance yet.</p>
+                    <p className="mt-1">
+                      Once your planner adds your ceremony and reception schedule, you&apos;ll see who is attending each event here.
+                    </p>
+                  </div>
+                )}
+              </div>
+            </div>
+          </>
+        ) : (
+          <div className="rounded-xl border border-dashed border-slate-300 dark:border-slate-700 p-5 text-sm text-slate-500 dark:text-slate-400">
+            Your guest tracker will start filling in as your planner adds guests and sends invitations.
+          </div>
+        )}
       </div>
 
       {/* Budget Progress */}
@@ -490,6 +633,20 @@ function DashboardSection({ data }: { data: DashboardData }) {
           <div className="flex justify-between text-sm">
             <span className="text-slate-500 dark:text-slate-400">Spent: {formatCurrency(budget.total_spent)}</span>
             <span className="text-slate-500 dark:text-slate-400">Remaining: {formatCurrency(budget.remaining)}</span>
+          </div>
+        </div>
+      )}
+
+      {budget.total_budget > 0 && (
+        <div className="bg-white dark:bg-slate-800 rounded-xl p-4 border border-slate-200 dark:border-slate-700 shadow-sm">
+          <div className="flex items-center gap-3">
+            <DollarSign className="w-5 h-5 text-emerald-500" />
+            <div>
+              <p className="text-sm font-medium text-slate-900 dark:text-white">Budget at a glance</p>
+              <p className="text-sm text-slate-500 dark:text-slate-400">
+                {formatCurrency(budget.total_budget)} total budget with {formatCurrency(budget.remaining)} left to allocate.
+              </p>
+            </div>
           </div>
         </div>
       )}

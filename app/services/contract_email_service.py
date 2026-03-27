@@ -9,6 +9,7 @@ import logging
 from bson import ObjectId
 from app.core.settings import settings
 from app.core.database import mongo
+from app.utils.payment_schedule import build_effective_payment_schedule
 
 logger = logging.getLogger(__name__)
 
@@ -618,7 +619,7 @@ class ContractEmailService:
 
             # Format payment schedule
             schedule_rows = ""
-            for i, payment in enumerate(package.get("payment_schedule", []), 1):
+            for i, payment in enumerate(build_effective_payment_schedule(package), 1):
                 amount = payment.get("amount") or (total * payment.get("percentage", 0) / 100)
                 trigger = payment.get("trigger", "")
                 trigger_label = {
