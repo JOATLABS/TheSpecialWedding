@@ -165,7 +165,7 @@ interface Testimonial {
 const SaasAdminDashboard = () => {
  const router = useRouter();
  const searchParams = useSearchParams();
- const { userProfile, token } = useAdmin();
+ const { userProfile, token, expireSession } = useAdmin();
  const [activeTab, setActiveTab] = useState<'overview' | 'plans' | 'reviews' | 'ad-config'>('overview');
  const [plans, setPlans] = useState<SubscriptionPlan[]>([]);
  const [planners, setPlanners] = useState<WeddingPlanner[]>([]);
@@ -199,6 +199,10 @@ const SaasAdminDashboard = () => {
       };
 
       const plansResponse = await fetch(`${baseUrl}/subscription-plans?include_inactive=true`, { headers, credentials: 'include' });
+      if (plansResponse.status === 401) {
+        expireSession();
+        return;
+      }
       if (plansResponse.ok) {
         const plansData = await plansResponse.json();
         console.log('[SaaS Admin] Subscription plans loaded:', plansData.length, 'plans');
@@ -210,6 +214,10 @@ const SaasAdminDashboard = () => {
       }
 
       const plannersResponse = await fetch(`${baseUrl}/saas/wedding-planners`, { headers, credentials: 'include' });
+      if (plannersResponse.status === 401) {
+        expireSession();
+        return;
+      }
       if (plannersResponse.ok) {
         const plannersData = await plannersResponse.json();
         setPlanners(plannersData.map((planner: any) => ({
@@ -227,6 +235,10 @@ const SaasAdminDashboard = () => {
 
       // Fetch platform metrics for the Overview tab (replaces old analytics/overview + revenue calls)
       const metricsResponse = await fetch(`${baseUrl}/saas/analytics/platform?timeframe=${metricsTimeframe}`, { headers, credentials: 'include' });
+      if (metricsResponse.status === 401) {
+        expireSession();
+        return;
+      }
       if (metricsResponse.ok) {
         const metricsData = await metricsResponse.json();
         setMetrics(metricsData);
@@ -319,7 +331,7 @@ const SaasAdminDashboard = () => {
     } finally {
       setLoading(false);
     }
-  }, [metricsTimeframe, token]);
+  }, [expireSession, metricsTimeframe, token]);
 
   useEffect(() => {
     fetchData();
@@ -343,6 +355,10 @@ const SaasAdminDashboard = () => {
         'Content-Type': 'application/json'
       };
       const res = await fetch(`${baseUrl}/saas/analytics/platform?timeframe=${tf}`, { headers, credentials: 'include' });
+      if (res.status === 401) {
+        expireSession();
+        return;
+      }
       if (res.ok) {
         setMetrics(await res.json());
       }
@@ -351,7 +367,7 @@ const SaasAdminDashboard = () => {
     } finally {
       setMetricsLoading(false);
     }
-  }, [token]);
+  }, [expireSession, token]);
 
   const handleTimeframeChange = useCallback((tf: TimeframeKey) => {
     setMetricsTimeframe(tf);

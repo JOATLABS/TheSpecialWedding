@@ -44,7 +44,7 @@ export default function AdminRouteGuard({ children }: { children: React.ReactNod
 
     // Redirect to login if not authenticated
     if (!isAuthenticated && pathname.startsWith('/admin')) {
-      router.push('/admin/login');
+      router.replace('/admin/login');
       return;
     }
 

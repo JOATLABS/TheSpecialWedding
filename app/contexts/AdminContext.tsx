@@ -1,16 +1,18 @@
 'use client';
 
-import React, { createContext, useContext, useEffect, useState, useCallback } from 'react';
+import React, { createContext, useContext, useEffect, useState, useCallback, useRef } from 'react';
 import { flushSync } from 'react-dom';
 import { getApiBaseUrl } from '@/utils/env';
-import { useRouter } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 import { toast } from 'sonner';
 
 import {
     bootstrapAdminAuthToken,
     clearAdminAuthStorage,
     getTokenExpiresInMs,
+    isTokenExpired,
     persistAdminAuthToken,
+    refreshAdminAuthToken,
     wasAdminSessionRemembered,
 } from '@/utils/adminAuthStorage';
 
@@ -49,11 +51,13 @@ type AdminContextType = {
     // Auth properties
     isAuthenticated: boolean;
     isLoading: boolean;
+    authStatus: 'loading' | 'authenticated' | 'unauthenticated';
     token: string | null;
     userProfile: UserProfile | null;
     // Auth methods
     login: (email: string, password: string, rememberMe?: boolean) => Promise<void>;
-    logout: () => void;
+    logout: (options?: { message?: string; redirectTo?: string; showToast?: boolean }) => void;
+    expireSession: (message?: string) => void;
     fetchUserProfile: () => Promise<void>;
     // API methods
     apiRequest: <T = any>(path: string, method?: string, body?: unknown) => Promise<T | undefined>;
@@ -67,9 +71,13 @@ const AdminContext = createContext<AdminContextType | null>(null);
  */
 export const AdminProvider = ({ children }: { children: React.ReactNode }) => {
     const router = useRouter();
+    const pathname = usePathname();
     const [token, setToken] = useState<string | null>(null);
     const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
     const [isLoading, setIsLoading] = useState(true);
+    const [authStatus, setAuthStatus] = useState<'loading' | 'authenticated' | 'unauthenticated'>('loading');
+    const sessionCheckRef = useRef<Promise<'success' | 'unauthenticated' | 'error'> | null>(null);
+    const lastSessionCheckAtRef = useRef(0);
 
     useEffect(() => {
         let cancelled = false;
@@ -79,6 +87,9 @@ export const AdminProvider = ({ children }: { children: React.ReactNode }) => {
 
             if (!cancelled && hydratedToken) {
                 setToken(hydratedToken);
+                setAuthStatus('authenticated');
+            } else if (!cancelled) {
+                setAuthStatus('unauthenticated');
             }
 
             if (!cancelled) {
@@ -95,7 +106,12 @@ export const AdminProvider = ({ children }: { children: React.ReactNode }) => {
 
     // ---- logout must be defined before fetchUserProfile & apiRequest ----
     // Both call logout() on 401/403, so it needs to be in scope first.
-    const logout = useCallback(() => {
+    const logout = useCallback((options?: { message?: string; redirectTo?: string; showToast?: boolean }) => {
+        const {
+            message = 'Logged out successfully',
+            redirectTo = '/admin/login',
+            showToast = true,
+        } = options ?? {};
         const baseUrl = getApiBaseUrl();
         void fetch(`${baseUrl}/admin/logout`, {
             method: 'POST',
@@ -108,12 +124,55 @@ export const AdminProvider = ({ children }: { children: React.ReactNode }) => {
         // Clear React state
         setToken(null);
         setUserProfile(null);
+        setAuthStatus('unauthenticated');
 
-        toast.success('Logged out successfully');
+        if (showToast) {
+            toast.success(message);
+        }
 
         // Force complete page refresh to clear ALL cached data and state
-        window.location.href = '/admin/login';
+        window.location.replace(redirectTo);
     }, []);
+
+    const expireSession = useCallback((message = 'Session expired. Please sign in again.') => {
+        const redirectTo = `/admin/login?message=${encodeURIComponent(message)}`;
+        logout({
+            message,
+            redirectTo,
+            showToast: false,
+        });
+    }, [logout]);
+
+    const revalidateSession = useCallback(async (): Promise<'success' | 'unauthenticated' | 'error'> => {
+        if (sessionCheckRef.current) {
+            return sessionCheckRef.current;
+        }
+
+        sessionCheckRef.current = (async () => {
+            try {
+                const result = await refreshAdminAuthToken(token);
+
+                if (result.status === 'success' && result.token) {
+                    persistAdminAuthToken(result.token, wasAdminSessionRemembered());
+                    setToken((current) => (current === result.token ? current : result.token));
+                    setAuthStatus('authenticated');
+                    return 'success';
+                }
+
+                if (result.status === 'unauthenticated') {
+                    return 'unauthenticated';
+                }
+
+                return 'error';
+            } catch {
+                return 'error';
+            } finally {
+                sessionCheckRef.current = null;
+            }
+        })();
+
+        return sessionCheckRef.current;
+    }, [token]);
 
     const fetchUserProfile = useCallback(async () => {
         if (!token) return;
@@ -168,6 +227,7 @@ export const AdminProvider = ({ children }: { children: React.ReactNode }) => {
                 }
 
                 setUserProfile(profile);
+                setAuthStatus('authenticated');
             } else if (response.status === 402) {
                 // Subscription blocked — user is authenticated but expired/cancelled.
                 // This shouldn't happen anymore since backend tags instead of 402s on profile,
@@ -175,7 +235,7 @@ export const AdminProvider = ({ children }: { children: React.ReactNode }) => {
                 console.warn('Subscription blocked (402) — redirecting to billing');
             } else if (response.status === 401) {
                 // Token expired or invalid — session is dead
-                logout();
+                expireSession();
             }
         } catch (error) {
             // Log error without exposing sensitive information
@@ -184,18 +244,19 @@ export const AdminProvider = ({ children }: { children: React.ReactNode }) => {
                 console.error('Failed to fetch user profile');
             }
         }
-    }, [token, logout]);
+    }, [token, expireSession]);
 
     // Always refresh the profile when the active token changes so role-sensitive
     // pages never act on a stale profile from a previous session.
     useEffect(() => {
         if (!token) {
             setUserProfile(null);
+            setAuthStatus(isLoading ? 'loading' : 'unauthenticated');
             return;
         }
 
         fetchUserProfile();
-    }, [fetchUserProfile, token]);
+    }, [fetchUserProfile, isLoading, token]);
 
     // ---- Automatic token refresh ----
     // Schedule a refresh ~5 minutes before the JWT expires so the session
@@ -215,34 +276,79 @@ export const AdminProvider = ({ children }: { children: React.ReactNode }) => {
 
         const timerId = setTimeout(async () => {
             try {
-                const baseUrl = getApiBaseUrl();
-                const res = await fetch(`${baseUrl}/admin/token/refresh`, {
-                    method: 'POST',
-                    headers: {
-                        'Authorization': `Bearer ${token}`,
-                        'Content-Type': 'application/json',
-                    },
-                    credentials: 'include',
-                });
+                const result = await refreshAdminAuthToken(token);
 
-                if (res.ok) {
-                    const { access_token } = await res.json();
-                    persistAdminAuthToken(access_token, wasAdminSessionRemembered());
+                if (result.status === 'success') {
+                    persistAdminAuthToken(result.token, wasAdminSessionRemembered());
                     // Update React state — this triggers the effect again,
                     // scheduling the NEXT refresh, and also causes TopHeader
                     // to reconnect SSE with the fresh token.
-                    setToken(access_token);
+                    setToken(result.token);
+                    setAuthStatus('authenticated');
                 }
-                // If refresh fails (e.g. 401 because the token expired in the
-                // meantime), we do nothing — the next API call or profile fetch
-                // will handle the 401 and trigger logout if needed.
+                // If refresh fails because the session is invalid, expire it.
+                else if (result.status === 'unauthenticated') {
+                    expireSession();
+                }
             } catch {
                 // Network error — do nothing, will retry on next mount/token change
             }
         }, refreshIn);
 
         return () => clearTimeout(timerId);
-    }, [token]);
+    }, [expireSession, token]);
+
+    useEffect(() => {
+        if (typeof window === 'undefined') {
+            return;
+        }
+
+        const isPublicPage = pathname === '/admin/login' || pathname.startsWith('/admin/team/accept');
+        if (isPublicPage) {
+            return;
+        }
+
+        const maybeRevalidate = () => {
+            if (document.hidden) {
+                return;
+            }
+
+            const now = Date.now();
+            if (now - lastSessionCheckAtRef.current < 15_000) {
+                return;
+            }
+            lastSessionCheckAtRef.current = now;
+
+            void (async () => {
+                const hasSessionState = !!token || !!userProfile;
+                const shouldCheck = hasSessionState || authStatus === 'authenticated' || (!!token && isTokenExpired(token));
+                if (!shouldCheck) {
+                    return;
+                }
+
+                const result = await revalidateSession();
+                if (result === 'unauthenticated') {
+                    expireSession();
+                }
+            })();
+        };
+
+        const handleVisibilityChange = () => {
+            if (!document.hidden) {
+                maybeRevalidate();
+            }
+        };
+
+        window.addEventListener('focus', maybeRevalidate);
+        window.addEventListener('pageshow', maybeRevalidate);
+        document.addEventListener('visibilitychange', handleVisibilityChange);
+
+        return () => {
+            window.removeEventListener('focus', maybeRevalidate);
+            window.removeEventListener('pageshow', maybeRevalidate);
+            document.removeEventListener('visibilitychange', handleVisibilityChange);
+        };
+    }, [authStatus, expireSession, pathname, revalidateSession, token, userProfile]);
 
     const login = async (email: string, password: string, rememberMe = true) => {
         try {
@@ -279,18 +385,10 @@ export const AdminProvider = ({ children }: { children: React.ReactNode }) => {
                 // Token has < 10 min left — trigger a background refresh
                 // so the useEffect scheduler doesn't race against expiry
                 try {
-                    const refreshRes = await fetch(`${baseUrl}/admin/token/refresh`, {
-                        method: 'POST',
-                        headers: {
-                            'Authorization': `Bearer ${access_token}`,
-                            'Content-Type': 'application/json',
-                        },
-                        credentials: 'include',
-                    });
-                    if (refreshRes.ok) {
-                        const { access_token: fresh } = await refreshRes.json();
-                        persistAdminAuthToken(fresh, rememberMe);
-                        activeToken = fresh;
+                    const refreshResult = await refreshAdminAuthToken(access_token);
+                    if (refreshResult.status === 'success') {
+                        persistAdminAuthToken(refreshResult.token, rememberMe);
+                        activeToken = refreshResult.token;
                     }
                 } catch {
                     // Network error on refresh — proceed with login token
@@ -346,6 +444,7 @@ export const AdminProvider = ({ children }: { children: React.ReactNode }) => {
                 flushSync(() => {
                     setToken(activeToken);
                     setUserProfile(profile);
+                    setAuthStatus('authenticated');
                 });
 
                 // Use a client-side transition here. A hard browser reload
@@ -361,6 +460,7 @@ export const AdminProvider = ({ children }: { children: React.ReactNode }) => {
                     clearAdminAuthStorage();
                     setToken(null);
                     setUserProfile(null);
+                    setAuthStatus('unauthenticated');
                     toast.error('Your account role is not recognized. Please contact support.');
                     return;
                 }
@@ -390,6 +490,7 @@ export const AdminProvider = ({ children }: { children: React.ReactNode }) => {
                     flushSync(() => {
                         setToken(activeToken);
                         setUserProfile(profile);
+                        setAuthStatus('authenticated');
                     });
                 }
 
@@ -401,6 +502,7 @@ export const AdminProvider = ({ children }: { children: React.ReactNode }) => {
                 console.error('Profile fetch failed after login');
                 clearAdminAuthStorage();
                 setToken(null);
+                setAuthStatus('unauthenticated');
                 toast.error('Unable to verify your account. Please try again.');
                 return;
             }
@@ -430,7 +532,7 @@ export const AdminProvider = ({ children }: { children: React.ReactNode }) => {
         if (!response.ok) {
             // 401 = token invalid/expired — force logout and re-auth
             if (response.status === 401) {
-                logout();
+                expireSession();
                 return undefined;
             }
             // 402 = subscription expired/blocked — redirect to billing
@@ -476,13 +578,15 @@ export const AdminProvider = ({ children }: { children: React.ReactNode }) => {
         <AdminContext.Provider
             value={{
                 // Auth properties
-                isAuthenticated: !!token,
+                isAuthenticated: authStatus === 'authenticated' && !!token,
                 isLoading,
+                authStatus,
                 token,
                 userProfile,
                 // Auth methods
                 login,
                 logout,
+                expireSession,
                 fetchUserProfile,
                 // API methods
                 apiRequest,

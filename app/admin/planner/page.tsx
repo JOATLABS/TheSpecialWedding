@@ -56,7 +56,7 @@ interface AIInsight {
 }
 
 export default function WeddingPlannerDashboard() {
- const { token, userProfile, fetchUserProfile } = useAdmin();
+ const { token, userProfile, fetchUserProfile, expireSession } = useAdmin();
  const router = useRouter();
  const [weddings, setWeddings] = useState<Wedding[]>([]);
  const [stats, setStats] = useState<RSVPStats>({ total_guests: 0, total_plus_ones_allowed: 0, total_plus_ones_submitted: 0, confirmed: 0, confirmed_plus_ones_allowed: 0, confirmed_plus_ones_submitted: 0, declined: 0, pending: 0, pending_plus_ones_allowed: 0 });
@@ -76,6 +76,10 @@ export default function WeddingPlannerDashboard() {
  const [showAdRail, setShowAdRail] = useState(false);
 
  const fetchMyWeddings = useCallback(async () => {
+ if (!token) {
+ setLoading(false);
+ return;
+ }
  try {
  const baseUrl = getApiBaseUrl();
  // Use the new optimized metrics API
@@ -101,6 +105,9 @@ export default function WeddingPlannerDashboard() {
  pending_plus_ones_allowed: data.summary.pending_plus_ones_allowed || 0,
  });
  setRecentActivity(data.recent_activity);
+ } else if (response.status === 401) {
+ expireSession();
+ return;
  } else {
  setError('Failed to fetch dashboard data');
  }
@@ -109,7 +116,7 @@ export default function WeddingPlannerDashboard() {
  } finally {
  setLoading(false);
  }
- }, [token]);
+ }, [expireSession, token]);
 
  // Fetch AI insights for selected wedding
  const fetchAIInsights = useCallback(async (weddingId: string, forceRefresh = false) => {

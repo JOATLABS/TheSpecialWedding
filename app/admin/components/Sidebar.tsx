@@ -274,7 +274,7 @@ export default function Sidebar({ isOpen, setIsOpen, isMobile }: SidebarProps) {
         {/* User Section */}
         <div className="p-3 border-t border-slate-200/50 dark:border-slate-700/50">
           <button
-            onClick={logout}
+            onClick={() => logout()}
             className="flex items-center gap-3 w-full px-3 py-2.5 rounded-xl text-slate-600 dark:text-slate-400 hover:bg-red-50 dark:hover:bg-red-900/20 hover:text-red-600 dark:hover:text-red-400 transition-colors"
             aria-label="Logout from account"
             title="Logout"

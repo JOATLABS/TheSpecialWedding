@@ -86,7 +86,7 @@ export default function AdminHeader() {
             </Link>
           ))}
           <button
-            onClick={logout}
+            onClick={() => logout()}
             className="text-red-500 hover:underline"
             aria-label="Logout from account"
           >
