@@ -12,6 +12,7 @@ import logging
 from bson import ObjectId
 from app.core.database import mongo
 from app.models.autopilot import WeddingPackage, Contract, CoupleInfo
+from app.utils.mongo_dates import to_mongo_datetime
 
 logger = logging.getLogger(__name__)
 
@@ -342,6 +343,7 @@ class PackageService:
             )
 
             contract_dict = contract.model_dump(by_alias=True)
+            contract_dict["wedding_date"] = to_mongo_datetime(contract.wedding_date)
             result = await self.contracts.insert_one(contract_dict)
 
             # Increment package contracts count

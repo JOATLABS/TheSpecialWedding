@@ -45,7 +45,7 @@ class BlogArticleModel(MongoModel):
     # Article Content
     title: str = Field(..., min_length=5, max_length=200, description="Article title")
     slug: str = Field(..., min_length=5, max_length=220, description="URL-friendly slug")
-    content: str = Field(..., min_length=50, max_length=100000, description="Markdown content rendered in React")
+    content: str = Field(..., min_length=50, max_length=100000, description="Markdown or basic editorial HTML rendered in React")
     excerpt: str = Field(..., min_length=20, max_length=500, description="Short summary for card listings")
 
     # Classification

@@ -11,6 +11,7 @@ import logging
 from bson import ObjectId
 from app.core.database import mongo
 from app.models.autopilot import Contract, ContractSignature, ScheduledPayment
+from app.utils.mongo_dates import to_mongo_datetime
 
 logger = logging.getLogger(__name__)
 
@@ -389,6 +390,7 @@ class ContractService:
                 )
 
                 payment_dict = payment.model_dump(by_alias=True)
+                payment_dict["due_date"] = to_mongo_datetime(payment.due_date)
                 result = await self.scheduled_payments.insert_one(payment_dict)
                 payment_dict["_id"] = result.inserted_id
 
@@ -652,7 +654,7 @@ class ContractService:
                 {"_id": ObjectId(contract_id)},
                 {
                     "$set": {
-                        "wedding_date": new_wedding_date,
+                        "wedding_date": to_mongo_datetime(new_wedding_date),
                         "updated_at": datetime.now(timezone.utc)
                     }
                 }
@@ -689,7 +691,12 @@ class ContractService:
                             "name": schedule_item.get("name"),
                             "status": "scheduled"
                         },
-                        {"$set": {"due_date": new_due_date, "updated_at": datetime.now(timezone.utc)}}
+                        {
+                            "$set": {
+                                "due_date": to_mongo_datetime(new_due_date),
+                                "updated_at": datetime.now(timezone.utc),
+                            }
+                        }
                     )
 
         except Exception as e:

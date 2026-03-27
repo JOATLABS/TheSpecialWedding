@@ -1,6 +1,7 @@
 import { Metadata } from 'next';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
+import type { ReactNode } from 'react';
 import { blogPosts, type BlogPostKey } from '../data';
 import SaasNav from '@/components/saas/SaasNav';
 import { getMarketingBlogCategory } from '@/data/blogCategories';
@@ -26,8 +27,7 @@ function getArticleData(apiArticle: PublicBlogApiArticle | null, slug: string) {
       ogDescription: apiArticle.meta_description || apiArticle.ogDescription || apiArticle.excerpt,
       ogImage: apiArticle.og_image || apiArticle.card_image || null,
       authorName: apiArticle.author_name || 'The Special Wedding',
-      isMarkdown: true,
-      fallbackContent: null,
+      fallbackContent: null as ReactNode | null,
     };
   }
 
@@ -43,7 +43,6 @@ function getArticleData(apiArticle: PublicBlogApiArticle | null, slug: string) {
       ogDescription: fallback.ogDescription,
       ogImage: null,
       authorName: 'The Special Wedding',
-      isMarkdown: false,
       fallbackContent: fallback.content,
     };
   }
@@ -139,13 +138,13 @@ export default async function BlogPostPage({
         </div>
 
         {/* Article body */}
-        <div className="prose prose-invert max-w-none">
-          {article.isMarkdown ? (
-            <BlogArticleContent content={article.content} />
-          ) : (
-            article.fallbackContent
-          )}
-        </div>
+        {article.content ? (
+          <BlogArticleContent content={article.content} />
+        ) : article.fallbackContent ? (
+          article.fallbackContent
+        ) : (
+          <p className="italic text-slate-500">Article content is not available.</p>
+        )}
       </article>
 
       {/* Footer */}
