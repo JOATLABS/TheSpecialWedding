@@ -16,6 +16,16 @@ logger = logging.getLogger(__name__)
 class CouplePortalService:
     """Service for couple portal data aggregation."""
 
+    @staticmethod
+    def _normalize_attending_events(rsvp: Dict[str, Any]) -> List[str]:
+        """Return a normalized list of event types a guest is attending."""
+        attending = rsvp.get("attending")
+        if isinstance(attending, list):
+            return [event for event in attending if isinstance(event, str) and event]
+        if isinstance(attending, dict):
+            return [event for event, is_attending in attending.items() if is_attending]
+        return []
+
     async def get_portal_dashboard(self, wedding_id: str, couple_email: str) -> Dict[str, Any]:
         """
         Get complete portal dashboard data for a couple.
@@ -33,7 +43,7 @@ class CouplePortalService:
             planner = await mongo.get_users_collection().find_one({"email": planner_email})
 
         # Get guest stats (aggregated, not individual)
-        guest_stats = await self._get_guest_stats(wedding_id)
+        guest_stats = await self._get_guest_stats(wedding)
 
         # Get budget summary (totals only, not line items)
         budget_summary = await self._get_budget_summary(wedding_id)
@@ -83,36 +93,108 @@ class CouplePortalService:
             "updates": updates,
         }
 
-    async def _get_guest_stats(self, wedding_id: str) -> Dict[str, int]:
-        """Get aggregated guest statistics (no individual data)."""
+    async def _get_guest_stats(self, wedding: Dict[str, Any]) -> Dict[str, Any]:
+        """Get aggregated guest statistics in couple-friendly language."""
         try:
+            wedding_id = str(wedding.get("_id", ""))
             guests_collection = mongo.db["guests"]
-
-            total = await guests_collection.count_documents({"wedding_id": wedding_id})
-
-            # Get RSVP stats
             rsvp_collection = mongo.db["rsvps"]
-            confirmed = await rsvp_collection.count_documents({
-                "wedding_id": wedding_id,
-                "attending": True
-            })
-            declined = await rsvp_collection.count_documents({
-                "wedding_id": wedding_id,
-                "attending": False
-            })
-            pending = total - confirmed - declined
-            if pending < 0:
-                pending = 0
+
+            guests = await guests_collection.find(
+                {"wedding_id": wedding_id},
+                {"_id": 1, "invite_sent": 1},
+            ).to_list(length=5000)
+
+            guest_list_total = len(guests)
+            planned_total = max(int(wedding.get("guest_count") or 0), guest_list_total)
+            invited = sum(1 for guest in guests if guest.get("invite_sent"))
+
+            rsvps = await rsvp_collection.find({
+                "$or": [
+                    {"wedding_id": wedding_id},
+                    {"wedding_id": wedding.get("_id")},
+                ]
+            }).to_list(length=5000)
+
+            confirmed = 0
+            declined = 0
+            responded_guest_ids: set[str] = set()
+            event_counts: Dict[str, int] = {}
+
+            for rsvp in rsvps:
+                guest_id = str(rsvp.get("guest_id", ""))
+                if guest_id:
+                    responded_guest_ids.add(guest_id)
+
+                attending_events = self._normalize_attending_events(rsvp)
+                if attending_events:
+                    confirmed += 1
+                    for event_type in attending_events:
+                        event_counts[event_type] = event_counts.get(event_type, 0) + 1
+                else:
+                    declined += 1
+
+            responded = len(responded_guest_ids)
+            pending = sum(
+                1 for guest in guests
+                if guest.get("invite_sent") and str(guest["_id"]) not in responded_guest_ids
+            )
+            not_invited = sum(
+                1 for guest in guests
+                if not guest.get("invite_sent") and str(guest["_id"]) not in responded_guest_ids
+            )
+            response_rate = min(100.0, round((responded / invited) * 100, 1)) if invited > 0 else 0.0
+
+            configured_events = wedding.get("events", []) or []
+            ordered_event_types: List[str] = []
+            event_dates: Dict[str, str] = {}
+            for event in configured_events:
+                event_type = event.get("type")
+                if event_type and event_type not in ordered_event_types:
+                    ordered_event_types.append(event_type)
+                    if event.get("date"):
+                        event_dates[event_type] = event.get("date")
+
+            for event_type in event_counts:
+                if event_type not in ordered_event_types:
+                    ordered_event_types.append(event_type)
+
+            event_breakdown = [
+                {
+                    "event_type": event_type,
+                    "date": event_dates.get(event_type),
+                    "attending": event_counts.get(event_type, 0),
+                }
+                for event_type in ordered_event_types
+            ]
 
             return {
-                "total_invited": total,
+                "planned_total": planned_total,
+                "guest_list_total": guest_list_total,
+                "invited": invited,
+                "responded": responded,
                 "confirmed": confirmed,
                 "declined": declined,
-                "pending": pending
+                "pending": pending,
+                "not_invited": not_invited,
+                "response_rate": response_rate,
+                "event_breakdown": event_breakdown,
             }
         except Exception as e:
+            wedding_id = str(wedding.get("_id", "unknown"))
             logger.error(f"Error getting guest stats for wedding {wedding_id}: {e}")
-            return {"total_invited": 0, "confirmed": 0, "declined": 0, "pending": 0}
+            return {
+                "planned_total": 0,
+                "guest_list_total": 0,
+                "invited": 0,
+                "responded": 0,
+                "confirmed": 0,
+                "declined": 0,
+                "pending": 0,
+                "not_invited": 0,
+                "response_rate": 0.0,
+                "event_breakdown": [],
+            }
 
     async def _get_budget_summary(self, wedding_id: str) -> Dict[str, Any]:
         """Get budget totals using the same sources as the planner budget surface."""

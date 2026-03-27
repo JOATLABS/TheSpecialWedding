@@ -12,6 +12,7 @@ from bson import ObjectId
 from app.core.database import mongo
 from app.models.autopilot import Contract, ContractSignature, ScheduledPayment
 from app.utils.mongo_dates import to_mongo_datetime
+from app.utils.payment_schedule import build_effective_payment_schedule
 
 logger = logging.getLogger(__name__)
 
@@ -132,6 +133,11 @@ class ContractService:
         hydrated = {**contract}
         updates: Dict[str, Any] = {}
         package_snapshot = dict(hydrated.get("package_snapshot") or {})
+        effective_schedule = build_effective_payment_schedule(package_snapshot)
+        if package_snapshot.get("payment_schedule") != effective_schedule:
+            package_snapshot["payment_schedule"] = effective_schedule
+            updates["package_snapshot"] = package_snapshot
+            hydrated["package_snapshot"] = package_snapshot
 
         couple = self._normalize_couple(hydrated.get("couple"))
         if couple:
@@ -469,7 +475,7 @@ class ContractService:
         """
         try:
             package_snapshot = contract.get("package_snapshot", {})
-            payment_schedule = package_snapshot.get("payment_schedule", [])
+            payment_schedule = build_effective_payment_schedule(package_snapshot)
             total_amount = Decimal(str(package_snapshot.get("total_amount", 0)))
             currency = package_snapshot.get("currency", "usd")
 
@@ -800,7 +806,7 @@ class ContractService:
         """Recalculate due dates for payments with days_before_wedding trigger."""
         try:
             package_snapshot = contract.get("package_snapshot", {})
-            payment_schedule = package_snapshot.get("payment_schedule", [])
+            payment_schedule = build_effective_payment_schedule(package_snapshot)
 
             # Find payments that need recalculation
             for schedule_item in payment_schedule:
