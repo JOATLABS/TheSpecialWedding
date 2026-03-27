@@ -770,6 +770,13 @@ class StripeService:
         # Build user update (if applicable) before starting the transaction
         user_update_doc = None
         if user_id:
+            user_doc = await self.users_collection.find_one(
+                {"_id": ObjectId(user_id)},
+                {"registration_source": 1, "email_verified": 1}
+            )
+            is_public_signup = user_doc.get("registration_source") == "public_signup" if user_doc else False
+            is_email_verified = bool(user_doc.get("email_verified")) if user_doc else False
+
             user_updates: Dict[str, Any] = {
                 "subscription_status": internal_status,
                 "updated_at": now,
@@ -792,14 +799,13 @@ class StripeService:
 
             unset_fields: Dict[str, Any] = {}
 
-            # Auto-activate and verify when a paid/trial subscription is established.
-            # NOTE: We intentionally do NOT $unset email_verification_token here.
-            # The token must remain in the DB so that the GET /verify-email/{token}
-            # endpoint can still find the user when they click the email link.
-            # The verify_email endpoint is responsible for cleaning up the token.
+            # Stripe can establish billing state, but it should not act as email
+            # verification for public signups. Keep those accounts blocked until
+            # the verification link is used, while still removing the pending
+            # signup TTL so a paid account is not reaped.
             if internal_status in (SubscriptionStatus.ACTIVE.value, SubscriptionStatus.TRIAL.value):
-                user_updates["is_active"] = True
-                user_updates["email_verified"] = True
+                if not is_public_signup or is_email_verified:
+                    user_updates["is_active"] = True
                 unset_fields["pending_expires_at"] = ""
 
             user_update_doc = {"$set": user_updates}
