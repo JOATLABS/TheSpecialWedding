@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { useAdmin } from '@/contexts/AdminContext';
 import { useSSE } from '@/hooks/useSSE';
+import { BUILT_IN_WEDDING_EVENT_OPTIONS, getWeddingEventLabel, getWeddingEventOptions } from '@/utils/weddingEvents';
 import PageHeader from '../components/PageHeader';
 import { usePagination } from '@/admin/hooks/usePagination';
 import { GlassPagination } from '@/admin/components/ui/glass/GlassPagination';
@@ -17,6 +18,7 @@ interface Wedding {
   slug: string;
   events?: Array<{
     type: string;
+    custom_type_label?: string;
     date: string;
   }>;
 }
@@ -90,12 +92,6 @@ const PRESET_GROUPS = [
 
 // Wedding party group IDs for sync feature (bridesmaids, groomsmen, maid of honor, best man)
 const WEDDING_PARTY_GROUP_IDS = ['maid_of_honor', 'bridesmaids', 'best_man', 'groomsmen'];
-
-const EVENT_OPTIONS = [
-  { value: 'traditional', label: 'Traditional Ceremony' },
-  { value: 'white_wedding', label: 'White Wedding' },
-  { value: 'reception', label: 'Reception' },
-];
 
 // ==================== MAIN COMPONENT ====================
 
@@ -1190,6 +1186,20 @@ export default function AdminGuestsPage() {
   // ==================== COMPUTED VALUES ====================
 
   const selectedWeddingData = weddings.find(w => (w.id || w._id) === selectedWedding);
+  const selectedWeddingEventOptions = useMemo(() => {
+    if (selectedWeddingData?.events?.length) {
+      return getWeddingEventOptions(selectedWeddingData.events);
+    }
+    return BUILT_IN_WEDDING_EVENT_OPTIONS.map((option) => ({ value: option.value, label: option.label }));
+  }, [selectedWeddingData]);
+  const getSelectedWeddingEventLabel = useCallback(
+    (eventType: string) =>
+      getWeddingEventLabel(
+        eventType,
+        selectedWeddingData?.events?.find((event) => event.type === eventType)?.custom_type_label
+      ),
+    [selectedWeddingData]
+  );
   const uniqueGroups = Array.from(new Set(guests.map(g => g.group_id).filter((g): g is string => Boolean(g))));
   const uniqueRoles = Array.from(new Set(guests.map(g => g.role).filter((r): r is string => Boolean(r))));
 
@@ -1907,7 +1917,7 @@ export default function AdminGuestsPage() {
                                           <div>
                                             <h4 className="font-semibold text-gray-900 dark:text-gray-100 mb-2">RSVP Details</h4>
                                             <dl className="space-y-1 text-sm">
-                                              <div><dt className="inline font-medium text-gray-700 dark:text-gray-300">Attending:</dt> <dd className="inline ml-2 text-gray-600 dark:text-gray-400">{rsvp.attending.join(', ') || 'None'}</dd></div>
+                                              <div><dt className="inline font-medium text-gray-700 dark:text-gray-300">Attending:</dt> <dd className="inline ml-2 text-gray-600 dark:text-gray-400">{rsvp.attending.map(getSelectedWeddingEventLabel).join(', ') || 'None'}</dd></div>
                                               <div><dt className="inline font-medium text-gray-700 dark:text-gray-300">Dietary:</dt> <dd className="inline ml-2 text-gray-600 dark:text-gray-400">{rsvp.dietary || 'None'}</dd></div>
                                               {rsvp.confirmed_by_admin && <div className="text-xs text-blue-500">(Confirmed by admin)</div>}
                                             </dl>
@@ -2054,7 +2064,7 @@ export default function AdminGuestsPage() {
                                 <div className="flex gap-6 text-sm">
                                   <div>
                                     <span className="font-medium text-gray-700 dark:text-gray-300">Attending:</span>
-                                    <span className="ml-2">{rsvp.attending.join(', ') || 'None'}</span>
+                                    <span className="ml-2">{rsvp.attending.map(getSelectedWeddingEventLabel).join(', ') || 'None'}</span>
                                   </div>
                                   {rsvp.dietary && (
                                     <div>
@@ -2113,7 +2123,7 @@ export default function AdminGuestsPage() {
                                               <div className="text-gray-600 dark:text-gray-400">
                                                 {plusOne.phone && <span>Phone: {plusOne.phone} | </span>}
                                                 {plusOne.email && <span>Email: {plusOne.email} | </span>}
-                                                Attending: {plusOne.attending?.join(', ') || 'None'}
+                                                Attending: {plusOne.attending?.map(getSelectedWeddingEventLabel).join(', ') || 'None'}
                                                 {plusOne.dietary && ` | Dietary: ${plusOne.dietary}`}
                                               </div>
                                               <div className="flex gap-2 mt-1">
@@ -2148,7 +2158,7 @@ export default function AdminGuestsPage() {
                                                 : 'bg-gray-100 text-gray-600'
                                             }`}
                                           >
-                                            {event.type.replace('_', ' ')} - {event.date}
+                                            {getWeddingEventLabel(event.type, event.custom_type_label)} - {event.date}
                                           </span>
                                         ))}
                                       </div>
@@ -2404,7 +2414,7 @@ export default function AdminGuestsPage() {
                     <div>
                       <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Attending Events</label>
                       <div className="space-y-2">
-                        {EVENT_OPTIONS.map(event => (
+                        {selectedWeddingEventOptions.map(event => (
                           <label key={event.value} className="flex items-center space-x-2">
                             <input
                               type="checkbox"

@@ -29,7 +29,8 @@ export interface OrderOfEventsItem {
 }
 
 export interface WeddingEvent {
-  type: 'traditional' | 'white_wedding' | 'reception' | 'engagement' | 'rehearsal';
+  type: string;
+  custom_type_label?: string;
   date: string;
   details?: EventDetails;
   order_of_events?: OrderOfEventsItem[];

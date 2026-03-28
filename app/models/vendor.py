@@ -29,6 +29,7 @@ class VendorCategory(str, Enum):
     CATERER = "caterer"
     VENUE = "venue"
     DJ = "dj"
+    MC = "mc"
     BAND = "band"
     OFFICIANT = "officiant"
     PLANNER = "planner"
@@ -190,6 +191,11 @@ class VendorProfile(BaseModel):
 
     # Categorization
     service_category: VendorCategory = Field(..., description="Primary service category")
+    custom_service_category: Optional[str] = Field(
+        None,
+        max_length=100,
+        description="Custom service category label when service_category is 'other'"
+    )
     service_subcategories: List[str] = Field(default_factory=list, description="Specific services offered")
     service_description: Optional[str] = Field(None, max_length=2000, description="Description of services")
 
@@ -340,6 +346,11 @@ class VendorContract(BaseModel):
     vendor_phone: Optional[str] = Field(None, description="Vendor phone")
     vendor_address: Optional[str] = Field(None, description="Vendor address")
     service_category: VendorCategory = Field(..., description="Service category")
+    custom_service_category: Optional[str] = Field(
+        None,
+        max_length=100,
+        description="Custom service category label when service_category is 'other'"
+    )
 
     # Contract Details
     contract_title: str = Field(..., min_length=1, max_length=300, description="Contract title")
@@ -516,6 +527,11 @@ class VendorAssignment(BaseModel):
     vendor_name: str = Field(..., description="Vendor name")
     vendor_email: str = Field(..., description="Vendor email")
     service_category: VendorCategory = Field(..., description="Service type")
+    custom_service_category: Optional[str] = Field(
+        None,
+        max_length=100,
+        description="Custom service category label when service_category is 'other'"
+    )
 
     # Linked Records
     quote_ids: List[str] = Field(default_factory=list, description="Associated quote IDs")
@@ -687,6 +703,7 @@ class CreateVendorProfileRequest(BaseModel):
     country: Optional[str] = None
     postal_code: Optional[str] = None
     service_category: VendorCategory
+    custom_service_category: Optional[str] = Field(default=None, max_length=100)
     service_subcategories: List[str] = []
     service_description: Optional[str] = None
     internal_notes: Optional[str] = None
@@ -712,6 +729,7 @@ class UpdateVendorProfileRequest(BaseModel):
     country: Optional[str] = None
     postal_code: Optional[str] = None
     service_category: Optional[VendorCategory] = None
+    custom_service_category: Optional[str] = Field(default=None, max_length=100)
     service_subcategories: Optional[List[str]] = None
     service_description: Optional[str] = None
     internal_notes: Optional[str] = None

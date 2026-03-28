@@ -1,12 +1,13 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { getApiBaseUrl } from '@/utils/env';
 import { useAdmin } from '@/contexts/AdminContext';
 import { formatDateTime } from '@/utils/dateFormat';
 import { MultiSelect } from '@/components/ui/MultiSelect';
 import { MessageEnrichment } from '@/components/ui/MessageEnrichment';
 import { Sparkles, X } from 'lucide-react';
+import { BUILT_IN_WEDDING_EVENT_OPTIONS, getWeddingEventLabel, getWeddingEventOptions } from '@/utils/weddingEvents';
 import PageHeader from '../components/PageHeader';
 
 interface Wedding {
@@ -17,6 +18,7 @@ interface Wedding {
  slug: string;
  events?: Array<{
  type: string;
+ custom_type_label?: string;
  date: string;
  }>;
 }
@@ -102,6 +104,18 @@ export default function AdminRemindersPage() {
  const [aiDraftType, setAiDraftType] = useState<string>('rsvp_reminder');
  const [aiDraftTarget, setAiDraftTarget] = useState<'customMessage' | 'inviteMessage'>('customMessage');
  const [aiDraftError, setAiDraftError] = useState<string | null>(null);
+
+ const selectedWeddingData = useMemo(
+ () => weddings.find((w) => (w.id || w._id) === selectedWedding),
+ [selectedWedding, weddings]
+ );
+
+ const reminderEventOptions = useMemo(() => {
+ if (selectedWeddingData?.events?.length) {
+ return getWeddingEventOptions(selectedWeddingData.events);
+ }
+ return BUILT_IN_WEDDING_EVENT_OPTIONS.map((option) => ({ value: option.value, label: option.label }));
+ }, [selectedWeddingData]);
 
  const formatLogTimestamp = (timestamp: string) =>
    formatDateTime(timestamp, {
@@ -224,13 +238,19 @@ export default function AdminRemindersPage() {
  }
  }, [fetchGuests, fetchPlusOnes, selectedWedding, token]);
 
+ useEffect(() => {
+ if (reminderEventOptions.length === 0) return;
+ if (!reminderEventOptions.some((option) => option.value === eventType)) {
+ setEventType(reminderEventOptions[0].value);
+ }
+ }, [eventType, reminderEventOptions]);
+
  const handleSendInviteLinks = async () => {
  if (!selectedWedding) {
  setError('Please select a wedding');
  return;
  }
 
- const selectedWeddingData = weddings.find(w => (w.id || w._id) === selectedWedding);
  if (!selectedWeddingData?.slug) {
  setError('Wedding slug not found');
  return;
@@ -343,7 +363,6 @@ export default function AdminRemindersPage() {
  return;
  }
 
- const selectedWeddingData = weddings.find(w => (w.id || w._id) === selectedWedding);
  if (!selectedWeddingData?.slug) {
  setError('Wedding slug not found');
  return;
@@ -624,7 +643,6 @@ export default function AdminRemindersPage() {
    setShowAiDraftModal(true);
  };
 
- const selectedWeddingData = weddings.find(w => (w.id || w._id) === selectedWedding);
  const guestsWithPhone = guests.filter(g => g.phone && g.phone.trim() !== '');
  const guestsWithEmail = guests.filter(g => g.email && g.email.trim() !== '');
 
@@ -990,9 +1008,9 @@ export default function AdminRemindersPage() {
  onChange={(e) => setEventType(e.target.value)}
  className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 dark:text-gray-100 focus:ring-2 focus:ring-wedding-rose focus:border-transparent"
  >
- <option value="traditional">Traditional</option>
- <option value="white_wedding">White Wedding</option>
- <option value="reception">Reception</option>
+ {reminderEventOptions.map((option) => (
+ <option key={option.value} value={option.value}>{option.label}</option>
+ ))}
  </select>
  </div>
  <div>
@@ -1029,7 +1047,10 @@ export default function AdminRemindersPage() {
  className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-wedding-rose focus:border-transparent"
  />
  <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
-        This will be sent to guests who have RSVP’d for the {eventType.replace('_', ' ')} event.
+        This will be sent to guests who have RSVP’d for the {getWeddingEventLabel(
+          eventType,
+          selectedWeddingData?.events?.find((event) => event.type === eventType)?.custom_type_label
+        )} event.
  </p>
  <p className="text-sm text-yellow-600 mt-1">
         Note: If no messages are sent, guests may not have RSVP’d yet. Use “Send Invites” first to get responses.

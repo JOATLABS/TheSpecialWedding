@@ -148,12 +148,15 @@ class CouplePortalService:
             configured_events = wedding.get("events", []) or []
             ordered_event_types: List[str] = []
             event_dates: Dict[str, str] = {}
+            event_labels: Dict[str, str] = {}
             for event in configured_events:
                 event_type = event.get("type")
                 if event_type and event_type not in ordered_event_types:
                     ordered_event_types.append(event_type)
                     if event.get("date"):
                         event_dates[event_type] = event.get("date")
+                    if event.get("custom_type_label"):
+                        event_labels[event_type] = event.get("custom_type_label")
 
             for event_type in event_counts:
                 if event_type not in ordered_event_types:
@@ -162,6 +165,7 @@ class CouplePortalService:
             event_breakdown = [
                 {
                     "event_type": event_type,
+                    "custom_type_label": event_labels.get(event_type),
                     "date": event_dates.get(event_type),
                     "attending": event_counts.get(event_type, 0),
                 }

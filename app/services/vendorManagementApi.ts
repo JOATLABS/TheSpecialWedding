@@ -37,6 +37,7 @@ export type VendorCategory =
   | 'caterer'
   | 'venue'
   | 'dj'
+  | 'mc'
   | 'band'
   | 'officiant'
   | 'planner'
@@ -64,6 +65,7 @@ export interface VendorProfile {
   city?: string;
   state?: string;
   service_category: VendorCategory;
+  custom_service_category?: string;
   service_subcategories: string[];
   service_description?: string;
   internal_notes?: string;
@@ -129,6 +131,7 @@ export interface VendorContract {
   vendor_email: string;
   vendor_phone?: string;
   service_category: VendorCategory;
+  custom_service_category?: string;
   contract_title: string;
   contract_number?: string;
   sections: ContractSection[];
@@ -185,6 +188,7 @@ export interface VendorAssignment {
   vendor_name: string;
   vendor_email: string;
   service_category: VendorCategory;
+  custom_service_category?: string;
   quoted_amount?: number;
   contracted_amount?: number;
   paid_amount: number;
@@ -680,6 +684,7 @@ export const VENDOR_CATEGORIES: { value: VendorCategory; label: string }[] = [
   { value: 'caterer', label: 'Caterer' },
   { value: 'venue', label: 'Venue' },
   { value: 'dj', label: 'DJ' },
+  { value: 'mc', label: 'MC / Host' },
   { value: 'band', label: 'Band/Musicians' },
   { value: 'officiant', label: 'Officiant' },
   { value: 'planner', label: 'Wedding Planner' },
@@ -696,7 +701,11 @@ export const VENDOR_CATEGORIES: { value: VendorCategory; label: string }[] = [
   { value: 'other', label: 'Other' },
 ];
 
-export function getCategoryLabel(category: VendorCategory): string {
+export function getCategoryLabel(category: VendorCategory, customServiceCategory?: string): string {
+  if (category === 'other' && customServiceCategory?.trim()) {
+    return customServiceCategory.trim();
+  }
+
   return VENDOR_CATEGORIES.find((c) => c.value === category)?.label || category;
 }
 

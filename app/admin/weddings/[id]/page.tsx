@@ -8,6 +8,12 @@ import { useAdmin } from '@/contexts/AdminContext';
 import { Wedding, WeddingEvent, RegistryItem, FAQItem, OurStory, WeddingPartyMember, PrivacySettings, WeddingPartySyncSettings } from '@/types/wedding';
 import { formatAdminTimestamp, DEFAULT_TIMEZONE } from '@/utils/dateFormat';
 import { EVENT_TIME_FORMAT_HINT, getEventTimeValidationMessage, normalizeEventTimeInput } from '@/utils/eventTime';
+import {
+  createCustomWeddingEventTypeKey,
+  getWeddingEventLabel,
+  getWeddingEventSelectValue,
+  WEDDING_EVENT_SELECT_OPTIONS,
+} from '@/utils/weddingEvents';
 import { PaymentCollectionButton } from '@/components/payments/PaymentCollectionButton';
 import { CampaignSponsoredRail } from '../../vendors/components/CampaignSponsoredRail';
 // Direct imports — avoids Turbopack barrel-evaluation bug with lucide-react
@@ -261,6 +267,15 @@ export default function WeddingDetailsPage() {
 	 const saveWedding = async () => {
 	 if (!wedding) return;
 
+	 const hasUnnamedCustomEvent = wedding.events.some(
+	 (event) => getWeddingEventSelectValue(event) === 'other' && !event.custom_type_label?.trim()
+	 );
+	 if (hasUnnamedCustomEvent) {
+	 setError('Give every custom event a name before saving.');
+	 toast.error('Give every custom event a name before saving.');
+	 return;
+	 }
+
 	 const nextEventTimeErrors = buildEventTimeErrors(wedding.events);
 	 if (Object.keys(nextEventTimeErrors).length > 0) {
 	 setEventTimeErrors(nextEventTimeErrors);
@@ -323,11 +338,58 @@ export default function WeddingDetailsPage() {
 	 }
 	 };
 
- const addEvent = () => {
+const addEvent = () => {
  if (!wedding) return;
  setWedding({
  ...wedding,
  events: [...wedding.events, { type: 'reception', date: '', details: {} }]
+ });
+ };
+
+ const updateEventTypeSelection = (index: number, selectedValue: string) => {
+ if (!wedding) return;
+
+ const nextEvents = [...wedding.events];
+ const currentEvent = nextEvents[index];
+
+ if (selectedValue === 'other') {
+ nextEvents[index] = {
+ ...currentEvent,
+ type: currentEvent.custom_type_label
+ ? currentEvent.type
+ : createCustomWeddingEventTypeKey('custom_event'),
+ custom_type_label: currentEvent.custom_type_label || '',
+ };
+ } else {
+ nextEvents[index] = {
+ ...currentEvent,
+ type: selectedValue,
+ custom_type_label: undefined,
+ };
+ }
+
+ setWedding({
+ ...wedding,
+ events: nextEvents,
+ });
+ };
+
+ const updateCustomEventLabel = (index: number, customLabel: string) => {
+ if (!wedding) return;
+
+ const nextEvents = [...wedding.events];
+ const currentEvent = nextEvents[index];
+ nextEvents[index] = {
+ ...currentEvent,
+ type: currentEvent.custom_type_label
+ ? currentEvent.type
+ : createCustomWeddingEventTypeKey(customLabel || 'custom_event'),
+ custom_type_label: customLabel,
+ };
+
+ setWedding({
+ ...wedding,
+ events: nextEvents,
  });
  };
 
@@ -500,7 +562,7 @@ export default function WeddingDetailsPage() {
  <div key={index} className="border border-gray-200 dark:border-gray-700 rounded-lg p-6 space-y-4">
  <div className="flex justify-between items-start">
  <h3 className="text-lg font-semibold capitalize text-gray-900 dark:text-gray-100">
- {event.type.replace('_', ' ')} - {event.date}
+ {getWeddingEventLabel(event.type, event.custom_type_label)} - {event.date}
  </h3>
  <button
  onClick={() => removeEvent(index)}
@@ -516,17 +578,30 @@ export default function WeddingDetailsPage() {
  Event Type
  </label>
  <select
- value={event.type}
- onChange={(e) => updateEvent(index, { ...event, type: e.target.value as any })}
+ value={getWeddingEventSelectValue(event)}
+ onChange={(e) => updateEventTypeSelection(index, e.target.value)}
  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100"
  >
- <option value="traditional">Traditional</option>
- <option value="white_wedding">White Wedding</option>
- <option value="reception">Reception</option>
- <option value="engagement">Engagement</option>
- <option value="rehearsal">Rehearsal Dinner</option>
+ {WEDDING_EVENT_SELECT_OPTIONS.map((option) => (
+ <option key={option.value} value={option.value}>{option.label}</option>
+ ))}
  </select>
  </div>
+
+ {getWeddingEventSelectValue(event) === 'other' && (
+ <div>
+ <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+ Custom Event Name
+ </label>
+ <input
+ type="text"
+ value={event.custom_type_label || ''}
+ onChange={(e) => updateCustomEventLabel(index, e.target.value)}
+ placeholder="e.g., Welcome Party"
+ className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100"
+ />
+ </div>
+ )}
 
  <div>
  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">

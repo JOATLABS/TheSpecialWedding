@@ -41,6 +41,11 @@ class OrderOfEventsItemModel(BaseModel):
 
 class EventModel(BaseModel):
     type: str = Field(..., description="Event type: traditional, white_wedding, reception, engagement, rehearsal")
+    custom_type_label: Optional[str] = Field(
+        default=None,
+        max_length=100,
+        description="Planner-defined label for custom event types"
+    )
     date: str = Field(..., description="Event date in YYYY-MM-DD format")
     details: Optional[EventDetailsModel] = Field(default=None, description="Additional event details")
     order_of_events: List[OrderOfEventsItemModel] = Field(default_factory=list, description="Detailed run of show / program for this event")

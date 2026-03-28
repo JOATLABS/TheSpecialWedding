@@ -426,7 +426,9 @@ Contract Reference: {{contract_number}}`,
       '{{couple_names}}': 'Sarah & Michael',
       '{{wedding_date}}': draft.serviceDate || 'TBD',
       '{{wedding_venue}}': draft.serviceLocation || 'Wedding Venue',
-      '{{service_category}}': draft.vendor ? getCategoryLabel(draft.vendor.service_category) : 'Service',
+      '{{service_category}}': draft.vendor
+        ? getCategoryLabel(draft.vendor.service_category, draft.vendor.custom_service_category)
+        : 'Service',
       '{{total_amount}}': draft.totalAmount.toLocaleString(),
       '{{deposit_amount}}': ((draft.totalAmount * draft.depositPercentage) / 100).toLocaleString(),
       '{{planner_name}}': `${userProfile?.first_name || ''} ${userProfile?.last_name || ''}`.trim() || 'Planner Name',
@@ -641,7 +643,7 @@ Contract Reference: {{contract_number}}`,
                             )}
                           </div>
                           <div className="text-sm text-gray-500 dark:text-gray-400">
-                            {getCategoryLabel(vendor.service_category)}
+                            {getCategoryLabel(vendor.service_category, vendor.custom_service_category)}
                           </div>
                           <div className="text-sm text-gray-500 dark:text-gray-400 truncate">
                             {vendor.email}
@@ -1075,7 +1077,7 @@ Contract Reference: {{contract_number}}`,
                       {draft.vendor?.business_name}
                     </div>
                     <div className="text-sm text-gray-600 dark:text-gray-400">
-                      {draft.vendor && getCategoryLabel(draft.vendor.service_category)}
+                      {draft.vendor && getCategoryLabel(draft.vendor.service_category, draft.vendor.custom_service_category)}
                     </div>
                   </div>
                   <div className="p-4 bg-gray-50 dark:bg-slate-700 rounded-xl">

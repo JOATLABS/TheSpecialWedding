@@ -4,6 +4,7 @@ from bson import ObjectId
 from datetime import datetime
 import re
 from app.utils.contact_sanitizer import sanitize_phone, sanitize_email, validate_email_format
+from app.utils.wedding_event_types import normalize_event_type_list
 
 
 class PyObjectId(ObjectId):
@@ -61,10 +62,7 @@ class PlusOneModel(BaseModel):
 
     @field_validator("attending")
     def validate_attending(cls, v):
-        valid_events = {"traditional", "white_wedding", "reception", "engagement", "rehearsal"}
-        if not all(event in valid_events for event in v):
-            raise ValueError("Invalid event(s) in attending list")
-        return v
+        return normalize_event_type_list(v)
 
     class Config:
         allow_population_by_field_name = True

@@ -6,6 +6,12 @@ import Link from 'next/link';
 import { useAdmin } from '@/contexts/AdminContext';
 import { formatDate, formatAdminTimestamp, DEFAULT_TIMEZONE } from '@/utils/dateFormat';
 import { EVENT_TIME_FORMAT_HINT, getEventTimeValidationMessage, normalizeEventTimeInput } from '@/utils/eventTime';
+import {
+  createCustomWeddingEventTypeKey,
+  getWeddingEventLabel,
+  getWeddingEventSelectValue,
+  WEDDING_EVENT_SELECT_OPTIONS,
+} from '@/utils/weddingEvents';
 import PageHeader from '../components/PageHeader';
 import { usePagination } from '@/admin/hooks/usePagination';
 import { GlassPagination } from '@/admin/components/ui/glass/GlassPagination';
@@ -34,6 +40,7 @@ interface Wedding {
   meter_pending_reason?: string;
   events?: Array<{
     type: string;
+    custom_type_label?: string;
     date: string;
     details?: {
       venue_name?: string;
@@ -55,6 +62,7 @@ interface WeddingForm {
   total_budget?: number;
   events: Array<{
     type: string;
+    custom_type_label?: string;
     date: string;
     details?: {
       venue_name?: string;
@@ -102,6 +110,7 @@ interface EventNote {
 
 interface WeddingEvent {
   type: string;
+  custom_type_label?: string;
   date: string;
   details?: {
     venue_name?: string;
@@ -372,6 +381,15 @@ export default function AdminWeddingsPage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
+    const hasUnnamedCustomEvent = formData.events.some(
+      (event) => getWeddingEventSelectValue(event) === 'other' && !event.custom_type_label?.trim()
+    );
+    if (hasUnnamedCustomEvent) {
+      setError('Give every custom event a name before saving.');
+      toast.error('Give every custom event a name before saving.');
+      return;
+    }
+
     const nextEventTimeErrors = buildEventTimeErrors(formData.events);
     if (Object.keys(nextEventTimeErrors).length > 0) {
       setEventTimeErrors(nextEventTimeErrors);
@@ -533,6 +551,45 @@ export default function AdminWeddingsPage() {
       ...formData,
       events: [...formData.events, { type: '', date: '', details: {} }]
     });
+  };
+
+  const updateEventTypeSelection = (index: number, selectedValue: string) => {
+    const newEvents = [...formData.events];
+    const currentEvent = newEvents[index];
+
+    if (selectedValue === 'other') {
+      newEvents[index] = {
+        ...currentEvent,
+        type: currentEvent.custom_type_label
+          ? currentEvent.type
+          : createCustomWeddingEventTypeKey('custom_event'),
+        custom_type_label: currentEvent.custom_type_label || '',
+      };
+    } else {
+      newEvents[index] = {
+        ...currentEvent,
+        type: selectedValue,
+        custom_type_label: undefined,
+      };
+    }
+
+    setFormData({ ...formData, events: newEvents });
+  };
+
+  const updateCustomEventLabel = (index: number, customLabel: string) => {
+    const newEvents = [...formData.events];
+    const currentEvent = newEvents[index];
+    const trimmedLabel = customLabel;
+
+    newEvents[index] = {
+      ...currentEvent,
+      type: currentEvent.custom_type_label
+        ? currentEvent.type
+        : createCustomWeddingEventTypeKey(trimmedLabel || 'custom_event'),
+      custom_type_label: trimmedLabel,
+    };
+
+    setFormData({ ...formData, events: newEvents });
   };
 
   const removeEvent = (index: number) => {
@@ -750,22 +807,30 @@ export default function AdminWeddingsPage() {
                         <div>
                           <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Event Type</label>
                           <select
-                            value={event.type}
-                            onChange={(e) => {
-                              const newEvents = [...formData.events];
-                              newEvents[index].type = e.target.value;
-                              setFormData({...formData, events: newEvents});
-                            }}
+                            value={getWeddingEventSelectValue(event)}
+                            onChange={(e) => updateEventTypeSelection(index, e.target.value)}
                             className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 dark:text-gray-100-lg text-sm"
                           >
                             <option value="">Select Type</option>
-                            <option value="traditional">Traditional</option>
-                            <option value="white_wedding">White Wedding</option>
-                            <option value="reception">Reception</option>
-                            <option value="engagement">Engagement</option>
-                            <option value="rehearsal">Rehearsal</option>
+                            {WEDDING_EVENT_SELECT_OPTIONS.map((option) => (
+                              <option key={option.value} value={option.value}>
+                                {option.label}
+                              </option>
+                            ))}
                           </select>
                         </div>
+                        {getWeddingEventSelectValue(event) === 'other' && (
+                          <div>
+                            <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Custom Event Name</label>
+                            <input
+                              type="text"
+                              value={event.custom_type_label || ''}
+                              onChange={(e) => updateCustomEventLabel(index, e.target.value)}
+                              placeholder="e.g., Welcome Party"
+                              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 dark:text-gray-100-lg text-sm"
+                            />
+                          </div>
+                        )}
                         <div>
                           <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Date</label>
                           <input
@@ -885,21 +950,26 @@ export default function AdminWeddingsPage() {
                     // Compact inline layout
                     <div key={index} className="flex gap-2 mb-2">
                       <select
-                        value={event.type}
-                        onChange={(e) => {
-                          const newEvents = [...formData.events];
-                          newEvents[index].type = e.target.value;
-                          setFormData({...formData, events: newEvents});
-                        }}
+                        value={getWeddingEventSelectValue(event)}
+                        onChange={(e) => updateEventTypeSelection(index, e.target.value)}
                         className="flex-1 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 dark:text-gray-100-lg"
                       >
                         <option value="">Select Type</option>
-                        <option value="traditional">Traditional</option>
-                        <option value="white_wedding">White Wedding</option>
-                        <option value="reception">Reception</option>
-                        <option value="engagement">Engagement</option>
-                        <option value="rehearsal">Rehearsal</option>
+                        {WEDDING_EVENT_SELECT_OPTIONS.map((option) => (
+                          <option key={option.value} value={option.value}>
+                            {option.label}
+                          </option>
+                        ))}
                       </select>
+                      {getWeddingEventSelectValue(event) === 'other' && (
+                        <input
+                          type="text"
+                          value={event.custom_type_label || ''}
+                          onChange={(e) => updateCustomEventLabel(index, e.target.value)}
+                          placeholder="Custom event name"
+                          className="flex-1 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 dark:text-gray-100-lg"
+                        />
+                      )}
                       <input
                         type="date"
                         value={event.date}
@@ -1246,17 +1316,6 @@ function ProgramModalContent({
   const [newDescription, setNewDescription] = useState('');
   const [saving, setSaving] = useState(false);
 
-  const eventTypeLabel = (type: string) => {
-    const labels: Record<string, string> = {
-      traditional: 'Traditional Ceremony',
-      white_wedding: 'White Wedding',
-      reception: 'Reception',
-      engagement: 'Engagement Party',
-      rehearsal: 'Rehearsal Dinner',
-    };
-    return labels[type] || type.charAt(0).toUpperCase() + type.slice(1).replace(/_/g, ' ');
-  };
-
   const handleAddItem = async (eventIndex: number) => {
     if (!newTitle.trim()) { toast.error('Title is required'); return; }
     setSaving(true);
@@ -1317,7 +1376,7 @@ function ProgramModalContent({
             <div className="flex items-center gap-2">
               <ListOrdered className="w-4 h-4 text-indigo-500" />
               <div className="text-left">
-                <p className="font-medium text-sm text-gray-800 dark:text-gray-200">{eventTypeLabel(event.type)}</p>
+                <p className="font-medium text-sm text-gray-800 dark:text-gray-200">{getWeddingEventLabel(event.type, event.custom_type_label)}</p>
                 <p className="text-xs text-gray-500 dark:text-gray-400">{event.date} · {event.order_of_events?.length || 0} items</p>
               </div>
             </div>

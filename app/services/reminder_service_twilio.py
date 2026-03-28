@@ -8,6 +8,7 @@ from fastapi import HTTPException
 from datetime import datetime, timezone
 from app.core.database import mongo
 from app.utils.contact_sanitizer import normalize_phone_e164
+from app.utils.wedding_event_types import normalize_event_type
 import logging
 
 # ---------------------------------------------------------------------------
@@ -74,8 +75,10 @@ class TwilioReminderService:
         self.log_collection = mongo.db["reminders_sent"]
 
     async def send_reminders(self, event_type: str, message: str, target_group: str):
-        if event_type not in {"traditional", "white_wedding", "reception"}:
-            raise HTTPException(status_code=400, detail="Invalid event type")
+        try:
+            event_type = normalize_event_type(event_type)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
         if target_group not in {"guests", "plus-ones", "all"}:
             raise HTTPException(status_code=400, detail="Invalid target group")
 

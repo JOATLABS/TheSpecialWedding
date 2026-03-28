@@ -7,6 +7,7 @@ import { useState } from 'react';
 import { Loader2 } from 'lucide-react';
 import { useWedding } from '@/hooks/useWedding';
 import { formatDate } from '@/utils/dateFormat';
+import { BUILT_IN_WEDDING_EVENT_OPTIONS, getWeddingEventLabel } from '@/utils/weddingEvents';
 
 interface ExistingRsvpData {
   has_rsvp?: boolean;
@@ -33,14 +34,6 @@ interface PlusOneData {
   sms_opt_in?: boolean;
   email_opt_in?: boolean;
 }
-
-const EVENT_TYPE_LABELS: Record<string, string> = {
-  traditional: 'Traditional Ceremony',
-  white_wedding: 'White Wedding',
-  reception: 'Reception',
-  engagement: 'Engagement Party',
-  rehearsal: 'Rehearsal Dinner',
-};
 
 /* ─── color helpers ─── */
 function hexToRgb(hex: string): { r: number; g: number; b: number } {
@@ -135,16 +128,12 @@ export default function RSVPForm({ guest, token, existingRsvp, onSuccess, onView
   const eventOptions = wedding.events && wedding.events.length > 0
     ? wedding.events.map((e: any) => ({
         value: e.type,
-        label: EVENT_TYPE_LABELS[e.type] || e.type.replace('_', ' '),
+        label: getWeddingEventLabel(e.type, e.custom_type_label),
         date: e.date,
         time: e.details?.time,
         venue: e.details?.venue_name,
       }))
-    : [
-        { value: 'traditional', label: 'Traditional Ceremony' },
-        { value: 'white_wedding', label: 'White Wedding' },
-        { value: 'reception', label: 'Reception' },
-      ];
+    : BUILT_IN_WEDDING_EVENT_OPTIONS.map((option) => ({ value: option.value, label: option.label }));
 
   const addPlusOne = () => {
     if (plusOnes.length < guest.number_of_plus_ones_allowed) {
@@ -224,7 +213,7 @@ export default function RSVPForm({ guest, token, existingRsvp, onSuccess, onView
 
         const eventTimezone = event.details?.timezone || weddingTimezone;
 
-        const eventLabel = EVENT_TYPE_LABELS[event.type] || event.type.replace('_', ' ');
+        const eventLabel = getWeddingEventLabel(event.type, event.custom_type_label);
         const summary = `${eventLabel} - ${wedding.couple_names || 'Wedding'}`;
         const location = event.details?.venue_name || event.details?.location || 'Wedding Venue';
         const attire = event.details?.attire ? `Attire: ${event.details.attire}` : '';
