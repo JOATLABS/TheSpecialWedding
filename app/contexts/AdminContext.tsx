@@ -261,8 +261,8 @@ export const AdminProvider = ({ children }: { children: React.ReactNode }) => {
     // ---- Automatic token refresh ----
     // Schedule a refresh ~5 minutes before the JWT expires so the session
     // stays alive while the user is active. When the token state updates,
-    // every component that depends on `token` (including TopHeader's SSE
-    // EventSource) will automatically reconnect with the fresh JWT.
+    // components that depend on it can refetch or reconnect against the
+    // refreshed cookie-backed session state.
     useEffect(() => {
         if (!token) return;
 
@@ -281,8 +281,8 @@ export const AdminProvider = ({ children }: { children: React.ReactNode }) => {
                 if (result.status === 'success') {
                     persistAdminAuthToken(result.token, wasAdminSessionRemembered());
                     // Update React state — this triggers the effect again,
-                    // scheduling the NEXT refresh, and also causes TopHeader
-                    // to reconnect SSE with the fresh token.
+                    // scheduling the NEXT refresh and keeping client state
+                    // aligned with the refreshed session cookie.
                     setToken(result.token);
                     setAuthStatus('authenticated');
                 }

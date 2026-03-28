@@ -1459,11 +1459,35 @@ async def create_campaign_platform_indexes():
     vendor_profiles = mongo.db["vendor_profiles"]
 
     # Unique compound index for race-safe add-to-directory dedup
-    # Only applies to profiles created from sponsored ads (partial filter)
+    # Only applies to profiles created from sponsored ads (partial filter).
+    # Older local databases may already have a broken version of this index
+    # that also matches null `source_campaign_id` values, which blocks manual
+    # vendor creation for planners after the first vendor.
+    desired_vendor_profile_index = {
+        "key": [("created_by", 1), ("source_campaign_id", 1)],
+        "unique": True,
+        "partialFilterExpression": {"source_campaign_id": {"$type": "string"}},
+    }
+    existing_vendor_profile_indexes = await vendor_profiles.index_information()
+    existing_sponsored_dedup = existing_vendor_profile_indexes.get("idx_sponsored_ad_dedup")
+
+    if existing_sponsored_dedup:
+        existing_key = existing_sponsored_dedup.get("key")
+        existing_unique = existing_sponsored_dedup.get("unique", False)
+        existing_partial = existing_sponsored_dedup.get("partialFilterExpression")
+
+        if (
+            existing_key != desired_vendor_profile_index["key"]
+            or existing_unique != desired_vendor_profile_index["unique"]
+            or existing_partial != desired_vendor_profile_index["partialFilterExpression"]
+        ):
+            await vendor_profiles.drop_index("idx_sponsored_ad_dedup")
+            logger.info("Dropped stale idx_sponsored_ad_dedup index on vendor_profiles")
+
     await vendor_profiles.create_index(
-        [("created_by", 1), ("source_campaign_id", 1)],
-        unique=True,
-        partialFilterExpression={"source_campaign_id": {"$type": "string"}},
+        desired_vendor_profile_index["key"],
+        unique=desired_vendor_profile_index["unique"],
+        partialFilterExpression=desired_vendor_profile_index["partialFilterExpression"],
         name="idx_sponsored_ad_dedup",
     )
 

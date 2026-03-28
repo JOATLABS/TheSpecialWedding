@@ -360,12 +360,16 @@ async def lifespan(app: FastAPI):
 
 
 # Create FastAPI application
+api_docs_enabled = settings.api_docs_enabled
 app = FastAPI(
     title=settings.app_name,
     version=settings.app_version,
     debug=settings.debug,
     lifespan=lifespan,
     default_response_class=MongoJSONResponse,
+    docs_url="/docs" if api_docs_enabled else None,
+    redoc_url="/redoc" if api_docs_enabled else None,
+    openapi_url="/openapi.json" if api_docs_enabled else None,
     openapi_tags=[
         {"name": "Health", "description": "Health check operations"},
         {"name": "Auth", "description": "Authentication operations"},
@@ -596,15 +600,22 @@ app.include_router(plus_one_router, prefix="/admin/plus-one", tags=["Plus-Ones"]
 
 # ==================== CUSTOM ENDPOINTS ====================
 
+def build_root_response(config) -> dict[str, object]:
+    """Build the root health/info payload with environment-aware docs metadata."""
+    response = {
+        "message": f"Welcome to {config.app_name}",
+        "version": config.app_version,
+        "environment": config.environment,
+    }
+    if config.api_docs_enabled:
+        response["docs_url"] = "/docs"
+    return response
+
+
 @app.get("/", tags=["Health"])
 async def root():
     """Root endpoint"""
-    return {
-        "message": f"Welcome to {settings.app_name}",
-        "version": settings.app_version,
-        "environment": settings.environment,
-        "docs_url": "/docs"
-    }
+    return build_root_response(settings)
 
 
 @app.get("/info", tags=["Health"])

@@ -103,8 +103,10 @@ export function SSEProvider({ children }: { children: React.ReactNode }) {
 
     const connect = () => {
       cleanup();
-      const url = `${getApiBaseUrl()}/admin/notifications/stream?token=${encodeURIComponent(token)}`;
-      const es = new EventSource(url);
+      const url = `${getApiBaseUrl()}/admin/notifications/stream`;
+      // EventSource cannot send Authorization headers, so the backend stream
+      // authenticates via the existing HttpOnly admin session cookie instead.
+      const es = new EventSource(url, { withCredentials: true });
       esRef.current = es;
 
       // Listen for all event types the backend emits
