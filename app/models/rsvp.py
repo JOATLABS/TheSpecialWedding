@@ -2,6 +2,7 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 from typing import List, Optional, Any
 import re
 import logging
+from app.utils.wedding_event_types import normalize_event_type_list
 
 logger = logging.getLogger(__name__)
 
@@ -61,10 +62,7 @@ class PlusOneInputModel(BaseModel):
 
     @field_validator("attending")
     def validate_attending(cls, v):
-        valid_events = {"traditional", "white_wedding", "reception", "engagement", "rehearsal"}
-        if not all(event in valid_events for event in v):
-            raise ValueError("Invalid event(s) in attending list")
-        return v
+        return normalize_event_type_list(v)
 
 
 class RSVPModel(BaseModel):
@@ -109,11 +107,7 @@ class RSVPModel(BaseModel):
 
     @field_validator("attending")
     def validate_attending(cls, v):
-        valid_events = {"traditional", "white_wedding", "reception", "engagement", "rehearsal"}
-        # Allow empty list (guest not attending any events) or valid events
-        if v and not all(event in valid_events for event in v):
-            raise ValueError("Invalid event(s) in attending list")
-        return v
+        return normalize_event_type_list(v)
 
     @field_validator("phone")
     def validate_phone(cls, value):

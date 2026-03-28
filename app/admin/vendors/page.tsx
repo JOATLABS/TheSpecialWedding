@@ -87,6 +87,7 @@ export default function VendorManagementPage() {
     phone: '',
     website: '',
     service_category: 'photographer' as VendorCategory,
+    custom_service_category: '',
     service_description: '',
     internal_notes: '',
     is_preferred: false,
@@ -274,6 +275,15 @@ export default function VendorManagementPage() {
 
     // Auto-prepend https:// if user entered a bare domain
     const vendorData = { ...newVendor };
+    if (vendorData.service_category === 'other') {
+      vendorData.custom_service_category = vendorData.custom_service_category.trim();
+      if (!vendorData.custom_service_category) {
+        toast.error('Please enter a custom vendor category');
+        return;
+      }
+    } else {
+      vendorData.custom_service_category = '';
+    }
     if (vendorData.website && vendorData.website.trim()) {
       const w = vendorData.website.trim();
       if (!/^https?:\/\//i.test(w)) {
@@ -292,6 +302,7 @@ export default function VendorManagementPage() {
         phone: '',
         website: '',
         service_category: 'photographer',
+        custom_service_category: '',
         service_description: '',
         internal_notes: '',
         is_preferred: false,
@@ -711,7 +722,7 @@ export default function VendorManagementPage() {
                             )}
                           </div>
                           <div className="text-sm text-gray-500 dark:text-gray-400">
-                            {getCategoryLabel(vendor.service_category)}
+                            {getCategoryLabel(vendor.service_category, vendor.custom_service_category)}
                           </div>
                         </div>
                       </div>
@@ -839,7 +850,7 @@ export default function VendorManagementPage() {
                       <div>
                         <div className="font-semibold text-gray-900 dark:text-gray-100">{contract.contract_title}</div>
                         <div className="text-sm text-gray-500 dark:text-gray-400">
-                          {contract.vendor_name} - {getCategoryLabel(contract.service_category)}
+                          {contract.vendor_name} - {getCategoryLabel(contract.service_category, contract.custom_service_category)}
                         </div>
                       </div>
                       <div className="flex items-center gap-4">
@@ -922,7 +933,11 @@ export default function VendorManagementPage() {
                   <select
                     required
                     value={newVendor.service_category}
-                    onChange={(e) => setNewVendor({ ...newVendor, service_category: e.target.value as VendorCategory })}
+                    onChange={(e) => setNewVendor({
+                      ...newVendor,
+                      service_category: e.target.value as VendorCategory,
+                      custom_service_category: e.target.value === 'other' ? newVendor.custom_service_category : '',
+                    })}
                     className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100"
                   >
                     {VENDOR_CATEGORIES.map((cat) => (
@@ -933,6 +948,21 @@ export default function VendorManagementPage() {
                   </select>
                 </div>
               </div>
+              {newVendor.service_category === 'other' && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                    Custom Category *
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={newVendor.custom_service_category}
+                    onChange={(e) => setNewVendor({ ...newVendor, custom_service_category: e.target.value })}
+                    placeholder="e.g., MC / Host"
+                    className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100"
+                  />
+                </div>
+              )}
               <div>
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Email *</label>
                 <input

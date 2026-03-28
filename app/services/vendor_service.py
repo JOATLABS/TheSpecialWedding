@@ -123,6 +123,49 @@ class VendorService:
             doc["_id"] = str(doc["_id"])
         return doc
 
+    @staticmethod
+    def _get_vendor_service_label(
+        service_category: str,
+        custom_service_category: Optional[str] = None,
+    ) -> str:
+        if service_category == "other" and custom_service_category:
+            return custom_service_category.strip()
+
+        labels = {
+            "dj": "DJ",
+            "mc": "MC / Host",
+            "hair_makeup": "Hair & Makeup",
+            "photo_booth": "Photo Booth",
+        }
+        return labels.get(service_category, service_category.replace("_", " ").title())
+
+    @staticmethod
+    def _normalize_vendor_category_data(data: Dict[str, Any], existing: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        normalized = dict(data)
+
+        service_category = normalized.get("service_category")
+        if service_category is None and existing:
+            service_category = existing.get("service_category")
+
+        custom_category = normalized.get("custom_service_category")
+        if custom_category is None and existing:
+            custom_category = existing.get("custom_service_category")
+
+        if isinstance(custom_category, str):
+            custom_category = custom_category.strip() or None
+
+        if service_category == "other":
+            if not custom_category:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Please enter a custom vendor category when selecting Other.",
+                )
+            normalized["custom_service_category"] = custom_category
+        elif "custom_service_category" in normalized or existing:
+            normalized["custom_service_category"] = None
+
+        return normalized
+
     async def _get_planner_contract_settings(self, planner_email: str) -> Dict[str, Any]:
         """
         Get contract settings for a planner, with graceful fallback to system defaults.
@@ -216,6 +259,7 @@ class VendorService:
     async def create_vendor_profile(self, data: dict, created_by: str) -> dict:
         """Create a new vendor in the directory"""
         try:
+            data = self._normalize_vendor_category_data(data)
             vendor = {
                 **data,
                 "created_by": created_by,
@@ -325,8 +369,15 @@ class VendorService:
     async def update_vendor_profile(self, vendor_id: str, data: dict, created_by: str) -> dict:
         """Update a vendor profile"""
         try:
+            existing = await self.vendor_profiles.find_one(
+                {"_id": ObjectId(vendor_id), "created_by": created_by}
+            )
+            if not existing:
+                raise HTTPException(status_code=404, detail="Vendor not found")
+
             # Remove None values
             update_data = {k: v for k, v in data.items() if v is not None}
+            update_data = self._normalize_vendor_category_data(update_data, existing=existing)
             update_data["updated_at"] = datetime.now(timezone.utc)
 
             result = await self.vendor_profiles.find_one_and_update(
@@ -515,6 +566,7 @@ class VendorService:
                 "vendor_name": vendor["business_name"],
                 "vendor_email": vendor["email"],
                 "service_category": vendor["service_category"],
+                "custom_service_category": vendor.get("custom_service_category"),
                 "quote_ids": [],
                 "contract_id": None,
                 "service_notes": service_notes,
@@ -741,7 +793,10 @@ class VendorService:
                 "couple_names": wedding.get("couple_names", ""),
                 "wedding_date": wedding.get("date", ""),
                 "wedding_venue": wedding.get("venue", ""),
-                "service_category": vendor["service_category"],
+                "service_category": self._get_vendor_service_label(
+                    vendor["service_category"],
+                    vendor.get("custom_service_category"),
+                ),
                 "total_amount": total_amount,
                 "deposit_amount": (total_amount * deposit_percentage / 100) if deposit_percentage else 0,
                 "planner_name": f"{planner.get('first_name', '')} {planner.get('last_name', '')}".strip() if planner else "",
@@ -807,7 +862,8 @@ class VendorService:
                 "vendor_phone": vendor.get("phone"),
                 "vendor_address": vendor.get("address"),
                 "service_category": vendor["service_category"],
-                "contract_title": f"{vendor['service_category'].replace('_', ' ').title()} Services Contract",
+                "custom_service_category": vendor.get("custom_service_category"),
+                "contract_title": f"{self._get_vendor_service_label(vendor['service_category'], vendor.get('custom_service_category'))} Services Contract",
                 "contract_number": placeholder_data["contract_number"],
                 "sections": sections,
                 "terms_and_conditions": terms_and_conditions,
@@ -1010,7 +1066,7 @@ class VendorService:
                             <h3>Contract Details:</h3>
                             <p><strong>Contract:</strong> {contract['contract_title']}</p>
                             <p><strong>Contract #:</strong> {contract.get('contract_number', 'N/A')}</p>
-                            <p><strong>Service:</strong> {contract['service_category'].replace('_', ' ').title()}</p>
+                            <p><strong>Service:</strong> {self._get_vendor_service_label(contract['service_category'], contract.get('custom_service_category'))}</p>
                             <p><strong>Total Amount:</strong> ${contract['total_amount']:,.2f}</p>
                             {f"<p><strong>Deposit Required:</strong> ${contract['deposit_amount']:,.2f}</p>" if contract.get('deposit_amount') else ''}
                         </div>
@@ -1788,6 +1844,7 @@ class VendorService:
                 "vendor_phone": vendor.get("phone"),
                 "vendor_address": vendor.get("address"),
                 "service_category": vendor["service_category"],
+                "custom_service_category": vendor.get("custom_service_category"),
                 "contract_title": contract_title,
                 "contract_number": self._generate_contract_number(),
                 "contract_type": ContractType.UPLOADED_PDF.value,

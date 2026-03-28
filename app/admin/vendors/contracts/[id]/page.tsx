@@ -454,7 +454,7 @@ export default function ContractDetailPage() {
                   <div>
                     <div className="font-medium text-gray-900 dark:text-gray-100">{contract.vendor_name}</div>
                     <div className="text-sm text-gray-500 dark:text-gray-400">
-                      {getCategoryLabel(contract.service_category)}
+                      {getCategoryLabel(contract.service_category, contract.custom_service_category)}
                     </div>
                   </div>
                 </div>

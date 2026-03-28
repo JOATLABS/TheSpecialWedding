@@ -22,6 +22,7 @@ import {
   Pencil, Trash2, ExternalLink, Download, BellOff,
 } from 'lucide-react';
 import { coupleFetch, logoutCoupleSession } from '@/couple/lib/auth';
+import { getWeddingEventLabel } from '@/utils/weddingEvents';
 
 // ============================================================================
 // TYPES
@@ -57,6 +58,7 @@ interface OrderItem {
 
 interface WeddingEvent {
   type: string;
+  custom_type_label?: string;
   date: string;
   details?: EventDetail;
   order_of_events?: OrderItem[];
@@ -73,6 +75,7 @@ interface PlannerInfo {
 
 interface EventGuestBreakdown {
   event_type: string;
+  custom_type_label?: string;
   date?: string;
   attending: number;
 }
@@ -212,15 +215,8 @@ function daysUntil(dateStr: string): number {
   return Math.ceil((target.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
 }
 
-function eventTypeLabel(type: string): string {
-  const labels: Record<string, string> = {
-    traditional: 'Traditional Ceremony',
-    white_wedding: 'White Wedding',
-    reception: 'Reception',
-    engagement: 'Engagement Party',
-    rehearsal: 'Rehearsal Dinner',
-  };
-  return labels[type] || type.charAt(0).toUpperCase() + type.slice(1).replace(/_/g, ' ');
+function eventTypeLabel(type: string, customTypeLabel?: string): string {
+  return getWeddingEventLabel(type, customTypeLabel);
 }
 
 function paymentStatusColor(status: string): string {
@@ -587,7 +583,7 @@ function DashboardSection({ data }: { data: DashboardData }) {
                     {stats.event_breakdown.map((event) => (
                       <div key={event.event_type} className="flex items-start justify-between gap-4">
                         <div>
-                          <p className="text-sm font-medium text-slate-900 dark:text-white">{eventTypeLabel(event.event_type)}</p>
+                          <p className="text-sm font-medium text-slate-900 dark:text-white">{eventTypeLabel(event.event_type, event.custom_type_label)}</p>
                           {event.date && (
                             <p className="text-xs text-slate-500 dark:text-slate-400">{formatDate(event.date)}</p>
                           )}
@@ -706,7 +702,7 @@ function DashboardSection({ data }: { data: DashboardData }) {
                   {new Date(event.date + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
                 </div>
                 <div className="flex-1 min-w-0">
-                  <p className="font-medium text-slate-900 dark:text-white text-sm">{eventTypeLabel(event.type)}</p>
+                  <p className="font-medium text-slate-900 dark:text-white text-sm">{eventTypeLabel(event.type, event.custom_type_label)}</p>
                   <p className="text-xs text-slate-500 dark:text-slate-400 truncate">
                     {event.details?.venue_name && `${event.details.venue_name}`}
                     {event.details?.time && ` · ${event.details.time}`}
@@ -797,7 +793,7 @@ function TimelineSection({ events, timezone, onNoteAdded }: { events: WeddingEve
           <div key={eventIdx} className="bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm overflow-hidden">
             {/* Event Header */}
             <div className="bg-indigo-600 dark:bg-indigo-500/90 px-6 py-3 flex items-center justify-between">
-              <p className="text-white text-sm font-medium">{eventTypeLabel(event.type)}</p>
+              <p className="text-white text-sm font-medium">{eventTypeLabel(event.type, event.custom_type_label)}</p>
               {(orderItems.length > 0 || eventNotes.length > 0) && (
                 <button
                   onClick={() => setExpandedEvent(isExpanded ? null : eventIdx)}
