@@ -134,6 +134,7 @@ class Settings(BaseSettings):
     # Monitoring
     enable_metrics: bool = Field(default=False, alias="ENABLE_METRICS")
     metrics_endpoint: str = Field(default="/metrics", alias="METRICS_ENDPOINT")
+    enable_api_docs: Optional[bool] = Field(default=None, alias="ENABLE_API_DOCS")
 
     # Feature Flags
     feature_ai_tools: bool = Field(default=True, alias="FEATURE_AI_TOOLS")
@@ -235,6 +236,13 @@ class Settings(BaseSettings):
     def is_testing(self) -> bool:
         """Check if running in testing mode"""
         return self.testing or self.environment == Environment.TESTING
+
+    @property
+    def api_docs_enabled(self) -> bool:
+        """Check if interactive API docs and schema should be exposed."""
+        if self.enable_api_docs is not None:
+            return self.enable_api_docs
+        return not self.is_production()
 
     def get_feature_flags(self) -> Dict[str, bool]:
         """Get all feature flags"""
