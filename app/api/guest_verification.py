@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException, Depends, Request
+from fastapi import APIRouter, HTTPException, Depends
 from typing import Optional, Literal
 from pydantic import BaseModel, Field
 from app.services.guest_verification_service import GuestVerificationService
@@ -52,7 +52,7 @@ async def verify_guest_access(slug: str, verification: GuestVerificationRequest)
     try:
         result = await verification_service.verify_wedding_page_access(
             slug=slug,
-            verification_data=verification.dict()
+            verification_data=verification.dict(),
         )
 
         if not result.get("access"):
@@ -123,7 +123,6 @@ async def get_wedding_with_token_access(slug: str, token: str):
 @router.post("/guests/request-rsvp-link", tags=["Guest"])
 async def request_rsvp_link(
     request_data: RequestRSVPLinkRequest,
-    http_request: Request
 ):
     """
     Request personal RSVP link to be sent via SMS or email.
@@ -141,14 +140,10 @@ async def request_rsvp_link(
         Generic success message regardless of whether guest was found
     """
     try:
-        # Get client IP for rate limiting
-        client_ip = http_request.client.host if http_request.client else "unknown"
-
         result = await verification_service.request_and_send_rsvp_link(
             slug=request_data.slug,
             contact=request_data.contact,
             contact_type=request_data.contact_type,
-            client_ip=client_ip
         )
 
         return result

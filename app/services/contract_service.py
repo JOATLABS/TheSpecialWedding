@@ -57,6 +57,8 @@ class ContractService:
         self.packages = mongo.db["packages"]
         self.users = mongo.db["users"]
         self.weddings = mongo.db["weddings"]
+        self.max_money_overview_contracts = 5000
+        self.max_money_overview_payments = 20000
 
     @staticmethod
     def _normalize_couple(couple: Any) -> Dict[str, Any]:
@@ -740,6 +742,76 @@ class ContractService:
 
         except Exception as e:
             logger.error(f"Failed to get contract payments: {str(e)}")
+            raise
+
+    async def get_planner_payment_overview(
+        self,
+        planner_id: str,
+        contract_statuses: Optional[List[str]] = None,
+    ) -> List[Dict]:
+        """
+        Get scheduled payments across a planner's contracts in one query set.
+
+        Used by the admin money dashboard to avoid N+1 contract payment fetches.
+        """
+        try:
+            contract_query: Dict[str, Any] = {"planner_id": planner_id}
+            if contract_statuses:
+                contract_query["status"] = {"$in": contract_statuses}
+
+            contract_cursor = self.contracts.find(
+                contract_query,
+                {
+                    "couple": 1,
+                    "package_snapshot": 1,
+                    "contract_title": 1,
+                    "status": 1,
+                },
+            )
+            contracts = await contract_cursor.to_list(length=self.max_money_overview_contracts)
+            if not contracts:
+                return []
+
+            contract_lookup: Dict[str, Dict[str, Any]] = {}
+            contract_ids: List[str] = []
+            for contract in contracts:
+                contract_id = str(contract["_id"])
+                couple = self._normalize_couple(contract.get("couple"))
+                contract_lookup[contract_id] = {
+                    "couple_name": couple.get("display_name") or "A couple",
+                    "wedding_title": (
+                        (contract.get("package_snapshot") or {}).get("name")
+                        or contract.get("contract_title")
+                        or "Wedding"
+                    ),
+                    "contract_status": contract.get("status"),
+                }
+                contract_ids.append(contract_id)
+
+            payments_cursor = self.scheduled_payments.find(
+                {"contract_id": {"$in": contract_ids}}
+            ).sort("due_date", 1)
+            payments = await payments_cursor.to_list(length=self.max_money_overview_payments)
+
+            overview: List[Dict[str, Any]] = []
+            for payment in payments:
+                serialized = self._serialize_payment(payment)
+                if serialized is None:
+                    continue
+
+                contract_meta = contract_lookup.get(str(serialized.get("contract_id")), {})
+                overview.append({
+                    **serialized,
+                    "name": serialized.get("name") or serialized.get("description") or "Scheduled payment",
+                    "couple_name": contract_meta.get("couple_name", "A couple"),
+                    "wedding_title": contract_meta.get("wedding_title", "Wedding"),
+                    "contract_status": contract_meta.get("contract_status"),
+                })
+
+            return overview
+
+        except Exception as e:
+            logger.error(f"Failed to get planner payment overview: {str(e)}")
             raise
 
     async def update_wedding_date(

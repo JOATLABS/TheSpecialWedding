@@ -880,6 +880,14 @@ async def get_subscription_details(
         if plan:
             response["plan_name"] = plan.get("name")
             response["plan_description"] = plan.get("description")
+            response["ai_credits_total"] = plan.get("ai_credits_monthly")
+            response["weddings_total"] = plan.get("max_weddings")
+            billing_interval = subscription_record.get("billing_interval", "monthly")
+            response["price"] = (
+                plan.get("price_yearly")
+                if billing_interval == "yearly"
+                else plan.get("price_monthly")
+            )
 
         return response
 

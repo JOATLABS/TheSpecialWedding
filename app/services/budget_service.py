@@ -694,6 +694,94 @@ class BudgetService:
             logger.error(f"Failed to get payment history: {str(e)}")
             raise
 
+    async def get_outgoing_payments_overview(self, weddings: List[Dict[str, Any]]) -> Dict[str, Any]:
+        """
+        Get aggregated outgoing payment data for the admin money dashboard.
+
+        The dashboard needs a wedding list for filters/forecasting plus one
+        rolled-up payment row per budget category with spend.
+        """
+        try:
+            wedding_lookup: Dict[str, Dict[str, str]] = {}
+            for wedding in weddings:
+                wedding_id = str(wedding.get("_id") or wedding.get("id") or "")
+                if not wedding_id:
+                    continue
+
+                wedding_lookup[wedding_id] = {
+                    "id": wedding_id,
+                    "title": (
+                        wedding.get("title")
+                        or wedding.get("couple_names")
+                        or wedding.get("name")
+                        or "Wedding"
+                    ),
+                }
+
+            if not wedding_lookup:
+                return {"payments": [], "count": 0, "weddings": [], "weddings_total": 0}
+
+            wedding_ids = list(wedding_lookup.keys())
+            categories_cursor = self.budget_categories.find({
+                "wedding_id": {"$in": wedding_ids},
+                "actual_spent": {"$gt": 0},
+            })
+            categories = await categories_cursor.to_list(length=self.MAX_CATEGORIES)
+
+            latest_payment_by_category: Dict[str, Dict[str, Any]] = {}
+            category_ids = [str(category["_id"]) for category in categories if category.get("_id") is not None]
+            if category_ids:
+                latest_payment_pipeline = [
+                    {"$match": {"category_id": {"$in": category_ids}}},
+                    {"$sort": {"payment_date": -1}},
+                    {
+                        "$group": {
+                            "_id": "$category_id",
+                            "vendor_name": {"$first": "$vendor_name"},
+                            "payment_date": {"$first": "$payment_date"},
+                        }
+                    },
+                ]
+                latest_payments = await self.payment_records.aggregate(latest_payment_pipeline).to_list(length=len(category_ids))
+                latest_payment_by_category = {
+                    str(payment["_id"]): payment
+                    for payment in latest_payments
+                }
+
+            payments: List[Dict[str, Any]] = []
+            for category in categories:
+                category_id = str(category["_id"])
+                wedding_id = str(category.get("wedding_id") or "")
+                wedding_meta = wedding_lookup.get(wedding_id, {"title": "Wedding"})
+                latest_payment = latest_payment_by_category.get(category_id, {})
+                payments.append({
+                    "id": category_id,
+                    "vendor_name": latest_payment.get("vendor_name") or category.get("vendor_name") or category.get("name") or "Unknown Vendor",
+                    "vendor_email": category.get("vendor_email"),
+                    "category": category.get("name") or "Service",
+                    "wedding_title": wedding_meta.get("title", "Wedding"),
+                    "wedding_id": wedding_id,
+                    "amount": float(category.get("actual_spent", 0) or 0),
+                    "budgeted": float(category.get("budgeted_amount", 0) or 0),
+                    "status": category.get("payment_status") or "pending",
+                    "due_date": None,
+                    "paid_at": serialize_mongo_doc(latest_payment).get("payment_date") if latest_payment else None,
+                })
+
+            payments.sort(key=lambda payment: payment.get("paid_at") or "", reverse=True)
+            weddings_payload = sorted(wedding_lookup.values(), key=lambda wedding: wedding["title"].lower())
+
+            return {
+                "payments": payments,
+                "count": len(payments),
+                "weddings": weddings_payload,
+                "weddings_total": len(weddings_payload),
+            }
+
+        except Exception as e:
+            logger.error(f"Failed to get outgoing payments overview: {str(e)}")
+            raise
+
     async def get_payment(self, payment_id: str) -> Optional[Dict]:
         """Fetch a single payment by ID"""
         try:

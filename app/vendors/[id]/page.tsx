@@ -28,17 +28,32 @@ interface PublicVendorProfile {
   state?: string;
   country?: string;
   service_category: string;
-  service_subcategories: string[];
+  custom_service_category?: string;
+  service_subcategories?: string[];
   service_description?: string;
-  portfolio_urls: string[];
+  portfolio_urls?: string[];
   logo_url?: string;
   typical_price_min?: number;
   typical_price_max?: number;
-  currency: string;
+  currency?: string;
   lead_time_days?: number;
   service_radius_miles?: number;
   is_preferred: boolean;
   weddings_count: number;
+}
+
+function formatCategory(cat: string): string {
+  return cat.replace(/_/g, ' ').replace(/\b\w/g, (l) => l.toUpperCase());
+}
+
+function getVendorCategoryLabel(vendor: Pick<PublicVendorProfile, 'service_category' | 'custom_service_category'>): string {
+  if (vendor.service_category === 'other' && vendor.custom_service_category?.trim()) {
+    return vendor.custom_service_category.trim();
+  }
+  if (vendor.service_category === 'mc') {
+    return 'MC / Host';
+  }
+  return formatCategory(vendor.service_category);
 }
 
 const LoadingSkeleton = () => (
@@ -147,7 +162,12 @@ export default function VendorProfilePage() {
         }
 
         const data = await response.json();
-        setVendor(data);
+        setVendor({
+          ...data,
+          service_subcategories: Array.isArray(data.service_subcategories) ? data.service_subcategories : [],
+          portfolio_urls: Array.isArray(data.portfolio_urls) ? data.portfolio_urls : [],
+          currency: data.currency || 'USD',
+        });
       } catch (err) {
         console.error('Error fetching vendor:', err);
         setError('failed-to-load');
@@ -172,10 +192,13 @@ export default function VendorProfilePage() {
   const fullAddress = [vendor.address, vendor.city, vendor.state, vendor.country]
     .filter(Boolean)
     .join(', ');
+  const serviceSubcategories = Array.isArray(vendor.service_subcategories) ? vendor.service_subcategories : [];
+  const portfolioUrls = Array.isArray(vendor.portfolio_urls) ? vendor.portfolio_urls : [];
+  const categoryLabel = getVendorCategoryLabel(vendor);
 
   const priceRange =
     vendor.typical_price_min && vendor.typical_price_max
-      ? `${vendor.currency} ${vendor.typical_price_min.toLocaleString()} - ${vendor.typical_price_max.toLocaleString()}`
+      ? `${vendor.currency || 'USD'} ${vendor.typical_price_min.toLocaleString()} - ${vendor.typical_price_max.toLocaleString()}`
       : null;
 
   return (
@@ -205,7 +228,7 @@ export default function VendorProfilePage() {
                 </h1>
                 <div className="flex flex-wrap items-center gap-4">
                   <span className="inline-block px-3 py-1 bg-primary-100 text-primary-700 rounded-full text-sm font-medium">
-                    {vendor.service_category}
+                    {categoryLabel}
                   </span>
                   {vendor.is_preferred && (
                     <span className="inline-flex items-center gap-1 px-3 py-1 bg-yellow-100 text-yellow-700 rounded-full text-sm font-medium">
@@ -286,13 +309,13 @@ export default function VendorProfilePage() {
           {/* Left Column - Details */}
           <div className="md:col-span-2 space-y-8">
             {/* Service Subcategories */}
-            {vendor.service_subcategories.length > 0 && (
+            {serviceSubcategories.length > 0 && (
               <section>
                 <h2 className="text-2xl font-bold text-gray-900 mb-4">
                   Specialties
                 </h2>
                 <div className="flex flex-wrap gap-2">
-                  {vendor.service_subcategories.map((subcategory, index) => (
+                  {serviceSubcategories.map((subcategory, index) => (
                     <span
                       key={index}
                       className="inline-flex items-center gap-2 px-3 py-2 bg-gray-100 text-gray-700 rounded-full text-sm font-medium hover:bg-gray-200 transition-colors"
@@ -306,13 +329,13 @@ export default function VendorProfilePage() {
             )}
 
             {/* Portfolio */}
-            {vendor.portfolio_urls.length > 0 && (
+            {portfolioUrls.length > 0 && (
               <section>
                 <h2 className="text-2xl font-bold text-gray-900 mb-4">
                   Portfolio
                 </h2>
                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
-                  {vendor.portfolio_urls.map((url, index) => (
+                  {portfolioUrls.map((url, index) => (
                     <a
                       key={index}
                       href={url}

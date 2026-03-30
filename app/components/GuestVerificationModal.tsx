@@ -3,32 +3,29 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { getApiBaseUrl } from '@/utils/env';
 import { Button } from '@/components/ui/Button';
+import type { Wedding } from '@/types/wedding';
+import { buildPublicGalleryAccess, type PublicGalleryAccess } from '@/utils/publicGallery';
 
 interface GuestVerificationModalProps {
   slug: string;
-  onVerified: (weddingData: any, guestData?: any) => void;
+  onVerified: (weddingData: any, guestData?: any, accessData?: PublicGalleryAccess | null) => void;
   onCancel?: () => void;
+  privacyInfo?: PrivacyInfo | null;
 }
 
-interface PrivacyInfo {
-  couple_names: string;
-  privacy_mode: string;
-  requires_password: boolean;
-  requires_guest_verification: boolean;
-  verification_requirements: {
-    otp_enabled: boolean;
-    supports_phone: boolean;
-    supports_email: boolean;
-  };
-}
+type PrivacyInfo = Pick<
+  Wedding,
+  'id' | 'couple_names' | 'privacy_mode' | 'requires_password' | 'requires_guest_verification' | 'verification_requirements'
+>;
 
 export default function GuestVerificationModal({
   slug,
   onVerified,
-  onCancel
+  onCancel,
+  privacyInfo: initialPrivacyInfo,
 }: GuestVerificationModalProps) {
-  const [privacyInfo, setPrivacyInfo] = useState<PrivacyInfo | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [fetchedPrivacyInfo, setFetchedPrivacyInfo] = useState<PrivacyInfo | null>(null);
+  const [loading, setLoading] = useState(!initialPrivacyInfo);
   const [verifying, setVerifying] = useState(false);
   const [sendingOtp, setSendingOtp] = useState(false);
   const [error, setError] = useState('');
@@ -47,6 +44,7 @@ export default function GuestVerificationModal({
 
   const API_BASE_URL = getApiBaseUrl();
   const API_URL = API_BASE_URL.replace('/admin', ''); // Remove /admin for public endpoints
+  const privacyInfo = initialPrivacyInfo ?? fetchedPrivacyInfo;
 
   const fetchPrivacyInfo = useCallback(async () => {
     try {
@@ -55,7 +53,7 @@ export default function GuestVerificationModal({
         throw new Error('Failed to load wedding information');
       }
       const data = await response.json();
-      setPrivacyInfo(data);
+      setFetchedPrivacyInfo(data);
     } catch (err: any) {
       setError(err.message || 'Failed to load wedding information');
     } finally {
@@ -64,14 +62,23 @@ export default function GuestVerificationModal({
   }, [API_URL, slug]);
 
   useEffect(() => {
+    if (initialPrivacyInfo) {
+      return;
+    }
+
     fetchPrivacyInfo();
-  }, [fetchPrivacyInfo]);
+  }, [fetchPrivacyInfo, initialPrivacyInfo]);
 
   useEffect(() => {
     if (privacyInfo?.privacy_mode === 'public') {
-      onVerified({ couple_names: privacyInfo.couple_names });
+      onVerified({
+        id: privacyInfo.id ?? slug,
+        slug,
+        couple_names: privacyInfo.couple_names ?? '',
+        privacy_mode: 'public',
+      });
     }
-  }, [onVerified, privacyInfo]);
+  }, [onVerified, privacyInfo, slug]);
 
   const handleVerification = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -79,13 +86,27 @@ export default function GuestVerificationModal({
     setError('');
 
     try {
+      if (privacyInfo?.privacy_mode === 'private' && token) {
+        const response = await fetch(`${API_URL}/weddings/guest-access/${slug}/${token.trim()}`);
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => ({}));
+          throw new Error(errorData.detail || 'Verification failed');
+        }
+
+        const result = await response.json();
+        onVerified(
+          result.wedding,
+          result.guest,
+          buildPublicGalleryAccess(result.guest) ?? { token: token.trim() },
+        );
+        return;
+      }
+
       const verificationData: any = {};
       if (privacyInfo?.privacy_mode === 'password' && password) {
         verificationData.password = password;
       } else if (privacyInfo?.privacy_mode === 'private') {
-        if (token) {
-          verificationData.token = token;
-        } else if (otpStep && otpCode && otpContact) {
+        if (otpStep && otpCode && otpContact) {
           // OTP verification
           verificationData.otp_code = otpCode;
           verificationData.contact = otpContact;
@@ -119,7 +140,14 @@ export default function GuestVerificationModal({
         await sendOtp(result.wedding_id, result.contact, result.contact_type);
         return;
       }
-      onVerified(result.wedding, result.guest);
+      onVerified(
+        result.wedding,
+        result.guest,
+        buildPublicGalleryAccess(
+          result.guest,
+          privacyInfo?.privacy_mode === 'password' ? password : null,
+        ),
+      );
 
     } catch (err: any) {
       setError(err.message || 'Verification failed. Please check your information and try again.');

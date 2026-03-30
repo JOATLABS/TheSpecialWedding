@@ -14,6 +14,7 @@ interface PublicVendor {
   _id: string;
   business_name: string;
   service_category: string;
+  custom_service_category?: string;
   service_description?: string;
   city?: string;
   state?: string;
@@ -61,6 +62,16 @@ function formatCategory(cat: string): string {
   return cat.replace(/_/g, ' ').replace(/\b\w/g, (l) => l.toUpperCase());
 }
 
+function getVendorCategoryLabel(vendor: Pick<PublicVendor, 'service_category' | 'custom_service_category'>): string {
+  if (vendor.service_category === 'other' && vendor.custom_service_category?.trim()) {
+    return vendor.custom_service_category.trim();
+  }
+  if (vendor.service_category === 'mc') {
+    return 'MC / Host';
+  }
+  return formatCategory(vendor.service_category);
+}
+
 function getCategoryIcon(cat: string): string {
   return CATEGORY_ICONS[cat.toLowerCase()] || '🤝';
 }
@@ -100,7 +111,7 @@ function VendorCard({ vendor }: { vendor: PublicVendor }) {
           </h3>
           <p className="text-xs text-slate-400 mt-0.5">
             {getCategoryIcon(vendor.service_category)}{' '}
-            {formatCategory(vendor.service_category)}
+            {getVendorCategoryLabel(vendor)}
           </p>
         </div>
         {vendor.is_preferred && (

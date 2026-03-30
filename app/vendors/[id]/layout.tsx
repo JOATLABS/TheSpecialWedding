@@ -4,9 +4,20 @@ import { getApiBaseUrl } from '@/utils/env';
 interface VendorMeta {
   business_name: string;
   service_category: string;
+  custom_service_category?: string;
   city?: string;
   state?: string;
   service_description?: string;
+}
+
+function getVendorCategoryLabel(vendor: Pick<VendorMeta, 'service_category' | 'custom_service_category'>): string {
+  if (vendor.service_category === 'other' && vendor.custom_service_category?.trim()) {
+    return vendor.custom_service_category.trim();
+  }
+  if (vendor.service_category === 'mc') {
+    return 'MC / Host';
+  }
+  return vendor.service_category.replace(/_/g, ' ').replace(/\b\w/g, (l) => l.toUpperCase());
 }
 
 async function fetchVendorMeta(id: string): Promise<VendorMeta | null> {
@@ -38,13 +49,14 @@ export async function generateMetadata({
   }
 
   const location = [vendor.city, vendor.state].filter(Boolean).join(', ');
+  const categoryLabel = getVendorCategoryLabel(vendor);
   const title = location
-    ? `${vendor.business_name} — ${vendor.service_category} in ${location}`
-    : `${vendor.business_name} — ${vendor.service_category}`;
+    ? `${vendor.business_name} — ${categoryLabel} in ${location}`
+    : `${vendor.business_name} — ${categoryLabel}`;
 
   const description = vendor.service_description
     ? vendor.service_description.slice(0, 155)
-    : `${vendor.business_name} is a ${vendor.service_category.toLowerCase()}${location ? ` based in ${location}` : ''}. View services, pricing, and portfolio.`;
+    : `${vendor.business_name} is a ${categoryLabel.toLowerCase()}${location ? ` based in ${location}` : ''}. View services, pricing, and portfolio.`;
 
   return {
     title,

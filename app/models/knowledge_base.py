@@ -26,6 +26,13 @@ KB_CATEGORIES = [
     "general"
 ]
 
+# Shared article status contract across model, API, and frontend.
+KB_STATUSES = [
+    "draft",
+    "published",
+    "archived",
+]
+
 
 class ArticleFeedbackModel(BaseModel):
     """Individual feedback entry for an article (embedded document)"""
@@ -61,7 +68,7 @@ class KnowledgeBaseArticleModel(UserRelatedModel):
     tags: List[str] = Field(default_factory=list, description="Article tags for search")
 
     # Status & Visibility
-    status: str = Field(default="published", description="Article status: draft, published, pending_review")
+    status: str = Field(default="published", description="Article status: draft, published, archived")
     is_official: bool = Field(default=False, description="True = platform docs by ROOT_ADMIN, False = community")
     featured: bool = Field(default=False, description="Highlight important articles")
 
@@ -100,9 +107,8 @@ class KnowledgeBaseArticleModel(UserRelatedModel):
     @classmethod
     def validate_status(cls, v):
         """Validate article status"""
-        valid_statuses = ["draft", "published", "pending_review", "archived"]
-        if v not in valid_statuses:
-            raise ValueError(f"Status must be one of: {', '.join(valid_statuses)}")
+        if v not in KB_STATUSES:
+            raise ValueError(f"Status must be one of: {', '.join(KB_STATUSES)}")
         return v
 
     @field_validator("slug")
@@ -147,9 +153,8 @@ class KnowledgeBaseArticleCreateModel(BaseModel):
     @field_validator("status")
     @classmethod
     def validate_status(cls, v):
-        valid_statuses = ["draft", "published"]
-        if v not in valid_statuses:
-            raise ValueError(f"Status must be one of: {', '.join(valid_statuses)}")
+        if v not in KB_STATUSES:
+            raise ValueError(f"Status must be one of: {', '.join(KB_STATUSES)}")
         return v
 
 
@@ -176,9 +181,8 @@ class KnowledgeBaseArticleUpdateModel(BaseModel):
     @field_validator("status")
     @classmethod
     def validate_status(cls, v):
-        valid_statuses = ["draft", "published", "pending_review", "archived"]
-        if v is not None and v not in valid_statuses:
-            raise ValueError(f"Status must be one of: {', '.join(valid_statuses)}")
+        if v is not None and v not in KB_STATUSES:
+            raise ValueError(f"Status must be one of: {', '.join(KB_STATUSES)}")
         return v
 
 

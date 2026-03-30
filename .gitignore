@@ -47,10 +47,12 @@ tests/*
 !tests/unit/
 tests/backend/*
 !tests/backend/test_blog_content_utils.py
+!tests/backend/test_knowledge_base_contract.py
 !tests/backend/test_settings.py
 !tests/backend/test_notification_stream_contract.py
 tests/unit/*
 !tests/unit/blogRichText.test.ts
+!tests/unit/legacyAdminContextBridge.test.ts
 !tests/resources-blog-rendering.spec.ts
 
 ARCHITECTURAL_IMPROVEMENTS_COMPLETE.md

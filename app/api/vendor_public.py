@@ -29,6 +29,7 @@ PUBLIC_VENDOR_FIELDS = {
     "state": 1,
     "country": 1,
     "service_category": 1,
+    "custom_service_category": 1,
     "service_subcategories": 1,
     "service_description": 1,
     "portfolio_urls": 1,
@@ -42,6 +43,15 @@ PUBLIC_VENDOR_FIELDS = {
     "weddings_count": 1,
     "tags": 1,
 }
+
+
+def _normalize_public_vendor_doc(doc: dict) -> dict:
+    """Backfill optional collection fields for older vendor records."""
+    doc["service_subcategories"] = doc.get("service_subcategories") or []
+    doc["portfolio_urls"] = doc.get("portfolio_urls") or []
+    doc["tags"] = doc.get("tags") or []
+    doc["currency"] = doc.get("currency") or "USD"
+    return doc
 
 
 @router.get("/sitemap-ids")
@@ -104,6 +114,7 @@ async def list_public_vendors(
     vendors = []
     async for doc in cursor:
         doc["_id"] = str(doc["_id"])
+        doc = _normalize_public_vendor_doc(doc)
         vendors.append(doc)
 
     # Get distinct categories for filter dropdown
@@ -141,5 +152,6 @@ async def get_public_vendor_profile(vendor_id: str):
 
     # Convert ObjectId to string for JSON serialization
     vendor["_id"] = str(vendor["_id"])
+    vendor = _normalize_public_vendor_doc(vendor)
 
     return vendor

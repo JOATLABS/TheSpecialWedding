@@ -16,7 +16,7 @@ import {
     wasAdminSessionRemembered,
 } from '@/utils/adminAuthStorage';
 
-interface UserProfile {
+export interface UserProfile {
     id?: string;
     email: string;
     role: string;
@@ -66,8 +66,10 @@ type AdminContextType = {
 const AdminContext = createContext<AdminContextType | null>(null);
 
 /**
- * AdminProvider - Composes AuthProvider and APIProvider
- * Maintains backward compatibility for existing consumers
+ * AdminProvider - Canonical auth/API provider for admin surfaces.
+ *
+ * Legacy AuthContext/APIContext shims delegate here so the admin shell has a
+ * single source of truth for session state, profile hydration, and API access.
  */
 export const AdminProvider = ({ children }: { children: React.ReactNode }) => {
     const router = useRouter();
@@ -597,16 +599,16 @@ export const AdminProvider = ({ children }: { children: React.ReactNode }) => {
     );
 }
 
+export const useOptionalAdmin = () => useContext(AdminContext);
+
 /**
- * useAdmin - Backward compatibility hook
- * Returns combined auth and API context
+ * useAdmin - Canonical combined auth + API hook for admin surfaces.
  *
- * For new code, prefer:
- * - useAuth() for authentication state and operations
- * - useAPI() for API requests
+ * Legacy useAuth()/useAPI() shims resolve through this hook so provider
+ * mismatches cannot reintroduce split admin auth state.
  */
 export const useAdmin = () => {
-    const context = useContext(AdminContext);
+    const context = useOptionalAdmin();
     if (!context) {
         throw new Error('useAdmin must be used within AdminProvider');
     }

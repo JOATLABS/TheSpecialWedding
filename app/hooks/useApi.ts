@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback } from 'react';
-import { useAuth } from '@/contexts/AuthContext';
+import { useAdmin } from '@/contexts/AdminContext';
 import { getApiBaseUrl } from '@/utils/env';
 import { toast } from 'sonner';
 
@@ -33,7 +33,7 @@ export interface ApiResponse<T> {
  * const { data, error } = await request('/api/guests', { method: 'GET' });
  */
 export function useApi() {
-  const { token } = useAuth();
+  const { token } = useAdmin();
 
   const request = useCallback(
     async <T = any>(path: string, options: ApiOptions = {}): Promise<ApiResponse<T>> => {

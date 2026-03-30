@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useCallback, useRef } from "react";
+import React, { useState, useCallback, useRef } from "react";
 import Link from "next/link";
 import Image from 'next/image';
 
@@ -217,7 +217,9 @@ function WeddingContent({ isClone, wedding, images, onCelebrateClick }: WeddingC
                 },
                 {
                   q: "Where is the venue?",
-                  a: wedding.venue || "Venue details will be shared with your RSVP confirmation."
+                  a: typeof wedding.venue === 'string'
+                    ? wedding.venue
+                    : wedding.venue?.name || "Venue details will be shared with your RSVP confirmation."
                 },
                 {
                   q: "What time should I arrive?",
@@ -268,7 +270,7 @@ export const LandingLayout: React.FC<LandingLayoutProps> = ({ wedding, images, r
   const [showTerms, setShowTerms] = useState(false);
   const [showPrivacy, setShowPrivacy] = useState(false);
   const [showRSVPLinkModal, setShowRSVPLinkModal] = useState(false);
-  const [showRSVPModal, setShowRSVPModal] = useState(!!rsvpToken);
+  const [dismissedRSVPModal, setDismissedRSVPModal] = useState(false);
   const [loopHeight, setLoopHeight] = useState(0);
 
   // Shared ref holding the normalised (modulo'd) scroll position.
@@ -279,12 +281,7 @@ export const LandingLayout: React.FC<LandingLayoutProps> = ({ wedding, images, r
   // Stable callback for InfiniteScrollWrapper height reporting
   const handlePrimaryHeight = useCallback((h: number) => setLoopHeight(h), []);
 
-  // Sync modal open state when rsvpToken arrives after initial render
-  useEffect(() => {
-    if (rsvpToken) {
-      setShowRSVPModal(true);
-    }
-  }, [rsvpToken]);
+  const showRSVPModal = Boolean(rsvpToken) && !dismissedRSVPModal;
 
   // Get featured image from wedding or use first gallery image
   const featuredImage = wedding.featured_image
@@ -361,7 +358,7 @@ export const LandingLayout: React.FC<LandingLayoutProps> = ({ wedding, images, r
           token={rsvpToken}
           slug={wedding.slug}
           onClose={() => {
-            setShowRSVPModal(false);
+            setDismissedRSVPModal(true);
             // Clear persisted token after modal closes (RSVP completed or dismissed)
             try { sessionStorage.removeItem('rsvp_token_' + wedding.slug); } catch {}
           }}

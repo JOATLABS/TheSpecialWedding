@@ -8,7 +8,9 @@ from app.dependencies.auth_extended import (
     check_wedding_access,
     require_wedding_planner,
     require_admin_or_planner,
+    require_team_or_planner,
     enforce_team_permission,
+    get_accessible_wedding_ids,
 )
 from app.models.budget import BudgetCategory, VendorQuote, BudgetTemplate, PaymentRecord
 from app.utils.response import success_response, error_response, dict_response
@@ -17,6 +19,7 @@ from app.utils.query_validation import (
     validated_boolean_filter
 )
 import logging
+from bson import ObjectId
 
 logger = logging.getLogger(__name__)
 
@@ -140,6 +143,37 @@ async def get_wedding_budget(
     except Exception as e:
         logger.error(f"Failed to get wedding budget: {str(e)}")
         raise HTTPException(status_code=500, detail="Failed to retrieve budget information")
+
+
+@router.get("/budget/payments/overview", tags=["Budget"])
+async def get_budget_payments_overview(
+    current_user: ExtendedAuthUser = Depends(require_team_or_planner)
+):
+    """Get outgoing payment overview for the admin money dashboard."""
+    try:
+        weddings_query: Dict[str, Any]
+        if current_user.is_root_admin:
+            weddings_query = {}
+        elif current_user.is_team_member:
+            weddings_query = {"assigned_planner_email": current_user.team_owner_email}
+            accessible_ids = get_accessible_wedding_ids(current_user)
+            if accessible_ids is not None:
+                weddings_query["_id"] = {
+                    "$in": [ObjectId(wedding_id) if ObjectId.is_valid(wedding_id) else wedding_id for wedding_id in accessible_ids]
+                }
+        else:
+            weddings_query = {"assigned_planner_email": current_user.email}
+
+        weddings_cursor = budget_service.weddings.find(
+            weddings_query,
+            {"title": 1, "couple_names": 1, "name": 1}
+        )
+        weddings = await weddings_cursor.to_list(length=budget_service.MAX_CATEGORIES)
+        return await budget_service.get_outgoing_payments_overview(weddings)
+
+    except Exception as e:
+        logger.error(f"Failed to get outgoing payments overview: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to retrieve outgoing payment overview")
 
 @router.post("/weddings/{wedding_id}/budget/category", tags=["Budget"])
 async def create_budget_category(
