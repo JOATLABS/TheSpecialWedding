@@ -38,7 +38,7 @@ const FALLBACK_PLANS: SubscriptionPlan[] = [
     price_yearly: 708,
     max_weddings: 10,
     max_guests_per_wedding: 350,
-    features: ['Seating orchestration', 'QR check-in', 'Automated reminders', 'Vendor collaboration'],
+    features: ['Seating orchestration', 'Guest memories uploads', 'Automated reminders', 'Vendor collaboration'],
     is_featured: true
   }
 ];

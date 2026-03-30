@@ -7,6 +7,7 @@ Sprint 3: Adds email digest generation for unread updates, messages, payments.
 from datetime import datetime, timezone, timedelta
 from typing import Optional, Dict, Any, List
 from app.core.database import mongo
+from app.services.guest_media_service import guest_media_service
 from bson import ObjectId
 import logging
 
@@ -57,6 +58,9 @@ class CouplePortalService:
         # Get updates/milestones
         updates = await self._get_updates(wedding_id)
 
+        # Get guest memories summary
+        memories_summary = await guest_media_service.get_dashboard_summary(wedding_id)
+
         return {
             "wedding": {
                 "id": str(wedding["_id"]),
@@ -91,6 +95,7 @@ class CouplePortalService:
             "contract": contract_info,
             "forms": shared_forms,
             "updates": updates,
+            "memories_summary": memories_summary,
         }
 
     async def _get_guest_stats(self, wedding: Dict[str, Any]) -> Dict[str, Any]:

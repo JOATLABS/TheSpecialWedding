@@ -1723,6 +1723,83 @@ async def create_couple_portal_indexes():
         logger.error(f"Error creating couple portal indexes: {e}")
 
 
+async def create_guest_media_indexes():
+    """
+    Create indexes for guest-uploaded memories and export jobs.
+
+    Collections:
+    1. guest_media_assets
+    2. guest_media_exports
+    """
+    try:
+        guest_media_assets = mongo.db["guest_media_assets"]
+
+        await guest_media_assets.create_index(
+            [("wedding_id", ASCENDING), ("uploaded_at", DESCENDING)],
+            name="idx_guest_media_wedding_uploaded",
+            background=True,
+        )
+        await guest_media_assets.create_index(
+            [("wedding_id", ASCENDING), ("review_status", ASCENDING), ("uploaded_at", DESCENDING)],
+            name="idx_guest_media_review_queue",
+            background=True,
+        )
+        await guest_media_assets.create_index(
+            [("wedding_id", ASCENDING), ("media_type", ASCENDING), ("uploaded_at", DESCENDING)],
+            name="idx_guest_media_media_type",
+            background=True,
+        )
+        await guest_media_assets.create_index(
+            [("wedding_id", ASCENDING), ("event_type", ASCENDING), ("uploaded_at", DESCENDING)],
+            name="idx_guest_media_event_type",
+            background=True,
+        )
+        await guest_media_assets.create_index(
+            [("upload_batch_id", ASCENDING)],
+            name="idx_guest_media_upload_batch",
+            background=True,
+        )
+        await guest_media_assets.create_index(
+            [("original_key", ASCENDING)],
+            name="idx_guest_media_original_key",
+            unique=True,
+            background=True,
+        )
+        await guest_media_assets.create_index(
+            [("stream_uid", ASCENDING)],
+            name="idx_guest_media_stream_uid",
+            sparse=True,
+            background=True,
+        )
+        await guest_media_assets.create_index(
+            [("wedding_id", ASCENDING), ("uploader_name", ASCENDING), ("uploaded_at", DESCENDING)],
+            name="idx_guest_media_uploader",
+            background=True,
+        )
+        await guest_media_assets.create_index(
+            [("wedding_id", ASCENDING), ("upload_status", ASCENDING), ("created_at", DESCENDING)],
+            name="idx_guest_media_upload_status",
+            background=True,
+        )
+
+        guest_media_exports = mongo.db["guest_media_exports"]
+
+        await guest_media_exports.create_index(
+            [("wedding_id", ASCENDING), ("created_at", DESCENDING)],
+            name="idx_guest_media_exports_wedding_created",
+            background=True,
+        )
+        await guest_media_exports.create_index(
+            [("status", ASCENDING), ("created_at", DESCENDING)],
+            name="idx_guest_media_exports_status",
+            background=True,
+        )
+
+        logger.info("Guest media indexes created/verified")
+    except Exception as e:
+        logger.error(f"Error creating guest media indexes: {e}")
+
+
 async def create_all_indexes():
     """Create all database indexes (called on app startup)"""
     try:
@@ -1749,6 +1826,7 @@ async def create_all_indexes():
         await create_campaign_platform_indexes()  # Campaign platform (21 indexes)
         await create_billing_indexes()  # Billing collections (7 indexes)
         await create_couple_portal_indexes()  # Couple portal (6 indexes)
+        await create_guest_media_indexes()  # Couple guest memories
         logger.info("All database indexes created/verified")
     except Exception as e:
         logger.error(f"Error creating database indexes: {str(e)}")

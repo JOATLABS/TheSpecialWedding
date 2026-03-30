@@ -9,13 +9,12 @@ export default function VerifyEmailPage() {
   const params = useParams();
   const router = useRouter();
   const token = params.token as string;
-  const [status, setStatus] = useState<'loading' | 'success' | 'error'>('loading');
-  const [message, setMessage] = useState('');
+  const missingToken = !token;
+  const [status, setStatus] = useState<'loading' | 'success' | 'error'>(missingToken ? 'error' : 'loading');
+  const [message, setMessage] = useState(missingToken ? 'Invalid verification link.' : '');
 
   useEffect(() => {
     if (!token) {
-      setStatus('error');
-      setMessage('Invalid verification link.');
       return;
     }
 

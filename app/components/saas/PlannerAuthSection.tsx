@@ -217,13 +217,6 @@ export function PlannerAuthSection({
   const [internalPlan, setInternalPlan] = useState<PlanSelection | null>(selectedPlan ?? null);
   const activePlan = selectedPlan ?? internalPlan;
 
-  useEffect(() => {
-    if (!selectedPlan) {
-      return;
-    }
-    setInternalPlan(selectedPlan);
-  }, [selectedPlan]);
-
   const handleModeChange = (next: AuthMode) => {
     onModeChange?.(next);
     if (mode === undefined) {
@@ -315,7 +308,7 @@ export function PlannerAuthSection({
       handleSubmit,
       formState: { errors, isSubmitting },
       setError,
-      watch,
+      getValues,
       reset,
     } = signupForm;
 
@@ -494,7 +487,7 @@ export function PlannerAuthSection({
               autoComplete="new-password"
               {...register('confirmPassword', {
                 required: 'Confirm your password',
-                validate: (value) => value === watch('password') || 'Passwords must match',
+                validate: (value) => value === getValues('password') || 'Passwords must match',
               })}
               className={`w-full rounded-xl border px-3 py-2 text-sm shadow-sm focus:outline-none focus:ring-2 focus:ring-offset-1 focus:ring-slate-900/10 ${
                 errors.confirmPassword ? 'border-red-300' : 'border-slate-200'

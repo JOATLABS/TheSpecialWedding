@@ -9,6 +9,7 @@ import {
   CreditCard,
   ClipboardList,
   Mail,
+  Images,
   Gift,
   HelpCircle,
   LogOut,
@@ -23,6 +24,7 @@ export type CoupleSection =
   | 'payments'
   | 'forms'
   | 'inbox'
+  | 'memories'
   | 'registry'
   | 'faq';
 
@@ -38,6 +40,7 @@ const navItems: NavItem[] = [
   { key: 'payments', name: 'Payments', icon: CreditCard },
   { key: 'forms', name: 'Forms', icon: ClipboardList },
   { key: 'inbox', name: 'Inbox', icon: Mail },
+  { key: 'memories', name: 'Memories', icon: Images },
   { key: 'registry', name: 'Registry', icon: Gift },
   { key: 'faq', name: 'FAQ', icon: HelpCircle },
 ];
@@ -51,6 +54,7 @@ interface CoupleSidebarProps {
   onLogout: () => void;
   unreadInbox?: number;
   pendingForms?: number;
+  pendingMemories?: number;
 }
 
 export default function CoupleSidebar({
@@ -62,10 +66,12 @@ export default function CoupleSidebar({
   onLogout,
   unreadInbox = 0,
   pendingForms = 0,
+  pendingMemories = 0,
 }: CoupleSidebarProps) {
   const getBadgeCount = (key: CoupleSection): number | undefined => {
     if (key === 'inbox' && unreadInbox > 0) return unreadInbox;
     if (key === 'forms' && pendingForms > 0) return pendingForms;
+    if (key === 'memories' && pendingMemories > 0) return pendingMemories;
     return undefined;
   };
 

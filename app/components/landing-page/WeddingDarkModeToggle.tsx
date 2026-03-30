@@ -34,13 +34,17 @@ export const WeddingDarkModeToggle: React.FC<WeddingDarkModeToggleProps> = ({
   const colors = THEME_COLORS[themeColor] || THEME_COLORS.rose;
 
   useEffect(() => {
-    setMounted(true);
-    const stored = localStorage.getItem('wedding-dark-mode');
-    if (stored !== null) {
-      setIsDark(stored === 'true');
-    } else {
-      setIsDark(window.matchMedia('(prefers-color-scheme: dark)').matches);
-    }
+    const frame = window.requestAnimationFrame(() => {
+      setMounted(true);
+      const stored = localStorage.getItem('wedding-dark-mode');
+      if (stored !== null) {
+        setIsDark(stored === 'true');
+      } else {
+        setIsDark(window.matchMedia('(prefers-color-scheme: dark)').matches);
+      }
+    });
+
+    return () => window.cancelAnimationFrame(frame);
   }, []);
 
   useEffect(() => {

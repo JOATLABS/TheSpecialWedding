@@ -92,7 +92,7 @@ For growing businesses that need more power.
 - 350 guests per wedding
 - Everything in Boutique, plus:
 - Seating orchestration
-- QR check-in & live counts
+- Guest memories QR uploads
 - Automated reminders
 - Vendor collaboration
 - 300 AI credits/month

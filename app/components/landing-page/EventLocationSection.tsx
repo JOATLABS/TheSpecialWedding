@@ -10,7 +10,9 @@ interface EventLocationSectionProps {
 }
 
 export const EventLocationSection: React.FC<EventLocationSectionProps> = ({ wedding }) => {
-  const [selectedEventType, setSelectedEventType] = useState<string>('');
+  const [selectedEventType, setSelectedEventType] = useState<string>(() => wedding.events?.find(
+    (event) => event.details?.location && event.details.location.trim() !== ''
+  )?.type || '');
   const [mapLoaded, setMapLoaded] = useState(false);
   const [mapUrl, setMapUrl] = useState<string>('');
 
@@ -21,15 +23,9 @@ export const EventLocationSection: React.FC<EventLocationSectionProps> = ({ wedd
     ) || [];
   }, [wedding.events]);
 
-  // Set initial selected event
-  useEffect(() => {
-    if (eventsWithLocation.length > 0 && !selectedEventType) {
-      setSelectedEventType(eventsWithLocation[0].type);
-    }
-  }, [eventsWithLocation, selectedEventType]);
-
   // Get selected event details
-  const selectedEvent = eventsWithLocation.find(e => e.type === selectedEventType);
+  const activeEventType = selectedEventType || eventsWithLocation[0]?.type || '';
+  const selectedEvent = eventsWithLocation.find(e => e.type === activeEventType);
 
   // Fetch secure map URL when location changes
   useEffect(() => {
@@ -104,7 +100,7 @@ export const EventLocationSection: React.FC<EventLocationSectionProps> = ({ wedd
       <div>
         <div className="bg-white/70 dark:bg-gray-800/70 rounded-lg p-4 flex items-center transition-colors duration-300">
           <select
-            value={selectedEventType}
+            value={activeEventType}
             onChange={(e) => setSelectedEventType(e.target.value)}
             className="w-full px-4 py-2 bg-transparent border-2 rounded-lg font-medium text-lg focus:outline-none focus:ring-2 focus:ring-wedding-rose transition-all theme-primary theme-border-primary"
           >

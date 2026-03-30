@@ -38,7 +38,6 @@ from app.api.reminder import router as reminder_router
 from app.api.reminder_telnyx import router as reminder_telnyx_router
 from app.api.reminder_twilio import router as reminder_twilio_router
 from app.api.email_reminders import router as email_reminder_router
-from app.api.checkin import router as checkin_router
 from app.api.gallery_public import router as gallery_public_router
 from app.api.gallery_admin import router as gallery_admin_router
 from app.api.wedding import router as wedding_router
@@ -93,6 +92,7 @@ from app.api.planner_ad_preferences import router as planner_ad_preferences_rout
 from app.api.vendor_public import router as vendor_public_router
 from app.api.vendor_signup import router as vendor_signup_router
 from app.api.blog import router as blog_router
+from app.api.guest_memories import router as guest_memories_router
 
 # Couple Portal routers
 from app.api.couple_auth import router as couple_auth_router
@@ -334,6 +334,35 @@ async def _monthly_billing_scheduler():
             await asyncio.sleep(3600)
 
 
+async def _guest_media_maintenance_scheduler():
+    """
+    Background task that drains durable guest media work:
+    - queued / stale video ingest jobs
+    - queued / stale export jobs
+    """
+    from app.services.guest_media_service import guest_media_service
+
+    while True:
+        try:
+            processed_video_jobs = await guest_media_service.process_pending_video_jobs(limit=6)
+            processed_export_jobs = await guest_media_service.process_pending_export_jobs(limit=1)
+
+            if processed_video_jobs or processed_export_jobs:
+                logger.info(
+                    "Guest media scheduler processed %s video job(s) and %s export job(s)",
+                    processed_video_jobs,
+                    processed_export_jobs,
+                )
+
+            await asyncio.sleep(15)
+        except asyncio.CancelledError:
+            logger.info("Guest media scheduler shutting down")
+            raise
+        except Exception as e:
+            logger.error(f"Guest media scheduler error: {e}", exc_info=True)
+            await asyncio.sleep(30)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan management"""
@@ -342,6 +371,7 @@ async def lifespan(app: FastAPI):
     logger.info(f"Environment: {settings.environment}")
     rollup_task: asyncio.Task | None = None
     billing_task: asyncio.Task | None = None
+    guest_media_task: asyncio.Task | None = None
     scheduler_heartbeat_task: asyncio.Task | None = None
     scheduler_holder_id: str | None = None
 
@@ -418,8 +448,9 @@ async def lifespan(app: FastAPI):
         if await _acquire_scheduler_leadership(scheduler_holder_id):
             rollup_task = asyncio.create_task(_nightly_rollup_scheduler())
             billing_task = asyncio.create_task(_monthly_billing_scheduler())
+            guest_media_task = asyncio.create_task(_guest_media_maintenance_scheduler())
             scheduler_heartbeat_task = asyncio.create_task(
-                _scheduler_leadership_heartbeat(scheduler_holder_id, [rollup_task, billing_task])
+                _scheduler_leadership_heartbeat(scheduler_holder_id, [rollup_task, billing_task, guest_media_task])
             )
             logger.info(f"Background schedulers started on leader replica {scheduler_holder_id}")
         else:
@@ -430,10 +461,10 @@ async def lifespan(app: FastAPI):
         yield  # Application runs here
 
         # Cancel background tasks on shutdown
-        for task in [scheduler_heartbeat_task, rollup_task, billing_task]:
+        for task in [scheduler_heartbeat_task, rollup_task, billing_task, guest_media_task]:
             if task and not task.done():
                 task.cancel()
-        for task in [scheduler_heartbeat_task, rollup_task, billing_task]:
+        for task in [scheduler_heartbeat_task, rollup_task, billing_task, guest_media_task]:
             if not task:
                 continue
             try:
@@ -644,6 +675,7 @@ app.include_router(blog_router, tags=["Blog"])  # Public blog + admin blog endpo
 # Couple Portal routes (public - couple auth is handled at route level)
 app.include_router(couple_auth_router, tags=["Couple Auth"])  # Couple login, setup, verify invite
 app.include_router(couple_portal_router, tags=["Couple Portal"])  # Couple dashboard, forms, updates
+app.include_router(guest_memories_router, tags=["Guest Memories"])  # Public upload + couple memories endpoints
 
 # Admin routes (authentication required)
 # Note: Routers already registered publicly with route-level auth are excluded to avoid duplicate routes
@@ -655,7 +687,6 @@ admin_routers = [
     (reminder_telnyx_router, "Admin"),
     (reminder_twilio_router, "Admin"),
     (email_reminder_router, "Admin"),
-    (checkin_router, "Admin"),
     (gallery_admin_router, "Gallery"),
     (reminder_utils_router, "Admin"),
     # user_management_router - already registered publicly with route-level auth

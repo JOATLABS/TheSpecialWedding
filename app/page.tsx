@@ -254,7 +254,6 @@ function FeatureShowcase({ isClone }: { isClone: boolean }) {
                     idx === activeIdx ? "opacity-100 z-10" : "opacity-0 z-0"
                   }`}
                 >
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img
                     src={feature.image}
                     alt={`${feature.title} — ${feature.tagline}`}
@@ -595,7 +594,7 @@ function LandingContent({
 
 const fallbackTestimonials: Testimonial[] = [
   {
-    quote: "I used to juggle Google Sheets for guests, QuickBooks for budgets, and DocuSign for contracts — all disconnected. Now my 240-person guest list, seating chart, and budget tracker live in one place. Last Saturday I reassigned three tables in the seating orchestrator ten minutes before doors opened and the live headcount updated instantly at check-in.",
+    quote: "I used to juggle Google Sheets for guests, QuickBooks for budgets, and DocuSign for contracts — all disconnected. Now my 240-person guest list, seating chart, and budget tracker live in one place. Last Saturday I reassigned three tables in the seating orchestrator ten minutes before doors opened and guest memories were already flowing into the couple portal before dinner.",
     name: "Maya Glenn",
     role: "Director of Events, Aurora Collective",
   },
