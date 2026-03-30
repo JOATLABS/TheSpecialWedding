@@ -113,6 +113,59 @@ async def list_contracts(
         raise HTTPException(status_code=500, detail="Failed to retrieve contracts")
 
 
+@router.get("/contracts/payments/overview", tags=["Contracts"])
+async def get_contract_payments_overview(
+    contract_statuses: Optional[str] = Query(
+        "signed,active",
+        description="Comma-separated list of contract statuses to include",
+    ),
+    current_user: ExtendedAuthUser = Depends(require_admin_or_planner),
+):
+    """
+    Get scheduled payments across the planner's contracts in one response.
+
+    Used by the admin money dashboard to avoid per-contract payment fan-out.
+    """
+    try:
+        allowed_statuses = {
+            "draft",
+            "sent",
+            "viewed",
+            "signed",
+            "active",
+            "completed",
+            "cancelled",
+        }
+        parsed_statuses = [
+            value.strip()
+            for value in (contract_statuses or "").split(",")
+            if value.strip()
+        ]
+        invalid_statuses = sorted(set(parsed_statuses) - allowed_statuses)
+        if invalid_statuses:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Invalid contract status filter: {', '.join(invalid_statuses)}",
+            )
+
+        planner_id = str((current_user.user_data or {}).get("_id") or current_user.email)
+        payments = await contract_service.get_planner_payment_overview(
+            planner_id=planner_id,
+            contract_statuses=parsed_statuses or None,
+        )
+
+        return {
+            "payments": payments,
+            "count": len(payments),
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to get contract payment overview: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to retrieve payment overview")
+
+
 @router.post("/contracts", tags=["Contracts"])
 async def create_contract(
     request: Request,

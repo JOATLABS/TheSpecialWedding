@@ -42,9 +42,9 @@ async def readiness():
 
     # Check Redis (non-fatal if not configured)
     try:
-        from app.core.cache import redis_client
-        if redis_client:
-            await redis_client.ping()
+        from app.core.cache import cache
+        if cache.redis_client:
+            await cache.redis_client.ping()
             checks["redis"] = "connected"
         else:
             checks["redis"] = "not_configured"

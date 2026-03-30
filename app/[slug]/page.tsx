@@ -6,6 +6,11 @@ import { WeddingContext } from '@/contexts/WeddingContext';
 import { LandingLayout } from '@/components/landing-page/LandingLayout';
 import { GalleryImage } from '@/types/landing';
 import GuestVerificationModal from '@/components/GuestVerificationModal';
+import {
+  buildPublicGalleryAccess,
+  fetchPublicGalleryPage,
+  type PublicGalleryAccess,
+} from '@/utils/publicGallery';
 
 const API_BASE_URL = getApiBaseUrl();
 const API_URL = API_BASE_URL.replace('/admin', ''); // Remove /admin for public endpoints
@@ -22,10 +27,10 @@ function WeddingLandingContent() {
  const [wedding, setWedding] = useState<any>(null);
  const [guest, setGuest] = useState<any>(null);
  const [images, setImages] = useState<GalleryImage[]>([]);
- const [error, setError] = useState<string | null>(null);
  const [accessGranted, setAccessGranted] = useState(false);
  const [loading, setLoading] = useState(true);
  const [rsvpToken, setRsvpToken] = useState<string | null>(null);
+ const [galleryAccess, setGalleryAccess] = useState<PublicGalleryAccess | null>(null);
 
  // Fetch wedding data using RSVP token (bypasses privacy verification)
  const fetchWeddingByToken = useCallback(async (tokenValue: string) => {
@@ -47,6 +52,7 @@ function WeddingLandingContent() {
 
      setWedding(weddingForContext);
      setGuest(guestResult);
+     setGalleryAccess(buildPublicGalleryAccess(guestResult) ?? { token: tokenValue });
      setAccessGranted(true);
    } catch (err: any) {
      console.error('Failed to load wedding via token:', err);
@@ -89,66 +95,35 @@ function WeddingLandingContent() {
  // eslint-disable-next-line react-hooks/exhaustive-deps
  }, [contextWedding, rsvpTokenParam, slug]);
 
- const handleGuestVerified = (weddingData: any, guestData?: any) => {
+ const handleGuestVerified = (
+  weddingData: any,
+  guestData?: any,
+  accessData?: PublicGalleryAccess | null,
+ ) => {
  setWedding(weddingData);
  setGuest(guestData);
+ setGalleryAccess(accessData ?? buildPublicGalleryAccess(guestData));
  setAccessGranted(true);
-
- // Fetch gallery for verified users
- fetchGallery(weddingData, guestData);
  };
 
  const fetchGallery = useCallback(
- async (weddingData?: any, guestData?: any) => {
-  if (!slug) return;
-
-  const targetWedding = weddingData || wedding;
-  const targetGuest = guestData || guest;
+ async () => {
+  if (!slug || !wedding) return;
 
   try {
-    // For public weddings, use the simple gallery endpoint
-    // For private/password weddings, use the verified endpoint with query params
-    const isPublic = targetWedding?.privacy_mode === 'public';
-
-    let galleryUrl: string;
-    if (isPublic) {
-      // Public gallery endpoint
-      galleryUrl = `${API_URL}/gallery?wedding_slug=${encodeURIComponent(slug)}`;
-    } else {
-      // Build query params for verified endpoint
-      const params = new URLSearchParams({ wedding_slug: slug });
-
-      // Add authentication parameters based on what we have
-      if (targetGuest?.token) {
-        params.append('token', targetGuest.token);
-      } else if (targetGuest?.name) {
-        params.append('name', targetGuest.name);
-        if (targetGuest.phone) {
-          params.append('phone', targetGuest.phone);
-        }
-      }
-
-      galleryUrl = `${API_URL}/gallery/verified?${params.toString()}`;
-    }
-
-    const res = await fetch(galleryUrl, {
-      method: isPublic ? 'GET' : 'POST',
+    const galleryPage = await fetchPublicGalleryPage({
+      slug,
+      privacyMode: wedding.privacy_mode,
+      access: galleryAccess,
+      limit: 12,
     });
-
-    if (res.ok) {
-      const data = await res.json();
-      setImages(data.map((img: any) => ({ key: img.key, url: img.url })));
-    } else {
-      // If gallery fails, don't show error - just continue without images
-      console.warn('Gallery access failed, continuing without images');
-      setImages([]);
-    }
+    setImages(galleryPage.items);
   } catch (err: any) {
     console.warn('Gallery could not be loaded:', err);
     setImages([]); // Continue without gallery instead of showing error
   }
  },
- [guest, slug, wedding]
+ [galleryAccess, slug, wedding]
  );
 
  // Fetch gallery when access is granted and we have wedding data
@@ -169,18 +144,6 @@ function WeddingLandingContent() {
  );
  }
 
- if (error) {
- return (
- <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-rose-50 to-pink-50 dark:from-slate-900 dark:to-slate-800">
- <div className="text-center bg-white dark:bg-slate-800 p-8 rounded-lg shadow-sm dark:shadow-slate-900/50 max-w-md">
- <div className="text-4xl mb-4 text-red-500 dark:text-red-400"></div>
- <h2 className="text-xl font-semibold text-gray-900 dark:text-gray-100 mb-2">Unable to Load Wedding</h2>
- <p className="text-gray-600 dark:text-gray-300 mb-4">{error}</p>
- </div>
- </div>
- );
- }
-
  // Show verification modal if access not granted
  if (!accessGranted) {
  return (
@@ -188,6 +151,7 @@ function WeddingLandingContent() {
  <GuestVerificationModal
  slug={slug}
  onVerified={handleGuestVerified}
+ privacyInfo={contextWedding}
  />
  </div>
  );

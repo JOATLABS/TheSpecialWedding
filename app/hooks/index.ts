@@ -1,7 +1,8 @@
 /**
- * Central export point for all API hooks
+ * Central export point for legacy admin API hooks.
  *
- * Import from @/hooks instead of @/hooks/useApi etc.
+ * New admin code should prefer useAdmin from @/contexts/AdminContext and only
+ * use these wrappers when the extra response-state helpers are needed.
  */
 
 // Core hooks

@@ -74,6 +74,10 @@ class CacheManager:
         """Get key with application prefix"""
         return f"{prefix}:{key}"
 
+    def build_key(self, key: str) -> str:
+        """Expose the prefixed Redis key for low-level cache operations."""
+        return self._get_key_with_prefix(key)
+
     async def get(self, key: str, default: Any = None) -> Any:
         """
         Get value from cache
@@ -177,6 +181,117 @@ class CacheManager:
         except Exception as e:
             logger.warning(f"Cache exists check failed for key {key}: {str(e)}")
             return False
+
+    async def increment(
+        self,
+        key: str,
+        amount: int = 1,
+        expire: Optional[Union[int, timedelta]] = None,
+    ) -> Optional[int]:
+        """
+        Atomically increment a numeric cache key.
+
+        Args:
+            key: Cache key
+            amount: Increment amount
+            expire: Optional expiration set on first increment
+
+        Returns:
+            New counter value, or None if Redis is unavailable
+        """
+        if not self.enabled or not self.redis_client:
+            return None
+
+        try:
+            prefixed_key = self._get_key_with_prefix(key)
+            current_value = await self.redis_client.incrby(prefixed_key, amount)
+
+            if current_value == amount and expire:
+                if isinstance(expire, timedelta):
+                    expire = int(expire.total_seconds())
+                await self.redis_client.expire(prefixed_key, expire)
+
+            return int(current_value)
+        except Exception as e:
+            logger.warning(f"Cache increment failed for key {key}: {str(e)}")
+            return None
+
+    async def acquire_lock(
+        self,
+        key: str,
+        value: str,
+        expire: Optional[Union[int, timedelta]] = None,
+    ) -> Optional[bool]:
+        """
+        Acquire a distributed lock if it is not already held.
+
+        Returns:
+            True if the lock was acquired, False if it is already held,
+            or None if Redis is unavailable.
+        """
+        if not self.enabled or not self.redis_client:
+            return None
+
+        try:
+            prefixed_key = self._get_key_with_prefix(key)
+            kwargs = {"nx": True}
+
+            if expire:
+                if isinstance(expire, timedelta):
+                    expire = int(expire.total_seconds())
+                kwargs["ex"] = expire
+
+            result = await self.redis_client.set(prefixed_key, value, **kwargs)
+            return bool(result)
+        except Exception as e:
+            logger.warning(f"Cache lock acquire failed for key {key}: {str(e)}")
+            return None
+
+    async def release_lock(self, key: str, value: str) -> Optional[bool]:
+        """
+        Release a distributed lock only if it is still owned by value.
+
+        Returns:
+            True if the lock was released, False if it was not owned,
+            or None if Redis is unavailable.
+        """
+        if not self.enabled or not self.redis_client:
+            return None
+
+        release_script = """
+        if redis.call("get", KEYS[1]) == ARGV[1] then
+            return redis.call("del", KEYS[1])
+        end
+        return 0
+        """
+
+        try:
+            prefixed_key = self._get_key_with_prefix(key)
+            result = await self.redis_client.eval(release_script, 1, prefixed_key, value)
+            return bool(result)
+        except Exception as e:
+            logger.warning(f"Cache lock release failed for key {key}: {str(e)}")
+            return None
+
+    async def ttl(self, key: str) -> int:
+        """
+        Get the remaining TTL for a cache key.
+
+        Args:
+            key: Cache key
+
+        Returns:
+            TTL in seconds, or -2 if unavailable/not found
+        """
+        if not self.enabled or not self.redis_client:
+            return -2
+
+        try:
+            prefixed_key = self._get_key_with_prefix(key)
+            return int(await self.redis_client.ttl(prefixed_key))
+        except Exception as e:
+            logger.warning(f"Cache TTL lookup failed for key {key}: {str(e)}")
+            return -2
 
     async def expire(self, key: str, time: Union[int, timedelta]) -> bool:
         """

@@ -53,8 +53,8 @@ export default function ArticleEditor({ article, onSuccess, onCancel }: ArticleE
   const [excerpt, setExcerpt] = useState(article?.excerpt || '');
   const [category, setCategory] = useState(article?.category || 'general');
   const [tags, setTags] = useState(article?.tags?.join(', ') || '');
-  const [status, setStatus] = useState<'draft' | 'published'>(
-    (article?.status as 'draft' | 'published') || 'published'
+  const [status, setStatus] = useState<'draft' | 'published' | 'archived'>(
+    (article?.status as 'draft' | 'published' | 'archived') || 'published'
   );
   const [cardImage, setCardImage] = useState(article?.card_image || '');
   const [ogImage, setOgImage] = useState(article?.og_image || '');
@@ -326,11 +326,12 @@ export default function ArticleEditor({ article, onSuccess, onCancel }: ArticleE
                   </label>
                   <select
                     value={status}
-                    onChange={(e) => setStatus(e.target.value as 'draft' | 'published')}
+                    onChange={(e) => setStatus(e.target.value as 'draft' | 'published' | 'archived')}
                     className="w-full px-4 py-3 border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                   >
                     <option value="published">Published</option>
                     <option value="draft">Draft</option>
+                    <option value="archived">Archived</option>
                   </select>
                 </div>
               </div>

@@ -70,6 +70,18 @@ export interface OurStory {
   image_shape?: 'circle' | 'heart' | 'square' | 'hexagon';
 }
 
+export interface VerificationRequirements {
+  otp_enabled: boolean;
+  supports_phone: boolean;
+  supports_email: boolean;
+}
+
+export interface WeddingVenue {
+  name?: string;
+  address?: string;
+  [key: string]: any;
+}
+
 export interface PrivacySettings {
   privacy_mode: 'private' | 'password' | 'public';
   guest_auth_required: boolean;
@@ -110,8 +122,14 @@ export interface Wedding {
   theme_config?: ThemeConfig;
   featured_image?: string;
   our_story?: OurStory;
+  venue?: string | WeddingVenue;
   wedding_party?: WeddingPartyMember[];
   wedding_party_sync?: WeddingPartySyncSettings;
+  privacy_mode?: 'private' | 'password' | 'public';
+  requires_authentication?: boolean;
+  requires_password?: boolean;
+  requires_guest_verification?: boolean;
+  verification_requirements?: VerificationRequirements;
   created_at?: string;
   [key: string]: any; // for flexibility (additional fields)
 }

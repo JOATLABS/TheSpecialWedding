@@ -2,6 +2,7 @@ import os
 import boto3
 import qrcode
 import logging
+from typing import Optional
 from urllib.parse import urlparse
 from io import BytesIO
 from botocore.exceptions import ClientError
@@ -93,21 +94,66 @@ class GalleryUploadService:
             logger.error(f"S3 delete error ({error_code}): {str(e)}")
             raise HTTPException(status_code=500, detail=f"Error deleting file: {str(e)}")
 
+    def _format_listed_objects(self, objects):
+        return [
+            {
+                "key": obj["Key"],
+                "url": f"{MEDIA_DOMAIN}/{obj['Key']}" if MEDIA_DOMAIN else obj["Key"],
+                "size": obj.get("Size", 0)
+            }
+            for obj in objects
+        ]
+
+    def list_uploaded_files_page(
+        self,
+        prefix: str = "gallery/",
+        limit: int = 60,
+        cursor: Optional[str] = None,
+    ):
+        try:
+            request = {
+                "Bucket": self.bucket_name,
+                "Prefix": prefix,
+                "MaxKeys": limit,
+            }
+            if cursor:
+                request["ContinuationToken"] = cursor
+
+            response = self.s3.list_objects_v2(**request)
+            contents = response.get("Contents", [])
+
+            return {
+                "items": self._format_listed_objects(contents),
+                "next_cursor": response.get("NextContinuationToken"),
+                "has_more": response.get("IsTruncated", False),
+            }
+        except ClientError as e:
+            error_code = e.response.get('Error', {}).get('Code', 'Unknown')
+            logger.error(f"S3 list error ({error_code}): {str(e)}")
+            raise HTTPException(status_code=500, detail=f"Error listing files: {str(e)}")
+
     def list_uploaded_files(self, prefix: str = "gallery/"):
         try:
-            response = self.s3.list_objects_v2(Bucket=self.bucket_name, Prefix=prefix)
-            if 'Contents' not in response:
-                return []
+            files = []
+            continuation_token = None
 
-            # Use custom domain for public access instead of presigned URLs
-            files = [
-                {
-                    "key": obj["Key"],
-                    "url": f"{MEDIA_DOMAIN}/{obj['Key']}" if MEDIA_DOMAIN else obj["Key"],
-                    "size": obj.get("Size", 0)
+            while True:
+                request = {
+                    "Bucket": self.bucket_name,
+                    "Prefix": prefix,
+                    "MaxKeys": 1000,
                 }
-                for obj in response["Contents"]
-            ]
+                if continuation_token:
+                    request["ContinuationToken"] = continuation_token
+
+                response = self.s3.list_objects_v2(**request)
+                files.extend(self._format_listed_objects(response.get("Contents", [])))
+
+                if not response.get("IsTruncated"):
+                    break
+
+                continuation_token = response.get("NextContinuationToken")
+
             return sorted(files, key=lambda x: x["key"], reverse=True)
         except ClientError as e:
             error_code = e.response.get('Error', {}).get('Code', 'Unknown')

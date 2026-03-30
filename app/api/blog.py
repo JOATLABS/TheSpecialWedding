@@ -8,7 +8,12 @@ from typing import Optional, List
 from app.dependencies.auth_extended import require_root_admin, ExtendedAuthUser
 from app.services.blog_service import blog_service
 from app.models.blog import BLOG_CATEGORIES
-from app.utils.rate_limiter import public_read_limiter, public_slug_limiter, check_rate_limit
+from app.utils.rate_limiter import (
+    public_read_limiter,
+    public_slug_limiter,
+    check_rate_limit,
+    get_client_ip,
+)
 import logging
 
 logger = logging.getLogger(__name__)
@@ -102,8 +107,8 @@ async def get_published_articles(
     Used by the /resources page on the marketing site.
     Rate limited to 60 requests per minute per IP.
     """
-    client_ip = request.client.host if request.client else "unknown"
-    check_rate_limit(client_ip, public_read_limiter)
+    client_ip = get_client_ip(request)
+    await check_rate_limit(client_ip, public_read_limiter)
 
     return await blog_service.get_published_articles(
         page=page,
@@ -121,8 +126,8 @@ async def get_article_by_slug(request: Request, slug: str):
     Used by the split-panel blog reader and direct blog URLs.
     Rate limited to 100 requests per minute per IP.
     """
-    client_ip = request.client.host if request.client else "unknown"
-    check_rate_limit(client_ip, public_slug_limiter)
+    client_ip = get_client_ip(request)
+    await check_rate_limit(client_ip, public_slug_limiter)
 
     return await blog_service.get_article_by_slug(slug, increment_view=True)
 
@@ -134,8 +139,8 @@ async def get_all_slugs(request: Request):
     Used by the sitemap generator.
     Rate limited to 60 requests per minute per IP.
     """
-    client_ip = request.client.host if request.client else "unknown"
-    check_rate_limit(client_ip, public_read_limiter)
+    client_ip = get_client_ip(request)
+    await check_rate_limit(client_ip, public_read_limiter)
 
     return await blog_service.get_slugs()
 

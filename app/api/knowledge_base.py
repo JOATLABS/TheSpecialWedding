@@ -2,13 +2,19 @@
 Knowledge Base API Endpoints
 Community-driven documentation system for wedding planners
 """
-from fastapi import APIRouter, Depends, Query, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, Field, field_validator
 from typing import Optional, List
 from app.dependencies.auth_extended import require_root_admin, require_admin_or_planner, ExtendedAuthUser
 from app.services.knowledge_base_service import knowledge_base_service
-from app.models.knowledge_base import KB_CATEGORIES
-from app.utils.rate_limiter import public_read_limiter, public_search_limiter, public_slug_limiter, check_rate_limit
+from app.models.knowledge_base import KB_CATEGORIES, KB_STATUSES
+from app.utils.rate_limiter import (
+    public_read_limiter,
+    public_search_limiter,
+    public_slug_limiter,
+    check_rate_limit,
+    get_client_ip,
+)
 import logging
 
 logger = logging.getLogger(__name__)
@@ -39,8 +45,8 @@ class ArticleCreateRequest(BaseModel):
     @field_validator('status')
     @classmethod
     def validate_status(cls, v):
-        if v not in ['draft', 'published']:
-            raise ValueError('Status must be draft or published')
+        if v not in KB_STATUSES:
+            raise ValueError(f"Status must be one of: {', '.join(KB_STATUSES)}")
         return v
 
     @field_validator('tags')
@@ -74,8 +80,8 @@ class ArticleUpdateRequest(BaseModel):
     @field_validator('status')
     @classmethod
     def validate_status(cls, v):
-        if v is not None and v not in ['draft', 'published', 'archived']:
-            raise ValueError('Status must be draft, published, or archived')
+        if v is not None and v not in KB_STATUSES:
+            raise ValueError(f"Status must be one of: {', '.join(KB_STATUSES)}")
         return v
 
 
@@ -111,8 +117,8 @@ async def get_articles(
     - Supports search, category filter, and pagination
     - Rate limited to 60 requests per minute per IP
     """
-    client_ip = request.client.host if request.client else "unknown"
-    check_rate_limit(client_ip, public_read_limiter)
+    client_ip = get_client_ip(request)
+    await check_rate_limit(client_ip, public_read_limiter)
 
     return await knowledge_base_service.get_articles(
         page=page,
@@ -137,8 +143,8 @@ async def get_article_by_slug(
     - Returns full article content with author info
     - Rate limited to 100 requests per minute per IP
     """
-    client_ip = request.client.host if request.client else "unknown"
-    check_rate_limit(client_ip, public_slug_limiter)
+    client_ip = get_client_ip(request)
+    await check_rate_limit(client_ip, public_slug_limiter)
 
     return await knowledge_base_service.get_article_by_slug(slug, increment_view=True)
 
@@ -153,8 +159,8 @@ async def get_categories(
     - Used for sidebar navigation
     - Rate limited to 60 requests per minute per IP
     """
-    client_ip = request.client.host if request.client else "unknown"
-    check_rate_limit(client_ip, public_read_limiter)
+    client_ip = get_client_ip(request)
+    await check_rate_limit(client_ip, public_read_limiter)
 
     return await knowledge_base_service.get_categories_with_counts()
 
@@ -172,8 +178,8 @@ async def search_articles(
     - Returns only published articles
     - Rate limited to 30 requests per minute per IP
     """
-    client_ip = request.client.host if request.client else "unknown"
-    check_rate_limit(client_ip, public_search_limiter)
+    client_ip = get_client_ip(request)
+    await check_rate_limit(client_ip, public_search_limiter)
 
     return await knowledge_base_service.search_articles(query=q, limit=limit)
 
@@ -206,8 +212,8 @@ async def get_related_articles(
     Get related articles based on category and tags
     - Rate limited to 60 requests per minute per IP
     """
-    client_ip = request.client.host if request.client else "unknown"
-    check_rate_limit(client_ip, public_read_limiter)
+    client_ip = get_client_ip(request)
+    await check_rate_limit(client_ip, public_read_limiter)
 
     return await knowledge_base_service.get_related_articles(
         article_id=article_id,
@@ -372,30 +378,16 @@ async def get_all_articles_admin(
     - Includes draft, published, and archived articles
     - For moderation purposes
     """
+    if status is not None and status not in KB_STATUSES:
+        allowed_statuses = ", ".join(KB_STATUSES)
+        raise HTTPException(status_code=400, detail=f"Status must be one of: {allowed_statuses}")
+
     return await knowledge_base_service.get_articles(
         page=page,
         limit=limit,
         category=category,
         search=search,
-        status=status if status else "published",
+        status=status,
         featured_only=False,
         official_only=False
     )
-
-
-@router.get("/admin/kb/feedback-summary", tags=["Admin KB"])
-async def get_feedback_summary(
-    current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
-):
-    """
-    Get aggregated feedback summary across all KB articles for admin review.
-
-    Returns:
-    - Global feedback statistics (total feedback, global helpfulness percentage)
-    - Top 5 most helpful articles with feedback metrics
-    - Top 5 least helpful articles for improvement focus
-    - Recent 20 feedback comments for moderation
-
-    Access: Admin and planner roles only
-    """
-    return await knowledge_base_service.get_feedback_summary()

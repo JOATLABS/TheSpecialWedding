@@ -132,6 +132,97 @@ class MongoJSONResponse(JSONResponse):
         ).encode("utf-8")
 
 
+SCHEDULER_LEASE_NAME = "background_schedulers"
+SCHEDULER_LEASE_TTL_SECONDS = 180
+
+
+def _build_scheduler_holder_id() -> str:
+    """Build a stable per-process identifier for scheduler leadership."""
+    import os
+    import socket
+
+    return f"{socket.gethostname()}:{os.getpid()}"
+
+
+async def _acquire_scheduler_leadership(holder_id: str) -> bool:
+    """Acquire or renew the singleton scheduler lease in MongoDB."""
+    from app.core.database import mongo
+    from pymongo import ReturnDocument
+    from pymongo.errors import DuplicateKeyError
+
+    now = datetime.now(timezone.utc)
+    expires_at = now + timedelta(seconds=SCHEDULER_LEASE_TTL_SECONDS)
+
+    try:
+        lease = await mongo.db["runtime_leases"].find_one_and_update(
+            {
+                "_id": SCHEDULER_LEASE_NAME,
+                "$or": [
+                    {"expires_at": {"$lte": now}},
+                    {"holder_id": holder_id},
+                ],
+            },
+            {
+                "$set": {
+                    "holder_id": holder_id,
+                    "expires_at": expires_at,
+                    "updated_at": now,
+                },
+                "$setOnInsert": {
+                    "created_at": now,
+                },
+            },
+            upsert=True,
+            return_document=ReturnDocument.AFTER,
+        )
+        return bool(lease and lease.get("holder_id") == holder_id)
+    except DuplicateKeyError:
+        return False
+    except Exception as e:
+        logger.warning(f"Failed to acquire scheduler leadership: {e}")
+        return False
+
+
+async def _release_scheduler_leadership(holder_id: str) -> None:
+    """Release the singleton scheduler lease on shutdown."""
+    from app.core.database import mongo
+
+    try:
+        await mongo.db["runtime_leases"].delete_one({
+            "_id": SCHEDULER_LEASE_NAME,
+            "holder_id": holder_id,
+        })
+    except Exception as e:
+        logger.warning(f"Failed to release scheduler leadership: {e}")
+
+
+async def _scheduler_leadership_heartbeat(holder_id: str, tasks: list[asyncio.Task]) -> None:
+    """
+    Renew scheduler leadership and fail closed if this replica loses the lease.
+    """
+    renewal_interval = max(30, SCHEDULER_LEASE_TTL_SECONDS // 3)
+
+    try:
+        while True:
+            await asyncio.sleep(renewal_interval)
+            still_leader = await _acquire_scheduler_leadership(holder_id)
+            if still_leader:
+                continue
+
+            logger.warning("Scheduler leadership lost; cancelling background scheduler tasks")
+            for task in tasks:
+                if task and not task.done():
+                    task.cancel()
+            return
+    except asyncio.CancelledError:
+        raise
+    except Exception as e:
+        logger.error(f"Scheduler leadership heartbeat failed: {e}", exc_info=True)
+        for task in tasks:
+            if task and not task.done():
+                task.cancel()
+
+
 async def _nightly_rollup_scheduler():
     """
     Background task that runs the ad stats daily rollup at 2:00 AM UTC.
@@ -249,6 +340,10 @@ async def lifespan(app: FastAPI):
     # Startup
     logger.info(f"Starting {settings.app_name} v{settings.app_version}")
     logger.info(f"Environment: {settings.environment}")
+    rollup_task: asyncio.Task | None = None
+    billing_task: asyncio.Task | None = None
+    scheduler_heartbeat_task: asyncio.Task | None = None
+    scheduler_holder_id: str | None = None
 
     try:
         # Initialize database connection
@@ -318,29 +413,35 @@ async def lifespan(app: FastAPI):
         await sse_manager.start_redis_listener()
         logger.info("SSE Redis pub/sub listener started")
 
-        # Start nightly ad stats rollup scheduler
-        rollup_task = asyncio.create_task(_nightly_rollup_scheduler())
-        logger.info("Ad stats nightly rollup scheduler started")
-
-        # Start monthly ad billing invoice finalization scheduler
-        billing_task = asyncio.create_task(_monthly_billing_scheduler())
-        logger.info("Ad billing monthly invoice scheduler started")
+        # Only one replica should run the long-lived background schedulers.
+        scheduler_holder_id = _build_scheduler_holder_id()
+        if await _acquire_scheduler_leadership(scheduler_holder_id):
+            rollup_task = asyncio.create_task(_nightly_rollup_scheduler())
+            billing_task = asyncio.create_task(_monthly_billing_scheduler())
+            scheduler_heartbeat_task = asyncio.create_task(
+                _scheduler_leadership_heartbeat(scheduler_holder_id, [rollup_task, billing_task])
+            )
+            logger.info(f"Background schedulers started on leader replica {scheduler_holder_id}")
+        else:
+            logger.info("Background schedulers not started on this replica")
 
         logger.info("Application startup complete")
 
         yield  # Application runs here
 
         # Cancel background tasks on shutdown
-        rollup_task.cancel()
-        billing_task.cancel()
-        try:
-            await rollup_task
-        except asyncio.CancelledError:
-            pass
-        try:
-            await billing_task
-        except asyncio.CancelledError:
-            pass
+        for task in [scheduler_heartbeat_task, rollup_task, billing_task]:
+            if task and not task.done():
+                task.cancel()
+        for task in [scheduler_heartbeat_task, rollup_task, billing_task]:
+            if not task:
+                continue
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
+        if scheduler_holder_id:
+            await _release_scheduler_leadership(scheduler_holder_id)
 
         # Stop SSE Redis listener
         await sse_manager.stop_redis_listener()

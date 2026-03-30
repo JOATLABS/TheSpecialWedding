@@ -1,6 +1,6 @@
 // app/[slug]/layout.tsx
 
-import React from "react";
+import React, { cache } from "react";
 import type { Metadata } from "next";
 import { getApiBaseUrl } from '@/utils/env';
 import { notFound } from "next/navigation";
@@ -9,7 +9,7 @@ import { Wedding } from '@/types/wedding';
 import ErrorBoundary from '@/components/ErrorBoundary';
 import { isNonWeddingSlug } from '@/utils/slug-constants';
 
-async function fetchWeddingPrivacyInfo(slug: string) {
+const fetchWeddingPrivacyInfo = cache(async (slug: string) => {
   // Defense-in-depth: the primary check is in middleware.ts, but we
   // also guard here in case the middleware matcher changes.
   if (isNonWeddingSlug(slug)) {
@@ -22,10 +22,10 @@ async function fetchWeddingPrivacyInfo(slug: string) {
     const res = await fetch(`${apiUrl}/weddings/privacy-info/${slug}`, { cache: 'no-store' });
     if (!res.ok) return null;
     return await res.json();
-  } catch (error) {
+  } catch {
     return null;
   }
-}
+});
 
 export async function generateMetadata({
   params,
