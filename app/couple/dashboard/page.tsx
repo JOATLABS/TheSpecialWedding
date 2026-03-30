@@ -6,6 +6,7 @@ import { toast } from 'sonner';
 import CoupleSidebar, { type CoupleSection } from '../components/CoupleSidebar';
 import CoupleTopHeader from '../components/CoupleTopHeader';
 import CoupleOnboardingModal from '../components/CoupleOnboardingModal';
+import CoupleMemoriesSection from '../components/CoupleMemoriesSection';
 import PageHeader from '@/components/ui/PageHeader';
 import MessageBubble from '@/components/ui/MessageBubble';
 import ChatInput from '@/components/ui/ChatInput';
@@ -99,6 +100,18 @@ interface BudgetSummary {
   remaining: number;
 }
 
+interface MemoriesSummary {
+  pending_count: number;
+  kept_count: number;
+  rejected_count: number;
+  processing_videos: number;
+  enabled: boolean;
+  link_status: 'open' | 'closed';
+  upload_closes_at?: string | null;
+  storage_ready: boolean;
+  stream_configured: boolean;
+}
+
 interface Payment {
   id: string;
   name: string;
@@ -188,6 +201,7 @@ interface DashboardData {
   contract?: ContractInfo;
   forms: FormItem[];
   updates: UpdateItem[];
+  memories_summary: MemoriesSummary;
 }
 
 // ============================================================================
@@ -372,6 +386,7 @@ export default function CoupleDashboardPage() {
   }
 
   const pendingForms = data.forms?.filter(f => f.status === 'pending').length || 0;
+  const pendingMemories = data.memories_summary?.pending_count || 0;
 
   return (
     <div className="min-h-screen overflow-x-hidden bg-light-bg dark:bg-dark-bg text-light-text dark:text-dark-text font-sans transition-colors duration-300">
@@ -384,6 +399,7 @@ export default function CoupleDashboardPage() {
         onLogout={handleLogout}
         unreadInbox={unreadMessages}
         pendingForms={pendingForms}
+        pendingMemories={pendingMemories}
       />
 
       <div
@@ -421,6 +437,13 @@ export default function CoupleDashboardPage() {
               archived={!!data.archived}
             />
           )}
+          {activeSection === 'memories' && (
+            <CoupleMemoriesSection
+              archived={!!data.archived}
+              initialSummary={data.memories_summary}
+              onUpdated={fetchDashboard}
+            />
+          )}
           {activeSection === 'registry' && <RegistrySection registries={data.wedding?.registries || []} archived={!!data.archived} onUpdated={fetchDashboard} />}
           {activeSection === 'faq' && <FAQSection faqs={data.wedding?.faqs || []} archived={!!data.archived} onUpdated={fetchDashboard} />}
         </main>
@@ -443,6 +466,7 @@ function DashboardSection({ data }: { data: DashboardData }) {
   const days = data.wedding?.date ? daysUntil(data.wedding.date) : null;
   const stats = data.guest_stats;
   const budget = data.budget_summary;
+  const memories = data.memories_summary;
   const budgetPercent = budget.total_budget > 0 ? Math.min(100, (budget.total_spent / budget.total_budget) * 100) : 0;
   const guestTarget = stats.planned_total || stats.guest_list_total;
   const guestListProgress = guestTarget > 0 ? Math.min(100, (stats.guest_list_total / guestTarget) * 100) : 0;
@@ -614,6 +638,42 @@ function DashboardSection({ data }: { data: DashboardData }) {
       </div>
 
       {/* Budget Progress */}
+      <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-700 dark:bg-slate-800">
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <h3 className="font-semibold text-slate-900 dark:text-white">Guest memories</h3>
+            <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+              Privately collect guest photos and videos from a QR sign or direct upload link.
+            </p>
+          </div>
+          <span className={`inline-flex items-center rounded-full px-2.5 py-1 text-xs font-semibold ${
+            memories.link_status === 'open'
+              ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-300'
+              : 'bg-slate-100 text-slate-600 dark:bg-slate-700 dark:text-slate-300'
+          }`}>
+            {memories.link_status === 'open' ? 'Uploads open' : 'Uploads closed'}
+          </span>
+        </div>
+
+        <div className="mt-5 grid gap-4 sm:grid-cols-3">
+          <div className="rounded-xl bg-slate-50 p-4 dark:bg-slate-900/60">
+            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">Pending review</p>
+            <p className="mt-2 text-3xl font-semibold text-slate-900 dark:text-white">{memories.pending_count}</p>
+          </div>
+          <div className="rounded-xl bg-slate-50 p-4 dark:bg-slate-900/60">
+            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">Kept</p>
+            <p className="mt-2 text-3xl font-semibold text-slate-900 dark:text-white">{memories.kept_count}</p>
+          </div>
+          <div className="rounded-xl bg-slate-50 p-4 dark:bg-slate-900/60">
+            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">Upload close date</p>
+            <p className="mt-2 text-lg font-semibold text-slate-900 dark:text-white">{memories.upload_closes_at ? formatDate(memories.upload_closes_at.slice(0, 10)) : 'Not set'}</p>
+            <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">
+              {memories.processing_videos} video{memories.processing_videos === 1 ? '' : 's'} still processing
+            </p>
+          </div>
+        </div>
+      </div>
+
       {budget.total_budget > 0 && (
         <div className="bg-white dark:bg-slate-800 rounded-xl p-6 border border-slate-200 dark:border-slate-700 shadow-sm">
           <div className="flex items-center justify-between mb-3">

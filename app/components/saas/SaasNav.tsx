@@ -27,7 +27,10 @@ export default function SaasNav() {
 
   // Close mobile menu on route change
   useEffect(() => {
-    setMobileOpen(false);
+    const frame = window.requestAnimationFrame(() => {
+      setMobileOpen(false);
+    });
+    return () => window.cancelAnimationFrame(frame);
   }, [pathname]);
 
   return (

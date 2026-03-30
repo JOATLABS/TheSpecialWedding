@@ -17,13 +17,17 @@ const NavDarkModeToggle: React.FC = () => {
   const [ripplePos, setRipplePos] = useState({ x: 0, y: 0 });
 
   useEffect(() => {
-    setMounted(true);
-    const stored = localStorage.getItem('wedding-dark-mode');
-    if (stored !== null) {
-      setIsDark(stored === 'true');
-    } else {
-      setIsDark(window.matchMedia('(prefers-color-scheme: dark)').matches);
-    }
+    const frame = window.requestAnimationFrame(() => {
+      setMounted(true);
+      const stored = localStorage.getItem('wedding-dark-mode');
+      if (stored !== null) {
+        setIsDark(stored === 'true');
+      } else {
+        setIsDark(window.matchMedia('(prefers-color-scheme: dark)').matches);
+      }
+    });
+
+    return () => window.cancelAnimationFrame(frame);
   }, []);
 
   useEffect(() => {

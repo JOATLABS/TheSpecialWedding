@@ -129,7 +129,7 @@ export const faqs: FAQ[] = [
   {
     question: 'How is this different from HoneyBook or Dubsado?',
     answer:
-      "HoneyBook and Dubsado are CRM tools built for all creative professionals. The Special Wedding is built specifically for wedding planners with event-specific tools they don't offer: seating charts, guest management with RSVPs, day-of timelines, touchless check-in, and AI-powered pricing, contracts, and cash flow predictions.",
+      "HoneyBook and Dubsado are CRM tools built for all creative professionals. The Special Wedding is built specifically for wedding planners with event-specific tools they don't offer: seating charts, guest management with RSVPs, day-of timelines, guest memory QR uploads, and AI-powered pricing, contracts, and cash flow predictions.",
     category: 'Getting Started',
   },
   {

@@ -74,6 +74,17 @@ class PrivacySettingsModel(BaseModel):
     require_name_verification: bool = Field(default=True, description="Require name for guest verification")
 
 
+class GuestMediaConfigModel(BaseModel):
+    enabled: bool = Field(default=True, description="Whether guest memory uploads are open")
+    upload_token_hash: Optional[str] = Field(default=None, description="SHA-256 hash of the active guest upload token")
+    upload_closes_at: Optional[datetime] = Field(default=None, description="When guest memory uploads close")
+    last_rotated_at: Optional[datetime] = Field(default=None, description="When the guest upload token was last rotated")
+
+    @field_serializer("upload_closes_at", "last_rotated_at", when_used="json")
+    def serialize_datetimes(self, value: Optional[datetime]) -> Optional[str]:
+        return value.isoformat() if value else None
+
+
 class RSVPConfigModel(BaseModel):
     greeting: str = Field(default="Join us in celebrating our special day! Please let us know if you'll be attending.",
                           description="RSVP greeting message")
@@ -116,6 +127,7 @@ class WeddingModel(BaseModel):
     events: List[EventModel] = Field(default_factory=list)
     rsvp_config: Optional[RSVPConfigModel] = Field(default_factory=RSVPConfigModel)
     privacy_settings: Optional[PrivacySettingsModel] = Field(default_factory=lambda: PrivacySettingsModel())
+    guest_media: Optional[GuestMediaConfigModel] = Field(default_factory=GuestMediaConfigModel)
     registries: List[RegistryItemModel] = Field(default_factory=list)
     faqs: List[FAQItemModel] = Field(default_factory=list)
     theme_config: Optional[ThemeConfigModel] = Field(default_factory=ThemeConfigModel)

@@ -58,6 +58,10 @@ RECOMMENDED_ENV_VARS = {
     "S3_ACCESS_KEY_ID": "S3/R2 access key ID",
     "S3_SECRET_ACCESS_KEY": "S3/R2 secret access key",
     "S3_BUCKET_NAME": "S3/R2 bucket name for file uploads",
+    "S3_GUEST_MEDIA_BUCKET_NAME": "Dedicated guest memories R2 bucket",
+    "GUEST_MEDIA_DOMAIN": "Guest memories CDN domain",
+    "CLOUDFLARE_ACCOUNT_ID": "Cloudflare account identifier for Stream ingest",
+    "CLOUDFLARE_API_TOKEN": "Cloudflare API token with Stream permissions",
 }
 
 

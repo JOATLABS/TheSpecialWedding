@@ -33,7 +33,8 @@ DEFAULT_TESTIMONIALS: List[Dict[str, Any]] = [
             "DocuSign for contracts \u2014 all disconnected. Now my 240-person guest list, "
             "seating chart, and budget tracker live in one place. Last Saturday I "
             "reassigned three tables in the seating orchestrator ten minutes before "
-            "doors opened and the live headcount updated instantly at check-in."
+            "doors opened and guest memories were already flowing into the couple "
+            "portal before dinner."
         ),
         "is_active": True,
         "display_order": 1,

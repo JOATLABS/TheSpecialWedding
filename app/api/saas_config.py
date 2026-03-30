@@ -96,7 +96,7 @@ def _get_default_saas_config():
         "statistics": [
             {"label": "Guest records managed across active weddings", "value": "48k"},
             {"label": "Average RSVP window to reach 90% response", "value": "5 days"},
-            {"label": "Median scan-to-confirm check-in speed", "value": "2.8s"},
+            {"label": "Median guest memory upload completion time", "value": "43s"},
             {"label": "Automation reliability across reminders", "value": "99.9%"}
         ],
         "statistics_enabled": True,
@@ -105,7 +105,7 @@ def _get_default_saas_config():
         "impact_metrics": [
             {"metric": "48k", "label": "Guest records managed across active weddings"},
             {"metric": "5 days", "label": "Average RSVP window to reach 90% response"},
-            {"metric": "2.8s", "label": "Median scan-to-confirm check-in speed"},
+            {"metric": "43s", "label": "Median guest memory upload completion time"},
             {"metric": "99.9%", "label": "Automation reliability across reminders"}
         ],
         "show_impact_metrics": True,
@@ -173,9 +173,9 @@ def _get_default_saas_config():
                 "order": 8
             },
             {
-                "title": "Touchless check-in",
-                "description": "Scan QR codes, monitor arrivals, and keep lines moving with live capacity counts.",
-                "category": "Execution",
+                "title": "Guest memories uploads",
+                "description": "Share a QR code so guests can upload photos and videos from their phones without an app.",
+                "category": "Celebration",
                 "status": "available",
                 "order": 9
             },
@@ -216,7 +216,7 @@ def _get_default_saas_config():
                 "name": "Maya Glenn",
                 "company": "Aurora Collective",
                 "role": "Director of Events",
-                "content": "I used to juggle Google Sheets for guests, QuickBooks for budgets, and DocuSign for contracts — all disconnected. Now my 240-person guest list, seating chart, and budget tracker live in one place. Last Saturday I reassigned three tables in the seating orchestrator ten minutes before doors opened and the live headcount updated instantly at check-in.",
+                "content": "I used to juggle Google Sheets for guests, QuickBooks for budgets, and DocuSign for contracts — all disconnected. Now my 240-person guest list, seating chart, and budget tracker live in one place. Last Saturday I reassigned three tables in the seating orchestrator ten minutes before doors opened and guest memories were already flowing into the couple portal before dinner.",
                 "order": 1
             },
             {
@@ -269,7 +269,7 @@ def _get_default_saas_config():
                 "description": "Day-of command center",
                 "badge": "Step 3",
                 "bullets": [
-                    "Touchless check-in with live headcounts and alerts",
+                    "QR-powered guest memory uploads with instant photo and video delivery",
                     "Role-based run of show for coordinators and crew",
                     "Instant galleries and thank-you follow ups post event"
                 ]

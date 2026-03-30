@@ -36,9 +36,15 @@ export const PlannerAuthModal: React.FC<PlannerAuthModalProps> = ({
 
   useEffect(() => {
     if (isOpen) {
-      setIsAnimating(true);
+      const frame = window.requestAnimationFrame(() => {
+        setIsAnimating(true);
+      });
       // Prevent body scroll when modal is open
       document.body.style.overflow = 'hidden';
+      return () => {
+        window.cancelAnimationFrame(frame);
+        document.body.style.overflow = 'unset';
+      };
     } else {
       document.body.style.overflow = 'unset';
     }

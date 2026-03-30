@@ -79,7 +79,7 @@ export const blogPosts = {
         </p>
 
         <p>
-          <strong>Touchless check-in:</strong> Print a table card with a QR code or give guests a unique code. They check in on their phone and self-assign to tables (you set the rules). Dietary flags and accessibility needs are flagged immediately to vendors and staff.
+          <strong>Guest memories uploads:</strong> Print a sign with a QR code so guests can scan, enter their name, and upload photos or videos from their phone. They can tag the moment if they remember it, leave it as not sure if they do not, and couples review everything privately in their portal.
         </p>
 
         <h3 className="text-xl font-semibold text-white mt-8">Built for professional planners, powered by AI</h3>
@@ -105,7 +105,7 @@ export const blogPosts = {
         </p>
 
         <p>
-          <strong>Signature ($299/month):</strong> Unlimited weddings, up to 3 team members, vendor collaboration, touchless check-in, and AI features (pricing, contracts, forecasting). Perfect for established solo planners or small teams.
+          <strong>Signature ($299/month):</strong> Unlimited weddings, up to 3 team members, vendor collaboration, guest memory QR uploads, and AI features (pricing, contracts, forecasting). Perfect for established solo planners or small teams.
         </p>
 
         <p>

@@ -26,6 +26,7 @@ export default function VendorQuoteCard({
   const [showRatingModal, setShowRatingModal] = useState(false);
   const [rating, setRating] = useState(quote.rating || 0);
   const [ratingNotes, setRatingNotes] = useState(quote.notes || '');
+  const [renderedAt] = useState(() => Date.now());
 
   const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat('en-US', {
@@ -54,7 +55,7 @@ export default function VendorQuoteCard({
     if (!deadline) {
       return false;
     }
-    return deadline.getTime() < Date.now();
+    return deadline.getTime() < renderedAt;
   })();
 
   const handleSubmitRating = () => {
