@@ -2,6 +2,7 @@ import asyncio
 import base64
 import hashlib
 import hmac
+import json
 import logging
 import os
 import re
@@ -45,6 +46,8 @@ DOWNLOAD_URL_EXPIRES_IN = 10 * 60
 PREVIEW_URL_EXPIRES_IN = 5 * 60
 STREAM_SOURCE_URL_EXPIRES_IN = 60 * 60
 STREAM_TOKEN_EXPIRES_IN = 10 * 60
+STREAM_TOKEN_REUSE_BUFFER_SECONDS = 30
+STREAM_SOURCE_VALIDATION_TIMEOUT_SECONDS = 15
 STREAM_JOB_STALE_MINUTES = 5
 STREAM_POLL_INTERVAL_SECONDS = 20
 EXPORT_JOB_STALE_MINUTES = 30
@@ -52,14 +55,6 @@ NOT_SURE_EVENT = "not_sure"
 REVIEW_STATUSES = {"pending", "kept", "rejected"}
 UPLOAD_STATUSES = {"reserved", "uploaded", "failed"}
 STREAM_STATUSES = {"queued", "ingesting", "processing", "ready", "failed", "unconfigured"}
-
-
-def _normalize_domain(raw_domain: Optional[str]) -> Optional[str]:
-    if not raw_domain:
-        return None
-    if raw_domain.startswith(("http://", "https://")):
-        return raw_domain.rstrip("/")
-    return f"https://{raw_domain}".rstrip("/")
 
 
 def _safe_filename(filename: str) -> str:
@@ -87,7 +82,6 @@ def _coerce_datetime(value: Any) -> Optional[datetime]:
 class GuestMediaStorage:
     def __init__(self):
         self.bucket_name = os.getenv("S3_GUEST_MEDIA_BUCKET_NAME") or os.getenv("S3_BUCKET_NAME")
-        self.public_domain = _normalize_domain(os.getenv("GUEST_MEDIA_DOMAIN")) or _normalize_domain(os.getenv("MEDIA_DOMAIN"))
         self.s3 = boto3.client(
             "s3",
             endpoint_url=os.getenv("S3_ENDPOINT_URL"),
@@ -113,11 +107,6 @@ class GuestMediaStorage:
             f"guest-media-exports/{wedding_slug}/{now.strftime('%Y')}/{now.strftime('%m')}/"
             f"{export_id}.zip"
         )
-
-    def build_public_url(self, key: str) -> Optional[str]:
-        if not self.public_domain:
-            return None
-        return f"{self.public_domain}/{key}"
 
     def create_presigned_upload_url(self, key: str, content_type: str, expires_in: int = UPLOAD_URL_EXPIRES_IN) -> str:
         if not self.bucket_name:
@@ -355,6 +344,97 @@ class GuestMediaService:
 
     def _asset_api_path(self, asset_id: str, variant: str) -> str:
         return f"/couple/portal/memories/{asset_id}/{variant}"
+
+    def _stream_allowed_origins(self) -> list[str]:
+        raw_candidates = [settings.frontend_url, *(settings.cors_origins or [])]
+        allowed_origins: list[str] = []
+
+        for raw_value in raw_candidates:
+            if not raw_value:
+                continue
+
+            candidate = str(raw_value).strip()
+            if not candidate or candidate == "*":
+                continue
+
+            parsed = urlparse(candidate if "://" in candidate else f"https://{candidate}")
+            hostname = (parsed.hostname or parsed.path.split("/")[0]).strip().lower()
+            if not hostname or hostname in {"localhost", "127.0.0.1", "0.0.0.0"}:
+                continue
+
+            allowed_origins.append(hostname)
+
+        return sorted(set(allowed_origins))
+
+    def _stream_security_payload(self) -> dict[str, Any]:
+        payload: dict[str, Any] = {"requireSignedURLs": True}
+        allowed_origins = self._stream_allowed_origins()
+        if allowed_origins:
+            payload["allowedOrigins"] = allowed_origins
+        return payload
+
+    def _stream_security_signature(self) -> str:
+        payload = self._stream_security_payload()
+        normalized = json.dumps(payload, sort_keys=True, separators=(",", ":"))
+        return hashlib.sha256(normalized.encode("utf-8")).hexdigest()
+
+    def _stream_result_needs_security_update(self, stream_result: dict[str, Any]) -> bool:
+        if not stream_result.get("requireSignedURLs"):
+            return True
+
+        required_origins = self._stream_allowed_origins()
+        if not required_origins:
+            return False
+
+        current_origins = sorted({
+            str(origin).strip().lower()
+            for origin in (stream_result.get("allowedOrigins") or [])
+            if str(origin).strip()
+        })
+        return current_origins != required_origins
+
+    def _build_stream_copy_payload(self, source_url: str, asset: dict[str, Any], asset_id: str) -> dict[str, Any]:
+        payload: dict[str, Any] = {
+            "url": source_url,
+            "meta": {
+                "asset_id": asset_id,
+                "wedding_id": asset.get("wedding_id"),
+                "filename": asset.get("original_filename"),
+            },
+            **self._stream_security_payload(),
+        }
+        return payload
+
+    async def _validate_stream_source_url(self, source_url: str) -> None:
+        timeout = aiohttp.ClientTimeout(total=STREAM_SOURCE_VALIDATION_TIMEOUT_SECONDS)
+        async with aiohttp.ClientSession(timeout=timeout) as session:
+            async with session.head(source_url, allow_redirects=True) as response:
+                if response.status >= 400:
+                    raise RuntimeError(
+                        f"Guest media source URL rejected HEAD requests with status {response.status}"
+                    )
+
+            async with session.get(
+                source_url,
+                allow_redirects=True,
+                headers={"Range": "bytes=0-0", "Accept-Encoding": "identity"},
+            ) as response:
+                if response.status not in {200, 206}:
+                    raise RuntimeError(
+                        f"Guest media source URL rejected ranged GET requests with status {response.status}"
+                    )
+
+                supports_range = (
+                    response.status == 206
+                    or "bytes" in (response.headers.get("Accept-Ranges") or "").lower()
+                    or bool(response.headers.get("Content-Range"))
+                )
+                if not supports_range:
+                    raise RuntimeError(
+                        "Guest media source URL must support ranged GET requests for Cloudflare Stream ingestion"
+                    )
+
+                await response.content.read(1)
 
     def _stream_base_url_from_result(self, stream_result: dict[str, Any]) -> Optional[str]:
         candidates = [
@@ -651,7 +731,7 @@ class GuestMediaService:
                     raise RuntimeError(f"Cloudflare Stream error: {data}")
                 return data.get("result") or {}
 
-    async def _create_stream_signed_token(self, stream_uid: str) -> str:
+    async def _create_stream_signed_token(self, stream_uid: str) -> tuple[str, datetime]:
         now_ts = int(datetime.now(timezone.utc).timestamp())
         result = await self._stream_request(
             "POST",
@@ -664,14 +744,18 @@ class GuestMediaService:
         token = result.get("token")
         if not token:
             raise RuntimeError("Cloudflare Stream did not return a signed playback token")
-        return token
+        expires_at = datetime.fromtimestamp(now_ts + STREAM_TOKEN_EXPIRES_IN, tz=timezone.utc)
+        return token, expires_at
 
-    async def _require_signed_stream_urls(self, stream_uid: str) -> None:
+    async def _enforce_stream_security(self, stream_uid: str) -> None:
         await self._stream_request(
             "POST",
             f"/{stream_uid}",
-            payload={"requireSignedURLs": True},
+            payload=self._stream_security_payload(),
         )
+
+    async def _delete_stream_video(self, stream_uid: str) -> None:
+        await self._stream_request("DELETE", f"/{stream_uid}")
 
     async def _ingest_video_into_stream(self, asset_id: str) -> None:
         asset = await self.assets.find_one({"_id": asset_id, "upload_status": "uploaded"})
@@ -690,28 +774,21 @@ class GuestMediaService:
             )
             return
 
+        stream_uid: Optional[str] = None
         try:
             source_url = self.storage.create_presigned_download_url(
                 asset["original_key"],
                 expires_in=STREAM_SOURCE_URL_EXPIRES_IN,
             )
+            await self._validate_stream_source_url(source_url)
             result = await self._stream_request(
                 "POST",
                 "/copy",
-                payload={
-                    "url": source_url,
-                    "meta": {
-                        "asset_id": asset_id,
-                        "wedding_id": asset.get("wedding_id"),
-                        "filename": asset.get("original_filename"),
-                    },
-                },
+                payload=self._build_stream_copy_payload(source_url, asset, asset_id),
             )
             stream_uid = result.get("uid")
             if not stream_uid:
                 raise RuntimeError("Cloudflare Stream did not return a stream UID")
-
-            await self._require_signed_stream_urls(stream_uid)
 
             await self.assets.update_one(
                 {"_id": asset_id},
@@ -720,12 +797,18 @@ class GuestMediaService:
                         "stream_uid": stream_uid,
                         "stream_status": "processing",
                         "stream_playback_base_url": self._stream_base_url_from_result(result),
+                        "stream_security_signature": self._stream_security_signature(),
                         "updated_at": datetime.now(timezone.utc),
                     }
                 },
             )
         except Exception as exc:
             logger.error("Video ingest failed for asset %s: %s", asset_id, exc)
+            if stream_uid:
+                try:
+                    await self._delete_stream_video(stream_uid)
+                except Exception as cleanup_exc:
+                    logger.warning("Failed to clean up orphaned Cloudflare Stream video %s: %s", stream_uid, cleanup_exc)
             await self.assets.update_one(
                 {"_id": asset_id},
                 {
@@ -740,14 +823,32 @@ class GuestMediaService:
     async def _poll_stream_ready_once(self, asset_id: str, stream_uid: str) -> None:
         try:
             result = await self._stream_request("GET", f"/{stream_uid}")
-            ready = bool(result.get("readyToStream"))
-            update_data: dict[str, Any] = {
-                "stream_status": "ready" if ready else "processing",
-                "stream_playback_base_url": self._stream_base_url_from_result(result),
-                "updated_at": datetime.now(timezone.utc),
-            }
-            if ready:
-                update_data["stream_ready_at"] = datetime.now(timezone.utc)
+            if self._stream_result_needs_security_update(result):
+                await self._enforce_stream_security(stream_uid)
+                result = await self._stream_request("GET", f"/{stream_uid}")
+
+            status = result.get("status") or {}
+            state = str(status.get("state") or "").lower()
+            ready = bool(result.get("readyToStream") or state == "ready")
+
+            update_data: dict[str, Any]
+            if state == "error":
+                error_reason = status.get("errorReasonText") or status.get("errorReasonCode") or "Cloudflare Stream processing failed"
+                update_data = {
+                    "stream_status": "failed",
+                    "stream_error": error_reason,
+                    "updated_at": datetime.now(timezone.utc),
+                }
+            else:
+                update_data = {
+                    "stream_status": "ready" if ready else "processing",
+                    "stream_playback_base_url": self._stream_base_url_from_result(result),
+                    "stream_security_signature": self._stream_security_signature(),
+                    "updated_at": datetime.now(timezone.utc),
+                }
+                ready_at = _coerce_datetime(result.get("readyToStreamAt"))
+                if ready:
+                    update_data["stream_ready_at"] = ready_at or datetime.now(timezone.utc)
             await self.assets.update_one({"_id": asset_id}, {"$set": update_data})
         except Exception as exc:
             logger.warning("Stream readiness poll failed for %s: %s", asset_id, exc)
@@ -928,12 +1029,31 @@ class GuestMediaService:
     async def _get_stream_base_url(self, asset: dict[str, Any]) -> str:
         base_url = asset.get("stream_playback_base_url")
         stream_uid = asset.get("stream_uid")
-        if base_url and stream_uid:
+        if base_url and stream_uid and asset.get("stream_security_signature") == self._stream_security_signature():
             return base_url
         if not stream_uid:
             raise HTTPException(status_code=409, detail="Video playback is not ready yet")
 
         result = await self._stream_request("GET", f"/{stream_uid}")
+        if self._stream_result_needs_security_update(result):
+            await self._enforce_stream_security(stream_uid)
+            result = await self._stream_request("GET", f"/{stream_uid}")
+
+        status = result.get("status") or {}
+        if str(status.get("state") or "").lower() == "error":
+            error_reason = status.get("errorReasonText") or status.get("errorReasonCode") or "Cloudflare Stream processing failed"
+            await self.assets.update_one(
+                {"_id": asset["_id"]},
+                {
+                    "$set": {
+                        "stream_status": "failed",
+                        "stream_error": error_reason,
+                        "updated_at": datetime.now(timezone.utc),
+                    }
+                },
+            )
+            raise HTTPException(status_code=409, detail="Video processing failed")
+
         base_url = self._stream_base_url_from_result(result)
         if not base_url:
             raise HTTPException(status_code=503, detail="Video playback domain is unavailable")
@@ -943,18 +1063,47 @@ class GuestMediaService:
             {
                 "$set": {
                     "stream_playback_base_url": base_url,
+                    "stream_security_signature": self._stream_security_signature(),
                     "updated_at": datetime.now(timezone.utc),
                 }
             },
         )
         return base_url
 
+    def _get_cached_stream_token(self, asset: dict[str, Any]) -> Optional[str]:
+        token = asset.get("stream_token")
+        expires_at = _coerce_datetime(asset.get("stream_token_expires_at"))
+        if not token or not expires_at:
+            return None
+
+        reuse_buffer = timedelta(seconds=STREAM_TOKEN_REUSE_BUFFER_SECONDS)
+        if expires_at <= datetime.now(timezone.utc) + reuse_buffer:
+            return None
+        return str(token)
+
+    async def _get_stream_player_token(self, asset: dict[str, Any]) -> str:
+        cached_token = self._get_cached_stream_token(asset)
+        if cached_token:
+            return cached_token
+
+        token, expires_at = await self._create_stream_signed_token(asset["stream_uid"])
+        await self.assets.update_one(
+            {"_id": asset["_id"]},
+            {
+                "$set": {
+                    "stream_token": token,
+                    "stream_token_expires_at": expires_at,
+                }
+            },
+        )
+        return token
+
     async def _build_signed_stream_player_url(self, asset: dict[str, Any]) -> str:
         stream_uid = asset.get("stream_uid")
         if not stream_uid or asset.get("stream_status") not in {"processing", "ready"}:
             raise HTTPException(status_code=409, detail="Video playback is not ready yet")
 
-        stream_token = await self._create_stream_signed_token(stream_uid)
+        stream_token = await self._get_stream_player_token(asset)
         base_url = await self._get_stream_base_url(asset)
         return f"{base_url}/{stream_token}/iframe"
 
@@ -963,7 +1112,7 @@ class GuestMediaService:
         if not stream_uid or asset.get("stream_status") not in {"processing", "ready"}:
             raise HTTPException(status_code=409, detail="Video thumbnail is not ready yet")
 
-        stream_token = await self._create_stream_signed_token(stream_uid)
+        stream_token = await self._get_stream_player_token(asset)
         base_url = await self._get_stream_base_url(asset)
         return f"{base_url}/{stream_token}/thumbnails/thumbnail.jpg?time=2s&height=480"
 
@@ -985,6 +1134,9 @@ class GuestMediaService:
         serialized.pop("original_key", None)
         serialized.pop("stream_uid", None)
         serialized.pop("stream_playback_base_url", None)
+        serialized.pop("stream_security_signature", None)
+        serialized.pop("stream_token", None)
+        serialized.pop("stream_token_expires_at", None)
         return serialized
 
     async def list_couple_assets(
