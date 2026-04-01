@@ -1,5 +1,7 @@
+import asyncio
 import sys
 import types
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import pytest
@@ -71,6 +73,8 @@ def _install_test_stubs() -> None:
         settings_module = types.ModuleType("app.core.settings")
         settings_module.settings = types.SimpleNamespace(
             api_base_url=None,
+            cors_origins=[],
+            frontend_url="https://app.example.com",
             secret_key="test-secret-key-with-sufficient-length-123456",
         )
         sys.modules["app.core.settings"] = settings_module
@@ -83,6 +87,7 @@ def _install_test_stubs() -> None:
 
 _install_test_stubs()
 
+import app.services.guest_media_service as guest_media_module
 from app.services.guest_media_service import GuestMediaService
 
 
@@ -187,6 +192,8 @@ def test_serialize_asset_uses_authenticated_relative_paths_for_videos():
             "upload_status": "uploaded",
             "stream_uid": "video-uid-123",
             "stream_playback_base_url": "https://customer-demo.cloudflarestream.com",
+            "stream_token": "should-not-leak",
+            "stream_token_expires_at": datetime.now(timezone.utc).isoformat(),
             "original_bucket": "guest-memories",
             "original_key": "guest-media/demo/asset.mp4",
         }
@@ -199,3 +206,102 @@ def test_serialize_asset_uses_authenticated_relative_paths_for_videos():
     assert "original_bucket" not in serialized
     assert "original_key" not in serialized
     assert "stream_uid" not in serialized
+    assert "stream_token" not in serialized
+    assert "stream_token_expires_at" not in serialized
+
+
+def test_build_stream_copy_payload_enforces_private_stream_defaults():
+    service = _build_service()
+
+    guest_media_module.settings.frontend_url = "https://portal.example.com"
+    guest_media_module.settings.cors_origins = [
+        "https://portal.example.com",
+        "http://localhost:3000",
+        "https://admin.example.com",
+    ]
+
+    payload = service._build_stream_copy_payload(
+        "https://signed-r2.example.com/object",
+        {
+            "wedding_id": "wedding-123",
+            "original_filename": "toast.mp4",
+        },
+        "asset-123",
+    )
+
+    assert payload["url"] == "https://signed-r2.example.com/object"
+    assert payload["requireSignedURLs"] is True
+    assert payload["allowedOrigins"] == ["admin.example.com", "portal.example.com"]
+    assert payload["meta"] == {
+        "asset_id": "asset-123",
+        "wedding_id": "wedding-123",
+        "filename": "toast.mp4",
+    }
+
+
+def test_get_stream_player_token_reuses_unexpired_cached_token():
+    service = _build_service()
+
+    class FakeAssets:
+        async def update_one(self, *_args, **_kwargs):
+            raise AssertionError("Should not persist a new token when cached token is still valid")
+
+    service.assets = FakeAssets()
+
+    asset = {
+        "_id": "asset-video-2",
+        "stream_uid": "stream-123",
+        "stream_token": "cached-token",
+        "stream_token_expires_at": (datetime.now(timezone.utc) + timedelta(minutes=5)).isoformat(),
+    }
+
+    token = asyncio.run(service._get_stream_player_token(asset))
+    assert token == "cached-token"
+
+
+def test_poll_stream_ready_marks_error_state_as_failed():
+    service = _build_service()
+    guest_media_module.settings.frontend_url = "https://app.example.com"
+    guest_media_module.settings.cors_origins = []
+
+    class FakeAssets:
+        def __init__(self):
+            self.calls = []
+
+        async def update_one(self, query, update):
+            self.calls.append((query, update))
+
+    fake_assets = FakeAssets()
+    service.assets = fake_assets
+    call_log = []
+
+    async def fake_stream_request(method, path, payload=None):
+        call_log.append((method, path, payload))
+        assert path == "/stream-uid-123"
+        if method == "POST":
+            assert payload["requireSignedURLs"] is True
+            assert payload["allowedOrigins"] == ["app.example.com"]
+            return {}
+
+        assert method == "GET"
+        return {
+            "uid": "stream-uid-123",
+            "requireSignedURLs": True,
+            "allowedOrigins": ["app.example.com"],
+            "status": {
+                "state": "error",
+                "errorReasonCode": "ERR_NON_VIDEO",
+                "errorReasonText": "The file was not recognized as a valid video file.",
+            },
+        }
+
+    service._stream_request = fake_stream_request
+
+    asyncio.run(service._poll_stream_ready_once("asset-video-3", "stream-uid-123"))
+
+    assert [entry[0] for entry in call_log] == ["GET"]
+    assert fake_assets.calls
+    query, update = fake_assets.calls[-1]
+    assert query == {"_id": "asset-video-3"}
+    assert update["$set"]["stream_status"] == "failed"
+    assert update["$set"]["stream_error"] == "The file was not recognized as a valid video file."
