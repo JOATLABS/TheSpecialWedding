@@ -185,10 +185,10 @@ export default function AdminMetricsDashboard() {
     }
 
     // Only ROOT_ADMIN can access Platform Health Overview
-    // Redirect planners and team members to the planner dashboard (or billing if expired)
+    // Redirect planners and team members to the planner dashboard (or billing if unpaid/expired)
     if (userProfile && (userProfile.is_wedding_planner || userProfile.role === 'team_member' || userProfile.is_team_member)) {
       const subStatus = userProfile.user_data?.subscription_status || userProfile.subscription_status;
-      if (subStatus && ['expired', 'cancelled', 'suspended', 'pending_payment'].includes(subStatus)) {
+      if (subStatus && ['expired', 'cancelled', 'suspended', 'pending_payment', 'pending', 'inactive'].includes(subStatus)) {
         router.replace('/admin/planner/billing');
       } else {
         router.push('/admin/planner');

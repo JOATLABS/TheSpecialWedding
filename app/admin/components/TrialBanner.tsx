@@ -19,11 +19,15 @@ export default function TrialBanner() {
 
     if (!status) return null;
 
-    // Show banner for expired/blocked users
-    if (status === 'expired' || status === 'cancelled' || status === 'suspended' || status === 'pending_payment') {
+    // Show banner for unpaid/expired/blocked users
+    if (status === 'expired' || status === 'cancelled' || status === 'suspended' || status === 'pending_payment' || status === 'pending' || status === 'inactive') {
       return {
         type: 'expired' as const,
-        message: ud._subscription_block_reason || 'Your subscription needs attention.',
+        message:
+          ud._subscription_block_reason ||
+          (status === 'inactive'
+            ? 'Choose a plan and complete checkout to access the platform.'
+            : 'Your subscription needs attention.'),
         urgent: true,
       };
     }

@@ -126,6 +126,18 @@ export default function PlannerBillingPage() {
   const paginationInvoices = usePagination({ initialItemsPerPage: 50 });
   const requestedPlanId = searchParams.get('plan');
   const requestedInterval = searchParams.get('interval') === 'yearly' ? 'yearly' : 'monthly';
+  const blockedSubscriptionStatuses = new Set([
+    'expired',
+    'cancelled',
+    'suspended',
+    'pending',
+    'pending_payment',
+    'pending_checkout',
+    'inactive',
+    'incomplete',
+    'incomplete_expired',
+    'unpaid',
+  ]);
 
   // Access control - only for wedding planners
   useEffect(() => {
@@ -505,6 +517,7 @@ export default function PlannerBillingPage() {
             billing_interval: interval,
             success_url: `${window.location.origin}/admin/planner/billing?success=true`,
             cancel_url: `${window.location.origin}/admin/planner/billing`,
+            trial_days: 0,
           })
         }
       );
@@ -553,9 +566,32 @@ export default function PlannerBillingPage() {
         bgColor: 'bg-yellow-100 dark:bg-yellow-900/30',
         icon: <AlertCircle className="w-4 h-4" />,
         label: 'Past Due'
+      },
+      pending_checkout: {
+        color: 'text-amber-700 dark:text-amber-300',
+        bgColor: 'bg-amber-100 dark:bg-amber-900/30',
+        icon: <Clock className="w-4 h-4" />,
+        label: 'Checkout Pending'
+      },
+      pending_payment: {
+        color: 'text-amber-700 dark:text-amber-300',
+        bgColor: 'bg-amber-100 dark:bg-amber-900/30',
+        icon: <AlertTriangle className="w-4 h-4" />,
+        label: 'Payment Required'
+      },
+      inactive: {
+        color: 'text-slate-700 dark:text-slate-300',
+        bgColor: 'bg-slate-100 dark:bg-slate-800',
+        icon: <XCircle className="w-4 h-4" />,
+        label: 'Inactive'
       }
     };
-    return config[status] || config.active;
+    return config[status] || {
+      color: 'text-slate-700 dark:text-slate-300',
+      bgColor: 'bg-slate-100 dark:bg-slate-800',
+      icon: <AlertCircle className="w-4 h-4" />,
+      label: status ? status.replace(/_/g, ' ') : 'Unknown',
+    };
   };
 
   const getUsagePercentage = (used: number, total: number) => {
@@ -601,14 +637,28 @@ export default function PlannerBillingPage() {
     );
   }
 
-  // No subscription OR expired/cancelled — show plan selection with fresh checkout
+  // No subscription OR unpaid/expired/cancelled — show plan selection with fresh checkout
   const subStatus = currentSubscription?.status;
   const needsNewSubscription = !currentSubscription || !currentPlan
-    || subStatus === 'expired' || subStatus === 'cancelled' || subStatus === 'suspended';
+    || (subStatus ? blockedSubscriptionStatuses.has(subStatus) : false);
   if (needsNewSubscription) {
     const requestedPlan = requestedPlanId
       ? plans.find((plan) => plan._id === requestedPlanId) ?? null
       : null;
+    const heading = subStatus === 'expired'
+      ? 'Reactivate Your Account'
+      : subStatus === 'cancelled'
+        ? 'Resubscribe'
+        : subStatus === 'pending_checkout'
+          ? 'Complete Your Subscription'
+          : 'Choose Your Plan';
+    const description = subStatus === 'expired'
+      ? 'Your trial has ended. Choose a plan to continue — all your data is safe and will be restored instantly.'
+      : subStatus === 'cancelled'
+        ? 'Welcome back! Pick a plan to reactivate your account.'
+        : subStatus === 'pending_checkout'
+          ? 'Your last checkout was not completed. Choose a plan to resume with a fresh Stripe Checkout session.'
+          : 'Select a subscription plan to unlock all features and start managing your weddings.';
 
     return (
       <div className="space-y-6">
@@ -617,14 +667,10 @@ export default function PlannerBillingPage() {
             <CreditCard className="w-8 h-8 text-blue-600 dark:text-blue-400" />
           </div>
           <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100 mb-2">
-            {subStatus === 'expired' ? 'Reactivate Your Account' : subStatus === 'cancelled' ? 'Resubscribe' : 'Choose Your Plan'}
+            {heading}
           </h1>
           <p className="text-gray-600 dark:text-gray-400 max-w-md mx-auto">
-            {subStatus === 'expired'
-              ? 'Your trial has ended. Choose a plan to continue — all your data is safe and will be restored instantly.'
-              : subStatus === 'cancelled'
-              ? 'Welcome back! Pick a plan to reactivate your account.'
-              : 'Select a subscription plan to unlock all features and start managing your weddings.'}
+            {description}
           </p>
         </div>
 

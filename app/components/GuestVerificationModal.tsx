@@ -5,6 +5,7 @@ import { getApiBaseUrl } from '@/utils/env';
 import { Button } from '@/components/ui/Button';
 import type { Wedding } from '@/types/wedding';
 import { buildPublicGalleryAccess, type PublicGalleryAccess } from '@/utils/publicGallery';
+import { exchangeGuestInviteToken } from '@/utils/guestAccess';
 
 interface GuestVerificationModalProps {
   slug: string;
@@ -87,17 +88,11 @@ export default function GuestVerificationModal({
 
     try {
       if (privacyInfo?.privacy_mode === 'private' && token) {
-        const response = await fetch(`${API_URL}/weddings/guest-access/${slug}/${token.trim()}`);
-        if (!response.ok) {
-          const errorData = await response.json().catch(() => ({}));
-          throw new Error(errorData.detail || 'Verification failed');
-        }
-
-        const result = await response.json();
+        const result = await exchangeGuestInviteToken(slug, token.trim());
         onVerified(
           result.wedding,
           result.guest,
-          buildPublicGalleryAccess(result.guest) ?? { token: token.trim() },
+          buildPublicGalleryAccess(result.guest),
         );
         return;
       }
@@ -125,6 +120,7 @@ export default function GuestVerificationModal({
         headers: {
           'Content-Type': 'application/json',
         },
+        credentials: 'include',
         body: JSON.stringify(verificationData),
       });
 
@@ -143,10 +139,7 @@ export default function GuestVerificationModal({
       onVerified(
         result.wedding,
         result.guest,
-        buildPublicGalleryAccess(
-          result.guest,
-          privacyInfo?.privacy_mode === 'password' ? password : null,
-        ),
+        buildPublicGalleryAccess(result.guest),
       );
 
     } catch (err: any) {
@@ -165,6 +158,7 @@ export default function GuestVerificationModal({
         headers: {
           'Content-Type': 'application/json',
         },
+        credentials: 'include',
         body: JSON.stringify({
           wedding_id: weddingId,
           contact: contact
@@ -180,7 +174,7 @@ export default function GuestVerificationModal({
       setOtpStep(true);
       setOtpContact(contact);
       setOtpContactType(contactType);
-      setOtpCountdown(result.expires_in_minutes * 60); // Convert to seconds
+      setOtpCountdown(5 * 60);
       // Start countdown
       const countdown = setInterval(() => {
         setOtpCountdown((prev) => {

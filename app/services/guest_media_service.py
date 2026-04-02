@@ -166,7 +166,7 @@ class GuestMediaService:
         self.storage = GuestMediaStorage()
 
         self.cloudflare_account_id = os.getenv("CLOUDFLARE_ACCOUNT_ID")
-        self.cloudflare_api_token = os.getenv("CLOUDFLARE_API_TOKEN")
+        self.cloudflare_api_token = os.getenv("CLOUDFLARE_STREAM_API_TOKEN")
         self.stream_api_base = (
             f"https://api.cloudflare.com/client/v4/accounts/{self.cloudflare_account_id}/stream"
             if self.cloudflare_account_id else None

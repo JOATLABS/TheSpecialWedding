@@ -37,6 +37,17 @@ class OTPService:
         self.twilio_service = TwilioReminderService()
         self.email_service = ResendEmailService()
 
+    @staticmethod
+    def _serialize_guest_response(guest: dict | None) -> dict | None:
+        if not guest:
+            return None
+
+        guest_response = guest.copy()
+        guest_response["id"] = str(guest_response.get("_id") or guest_response.get("id"))
+        guest_response.pop("_id", None)
+        guest_response.pop("token", None)
+        return guest_response
+
     async def _ensure_indexes(self):
         """Create TTL index on expires_at field if not already created."""
         if not OTPService._indexes_initialized:
@@ -275,16 +286,12 @@ class OTPService:
             # OTP is valid, delete it
             await self.otp_collection.delete_one({"_id": record["_id"]})
 
-            # Convert guest ObjectId to string for JSON serialization
-            guest["id"] = str(guest["_id"])
-            guest.pop("_id", None)
-
             # Determine auth method
             auth_method = "phone_otp" if guest.get("phone") in contact_variants else "email_otp"
 
             return {
                 "success": True,
-                "guest": guest,
+                "guest": self._serialize_guest_response(guest),
                 "auth_method": auth_method
             }
 
@@ -337,17 +344,13 @@ class OTPService:
             logger.error(f"Guest not found after OTP verification: {guest_id}")
             return {"success": False, "error": "Guest not found"}
 
-        # Convert ObjectId to string for JSON serialization
-        guest["id"] = str(guest["_id"])
-        guest.pop("_id", None)
-
         # Determine auth method from OTP record's contact_type
         contact_type = record.get("contact_type", "phone")
         auth_method = f"{contact_type}_otp"
 
         return {
             "success": True,
-            "guest": guest,
+            "guest": self._serialize_guest_response(guest),
             "auth_method": auth_method
         }
 

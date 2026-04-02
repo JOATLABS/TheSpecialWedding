@@ -7,6 +7,12 @@ from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, R
 from fastapi.responses import RedirectResponse
 from pydantic import BaseModel, Field
 
+from app.dependencies.auth_extended import (
+    ExtendedAuthUser,
+    check_wedding_access,
+    enforce_team_permission,
+    require_team_or_planner,
+)
 from app.dependencies.couple_auth import require_couple_auth
 from app.services.guest_export_service import guest_export_service
 from app.services.guest_media_service import NOT_SURE_EVENT, guest_media_service
@@ -32,6 +38,16 @@ def _token_scope_key(request: Request, upload_token: str) -> str:
 
 async def _apply_public_guest_media_rate_limit(request: Request, upload_token: str, bucket) -> None:
     await check_rate_limit(_token_scope_key(request, upload_token), bucket)
+
+
+async def _authorize_planner_guest_memories_access(
+    wedding_id: str,
+    current_user: ExtendedAuthUser,
+) -> str:
+    enforce_team_permission(current_user, "manage_guests")
+    if not await check_wedding_access(current_user, wedding_id):
+        raise HTTPException(status_code=403, detail="Access to this wedding denied")
+    return wedding_id
 
 
 class GuestMediaPlanFileRequest(BaseModel):
@@ -102,6 +118,102 @@ async def finalize_guest_media_upload(
         upload_token,
         payload.upload_batch_id,
         payload.asset_ids,
+    )
+
+
+@router.get("/admin/guest-memories/settings", tags=["Guest Memories"])
+async def get_planner_guest_media_settings(
+    wedding_id: str = Query(..., description="Wedding ID"),
+    current_user: ExtendedAuthUser = Depends(require_team_or_planner),
+):
+    await _authorize_planner_guest_memories_access(wedding_id, current_user)
+    return await guest_media_service.get_couple_settings(wedding_id)
+
+
+@router.put("/admin/guest-memories/settings", tags=["Guest Memories"])
+async def update_planner_guest_media_settings(
+    payload: CoupleGuestMediaSettingsUpdateRequest,
+    wedding_id: str = Query(..., description="Wedding ID"),
+    current_user: ExtendedAuthUser = Depends(require_team_or_planner),
+):
+    if payload.enabled is None and payload.upload_closes_at is None:
+        raise HTTPException(status_code=400, detail="No guest media settings were provided")
+
+    await _authorize_planner_guest_memories_access(wedding_id, current_user)
+    return await guest_media_service.update_couple_settings(
+        wedding_id,
+        enabled=payload.enabled,
+        upload_closes_at=payload.upload_closes_at,
+    )
+
+
+@router.post("/admin/guest-memories/rotate-link", tags=["Guest Memories"])
+async def rotate_planner_guest_media_link(
+    wedding_id: str = Query(..., description="Wedding ID"),
+    current_user: ExtendedAuthUser = Depends(require_team_or_planner),
+):
+    await _authorize_planner_guest_memories_access(wedding_id, current_user)
+    return await guest_media_service.rotate_upload_link(wedding_id)
+
+
+@router.get("/admin/guest-memories/qr-code", tags=["Guest Memories"])
+async def get_planner_guest_media_qr_code(
+    wedding_id: str = Query(..., description="Wedding ID"),
+    current_user: ExtendedAuthUser = Depends(require_team_or_planner),
+):
+    await _authorize_planner_guest_memories_access(wedding_id, current_user)
+
+    settings_payload = await guest_media_service.get_couple_settings(wedding_id)
+    png_bytes = guest_export_service.generate_qr_code(settings_payload["upload_url"])
+
+    wedding_slug = settings_payload.get("wedding", {}).get("slug") or "wedding"
+    return Response(
+        content=png_bytes,
+        media_type="image/png",
+        headers={
+            "Content-Disposition": f'inline; filename="{wedding_slug}-guest-memories-qr.png"',
+            "Cache-Control": "private, max-age=300",
+        },
+    )
+
+
+@router.get("/admin/guest-memories/sign-pdf", tags=["Guest Memories"])
+async def download_planner_guest_media_sign_pdf(
+    wedding_id: str = Query(..., description="Wedding ID"),
+    current_user: ExtendedAuthUser = Depends(require_team_or_planner),
+):
+    await _authorize_planner_guest_memories_access(wedding_id, current_user)
+
+    try:
+        settings_payload = await guest_media_service.get_couple_settings(wedding_id)
+        qr_bytes = guest_export_service.generate_qr_code(settings_payload["upload_url"], box_size=12)
+        pdf_bytes = await guest_export_service.generate_guest_memories_sign_pdf(
+            couple_names=settings_payload.get("wedding", {}).get("couple_names") or "Wedding",
+            upload_url=settings_payload["upload_url"],
+            qr_png_bytes=qr_bytes,
+            upload_closes_at=datetime.fromisoformat(settings_payload["upload_closes_at"].replace("Z", "+00:00"))
+            if settings_payload.get("upload_closes_at") else None,
+        )
+    except ImportError as exc:
+        logger.error(f"Guest memories sign PDF generation dependency missing: {exc}")
+        raise HTTPException(
+            status_code=503,
+            detail="PDF generation not available. WeasyPrint may not be installed.",
+        ) from exc
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.error(f"Failed to generate guest memories sign PDF: {exc}")
+        raise HTTPException(status_code=500, detail="Failed to generate guest memories sign PDF") from exc
+
+    wedding_slug = settings_payload.get("wedding", {}).get("slug") or "wedding"
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": f'attachment; filename="{wedding_slug}-guest-memories-sign.pdf"',
+            "Cache-Control": "private, no-store",
+        },
     )
 
 

@@ -13,6 +13,7 @@ import {
   fetchPublicGalleryPage,
   type PublicGalleryAccess,
 } from '@/utils/publicGallery';
+import { fetchGuestSessionAccess } from '@/utils/guestAccess';
 
 export default function GalleryPage() {
   const contextWedding = useContext(WeddingContext);
@@ -25,6 +26,7 @@ export default function GalleryPage() {
   const [accessGranted, setAccessGranted] = useState(Boolean(hasPublicAccess));
   const [galleryAccess, setGalleryAccess] = useState<PublicGalleryAccess | null>(null);
   const [galleryLoading, setGalleryLoading] = useState(Boolean(hasPublicAccess));
+  const [checkingSessionAccess, setCheckingSessionAccess] = useState(!hasPublicAccess);
   const [loadingMore, setLoadingMore] = useState(false);
   const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [hasMore, setHasMore] = useState(false);
@@ -90,6 +92,52 @@ export default function GalleryPage() {
     setLoadingMore(true);
     void fetchGallery(nextCursor, true);
   };
+
+  useEffect(() => {
+    if (hasPublicAccess) {
+      setCheckingSessionAccess(false);
+      return;
+    }
+
+    let cancelled = false;
+
+    const loadSessionAccess = async () => {
+      try {
+        const sessionData = await fetchGuestSessionAccess(slug);
+        if (cancelled || !sessionData?.wedding) {
+          return;
+        }
+
+        setWedding(sessionData.wedding);
+        setGalleryAccess(buildPublicGalleryAccess(sessionData.guest));
+        setAccessGranted(true);
+        setGalleryLoading(true);
+      } catch (err) {
+        console.warn('Gallery session access unavailable:', err);
+      } finally {
+        if (!cancelled) {
+          setCheckingSessionAccess(false);
+        }
+      }
+    };
+
+    void loadSessionAccess();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [hasPublicAccess, slug]);
+
+  if (checkingSessionAccess && !accessGranted) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-50">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-rose-600 mx-auto mb-4"></div>
+          <p className="text-gray-600">Checking gallery access...</p>
+        </div>
+      </div>
+    );
+  }
 
   if (accessGranted && galleryLoading && images.length === 0) {
     return (

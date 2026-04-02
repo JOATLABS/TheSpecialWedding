@@ -122,7 +122,8 @@ async def invite_couple(
     # Send invitation email
     from app.core.settings import settings
     frontend_url = getattr(settings, 'frontend_url', None) or "https://thespecialwedding.io"
-    setup_link = f"{frontend_url}/couple/setup?token={invite_token}"
+    normalized_frontend_url = frontend_url.rstrip("/")
+    setup_link = f"{normalized_frontend_url}/couple/setup/{invite_token}"
 
     couple_name = data.partner1_name
     if data.partner2_name:
@@ -223,7 +224,8 @@ async def resend_invite(
 
     from app.core.settings import settings
     frontend_url = getattr(settings, 'frontend_url', None) or "https://thespecialwedding.io"
-    setup_link = f"{frontend_url}/couple/setup?token={invite_token}"
+    normalized_frontend_url = frontend_url.rstrip("/")
+    setup_link = f"{normalized_frontend_url}/couple/setup/{invite_token}"
 
     # Send email (reuse same template logic)
     try:

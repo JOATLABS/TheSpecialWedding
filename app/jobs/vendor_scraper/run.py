@@ -1,0 +1,192 @@
+"""
+Vendor Directory Scraper — Main Runner
+
+Scrapes wedding vendors city-by-city using Google Places API,
+enriches with website data, uploads logos to R2, and upserts
+into the vendor_profiles collection.
+
+Usage:
+    # From project root:
+    python -m app.jobs.vendor_scraper.run
+
+    # Scrape specific city only:
+    python -m app.jobs.vendor_scraper.run --city "Atlanta"
+
+    # Dry run (no DB writes):
+    python -m app.jobs.vendor_scraper.run --dry-run
+
+    # Limit categories:
+    python -m app.jobs.vendor_scraper.run --categories photographer,florist,venue
+"""
+
+import asyncio
+import argparse
+import logging
+import time
+from typing import List, Optional
+
+from app.core.database import mongo
+from app.services.vendor_service import VendorService
+from app.jobs.vendor_scraper.config import (
+    PILOT_CITIES,
+    SEARCH_QUERIES,
+    REQUEST_DELAY_SECONDS,
+    SYSTEM_CREATED_BY,
+)
+from app.jobs.vendor_scraper.google_places import search_vendors
+from app.jobs.vendor_scraper.website_enricher import enrich_from_website
+from app.jobs.vendor_scraper.logo_uploader import download_and_upload_logo
+
+logger = logging.getLogger(__name__)
+logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+
+
+async def scrape_city(
+    city: str,
+    state: str,
+    state_full: str,
+    country: str,
+    vendor_service: VendorService,
+    categories_filter: Optional[List[str]] = None,
+    dry_run: bool = False,
+) -> dict:
+    """
+    Scrape all vendor categories for a single city.
+
+    Returns stats: {inserted: int, updated: int, skipped: int, errors: int}
+    """
+    stats = {"inserted": 0, "updated": 0, "skipped": 0, "errors": 0}
+
+    for query_template, vendor_category in SEARCH_QUERIES:
+        # Filter to specific categories if requested
+        if categories_filter and vendor_category not in categories_filter:
+            continue
+
+        query = query_template.format(city=city, state=state)
+        logger.info(f"Searching: {query}")
+
+        # 1. Search Google Places
+        places = await search_vendors(query)
+        if not places:
+            logger.info(f"  → 0 results")
+            continue
+
+        logger.info(f"  → {len(places)} results")
+
+        for place in places:
+            try:
+                place["service_category"] = vendor_category
+                place["scraped_from_city"] = city
+
+                # 2. Download and upload logo to R2
+                photo_url = place.pop("photo_url", None)
+                if photo_url and not dry_run:
+                    logo_url = await download_and_upload_logo(
+                        photo_url=photo_url,
+                        business_name=place["business_name"],
+                        city=city,
+                    )
+                    if logo_url:
+                        place["logo_url"] = logo_url
+
+                # 3. Enrich from vendor website
+                if place.get("website"):
+                    enrichment = await enrich_from_website(place["website"])
+                    # Only fill in fields not already set by Google Places
+                    for key, val in enrichment.items():
+                        if key not in place or place[key] is None:
+                            place[key] = val
+
+                # 4. Upsert into vendor_profiles
+                if dry_run:
+                    logger.info(f"  [DRY RUN] Would upsert: {place['business_name']} ({vendor_category})")
+                    stats["skipped"] += 1
+                else:
+                    result = await vendor_service.upsert_scraped_vendor(place)
+                    # Check if it was an insert or update by looking at created_at
+                    if result.get("_id"):
+                        stats["inserted"] += 1
+                    else:
+                        stats["updated"] += 1
+
+            except Exception as e:
+                logger.error(f"  Error processing {place.get('business_name', '?')}: {e}")
+                stats["errors"] += 1
+
+        # Be polite — delay between queries
+        await asyncio.sleep(REQUEST_DELAY_SECONDS)
+
+    return stats
+
+
+async def run_scraper(
+    cities: Optional[List[str]] = None,
+    categories: Optional[List[str]] = None,
+    dry_run: bool = False,
+):
+    """
+    Main entry point. Scrapes all pilot cities (or a specific subset).
+    """
+    # Initialize MongoDB connection
+    await mongo.connect()
+
+    vendor_service = VendorService()
+
+    # Filter to specific cities if requested
+    city_list = PILOT_CITIES
+    if cities:
+        city_list = [c for c in PILOT_CITIES if c[0].lower() in [x.lower() for x in cities]]
+        if not city_list:
+            logger.error(f"No matching pilot cities for: {cities}")
+            logger.info(f"Available: {[c[0] for c in PILOT_CITIES]}")
+            return
+
+    total_stats = {"inserted": 0, "updated": 0, "skipped": 0, "errors": 0}
+    start_time = time.time()
+
+    logger.info(f"{'[DRY RUN] ' if dry_run else ''}Starting vendor scraper for {len(city_list)} cities")
+
+    for city, state, state_full, country in city_list:
+        logger.info(f"\n{'='*60}")
+        logger.info(f"Scraping: {city}, {state}")
+        logger.info(f"{'='*60}")
+
+        stats = await scrape_city(
+            city=city,
+            state=state,
+            state_full=state_full,
+            country=country,
+            vendor_service=vendor_service,
+            categories_filter=categories,
+            dry_run=dry_run,
+        )
+
+        for key in total_stats:
+            total_stats[key] += stats[key]
+
+        logger.info(f"City {city} done: {stats}")
+
+    elapsed = time.time() - start_time
+    logger.info(f"\n{'='*60}")
+    logger.info(f"Scraper complete in {elapsed:.1f}s")
+    logger.info(f"Total: {total_stats}")
+    logger.info(f"{'='*60}")
+
+    await mongo.close()
+
+
+def main():
+    parser = argparse.ArgumentParser(description="Scrape wedding vendors from Google Places")
+    parser.add_argument("--city", type=str, help="Scrape a specific city only")
+    parser.add_argument("--categories", type=str, help="Comma-separated categories to scrape")
+    parser.add_argument("--dry-run", action="store_true", help="Search but don't write to DB")
+    args = parser.parse_args()
+
+    cities = [args.city] if args.city else None
+    categories = args.categories.split(",") if args.categories else None
+
+    asyncio.run(run_scraper(cities=cities, categories=categories, dry_run=args.dry_run))
+
+
+if __name__ == "__main__":
+    main()

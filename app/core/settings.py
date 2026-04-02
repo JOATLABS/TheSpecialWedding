@@ -7,6 +7,8 @@ from pydantic import Field, field_validator
 from typing import List, Optional, Dict, Any
 from functools import lru_cache
 from enum import Enum
+import json
+from urllib.parse import urlparse
 
 
 class Environment(str, Enum):
@@ -43,6 +45,7 @@ class Settings(BaseSettings):
     jwt_algorithm: str = Field(default="HS256", alias="JWT_ALGORITHM")
     access_token_expire_minutes: int = Field(default=60, alias="ACCESS_TOKEN_EXPIRE_MINUTES")
     refresh_token_expire_days: int = Field(default=7, alias="REFRESH_TOKEN_EXPIRE_DAYS")
+    guest_access_session_minutes: int = Field(default=180, alias="GUEST_ACCESS_SESSION_MINUTES")
     # CORS
     cors_origins: List[str] = Field(default=[], alias="CORS_ORIGINS")  # Required - validated below
 
@@ -71,6 +74,7 @@ class Settings(BaseSettings):
         default=["Authorization", "Content-Type", "Accept", "X-Requested-With", "Cache-Control", "Pragma"],
         alias="CORS_HEADERS"
     )
+    allowed_hosts: List[str] = Field(default=[], alias="ALLOWED_HOSTS")
     # Database
     mongo_uri: str = Field(default="mongodb://localhost:27017", alias="MONGO_URI")
     mongo_db: str = Field(default="wedding", alias="MONGO_DB")
@@ -179,7 +183,33 @@ class Settings(BaseSettings):
     def parse_cors_origins(cls, v):
         """Parse CORS origins from comma-separated string"""
         if isinstance(v, str):
+            stripped = v.strip()
+            if stripped.startswith("["):
+                try:
+                    parsed = json.loads(stripped)
+                    if isinstance(parsed, list):
+                        return [str(origin).strip() for origin in parsed if str(origin).strip()]
+                except json.JSONDecodeError:
+                    pass
             return [origin.strip() for origin in v.split(",") if origin.strip()]
+        return v
+
+    @field_validator("allowed_hosts", mode="before")
+    @classmethod
+    def parse_allowed_hosts(cls, v):
+        """Parse explicit host allowlist from JSON or comma-separated values."""
+        if v in (None, ""):
+            return []
+        if isinstance(v, str):
+            stripped = v.strip()
+            if stripped.startswith("["):
+                try:
+                    parsed = json.loads(stripped)
+                    if isinstance(parsed, list):
+                        return [str(host).strip() for host in parsed if str(host).strip()]
+                except json.JSONDecodeError:
+                    pass
+            return [host.strip() for host in stripped.split(",") if host.strip()]
         return v
 
     @field_validator("environment", mode="before")
@@ -243,6 +273,51 @@ class Settings(BaseSettings):
         if self.enable_api_docs is not None:
             return self.enable_api_docs
         return not self.is_production()
+
+    @property
+    def trusted_hosts(self) -> List[str]:
+        """
+        Return the Host-header allowlist for TrustedHostMiddleware.
+
+        Explicit ALLOWED_HOSTS entries win, but we also derive safe defaults
+        from the configured frontend/API URLs and CORS origins so production
+        deployments gain host validation without requiring duplicate config.
+        """
+        hosts: list[str] = []
+
+        def add_host(candidate: Optional[str]) -> None:
+            if not candidate:
+                return
+
+            value = str(candidate).strip()
+            if not value:
+                return
+
+            normalized: Optional[str]
+            if "://" in value:
+                normalized = urlparse(value).hostname
+            elif value.startswith("*.") or value == "*":
+                normalized = value
+            else:
+                normalized = value.split("/")[0].split(":")[0].strip()
+
+            if normalized and normalized not in hosts:
+                hosts.append(normalized)
+
+        for host in self.allowed_hosts:
+            add_host(host)
+
+        if hosts:
+            return hosts
+
+        for url in [self.frontend_url, self.api_base_url, *self.cors_origins]:
+            add_host(url)
+
+        if self.is_development() or self.is_testing():
+            for dev_host in ("localhost", "127.0.0.1", "testserver"):
+                add_host(dev_host)
+
+        return hosts
 
     def get_feature_flags(self) -> Dict[str, bool]:
         """Get all feature flags"""

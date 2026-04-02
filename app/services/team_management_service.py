@@ -479,7 +479,7 @@ class TeamManagementService:
         base_url = settings.FRONTEND_URL
         if not base_url:
             raise ValueError("FRONTEND_URL environment variable is not configured")
-        accept_url = f"{base_url.rstrip('/')}/admin/team/accept?token={token}"
+        accept_url = f"{base_url.rstrip('/')}/admin/team/accept/{token}"
 
         # Build permissions list for the email
         enabled_perms = [

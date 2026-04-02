@@ -1491,7 +1491,38 @@ async def create_campaign_platform_indexes():
         name="idx_sponsored_ad_dedup",
     )
 
-    logger.info("All campaign platform indexes created/verified (22 total)")
+    # =========================================================================
+    # vendor_profiles — scraper dedup & filtering indexes
+    # =========================================================================
+    try:
+        # google_place_id unique index (sparse — only applies to scraped vendors)
+        await vendor_profiles.create_index(
+            [("google_place_id", ASCENDING)],
+            unique=True,
+            sparse=True,
+            name="idx_vendor_google_place_id",
+        )
+        logger.info("Created index: idx_vendor_google_place_id")
+
+        # Compound index for scraper name+city+category dedup
+        await vendor_profiles.create_index(
+            [("business_name", ASCENDING), ("city", ASCENDING), ("service_category", ASCENDING)],
+            name="idx_vendor_name_city_category",
+        )
+        logger.info("Created index: idx_vendor_name_city_category")
+
+        # Source filter (e.g. list all scraped vendors)
+        await vendor_profiles.create_index(
+            [("source", ASCENDING), ("is_active", ASCENDING)],
+            name="idx_vendor_source_active",
+        )
+        logger.info("Created index: idx_vendor_source_active")
+
+        logger.info("Vendor scraper indexes created (3)")
+    except Exception as e:
+        logger.error(f"Error creating vendor scraper indexes: {str(e)}")
+
+    logger.info("All campaign platform indexes created/verified (25 total)")
     return True
 
 

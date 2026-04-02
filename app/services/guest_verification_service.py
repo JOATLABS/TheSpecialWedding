@@ -3,6 +3,7 @@ from app.core.database import mongo
 from app.core.cache import cache, CacheKeys
 from typing import Optional, Dict, Any
 from datetime import datetime, timezone, timedelta
+from bson.objectid import ObjectId
 import re
 import secrets
 import logging
@@ -34,6 +35,88 @@ class GuestVerificationService:
         self.guests_collection = mongo.get_guest_collection()
         self.rsvp_collection = mongo.db["rsvps"]
         self.plus_ones_collection = mongo.db["plus_ones"]
+
+    @staticmethod
+    def _serialize_wedding_response(wedding: Dict[str, Any]) -> Dict[str, Any]:
+        return {
+            **wedding,
+            "id": str(wedding.get("_id")),
+        }
+
+    @staticmethod
+    def _serialize_guest_response(guest: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+        if not guest:
+            return None
+
+        guest_response = guest.copy()
+        guest_id = guest_response.get("id") or guest_response.get("_id")
+        if guest_id is not None:
+            guest_response["id"] = str(guest_id)
+        guest_response.pop("_id", None)
+        guest_response.pop("token", None)
+        return guest_response
+
+    async def _load_rsvp_data(self, guest_id: str) -> Optional[Dict[str, Any]]:
+        existing_rsvp = await self.rsvp_collection.find_one({
+            "$or": [
+                {"guest_id": guest_id},
+                {"guest_id": ObjectId(guest_id) if ObjectId.is_valid(guest_id) else guest_id},
+            ]
+        })
+
+        if not existing_rsvp:
+            return None
+
+        plus_ones_cursor = self.plus_ones_collection.find({"guest_id": guest_id})
+        plus_ones = await plus_ones_cursor.to_list(length=20)
+        for plus_one in plus_ones:
+            plus_one["id"] = str(plus_one.pop("_id", ""))
+
+        return {
+            "has_rsvp": True,
+            "submitted_at": existing_rsvp.get("submitted_at"),
+            "attending": existing_rsvp.get("attending", []),
+            "dietary": existing_rsvp.get("dietary"),
+            "plus_ones": plus_ones,
+        }
+
+    async def get_session_access(
+        self,
+        *,
+        slug: str,
+        wedding_id: str,
+        auth_method: str,
+        guest_id: Optional[str] = None,
+        otp_verified: bool = False,
+    ) -> Dict[str, Any]:
+        slug = self._sanitize_input(slug, "slug", max_length=100)
+
+        wedding = await self.wedding_service.get_wedding_by_slug(slug)
+        if not wedding:
+            raise HTTPException(status_code=404, detail="Wedding not found")
+
+        if str(wedding.get("_id")) != str(wedding_id):
+            raise HTTPException(status_code=403, detail="Guest access session does not match this wedding")
+
+        guest_response = None
+        rsvp_data = None
+
+        if guest_id:
+            guest = await self.guests_collection.find_one({"_id": ObjectId(guest_id)})
+            if not guest:
+                raise HTTPException(status_code=404, detail="Guest not found")
+
+            guest_response = self._serialize_guest_response(guest)
+            rsvp_data = await self._load_rsvp_data(str(guest_response["id"]))
+
+        return {
+            "access": True,
+            "wedding": self._serialize_wedding_response(wedding),
+            "guest": guest_response,
+            "rsvp": rsvp_data,
+            "auth_method": auth_method,
+            "otp_verified": otp_verified,
+        }
 
     def _sanitize_input(self, value: str, field_name: str, max_length: int = 255) -> str:
         """Sanitize user input to prevent injection attacks"""
@@ -316,44 +399,13 @@ class GuestVerificationService:
                 "guest_id": str(guest.get("id"))
             })
 
-            # Check if guest has already RSVPed
+            guest = self._serialize_guest_response(guest)
             guest_id_str = str(guest.get("id"))
-            existing_rsvp = await self.rsvp_collection.find_one({
-                "$or": [
-                    {"guest_id": guest_id_str},
-                    {"guest_id": guest.get("id")}
-                ]
-            })
-
-            # Get plus-ones if RSVP exists
-            plus_ones = []
-            if existing_rsvp:
-                plus_ones_cursor = self.plus_ones_collection.find({"guest_id": guest_id_str})
-                plus_ones = await plus_ones_cursor.to_list(length=20)
-                # Convert ObjectId to string for JSON serialization
-                for po in plus_ones:
-                    po["id"] = str(po.pop("_id", ""))
-
-            # Build RSVP response
-            rsvp_data = None
-            if existing_rsvp:
-                rsvp_data = {
-                    "has_rsvp": True,
-                    "submitted_at": existing_rsvp.get("submitted_at"),
-                    "attending": existing_rsvp.get("attending", []),
-                    "dietary": existing_rsvp.get("dietary"),
-                    "plus_ones": plus_ones
-                }
-
-            # Return wedding and guest data
-            wedding_response = {
-                **wedding,
-                "id": str(wedding.get("_id"))
-            }
+            rsvp_data = await self._load_rsvp_data(guest_id_str)
 
             return {
                 "access": True,
-                "wedding": wedding_response,
+                "wedding": self._serialize_wedding_response(wedding),
                 "guest": guest,
                 "rsvp": rsvp_data,
                 "auth_method": "token"
@@ -422,14 +474,9 @@ class GuestVerificationService:
 
             # If wedding is public, grant access immediately (no token was provided or token failed)
             if privacy_mode == "public":
-                # Transform wedding to have 'id' for frontend consistency
-                wedding_response = {
-                    **wedding,
-                    "id": str(wedding.get("_id"))
-                }
                 return {
                     "access": True,
-                    "wedding": wedding_response,
+                    "wedding": self._serialize_wedding_response(wedding),
                     "guest": None,
                     "auth_method": "public"
                 }
@@ -447,14 +494,9 @@ class GuestVerificationService:
                         "slug": slug,
                         "wedding_id": str(wedding.get("_id"))
                     })
-                    # Transform wedding to have 'id' for frontend consistency
-                    wedding_response = {
-                        **wedding,
-                        "id": str(wedding.get("_id"))
-                    }
                     return {
                         "access": True,
-                        "wedding": wedding_response,
+                        "wedding": self._serialize_wedding_response(wedding),
                         "guest": None,
                         "auth_method": "password"
                     }
@@ -491,15 +533,11 @@ class GuestVerificationService:
                                 "wedding_id": str(wedding.get("_id")),
                                 "contact_type": otp_result.get("auth_method", "otp")
                             })
-                            # Transform wedding to have 'id' like guest does for frontend consistency
-                            wedding_response = {
-                                **wedding,
-                                "id": str(wedding.get("_id"))
-                            }
+                            guest_response = self._serialize_guest_response(otp_result.get("guest"))
                             return {
                                 "access": True,
-                                "wedding": wedding_response,
-                                "guest": otp_result.get("guest"),
+                                "wedding": self._serialize_wedding_response(wedding),
+                                "guest": guest_response,
                                 "auth_method": otp_result.get("auth_method", "otp")
                             }
                         else:

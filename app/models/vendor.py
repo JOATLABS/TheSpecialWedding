@@ -21,6 +21,13 @@ from app.utils.pydantic_objectid import PyObjectId, generate_object_id
 # ENUMS
 # =============================================================================
 
+class VendorSource(str, Enum):
+    """How the vendor was added to the directory"""
+    MANUAL = "manual"        # Added by a planner
+    SCRAPED = "scraped"      # Auto-discovered by scraper job
+    CLAIMED = "claimed"      # Scraped vendor claimed by the business owner
+
+
 class VendorCategory(str, Enum):
     """Standard vendor service categories"""
     PHOTOGRAPHER = "photographer"
@@ -230,6 +237,12 @@ class VendorProfile(BaseModel):
     weddings_count: int = Field(0, description="Number of weddings assigned")
     total_revenue: float = Field(0.0, description="Total paid to this vendor")
     last_used_at: Optional[datetime] = Field(None, description="Last wedding assignment")
+
+    # Source / Scraper Metadata
+    source: str = Field("manual", description="How vendor was added: manual, scraped, claimed")
+    google_place_id: Optional[str] = Field(None, description="Google Places ID for dedup")
+    scraped_at: Optional[datetime] = Field(None, description="When vendor was last scraped/refreshed")
+    scraped_from_city: Optional[str] = Field(None, description="Which city search discovered this vendor")
 
     # System
     is_active: bool = Field(True, description="Whether vendor is active")
@@ -714,6 +727,9 @@ class CreateVendorProfileRequest(BaseModel):
     typical_price_min: Optional[float] = None
     typical_price_max: Optional[float] = None
     currency: str = "USD"
+    # Scraper fields (optional, only used by scraper job)
+    source: str = "manual"
+    google_place_id: Optional[str] = None
 
 
 class UpdateVendorProfileRequest(BaseModel):

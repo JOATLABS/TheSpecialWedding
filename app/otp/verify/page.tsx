@@ -2,24 +2,17 @@
 
 'use client';
 
-import { useState, useEffect, Suspense, useRef } from 'react';
+import { useState, useEffect, Suspense, useRef, useCallback } from 'react';
 import { useSearchParams } from 'next/navigation';
 import RSVPForm from '@/components/RSVPForm';
 import AlreadyRSVPedScreen from '@/components/AlreadyRSVPedScreen';
 import { WeddingContext } from '@/contexts/WeddingContext';
-
-// Get API base URL - strip /admin suffix for public endpoints
-// NEXT_PUBLIC_API_BASE_URL typically ends with /admin for admin panel use
-const getApiBase = (): string => {
-  const url = process.env.NEXT_PUBLIC_API_BASE_URL;
-  if (!url) {
-    console.warn('NEXT_PUBLIC_API_BASE_URL not set, using relative URLs');
-    return '';
-  }
-  return url.replace('/admin', '');
-};
-
-const apiBase = getApiBase();
+import {
+  exchangeGuestInviteToken,
+  fetchGuestSessionAccess,
+  requestGuestSessionOtp,
+  verifyGuestSessionOtp,
+} from '@/utils/guestAccess';
 
 function VerifyOTPContent() {
   const [otp, setOtp] = useState('');
@@ -36,9 +29,8 @@ function VerifyOTPContent() {
   const [contactType, setContactType] = useState<'phone' | 'email'>('phone');
   const isSubmittingRef = useRef(false);
   const searchParams = useSearchParams();
-  const guest_id = searchParams.get('guest_id');
-  const token = searchParams.get('token') ?? '';
   const slug = searchParams.get('slug') ?? '';
+  const token = searchParams.get('token') ?? '';
 
   useEffect(() => {
     const timer = setInterval(() => {
@@ -48,17 +40,15 @@ function VerifyOTPContent() {
   }, []);
 
   // Fetch wedding and guest data after OTP verification
-  const fetchWeddingData = async () => {
+  const fetchWeddingData = useCallback(async () => {
     setLoading(true);
     setError('');
 
     try {
-      const accessRes = await fetch(`${apiBase}/weddings/guest-access/${slug}/${token}`);
-      if (!accessRes.ok) {
-        const errorData = await accessRes.json().catch(() => ({}));
-        throw new Error(errorData.detail || 'Failed to load RSVP form. Please try again.');
+      const data = await fetchGuestSessionAccess(slug);
+      if (!data) {
+        throw new Error('Guest access session not found. Please open your invitation again.');
       }
-      const data = await accessRes.json();
       const { wedding, guest, rsvp } = data;
 
       // Validate response data
@@ -97,7 +87,53 @@ function VerifyOTPContent() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [slug]);
+
+  useEffect(() => {
+    if (!slug) {
+      setError('Missing wedding slug');
+      return;
+    }
+
+    let active = true;
+
+    const initializeSession = async () => {
+      try {
+        if (token) {
+          await exchangeGuestInviteToken(slug, token);
+          const cleanParams = new URLSearchParams();
+          cleanParams.set('slug', slug);
+          window.history.replaceState({}, '', `/otp/verify?${cleanParams.toString()}`);
+        }
+
+        const sessionData = await fetchGuestSessionAccess(slug);
+        if (!active || !sessionData) {
+          return;
+        }
+
+        if (sessionData.guest) {
+          setGuestData(sessionData.guest);
+        }
+        if (sessionData.rsvp) {
+          setRsvpData(sessionData.rsvp);
+        }
+        if (sessionData.otp_verified) {
+          setOtpVerified(true);
+          await fetchWeddingData();
+        }
+      } catch (err) {
+        if (active) {
+          setError(err instanceof Error ? err.message : 'Failed to initialize guest access');
+        }
+      }
+    };
+
+    void initializeSession();
+
+    return () => {
+      active = false;
+    };
+  }, [fetchWeddingData, slug, token]);
 
   const handleVerifyOTP = async () => {
     // Prevent double-submit
@@ -110,29 +146,11 @@ function VerifyOTPContent() {
     setError('');
 
     try {
-      if (!token) {
-        throw new Error('Missing RSVP token');
-      }
-      if (!guest_id) {
-        throw new Error('Missing guest ID');
-      }
       if (!slug) {
         throw new Error('Missing wedding slug');
       }
 
-      console.log('Verifying OTP for guest:', guest_id);
-      const response = await fetch(`${apiBase}/otp/verify`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ guest_id, otp }),
-      });
-
-      const verifyData = await response.json().catch(() => ({}));
-
-      if (!response.ok) {
-        console.error('OTP verification failed:', verifyData);
-        throw new Error(verifyData.detail || 'Failed to verify OTP');
-      }
+      const verifyData = await verifyGuestSessionOtp(otp);
 
       console.log('OTP verified successfully');
       // OTP verified successfully - mark this so user doesn't need to re-enter
@@ -162,26 +180,7 @@ function VerifyOTPContent() {
     setResendCooldown(65);
 
     try {
-      const response = await fetch(`${apiBase}/otp/request`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ guest_id }),
-      });
-
-      const data = await response.json().catch(() => ({}));
-
-      if (!response.ok) {
-        // Handle structured error response from backend
-        const detail = data.detail;
-        if (typeof detail === 'object' && detail !== null) {
-          // Use retry_after from server if available
-          if (detail.retry_after) {
-            setResendCooldown(detail.retry_after);
-          }
-          throw new Error(detail.message || 'Failed to resend code');
-        }
-        throw new Error(typeof detail === 'string' ? detail : 'Failed to resend code');
-      }
+      const data = await requestGuestSessionOtp();
 
       // Track which channel the code was sent to
       const sentVia = data.contact_type || 'phone';
@@ -229,7 +228,7 @@ function VerifyOTPContent() {
             ) : (
               <RSVPForm
                 guest={guestData}
-                token={token}
+                slug={slug}
                 existingRsvp={editMode ? rsvpData : null}
                 onViewWeddingPage={() => { window.location.href = `/${slug}`; }}
               />

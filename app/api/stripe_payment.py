@@ -23,7 +23,7 @@ class CreateCheckoutSessionRequest(BaseModel):
     billing_interval: str = Field(default="monthly", description="Billing interval: monthly or yearly")
     success_url: Optional[str] = Field(None, description="Success redirect URL")
     cancel_url: Optional[str] = Field(None, description="Cancel redirect URL")
-    trial_days: int = Field(default=0, ge=0, description="Number of trial days")
+    trial_days: Optional[int] = Field(default=None, ge=0, description="Number of trial days")
 
 
 class PublicCreateCheckoutSessionRequest(CreateCheckoutSessionRequest):

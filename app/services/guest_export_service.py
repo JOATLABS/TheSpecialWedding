@@ -5,8 +5,10 @@ Generates QR codes for RSVP links, guest list PDFs, and bulk QR code ZIP files.
 Used by planners for physical invitations and printable guest lists.
 """
 from typing import List, Dict, Optional
+from html import escape
 from datetime import datetime, timezone
 from io import BytesIO
+import base64
 import zipfile
 import logging
 import os
@@ -386,6 +388,221 @@ class GuestExportService:
 
         except Exception as e:
             logger.error(f"Failed to generate QR ZIP: {str(e)}")
+            raise
+
+    async def generate_guest_memories_sign_pdf(
+        self,
+        *,
+        couple_names: str,
+        upload_url: str,
+        qr_png_bytes: bytes,
+        upload_closes_at: Optional[datetime] = None,
+    ) -> bytes:
+        """
+        Generate a printable sign that invites guests to upload photos and videos.
+
+        Args:
+            couple_names: Couple names shown on the sign
+            upload_url: Active guest memories upload URL
+            qr_png_bytes: QR code PNG bytes for the upload URL
+            upload_closes_at: Optional close date shown as a reminder on the sign
+
+        Returns:
+            PDF bytes for download/printing
+        """
+        try:
+            from weasyprint import HTML
+
+            escaped_couple_names = escape(couple_names or "Wedding")
+            escaped_upload_url = escape(upload_url)
+            close_label = (
+                upload_closes_at.astimezone(timezone.utc).strftime("%B %d, %Y")
+                if upload_closes_at else
+                "After the celebration"
+            )
+            qr_base64 = base64.b64encode(qr_png_bytes).decode("ascii")
+
+            html = f"""
+            <!DOCTYPE html>
+            <html>
+            <head>
+                <meta charset="UTF-8">
+                <style>
+                    @page {{
+                        size: letter portrait;
+                        margin: 0.5in;
+                    }}
+                    body {{
+                        margin: 0;
+                        font-family: 'Helvetica Neue', Arial, sans-serif;
+                        color: #0f172a;
+                        background: #f8fafc;
+                    }}
+                    .poster {{
+                        min-height: 9.5in;
+                        border: 2px solid #e2e8f0;
+                        border-radius: 28px;
+                        background:
+                            radial-gradient(circle at top left, rgba(99, 102, 241, 0.12), transparent 32%),
+                            radial-gradient(circle at bottom right, rgba(225, 29, 72, 0.12), transparent 30%),
+                            #ffffff;
+                        padding: 34px 34px 28px;
+                        box-sizing: border-box;
+                    }}
+                    .eyebrow {{
+                        display: inline-block;
+                        padding: 8px 14px;
+                        border-radius: 999px;
+                        background: rgba(99, 102, 241, 0.09);
+                        color: #4338ca;
+                        font-size: 11px;
+                        font-weight: 700;
+                        letter-spacing: 0.18em;
+                        text-transform: uppercase;
+                    }}
+                    h1 {{
+                        margin: 20px 0 8px;
+                        font-size: 33px;
+                        line-height: 1.05;
+                        letter-spacing: -0.04em;
+                    }}
+                    .subhead {{
+                        margin: 0;
+                        font-size: 16px;
+                        line-height: 1.6;
+                        color: #475569;
+                    }}
+                    .names {{
+                        margin-top: 18px;
+                        font-size: 18px;
+                        font-weight: 700;
+                        color: #e11d48;
+                    }}
+                    .grid {{
+                        margin-top: 28px;
+                        display: table;
+                        width: 100%;
+                    }}
+                    .column {{
+                        display: table-cell;
+                        vertical-align: top;
+                    }}
+                    .column.instructions {{
+                        padding-right: 26px;
+                    }}
+                    .step {{
+                        margin-bottom: 16px;
+                        padding: 16px 18px;
+                        border-radius: 18px;
+                        background: #f8fafc;
+                        border: 1px solid #e2e8f0;
+                    }}
+                    .step-label {{
+                        margin: 0 0 6px;
+                        font-size: 11px;
+                        font-weight: 700;
+                        letter-spacing: 0.16em;
+                        text-transform: uppercase;
+                        color: #6366f1;
+                    }}
+                    .step-copy {{
+                        margin: 0;
+                        font-size: 15px;
+                        line-height: 1.5;
+                    }}
+                    .qr-card {{
+                        text-align: center;
+                        border-radius: 22px;
+                        border: 1px solid #e2e8f0;
+                        background: #ffffff;
+                        padding: 20px;
+                    }}
+                    .qr-card img {{
+                        width: 245px;
+                        height: 245px;
+                        object-fit: contain;
+                        border-radius: 18px;
+                        border: 1px solid #e2e8f0;
+                        padding: 14px;
+                        background: #ffffff;
+                    }}
+                    .qr-caption {{
+                        margin: 16px 0 8px;
+                        font-size: 14px;
+                        font-weight: 700;
+                        color: #111827;
+                    }}
+                    .url {{
+                        margin: 0;
+                        font-size: 11px;
+                        line-height: 1.5;
+                        color: #64748b;
+                        word-break: break-word;
+                    }}
+                    .footer {{
+                        margin-top: 26px;
+                        padding-top: 18px;
+                        border-top: 1px solid #e2e8f0;
+                        font-size: 12px;
+                        color: #64748b;
+                        display: flex;
+                        justify-content: space-between;
+                        gap: 16px;
+                    }}
+                    .footer strong {{
+                        color: #0f172a;
+                    }}
+                </style>
+            </head>
+            <body>
+                <div class="poster">
+                    <div class="eyebrow">Guest memories</div>
+                    <h1>Share your photos and videos from tonight</h1>
+                    <p class="subhead">
+                        Help us capture the full celebration. Scan the QR code, enter your name,
+                        and upload the moments you catch throughout the event.
+                    </p>
+                    <p class="names">{escaped_couple_names}</p>
+
+                    <div class="grid">
+                        <div class="column instructions">
+                            <div class="step">
+                                <p class="step-label">Step 1</p>
+                                <p class="step-copy">Scan the QR code with your phone camera.</p>
+                            </div>
+                            <div class="step">
+                                <p class="step-label">Step 2</p>
+                                <p class="step-copy">Tell us your name so the couple knows who shared each memory.</p>
+                            </div>
+                            <div class="step">
+                                <p class="step-label">Step 3</p>
+                                <p class="step-copy">Upload photos or videos from any part of the celebration. If you are not sure which event it belongs to, that is okay.</p>
+                            </div>
+                        </div>
+                        <div class="column">
+                            <div class="qr-card">
+                                <img src="data:image/png;base64,{qr_base64}" alt="Guest memories upload QR code" />
+                                <p class="qr-caption">Scan to upload instantly</p>
+                                <p class="url">{escaped_upload_url}</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="footer">
+                        <span><strong>Uploads close:</strong> {escape(close_label)}</span>
+                        <span>Powered by The Special Wedding</span>
+                    </div>
+                </div>
+            </body>
+            </html>
+            """
+
+            return HTML(string=html).write_pdf()
+        except ImportError:
+            logger.error("WeasyPrint not installed. Run: pip install weasyprint")
+            raise
+        except Exception as e:
+            logger.error(f"Failed to generate guest memories sign PDF: {str(e)}")
             raise
 
     async def get_single_guest_qr(

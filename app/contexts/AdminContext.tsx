@@ -449,9 +449,20 @@ export const AdminProvider = ({ children }: { children: React.ReactNode }) => {
                 // Use a client-side transition here. A hard browser reload
                 // throws away the in-memory access token before the destination
                 // route can hydrate, which caused the first-login bounce loop.
+                const subscriptionStatus =
+                    profile.user_data?.subscription_status ||
+                    profile.subscription_status;
+                const billingBlocked =
+                    profile._subscription_blocked ||
+                    ['expired', 'cancelled', 'suspended', 'pending_payment', 'pending', 'inactive'].includes(subscriptionStatus || '');
+
                 if (profile.is_root_admin) {
                     router.replace('/admin');
                 } else if (profile.is_wedding_planner || profile.role === 'team_member' || profile.is_team_member === true) {
+                    if (billingBlocked && profile.is_wedding_planner) {
+                        router.replace('/admin/planner/billing');
+                        return;
+                    }
                     router.replace('/admin/planner');
                 } else {
                     // Unknown/undefined role — do not grant access

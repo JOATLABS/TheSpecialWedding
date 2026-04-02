@@ -377,7 +377,7 @@ class StripeService:
         billing_interval: str = "monthly",
         success_url: Optional[str] = None,
         cancel_url: Optional[str] = None,
-        trial_days: int = 0
+        trial_days: Optional[int] = None
     ) -> Dict[str, Any]:
         """
         Create a Stripe Checkout Session for subscription signup
@@ -414,9 +414,13 @@ class StripeService:
 
             # Respect plan-level trial configuration when available
             plan_trial_days = plan.get("trial_days")
-            if isinstance(plan_trial_days, int) and plan_trial_days >= 0:
-                trial_days = plan_trial_days
-            trial_days = max(trial_days, 0)
+            if trial_days is None:
+                if isinstance(plan_trial_days, int) and plan_trial_days >= 0:
+                    trial_days = plan_trial_days
+                else:
+                    trial_days = 0
+            else:
+                trial_days = max(trial_days, 0)
 
             # Get or create Stripe customer
             customer_id = await self.get_or_create_customer(
@@ -1326,6 +1330,16 @@ class StripeService:
         except Exception as e:
             logger.error(f"Failed to initialize usage tracking for user {user_id}: {str(e)}")
 
+        try:
+            await self._send_checkout_completion_notification(
+                user_id=user_id,
+                plan_id=plan_id,
+                session=session,
+                subscription=subscription,
+            )
+        except Exception as e:
+            logger.error(f"Failed to send checkout completion notification for user {user_id}: {str(e)}")
+
         logger.info(
             "Checkout completed for user %s, subscription %s (status: %s)",
             user_id,
@@ -1582,6 +1596,14 @@ class StripeService:
             )
 
         logger.info(f"Invoice paid for subscription {subscription_id}")
+
+        billing_reason = invoice.get("billing_reason")
+        if billing_reason == "subscription_create":
+            logger.info(
+                "Skipping invoice.paid payment notification for initial subscription invoice %s; checkout.session.completed owns the activation message",
+                invoice.get("id"),
+            )
+            return {"status": "success", "subscription_id": subscription_id, "notification_skipped": True}
 
         # Send payment success notification (best-effort, don't fail webhook)
         try:
@@ -2059,6 +2081,116 @@ class StripeService:
         except Exception as e:
             # Don't fail the webhook if notification fails
             logger.error(f"Error sending payment notification: {str(e)}")
+
+    async def _send_checkout_completion_notification(
+        self,
+        user_id: str,
+        plan_id: str,
+        session: Dict[str, Any],
+        subscription: Optional[Dict[str, Any]] = None,
+    ) -> None:
+        """Send the first successful checkout confirmation after local sync completes."""
+
+        resolved_subscription = subscription or {}
+        stripe_status = resolved_subscription.get("status")
+        trial_end = self._parse_timestamp(resolved_subscription.get("trial_end"))
+
+        user = await self.users_collection.find_one({"_id": ObjectId(user_id)})
+        if not user or not user.get("email"):
+            logger.warning(f"Skipping checkout completion notification; user {user_id} not found")
+            return
+
+        plan = None
+        try:
+            plan = await self.plans_collection.find_one({"_id": plan_id})
+        except Exception:
+            plan = None
+
+        plan_name = plan.get("name", "Subscription") if plan else "Subscription"
+        user_email = user["email"]
+        user_name = user.get("first_name") or user.get("company_name") or user_email.split("@")[0]
+        amount = (session.get("amount_total") or 0) / 100
+        currency = (session.get("currency") or "usd").upper()
+        billing_url = f"{settings.frontend_url}/admin/planner/billing"
+        invoice_date = datetime.now(timezone.utc).strftime("%B %d, %Y")
+
+        if stripe_status == "trialing" and trial_end:
+            trial_end_label = trial_end.strftime("%B %d, %Y")
+            subject = f"{plan_name} Trial Activated"
+            html_content = f"""
+            <div style="font-family: Arial, sans-serif; max-width: 640px; margin: 0 auto; padding: 24px; color: #0f172a;">
+              <h1 style="margin-bottom: 12px;">Your {plan_name} trial is active</h1>
+              <p>Hi {user_name},</p>
+              <p>Your subscription checkout is complete and your <strong>{plan_name}</strong> trial is now active.</p>
+              <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 12px; padding: 18px; margin: 20px 0;">
+                <p style="margin: 0 0 8px;"><strong>Trial end date:</strong> {trial_end_label}</p>
+                <p style="margin: 0;"><strong>Billing begins after:</strong> {trial_end_label}</p>
+              </div>
+              <p>Your saved payment method will be used automatically when the trial ends unless you change or cancel the subscription first.</p>
+              <p><a href="{billing_url}" style="display: inline-block; background: #111827; color: #ffffff; text-decoration: none; padding: 12px 18px; border-radius: 999px;">Manage billing</a></p>
+            </div>
+            """
+            notification_title = "Free Trial Active"
+            notification_message = f"Your {plan_name} trial is active through {trial_end_label}."
+        else:
+            subject = f"{plan_name} Subscription Activated"
+            html_content = f"""
+            <div style="font-family: Arial, sans-serif; max-width: 640px; margin: 0 auto; padding: 24px; color: #0f172a;">
+              <h1 style="margin-bottom: 12px;">Your {plan_name} subscription is active</h1>
+              <p>Hi {user_name},</p>
+              <p>Your checkout completed successfully and your subscription is ready to use.</p>
+              <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 12px; padding: 18px; margin: 20px 0;">
+                <p style="margin: 0 0 8px;"><strong>Amount received:</strong> ${amount:.2f} {currency}</p>
+                <p style="margin: 0;"><strong>Processed on:</strong> {invoice_date}</p>
+              </div>
+              <p>You can manage your payment method, billing history, and plan from your billing page any time.</p>
+              <p><a href="{billing_url}" style="display: inline-block; background: #111827; color: #ffffff; text-decoration: none; padding: 12px 18px; border-radius: 999px;">Open billing</a></p>
+            </div>
+            """
+            notification_title = "Subscription Active"
+            notification_message = f"Your {plan_name} subscription is active and ready to use."
+
+        await mongo.db["notifications"].insert_one({
+            "_id": ObjectId(),
+            "title": notification_title,
+            "message": notification_message,
+            "type": "billing",
+            "target_audience": "specific_user",
+            "user_id": user_id,
+            "user_email": user_email,
+            "created_by": "system",
+            "created_at": datetime.now(timezone.utc),
+            "updated_at": datetime.now(timezone.utc),
+            "expiry_date": None,
+            "is_dismissible": True,
+            "priority": "low",
+            "status": "active",
+            "read_by": [],
+            "dismissed_by": [],
+            "metadata": {
+                "notification_type": "subscription_activation",
+                "plan_name": plan_name,
+                "amount": amount,
+                "currency": currency,
+                "stripe_subscription_id": session.get("subscription"),
+            },
+        })
+
+        if not getattr(self.email_service, "configured", False):
+            logger.warning("Email service not configured, skipping checkout completion email notification")
+            return
+
+        result = await self.email_service.send_email(
+            to_email=user_email,
+            subject=subject,
+            html_content=html_content,
+            email_type="subscription_activation",
+        )
+
+        if result.get("success"):
+            logger.info(f"Checkout completion email sent to {user_email}")
+        else:
+            logger.error(f"Failed to send checkout completion email to {user_email}: {result.get('error')}")
 
     async def _create_in_app_notification(
         self,

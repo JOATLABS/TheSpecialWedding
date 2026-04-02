@@ -330,7 +330,7 @@ export default function VendorDashboardPage(): ReactElement {
                       <p className="mt-1 text-xs text-slate-500 dark:text-slate-200/60">Sent {formatDisplayDate(form.sent_at)}</p>
                       {form.access_token && (
                         <a
-                          href={`/vendor-form/${form.id}?token=${form.access_token}`}
+                          href={`/vendor-form/${form.id}/${encodeURIComponent(form.access_token)}`}
                           className="mt-3 inline-flex items-center justify-center rounded-xl border border-slate-300 bg-white px-3 py-1 text-xs font-semibold text-slate-900 transition hover:border-slate-400 hover:bg-slate-50 dark:border-white/15 dark:bg-white/15 dark:text-white dark:hover:border-white/40 dark:hover:bg-white/25"
                         >
                           Open form

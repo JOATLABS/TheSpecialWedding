@@ -45,3 +45,41 @@ def test_root_response_includes_docs_url_when_docs_enabled():
     response = build_root_response(settings)
 
     assert response["docs_url"] == "/docs"
+
+
+def test_trusted_hosts_are_derived_from_frontend_api_and_cors_urls():
+    settings = build_settings(
+        ENVIRONMENT="production",
+        FRONTEND_URL="https://app.example.com",
+        NEXT_PUBLIC_API_BASE_URL="https://api.example.com",
+        CORS_ORIGINS=["https://admin.example.com", "https://app.example.com"],
+    )
+
+    assert settings.trusted_hosts == [
+        "app.example.com",
+        "api.example.com",
+        "admin.example.com",
+    ]
+
+
+def test_trusted_hosts_include_local_dev_defaults():
+    settings = build_settings(
+        ENVIRONMENT="development",
+        NEXT_PUBLIC_API_BASE_URL="http://localhost:8000",
+        CORS_ORIGINS=["http://localhost:3000"],
+    )
+
+    assert settings.trusted_hosts == ["localhost", "127.0.0.1", "testserver"]
+
+
+def test_allowed_hosts_override_accepts_comma_separated_values():
+    settings = build_settings(
+        ENVIRONMENT="production",
+        ALLOWED_HOSTS="api.example.com,app.example.com,*.example.com",
+    )
+
+    assert settings.trusted_hosts == [
+        "api.example.com",
+        "app.example.com",
+        "*.example.com",
+    ]
