@@ -22,6 +22,7 @@ import {
   type VendorCategory,
 } from '@/services/vendorManagementApi';
 import { toast } from 'sonner';
+import VendorImportModal from '@/components/vendor/VendorImportModal';
 import { VendorPaymentModal } from './components/VendorPaymentModal';
 import { PaymentMilestones } from './components/PaymentMilestones';
 import { getApiBaseUrl } from '@/utils/env';
@@ -80,6 +81,7 @@ export default function VendorManagementPage() {
 
   // Modal state
   const [showAddVendor, setShowAddVendor] = useState(false);
+  const [showImportModal, setShowImportModal] = useState(false);
   const [newVendor, setNewVendor] = useState({
     business_name: '',
     contact_name: '',
@@ -662,6 +664,15 @@ export default function VendorManagementPage() {
                 />
                 <span className="text-sm text-gray-700 dark:text-gray-300">Preferred only</span>
               </label>
+              {userProfile?.is_root_admin && (
+                <button
+                  onClick={() => setShowImportModal(true)}
+                  className="flex items-center gap-2 px-4 py-2 border-2 border-dashed border-rose-300 text-rose-500 rounded-lg text-sm font-semibold hover:bg-rose-50 transition-colors dark:border-rose-700 dark:text-rose-400 dark:hover:bg-rose-900/20"
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4" /><polyline points="17 8 12 3 7 8" /><line x1="12" y1="3" x2="12" y2="15" /></svg>
+                  Import Vendors
+                </button>
+              )}
               <button
                 onClick={() => setShowAddVendor(true)}
                 className="px-4 py-2 bg-wedding-rose text-white rounded-lg font-medium hover:bg-wedding-rose/90 transition-colors"
@@ -1453,6 +1464,23 @@ export default function VendorManagementPage() {
       </div>
 
       </div>
+
+      {/* Vendor Import Modal (Root Admin only) */}
+      {token && (
+        <VendorImportModal
+          isOpen={showImportModal}
+          onClose={() => setShowImportModal(false)}
+          token={token}
+          onImportComplete={(result) => {
+            toast.success(
+              `Import complete: ${result.inserted} inserted, ${result.updated} updated` +
+              (result.errors > 0 ? `, ${result.errors} errors` : '')
+            );
+            // Refresh vendor list
+            fetchData();
+          }}
+        />
+      )}
     </div>
   );
 }

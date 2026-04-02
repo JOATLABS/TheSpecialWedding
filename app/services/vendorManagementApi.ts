@@ -1146,3 +1146,64 @@ export async function saveContractAsTemplate(
     is_public: false,
   });
 }
+
+
+// =============================================================================
+// VENDOR IMPORT (Root Admin Only)
+// =============================================================================
+
+export interface VendorImportItem {
+  google_place_id?: string;
+  business_name: string;
+  email?: string;
+  phone?: string;
+  website?: string;
+  address?: string;
+  city?: string;
+  state?: string;
+  country?: string;
+  postal_code?: string;
+  service_category: string;
+  service_description?: string;
+  logo_url?: string;
+  typical_price_min?: number;
+  typical_price_max?: number;
+  currency?: string;
+  tags?: string[];
+  scraped_from_city?: string;
+}
+
+export interface VendorImportResponse {
+  inserted: number;
+  updated: number;
+  skipped: number;
+  errors: number;
+  error_details: Array<{ index: number; business_name: string; error: string }>;
+  total: number;
+}
+
+/**
+ * Import scraped vendors via JSON.
+ * ROOT_ADMIN only — used with the vendor scraper CLI export.
+ */
+export async function importVendors(
+  token: string,
+  vendors: VendorImportItem[],
+): Promise<VendorImportResponse> {
+  const res = await fetch(`${API_BASE}/admin/vendors/import`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${token}`,
+    },
+    credentials: 'include',
+    body: JSON.stringify({ vendors }),
+  });
+
+  if (!res.ok) {
+    const errBody = await res.json().catch(() => ({}));
+    throw new Error(extractErrorMessage(errBody, 'Failed to import vendors'));
+  }
+
+  return res.json();
+}

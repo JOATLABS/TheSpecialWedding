@@ -1,0 +1,530 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>The Special Wedding — Metrics Analysis</title>
+<style>
+  :root {
+    --indigo: #4F46E5; --indigo-light: #E0E7FF; --indigo-dark: #3730A3;
+    --emerald: #059669; --emerald-light: #D1FAE5;
+    --amber: #D97706; --amber-light: #FEF3C7;
+    --red: #DC2626; --red-light: #FEE2E2;
+    --slate: #334155; --slate-light: #F1F5F9;
+    --border: #E2E8F0;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; color: var(--slate); line-height: 1.6; background: #F8FAFC; }
+  .container { max-width: 960px; margin: 0 auto; padding: 40px 24px; }
+  h1 { font-size: 28px; font-weight: 700; color: var(--indigo-dark); margin-bottom: 6px; }
+  .subtitle { font-size: 15px; color: #64748B; margin-bottom: 40px; }
+  h2 { font-size: 20px; font-weight: 700; color: var(--slate); margin: 36px 0 16px; padding-bottom: 8px; border-bottom: 2px solid var(--indigo); display: inline-block; }
+  h3 { font-size: 16px; font-weight: 600; margin: 20px 0 10px; }
+  p, li { font-size: 14px; line-height: 1.7; }
+  p + p { margin-top: 10px; }
+
+  /* Dashboard Cards */
+  .dash-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 16px; margin: 20px 0; }
+  .dash-card { background: white; border: 1px solid var(--border); border-radius: 12px; padding: 20px; }
+  .dash-card h4 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.5px; color: #94A3B8; margin-bottom: 6px; }
+  .dash-card .name { font-size: 16px; font-weight: 600; margin-bottom: 12px; }
+
+  /* Score badges */
+  .score { display: inline-flex; align-items: center; gap: 6px; padding: 4px 12px; border-radius: 20px; font-size: 13px; font-weight: 600; }
+  .score-good { background: var(--emerald-light); color: var(--emerald); }
+  .score-warn { background: var(--amber-light); color: var(--amber); }
+  .score-bad { background: var(--red-light); color: var(--red); }
+
+  /* Metric tables */
+  table { width: 100%; border-collapse: collapse; margin: 14px 0 24px; font-size: 13px; }
+  th { text-align: left; background: var(--slate-light); padding: 10px 14px; font-weight: 600; border-bottom: 2px solid var(--border); }
+  td { padding: 10px 14px; border-bottom: 1px solid var(--border); vertical-align: top; }
+  tr:last-child td { border-bottom: none; }
+  .tag { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 600; }
+  .tag-tracked { background: var(--emerald-light); color: var(--emerald); }
+  .tag-missing { background: var(--red-light); color: var(--red); }
+  .tag-partial { background: var(--amber-light); color: var(--amber); }
+
+  /* Callout boxes */
+  .callout { border-left: 4px solid; border-radius: 0 8px 8px 0; padding: 16px 20px; margin: 16px 0; }
+  .callout-star { border-color: var(--indigo); background: var(--indigo-light); }
+  .callout-rec { border-color: var(--emerald); background: var(--emerald-light); }
+  .callout-warn { border-color: var(--amber); background: var(--amber-light); }
+  .callout strong { display: block; margin-bottom: 4px; }
+
+  ul { padding-left: 20px; margin: 8px 0; }
+  li { margin: 4px 0; }
+
+  /* Verdict section */
+  .verdict { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin: 20px 0; }
+  .verdict-card { background: white; border: 1px solid var(--border); border-radius: 12px; padding: 20px; }
+  .verdict-card h4 { font-size: 14px; font-weight: 600; margin-bottom: 8px; }
+
+  .section-divider { border: none; border-top: 1px solid var(--border); margin: 40px 0; }
+
+  @media (max-width: 700px) {
+    .dash-grid { grid-template-columns: 1fr; }
+    .verdict { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+<div class="container">
+
+<h1>Metrics Analysis — The Special Wedding</h1>
+<p class="subtitle">Root Admin Dashboard · Planner Dashboard · Couple Portal &nbsp;|&nbsp; April 2, 2026</p>
+
+<!-- ───────────────────── EXECUTIVE SUMMARY ───────────────────── -->
+<h2>Executive Summary</h2>
+
+<p>Your platform tracks a strong set of <strong>operational</strong> and <strong>infrastructure</strong> metrics across all three dashboards. The root admin SaaS page is the most mature, with user, subscription, and operations metrics at configurable timeframes. The planner dashboard delivers solid per-wedding health data with RSVP tracking and AI-powered insights. The couple portal gives end-users a comprehensive planning view.</p>
+
+<p>The main gap across all three dashboards is the absence of <strong>behavioral product metrics</strong> — engagement frequency, retention cohorts, activation rates, and conversion funnels. The platform tracks <em>what exists</em> (counts of users, weddings, RSVPs) but not <em>how people use it</em> (login frequency, feature adoption, time-to-value). This limits your ability to diagnose churn, prioritize features, or measure onboarding improvements.</p>
+
+<div class="dash-grid">
+  <div class="dash-card">
+    <h4>Root Admin</h4>
+    <div class="name">SaaS & Platform Health</div>
+    <span class="score score-good">Infrastructure: Strong</span><br><br>
+    <span class="score score-warn">Product Metrics: Gaps</span>
+  </div>
+  <div class="dash-card">
+    <h4>Planner</h4>
+    <div class="name">Wedding Operations</div>
+    <span class="score score-good">Ops Metrics: Strong</span><br><br>
+    <span class="score score-bad">Engagement: Missing</span>
+  </div>
+  <div class="dash-card">
+    <h4>Couple Portal</h4>
+    <div class="name">End-User Dashboard</div>
+    <span class="score score-good">Wedding Data: Strong</span><br><br>
+    <span class="score score-bad">Engagement: Missing</span>
+  </div>
+</div>
+
+<hr class="section-divider">
+
+<!-- ───────────────────── NORTH STAR ───────────────────── -->
+<h2>Recommended North Star Metric</h2>
+
+<div class="callout callout-star">
+  <strong>Weekly Active Weddings with Guest Engagement</strong>
+  <p>Count of weddings where at least one guest RSVP, form submission, or media upload occurred in the past 7 days. This captures value delivery to both planners (active weddings = revenue) and couples/guests (engagement = product utility).</p>
+</div>
+
+<p>This metric is <strong>value-aligned</strong> (moves when your product delivers planning outcomes), <strong>leading</strong> (active guest engagement predicts subscription retention), and <strong>actionable</strong> (the team can improve onboarding, reminders, and RSVP flows to drive it). Currently you track <code>active_weddings</code> count but not the engagement dimension — weddings can be "active" without any guest interaction happening.</p>
+
+<hr class="section-divider">
+
+<!-- ───────────────────── ROOT ADMIN ───────────────────── -->
+<h2>1. Root Admin Dashboard</h2>
+
+<h3>What You're Tracking</h3>
+
+<table>
+  <tr><th>Metric Area</th><th>Specific Metrics</th><th>Status</th></tr>
+  <tr>
+    <td><strong>Infrastructure Health</strong></td>
+    <td>DB status, DB latency (ms), CPU cores, CPU usage %, disk usage, memory usage</td>
+    <td><span class="tag tag-tracked">Tracked</span></td>
+  </tr>
+  <tr>
+    <td><strong>Performance</strong></td>
+    <td>Endpoint response times (p50, p95, p99), error rates, slow endpoints</td>
+    <td><span class="tag tag-tracked">Tracked</span></td>
+  </tr>
+  <tr>
+    <td><strong>User Counts</strong></td>
+    <td>Total users, active users, new users, growth rate, role breakdown</td>
+    <td><span class="tag tag-tracked">Tracked</span></td>
+  </tr>
+  <tr>
+    <td><strong>Subscriptions</strong></td>
+    <td>Total subs, status breakdown, MRR/ARR, plan breakdowns</td>
+    <td><span class="tag tag-tracked">Tracked</span></td>
+  </tr>
+  <tr>
+    <td><strong>Operations</strong></td>
+    <td>Total weddings, active/upcoming, guest totals, RSVP totals, forms, notifications, AI events</td>
+    <td><span class="tag tag-tracked">Tracked</span></td>
+  </tr>
+  <tr>
+    <td><strong>Admin Activity</strong></td>
+    <td>Invitation actions, planner lifecycle events (suspend, activate, delete)</td>
+    <td><span class="tag tag-tracked">Tracked</span></td>
+  </tr>
+  <tr>
+    <td><strong>Engagement / Retention</strong></td>
+    <td>DAU/WAU/MAU, login frequency, feature usage, session depth</td>
+    <td><span class="tag tag-missing">Not Tracked</span></td>
+  </tr>
+  <tr>
+    <td><strong>Activation</strong></td>
+    <td>Time to first wedding created, onboarding completion rate, first RSVP received</td>
+    <td><span class="tag tag-missing">Not Tracked</span></td>
+  </tr>
+  <tr>
+    <td><strong>Retention Cohorts</strong></td>
+    <td>D7/D30/D90 planner retention, cohort curves, churn rate</td>
+    <td><span class="tag tag-missing">Not Tracked</span></td>
+  </tr>
+  <tr>
+    <td><strong>Conversion Funnels</strong></td>
+    <td>Signup → Trial → Paid, Free → Premium, Monthly → Annual</td>
+    <td><span class="tag tag-missing">Not Tracked</span></td>
+  </tr>
+  <tr>
+    <td><strong>Revenue Health</strong></td>
+    <td>ARPU, expansion revenue, net revenue retention, LTV</td>
+    <td><span class="tag tag-partial">Partial</span></td>
+  </tr>
+</table>
+
+<h3>Assessment</h3>
+
+<p>The root admin dashboard has two strong layers: (1) a solid <strong>infrastructure monitoring</strong> suite with real-time health, error tracking, and endpoint performance, and (2) a decent <strong>SaaS analytics</strong> view with user/subscription/operations counts at configurable timeframes (7d/30d/90d/1y). The historical snapshot system provides trend data over time.</p>
+
+<p>The critical gap is the entire <strong>behavioral layer</strong>. You have "total users: 150" and "active users: 120" but no visibility into <em>how</em> those users engage, <em>when</em> they drop off, or <em>what</em> predicts retention. Without cohort analysis and funnel metrics, you can't answer questions like "are newer planners retaining better than earlier ones?" or "what's our trial-to-paid conversion rate this month?"</p>
+
+<div class="callout callout-rec">
+  <strong>Top 3 Additions for Root Admin</strong>
+  <ul>
+    <li><strong>Activation funnel:</strong> Signup → Profile setup → First wedding created → First guest invited → First RSVP received. Track conversion at each step.</li>
+    <li><strong>Retention cohorts:</strong> Weekly signup cohorts with D7/D30/D60/D90 retention. Show as a cohort table or curve chart.</li>
+    <li><strong>Revenue breakdown:</strong> Add ARPU, net revenue retention (NRR), and MRR movement chart (new + expansion − contraction − churn).</li>
+  </ul>
+</div>
+
+<hr class="section-divider">
+
+<!-- ───────────────────── PLANNER DASHBOARD ───────────────────── -->
+<h2>2. Planner Dashboard</h2>
+
+<h3>What You're Tracking</h3>
+
+<table>
+  <tr><th>Metric Area</th><th>Specific Metrics</th><th>Status</th></tr>
+  <tr>
+    <td><strong>Portfolio Summary</strong></td>
+    <td>Total/active/upcoming/past weddings, active wedding count card</td>
+    <td><span class="tag tag-tracked">Tracked</span></td>
+  </tr>
+  <tr>
+    <td><strong>Guest & RSVP Aggregate</strong></td>
+    <td>Total guests, confirmed/pending/declined RSVPs, plus-ones (allowed vs submitted), response rate</td>
+    <td><span class="tag tag-tracked">Tracked</span></td>
+  </tr>
+  <tr>
+    <td><strong>Per-Wedding Health</strong></td>
+    <td>Progress %, days until wedding, guest count, RSVP breakdown, response rate, status badge</td>
+    <td><span class="tag tag-tracked">Tracked</span></td>
+  </tr>
+  <tr>
+    <td><strong>Revenue</strong></td>
+    <td>Monthly bookings, total revenue, average wedding value</td>
+    <td><span class="tag tag-tracked">Tracked</span></td>
+  </tr>
+  <tr>
+    <td><strong>Activity Feed</strong></td>
+    <td>Recent 10 actions (RSVP received, guest updated, emails sent, support tickets)</td>
+    <td><span class="tag tag-tracked">Tracked</span></td>
+  </tr>
+  <tr>
+    <td><strong>AI Insights</strong></td>
+    <td>RSVP follow-ups, budget health, upcoming deadlines, vendor payments, timeline concerns</td>
+    <td><span class="tag tag-tracked">Tracked</span></td>
+  </tr>
+  <tr>
+    <td><strong>Couple Engagement</strong></td>
+    <td>Portal login frequency, form completion rate, message response time</td>
+    <td><span class="tag tag-missing">Not Tracked</span></td>
+  </tr>
+  <tr>
+    <td><strong>Vendor Metrics</strong></td>
+    <td>Vendor response rates, contract signing speed, payment compliance</td>
+    <td><span class="tag tag-missing">Not Tracked</span></td>
+  </tr>
+  <tr>
+    <td><strong>Task Completion</strong></td>
+    <td>Task completion rate, overdue tasks, average task age</td>
+    <td><span class="tag tag-missing">Not Tracked</span></td>
+  </tr>
+  <tr>
+    <td><strong>Guest Experience</strong></td>
+    <td>RSVP time-to-respond, media upload rate, FAQ views</td>
+    <td><span class="tag tag-missing">Not Tracked</span></td>
+  </tr>
+</table>
+
+<h3>Assessment</h3>
+
+<p>The planner dashboard is well-designed as a <strong>wedding operations command center</strong>. The four summary cards, per-wedding progress tracking, and AI-powered insights give planners a clear view of their portfolio health. The progress percentage calculation (40% RSVP + 20% guest list + 20% events + 20% details) is a thoughtful composite metric.</p>
+
+<p>What's missing is <strong>couple engagement visibility</strong>. A planner can see that 60 of 150 RSVPs are pending, but can't see whether the couple has logged into the portal this week, whether they've completed the shared forms, or how quickly they respond to messages. These signals help planners triage which couples need attention. Similarly, there's no aggregate view of "how healthy is my practice?" beyond revenue — metrics like average RSVP response rate across weddings or on-time task completion would help planners benchmark their performance.</p>
+
+<div class="callout callout-rec">
+  <strong>Top 3 Additions for Planner Dashboard</strong>
+  <ul>
+    <li><strong>Couple engagement signals:</strong> Last login date, form completion status, and average message response time per wedding — surfaced as "needs attention" flags.</li>
+    <li><strong>RSVP velocity:</strong> Show RSVPs received per day as a trend line per wedding. A flattening curve signals the planner needs to send reminders.</li>
+    <li><strong>Practice health score:</strong> Composite across weddings — on-time milestones, budget adherence, guest response rates. One number to show overall practice performance.</li>
+  </ul>
+</div>
+
+<hr class="section-divider">
+
+<!-- ───────────────────── COUPLE PORTAL ───────────────────── -->
+<h2>3. Couple Portal</h2>
+
+<h3>What You're Tracking</h3>
+
+<table>
+  <tr><th>Metric Area</th><th>Specific Metrics</th><th>Status</th></tr>
+  <tr>
+    <td><strong>Countdown</strong></td>
+    <td>Days until wedding (prominently displayed)</td>
+    <td><span class="tag tag-tracked">Tracked</span></td>
+  </tr>
+  <tr>
+    <td><strong>Guest Stats</strong></td>
+    <td>Target, invites sent, responses, attending, declined, awaiting — detailed breakdown</td>
+    <td><span class="tag tag-tracked">Tracked</span></td>
+  </tr>
+  <tr>
+    <td><strong>Response Rate</strong></td>
+    <td>% of sent invites with responses, RSVPs by event</td>
+    <td><span class="tag tag-tracked">Tracked</span></td>
+  </tr>
+  <tr>
+    <td><strong>Budget</strong></td>
+    <td>Total budget, spent, remaining, progress bar with color coding</td>
+    <td><span class="tag tag-tracked">Tracked</span></td>
+  </tr>
+  <tr>
+    <td><strong>Memories</strong></td>
+    <td>Pending/kept/rejected media, processing videos, upload status</td>
+    <td><span class="tag tag-tracked">Tracked</span></td>
+  </tr>
+  <tr>
+    <td><strong>Payments</strong></td>
+    <td>Total/paid/remaining amounts, per-payment status and schedule</td>
+    <td><span class="tag tag-tracked">Tracked</span></td>
+  </tr>
+  <tr>
+    <td><strong>Forms</strong></td>
+    <td>Pending vs submitted forms</td>
+    <td><span class="tag tag-tracked">Tracked</span></td>
+  </tr>
+  <tr>
+    <td><strong>Planner & Venue Info</strong></td>
+    <td>Contact details, upcoming events preview</td>
+    <td><span class="tag tag-tracked">Tracked</span></td>
+  </tr>
+  <tr>
+    <td><strong>Progress Indicators</strong></td>
+    <td>Overall wedding readiness score, checklist completion</td>
+    <td><span class="tag tag-missing">Not Tracked</span></td>
+  </tr>
+  <tr>
+    <td><strong>Budget Category Breakdown</strong></td>
+    <td>Per-category spend vs allocation (e.g., venue, catering, decor)</td>
+    <td><span class="tag tag-partial">Partial</span></td>
+  </tr>
+  <tr>
+    <td><strong>Guest Engagement</strong></td>
+    <td>Who viewed RSVP, who opened invite emails, guest portal visits</td>
+    <td><span class="tag tag-missing">Not Tracked</span></td>
+  </tr>
+</table>
+
+<h3>Assessment</h3>
+
+<p>The couple portal is <strong>feature-rich and well-structured</strong> with 8 sections covering the full wedding planning lifecycle. The quick stats grid (6 cards) gives an immediate snapshot, and the guest tracker with per-event RSVP breakdown is genuinely useful. Budget tracking with color-coded thresholds (red >90%, amber >70%) provides clear visual signals.</p>
+
+<p>The main gap is the <strong>absence of a progress/readiness score</strong>. Couples want to know "am I on track?" The portal shows individual data points (RSVPs, budget, forms) but doesn't synthesize them into an overall readiness indicator. The planner dashboard has a progress percentage per wedding, but this isn't exposed to the couple. Additionally, couples have no visibility into guest-side engagement — they can't see which guests opened their emails or viewed the RSVP page, which would help them know who to follow up with personally.</p>
+
+<div class="callout callout-rec">
+  <strong>Top 3 Additions for Couple Portal</strong>
+  <ul>
+    <li><strong>Wedding readiness score:</strong> Surface the progress % already calculated on the planner side. Show it prominently with a breakdown of what's driving the score.</li>
+    <li><strong>Budget category chart:</strong> A simple donut or bar chart showing spend by category (you already collect budget_categories). Couples want to see where money is going at a glance.</li>
+    <li><strong>"Who hasn't responded" list:</strong> A filterable view of guests who haven't RSVP'd, sorted by days since invite sent. Makes personal follow-up easy.</li>
+  </ul>
+</div>
+
+<hr class="section-divider">
+
+<!-- ───────────────────── L1 METRICS FRAMEWORK ───────────────────── -->
+<h2>Proposed L1 Metrics Framework</h2>
+
+<p>Below is a recommended set of 7 L1 health indicators for The Special Wedding, mapped to the standard product lifecycle stages. Items marked "exists" are already tracked; "build" items need new instrumentation.</p>
+
+<table>
+  <tr><th>Stage</th><th>L1 Metric</th><th>Definition</th><th>Status</th></tr>
+  <tr>
+    <td><strong>Acquisition</strong></td>
+    <td>New planner signups</td>
+    <td>New accounts created per week/month</td>
+    <td><span class="tag tag-tracked">Exists</span></td>
+  </tr>
+  <tr>
+    <td><strong>Activation</strong></td>
+    <td>Activation rate</td>
+    <td>% of new planners who create first wedding + receive first RSVP within 14 days</td>
+    <td><span class="tag tag-missing">Build</span></td>
+  </tr>
+  <tr>
+    <td><strong>Engagement</strong></td>
+    <td>WAU (Weekly Active Users)</td>
+    <td>Unique planners who perform a core action (guest mgmt, form send, message) in 7 days</td>
+    <td><span class="tag tag-missing">Build</span></td>
+  </tr>
+  <tr>
+    <td><strong>Retention</strong></td>
+    <td>M1/M3 planner retention</td>
+    <td>% of planners active 30 and 90 days after signup</td>
+    <td><span class="tag tag-missing">Build</span></td>
+  </tr>
+  <tr>
+    <td><strong>Monetization</strong></td>
+    <td>MRR + NRR</td>
+    <td>Monthly recurring revenue and net revenue retention (expansion − churn)</td>
+    <td><span class="tag tag-partial">Partial</span></td>
+  </tr>
+  <tr>
+    <td><strong>Guest Value</strong></td>
+    <td>RSVP response rate</td>
+    <td>Platform-wide average % of invited guests who respond</td>
+    <td><span class="tag tag-tracked">Exists</span></td>
+  </tr>
+  <tr>
+    <td><strong>Satisfaction</strong></td>
+    <td>NPS or CSAT</td>
+    <td>Periodic satisfaction survey score from planners and couples</td>
+    <td><span class="tag tag-missing">Build</span></td>
+  </tr>
+</table>
+
+<hr class="section-divider">
+
+<!-- ───────────────────── DASHBOARD DESIGN ───────────────────── -->
+<h2>Dashboard Design Observations</h2>
+
+<div class="verdict">
+  <div class="verdict-card">
+    <h4>What's Working Well</h4>
+    <ul>
+      <li>Configurable time ranges on SaaS analytics (7d/30d/90d/1y)</li>
+      <li>Role-based access control — planners only see their weddings</li>
+      <li>Color-coded budget thresholds on couple portal</li>
+      <li>AI insights provide actionable, prioritized recommendations</li>
+      <li>Per-event RSVP breakdown in couple portal</li>
+      <li>Real-time activity feeds on both admin and planner dashboards</li>
+      <li>Infrastructure monitoring with p50/p95/p99 latency breakdowns</li>
+    </ul>
+  </div>
+  <div class="verdict-card">
+    <h4>Anti-Patterns to Address</h4>
+    <ul>
+      <li><strong>No comparison context:</strong> User counts shown as raw numbers without previous-period comparison or targets</li>
+      <li><strong>Flat hierarchy:</strong> All metrics presented at the same visual weight — no clear North Star at the top</li>
+      <li><strong>Output over outcome:</strong> "Notifications sent" and "AI events" are output metrics, not user outcome metrics</li>
+      <li><strong>Missing trend lines:</strong> Most metrics are point-in-time snapshots without week-over-week directional indicators</li>
+      <li><strong>No alerting:</strong> No threshold-based alerts for metrics (e.g., response rate dropping below 50%)</li>
+    </ul>
+  </div>
+</div>
+
+<hr class="section-divider">
+
+<!-- ───────────────────── PRIORITY ROADMAP ───────────────────── -->
+<h2>Implementation Priority</h2>
+
+<p>Ranked by impact-to-effort ratio. Quick wins first, then strategic investments.</p>
+
+<table>
+  <tr><th>Priority</th><th>Item</th><th>Dashboard</th><th>Effort</th><th>Impact</th></tr>
+  <tr>
+    <td>1</td>
+    <td>Add week-over-week change indicators (↑ / ↓ / →) to existing metric cards</td>
+    <td>All three</td>
+    <td>Low</td>
+    <td>High — context transforms raw numbers into signals</td>
+  </tr>
+  <tr>
+    <td>2</td>
+    <td>Surface wedding readiness % on couple portal (already computed on planner side)</td>
+    <td>Couple</td>
+    <td>Low</td>
+    <td>High — answers the couple's #1 question</td>
+  </tr>
+  <tr>
+    <td>3</td>
+    <td>Add "who hasn't responded" guest list with days-since-invite</td>
+    <td>Couple</td>
+    <td>Low</td>
+    <td>High — drives RSVP completion, the core value loop</td>
+  </tr>
+  <tr>
+    <td>4</td>
+    <td>Instrument WAU tracking (log core actions with timestamp + user_id)</td>
+    <td>Admin</td>
+    <td>Medium</td>
+    <td>High — foundation for engagement and retention metrics</td>
+  </tr>
+  <tr>
+    <td>5</td>
+    <td>Build activation funnel (signup → wedding → guest → RSVP)</td>
+    <td>Admin</td>
+    <td>Medium</td>
+    <td>High — identifies onboarding drop-off</td>
+  </tr>
+  <tr>
+    <td>6</td>
+    <td>Add couple last-login and form-completion signals to planner wedding cards</td>
+    <td>Planner</td>
+    <td>Medium</td>
+    <td>Medium — helps planners triage attention</td>
+  </tr>
+  <tr>
+    <td>7</td>
+    <td>Budget category donut chart on couple portal</td>
+    <td>Couple</td>
+    <td>Low</td>
+    <td>Medium — visual upgrade, data already exists</td>
+  </tr>
+  <tr>
+    <td>8</td>
+    <td>Monthly cohort retention table for planners</td>
+    <td>Admin</td>
+    <td>High</td>
+    <td>High — essential for understanding long-term health</td>
+  </tr>
+  <tr>
+    <td>9</td>
+    <td>MRR movement chart (new + expansion − contraction − churn)</td>
+    <td>Admin</td>
+    <td>High</td>
+    <td>High — revenue story beyond a single number</td>
+  </tr>
+  <tr>
+    <td>10</td>
+    <td>NPS/CSAT survey integration</td>
+    <td>Admin</td>
+    <td>High</td>
+    <td>Medium — qualitative complement to quantitative metrics</td>
+  </tr>
+</table>
+
+<hr class="section-divider">
+
+<!-- ───────────────────── SUMMARY VERDICT ───────────────────── -->
+<h2>Bottom Line</h2>
+
+<p>Your dashboards are <strong>operationally solid</strong> — the infrastructure monitoring, RSVP tracking, and wedding operations data are genuinely useful and well-presented. The foundation is strong. The primary gap is the <strong>product analytics layer</strong>: engagement, activation, retention, and conversion metrics that would tell you <em>whether the product is growing and why</em>. The good news is that most of the raw data (user actions, timestamps, wedding lifecycle events) likely already exists in your database — it just needs to be aggregated into the right views.</p>
+
+<p>Start with items 1–3 in the priority table (low effort, high impact), then invest in WAU instrumentation (item 4) as the foundation for everything else.</p>
+
+</div>
+</body>
+</html>
