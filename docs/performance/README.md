@@ -4,6 +4,11 @@ This directory contains documentation for all performance optimizations implemen
 
 ## Completed Optimizations
 
+### 0. [Locust Load Test Plan](./locust-load-test-plan.md)
+- Added a safe, read-only Locust harness for public wedding, planner, and couple traffic
+- Uses repo-local `loadtests/locustfile.py`
+- Completed: April 2, 2026
+
 ### 1. [Database Indexes](./database-indexes.md)
 - Added 20+ compound indexes
 - 60-70% query performance improvement
@@ -34,6 +39,10 @@ All performance testing scripts are located in `/scripts/`:
 - `test_bulk_endpoints.py` - Tests all bulk endpoints
 - `test_n1_fix.py` - Performance comparison test
 - `add_performance_indexes.py` - Database index creation
+
+Load testing uses:
+- `loadtests/locustfile.py` - Mixed read-only Locust scenarios for public, planner, and couple traffic
+- `docs/performance/locust-load-test-plan.md` - Runbook, stages, guardrails, and success criteria
 
 ## Monitoring
 

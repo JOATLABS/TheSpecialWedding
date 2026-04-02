@@ -54,6 +54,7 @@ from app.api.trial_management import router as trial_management_router
 from app.api.vendor_forms import router as vendor_forms_router
 from app.api.vendor_dashboard import router as vendor_dashboard_router
 from app.api.vendor_management import router as vendor_management_router
+from app.api.vendor_import import router as vendor_import_router
 from app.api.budget import router as budget_router
 from app.api.otp import router as otp_router
 from app.api.notification_management import router as notification_router
@@ -651,6 +652,7 @@ app.include_router(forms_router, prefix="/admin", tags=["Forms"])  # Canonical a
 app.include_router(vendor_forms_router, prefix="/vendor-form", tags=["Vendor Forms"])  # Public vendor forms
 app.include_router(vendor_dashboard_router, prefix="/vendor", tags=["Vendor Dashboard"])
 app.include_router(vendor_management_router, prefix="/admin", tags=["Vendor Contracts"])  # Vendor management endpoints (admin only)
+app.include_router(vendor_import_router, prefix="/admin", tags=["Vendor Import"])  # Vendor scraper import (root admin only)
 app.include_router(vendor_contract_public_router, prefix="/vendor-contract", tags=["Public Contract Access"])  # Public vendor contract endpoints (no auth required)
 app.include_router(user_management_router, tags=["Auth"])  # Public registration endpoints
 app.include_router(otp_router, tags=["OTP"])  # Public OTP verification endpoints

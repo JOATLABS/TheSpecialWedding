@@ -7,6 +7,7 @@ PROJECT_ROOT="${DEFAULT_PROJECT_ROOT}"
 MENU_WINDOW="menu"
 FRONTEND_WINDOW="frontend"
 ALL_LOG_WINDOW="all-logs"
+SCRAPER_WINDOW="vendor-scraper"
 
 if [[ -z "${BASH_VERSINFO:-}" ]]; then
   echo "This script must be run with Bash." >&2
@@ -596,6 +597,130 @@ setup_all_logs_window() {
   tmux switch-client -t "$SESSION_NAME:$ALL_LOG_WINDOW"
 }
 
+# =============================================================================
+# VENDOR SCRAPER
+# =============================================================================
+
+SCRAPER_LOG_FILE="$LOG_DIR/scraper.log"
+SCRAPER_EXPORT_DIR="$LOG_ROOT/exports"
+
+run_vendor_scraper() {
+  local dry_run="${1:-false}"
+
+  if window_exists "$SCRAPER_WINDOW"; then
+    warn "Scraper is already running. View logs (option 13) or wait for it to finish."
+    return
+  fi
+
+  # ── City selection ──
+  printf '\n\033[1;35mVendor Directory Scraper\033[0m\n'
+  printf '\033[90m─────────────────────────────────────────\033[0m\n'
+  printf '\nAvailable cities:\n'
+  printf '  1) Atlanta, GA    2) Houston, TX    3) New York, NY\n'
+  printf '  4) Los Angeles, CA    5) Chicago, IL\n'
+  printf '  a) All cities\n'
+  printf '\nSelect cities (comma-separated, or "a" for all): '
+  read -r city_input
+
+  local city_args=""
+  if [[ "$city_input" != "a" && -n "$city_input" ]]; then
+    local city_map=("Atlanta" "Houston" "New York" "Los Angeles" "Chicago")
+    IFS=',' read -r -a selections <<< "$city_input"
+    for sel in "${selections[@]}"; do
+      sel="$(trim "$sel")"
+      if [[ "$sel" =~ ^[1-5]$ ]]; then
+        local idx=$((sel - 1))
+        city_args="$city_args --city \"${city_map[$idx]}\""
+      fi
+    done
+  fi
+
+  # ── Category selection ──
+  printf '\nAvailable categories:\n'
+  printf '  photographer, videographer, florist, caterer, venue, dj, mc,\n'
+  printf '  band, officiant, planner, decorator, cake, hair_makeup,\n'
+  printf '  transportation, stationery, rentals, lighting, photo_booth,\n'
+  printf '  jewelry, attire\n'
+  printf '\nCategories (comma-separated, or Enter for all): '
+  read -r cat_input
+
+  local cat_args=""
+  if [[ -n "$cat_input" ]]; then
+    # Sanitize: only allow alphanumeric, commas, underscores (valid category chars)
+    local sanitized_cats
+    sanitized_cats="$(printf '%s' "$cat_input" | tr -cd 'a-zA-Z0-9,_')"
+    if [[ -n "$sanitized_cats" ]]; then
+      cat_args="--categories $sanitized_cats"
+    fi
+  fi
+
+  local dry_flag=""
+  if [[ "$dry_run" == "true" ]]; then
+    dry_flag="--dry-run"
+  fi
+
+  local cmd="cd '$PROJECT_ROOT' && python -m app.jobs.vendor_scraper.run $city_args $cat_args $dry_flag 2>&1 | tee '$SCRAPER_LOG_FILE'"
+
+  local mode="LIVE"
+  [[ "$dry_run" == "true" ]] && mode="DRY RUN (no DB writes)"
+
+  printf '\n\033[90m─────────────────────────────────────────\033[0m\n'
+  printf '\033[33m▶ Starting scraper...\033[0m\n'
+  printf "  Mode: %s\n" "$mode"
+  [[ -n "$city_args" ]] && printf "  Cities: %s\n" "$city_args" || printf "  Cities: All\n"
+  [[ -n "$cat_args" ]] && printf "  Categories: %s\n" "$cat_input" || printf "  Categories: All\n"
+  printf '\n'
+
+  info "Launching scraper in a new tmux pane..."
+  tmux new-window -d -t "$SESSION_NAME" -n "$SCRAPER_WINDOW" \
+    "bash -c '$cmd; printf \"\n\033[32m✓ Scraper finished. Press Enter to close.\033[0m\n\"; read -r'"
+  sleep 1
+  tmux pipe-pane -t "$SESSION_NAME:$SCRAPER_WINDOW.0" "cat >> '$SCRAPER_LOG_FILE'"
+  tmux switch-client -t "$SESSION_NAME:$SCRAPER_WINDOW"
+}
+
+view_scraper_logs() {
+  if window_exists "$SCRAPER_WINDOW"; then
+    tmux switch-client -t "$SESSION_NAME:$SCRAPER_WINDOW"
+    return
+  fi
+
+  if [[ -f "$SCRAPER_LOG_FILE" ]]; then
+    info "No active scraper session. Showing last log file..."
+    tmux new-window -d -t "$SESSION_NAME" -n "$SCRAPER_WINDOW" \
+      "less +G '$SCRAPER_LOG_FILE'"
+    tmux switch-client -t "$SESSION_NAME:$SCRAPER_WINDOW"
+  else
+    warn "No scraper logs found. Run the scraper first."
+  fi
+}
+
+export_scraper_json() {
+  mkdir -p "$SCRAPER_EXPORT_DIR"
+  local timestamp
+  timestamp="$(date +%Y-%m-%d-%H%M)"
+  local outfile="$SCRAPER_EXPORT_DIR/vendors-${timestamp}.json"
+
+  info "Exporting scraped vendors to JSON..."
+  cd "$PROJECT_ROOT" && python -m app.jobs.vendor_scraper.export_json "$outfile"
+  local exit_code=$?
+
+  if [[ $exit_code -eq 0 && -f "$outfile" ]]; then
+    local count
+    count="$(python3 -c "import json; print(len(json.load(open('$outfile'))))" 2>/dev/null || echo '?')"
+    local size
+    size="$(du -h "$outfile" | cut -f1)"
+
+    printf '\n\033[32m✓ Exported %s vendors\033[0m\n' "$count"
+    printf '  File: %s\n' "$outfile"
+    printf '  Size: %s\n' "$size"
+    printf '\n\033[37mYou can now import this file via the admin panel:\033[0m\n'
+    printf '  \033[36mAdmin → Vendor Management → Import Vendors\033[0m\n'
+  else
+    error "Export failed. Make sure the database is running."
+  fi
+}
+
 print_menu() {
   clear
   cat <<MENU
@@ -613,8 +738,15 @@ Managing: $PROJECT_ROOT
 8) View Docker service logs
 9) View all logs (split panes)
 10) Close log windows
-11) Detach from tmux session
-12) Quit manager (kills tmux session)
+
+── Vendor Scraper ────────────────────────
+11) Run vendor scraper (prompts for args)
+12) Run vendor scraper (dry run)
+13) View scraper logs
+14) Export last run → JSON (for admin import)
+
+15) Detach from tmux session
+16) Quit manager (kills tmux session)
 MENU
 }
 
@@ -630,8 +762,12 @@ handle_choice() {
     8) view_service_logs ;;
     9) setup_all_logs_window ;;
     10) close_service_log_windows ;;
-    11) tmux detach-client ;;
-    12) tmux kill-session -t "$SESSION_NAME" ; exit 0 ;;
+    11) run_vendor_scraper "false" ;;
+    12) run_vendor_scraper "true" ;;
+    13) view_scraper_logs ;;
+    14) export_scraper_json ;;
+    15) tmux detach-client ;;
+    16) tmux kill-session -t "$SESSION_NAME" ; exit 0 ;;
     *) warn "Unknown option: $1" ;;
   esac
   printf '\nPress Enter to continue...'
