@@ -125,6 +125,7 @@ The platform requires these environment variables (set via `.env` or Coolify das
 | `TWILIO_MESSAGING_SERVICE_SID` | Twilio messaging service |
 | `TWILIO_STATUS_CALLBACK_URL` | Webhook URL for delivery tracking |
 | `RESEND_API_KEY` | Resend email API key |
+| `RESEND_BILLING_EMAIL` | Dedicated sender address for Stripe billing/invoice emails |
 | `STRIPE_SECRET_KEY` | Stripe secret key |
 | `STRIPE_WEBHOOK_SECRET` | Stripe webhook signing secret |
 | `GOOGLE_GEMINI_API_KEY` | Google Gemini API key |

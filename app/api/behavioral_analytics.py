@@ -12,6 +12,7 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Query
 
 from app.dependencies.auth_extended import require_root_admin, get_current_active_user
+from app.dependencies.couple_auth import require_couple_auth
 from app.models.user_extended import ExtendedAuthUser
 from app.services.behavioral_analytics_service import service as analytics_service
 
@@ -122,6 +123,61 @@ async def get_budget_breakdown(
     try:
         breakdown = await analytics_service.get_budget_breakdown(wedding_id)
         return {"wedding_id": wedding_id, **breakdown}
+    except Exception as exc:
+        logger.error("Failed to get budget breakdown: %s", exc, exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to get budget breakdown")
+
+
+# ──────────────────────────────────────────────────
+#  COUPLE-AUTH ENDPOINTS
+#  These mirror the admin endpoints but use couple auth
+#  and restrict access to the couple's own wedding.
+# ──────────────────────────────────────────────────
+
+couple_router = APIRouter()
+
+
+@couple_router.get(
+    "/portal/non-responders",
+    tags=["Couple Portal Analytics"],
+    summary="Get guests who haven't RSVP'd for the couple's wedding",
+)
+async def couple_get_non_responders(
+    couple: dict = Depends(require_couple_auth),
+):
+    """Return non-responding guests for the authenticated couple's wedding."""
+    wedding_id = couple.get("wedding_id")
+    if not wedding_id:
+        raise HTTPException(status_code=400, detail="No wedding associated with this account")
+
+    try:
+        non_responders = await analytics_service.get_non_responders(str(wedding_id))
+        return {
+            "wedding_id": str(wedding_id),
+            "non_responders": non_responders,
+            "count": len(non_responders),
+        }
+    except Exception as exc:
+        logger.error("Failed to get non-responders: %s", exc, exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to get non-responders")
+
+
+@couple_router.get(
+    "/portal/budget-breakdown",
+    tags=["Couple Portal Analytics"],
+    summary="Get budget category breakdown for the couple's wedding",
+)
+async def couple_get_budget_breakdown(
+    couple: dict = Depends(require_couple_auth),
+):
+    """Return budget category breakdown for the authenticated couple's wedding."""
+    wedding_id = couple.get("wedding_id")
+    if not wedding_id:
+        raise HTTPException(status_code=400, detail="No wedding associated with this account")
+
+    try:
+        breakdown = await analytics_service.get_budget_breakdown(str(wedding_id))
+        return {"wedding_id": str(wedding_id), **breakdown}
     except Exception as exc:
         logger.error("Failed to get budget breakdown: %s", exc, exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to get budget breakdown")

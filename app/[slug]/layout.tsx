@@ -1,31 +1,12 @@
 // app/[slug]/layout.tsx
 
-import React, { cache } from "react";
+import React from "react";
 import type { Metadata } from "next";
-import { getApiBaseUrl } from '@/utils/env';
 import { notFound } from "next/navigation";
 import { WeddingProvider } from '@/components/WeddingProvider';
 import { Wedding } from '@/types/wedding';
 import ErrorBoundary from '@/components/ErrorBoundary';
-import { isNonWeddingSlug } from '@/utils/slug-constants';
-
-const fetchWeddingPrivacyInfo = cache(async (slug: string) => {
-  // Defense-in-depth: the primary check is in middleware.ts, but we
-  // also guard here in case the middleware matcher changes.
-  if (isNonWeddingSlug(slug)) {
-    return null;
-  }
-
-  const baseUrl = getApiBaseUrl();
-  const apiUrl = baseUrl.replace('/admin', ''); // Remove /admin for public endpoints
-  try {
-    const res = await fetch(`${apiUrl}/weddings/privacy-info/${slug}`, { cache: 'no-store' });
-    if (!res.ok) return null;
-    return await res.json();
-  } catch {
-    return null;
-  }
-});
+import { fetchWeddingPrivacyInfo } from '@/utils/weddingPrivacyInfo';
 
 export async function generateMetadata({
   params,
@@ -33,11 +14,13 @@ export async function generateMetadata({
   params: Promise<{ slug: string }>;
 }): Promise<Metadata> {
   const { slug } = await params;
-  const privacyInfo = await fetchWeddingPrivacyInfo(slug);
+  const privacyInfoResult = await fetchWeddingPrivacyInfo(slug);
 
-  if (!privacyInfo) {
+  if (privacyInfoResult.kind !== 'ok') {
     return { title: 'Wedding' };
   }
+
+  const privacyInfo = privacyInfoResult.privacyInfo;
 
   const coupleNames = privacyInfo.couple_names || 'Wedding';
   const weddingDate = privacyInfo.date
@@ -70,9 +53,17 @@ export async function generateMetadata({
 
 export default async function WeddingLayout({ children, params }: { children: React.ReactNode; params: Promise<{ slug: string }> }) {
   const { slug } = await params;
-  const privacyInfo = await fetchWeddingPrivacyInfo(slug);
+  const privacyInfoResult = await fetchWeddingPrivacyInfo(slug);
 
-  if (!privacyInfo) notFound();
+  if (privacyInfoResult.kind === 'not_found') {
+    notFound();
+  }
+
+  if (privacyInfoResult.kind === 'error') {
+    throw new Error(privacyInfoResult.message);
+  }
+
+  const privacyInfo = privacyInfoResult.privacyInfo;
 
   // Pass minimal wedding info for the layout
   // The actual wedding data will be loaded by the client-side verification

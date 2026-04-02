@@ -707,6 +707,15 @@ function DashboardSection({ data }: { data: DashboardData }) {
         </div>
       )}
 
+      {/* Wedding Readiness Score */}
+      <WeddingReadinessCard data={data} />
+
+      {/* Who Hasn't Responded */}
+      <NonRespondersCard weddingId={data.wedding?.id} stats={stats} />
+
+      {/* Budget Category Breakdown Chart */}
+      {budget.total_budget > 0 && <BudgetBreakdownCard weddingId={data.wedding?.id} />}
+
       {/* Venue & Planner */}
       <div className="grid sm:grid-cols-2 gap-4">
         {data.wedding?.venue && (
@@ -778,6 +787,256 @@ function DashboardSection({ data }: { data: DashboardData }) {
   );
 }
 
+
+// ============================================================================
+// COMPONENT: Wedding Readiness Score
+// ============================================================================
+
+function WeddingReadinessCard({ data }: { data: DashboardData }) {
+  // Replicate the planner-side progress calculation for couple visibility
+  const stats = data.guest_stats;
+  const wedding = data.wedding;
+
+  let progressScore = 0;
+  const guestCount = stats.guest_list_total || 0;
+  const rsvpCount = stats.responded || 0;
+
+  // Up to 40% for RSVP completion rate
+  if (guestCount > 0) {
+    const rsvpRate = rsvpCount / guestCount;
+    progressScore += Math.min(40, rsvpRate * 40);
+    // 20% for having guests on the list
+    progressScore += 20;
+  }
+
+  // 20% for having events configured
+  if (wedding?.events?.length > 0) {
+    progressScore += 20;
+  }
+
+  // 20% for having wedding details (venue, date)
+  if (wedding?.venue || wedding?.date) {
+    progressScore += 20;
+  }
+
+  const readiness = Math.min(100, Math.round(progressScore));
+  const readinessColor = readiness >= 70 ? 'text-emerald-600' : readiness >= 40 ? 'text-amber-600' : 'text-red-500';
+  const barColor = readiness >= 70 ? 'bg-emerald-500' : readiness >= 40 ? 'bg-amber-500' : 'bg-red-500';
+
+  const milestones = [
+    { label: 'Guest list started', done: guestCount > 0 },
+    { label: 'Invites sent', done: stats.invited > 0 },
+    { label: 'RSVPs coming in', done: rsvpCount > 0 },
+    { label: 'Events configured', done: (wedding?.events?.length || 0) > 0 },
+    { label: 'Venue set', done: !!wedding?.venue },
+  ];
+
+  return (
+    <div className="bg-white dark:bg-slate-800 rounded-xl p-6 border border-slate-200 dark:border-slate-700 shadow-sm">
+      <div className="flex items-center justify-between mb-4">
+        <div>
+          <h3 className="font-semibold text-slate-900 dark:text-white">Wedding readiness</h3>
+          <p className="text-sm text-slate-500 dark:text-slate-400">How prepared you are for the big day</p>
+        </div>
+        <div className={`text-3xl font-bold ${readinessColor}`}>{readiness}%</div>
+      </div>
+      <div className="w-full bg-slate-200 dark:bg-slate-700 rounded-full h-3 mb-4">
+        <div className={`h-3 rounded-full transition-all duration-500 ${barColor}`} style={{ width: `${readiness}%` }} />
+      </div>
+      <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
+        {milestones.map((m) => (
+          <div key={m.label} className="flex items-center gap-2 text-xs">
+            {m.done ? (
+              <CheckCircle className="w-4 h-4 text-emerald-500 flex-shrink-0" />
+            ) : (
+              <Clock className="w-4 h-4 text-slate-400 flex-shrink-0" />
+            )}
+            <span className={m.done ? 'text-slate-700 dark:text-slate-300' : 'text-slate-400 dark:text-slate-500'}>{m.label}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ============================================================================
+// COMPONENT: Non-Responders List
+// ============================================================================
+
+function NonRespondersCard({ weddingId, stats }: { weddingId?: string; stats: any }) {
+  const [nonResponders, setNonResponders] = useState<any[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [expanded, setExpanded] = useState(false);
+
+  useEffect(() => {
+    if (!weddingId || stats.pending === 0) return;
+
+    const fetchNonResponders = async () => {
+      setLoading(true);
+      try {
+        const res = await coupleFetch(`/couple/portal/non-responders`);
+        if (res.ok) {
+          const data = await res.json();
+          setNonResponders(data.non_responders || []);
+        }
+      } catch { /* non-critical */ }
+      finally { setLoading(false); }
+    };
+
+    fetchNonResponders();
+  }, [weddingId, stats.pending]);
+
+  if (stats.pending === 0 || nonResponders.length === 0) return null;
+
+  const displayed = expanded ? nonResponders : nonResponders.slice(0, 5);
+
+  return (
+    <div className="bg-white dark:bg-slate-800 rounded-xl p-6 border border-slate-200 dark:border-slate-700 shadow-sm">
+      <div className="flex items-center justify-between mb-4">
+        <div>
+          <h3 className="font-semibold text-slate-900 dark:text-white">Who hasn&apos;t responded</h3>
+          <p className="text-sm text-slate-500 dark:text-slate-400">
+            {nonResponders.length} guest{nonResponders.length !== 1 ? 's' : ''} still waiting to RSVP
+          </p>
+        </div>
+        <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300">
+          {nonResponders.length} pending
+        </span>
+      </div>
+
+      {loading ? (
+        <div className="flex justify-center py-4"><Loader2 className="h-5 w-5 animate-spin text-slate-400" /></div>
+      ) : (
+        <>
+          <div className="divide-y divide-slate-100 dark:divide-slate-700">
+            {displayed.map((guest) => (
+              <div key={guest.guest_id} className="flex items-center justify-between py-3">
+                <div>
+                  <p className="text-sm font-medium text-slate-900 dark:text-white">{guest.name}</p>
+                  <p className="text-xs text-slate-500 dark:text-slate-400">
+                    {guest.email || guest.phone || 'No contact info'}
+                  </p>
+                </div>
+                <div className="text-right">
+                  {guest.days_since_invite !== null ? (
+                    <span className={`text-xs font-medium ${
+                      guest.days_since_invite > 14 ? 'text-red-600 dark:text-red-400' :
+                      guest.days_since_invite > 7 ? 'text-amber-600 dark:text-amber-400' :
+                      'text-slate-500 dark:text-slate-400'
+                    }`}>
+                      {guest.days_since_invite}d since invite
+                    </span>
+                  ) : (
+                    <span className="text-xs text-slate-400">Date unknown</span>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {nonResponders.length > 5 && (
+            <button
+              onClick={() => setExpanded(!expanded)}
+              className="mt-3 text-sm font-medium text-indigo-600 dark:text-indigo-400 hover:opacity-70 transition-opacity flex items-center gap-1"
+            >
+              {expanded ? (
+                <>Show less <ChevronUp className="h-4 w-4" /></>
+              ) : (
+                <>Show all {nonResponders.length} <ChevronDown className="h-4 w-4" /></>
+              )}
+            </button>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
+// ============================================================================
+// COMPONENT: Budget Category Breakdown Chart
+// ============================================================================
+
+function BudgetBreakdownCard({ weddingId }: { weddingId?: string }) {
+  const [breakdown, setBreakdown] = useState<any>(null);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    if (!weddingId) return;
+
+    const fetchBreakdown = async () => {
+      setLoading(true);
+      try {
+        const res = await coupleFetch(`/couple/portal/budget-breakdown`);
+        if (res.ok) {
+          const data = await res.json();
+          setBreakdown(data);
+        }
+      } catch { /* non-critical */ }
+      finally { setLoading(false); }
+    };
+
+    fetchBreakdown();
+  }, [weddingId]);
+
+  if (!breakdown || breakdown.category_count === 0) return null;
+
+  // Color palette for categories
+  const colors = [
+    'bg-indigo-500', 'bg-emerald-500', 'bg-amber-500', 'bg-rose-500',
+    'bg-sky-500', 'bg-violet-500', 'bg-orange-500', 'bg-teal-500',
+    'bg-pink-500', 'bg-cyan-500',
+  ];
+
+  return (
+    <div className="bg-white dark:bg-slate-800 rounded-xl p-6 border border-slate-200 dark:border-slate-700 shadow-sm">
+      <h3 className="font-semibold text-slate-900 dark:text-white mb-1">Budget breakdown</h3>
+      <p className="text-sm text-slate-500 dark:text-slate-400 mb-4">
+        {formatCurrency(breakdown.total_spent)} of {formatCurrency(breakdown.total_budgeted)} spent across {breakdown.category_count} categories
+      </p>
+
+      {loading ? (
+        <div className="flex justify-center py-4"><Loader2 className="h-5 w-5 animate-spin text-slate-400" /></div>
+      ) : (
+        <>
+          {/* Stacked bar */}
+          <div className="w-full flex rounded-full h-4 overflow-hidden mb-4">
+            {breakdown.categories.map((cat: any, i: number) => (
+              <div
+                key={cat.category_id}
+                className={`${colors[i % colors.length]} transition-all`}
+                style={{ width: `${cat.percent_of_total_budget}%` }}
+                title={`${cat.name}: ${formatCurrency(cat.budgeted)}`}
+              />
+            ))}
+          </div>
+
+          {/* Category list */}
+          <div className="space-y-3">
+            {breakdown.categories.map((cat: any, i: number) => (
+              <div key={cat.category_id} className="flex items-center gap-3">
+                <span className={`w-3 h-3 rounded-full flex-shrink-0 ${colors[i % colors.length]}`} />
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm font-medium text-slate-900 dark:text-white truncate">{cat.name}</span>
+                    <span className="text-sm text-slate-500 dark:text-slate-400 ml-2">
+                      {formatCurrency(cat.spent)} / {formatCurrency(cat.budgeted)}
+                    </span>
+                  </div>
+                  <div className="w-full bg-slate-200 dark:bg-slate-700 rounded-full h-1.5 mt-1">
+                    <div
+                      className={`h-1.5 rounded-full ${cat.percent_spent > 90 ? 'bg-red-500' : cat.percent_spent > 70 ? 'bg-amber-500' : colors[i % colors.length]}`}
+                      style={{ width: `${Math.min(100, cat.percent_spent)}%` }}
+                    />
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
 
 // ============================================================================
 // SECTION: TIMELINE

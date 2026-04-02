@@ -9,6 +9,7 @@ import { formatDate as formatUtcDate, formatDateTime } from '@/utils/dateFormat'
 import PageHeader from '../components/PageHeader';
 import OnboardingModal from '../components/OnboardingModal';
 import { CampaignSponsoredRail } from '../vendors/components/CampaignSponsoredRail';
+import { fetchEngagementSignals, type WeddingEngagementSignal } from '@/services/behavioralAnalyticsApi';
 
 interface Wedding {
  id: string;
@@ -74,6 +75,14 @@ export default function WeddingPlannerDashboard() {
  const [isOnboardingOpen, setIsOnboardingOpen] = useState(false);
  const [hasUserDismissedOnboarding, setHasUserDismissedOnboarding] = useState(false);
  const [showAdRail, setShowAdRail] = useState(false);
+
+ // Engagement signals state
+ const [engagementSignals, setEngagementSignals] = useState<WeddingEngagementSignal[]>([]);
+ const engagementMap = React.useMemo(() => {
+   const map = new Map<string, WeddingEngagementSignal>();
+   engagementSignals.forEach((s) => map.set(s.wedding_id, s));
+   return map;
+ }, [engagementSignals]);
 
  const fetchMyWeddings = useCallback(async () => {
  if (!token) {
@@ -201,6 +210,13 @@ export default function WeddingPlannerDashboard() {
  }
 
  fetchMyWeddings();
+
+ // Fetch engagement signals (non-blocking)
+ if (token) {
+   fetchEngagementSignals(token)
+     .then((data) => setEngagementSignals(data.signals))
+     .catch((err) => console.error('[Planner] Failed to load engagement signals:', err));
+ }
  }, [fetchMyWeddings, fetchUserProfile, router, token, userProfile]);
 
  // Real-time updates via SSE — refetch wedding list when the server
@@ -406,6 +422,44 @@ export default function WeddingPlannerDashboard() {
  {wedding.status || 'active'}
  </span>
  </div>
+ {/* Engagement Signals */}
+ {engagementMap.has(wedding.id) && (() => {
+   const sig = engagementMap.get(wedding.id)!;
+   return (
+     <div className="flex flex-wrap items-center gap-2 mt-2">
+       {sig.rsvps_last_7d > 0 && (
+         <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300">
+           {sig.rsvps_last_7d} RSVPs this week
+         </span>
+       )}
+       {sig.needs_attention.includes('inactive_14d') && (
+         <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300">
+           Inactive 14+ days
+         </span>
+       )}
+       {sig.needs_attention.includes('no_rsvps_yet') && (
+         <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300">
+           No RSVPs yet
+         </span>
+       )}
+       {sig.needs_attention.includes('low_response_rate') && (
+         <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-300">
+           Low response rate ({sig.response_rate}%)
+         </span>
+       )}
+       {sig.needs_attention.includes('pending_forms') && (
+         <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300">
+           {sig.forms_total - sig.forms_completed} forms pending
+         </span>
+       )}
+       {sig.last_activity_at && sig.days_since_activity !== null && sig.days_since_activity <= 7 && sig.needs_attention.length === 0 && (
+         <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300">
+           Active recently
+         </span>
+       )}
+     </div>
+   );
+ })()}
  </div>
  <div className="flex space-x-2">
  <button
