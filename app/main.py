@@ -94,6 +94,8 @@ from app.api.vendor_public import router as vendor_public_router
 from app.api.vendor_signup import router as vendor_signup_router
 from app.api.blog import router as blog_router
 from app.api.guest_memories import router as guest_memories_router
+from app.api.behavioral_analytics import router as behavioral_analytics_router
+from app.api.behavioral_analytics import couple_router as couple_analytics_router
 
 # Couple Portal routers
 from app.api.couple_auth import router as couple_auth_router
@@ -653,6 +655,7 @@ app.include_router(vendor_forms_router, prefix="/vendor-form", tags=["Vendor For
 app.include_router(vendor_dashboard_router, prefix="/vendor", tags=["Vendor Dashboard"])
 app.include_router(vendor_management_router, prefix="/admin", tags=["Vendor Contracts"])  # Vendor management endpoints (admin only)
 app.include_router(vendor_import_router, prefix="/admin", tags=["Vendor Import"])  # Vendor scraper import (root admin only)
+app.include_router(behavioral_analytics_router, prefix="/admin", tags=["Behavioral Analytics"])  # Product metrics (WAU, funnels, retention)
 app.include_router(vendor_contract_public_router, prefix="/vendor-contract", tags=["Public Contract Access"])  # Public vendor contract endpoints (no auth required)
 app.include_router(user_management_router, tags=["Auth"])  # Public registration endpoints
 app.include_router(otp_router, tags=["OTP"])  # Public OTP verification endpoints
@@ -677,6 +680,7 @@ app.include_router(blog_router, tags=["Blog"])  # Public blog + admin blog endpo
 # Couple Portal routes (public - couple auth is handled at route level)
 app.include_router(couple_auth_router, tags=["Couple Auth"])  # Couple login, setup, verify invite
 app.include_router(couple_portal_router, tags=["Couple Portal"])  # Couple dashboard, forms, updates
+app.include_router(couple_analytics_router, prefix="/couple", tags=["Couple Portal Analytics"])  # Couple-auth behavioral analytics
 app.include_router(guest_memories_router, tags=["Guest Memories"])  # Public upload + couple memories endpoints
 
 # Admin routes (authentication required)

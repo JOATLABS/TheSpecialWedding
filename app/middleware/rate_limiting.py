@@ -82,7 +82,25 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
             bucket, limit, period = exact_auth_limits[normalized_path]
             return bucket, limit, period, True
 
-        if path.startswith("/otp/"):
+        prefix_limits = (
+            # Dynamic guest verification paths must not fall through into the
+            # generic API bucket or they will compete with unrelated traffic.
+            ("/weddings/verify-guest-access/", "guest_access", self.auth_calls, self.auth_period, True),
+            # Separate public wedding metadata and gallery reads from
+            # authenticated planner/couple APIs so guest traffic cannot starve
+            # internal dashboards behind the same source IP.
+            ("/weddings/privacy-info/", "public_wedding_metadata", self.calls, self.period, False),
+            ("/gallery", "public_gallery", self.calls, self.period, False),
+            ("/weddings/guest-access/", "guest_access_session", self.calls, self.period, False),
+            ("/admin/", "admin_api", self.calls, self.period, False),
+            ("/couple/", "couple_api", self.calls, self.period, False),
+        )
+
+        for prefix, bucket, limit, period, is_auth in prefix_limits:
+            if normalized_path.startswith(prefix):
+                return bucket, limit, period, is_auth
+
+        if normalized_path.startswith("/otp/"):
             return "otp", 5, 60, True
 
         return "api", self.calls, self.period, False

@@ -8,7 +8,8 @@ import { Card } from '../../components/ui/Card';
 import { formatDate, formatDateTime } from '@/utils/dateFormat';
 import PageHeader from '../components/PageHeader';
 import { toast } from 'sonner';
-import { Settings, Download, Database, RefreshCw, Save } from 'lucide-react';
+import { Settings, Download, Database, RefreshCw, Save, TrendingUp, TrendingDown, Minus, Activity, Users, Zap, DollarSign } from 'lucide-react';
+import { fetchBehavioralAnalytics, type BehavioralAnalyticsResponse } from '@/services/behavioralAnalyticsApi';
 import {
   getAdminConfig,
   getAdminPipelineStatus,
@@ -177,6 +178,8 @@ const SaasAdminDashboard = () => {
  const [metrics, setMetrics] = useState<PlatformMetricsResponse | null>(null);
  const [metricsTimeframe, setMetricsTimeframe] = useState<TimeframeKey>('30d');
  const [metricsLoading, setMetricsLoading] = useState(false);
+ const [behavioralMetrics, setBehavioralMetrics] = useState<BehavioralAnalyticsResponse | null>(null);
+ const [behavioralLoading, setBehavioralLoading] = useState(false);
 
   // ROOT_ADMIN access control - redirect non-root admins
   useEffect(() => {
@@ -242,6 +245,17 @@ const SaasAdminDashboard = () => {
       if (metricsResponse.ok) {
         const metricsData = await metricsResponse.json();
         setMetrics(metricsData);
+      }
+
+      // Fetch behavioral analytics (WAU, funnels, retention, MRR movement)
+      try {
+        setBehavioralLoading(true);
+        const behavioralData = await fetchBehavioralAnalytics(token, metricsTimeframe);
+        setBehavioralMetrics(behavioralData);
+      } catch (err) {
+        console.error('[SaaS Admin] Failed to load behavioral analytics:', err);
+      } finally {
+        setBehavioralLoading(false);
       }
     } catch (error) {
       console.error('Error fetching SaaS data:', error);
@@ -967,6 +981,227 @@ const SaasAdminDashboard = () => {
              </div>
            </Card>
          </section>
+       )}
+
+       {/* ── Product Health (Behavioral Analytics) ── */}
+       {behavioralLoading && (
+         <div className="flex items-center justify-center py-4">
+           <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-indigo-600"></div>
+           <span className="ml-2 text-sm text-gray-500">Loading product metrics...</span>
+         </div>
+       )}
+
+       {behavioralMetrics && (
+         <>
+           {/* North Star + WAU + Stickiness */}
+           <section className="space-y-4">
+             <h2 className="text-xl font-semibold text-gray-900 dark:text-white flex items-center gap-2">
+               <Activity className="h-5 w-5 text-indigo-600" />
+               Product Health
+             </h2>
+             <div className="grid gap-6 md:grid-cols-2 xl:grid-cols-4">
+               <Card className="p-6 border-l-4 border-l-indigo-600">
+                 <p className="text-sm font-medium text-gray-500 dark:text-gray-400">North Star: Active Engaged Weddings</p>
+                 <p className="mt-2 text-3xl font-bold text-indigo-600">{behavioralMetrics.engagement_signals.north_star_metric}</p>
+                 <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">Weddings with guest activity this week</p>
+               </Card>
+               <Card className="p-6">
+                 <div className="flex items-center justify-between">
+                   <p className="text-sm font-medium text-gray-500 dark:text-gray-400">Weekly Active Users</p>
+                   {behavioralMetrics.weekly_active_users.change !== 0 && (
+                     <span className={`flex items-center gap-1 text-xs font-medium ${
+                       behavioralMetrics.weekly_active_users.change > 0 ? 'text-green-600' : 'text-red-600'
+                     }`}>
+                       {behavioralMetrics.weekly_active_users.change > 0 ? <TrendingUp className="h-3 w-3" /> : <TrendingDown className="h-3 w-3" />}
+                       {behavioralMetrics.weekly_active_users.change > 0 ? '+' : ''}{behavioralMetrics.weekly_active_users.change_percent}%
+                     </span>
+                   )}
+                 </div>
+                 <p className="mt-2 text-3xl font-bold text-gray-900 dark:text-white">{behavioralMetrics.weekly_active_users.current}</p>
+                 <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">vs {behavioralMetrics.weekly_active_users.previous_week} last week</p>
+               </Card>
+               <Card className="p-6">
+                 <p className="text-sm font-medium text-gray-500 dark:text-gray-400">MAU</p>
+                 <p className="mt-2 text-3xl font-bold text-gray-900 dark:text-white">{behavioralMetrics.weekly_active_users.mau}</p>
+                 <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">Monthly active users</p>
+               </Card>
+               <Card className="p-6">
+                 <p className="text-sm font-medium text-gray-500 dark:text-gray-400">Stickiness (WAU/MAU)</p>
+                 <p className="mt-2 text-3xl font-bold text-gray-900 dark:text-white">{behavioralMetrics.weekly_active_users.stickiness_ratio}%</p>
+                 <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">Higher = more engaged user base</p>
+               </Card>
+             </div>
+           </section>
+
+           {/* Activation Funnel */}
+           <section className="space-y-4">
+             <h2 className="text-xl font-semibold text-gray-900 dark:text-white flex items-center gap-2">
+               <Zap className="h-5 w-5 text-amber-500" />
+               Activation Funnel
+               <span className="text-sm font-normal text-gray-500 dark:text-gray-400">(Last 30 Days)</span>
+             </h2>
+             <Card className="p-6">
+               <div className="space-y-4">
+                 {behavioralMetrics.activation_funnel.steps.map((step, idx) => (
+                   <div key={step.name}>
+                     <div className="flex items-center justify-between mb-1">
+                       <span className="text-sm font-medium text-gray-700 dark:text-gray-300">{step.name}</span>
+                       <span className="text-sm text-gray-500 dark:text-gray-400">{step.count} ({step.rate}%)</span>
+                     </div>
+                     <div className="w-full bg-gray-200 dark:bg-slate-700 rounded-full h-3">
+                       <div
+                         className={`h-3 rounded-full transition-all duration-500 ${
+                           idx === 0 ? 'bg-indigo-600' :
+                           idx === 1 ? 'bg-indigo-500' :
+                           idx === 2 ? 'bg-blue-500' :
+                           idx === 3 ? 'bg-cyan-500' :
+                           'bg-emerald-500'
+                         }`}
+                         style={{ width: `${Math.max(step.rate, 2)}%` }}
+                       />
+                     </div>
+                   </div>
+                 ))}
+                 <div className="pt-3 border-t border-gray-200 dark:border-slate-700">
+                   <p className="text-sm text-gray-600 dark:text-gray-400">
+                     Signup → Value conversion: <strong className="text-gray-900 dark:text-white">{behavioralMetrics.activation_funnel.conversion_rate}%</strong>
+                   </p>
+                 </div>
+               </div>
+             </Card>
+           </section>
+
+           {/* Retention Cohorts + MRR Movement side by side */}
+           <section className="space-y-4">
+             <div className="grid gap-6 lg:grid-cols-2">
+               {/* Retention Cohorts */}
+               <Card className="p-6">
+                 <h3 className="text-lg font-semibold text-gray-900 dark:text-white flex items-center gap-2 mb-4">
+                   <Users className="h-5 w-5 text-blue-600" />
+                   Retention Cohorts
+                 </h3>
+                 <div className="overflow-x-auto">
+                   <table className="w-full text-sm">
+                     <thead>
+                       <tr className="text-left text-gray-500 dark:text-gray-400 border-b border-gray-200 dark:border-slate-700">
+                         <th className="pb-2 pr-4 font-medium">Cohort</th>
+                         <th className="pb-2 pr-4 font-medium text-center">Size</th>
+                         <th className="pb-2 pr-4 font-medium text-center">D7</th>
+                         <th className="pb-2 pr-4 font-medium text-center">D30</th>
+                         <th className="pb-2 pr-4 font-medium text-center">D60</th>
+                         <th className="pb-2 font-medium text-center">D90</th>
+                       </tr>
+                     </thead>
+                     <tbody>
+                       {behavioralMetrics.retention_cohorts.cohorts.map((cohort) => (
+                         <tr key={cohort.month} className="border-b border-gray-100 dark:border-slate-700/50 last:border-0">
+                           <td className="py-2 pr-4 font-medium text-gray-900 dark:text-white">{cohort.month}</td>
+                           <td className="py-2 pr-4 text-center text-gray-600 dark:text-gray-400">{cohort.cohort_size}</td>
+                           {['d7', 'd30', 'd60', 'd90'].map((key) => {
+                             const val = cohort[key as keyof typeof cohort] as number | null;
+                             return (
+                               <td key={key} className="py-2 pr-4 text-center">
+                                 {val === null ? (
+                                   <span className="text-gray-400">—</span>
+                                 ) : (
+                                   <span className={`inline-block px-2 py-0.5 rounded text-xs font-medium ${
+                                     val >= 60 ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' :
+                                     val >= 30 ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400' :
+                                     'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'
+                                   }`}>
+                                     {val}%
+                                   </span>
+                                 )}
+                               </td>
+                             );
+                           })}
+                         </tr>
+                       ))}
+                     </tbody>
+                   </table>
+                 </div>
+               </Card>
+
+               {/* MRR Movement */}
+               <Card className="p-6">
+                 <h3 className="text-lg font-semibold text-gray-900 dark:text-white flex items-center gap-2 mb-4">
+                   <DollarSign className="h-5 w-5 text-green-600" />
+                   MRR Movement
+                   <span className="text-sm font-normal text-gray-500 dark:text-gray-400">(Last 30 Days)</span>
+                 </h3>
+                 <div className="space-y-4">
+                   <div className="flex items-center justify-between">
+                     <span className="text-sm text-gray-600 dark:text-gray-400">Current MRR</span>
+                     <span className="text-2xl font-bold text-gray-900 dark:text-white">${behavioralMetrics.mrr_movement.current_mrr.toLocaleString()}</span>
+                   </div>
+                   <div className="space-y-2 pt-3 border-t border-gray-200 dark:border-slate-700">
+                     <div className="flex items-center justify-between">
+                       <span className="text-sm text-gray-600 dark:text-gray-400 flex items-center gap-2">
+                         <span className="inline-block w-2 h-2 rounded-full bg-green-500" /> New MRR
+                       </span>
+                       <span className="text-sm font-medium text-green-600">+${behavioralMetrics.mrr_movement.new_mrr.toLocaleString()}</span>
+                     </div>
+                     <div className="flex items-center justify-between">
+                       <span className="text-sm text-gray-600 dark:text-gray-400 flex items-center gap-2">
+                         <span className="inline-block w-2 h-2 rounded-full bg-red-500" /> Churned MRR
+                       </span>
+                       <span className="text-sm font-medium text-red-600">-${behavioralMetrics.mrr_movement.churned_mrr.toLocaleString()}</span>
+                     </div>
+                     <div className="flex items-center justify-between pt-2 border-t border-gray-200 dark:border-slate-700">
+                       <span className="text-sm font-medium text-gray-900 dark:text-white">Net Change</span>
+                       <span className={`text-sm font-bold ${behavioralMetrics.mrr_movement.net_change >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                         {behavioralMetrics.mrr_movement.net_change >= 0 ? '+' : ''}${behavioralMetrics.mrr_movement.net_change.toLocaleString()}
+                         <span className="text-xs ml-1">({behavioralMetrics.mrr_movement.net_change_percent}%)</span>
+                       </span>
+                     </div>
+                   </div>
+                   <div className="pt-3 border-t border-gray-200 dark:border-slate-700">
+                     <div className="flex items-center justify-between">
+                       <span className="text-sm text-gray-600 dark:text-gray-400">Trial → Paid Conversions</span>
+                       <span className="text-sm font-medium text-gray-900 dark:text-white">{behavioralMetrics.mrr_movement.trial_conversions}</span>
+                     </div>
+                     <div className="flex items-center justify-between mt-1">
+                       <span className="text-sm text-gray-600 dark:text-gray-400">Conversion Rate</span>
+                       <span className="text-sm font-medium text-gray-900 dark:text-white">{behavioralMetrics.mrr_movement.trial_conversion_rate}%</span>
+                     </div>
+                   </div>
+                 </div>
+               </Card>
+             </div>
+           </section>
+
+           {/* RSVP Velocity + Platform Response Rate */}
+           <section className="space-y-4">
+             <h2 className="text-xl font-semibold text-gray-900 dark:text-white">Engagement Velocity</h2>
+             <div className="grid gap-6 md:grid-cols-3">
+               <Card className="p-6">
+                 <div className="flex items-center justify-between">
+                   <p className="text-sm font-medium text-gray-500 dark:text-gray-400">RSVPs This Week</p>
+                   {behavioralMetrics.engagement_signals.rsvp_velocity.trend !== 'flat' && (
+                     <span className={`flex items-center gap-1 text-xs font-medium ${
+                       behavioralMetrics.engagement_signals.rsvp_velocity.trend === 'up' ? 'text-green-600' : 'text-red-600'
+                     }`}>
+                       {behavioralMetrics.engagement_signals.rsvp_velocity.trend === 'up' ? <TrendingUp className="h-3 w-3" /> : <TrendingDown className="h-3 w-3" />}
+                       {behavioralMetrics.engagement_signals.rsvp_velocity.change > 0 ? '+' : ''}{behavioralMetrics.engagement_signals.rsvp_velocity.change}
+                     </span>
+                   )}
+                 </div>
+                 <p className="mt-2 text-3xl font-bold text-gray-900 dark:text-white">{behavioralMetrics.engagement_signals.rsvp_velocity.current_7d}</p>
+                 <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">vs {behavioralMetrics.engagement_signals.rsvp_velocity.previous_7d} previous week</p>
+               </Card>
+               <Card className="p-6">
+                 <p className="text-sm font-medium text-gray-500 dark:text-gray-400">Platform Response Rate</p>
+                 <p className="mt-2 text-3xl font-bold text-gray-900 dark:text-white">{behavioralMetrics.engagement_signals.platform_response_rate}%</p>
+                 <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">Of invited guests who responded</p>
+               </Card>
+               <Card className="p-6">
+                 <p className="text-sm font-medium text-gray-500 dark:text-gray-400">Active Engaged Weddings</p>
+                 <p className="mt-2 text-3xl font-bold text-gray-900 dark:text-white">{behavioralMetrics.engagement_signals.active_engaged_weddings}</p>
+                 <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">With guest activity in last 7 days</p>
+               </Card>
+             </div>
+           </section>
+         </>
        )}
      </>
    )}

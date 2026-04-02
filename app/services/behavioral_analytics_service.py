@@ -228,7 +228,7 @@ class BehavioralAnalyticsService:
                 {
                     "$match": {
                         "wedding_id": {"$in": wedding_ids},
-                        "attending": {"$exists": True, "$ne": None, "$not": {"$size": 0}},
+                        "attending": {"$exists": True, "$type": "array", "$ne": []},
                     }
                 },
                 {"$group": {"_id": "$wedding_id"}},

@@ -53,6 +53,13 @@ class StripeService:
                 detail="Stripe configuration error: Missing secret key"
             )
 
+    def _get_billing_sender(self) -> Dict[str, Optional[str]]:
+        """Use the dedicated billing sender when configured, otherwise fall back to the default mail sender."""
+        return {
+            "from_email": settings.resend_billing_email or settings.resend_from_email,
+            "from_name": settings.resend_from_name,
+        }
+
     # ==================== CUSTOMER MANAGEMENT ====================
 
     async def get_or_create_customer(self, user_id: str, email: str, name: Optional[str] = None) -> str:
@@ -2054,7 +2061,8 @@ class StripeService:
                 to_email=user_email,
                 subject=subject,
                 html_content=html_content,
-                email_type="billing_notification"
+                email_type="billing_notification",
+                **self._get_billing_sender(),
             )
 
             if result.get("success"):
@@ -2185,6 +2193,7 @@ class StripeService:
             subject=subject,
             html_content=html_content,
             email_type="subscription_activation",
+            **self._get_billing_sender(),
         )
 
         if result.get("success"):

@@ -96,6 +96,7 @@ class Settings(BaseSettings):
     # Email Service (Resend)
     resend_api_key: Optional[str] = Field(default=None, alias="RESEND_API_KEY")
     resend_from_email: str = Field(default="noreply@thespecialwedding.com", alias="RESEND_FROM_EMAIL")
+    resend_billing_email: Optional[str] = Field(default=None, alias="RESEND_BILLING_EMAIL")
     resend_from_name: str = Field(default="The Special Wedding", alias="RESEND_FROM_NAME")
     # SMS Services
     twilio_enabled: bool = Field(default=False, alias="TWILIO_ENABLED")
