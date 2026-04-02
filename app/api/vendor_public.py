@@ -42,6 +42,8 @@ PUBLIC_VENDOR_FIELDS = {
     "is_preferred": 1,
     "weddings_count": 1,
     "tags": 1,
+    "source": 1,
+    "google_place_id": 1,
 }
 
 
@@ -51,6 +53,7 @@ def _normalize_public_vendor_doc(doc: dict) -> dict:
     doc["portfolio_urls"] = doc.get("portfolio_urls") or []
     doc["tags"] = doc.get("tags") or []
     doc["currency"] = doc.get("currency") or "USD"
+    doc["source"] = doc.get("source") or "manual"
     return doc
 
 

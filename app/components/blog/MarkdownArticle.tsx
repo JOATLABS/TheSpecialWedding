@@ -8,6 +8,7 @@ import remarkGfm from 'remark-gfm';
 interface MarkdownArticleProps {
   content: string;
   className?: string;
+  theme?: 'light' | 'dark';
 }
 
 const UNSAFE_HTML_BLOCK_PATTERN = /<(script|style)\b[^>]*>[\s\S]*?<\/\1>/gi;
@@ -67,16 +68,28 @@ function normalizeArticleContent(content: string): string {
     .trim();
 }
 
-export default function MarkdownArticle({ content, className = '' }: MarkdownArticleProps) {
+const LIGHT_THEME_CLASSES =
+  'prose-headings:text-slate-900 prose-p:text-slate-700 prose-a:text-wedding-rose prose-strong:text-slate-900 prose-li:text-slate-700 prose-blockquote:border-wedding-rose/30 prose-blockquote:text-slate-600 prose-code:text-slate-800 prose-pre:bg-slate-900 prose-hr:border-white/10 dark:prose-invert dark:prose-headings:text-white dark:prose-p:text-slate-300 dark:prose-strong:text-white dark:prose-li:text-slate-300 dark:prose-blockquote:text-slate-300 dark:prose-code:text-slate-100 dark:prose-pre:bg-slate-950';
+
+const DARK_THEME_CLASSES =
+  'prose-invert prose-headings:text-white prose-p:text-slate-300 prose-a:text-wedding-rose prose-strong:text-white prose-li:text-slate-300 prose-blockquote:border-wedding-rose/30 prose-blockquote:text-slate-300 prose-code:text-slate-100 prose-pre:bg-slate-950 prose-hr:border-white/10';
+
+export default function MarkdownArticle({
+  content,
+  className = '',
+  theme = 'light',
+}: MarkdownArticleProps) {
   const normalizedContent = normalizeArticleContent(content || '');
 
   if (!normalizedContent) {
     return <p className="text-slate-500 italic">Article content is not available.</p>;
   }
 
+  const themeClasses = theme === 'dark' ? DARK_THEME_CLASSES : LIGHT_THEME_CLASSES;
+
   return (
     <div
-      className={`prose max-w-none prose-headings:text-slate-900 prose-p:text-slate-700 prose-a:text-wedding-rose prose-strong:text-slate-900 prose-li:text-slate-700 prose-blockquote:border-wedding-rose/30 prose-blockquote:text-slate-600 prose-code:text-slate-800 prose-pre:bg-slate-900 prose-hr:border-white/10 dark:prose-invert dark:prose-headings:text-white dark:prose-p:text-slate-300 dark:prose-strong:text-white dark:prose-li:text-slate-300 dark:prose-blockquote:text-slate-300 dark:prose-code:text-slate-100 dark:prose-pre:bg-slate-950 ${className}`.trim()}
+      className={`prose max-w-none ${themeClasses} ${className}`.trim()}
     >
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}

@@ -15,6 +15,11 @@ router = APIRouter()
 email_service = ResendEmailService()
 
 
+def _build_public_vendor_form_link(base_url: str, form_id: str, access_token: str) -> str:
+    normalized_base = base_url.rstrip("/")
+    return f"{normalized_base}/vendor-form/{form_id}/{access_token}"
+
+
 class VendorFormSubmission(BaseModel):
     """Pydantic model for vendor form submission data"""
     submission_data: Dict[str, Any] = Field(..., description="Form field responses keyed by field ID")
@@ -117,7 +122,7 @@ class VendorFormService:
                 raise HTTPException(status_code=404, detail="Wedding not found")
             # Generate form link
             base_url = os.getenv("FRONTEND_URL", "")  # Update with your frontend URL
-            form_link = f"{base_url}/vendor-form/{form_id}?token={form['access_token']}"
+            form_link = _build_public_vendor_form_link(base_url, form_id, form["access_token"])
 
             # Prepare email content
             # Prepare email content
@@ -255,9 +260,7 @@ async def get_vendor_form(form_id: str, current_user: ExtendedAuthUser = Depends
 
 
 # Public endpoint for vendors to access forms
-@router.get("/vendor-form/{form_id}/public", tags=["Public Vendor Form"])
-async def get_vendor_form_public(form_id: str, token: str = Query(..., description="Access token for vendor form")):
-    """Get vendor form for public access (no auth required)"""
+async def _get_vendor_form_public_payload(form_id: str, token: str) -> dict:
     try:
         form = await vendor_service.vendor_forms_collection.find_one({
             "_id": ObjectId(form_id),
@@ -293,9 +296,19 @@ async def get_vendor_form_public(form_id: str, token: str = Query(..., descripti
         raise HTTPException(status_code=500, detail="Failed to load form")
 
 
-@router.post("/vendor-form/{form_id}/submit", tags=["Public Vendor Form"])
-async def submit_vendor_form(form_id: str, token: str = Query(..., description="Access token for vendor form"), submission: VendorFormSubmission = None):
-    """Submit vendor form (no auth required)"""
+@router.get("/vendor-form/{form_id}/public/{token}", tags=["Public Vendor Form"])
+async def get_vendor_form_public(form_id: str, token: str):
+    """Get vendor form for public access using the canonical path-token route."""
+    return await _get_vendor_form_public_payload(form_id, token)
+
+
+@router.get("/vendor-form/{form_id}/public", tags=["Public Vendor Form"], include_in_schema=False)
+async def get_vendor_form_public_legacy(form_id: str, token: str = Query(..., description="Access token for vendor form")):
+    """Backward-compatible query-token access for already-issued links."""
+    return await _get_vendor_form_public_payload(form_id, token)
+
+
+async def _submit_vendor_form_payload(form_id: str, token: str, submission: VendorFormSubmission | None) -> dict:
     try:
         # Validate submission data
         if not submission:
@@ -412,3 +425,19 @@ async def submit_vendor_form(form_id: str, token: str = Query(..., description="
     except Exception as e:
         logging.error(f"Error submitting vendor form: {str(e)}")
         raise HTTPException(status_code=500, detail="Failed to submit form")
+
+
+@router.post("/vendor-form/{form_id}/submit/{token}", tags=["Public Vendor Form"])
+async def submit_vendor_form(form_id: str, token: str, submission: VendorFormSubmission | None = None):
+    """Submit vendor form using the canonical path-token route."""
+    return await _submit_vendor_form_payload(form_id, token, submission)
+
+
+@router.post("/vendor-form/{form_id}/submit", tags=["Public Vendor Form"], include_in_schema=False)
+async def submit_vendor_form_legacy(
+    form_id: str,
+    token: str = Query(..., description="Access token for vendor form"),
+    submission: VendorFormSubmission | None = None,
+):
+    """Backward-compatible query-token submit path for already-issued links."""
+    return await _submit_vendor_form_payload(form_id, token, submission)

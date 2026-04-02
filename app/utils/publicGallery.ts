@@ -5,11 +5,7 @@ const API_BASE_URL = getApiBaseUrl();
 const API_URL = API_BASE_URL.replace('/admin', '');
 
 export interface PublicGalleryAccess {
-  token?: string | null;
-  name?: string | null;
-  phone?: string | null;
-  email?: string | null;
-  password?: string | null;
+  session?: true;
 }
 
 export interface PublicGalleryPage {
@@ -50,41 +46,10 @@ function normalizeGalleryItems(items: GalleryImageResponse[] = []): GalleryImage
   }));
 }
 
-function serializeAccess(access?: PublicGalleryAccess | null) {
-  if (!access) {
-    return {};
-  }
-
-  return Object.fromEntries(
-    Object.entries(access).filter(([, value]) => value !== undefined && value !== null && value !== '')
-  );
-}
-
 export function buildPublicGalleryAccess(
-  guest?: { token?: string | null; name?: string | null; phone?: string | null; email?: string | null } | null,
-  password?: string | null,
+  _guest?: unknown,
 ): PublicGalleryAccess | null {
-  const access: PublicGalleryAccess = {};
-
-  if (guest?.token) {
-    access.token = guest.token;
-  } else {
-    if (guest?.name) {
-      access.name = guest.name;
-    }
-    if (guest?.phone) {
-      access.phone = guest.phone;
-    }
-    if (guest?.email) {
-      access.email = guest.email;
-    }
-  }
-
-  if (password) {
-    access.password = password;
-  }
-
-  return Object.keys(access).length > 0 ? access : null;
+  return { session: true };
 }
 
 export async function fetchPublicGalleryPage({
@@ -122,11 +87,11 @@ export async function fetchPublicGalleryPage({
       headers: {
         'Content-Type': 'application/json',
       },
+      credentials: 'include',
       body: JSON.stringify({
         wedding_slug: slug,
         limit,
         ...(cursor ? { cursor } : {}),
-        ...serializeAccess(access),
       }),
     });
   }

@@ -1046,7 +1046,7 @@ export async function getPublicContract(
   accessToken: string
 ): Promise<PublicContract> {
   const response = await fetch(
-    `${API_BASE}/vendor-contract/public/contracts/${contractId}?token=${accessToken}`
+    `${API_BASE}/vendor-contract/public/contracts/${contractId}/${encodeURIComponent(accessToken)}`
   );
 
   if (!response.ok) {
@@ -1068,8 +1068,17 @@ export async function signPublicContract(
   signerEmail: string
 ): Promise<{ message: string; signed_at: string }> {
   const response = await fetch(
-    `${API_BASE}/vendor-contract/public/contracts/${contractId}/sign?token=${accessToken}&signer_name=${encodeURIComponent(signerName)}&signer_email=${encodeURIComponent(signerEmail)}`,
-    { method: 'POST' }
+    `${API_BASE}/vendor-contract/public/contracts/${contractId}/${encodeURIComponent(accessToken)}/sign`,
+    {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        signer_name: signerName,
+        signer_email: signerEmail,
+      }),
+    }
   );
 
   if (!response.ok) {

@@ -61,8 +61,10 @@ def _install_test_stubs() -> None:
     if "app.core.database" not in sys.modules:
         database_module = types.ModuleType("app.core.database")
         database_module.mongo = types.SimpleNamespace(
+            get_guest_collection=lambda: object(),
             db={
                 "weddings": object(),
+                "rsvps": object(),
                 "guest_media_assets": object(),
                 "guest_media_exports": object(),
             }
@@ -88,11 +90,16 @@ def _install_test_stubs() -> None:
 _install_test_stubs()
 
 import app.services.guest_media_service as guest_media_module
+from app.services.guest_export_service import GuestExportService
 from app.services.guest_media_service import GuestMediaService
 
 
 def _build_service() -> GuestMediaService:
     return GuestMediaService.__new__(GuestMediaService)
+
+
+def _build_export_service() -> GuestExportService:
+    return GuestExportService.__new__(GuestExportService)
 
 
 def test_uploaded_object_constraints_accept_matching_reserved_upload():
@@ -305,3 +312,32 @@ def test_poll_stream_ready_marks_error_state_as_failed():
     assert query == {"_id": "asset-video-3"}
     assert update["$set"]["stream_status"] == "failed"
     assert update["$set"]["stream_error"] == "The file was not recognized as a valid video file."
+
+
+def test_generate_guest_memories_sign_pdf_embeds_qr_and_upload_url(monkeypatch):
+    export_service = _build_export_service()
+    rendered = {}
+
+    class FakeHTML:
+        def __init__(self, string: str):
+            rendered["html"] = string
+
+        def write_pdf(self) -> bytes:
+            return b"%PDF-guest-memories%"
+
+    monkeypatch.setitem(sys.modules, "weasyprint", types.SimpleNamespace(HTML=FakeHTML))
+
+    pdf_bytes = asyncio.run(
+        export_service.generate_guest_memories_sign_pdf(
+            couple_names="Ada & Kunle",
+            upload_url="https://app.example.com/demo/upload/token",
+            qr_png_bytes=b"fake-qr-bytes",
+            upload_closes_at=datetime(2026, 5, 3, tzinfo=timezone.utc),
+        )
+    )
+
+    assert pdf_bytes == b"%PDF-guest-memories%"
+    assert "Ada &amp; Kunle" in rendered["html"]
+    assert "https://app.example.com/demo/upload/token" in rendered["html"]
+    assert "Uploads close:" in rendered["html"]
+    assert "data:image/png;base64," in rendered["html"]

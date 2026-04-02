@@ -48,7 +48,7 @@ export default function AdminRouteGuard({ children }: { children: React.ReactNod
       return;
     }
 
-    // Subscription gate: redirect expired/blocked planners to billing
+    // Subscription gate: redirect unpaid/expired/blocked planners to billing
     if (isAuthenticated && userProfile) {
       if (userProfile.is_root_admin) {
         const redirectPath = getRootAdminRedirect(pathname);
@@ -61,7 +61,7 @@ export default function AdminRouteGuard({ children }: { children: React.ReactNod
       const ud = userProfile.user_data || {};
       const status = ud.subscription_status || userProfile.subscription_status;
       const isPlanner = userProfile.is_wedding_planner;
-      const isBlocked = status && ['expired', 'cancelled', 'suspended', 'pending_payment'].includes(status);
+      const isBlocked = status && ['expired', 'cancelled', 'suspended', 'pending_payment', 'pending', 'inactive'].includes(status);
 
       if (isPlanner && isBlocked && !isAllowedForExpired(pathname)) {
         router.replace('/admin/planner/billing');
@@ -98,7 +98,7 @@ export default function AdminRouteGuard({ children }: { children: React.ReactNod
     const ud = userProfile.user_data || {};
     const status = ud.subscription_status || userProfile.subscription_status;
     const isPlanner = userProfile.is_wedding_planner;
-    const isBlocked = status && ['expired', 'cancelled', 'suspended', 'pending_payment'].includes(status);
+    const isBlocked = status && ['expired', 'cancelled', 'suspended', 'pending_payment', 'pending', 'inactive'].includes(status);
 
     if (isPlanner && isBlocked && !isAllowedForExpired(pathname)) {
       return null; // Don't render — useEffect above will redirect

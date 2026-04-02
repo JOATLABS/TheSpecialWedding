@@ -116,6 +116,11 @@ class VendorService:
         return f"CON-{timestamp}-{random_suffix}"
 
     @staticmethod
+    def _build_public_vendor_contract_link(base_url: str, contract_id: str, access_token: str) -> str:
+        normalized_base = base_url.rstrip("/")
+        return f"{normalized_base}/vendor-contract/{contract_id}/{access_token}"
+
+    @staticmethod
     def _serialize_doc(doc: Dict) -> Dict:
         """Normalize a MongoDB document for API response: ensure both 'id' and '_id' are string."""
         if "_id" in doc:
@@ -290,6 +295,120 @@ class VendorService:
         except Exception as e:
             logger.error(f"Failed to create vendor profile: {str(e)}")
             raise HTTPException(status_code=500, detail="Failed to create vendor")
+
+    async def upsert_scraped_vendor(self, data: dict) -> dict:
+        """
+        Insert or update a vendor discovered by the scraper job.
+
+        Dedup logic:
+        1. Match by google_place_id (most reliable)
+        2. Match by normalized business_name + city + service_category
+        Never overwrites a planner-added (source=manual) vendor.
+
+        Returns the vendor doc (inserted or existing).
+        """
+        try:
+            now = datetime.now(timezone.utc)
+            google_place_id = data.get("google_place_id")
+            business_name = data.get("business_name", "").strip()
+            city = (data.get("city") or "").strip()
+            service_category = data.get("service_category")
+
+            # -- Dedup: check if vendor already exists --
+            existing = None
+            if google_place_id:
+                existing = await self.vendor_profiles.find_one(
+                    {"google_place_id": google_place_id}
+                )
+
+            if not existing and business_name and city:
+                existing = await self.vendor_profiles.find_one({
+                    "business_name": {"$regex": f"^{business_name}$", "$options": "i"},
+                    "city": {"$regex": f"^{city}$", "$options": "i"},
+                    "service_category": service_category,
+                })
+
+            # If it exists and was manually added by a planner, don't touch it
+            if existing and existing.get("source", "manual") == "manual":
+                logger.debug(
+                    f"Skipping scraped vendor '{business_name}' — already exists as manual entry"
+                )
+                existing["_id"] = str(existing["_id"])
+                return existing
+
+            # If it exists as a previously scraped entry, refresh it
+            if existing:
+                update_fields = {
+                    "scraped_at": now,
+                    "updated_at": now,
+                }
+                # Only update fields that have new non-empty values
+                for field in [
+                    "phone", "website", "address", "state", "country",
+                    "postal_code", "service_description", "logo_url",
+                    "typical_price_min", "typical_price_max",
+                ]:
+                    new_val = data.get(field)
+                    if new_val is not None and new_val != "":
+                        update_fields[field] = new_val
+
+                # Update portfolio_urls only if we have a website and it's not already there
+                new_website = data.get("website")
+                if new_website:
+                    existing_urls = existing.get("portfolio_urls") or []
+                    if new_website not in existing_urls:
+                        update_fields["portfolio_urls"] = [new_website]
+
+                await self.vendor_profiles.update_one(
+                    {"_id": existing["_id"]},
+                    {"$set": update_fields}
+                )
+                existing["_id"] = str(existing["_id"])
+                existing.update(update_fields)
+                logger.info(f"Refreshed scraped vendor: {business_name} in {city}")
+                return existing
+
+            # -- Insert new scraped vendor --
+            vendor = {
+                "business_name": business_name,
+                "email": data.get("email", ""),
+                "phone": data.get("phone"),
+                "website": data.get("website"),
+                "address": data.get("address"),
+                "city": city,
+                "state": data.get("state"),
+                "country": data.get("country", "US"),
+                "postal_code": data.get("postal_code"),
+                "service_category": service_category,
+                "custom_service_category": data.get("custom_service_category"),
+                "service_subcategories": data.get("service_subcategories", []),
+                "service_description": data.get("service_description"),
+                "logo_url": data.get("logo_url"),
+                "portfolio_urls": [data["website"]] if data.get("website") else [],
+                "typical_price_min": data.get("typical_price_min"),
+                "typical_price_max": data.get("typical_price_max"),
+                "currency": data.get("currency", "USD"),
+                "tags": data.get("tags", []),
+                "source": "scraped",
+                "google_place_id": google_place_id,
+                "scraped_at": now,
+                "scraped_from_city": data.get("scraped_from_city", city),
+                "created_by": "system@thespecialwedding.com",
+                "weddings_count": 0,
+                "total_revenue": 0.0,
+                "is_active": True,
+                "created_at": now,
+                "updated_at": now,
+            }
+
+            result = await self.vendor_profiles.insert_one(vendor)
+            vendor["_id"] = str(result.inserted_id)
+            logger.info(f"Inserted scraped vendor: {business_name} in {city} [{service_category}]")
+            return vendor
+
+        except Exception as e:
+            logger.error(f"Failed to upsert scraped vendor '{data.get('business_name')}': {str(e)}")
+            raise
 
     async def get_vendor_profiles(
         self,
@@ -1034,7 +1153,7 @@ class VendorService:
 
             # Generate contract link
             base_url = os.getenv("FRONTEND_URL", "")
-            contract_link = f"{base_url}/vendor-contract/{contract_id}?token={contract['access_token']}"
+            contract_link = self._build_public_vendor_contract_link(base_url, contract_id, contract["access_token"])
 
             # Build email
             subject = f"Contract for Review: {contract['contract_title']}"

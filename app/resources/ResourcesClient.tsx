@@ -481,7 +481,7 @@ export default function ResourcesClient({
                         </div>
 
                         {selectedPostData.content ? (
-                          <MarkdownArticle content={selectedPostData.content} />
+                          <MarkdownArticle content={selectedPostData.content} theme="dark" />
                         ) : (
                           <p className="italic text-slate-500">
                             Article content is not available.
@@ -525,7 +525,7 @@ export default function ResourcesClient({
                     </div>
 
                     {selectedPostData.content ? (
-                      <MarkdownArticle content={selectedPostData.content} />
+                      <MarkdownArticle content={selectedPostData.content} theme="dark" />
                     ) : (
                       <p className="italic text-slate-500">Article content is not available.</p>
                     )}

@@ -51,6 +51,8 @@ tests/backend/*
 !tests/backend/test_knowledge_base_contract.py
 !tests/backend/test_settings.py
 !tests/backend/test_notification_stream_contract.py
+!tests/backend/test_setup_reset_token_transport_contract.py
+!tests/backend/test_guest_access_session_contract.py
 tests/unit/*
 !tests/unit/blogRichText.test.ts
 !tests/resources-blog-rendering.spec.ts
@@ -94,3 +96,5 @@ Special Wedding Root Admin Platform Error Page .pdf
 .pytest_cache
 tests/backend/test_platform_metrics.py
 output/playwright
+vendor-import-mockup.html
+vendor-scraper-mockup.html

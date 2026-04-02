@@ -285,7 +285,7 @@ class UserManagementService:
                 frontend_url = os.getenv("FRONTEND_URL")
                 if not frontend_url:
                     raise ValueError("FRONTEND_URL environment variable is required")
-                setup_url = f"{frontend_url}/setup-account?token={token}"
+                setup_url = f"{frontend_url.rstrip('/')}/setup-account/{token}"
                 # Create professional invitation email
                 html_content = self._generate_invitation_email_html(
                     email=email,
@@ -642,7 +642,9 @@ class UserManagementService:
 
         If the invitation includes trial_days > 0, creates a Stripe Subscription
         with trial period so usage can be tracked and billing starts automatically
-        when the trial ends.
+        when the trial ends. Zero-day invites remain admin-verified, but they
+        are placed into the payment-required state so they must complete billing
+        before accessing planner features.
         """
         try:
             # Validate token first
@@ -667,8 +669,11 @@ class UserManagementService:
             trial_end_behavior = invite_data.get("trial_end_behavior", "pause")
             stripe_customer_id = invitation.get("stripe_customer_id")
 
-            # Determine subscription status based on trial configuration
-            subscription_status = "trial" if trial_days > 0 else "inactive"
+            # Determine subscription status based on trial configuration.
+            # Admin-invited users with no trial should follow the existing
+            # payment-required Stripe Checkout path instead of landing as
+            # accessible unpaid planners.
+            subscription_status = "trial" if trial_days > 0 else "pending_payment"
             trial_end_date = datetime.now(timezone.utc) + timedelta(days=trial_days) if trial_days > 0 else None
             stripe_subscription_id = None
 
@@ -1854,7 +1859,7 @@ class UserManagementService:
                     self.logger.error("FRONTEND_URL environment variable is required")
                     return success_message
 
-                reset_url = f"{frontend_url}/reset-password?token={reset_token}"
+                reset_url = f"{frontend_url.rstrip('/')}/reset-password/{reset_token}"
                 html_content = self._generate_password_reset_email_html(
                     email=email,
                     first_name=user.get("first_name", ""),

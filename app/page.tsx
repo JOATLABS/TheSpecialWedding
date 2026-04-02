@@ -1,7 +1,7 @@
 "use client";
 
 import { getApiBaseUrl } from '@/utils/env';
-import React, { useState, useEffect, useCallback, useRef } from "react";
+import React, { startTransition, useState, useEffect, useCallback, useRef } from "react";
 import Link from "next/link";
 
 
@@ -594,12 +594,12 @@ function LandingContent({
 
 const fallbackTestimonials: Testimonial[] = [
   {
-    quote: "I used to juggle Google Sheets for guests, QuickBooks for budgets, and DocuSign for contracts — all disconnected. Now my 240-person guest list, seating chart, and budget tracker live in one place. Last Saturday I reassigned three tables in the seating orchestrator ten minutes before doors opened and guest memories were already flowing into the couple portal before dinner.",
+    quote: "I used to juggle Google Sheets for guests, QuickBooks for budgets, and DocuSign for contracts — all disconnected. Now my 240-person guest list, seating chart, and budget tracker live in one place. Last Saturday I reassigned three tables in the seating orchestrator ten minutes before doors opened and the live headcount updated instantly at check-in.",
     name: "Maya Glenn",
     role: "Director of Events, Aurora Collective",
   },
   {
-    quote: "Building a service package with AI-suggested pricing took me ten minutes instead of a full afternoon of market research. I sent the quote through the contract canvas with e-sign the same day, and the client's milestone payment hit my dashboard before dinner. The entire book-to-pay cycle that used to take me a week now happens in a single session.",
+    quote: "Building a service package with AI-suggested pricing took me ten minutes instead of a full afternoon of market research. I sent the quote through the contract canvas with e-sign the same day, and the client’s milestone payment hit my dashboard before dinner. The entire book-to-pay cycle that used to take me a week now happens in a single session.",
     name: "Elias Romero",
     role: "Lead Coordinator, Harbor & Bloom",
   },
@@ -621,40 +621,75 @@ export default function HomePage() {
   const [apiPlans, setApiPlans] = useState<ApiPlan[]>([]);
   const [plansLoading, setPlansLoading] = useState(true);
   const [testimonials, setTestimonials] = useState<Testimonial[]>(fallbackTestimonials);
+  const [hasHydrated, setHasHydrated] = useState(false);
 
-  // Fetch subscription plans from API (admin-configurable)
   useEffect(() => {
+    setHasHydrated(true);
+  }, []);
+
+  // Wait until after hydration before refreshing marketing data so SSR markup
+  // and the first client render stay byte-for-byte identical.
+  useEffect(() => {
+    if (!hasHydrated) {
+      return;
+    }
+
+    let cancelled = false;
+    const frame = window.requestAnimationFrame(() => {
+      void fetchPlans();
+    });
+
     const fetchPlans = async () => {
       try {
         const response = await fetch(`${getApiBaseUrl()}/public/subscription-plans`);
         if (response.ok) {
           const data = await response.json();
-          setApiPlans(data.sort((a: ApiPlan, b: ApiPlan) => a.sort_order - b.sort_order));
+          if (!cancelled) {
+            startTransition(() => {
+              setApiPlans([...data].sort((a: ApiPlan, b: ApiPlan) => a.sort_order - b.sort_order));
+            });
+          }
         }
       } catch (error) {
         console.error('Failed to fetch subscription plans:', error);
       } finally {
-        setPlansLoading(false);
+        if (!cancelled) {
+          setPlansLoading(false);
+        }
       }
     };
-    fetchPlans();
-  }, []);
 
-  // Fetch testimonials from API (admin-configurable via Customer Reviews tab)
+    return () => {
+      cancelled = true;
+      window.cancelAnimationFrame(frame);
+    };
+  }, [hasHydrated]);
+
   useEffect(() => {
+    if (!hasHydrated) {
+      return;
+    }
+
+    let cancelled = false;
+    const frame = window.requestAnimationFrame(() => {
+      void fetchTestimonials();
+    });
+
     const fetchTestimonials = async () => {
       try {
         const response = await fetch(`${getApiBaseUrl()}/saas/public/testimonials`);
         if (response.ok) {
           const data = await response.json();
-          if (data.length > 0) {
-            setTestimonials(
-              data.map((t: any) => ({
-                quote: t.quote,
-                name: t.name,
-                role: [t.role, t.company].filter(Boolean).join(', '),
-              }))
-            );
+          if (!cancelled && data.length > 0) {
+            startTransition(() => {
+              setTestimonials(
+                data.map((t: any) => ({
+                  quote: t.quote,
+                  name: t.name,
+                  role: [t.role, t.company].filter(Boolean).join(', '),
+                }))
+              );
+            });
           }
         }
       } catch (error) {
@@ -662,8 +697,12 @@ export default function HomePage() {
         // Fallback testimonials are already set as initial state
       }
     };
-    fetchTestimonials();
-  }, []);
+
+    return () => {
+      cancelled = true;
+      window.cancelAnimationFrame(frame);
+    };
+  }, [hasHydrated]);
 
   const handlePricingCTAClick = (planId: string) => {
     if (planId === 'agency') {

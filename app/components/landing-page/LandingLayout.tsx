@@ -263,14 +263,15 @@ function WeddingContent({ isClone, wedding, images, onCelebrateClick }: WeddingC
    Main layout — assembles fixed layers + infinite scroll content
    ═══════════════════════════════════════════════════════════ */
 
-export const LandingLayout: React.FC<LandingLayoutProps> = ({ wedding, images, rsvpToken }) => {
+export const LandingLayout: React.FC<LandingLayoutProps> = ({ wedding, images, guest, openGuestRsvpOnLoad }) => {
   // Apply theme CSS variables (--theme-primary, --theme-secondary, etc.)
   useTheme(wedding);
 
   const [showTerms, setShowTerms] = useState(false);
   const [showPrivacy, setShowPrivacy] = useState(false);
   const [showRSVPLinkModal, setShowRSVPLinkModal] = useState(false);
-  const [dismissedRSVPModal, setDismissedRSVPModal] = useState(false);
+  const [manualRSVPModalOpen, setManualRSVPModalOpen] = useState(false);
+  const [dismissedAutoOpenToken, setDismissedAutoOpenToken] = useState<string | null>(null);
   const [loopHeight, setLoopHeight] = useState(0);
 
   // Shared ref holding the normalised (modulo'd) scroll position.
@@ -281,7 +282,10 @@ export const LandingLayout: React.FC<LandingLayoutProps> = ({ wedding, images, r
   // Stable callback for InfiniteScrollWrapper height reporting
   const handlePrimaryHeight = useCallback((h: number) => setLoopHeight(h), []);
 
-  const showRSVPModal = Boolean(rsvpToken) && !dismissedRSVPModal;
+  const currentAutoOpenToken = openGuestRsvpOnLoad && guest ? `${wedding.slug}:guest-rsvp` : null;
+  const showRSVPModal = manualRSVPModalOpen || Boolean(
+    currentAutoOpenToken && dismissedAutoOpenToken !== currentAutoOpenToken,
+  );
 
   // Get featured image from wedding or use first gallery image
   const featuredImage = wedding.featured_image
@@ -310,7 +314,13 @@ export const LandingLayout: React.FC<LandingLayoutProps> = ({ wedding, images, r
               isClone={isClone}
               wedding={wedding}
               images={images}
-              onCelebrateClick={() => setShowRSVPLinkModal(true)}
+              onCelebrateClick={() => {
+                if (guest) {
+                  setManualRSVPModalOpen(true);
+                  return;
+                }
+                setShowRSVPLinkModal(true);
+              }}
             />
           )}
         </InfiniteScrollWrapper>
@@ -352,15 +362,15 @@ export const LandingLayout: React.FC<LandingLayoutProps> = ({ wedding, images, r
         coupleName={wedding.couple_names}
         themeConfig={wedding.theme_config}
       />
-      {rsvpToken && (
+      {guest && (
         <RSVPModal
           isOpen={showRSVPModal}
-          token={rsvpToken}
           slug={wedding.slug}
           onClose={() => {
-            setDismissedRSVPModal(true);
-            // Clear persisted token after modal closes (RSVP completed or dismissed)
-            try { sessionStorage.removeItem('rsvp_token_' + wedding.slug); } catch {}
+            if (currentAutoOpenToken) {
+              setDismissedAutoOpenToken(currentAutoOpenToken);
+            }
+            setManualRSVPModalOpen(false);
           }}
         />
       )}

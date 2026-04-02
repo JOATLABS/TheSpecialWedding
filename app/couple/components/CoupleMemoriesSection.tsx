@@ -39,6 +39,7 @@ import {
   type GuestMemoriesSummary,
 } from '@/services/guestMemoriesApi';
 import { getWeddingEventLabel } from '@/utils/weddingEvents';
+import GuestMemoriesSummaryCard from '@/components/guest-memories/GuestMemoriesSummaryCard';
 
 type ReviewFilter = 'all' | 'pending' | 'kept' | 'rejected';
 type MediaFilter = 'all' | 'image' | 'video';
@@ -395,10 +396,10 @@ export default function CoupleMemoriesSection({
       )}
 
       <div className="grid gap-4 lg:grid-cols-4">
-        <SummaryCard icon={Images} title="Pending review" value={String(summary?.pending_count ?? 0)} subtitle="New uploads waiting for a decision" accent="indigo" />
-        <SummaryCard icon={CheckCircle2} title="Kept" value={String(summary?.kept_count ?? 0)} subtitle="Saved to the couple library" accent="emerald" />
-        <SummaryCard icon={XCircle} title="Rejected" value={String(summary?.rejected_count ?? 0)} subtitle="Hidden from the main library" accent="rose" />
-        <SummaryCard
+        <GuestMemoriesSummaryCard icon={Images} title="Pending review" value={String(summary?.pending_count ?? 0)} subtitle="New uploads waiting for a decision" accent="indigo" />
+        <GuestMemoriesSummaryCard icon={CheckCircle2} title="Kept" value={String(summary?.kept_count ?? 0)} subtitle="Saved to the couple library" accent="emerald" />
+        <GuestMemoriesSummaryCard icon={XCircle} title="Rejected" value={String(summary?.rejected_count ?? 0)} subtitle="Hidden from the main library" accent="rose" />
+        <GuestMemoriesSummaryCard
           icon={CalendarDays}
           title="Upload window"
           value={summary?.link_status === 'open' ? 'Open' : 'Closed'}
@@ -727,39 +728,6 @@ export default function CoupleMemoriesSection({
           </div>
         </div>
       )}
-    </div>
-  );
-}
-
-function SummaryCard({
-  icon: Icon,
-  title,
-  value,
-  subtitle,
-  accent,
-}: {
-  icon: typeof Images;
-  title: string;
-  value: string;
-  subtitle: string;
-  accent: 'indigo' | 'emerald' | 'rose' | 'amber' | 'slate';
-}) {
-  const accentClasses = {
-    indigo: 'text-indigo-500 bg-indigo-100 dark:bg-indigo-950/40',
-    emerald: 'text-emerald-500 bg-emerald-100 dark:bg-emerald-950/40',
-    rose: 'text-rose-500 bg-rose-100 dark:bg-rose-950/40',
-    amber: 'text-amber-500 bg-amber-100 dark:bg-amber-950/40',
-    slate: 'text-slate-500 bg-slate-100 dark:bg-slate-700',
-  } as const;
-
-  return (
-    <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-700 dark:bg-slate-800">
-      <div className={`inline-flex h-10 w-10 items-center justify-center rounded-2xl ${accentClasses[accent]}`}>
-        <Icon className="h-5 w-5" />
-      </div>
-      <p className="mt-4 text-sm font-medium text-slate-500 dark:text-slate-400">{title}</p>
-      <p className="mt-1 text-2xl font-semibold text-slate-900 dark:text-white">{value}</p>
-      <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">{subtitle}</p>
     </div>
   );
 }

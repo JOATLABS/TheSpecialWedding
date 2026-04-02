@@ -167,6 +167,23 @@ function withApiBase(path?: string | null): string | undefined {
   return `${getApiBaseUrl()}${path}`;
 }
 
+async function adminFetch(token: string, path: string, init: RequestInit = {}): Promise<Response> {
+  const headers = new Headers(init.headers);
+  headers.set('Authorization', `Bearer ${token}`);
+
+  const hasBody = init.body != null;
+  if (hasBody && !headers.has('Content-Type')) {
+    headers.set('Content-Type', 'application/json');
+  }
+
+  return fetch(`${getApiBaseUrl()}${path}`, {
+    ...init,
+    headers,
+    credentials: 'include',
+    cache: 'no-store',
+  });
+}
+
 function hydrateCoupleMemoryAsset(asset: CoupleMemoryAsset): CoupleMemoryAsset {
   return {
     ...asset,
@@ -301,4 +318,61 @@ export async function createCoupleMemoriesExport(payload: {
 
 export async function fetchCoupleMemoriesExport(exportId: string): Promise<CoupleMemoriesExportJob> {
   return parseResponse<CoupleMemoriesExportJob>(await coupleFetch(`/couple/portal/memories/exports/${exportId}`));
+}
+
+export async function fetchPlannerMemoriesSettings(
+  token: string,
+  weddingId: string,
+): Promise<GuestMemoriesSettings> {
+  const search = new URLSearchParams({ wedding_id: weddingId });
+  return parseResponse<GuestMemoriesSettings>(
+    await adminFetch(token, `/admin/guest-memories/settings?${search.toString()}`),
+  );
+}
+
+export async function updatePlannerMemoriesSettings(
+  token: string,
+  weddingId: string,
+  payload: {
+    enabled?: boolean;
+    upload_closes_at?: string | null;
+  },
+): Promise<GuestMemoriesSettings> {
+  const search = new URLSearchParams({ wedding_id: weddingId });
+  return parseResponse<GuestMemoriesSettings>(
+    await adminFetch(token, `/admin/guest-memories/settings?${search.toString()}`, {
+      method: 'PUT',
+      body: JSON.stringify(payload),
+    }),
+  );
+}
+
+export async function rotatePlannerMemoriesLink(
+  token: string,
+  weddingId: string,
+): Promise<GuestMemoriesSettings> {
+  const search = new URLSearchParams({ wedding_id: weddingId });
+  return parseResponse<GuestMemoriesSettings>(
+    await adminFetch(token, `/admin/guest-memories/rotate-link?${search.toString()}`, {
+      method: 'POST',
+    }),
+  );
+}
+
+export async function fetchPlannerMemoriesQrBlob(token: string, weddingId: string): Promise<Blob> {
+  const search = new URLSearchParams({ wedding_id: weddingId });
+  const response = await adminFetch(token, `/admin/guest-memories/qr-code?${search.toString()}`);
+  if (!response.ok) {
+    await parseResponse(response);
+  }
+  return response.blob();
+}
+
+export async function fetchPlannerMemoriesSignPdfBlob(token: string, weddingId: string): Promise<Blob> {
+  const search = new URLSearchParams({ wedding_id: weddingId });
+  const response = await adminFetch(token, `/admin/guest-memories/sign-pdf?${search.toString()}`);
+  if (!response.ok) {
+    await parseResponse(response);
+  }
+  return response.blob();
 }

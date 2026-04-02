@@ -1,9 +1,10 @@
 from typing import Optional
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query, Request
 from pydantic import BaseModel, Field
 
 from app.services.gallery_upload_service import GalleryUploadService
+from app.dependencies.guest_access import get_guest_access_session
 
 router = APIRouter()
 gallery_service = GalleryUploadService()
@@ -57,14 +58,14 @@ async def public_gallery(
 
 # New secure gallery endpoint
 @router.post("/gallery/verified", tags=["Guest"])
-async def verified_gallery(request: VerifiedGalleryRequest):
+async def verified_gallery(request: VerifiedGalleryRequest, http_request: Request):
     """Get gallery images for verified guests only"""
     from app.services.guest_verification_service import GuestVerificationService
 
     verification_service = GuestVerificationService()
     if request.token:
         result = await verification_service.get_rsvp_access_by_token(request.wedding_slug, request.token)
-    else:
+    elif any([request.name, request.phone, request.email, request.password, request.otp_code, request.contact]):
         verification_data = {
             "name": request.name,
             "phone": request.phone,
@@ -76,6 +77,15 @@ async def verified_gallery(request: VerifiedGalleryRequest):
         result = await verification_service.verify_wedding_page_access(
             request.wedding_slug,
             verification_data,
+        )
+    else:
+        session = get_guest_access_session(http_request, slug=request.wedding_slug)
+        result = await verification_service.get_session_access(
+            slug=request.wedding_slug,
+            wedding_id=session.wedding_id,
+            guest_id=session.guest_id,
+            auth_method=session.auth_method,
+            otp_verified=session.otp_verified,
         )
 
     if not result.get("access"):

@@ -315,7 +315,8 @@ async def couple_forgot_password(data: CoupleForgotPasswordRequest):
         email_service = ResendEmailService()
 
         frontend_url = getattr(settings, 'frontend_url', None) or "https://thespecialwedding.io"
-        reset_link = f"{frontend_url}/couple/reset-password?token={reset_token}"
+        normalized_frontend_url = frontend_url.rstrip("/")
+        reset_link = f"{normalized_frontend_url}/couple/reset-password/{reset_token}"
 
         couple_name = couple.get("partner1_name", "")
         if couple.get("partner2_name"):

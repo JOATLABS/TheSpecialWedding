@@ -300,6 +300,17 @@ export default function AdminUsersPage() {
     setTotalItems: setPaginationTotalItems,
   } = pagination;
 
+  const buildInviteForm = useCallback((): InviteFormData => ({
+    email: '',
+    name: '',
+    phone: '',
+    organization: '',
+    plan_id: availablePlans[0]?._id || '',
+    trial_days: defaultTrialDays,
+    trial_end_behavior: 'pause',
+    admin_notes: ''
+  }), [availablePlans, defaultTrialDays]);
+
   // Access control - ROOT ADMIN only
   useEffect(() => {
     if (userProfile && !userProfile.is_root_admin) {
@@ -381,10 +392,8 @@ export default function AdminUsersPage() {
 
       if (response.ok) {
         const data = await response.json();
-        const trialDays = data.default_trial_days || 30;
+        const trialDays = data.default_trial_days ?? 30;
         setDefaultTrialDays(trialDays);
-        // Update invite form with fetched default
-        setInviteForm(prev => ({ ...prev, trial_days: trialDays }));
       }
     } catch (err) {
       console.error('Error fetching trial settings:', err);
@@ -570,7 +579,7 @@ export default function AdminUsersPage() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchTerm, filterStatus, roleScope]);
 
-  const handleInvitePlanner = async (e: React.FormEvent) => {
+  const handleInvitePlanner = useCallback(async (e: React.FormEvent) => {
     e.preventDefault();
     setInviteLoading(true);
 
@@ -610,16 +619,7 @@ export default function AdminUsersPage() {
         : `Invitation sent to ${inviteForm.email}`;
 
       setShowInviteModal(false);
-      setInviteForm({
-        email: '',
-        name: '',
-        phone: '',
-        organization: '',
-        plan_id: availablePlans[0]?._id || '',
-        trial_days: defaultTrialDays,
-        trial_end_behavior: 'pause',
-        admin_notes: ''
-      });
+      setInviteForm(buildInviteForm());
 
       // Show success toast with email status
       setSuccessToast({
@@ -636,7 +636,12 @@ export default function AdminUsersPage() {
     } finally {
       setInviteLoading(false);
     }
-  };
+  }, [buildInviteForm, fetchPendingInvitations, fetchPlanners, fetchInvitationStats, inviteForm.admin_notes, inviteForm.email, inviteForm.name, inviteForm.organization, inviteForm.plan_id, inviteForm.trial_days, inviteForm.trial_end_behavior, token]);
+
+  const openInviteModal = useCallback(() => {
+    setInviteForm(buildInviteForm());
+    setShowInviteModal(true);
+  }, [buildInviteForm]);
 
   const handleSuspendUser = async (userId: string) => {
     try {
@@ -835,7 +840,7 @@ export default function AdminUsersPage() {
       >
         {canInvitePlanners && (
           <Button
-            onClick={() => setShowInviteModal(true)}
+            onClick={openInviteModal}
             className="gap-2"
           >
             <UserPlus className="w-5 h-5" />
@@ -1188,7 +1193,7 @@ export default function AdminUsersPage() {
               </p>
               {canInvitePlanners && (
                 <button
-                  onClick={() => setShowInviteModal(true)}
+                  onClick={openInviteModal}
                   className={`${dashboardPrimaryButtonClass} flex items-center gap-2 px-6 py-3 font-semibold`}
                 >
                   <UserPlus className="w-5 h-5" />
@@ -1808,16 +1813,7 @@ export default function AdminUsersPage() {
                       type="button"
                       onClick={() => {
                         setShowInviteModal(false);
-                        setInviteForm({
-                          email: '',
-                          name: '',
-                          phone: '',
-                          organization: '',
-                          plan_id: availablePlans[0]?._id || '',
-                          trial_days: 14,
-                          trial_end_behavior: 'pause',
-                          admin_notes: ''
-                        });
+                        setInviteForm(buildInviteForm());
                       }}
                       className={`flex-1 px-4 py-3 font-medium ${dashboardSecondaryButtonClass}`}
                     >

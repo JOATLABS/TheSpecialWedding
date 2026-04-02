@@ -2,7 +2,7 @@
 
 **Purpose:** manual browser validation for deployment readiness after auth, security, contract-alignment, and portal changes.
 
-**Last Updated:** March 26, 2026
+**Last Updated:** April 1, 2026
 
 **Primary Browser:** Chrome latest
 
@@ -17,6 +17,7 @@ Run this test plan before promoting a build from staging to production when any 
 3. Planner inbox or couple inbox rendering
 4. Budget templates, campaign stats, or guest management
 5. Homepage, pricing, features page, or resources/blog public surfaces
+6. Guest memories planner operations, public uploads, or couple review/export flows
 
 This runbook is intentionally risk-based. It focuses on the flows most likely to break deployment readiness:
 
@@ -25,6 +26,7 @@ This runbook is intentionally risk-based. It focuses on the flows most likely to
 3. Security regressions around token exposure and inbox HTML rendering
 4. Frontend/backend contract regressions in budget and advertising surfaces
 5. Public marketing, pricing, and SEO-critical routes
+6. Guest memories upload, moderation, and export flows that span planner, guest, and couple roles
 
 ## 1A. Testing Principle
 
@@ -69,6 +71,8 @@ npm run dev
 2. Email provider configured if password reset or inbox ingestion must be tested end-to-end
 3. Stripe test mode configured if billing and connect flows must be exercised
 4. Web push keys configured if push notification flows must be verified
+5. R2 guest-media storage configured if guest memories upload/download must be exercised
+6. Cloudflare Stream configured if low-latency guest video playback must be exercised end-to-end
 
 ### Required Test Accounts
 
@@ -80,7 +84,7 @@ Prepare these accounts before starting:
 |---|---|
 | Wedding planner | Active subscription, at least 1 wedding, at least 1 couple account, at least 1 form, at least 1 budget template, at least 1 inbox thread |
 | Root admin | Access to `/admin/platform`, `/admin/saas`, and vendor portal |
-| Couple | Existing active account for login tests |
+| Couple | Existing active account for login tests and, if guest memories is in scope, tied to the tested guest-memories wedding |
 | Couple invite | Fresh invite token for setup-password test |
 | Couple reset | Mailbox access or seeded reset token for reset-password test |
 | Advertising vendor | Vendor portal credentials with at least 1 campaign and billing record |
@@ -98,6 +102,8 @@ Seed or confirm the following data exists:
 7. One inbox item created from an external email or seeded email payload
 8. One planner account with no active subscription, or an expired/cancelled subscription, for billing preselection testing
 9. One active public subscription plan ID that can be inserted into `/admin/planner/billing?plan=<plan_id>&interval=yearly`
+10. One wedding with guest memories enabled, a valid upload link, at least one couple account, and at least one configured event plus the implicit `Not sure` option
+11. At least one small image file and one small video file available on the tester machine for guest upload validation
 
 ## 3. Tester Preparation
 
@@ -157,6 +163,10 @@ Use this map when you need to prove that a frontend action updated the database 
 | Couple message send | `POST /couple/portal/messages` | `GET /couple/portal/messages` after refresh | `couple_messages` document keyed by `wedding_id`. Check `sender_role: "couple"`, `sender_email`, `content`, `created_at`. |
 | Couple registry add/edit/delete | `POST|PUT|DELETE /couple/portal/registries/*` | `GET /couple/portal/registries` after refresh | Embedded `registries` array on the related `weddings` document. |
 | Couple FAQ add/edit/delete | `POST|PUT|DELETE /couple/portal/faqs/*` | `GET /couple/portal/faqs` after refresh | Embedded `faqs` array on the related `weddings` document. |
+| Planner guest memories settings | `PUT /admin/guest-memories/settings`, `POST /admin/guest-memories/rotate-link` | `GET /admin/guest-memories/settings` after refresh | Embedded `guest_media` object on the related `weddings` document. Check `enabled`, `upload_closes_at`, `last_rotated_at`, and token-hash-backed link rotation state. |
+| Public guest memories upload | `POST /guest-media/public/{slug}/{upload_token}/upload-plan`, direct `PUT` to presigned R2 URL, `POST /guest-media/public/{slug}/{upload_token}/finalize` | Couple memories list after refresh | `guest_media_assets` collection keyed by `wedding_id` and `upload_batch_id`. Check `uploader_name`, `event_type`, `media_type`, `upload_status`, `review_status`, `original_key`, and video `stream_status` when applicable. |
+| Couple guest memories review | `PATCH /couple/portal/memories/{asset_id}/review` | `GET /couple/portal/memories` after refresh | `guest_media_assets` document for that asset. Check `review_status`, `reviewed_at`, and that kept vs rejected counts reconcile with the UI summary. |
+| Couple guest memories export | `POST /couple/portal/memories/exports`, `GET /couple/portal/memories/exports/{export_id}` | Export card state after refresh | `guest_media_exports` collection keyed by `wedding_id` and `requested_by`. Check `status`, `asset_count`, `export_key`, `completed_at`, and download-url readiness. |
 | Budget template apply | `POST /admin/weddings/{wedding_id}/budget/apply-template` | Reload the wedding budget screen and confirm categories | `budget_categories` collection for that `wedding_id`, plus the `weddings` document fields `total_budget` and `budget_template_applied`. |
 | Public pricing read path | `GET /public/subscription-plans` | Compare homepage cards and signup modal plan choices | `subscription_plans` collection filtered to active plans. Public response should match active plan names, prices, and feature highlights. |
 | Resources/blog public read path | `GET /api/v1/blog/articles`, `GET /api/v1/blog/articles/slug/{slug}` | Reload `/resources` and the direct `/resources/blog/[slug]` page | `blog_articles` collection. Article must have `status: "published"` and the matching `slug`. |
@@ -172,6 +182,9 @@ If you have direct DB access, prefer verifying by business key instead of copyin
 5. Budget template apply: inspect `budget_categories` by `wedding_id`
 6. Public pricing: inspect active documents in `subscription_plans`
 7. Public blog/resources: inspect published documents in `blog_articles`
+8. Planner guest memories settings: inspect `weddings.guest_media` by `_id`
+9. Guest memories uploads and moderation: inspect `guest_media_assets` by `wedding_id`, `upload_batch_id`, or recent `uploaded_at`
+10. Guest memories exports: inspect `guest_media_exports` by `wedding_id` and recent `created_at`
 
 ### Optional `mongosh` Examples
 
@@ -194,6 +207,22 @@ db.form_submissions.findOne(
 db.couple_messages.find(
   { wedding_id: "WEDDING_ID", sender_email: "couple@example.com" }
 ).sort({ created_at: -1 }).limit(3)
+
+// Planner guest memories settings on the wedding document
+db.weddings.findOne(
+  { _id: "WEDDING_ID" },
+  { slug: 1, couple_names: 1, guest_media: 1, events: 1 }
+)
+
+// Guest memories assets
+db.guest_media_assets.find(
+  { wedding_id: "WEDDING_ID" }
+).sort({ uploaded_at: -1 }).limit(20)
+
+// Guest memories exports
+db.guest_media_exports.find(
+  { wedding_id: "WEDDING_ID" }
+).sort({ created_at: -1 }).limit(10)
 
 // Registry / FAQ persistence on the wedding document
 db.weddings.findOne(
@@ -245,7 +274,8 @@ A deployment should be blocked if any of these fail:
 4. Inbox HTML executes script or unsanitized markup
 5. Budget template apply or campaign stats show obviously incorrect data
 6. Public homepage or features page fails to render
-7. A screen looks correct but the underlying action, reread, or persistence check fails
+7. Guest memories upload, moderation, download, or export fails its write/reread checks
+8. A screen looks correct but the underlying action, reread, or persistence check fails
 
 ## 5. Scenario A: Public Routes, Marketing, and SEO Surfaces
 
@@ -280,10 +310,11 @@ Verify that public discovery pages function correctly, render correctly, and rem
 4. Agency CTA opens the expected sales email flow
 5. Homepage and features page describe the same current feature set
 6. Resources split-panel and direct blog detail pages both load correctly
-7. If the blog feed is unavailable, `/resources` shows an explicit unavailable state and retry action rather than pretending there are zero articles
-8. Metadata is present and relevant
-9. `robots.txt` and `sitemap.xml` return 200
-10. Blog URLs emitted by `sitemap.xml` resolve to live article pages
+7. Blog body copy and headings remain legible on the dark resources surface in both the split reader and direct article route
+8. If the blog feed is unavailable, `/resources` shows an explicit unavailable state and retry action rather than pretending there are zero articles
+9. Metadata is present and relevant
+10. `robots.txt` and `sitemap.xml` return 200
+11. Blog URLs emitted by `sitemap.xml` resolve to live article pages
 
 ### Evidence
 
@@ -503,7 +534,99 @@ Use these checks during the couple portal flow:
    After add, edit, and delete, refresh the dashboard each time and verify the FAQ list matches the latest action.
    If you have DB access, confirm the `weddings.faqs` array reflects the final state.
 
-## 10. Scenario F: Vendor Advertising Portal Login and Session
+## 10. Scenario F: Planner Guest Memories Operations, Guest Upload, and Couple Review
+
+### Objective
+
+Verify the planner-managed guest memories rollout works end to end: planner ops, public guest upload, and private couple moderation/export.
+
+### F1. Planner Operations
+
+1. Log in as a planner who can access the target wedding.
+2. Open `/admin/memories`.
+3. Select the target wedding.
+4. Confirm the summary cards, active upload link, event chips, and close-date controls load.
+5. Click `Copy link` and confirm the current upload URL is visible and appears valid for the selected wedding slug.
+6. Click `Generate QR` and confirm the QR image renders.
+7. Download the QR image.
+8. Download the printable sign PDF.
+9. Click `Preview guest upload page` and confirm the public upload page opens in a new tab.
+10. Close uploads and verify the public page starts rejecting the link.
+11. Reopen uploads and verify the same link works again.
+12. Rotate the link and confirm the old link now fails while the new link works.
+13. Save a new upload close date and refresh `/admin/memories`.
+
+Expected results:
+
+1. Planner memories operations load without a crash or blank state.
+2. QR generation and sign PDF download both succeed.
+3. The public upload page reflects open vs closed state accurately.
+4. Rotating the link invalidates the old link immediately.
+5. The new close date persists after refresh.
+6. Event coverage always includes the configured wedding events plus `Not sure`.
+
+Validation detail:
+
+1. Watch `GET /admin/guest-memories/settings`, `PUT /admin/guest-memories/settings`, `POST /admin/guest-memories/rotate-link`, `GET /admin/guest-memories/qr-code`, and `GET /admin/guest-memories/sign-pdf`.
+2. If you have DB access, confirm `weddings.guest_media.enabled`, `upload_closes_at`, and `last_rotated_at` match the planner actions.
+
+### F2. Public Guest Upload
+
+1. In a fresh unauthenticated tab, open the active guest memories upload URL from Scenario F1.
+2. Confirm the three-step mobile-style flow loads.
+3. Enter a guest name.
+4. Choose a batch event.
+5. Move to the upload step and add at least one image and one video within the documented limits.
+6. Override one file to a different event, and set another to `Not sure` if the UI allows it.
+7. Submit the upload batch.
+8. Confirm the success state appears.
+9. Use `Upload more` if available and verify the flow resets cleanly.
+10. Re-open the rotated-out or closed link from F1 and confirm it shows the unavailable state instead of the upload form.
+
+Expected results:
+
+1. The public page loads without requiring guest authentication.
+2. Name is required before upload can complete.
+3. File count, file type, per-file size, and batch size limits are enforced.
+4. Mixed image/video uploads succeed when valid.
+5. Event tags, including `Not sure`, persist into the saved assets.
+6. Invalid, rotated, or closed links show an unavailable state rather than a broken page.
+
+Validation detail:
+
+1. Watch `GET /guest-media/public/{slug}/{upload_token}`, `POST /guest-media/public/{slug}/{upload_token}/upload-plan`, the direct presigned `PUT` upload requests, and `POST /guest-media/public/{slug}/{upload_token}/finalize`.
+2. If you have DB access, confirm new `guest_media_assets` documents were created with the expected `uploader_name`, `event_type`, `media_type`, `upload_status: "uploaded"`, and `review_status: "pending"`.
+
+### F3. Couple Review, Playback, and Export
+
+1. Log in as the couple for the same wedding.
+2. Open the `Memories` section in `/couple/dashboard`.
+3. Confirm the pending count increased after the guest upload.
+4. Filter by `Pending` and verify the new assets appear.
+5. Search by the guest uploader name and verify the results narrow correctly.
+6. Open an uploaded image preview.
+7. Open an uploaded video and verify either low-latency playback or a visible processing state.
+8. Mark one asset `Kept` and one asset `Rejected`.
+9. Refresh the memories section and confirm the counts and filters reconcile.
+10. Download one original asset.
+11. Start an export of kept memories.
+12. Refresh until the export reports `completed`, then download the ZIP.
+
+Expected results:
+
+1. The couple review queue shows the new guest uploads without a planner-only dependency.
+2. Filtering by review status, event, media type, and guest name works.
+3. Video assets show a clear processing state before Stream playback is ready.
+4. Keep/reject actions persist after refresh.
+5. Individual downloads succeed.
+6. Export transitions from `queued` or `processing` to `completed` and produces a usable ZIP.
+
+Validation detail:
+
+1. Watch `GET /couple/portal/memories/settings`, `GET /couple/portal/memories`, `PATCH /couple/portal/memories/{asset_id}/review`, `GET /couple/portal/memories/{asset_id}/download`, `POST /couple/portal/memories/exports`, and `GET /couple/portal/memories/exports/{export_id}`.
+2. If you have DB access, confirm the touched `guest_media_assets` documents updated `review_status` and `reviewed_at`, and the `guest_media_exports` record advanced to `completed` with the expected `asset_count`.
+
+## 11. Scenario G: Vendor Advertising Portal Login and Session
 
 ### Objective
 
@@ -529,7 +652,7 @@ Verify vendor portal auth works without vendor token storage and that root admin
 5. Logout removes access
 6. Root admin can still access the portal
 
-## 11. Scenario G: Planner Inbox HTML Sanitization
+## 12. Scenario H: Planner Inbox HTML Sanitization
 
 ### Objective
 
@@ -567,9 +690,9 @@ Use a seeded email or send a real test email containing at least these snippets:
 
 If any script executes, the build is not deployable.
 
-## 12. Scenario H: Budget Template, Campaign Stats, and Guest Management
+## 13. Scenario I: Budget Template, Campaign Stats, and Guest Management
 
-### H1. Budget Template Apply Contract
+### I1. Budget Template Apply Contract
 
 1. Log in as planner.
 2. Open `/admin/budget/templates`.
@@ -589,7 +712,7 @@ Validation detail:
 2. Reload the budget view and verify the newly created categories are still present from a fresh read.
 3. If you have DB access, confirm new `budget_categories` documents exist for that `wedding_id` and the `weddings` document reflects `total_budget` and `budget_template_applied`.
 
-### H2. Advertising Campaign Stats Contract
+### I2. Advertising Campaign Stats Contract
 
 1. Log in as advertising vendor or root admin in the vendor portal.
 2. Open one seeded campaign with known activity.
@@ -607,7 +730,7 @@ Validation detail:
 1. Confirm the stats values do not change unexpectedly across a hard refresh unless the underlying seeded data changed.
 2. If you have DB or seed-data access, compare the rendered totals against the known campaign fixture before approving the build.
 
-### H3. Guest Management Performance Check
+### I3. Guest Management Performance Check
 
 1. Log in as planner.
 2. Open `/admin/guests` for a wedding with a large guest list.
@@ -628,7 +751,7 @@ Validation detail:
 1. In the Network tab, verify guest-list pagination and filter changes do not trigger unrelated wedding-wide data reloads on every click.
 2. Confirm the visible guest rows after each filter/sort action still match the RSVP and plus-one data shown in the row UI.
 
-## 13. Scenario I: Platform Error Detail and Acknowledge Flow
+## 14. Scenario J: Platform Error Detail and Acknowledge Flow
 
 ### Objective
 
@@ -664,7 +787,7 @@ Validate the scope explicitly before marking this scenario passed.
 4. If you change `Severity` or `Status`, verify the cards and total update together for the filtered result.
 5. A valid pass now requires the counts to reconcile for the selected window and active filters.
 
-## 14. Cross-Role Isolation Check
+## 15. Cross-Role Isolation Check
 
 Run this after planner, couple, and vendor flows all pass individually.
 
@@ -683,7 +806,7 @@ Run this after planner, couple, and vendor flows all pass individually.
 2. Logout in one profile does not log out the others
 3. Each role only sees its own allowed routes
 
-## 15. Console and Network Failure Rules
+## 16. Console and Network Failure Rules
 
 Mark the run as failed if any of these appear:
 
@@ -694,7 +817,7 @@ Mark the run as failed if any of these appear:
 5. Console errors on send/save flows
 6. Any evidence of JS-readable auth token persistence
 
-## 16. Final Go / No-Go Checklist
+## 17. Final Go / No-Go Checklist
 
 Approve deployment only if all items below are true:
 
@@ -704,16 +827,18 @@ Approve deployment only if all items below are true:
 4. Vendor portal login, refresh persistence, and logout pass
 5. Planner inbox sanitization passes with no script execution
 6. Couple portal forms, inbox, registry, and FAQ flows pass
-7. Budget template apply passes
-8. Advertising campaign stats display correctly
-9. Guest management remains responsive on a large wedding
-10. Homepage pricing CTA, signup-plan preselection, and Agency sales CTA pass
-11. Planner billing preselection via `plan` and `interval` passes
-12. Homepage, features, resources, `robots.txt`, and `sitemap.xml` pass
-13. No auth token is stored in browser storage
-14. No blocking console or network issues remain
+7. Planner guest memories operations, public upload, and couple review/export all pass
+8. Budget template apply passes
+9. Advertising campaign stats display correctly
+10. Guest management remains responsive on a large wedding
+11. Homepage pricing CTA, signup-plan preselection, and Agency sales CTA pass
+12. Homepage and direct blog routes keep article copy legible on the dark resources surface
+13. Planner billing preselection via `plan` and `interval` passes
+14. Homepage, features, resources, `robots.txt`, and `sitemap.xml` pass
+15. No auth token is stored in browser storage
+16. No blocking console or network issues remain
 
-## 17. Test Report Template
+## 18. Test Report Template
 
 Use this template for each run:
 
