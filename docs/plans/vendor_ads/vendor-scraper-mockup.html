@@ -1,0 +1,407 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Vendor Scraper — Admin Dashboard Mockup</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script>
+tailwind.config = {
+  darkMode: 'class',
+  theme: {
+    extend: {
+      colors: {
+        'wedding-navy': '#1e293b',
+        'wedding-rose': '#d4a5a5',
+        'wedding-muted': '#94a3b8',
+      }
+    }
+  }
+}
+</script>
+<style>
+  @keyframes pulse-dot { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
+  .pulse-dot { animation: pulse-dot 1.5s infinite; }
+  .log-scroll::-webkit-scrollbar { width: 6px; }
+  .log-scroll::-webkit-scrollbar-thumb { background: #334155; border-radius: 3px; }
+  body { background: #f8fafc; }
+</style>
+</head>
+<body class="min-h-screen text-slate-800">
+
+<!-- ═══════════════════════════════════════════════════════════════════════════
+     LAYOUT: Simulated admin with sidebar stub + main content
+     ═══════════════════════════════════════════════════════════════════════════ -->
+<div class="flex min-h-screen">
+
+  <!-- ── Sidebar (simplified) ── -->
+  <aside class="w-[260px] bg-white/80 backdrop-blur-xl border-r border-slate-200 flex flex-col shrink-0">
+    <div class="px-5 py-5 border-b border-slate-100">
+      <div class="text-lg font-bold text-slate-800">✨ The Special</div>
+      <div class="text-[11px] text-slate-400 uppercase tracking-wider">Admin Panel</div>
+    </div>
+    <nav class="flex-1 py-3 px-3 space-y-0.5 text-sm">
+      <a href="#" class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-slate-500 hover:bg-slate-50">
+        <svg class="w-[18px] h-[18px]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1" stroke-width="2"/><rect x="14" y="3" width="7" height="7" rx="1" stroke-width="2"/><rect x="3" y="14" width="7" height="7" rx="1" stroke-width="2"/><rect x="14" y="14" width="7" height="7" rx="1" stroke-width="2"/></svg>
+        Dashboard
+      </a>
+      <a href="#" class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-slate-500 hover:bg-slate-50">
+        <svg class="w-[18px] h-[18px]" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></svg>
+        Platform
+      </a>
+      <a href="#" class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-slate-500 hover:bg-slate-50">
+        <svg class="w-[18px] h-[18px]" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
+        SaaS Management
+      </a>
+      <a href="#" class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-slate-500 hover:bg-slate-50">
+        <svg class="w-[18px] h-[18px]" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/></svg>
+        Accounts
+      </a>
+      <a href="#" class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-slate-500 hover:bg-slate-50">
+        <svg class="w-[18px] h-[18px]" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="1" y="4" width="22" height="16" rx="2"/><path d="M1 10h22"/></svg>
+        Billing
+      </a>
+      <a href="#" class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-slate-500 hover:bg-slate-50">
+        <svg class="w-[18px] h-[18px]" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M3 18v-6a9 9 0 0118 0v6"/><path d="M21 19a2 2 0 01-2 2h-1a2 2 0 01-2-2v-3a2 2 0 012-2h3zM3 19a2 2 0 002 2h1a2 2 0 002-2v-3a2 2 0 00-2-2H3z"/></svg>
+        Ad Platform
+      </a>
+
+      <!-- ★ THIS IS THE NEW ITEM ★ -->
+      <a href="#" class="flex items-center gap-3 px-3 py-2.5 rounded-lg bg-rose-50 text-rose-600 font-medium border border-rose-200/60">
+        <svg class="w-[18px] h-[18px]" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>
+        Vendor Scraper
+        <span class="ml-auto text-[9px] font-bold uppercase tracking-wider bg-rose-500 text-white px-1.5 py-0.5 rounded">NEW</span>
+      </a>
+
+      <a href="#" class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-slate-500 hover:bg-slate-50">
+        <svg class="w-[18px] h-[18px]" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 01-3.46 0"/></svg>
+        Notifications
+      </a>
+      <a href="#" class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-slate-500 hover:bg-slate-50">
+        <svg class="w-[18px] h-[18px]" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 015.83 1c0 2-3 3-3 3"/><path d="M12 17h.01"/></svg>
+        Support
+      </a>
+    </nav>
+  </aside>
+
+  <!-- ── Main Content ── -->
+  <main class="flex-1 p-8 max-w-[1100px]">
+
+    <!-- Page Header -->
+    <div class="flex items-start justify-between mb-8">
+      <div>
+        <h1 class="text-2xl font-bold text-wedding-navy">Vendor Directory Scraper</h1>
+        <p class="text-sm text-wedding-muted mt-1">Discover and import wedding vendors city-by-city using Google Places</p>
+      </div>
+      <a href="#" class="text-sm text-rose-400 hover:text-rose-500 mt-1">View Public Directory →</a>
+    </div>
+
+    <!-- ═══ SECTION 1: Stats Cards ═══ -->
+    <div class="grid grid-cols-4 gap-4 mb-6">
+      <!-- Inserted -->
+      <div class="bg-white border border-slate-200 rounded-2xl shadow-sm p-5 flex items-center gap-4">
+        <div class="w-11 h-11 rounded-xl bg-emerald-100 flex items-center justify-center">
+          <svg class="w-5 h-5 text-emerald-600" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M22 11.08V12a10 10 0 11-5.93-9.14"/><path d="M22 4L12 14.01l-3-3"/></svg>
+        </div>
+        <div>
+          <p class="text-2xl font-bold text-wedding-navy" id="stat-inserted">47</p>
+          <p class="text-[11px] font-semibold text-slate-400 uppercase tracking-wide">Inserted</p>
+        </div>
+      </div>
+      <!-- Updated -->
+      <div class="bg-white border border-slate-200 rounded-2xl shadow-sm p-5 flex items-center gap-4">
+        <div class="w-11 h-11 rounded-xl bg-blue-100 flex items-center justify-center">
+          <svg class="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M23 4v6h-6"/><path d="M20.49 15a9 9 0 11-2.12-9.36L23 10"/></svg>
+        </div>
+        <div>
+          <p class="text-2xl font-bold text-wedding-navy">12</p>
+          <p class="text-[11px] font-semibold text-slate-400 uppercase tracking-wide">Updated</p>
+        </div>
+      </div>
+      <!-- Skipped -->
+      <div class="bg-white border border-slate-200 rounded-2xl shadow-sm p-5 flex items-center gap-4">
+        <div class="w-11 h-11 rounded-xl bg-amber-100 flex items-center justify-center">
+          <svg class="w-5 h-5 text-amber-600" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><path d="M12 9v4M12 17h.01"/></svg>
+        </div>
+        <div>
+          <p class="text-2xl font-bold text-wedding-navy">5</p>
+          <p class="text-[11px] font-semibold text-slate-400 uppercase tracking-wide">Skipped</p>
+        </div>
+      </div>
+      <!-- Errors -->
+      <div class="bg-white border border-slate-200 rounded-2xl shadow-sm p-5 flex items-center gap-4">
+        <div class="w-11 h-11 rounded-xl bg-red-100 flex items-center justify-center">
+          <svg class="w-5 h-5 text-red-600" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M15 9l-6 6M9 9l6 6"/></svg>
+        </div>
+        <div>
+          <p class="text-2xl font-bold text-wedding-navy">2</p>
+          <p class="text-[11px] font-semibold text-slate-400 uppercase tracking-wide">Errors</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- ═══ SECTION 2: Control Panel ═══ -->
+    <div class="bg-white shadow-xl rounded-2xl border border-slate-200 overflow-hidden mb-6">
+      <div class="px-6 py-4 border-b border-slate-100">
+        <h2 class="text-lg font-semibold text-wedding-navy">Scraper Controls</h2>
+        <p class="text-sm text-wedding-muted">Select cities and categories, then run the scraper</p>
+      </div>
+      <div class="p-6 space-y-5">
+
+        <!-- Cities -->
+        <div>
+          <label class="text-sm font-semibold text-wedding-navy flex items-center gap-2 mb-3">
+            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0118 0z"/><circle cx="12" cy="10" r="3"/></svg>
+            Target Cities
+          </label>
+          <div class="flex flex-wrap gap-2">
+            <button class="px-3 py-1.5 rounded-lg text-sm font-medium border bg-rose-50 border-rose-300 text-rose-700">Atlanta, GA</button>
+            <button class="px-3 py-1.5 rounded-lg text-sm font-medium border bg-rose-50 border-rose-300 text-rose-700">Houston, TX</button>
+            <button class="px-3 py-1.5 rounded-lg text-sm font-medium border bg-white border-slate-200 text-slate-400 hover:border-rose-200">New York, NY</button>
+            <button class="px-3 py-1.5 rounded-lg text-sm font-medium border bg-rose-50 border-rose-300 text-rose-700">Los Angeles, CA</button>
+            <button class="px-3 py-1.5 rounded-lg text-sm font-medium border bg-white border-slate-200 text-slate-400 hover:border-rose-200">Chicago, IL</button>
+            <button class="px-3 py-1.5 rounded-lg text-sm font-medium border border-dashed border-slate-300 text-slate-400 hover:text-rose-500">Select all</button>
+          </div>
+        </div>
+
+        <!-- Categories -->
+        <div>
+          <label class="text-sm font-semibold text-wedding-navy flex items-center gap-2 mb-3">
+            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg>
+            Vendor Categories
+          </label>
+          <div class="flex items-center gap-3 mb-2">
+            <div class="flex items-center gap-2 text-sm text-slate-600">
+              <!-- Toggle ON state -->
+              <svg class="w-8 h-5 text-rose-500" viewBox="0 0 36 20"><rect width="36" height="20" rx="10" fill="currentColor" opacity="0.2"/><circle cx="24" cy="10" r="7" fill="currentColor"/></svg>
+              All categories (20)
+            </div>
+          </div>
+          <p class="text-xs text-slate-400 italic">All 20 wedding vendor categories will be scraped. Toggle off to pick specific ones.</p>
+        </div>
+
+        <!-- Actions row -->
+        <div class="flex items-center gap-4 pt-4 border-t border-slate-100">
+          <!-- Dry run toggle -->
+          <div class="flex items-center gap-2 text-sm text-slate-600">
+            <svg class="w-8 h-5 text-slate-300" viewBox="0 0 36 20"><rect width="36" height="20" rx="10" fill="currentColor" opacity="0.2"/><circle cx="12" cy="10" r="7" fill="currentColor"/></svg>
+            Dry Run
+          </div>
+
+          <div class="flex-1"></div>
+
+          <!-- Run button -->
+          <button class="flex items-center gap-2 px-6 py-2.5 rounded-xl bg-rose-500 text-white font-semibold shadow-lg shadow-rose-500/20 hover:bg-rose-600 transition-all" id="run-btn" onclick="simulateRun()">
+            <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 24 24"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+            Run Scraper
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ═══ SECTION 3: Live Log Output ═══ -->
+    <div class="mb-6">
+      <div class="flex items-center justify-between mb-3">
+        <h2 class="text-lg font-semibold text-wedding-navy">Live Output</h2>
+        <span class="text-xs text-slate-400" id="line-count">12 log lines</span>
+      </div>
+      <div class="bg-slate-950 rounded-xl border border-slate-800 overflow-hidden font-mono text-[13px]">
+        <!-- Terminal header -->
+        <div class="flex items-center gap-2 px-4 py-2.5 bg-slate-900 border-b border-slate-800">
+          <div class="flex gap-1.5">
+            <span class="w-3 h-3 rounded-full bg-red-500/70"></span>
+            <span class="w-3 h-3 rounded-full bg-amber-500/70"></span>
+            <span class="w-3 h-3 rounded-full bg-emerald-500/70"></span>
+          </div>
+          <span class="text-xs text-slate-500 ml-2">Vendor Scraper Output</span>
+          <span class="ml-auto flex items-center gap-1.5 text-xs text-emerald-400" id="running-indicator">
+            <span class="w-2 h-2 rounded-full bg-emerald-400 pulse-dot"></span>
+            Running
+          </span>
+        </div>
+        <!-- Log body -->
+        <div class="max-h-[350px] overflow-y-auto p-4 space-y-1 log-scroll" id="log-body">
+          <div class="flex gap-3 leading-relaxed"><span class="text-slate-600 w-[72px] shrink-0">14:23:01</span><span class="w-4 shrink-0 text-slate-400">○</span><span class="text-slate-400">Starting vendor scraper...</span></div>
+          <div class="flex gap-3 leading-relaxed"><span class="text-slate-600 w-[72px] shrink-0">14:23:01</span><span class="w-4 shrink-0 text-slate-400">○</span><span class="text-slate-400">═══ Scraping: Atlanta, GA ═══</span></div>
+          <div class="flex gap-3 leading-relaxed"><span class="text-slate-600 w-[72px] shrink-0">14:23:02</span><span class="w-4 shrink-0 text-slate-400">○</span><span class="text-slate-400">Searching: wedding photographer in Atlanta, GA</span></div>
+          <div class="flex gap-3 leading-relaxed"><span class="text-slate-600 w-[72px] shrink-0">14:23:03</span><span class="w-4 shrink-0 text-slate-400">○</span><span class="text-slate-400">  → 18 results found</span></div>
+          <div class="flex gap-3 leading-relaxed"><span class="text-slate-600 w-[72px] shrink-0">14:23:04</span><span class="w-4 shrink-0 text-emerald-400">✓</span><span class="text-emerald-400">  Upserted: Atlanta Wedding Photography Co.</span></div>
+          <div class="flex gap-3 leading-relaxed"><span class="text-slate-600 w-[72px] shrink-0">14:23:04</span><span class="w-4 shrink-0 text-emerald-400">✓</span><span class="text-emerald-400">  Upserted: Smith & Lens Studios</span></div>
+          <div class="flex gap-3 leading-relaxed"><span class="text-slate-600 w-[72px] shrink-0">14:23:05</span><span class="w-4 shrink-0 text-emerald-400">✓</span><span class="text-emerald-400">  Upserted: Peachtree Photo Co.</span></div>
+          <div class="flex gap-3 leading-relaxed"><span class="text-slate-600 w-[72px] shrink-0">14:23:05</span><span class="w-4 shrink-0 text-amber-400">⚠</span><span class="text-amber-400">  Skipped: ElegantShots — already exists as manual entry</span></div>
+          <div class="flex gap-3 leading-relaxed"><span class="text-slate-600 w-[72px] shrink-0">14:23:06</span><span class="w-4 shrink-0 text-red-400">✗</span><span class="text-red-400">  Error: Golden Hour Films — website timeout (10s)</span></div>
+          <div class="flex gap-3 leading-relaxed"><span class="text-slate-600 w-[72px] shrink-0">14:23:07</span><span class="w-4 shrink-0 text-slate-400">○</span><span class="text-slate-400">Searching: wedding florist in Atlanta, GA</span></div>
+          <div class="flex gap-3 leading-relaxed"><span class="text-slate-600 w-[72px] shrink-0">14:23:08</span><span class="w-4 shrink-0 text-slate-400">○</span><span class="text-slate-400">  → 14 results found</span></div>
+          <div class="flex gap-3 leading-relaxed"><span class="text-slate-600 w-[72px] shrink-0">14:23:09</span><span class="w-4 shrink-0 text-emerald-400">✓</span><span class="text-emerald-400">  Upserted: Bloom & Petal Florals</span></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ═══ SECTION 4: Run History ═══ -->
+    <div class="bg-white shadow-xl rounded-2xl border border-slate-200 overflow-hidden">
+      <div class="px-6 py-4 border-b border-slate-100 flex items-center justify-between">
+        <div>
+          <h2 class="text-lg font-semibold text-wedding-navy">Run History</h2>
+          <p class="text-sm text-wedding-muted">Past scraper runs and their results</p>
+        </div>
+        <button class="text-sm text-rose-400 hover:text-rose-500 flex items-center gap-1">
+          <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M23 4v6h-6"/><path d="M20.49 15a9 9 0 11-2.12-9.36L23 10"/></svg>
+          Refresh
+        </button>
+      </div>
+      <div class="overflow-x-auto">
+        <table class="min-w-full divide-y divide-slate-100">
+          <thead class="bg-slate-50">
+            <tr>
+              <th class="px-4 py-3 text-left text-[11px] font-semibold text-slate-400 uppercase tracking-wider">Date</th>
+              <th class="px-4 py-3 text-left text-[11px] font-semibold text-slate-400 uppercase tracking-wider">Cities</th>
+              <th class="px-4 py-3 text-left text-[11px] font-semibold text-slate-400 uppercase tracking-wider">Results (I/U/S/E)</th>
+              <th class="px-4 py-3 text-left text-[11px] font-semibold text-slate-400 uppercase tracking-wider">Duration</th>
+              <th class="px-4 py-3 text-left text-[11px] font-semibold text-slate-400 uppercase tracking-wider">Status</th>
+            </tr>
+          </thead>
+          <tbody class="bg-white divide-y divide-slate-50">
+            <!-- Current run -->
+            <tr class="bg-rose-50/30">
+              <td class="px-4 py-3 text-sm">
+                <svg class="w-3.5 h-3.5 text-slate-300 inline mr-2" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg>
+                <span class="text-wedding-navy font-medium">Apr 1, 2:23 PM</span>
+              </td>
+              <td class="px-4 py-3 text-sm text-slate-500">Atlanta, Houston, Los Angeles</td>
+              <td class="px-4 py-3 text-sm">
+                <span class="text-emerald-600 font-medium">47</span><span class="text-slate-300 mx-1">/</span>
+                <span class="text-blue-600">12</span><span class="text-slate-300 mx-1">/</span>
+                <span class="text-amber-600">5</span><span class="text-slate-300 mx-1">/</span>
+                <span class="text-red-600">2</span>
+              </td>
+              <td class="px-4 py-3 text-sm text-slate-500">—</td>
+              <td class="px-4 py-3 text-sm">
+                <span class="flex items-center gap-1.5 text-blue-600">
+                  <span class="w-2 h-2 rounded-full bg-blue-500 pulse-dot"></span>
+                  Running
+                </span>
+              </td>
+            </tr>
+            <!-- Past run 1 -->
+            <tr class="hover:bg-slate-50 cursor-pointer">
+              <td class="px-4 py-3 text-sm">
+                <svg class="w-3.5 h-3.5 text-slate-300 inline mr-2" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M9 18l6-6-6-6"/></svg>
+                <span class="text-wedding-navy">Mar 28, 10:15 AM</span>
+              </td>
+              <td class="px-4 py-3 text-sm text-slate-500">All cities</td>
+              <td class="px-4 py-3 text-sm">
+                <span class="text-emerald-600 font-medium">183</span><span class="text-slate-300 mx-1">/</span>
+                <span class="text-blue-600">41</span><span class="text-slate-300 mx-1">/</span>
+                <span class="text-amber-600">22</span><span class="text-slate-300 mx-1">/</span>
+                <span class="text-red-600">7</span>
+              </td>
+              <td class="px-4 py-3 text-sm text-slate-500">4m 32s</td>
+              <td class="px-4 py-3 text-sm">
+                <span class="flex items-center gap-1.5 text-emerald-600">
+                  <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M22 11.08V12a10 10 0 11-5.93-9.14"/><path d="M22 4L12 14.01l-3-3"/></svg>
+                  Completed
+                </span>
+              </td>
+            </tr>
+            <!-- Past run 2 (dry run) -->
+            <tr class="hover:bg-slate-50 cursor-pointer">
+              <td class="px-4 py-3 text-sm">
+                <svg class="w-3.5 h-3.5 text-slate-300 inline mr-2" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M9 18l6-6-6-6"/></svg>
+                <span class="text-wedding-navy">Mar 27, 4:50 PM</span>
+              </td>
+              <td class="px-4 py-3 text-sm text-slate-500">Atlanta</td>
+              <td class="px-4 py-3 text-sm">
+                <span class="text-emerald-600 font-medium">0</span><span class="text-slate-300 mx-1">/</span>
+                <span class="text-blue-600">0</span><span class="text-slate-300 mx-1">/</span>
+                <span class="text-amber-600">36</span><span class="text-slate-300 mx-1">/</span>
+                <span class="text-red-600">0</span>
+              </td>
+              <td class="px-4 py-3 text-sm text-slate-500">1m 12s</td>
+              <td class="px-4 py-3 text-sm">
+                <span class="flex items-center gap-1.5 text-emerald-600">
+                  <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M22 11.08V12a10 10 0 11-5.93-9.14"/><path d="M22 4L12 14.01l-3-3"/></svg>
+                  Completed
+                  <span class="ml-1 px-1.5 py-0.5 text-[9px] rounded bg-slate-200 text-slate-500 font-bold">DRY</span>
+                </span>
+              </td>
+            </tr>
+            <!-- Past run 3 (failed) -->
+            <tr class="hover:bg-slate-50 cursor-pointer">
+              <td class="px-4 py-3 text-sm">
+                <svg class="w-3.5 h-3.5 text-slate-300 inline mr-2" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M9 18l6-6-6-6"/></svg>
+                <span class="text-wedding-navy">Mar 25, 9:03 AM</span>
+              </td>
+              <td class="px-4 py-3 text-sm text-slate-500">All cities</td>
+              <td class="px-4 py-3 text-sm">
+                <span class="text-emerald-600 font-medium">28</span><span class="text-slate-300 mx-1">/</span>
+                <span class="text-blue-600">3</span><span class="text-slate-300 mx-1">/</span>
+                <span class="text-amber-600">0</span><span class="text-slate-300 mx-1">/</span>
+                <span class="text-red-600">1</span>
+              </td>
+              <td class="px-4 py-3 text-sm text-slate-500">0m 48s</td>
+              <td class="px-4 py-3 text-sm">
+                <span class="flex items-center gap-1.5 text-red-600">
+                  <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M15 9l-6 6M9 9l6 6"/></svg>
+                  Failed
+                </span>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Design notes (visible on mockup only) -->
+    <div class="mt-10 bg-amber-50 border border-amber-200 rounded-xl p-5 text-sm text-amber-800">
+      <h3 class="font-bold mb-2">📋 Mockup Design Notes</h3>
+      <ul class="space-y-1.5 list-disc list-inside text-amber-700">
+        <li><strong>Sidebar placement:</strong> "Vendor Scraper" sits between Ad Platform and Notifications (root admin only)</li>
+        <li><strong>Stats cards:</strong> Live counters that update via SSE as the scraper runs</li>
+        <li><strong>City selector:</strong> Toggle buttons — pink = selected, gray = deselected. "Select all" / "Clear all" toggle</li>
+        <li><strong>Category filter:</strong> All-on toggle or pick specific ones when toggled off</li>
+        <li><strong>Dry Run toggle:</strong> When ON, shows yellow "NO DB WRITES" badge and scraper logs show "[DRY RUN]" prefix</li>
+        <li><strong>Live Output:</strong> Terminal-style panel with color coding — green ✓ for inserts, yellow ⚠ for skips, red ✗ for errors</li>
+        <li><strong>Run History:</strong> Click any row to expand and show the log tail from that run. Persisted to <code>scraper_runs</code> MongoDB collection</li>
+        <li><strong>SSE streaming:</strong> Reuses your existing SSEProvider pattern — logs push in real time, no polling</li>
+        <li><strong>Only one run at a time:</strong> Starting a second run while one is active returns 409 Conflict</li>
+        <li><strong>Stop button:</strong> Replaces "Run Scraper" while active — disconnects SSE and cancels the background task</li>
+      </ul>
+    </div>
+
+  </main>
+</div>
+
+<script>
+// Simple animation to simulate new log lines appearing
+function simulateRun() {
+  const logBody = document.getElementById('log-body');
+  const lines = [
+    { time: '14:23:10', icon: '✓', color: 'emerald', msg: '  Upserted: Southern Charm Florals' },
+    { time: '14:23:11', icon: '✓', color: 'emerald', msg: '  Upserted: Magnolia & Vine' },
+    { time: '14:23:12', icon: '○', color: 'slate', msg: 'Searching: wedding caterer in Atlanta, GA' },
+    { time: '14:23:13', icon: '○', color: 'slate', msg: '  → 11 results found' },
+    { time: '14:23:14', icon: '✓', color: 'emerald', msg: '  Upserted: Farm to Table Catering ATL' },
+    { time: '14:23:15', icon: '⚠', color: 'amber', msg: '  Skipped: Chef Marcus Events — already exists as manual entry' },
+  ];
+  let i = 0;
+  const interval = setInterval(() => {
+    if (i >= lines.length) { clearInterval(interval); return; }
+    const l = lines[i];
+    const div = document.createElement('div');
+    div.className = 'flex gap-3 leading-relaxed';
+    div.innerHTML = `<span class="text-slate-600 w-[72px] shrink-0">${l.time}</span><span class="w-4 shrink-0 text-${l.color}-400">${l.icon}</span><span class="text-${l.color}-400">${l.msg}</span>`;
+    logBody.appendChild(div);
+    div.scrollIntoView({ behavior: 'smooth' });
+    // Update inserted count
+    if (l.icon === '✓') {
+      const el = document.getElementById('stat-inserted');
+      el.textContent = parseInt(el.textContent) + 1;
+    }
+    document.getElementById('line-count').textContent = `${logBody.children.length} log lines`;
+    i++;
+  }, 800);
+}
+</script>
+
+</body>
+</html>
