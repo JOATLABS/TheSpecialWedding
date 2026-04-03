@@ -1,5 +1,7 @@
 # Wedding WebApp Architecture Documentation
 
+> Historical reference. This document still reflects the older Vercel + DigitalOcean deployment era and is not the current deployment source of truth. Use [README.md](../../README.md) for the active single-container Coolify runtime and [docs/plans/DEPLOYMENT_STRATEGY_STATUS.md](../plans/DEPLOYMENT_STRATEGY_STATUS.md) for the reviewed alternatives.
+
 ## Overview
 
 This is a full-stack wedding planning and management application built with a **hybrid architecture** combining:

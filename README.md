@@ -138,7 +138,7 @@ The platform requires these environment variables (set via `.env` or Coolify das
 
 ### Production Deployment (Coolify)
 
-The platform deploys as a single Docker container via `Dockerfile.coolify`:
+The current production path deploys as a single Docker container via `Dockerfile.coolify`:
 
 ```bash
 # Dockerfile Location in Coolify: Dockerfile.coolify
@@ -146,7 +146,21 @@ The platform deploys as a single Docker container via `Dockerfile.coolify`:
 # Supervisor manages both processes
 ```
 
-Set all environment variables in the Coolify dashboard. The container exposes port 3000 (Next.js) and 8000 (FastAPI) internally, with Supervisor orchestrating both.
+Runtime details:
+
+- frontend process: `npm start` on port `3000`
+- backend process: `/usr/local/bin/start-backend.sh` on port `8000`
+- backend worker count comes from `WEB_CONCURRENCY` and defaults to `2`
+- if `REDIS_ENABLED` is not truthy, the backend forces `WEB_CONCURRENCY=1` so SSE remains correct across workers
+
+Set all environment variables in the Coolify dashboard. The container exposes port `3000` (Next.js) and `8000` (FastAPI) internally, with Supervisor orchestrating both.
+
+Recommended next deployment path:
+
+- [Split-service Coolify rollout guide](docs/plans/COOLIFY_SPLIT_DEPLOY_GUIDE.md)
+- [Deployment strategy status](docs/plans/DEPLOYMENT_STRATEGY_STATUS.md)
+
+Historical deployment docs for older Vercel/DigitalOcean or droplet-only setups remain in `docs/`, but they are no longer the primary source of truth.
 
 ## Roles
 

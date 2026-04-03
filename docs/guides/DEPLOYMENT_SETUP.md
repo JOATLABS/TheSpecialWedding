@@ -1,5 +1,7 @@
 # Backend Deployment Setup Guide
 
+> Historical reference. This guide targets an older droplet-based backend deployment flow and is no longer the primary deployment path for this repo. Use [docs/plans/DEPLOYMENT_STRATEGY_STATUS.md](../plans/DEPLOYMENT_STRATEGY_STATUS.md) for the current recommendation.
+
 ## Overview
 
 This guide explains how to set up automated deployment of the Wedding App backend to your DigitalOcean droplet using GitHub Actions.

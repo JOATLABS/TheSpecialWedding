@@ -1,5 +1,7 @@
 # Split-Service Coolify Deployment with GitHub Actions CI Gate
 
+> This is the recommended next-state deployment path for this repo. The current production path is still the single-container Coolify runtime in `Dockerfile.coolify`. See [DEPLOYMENT_STRATEGY_STATUS.md](./DEPLOYMENT_STRATEGY_STATUS.md) for the current-state vs next-state decision.
+
 ## Overview
 
 This guide migrates from a single monolith container (`Dockerfile.coolify`) to two independent services (backend + frontend) deployed via Coolify, with GitHub Actions gating every deploy through CI validation.
@@ -29,11 +31,12 @@ GitHub Actions CI
      │
      ▼ (only if ALL above pass)
 GitHub Actions Deploy
-  ├─ Trigger Coolify webhook (backend)
-  ├─ Trigger Coolify webhook (frontend)
+  ├─ Read current Coolify image tag (backend/frontend)
+  ├─ Patch Coolify image tag via API
+  ├─ Restart backend/frontend via API
   ├─ Wait for deploys to complete
   ├─ Post-deploy health checks
-  └─ On failure: trigger Coolify rollback via API
+  └─ On failure: restore previous image tag via API
 ```
 
 ---
@@ -54,8 +57,9 @@ GitHub Actions Deploy
    - **Health Check Start Period**: `15s`
 3. **Environment Variables**: Copy all backend env vars from your current Coolify service (MONGODB_URL, SECRET_KEY, REDIS_URL, etc.)
 4. **Domains**: Point `api.thespecialwedding.io` to this service
-5. **Important**: Under **General → Build**, disable "Auto Deploy" — GitHub Actions will trigger deploys via webhook
-6. Under **Webhooks**, copy the **Deploy Webhook URL** — you'll need it for GitHub Actions
+5. **Important**: Under **General → Build**, disable "Auto Deploy" — GitHub Actions will manage deploys through the Coolify API
+6. Copy the application **UUID** from **General** — the workflow deploys by UUID, not by webhook
+7. If you plan to run backend workers greater than `1`, verify Redis-backed SSE coordination is enabled first
 
 ### 1b. Create the Frontend Service
 
@@ -70,7 +74,7 @@ GitHub Actions Deploy
    - **Health Check Start Period**: `10s`
 3. **Environment Variables**: Add frontend-specific vars (NEXT_PUBLIC_API_BASE_URL, NODE_ENV, etc.)
 4. **Domains**: Point `thespecialwedding.io` to this service
-5. Disable "Auto Deploy" and copy the **Deploy Webhook URL**
+5. Disable "Auto Deploy" and copy the application **UUID**
 
 ### 1c. Keep Your Old Service (Temporarily)
 
@@ -91,12 +95,19 @@ Add these secrets in **GitHub → Settings → Secrets and variables → Actions
 
 ---
 
-## Step 3: Deploy the Workflow Files
+## Step 3: Verify the Existing Workflow Files
 
-Copy the two workflow files from this PR:
+These files already exist in the repo and should be treated as the split-service deployment path:
 
 1. **`.github/workflows/ci.yml`** — Updated CI with smoke tests and image tagging
-2. **`.github/workflows/deploy-coolify.yml`** — New: triggers Coolify after CI passes
+2. **`.github/workflows/deploy-coolify.yml`** — API-driven Coolify deploy after CI passes
+
+Review before cutover:
+
+- GHCR image naming and ownership
+- Coolify application UUIDs
+- backend/frontend env separation
+- Redis/SSE readiness for multi-worker backend mode
 
 ---
 
@@ -105,9 +116,10 @@ Copy the two workflow files from this PR:
 - [ ] Both services created in Coolify with correct env vars
 - [ ] Health check paths configured (`/health/readyz` for backend, `/` for frontend)
 - [ ] Auto-deploy disabled on both services
-- [ ] Webhook URLs saved as GitHub secrets
 - [ ] Coolify API token saved as GitHub secret
+- [ ] Backend and frontend UUIDs saved as GitHub secrets
 - [ ] DNS pointing correctly (api.thespecialwedding.io → backend, thespecialwedding.io → frontend)
+- [ ] Redis-enabled SSE coordination verified before backend worker count exceeds `1`
 - [ ] First push to main triggers CI → deploy → health check successfully
 - [ ] Old monolith service disabled
 
@@ -116,7 +128,7 @@ Copy the two workflow files from this PR:
 ## Rollback
 
 ### Automatic
-If post-deploy health checks fail, the `deploy-coolify.yml` workflow automatically tells Coolify to redeploy the previous image tag.
+If post-deploy health checks fail, the `deploy-coolify.yml` workflow restores the previously recorded image tag for the failed service and restarts it.
 
 ### Manual
 1. Go to Coolify → the failing service → Deployments

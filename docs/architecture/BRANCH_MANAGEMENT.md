@@ -1,5 +1,7 @@
 # Branch Management Workflow
 
+> Historical reference. This document still describes the older Vercel + DigitalOcean deployment flow and should not be used as the current production deployment guide. Use [docs/plans/DEPLOYMENT_STRATEGY_STATUS.md](../plans/DEPLOYMENT_STRATEGY_STATUS.md) instead.
+
 This document outlines the branching strategy for the Special Wedding web application.
 
 ## Branch Structure

@@ -1,5 +1,7 @@
 # WeddingApp Backend Deployment Guide
 
+> Historical reference. This guide covers a backend-only VPS deployment path and is not the current production deployment model. Use [README.md](../../README.md) for the active single-container Coolify setup and [docs/plans/COOLIFY_SPLIT_DEPLOY_GUIDE.md](../plans/COOLIFY_SPLIT_DEPLOY_GUIDE.md) for the recommended next-state rollout.
+
 This guide covers deploying the FastAPI backend to a VPS using GitHub Actions and Docker Compose.
 
 ## Architecture Overview
