@@ -131,6 +131,8 @@ class Settings(BaseSettings):
     audit_log_to_db: bool = Field(default=True, alias="AUDIT_LOG_TO_DB")
     audit_log_to_file: bool = Field(default=True, alias="AUDIT_LOG_TO_FILE")
     audit_log_file: str = Field(default="audit.log", alias="AUDIT_LOG_FILE")
+    security_log_to_file: bool = Field(default=True, alias="SECURITY_LOG_TO_FILE")
+    security_log_file: str = Field(default="logs/security_audit.log", alias="SECURITY_LOG_FILE")
     # Performance
     enable_compression: bool = Field(default=True, alias="ENABLE_COMPRESSION")
     enable_cache_headers: bool = Field(default=True, alias="ENABLE_CACHE_HEADERS")

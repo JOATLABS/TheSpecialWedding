@@ -1,4 +1,4 @@
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 from typing import List, Optional
 from bson import ObjectId
 from datetime import datetime
@@ -24,6 +24,23 @@ class PyObjectId(ObjectId):
 
 
 class PlusOneModel(BaseModel):
+    model_config = ConfigDict(
+        validate_by_name=True,
+        json_encoders={ObjectId: str},
+        json_schema_extra={
+            "example": {
+                "guest_id": "60c7d3e9e1b1fdbb4f12d9aa",
+                "name": "Jane Doe",
+                "phone": "1234567890",
+                "email": "jane.doe@example.com",
+                "attending": ["reception"],
+                "dietary": "Vegetarian",
+                "sms_opt_in": True,
+                "email_opt_in": True
+            }
+        },
+    )
+
     guest_id: str = Field(...)  # Store as string, convert to ObjectId when needed
     name: str = Field(..., min_length=2, max_length=100)
     phone: Optional[str] = None
@@ -63,19 +80,3 @@ class PlusOneModel(BaseModel):
     @field_validator("attending")
     def validate_attending(cls, v):
         return normalize_event_type_list(v)
-
-    class Config:
-        allow_population_by_field_name = True
-        json_encoders = {ObjectId: str}
-        json_schema_extra = {
-            "example": {
-                "guest_id": "60c7d3e9e1b1fdbb4f12d9aa",
-                "name": "Jane Doe",
-                "phone": "1234567890",
-                "email": "jane.doe@example.com",
-                "attending": ["reception"],
-                "dietary": "Vegetarian",
-                "sms_opt_in": True,
-                "email_opt_in": True
-            }
-        }

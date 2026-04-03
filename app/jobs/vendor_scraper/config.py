@@ -1,47 +1,62 @@
 """
 Vendor Scraper Configuration
 
-City list, category mappings, and search query templates.
+State list, category mappings, and search query templates.
+States are loaded from states.json — edit that file to change target states.
 """
 
-# ─── Pilot cities to scrape ──────────────────────────────────────────────────
-# Each entry: (city, state_abbrev, state_full, country)
-PILOT_CITIES = [
-    ("Atlanta", "GA", "Georgia", "US"),
-    ("Houston", "TX", "Texas", "US"),
-    ("New York", "NY", "New York", "US"),
-    ("Los Angeles", "CA", "California", "US"),
-    ("Chicago", "IL", "Illinois", "US"),
-]
+import json
+import os
+
+# ─── Load states from states.json ────────────────────────────────────────────
+# Edit states.json to add/remove/change target states.
+# Each entry: {"state": "XX", "state_full": "Oklahoma", "country": "US"}
+_STATES_FILE = os.path.join(os.path.dirname(__file__), "states.json")
+
+def _load_states():
+    """Load states from the JSON config file."""
+    if not os.path.exists(_STATES_FILE):
+        raise FileNotFoundError(
+            f"states.json not found at {_STATES_FILE}. "
+            "Create it with an array of state objects: "
+            '[{"state": "OK", "state_full": "Oklahoma", "country": "US"}]'
+        )
+    with open(_STATES_FILE, "r") as f:
+        entries = json.load(f)
+    return [(e["state"], e["state_full"], e["country"]) for e in entries]
+
+STATES = _load_states()
 
 
 # ─── Google Places type → VendorCategory mapping ─────────────────────────────
 # Google Places uses its own type taxonomy. We map to our VendorCategory enum.
 # The scraper searches for each SEARCH_QUERIES entry and maps results using
 # the category specified.
+# {state_full} is the full state name (e.g. "Oklahoma") — Google Places handles
+# geographic scoping across the entire state.
 
 SEARCH_QUERIES = [
     # (search_query_template, our_vendor_category)
-    ("wedding photographer in {city}, {state}", "photographer"),
-    ("wedding videographer in {city}, {state}", "videographer"),
-    ("wedding florist in {city}, {state}", "florist"),
-    ("wedding caterer in {city}, {state}", "caterer"),
-    ("wedding venue in {city}, {state}", "venue"),
-    ("wedding DJ in {city}, {state}", "dj"),
-    ("wedding MC host in {city}, {state}", "mc"),
-    ("wedding band in {city}, {state}", "band"),
-    ("wedding officiant in {city}, {state}", "officiant"),
-    ("wedding planner in {city}, {state}", "planner"),
-    ("wedding decorator in {city}, {state}", "decorator"),
-    ("wedding cake bakery in {city}, {state}", "cake"),
-    ("bridal hair makeup artist in {city}, {state}", "hair_makeup"),
-    ("wedding transportation limo in {city}, {state}", "transportation"),
-    ("wedding invitations stationery in {city}, {state}", "stationery"),
-    ("wedding rentals in {city}, {state}", "rentals"),
-    ("wedding lighting in {city}, {state}", "lighting"),
-    ("photo booth rental wedding in {city}, {state}", "photo_booth"),
-    ("wedding jewelry in {city}, {state}", "jewelry"),
-    ("bridal shop wedding attire in {city}, {state}", "attire"),
+    ("wedding photographer in {state_full}", "photographer"),
+    ("wedding videographer in {state_full}", "videographer"),
+    ("wedding florist in {state_full}", "florist"),
+    ("wedding caterer in {state_full}", "caterer"),
+    ("wedding venue in {state_full}", "venue"),
+    ("wedding DJ in {state_full}", "dj"),
+    ("wedding MC host in {state_full}", "mc"),
+    ("wedding band in {state_full}", "band"),
+    ("wedding officiant in {state_full}", "officiant"),
+    ("wedding planner in {state_full}", "planner"),
+    ("wedding decorator in {state_full}", "decorator"),
+    ("wedding cake bakery in {state_full}", "cake"),
+    ("bridal hair makeup artist in {state_full}", "hair_makeup"),
+    ("wedding transportation limo in {state_full}", "transportation"),
+    ("wedding invitations stationery in {state_full}", "stationery"),
+    ("wedding rentals in {state_full}", "rentals"),
+    ("wedding lighting in {state_full}", "lighting"),
+    ("photo booth rental wedding in {state_full}", "photo_booth"),
+    ("wedding jewelry in {state_full}", "jewelry"),
+    ("bridal shop wedding attire in {state_full}", "attire"),
 ]
 
 

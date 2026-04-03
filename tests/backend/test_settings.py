@@ -83,3 +83,16 @@ def test_allowed_hosts_override_accepts_comma_separated_values():
         "app.example.com",
         "*.example.com",
     ]
+
+
+def test_security_log_settings_default_to_repo_writable_paths():
+    settings = build_settings()
+
+    assert settings.security_log_to_file is True
+    assert settings.security_log_file == "logs/security_audit.log"
+
+
+def test_security_log_file_can_be_overridden():
+    settings = build_settings(SECURITY_LOG_FILE="/tmp/custom-security.log")
+
+    assert settings.security_log_file == "/tmp/custom-security.log"

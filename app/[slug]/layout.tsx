@@ -26,7 +26,11 @@ export async function generateMetadata({
   const weddingDate = privacyInfo.date
     ? new Date(privacyInfo.date).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })
     : '';
-  const venue = privacyInfo.venue?.name || '';
+  const venue = typeof privacyInfo.venue === 'string'
+    ? privacyInfo.venue
+    : typeof privacyInfo.venue?.name === 'string'
+      ? privacyInfo.venue.name
+      : '';
 
   const titleParts = [coupleNames];
   if (weddingDate) titleParts.push(weddingDate);
@@ -73,18 +77,18 @@ export default async function WeddingLayout({ children, params }: { children: Re
     slug,
     couple_names: privacyInfo.couple_names ?? '',
     date: privacyInfo.date ?? new Date().toISOString(),
-    events: Array.isArray(privacyInfo.events) ? privacyInfo.events : [],
+    events: Array.isArray(privacyInfo.events) ? (privacyInfo.events as unknown as Wedding['events']) : [],
     requires_authentication: privacyInfo.privacy_mode === 'public' ? false : true,
     privacy_mode: privacyInfo.privacy_mode,
     ...(privacyInfo.featured_image ? { featured_image: privacyInfo.featured_image } : {}),
-    ...(privacyInfo.theme_config ? { theme_config: privacyInfo.theme_config } : {}),
-    ...(privacyInfo.rsvp_config ? { rsvp_config: privacyInfo.rsvp_config } : {}),
+    ...(privacyInfo.theme_config ? { theme_config: privacyInfo.theme_config as unknown as Wedding['theme_config'] } : {}),
+    ...(privacyInfo.rsvp_config ? { rsvp_config: privacyInfo.rsvp_config as unknown as Wedding['rsvp_config'] } : {}),
     // Include additional data for public weddings
-    ...(privacyInfo.registries ? { registries: privacyInfo.registries } : {}),
-    ...(privacyInfo.faqs ? { faqs: privacyInfo.faqs } : {}),
-    ...(privacyInfo.our_story ? { our_story: privacyInfo.our_story } : {}),
-    ...(privacyInfo.venue ? { venue: privacyInfo.venue } : {}),
-    ...(privacyInfo.wedding_party ? { wedding_party: privacyInfo.wedding_party } : {}),
+    ...(Array.isArray(privacyInfo.registries) ? { registries: privacyInfo.registries as unknown as Wedding['registries'] } : {}),
+    ...(Array.isArray(privacyInfo.faqs) ? { faqs: privacyInfo.faqs as unknown as Wedding['faqs'] } : {}),
+    ...(privacyInfo.our_story ? { our_story: privacyInfo.our_story as unknown as Wedding['our_story'] } : {}),
+    ...(privacyInfo.venue ? { venue: privacyInfo.venue as unknown as Wedding['venue'] } : {}),
+    ...(Array.isArray(privacyInfo.wedding_party) ? { wedding_party: privacyInfo.wedding_party as unknown as Wedding['wedding_party'] } : {}),
   };
 
   return (

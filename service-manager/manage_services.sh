@@ -612,25 +612,57 @@ run_vendor_scraper() {
     return
   fi
 
-  # ── City selection ──
+  # ── State selection (loaded from states.json) ──
+  local states_file="$PROJECT_ROOT/app/jobs/vendor_scraper/states.json"
+  if [[ ! -f "$states_file" ]]; then
+    err "states.json not found at $states_file"
+    warn "Create it with: [{\"state\": \"OK\", \"state_full\": \"Oklahoma\", \"country\": \"US\"}]"
+    return
+  fi
+
+  # Parse state abbreviations and full names from JSON
+  local state_abbrevs=()
+  local state_fulls=()
+  while IFS='|' read -r abbrev full; do
+    state_abbrevs+=("$abbrev")
+    state_fulls+=("$full")
+  done < <(python3 -c "
+import json, sys
+with open('$states_file') as f:
+    for s in json.load(f):
+        print(f\"{s['state']}|{s['state_full']}\")
+")
+
+  local state_count=${#state_abbrevs[@]}
+  if [[ "$state_count" -eq 0 ]]; then
+    err "No states found in states.json"
+    return
+  fi
+
   printf '\n\033[1;35mVendor Directory Scraper\033[0m\n'
   printf '\033[90m─────────────────────────────────────────\033[0m\n'
-  printf '\nAvailable cities:\n'
-  printf '  1) Atlanta, GA    2) Houston, TX    3) New York, NY\n'
-  printf '  4) Los Angeles, CA    5) Chicago, IL\n'
-  printf '  a) All cities\n'
-  printf '\nSelect cities (comma-separated, or "a" for all): '
-  read -r city_input
+  printf '\nAvailable states (from states.json):\n'
+  for i in $(seq 0 $((state_count - 1))); do
+    printf '  %d) %s (%s)' "$((i + 1))" "${state_fulls[$i]}" "${state_abbrevs[$i]}"
+    # 3 states per line
+    if (( (i + 1) % 3 == 0 )); then
+      printf '\n'
+    else
+      printf '    '
+    fi
+  done
+  printf '\n  a) All states\n'
+  printf '\nSelect states (comma-separated, or "a" for all): '
+  read -r state_input
 
-  local city_args=""
-  if [[ "$city_input" != "a" && -n "$city_input" ]]; then
-    local city_map=("Atlanta" "Houston" "New York" "Los Angeles" "Chicago")
-    IFS=',' read -r -a selections <<< "$city_input"
+  local state_args=""
+  if [[ "$state_input" != "a" && -n "$state_input" ]]; then
+    IFS=',' read -r -a selections <<< "$state_input"
     for sel in "${selections[@]}"; do
       sel="$(trim "$sel")"
-      if [[ "$sel" =~ ^[1-5]$ ]]; then
+      if [[ "$sel" =~ ^[0-9]+$ ]] && (( sel >= 1 && sel <= state_count )); then
         local idx=$((sel - 1))
-        city_args="$city_args --city \"${city_map[$idx]}\""
+        state_args="$state_args --state \"${state_abbrevs[$idx]}\""
       fi
     done
   fi
@@ -659,7 +691,7 @@ run_vendor_scraper() {
     dry_flag="--dry-run"
   fi
 
-  local cmd="cd '$PROJECT_ROOT' && python -m app.jobs.vendor_scraper.run $city_args $cat_args $dry_flag 2>&1 | tee '$SCRAPER_LOG_FILE'"
+  local cmd="cd '$PROJECT_ROOT' && python -m app.jobs.vendor_scraper.run $state_args $cat_args $dry_flag 2>&1 | tee '$SCRAPER_LOG_FILE'"
 
   local mode="LIVE"
   [[ "$dry_run" == "true" ]] && mode="DRY RUN (no DB writes)"
@@ -667,7 +699,7 @@ run_vendor_scraper() {
   printf '\n\033[90m─────────────────────────────────────────\033[0m\n'
   printf '\033[33m▶ Starting scraper...\033[0m\n'
   printf "  Mode: %s\n" "$mode"
-  [[ -n "$city_args" ]] && printf "  Cities: %s\n" "$city_args" || printf "  Cities: All\n"
+  [[ -n "$state_args" ]] && printf "  States: %s\n" "$state_args" || printf "  States: All\n"
   [[ -n "$cat_args" ]] && printf "  Categories: %s\n" "$cat_input" || printf "  Categories: All\n"
   printf '\n'
 

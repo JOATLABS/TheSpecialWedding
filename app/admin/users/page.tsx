@@ -1609,18 +1609,19 @@ export default function AdminUsersPage() {
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
-              className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50"
+              className="fixed inset-0 z-50 overflow-y-auto bg-black/60 backdrop-blur-sm"
               onClick={() => setShowInviteModal(false)}
             >
+              <div className="flex min-h-full items-start justify-center p-4 sm:items-center sm:p-6">
               <motion.div
                 initial={{ opacity: 0, scale: 0.95, y: 20 }}
                 animate={{ opacity: 1, scale: 1, y: 0 }}
                 exit={{ opacity: 0, scale: 0.95, y: 20 }}
-                className="w-full max-w-md overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl dark:border-slate-700 dark:bg-slate-900"
+                className="my-4 flex w-full max-w-[560px] max-h-[90vh] flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl dark:border-slate-700 dark:bg-slate-900"
                 onClick={(e) => e.stopPropagation()}
               >
                 {/* Modal Header */}
-                <div className="relative overflow-hidden px-6 pt-6 pb-4">
+                <div className="relative shrink-0 overflow-hidden px-6 pt-6 pb-4">
                   <div className="absolute top-0 right-0 w-40 h-40 bg-gradient-to-br from-primary-500/20 to-secondary-500/20 rounded-full blur-2xl" />
                   <div className="relative flex items-center gap-4">
                     <div className="w-14 h-14 rounded-xl bg-gradient-to-br from-primary-500 to-secondary-500 flex items-center justify-center shadow-lg shadow-primary-500/30">
@@ -1634,10 +1635,10 @@ export default function AdminUsersPage() {
                 </div>
 
                 {/* Modal Body */}
-                <form onSubmit={handleInvitePlanner} className="p-6 pt-2 space-y-4 max-h-[70vh] overflow-y-auto">
+                <form onSubmit={handleInvitePlanner} className="flex-1 space-y-4 overflow-y-auto p-6 pt-2 pr-4 scrollbar-thin sm:pr-6">
                   {/* Basic Info Section */}
-                  <div className="grid grid-cols-2 gap-4">
-                    <div className="col-span-2">
+                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                    <div className="sm:col-span-2">
                       <label className="mb-2 block text-sm font-medium text-slate-700 dark:text-slate-300">
                         Email Address <span className="text-red-400">*</span>
                       </label>
@@ -1713,7 +1714,7 @@ export default function AdminUsersPage() {
                           <Clock className="w-4 h-4 inline mr-1" />
                           Trial Duration (days)
                         </label>
-                        <div className="flex items-center gap-3">
+                        <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
                           <input
                             type="range"
                             min="0"
@@ -1729,7 +1730,7 @@ export default function AdminUsersPage() {
                             max="730"
                             value={inviteForm.trial_days}
                             onChange={(e) => setInviteForm({ ...inviteForm, trial_days: parseInt(e.target.value) || 0 })}
-                            className="w-20 rounded-lg border border-slate-200 bg-white px-3 py-2 text-center text-slate-900 shadow-sm focus:outline-none focus:ring-2 focus:ring-primary-500/50 dark:border-slate-600 dark:bg-slate-700 dark:text-white dark:shadow-none"
+                            className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-center text-slate-900 shadow-sm focus:outline-none focus:ring-2 focus:ring-primary-500/50 dark:border-slate-600 dark:bg-slate-700 dark:text-white dark:shadow-none sm:w-20"
                           />
                         </div>
                         <p className="text-xs text-slate-500 mt-1">
@@ -1745,7 +1746,7 @@ export default function AdminUsersPage() {
                           <label className="mb-2 block text-sm font-medium text-slate-700 dark:text-slate-300">
                             When Trial Ends Without Payment
                           </label>
-                          <div className="grid grid-cols-2 gap-3">
+                          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                             <button
                               type="button"
                               onClick={() => setInviteForm({ ...inviteForm, trial_end_behavior: 'pause' })}
@@ -1808,7 +1809,7 @@ export default function AdminUsersPage() {
                     </div>
                   )}
 
-                  <div className="flex gap-3 pt-4">
+                  <div className="flex flex-col-reverse gap-3 pt-4 sm:flex-row">
                     <button
                       type="button"
                       onClick={() => {
@@ -1839,6 +1840,7 @@ export default function AdminUsersPage() {
                   </div>
                 </form>
               </motion.div>
+              </div>
             </motion.div>
           )}
         </AnimatePresence>
