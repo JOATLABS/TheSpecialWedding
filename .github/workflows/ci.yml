@@ -288,7 +288,7 @@ jobs:
           cache-from: type=gha,scope=frontend
           cache-to: type=gha,mode=max,scope=frontend
           build-args: |
-            NEXT_PUBLIC_API_BASE_URL=https://api.thespecialwedding.io
+            FRONTEND_URL=https://thespecialwedding.io
 
   # ── Smoke Test: Validate built images start correctly ──────────────────────
   smoke-test:
@@ -351,9 +351,11 @@ jobs:
 
           # Start frontend
           docker run -d --name frontend-smoke \
+            --add-host=host.docker.internal:host-gateway \
             -p 3000:3000 \
             -e NODE_ENV=production \
-            -e NEXT_PUBLIC_API_BASE_URL=http://localhost:8000 \
+            -e FRONTEND_URL=http://localhost:3000 \
+            -e INTERNAL_API_BASE_URL=http://host.docker.internal:8000 \
             ${{ env.FRONTEND_IMAGE }}:${{ steps.tag.outputs.tag }}
 
       - name: Wait and verify backend
@@ -450,4 +452,4 @@ jobs:
           push: false
           cache-from: type=gha,scope=frontend
           build-args: |
-            NEXT_PUBLIC_API_BASE_URL=https://api.thespecialwedding.io
+            FRONTEND_URL=https://thespecialwedding.io

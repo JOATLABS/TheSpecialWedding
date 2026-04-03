@@ -120,6 +120,7 @@ The platform requires these environment variables (set via `.env` or Coolify das
 | `CORS_ORIGINS` | Allowed origins (comma-separated) |
 | `NEXT_PUBLIC_API_BASE_URL` | Backend API URL for frontend |
 | `FRONTEND_URL` | Frontend URL for generated links |
+| `INTERNAL_API_BASE_URL` | Server-side API URL used by the frontend container for SSR/data fetches |
 | `TWILIO_ACCOUNT_SID` | Twilio account SID |
 | `TWILIO_AUTH_TOKEN` | Twilio auth token |
 | `TWILIO_MESSAGING_SERVICE_SID` | Twilio messaging service |
@@ -159,6 +160,12 @@ Recommended next deployment path:
 
 - [Split-service Coolify rollout guide](docs/plans/COOLIFY_SPLIT_DEPLOY_GUIDE.md)
 - [Deployment strategy status](docs/plans/DEPLOYMENT_STRATEGY_STATUS.md)
+
+Repo rollout status:
+
+- staging auto-deploy after CI: [`.github/workflows/deploy-coolify.yml`](/Users/emmanuelakinwale/Desktop/WeddingWebApp/.github/workflows/deploy-coolify.yml)
+- manual production promotion by immutable SHA: [`.github/workflows/promote-coolify-production.yml`](/Users/emmanuelakinwale/Desktop/WeddingWebApp/.github/workflows/promote-coolify-production.yml)
+- shared deploy verification and rollback logic: [`.github/workflows/coolify-deploy-shared.yml`](/Users/emmanuelakinwale/Desktop/WeddingWebApp/.github/workflows/coolify-deploy-shared.yml)
 
 Historical deployment docs for older Vercel/DigitalOcean or droplet-only setups remain in `docs/`, but they are no longer the primary source of truth.
 

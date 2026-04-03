@@ -13,9 +13,11 @@ RUN npm ci --legacy-peer-deps
 # Copy source
 COPY . .
 
-# Build-time env vars (injected by CI/CD or K8s ConfigMap)
-ARG NEXT_PUBLIC_API_BASE_URL
-ENV NEXT_PUBLIC_API_BASE_URL=${NEXT_PUBLIC_API_BASE_URL}
+# Build-time env vars used only for server-side evaluation during `next build`.
+# The runtime browser API base is resolved dynamically from the current host so
+# the same image can move from staging to production without a rebuild.
+ARG FRONTEND_URL
+ENV FRONTEND_URL=${FRONTEND_URL}
 
 # Build Next.js with standalone output
 RUN npm run build

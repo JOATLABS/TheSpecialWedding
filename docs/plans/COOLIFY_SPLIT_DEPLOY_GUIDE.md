@@ -1,148 +1,289 @@
-# Split-Service Coolify Deployment with GitHub Actions CI Gate
+# Two-Server Coolify Deployment Guide
 
-> This is the recommended next-state deployment path for this repo. The current production path is still the single-container Coolify runtime in `Dockerfile.coolify`. See [DEPLOYMENT_STRATEGY_STATUS.md](./DEPLOYMENT_STRATEGY_STATUS.md) for the current-state vs next-state decision.
+> This is the implemented next-state rollout path in the repo. The live production environment may still be on the older single-container Coolify service until you cut over, but the GitHub Actions workflows and runtime config now target this two-server staging-first model.
 
 ## Overview
 
-This guide migrates from a single monolith container (`Dockerfile.coolify`) to two independent services (backend + frontend) deployed via Coolify, with GitHub Actions gating every deploy through CI validation.
+This guide moves the platform from one combined app container to two separate environments, each with its own frontend, backend, MongoDB, and Redis resources, all managed through **Coolify Cloud**.
 
-### What Changes
+### Target topology
 
-| Before | After |
-|--------|-------|
-| Single container (supervisord) | Two independent services |
-| Manual deploy via Coolify UI | Automated: push → CI → deploy |
-| No CI gate on deploys | Deploy only after tests pass |
-| No rollback | Instant rollback per service |
-| `:latest` tags only | SHA-tagged images for traceability |
+| Environment | Server | Resources |
+| --- | --- | --- |
+| Production | DO production server | `frontend-prod`, `backend-prod`, `mongodb-prod`, `redis-prod` |
+| Staging | DO staging server | `frontend-staging`, `backend-staging`, `mongodb-staging`, `redis-staging` |
 
-### Architecture
+### Release model
 
-```
-Push to main
-     │
-     ▼
-GitHub Actions CI
-  ├─ Lint (frontend + backend)
-  ├─ Test (frontend + backend)
-  ├─ Security audit
-  ├─ Build & push images (SHA-tagged to GHCR)
-  └─ Smoke test (container health check in CI)
-     │
-     ▼ (only if ALL above pass)
-GitHub Actions Deploy
-  ├─ Read current Coolify image tag (backend/frontend)
-  ├─ Patch Coolify image tag via API
-  ├─ Restart backend/frontend via API
-  ├─ Wait for deploys to complete
-  ├─ Post-deploy health checks
-  └─ On failure: restore previous image tag via API
-```
+1. Push to `main`
+2. GitHub Actions CI passes
+3. The same immutable SHA-tagged images deploy to **staging**
+4. Staging smoke checks pass
+5. You manually promote that same SHA to **production**
+6. Rollback means redeploying the previous known-good SHA tag
+
+This keeps staging real, keeps production promotion manual, and avoids rebuilding the frontend for each environment.
 
 ---
 
-## Step 1: Coolify Dashboard Setup
+## Workflow assets in this repo
 
-### 1a. Create the Backend Service
+These files now implement the rollout:
 
-1. In Coolify, go to **Projects → your project → New Resource → Docker Image**
-2. Configure:
-   - **Name**: `wedding-backend`
-   - **Image**: `ghcr.io/etastic/wedding-app-backend:latest` (GitHub Actions will override the tag)
-   - **Port**: `8000`
-   - **Health Check Path**: `/health/readyz`
-   - **Health Check Interval**: `30s`
-   - **Health Check Timeout**: `10s`
-   - **Health Check Retries**: `3`
-   - **Health Check Start Period**: `15s`
-3. **Environment Variables**: Copy all backend env vars from your current Coolify service (MONGODB_URL, SECRET_KEY, REDIS_URL, etc.)
-4. **Domains**: Point `api.thespecialwedding.io` to this service
-5. **Important**: Under **General → Build**, disable "Auto Deploy" — GitHub Actions will manage deploys through the Coolify API
-6. Copy the application **UUID** from **General** — the workflow deploys by UUID, not by webhook
-7. If you plan to run backend workers greater than `1`, verify Redis-backed SSE coordination is enabled first
-
-### 1b. Create the Frontend Service
-
-1. Same as above: **Projects → your project → New Resource → Docker Image**
-2. Configure:
-   - **Name**: `wedding-frontend`
-   - **Image**: `ghcr.io/etastic/wedding-app-frontend:latest`
-   - **Port**: `3000`
-   - **Health Check Path**: `/`
-   - **Health Check Interval**: `30s`
-   - **Health Check Retries**: `3`
-   - **Health Check Start Period**: `10s`
-3. **Environment Variables**: Add frontend-specific vars (NEXT_PUBLIC_API_BASE_URL, NODE_ENV, etc.)
-4. **Domains**: Point `thespecialwedding.io` to this service
-5. Disable "Auto Deploy" and copy the application **UUID**
-
-### 1c. Keep Your Old Service (Temporarily)
-
-Don't delete the monolith service yet. Keep it running while you test the split services. Once both new services are verified, disable the monolith.
+| File | Purpose |
+| --- | --- |
+| [`.github/workflows/ci.yml`](/Users/emmanuelakinwale/Desktop/WeddingWebApp/.github/workflows/ci.yml) | Lint, test, build, push immutable images to GHCR, and smoke-test the built images |
+| [`.github/workflows/deploy-coolify.yml`](/Users/emmanuelakinwale/Desktop/WeddingWebApp/.github/workflows/deploy-coolify.yml) | Auto-deploy staging after CI succeeds on `main`, or manually redeploy staging by tag |
+| [`.github/workflows/promote-coolify-production.yml`](/Users/emmanuelakinwale/Desktop/WeddingWebApp/.github/workflows/promote-coolify-production.yml) | Manual production promotion of an explicit SHA tag |
+| [`.github/workflows/coolify-deploy-shared.yml`](/Users/emmanuelakinwale/Desktop/WeddingWebApp/.github/workflows/coolify-deploy-shared.yml) | Shared deploy, verify, and rollback logic for both environments |
+| [`scripts/deploy/verify_environment.py`](/Users/emmanuelakinwale/Desktop/WeddingWebApp/scripts/deploy/verify_environment.py) | Post-deploy smoke verification used by both workflows |
 
 ---
 
-## Step 2: GitHub Repository Secrets
+## Step 1: Register two servers in Coolify Cloud
 
-Add these secrets in **GitHub → Settings → Secrets and variables → Actions**:
+In Coolify Cloud:
 
-| Secret | Description | Where to find |
-|--------|-------------|---------------|
-| `COOLIFY_BASE_URL` | Your Coolify instance URL (e.g. `https://coolify.yourdomain.com`) | Your browser address bar when logged into Coolify |
-| `COOLIFY_API_TOKEN` | Coolify API token for deploy/rollback | Coolify → Settings → API → Create Token |
-| `COOLIFY_BACKEND_UUID` | Backend application UUID | Coolify → Backend service → General → UUID |
-| `COOLIFY_FRONTEND_UUID` | Frontend application UUID | Coolify → Frontend service → General → UUID |
+1. Add your **production DO server**
+2. Add your **staging DO server**
+3. Confirm each server is reachable and the Coolify proxy is healthy
 
----
-
-## Step 3: Verify the Existing Workflow Files
-
-These files already exist in the repo and should be treated as the split-service deployment path:
-
-1. **`.github/workflows/ci.yml`** — Updated CI with smoke tests and image tagging
-2. **`.github/workflows/deploy-coolify.yml`** — API-driven Coolify deploy after CI passes
-
-Review before cutover:
-
-- GHCR image naming and ownership
-- Coolify application UUIDs
-- backend/frontend env separation
-- Redis/SSE readiness for multi-worker backend mode
+Do **not** try to share one MongoDB or Redis between staging and production for launch. Each environment should be self-contained.
 
 ---
 
-## Step 4: Cutover Checklist
+## Step 2: Create the Coolify resources
 
-- [ ] Both services created in Coolify with correct env vars
-- [ ] Health check paths configured (`/health/readyz` for backend, `/` for frontend)
-- [ ] Auto-deploy disabled on both services
-- [ ] Coolify API token saved as GitHub secret
-- [ ] Backend and frontend UUIDs saved as GitHub secrets
-- [ ] DNS pointing correctly (api.thespecialwedding.io → backend, thespecialwedding.io → frontend)
-- [ ] Redis-enabled SSE coordination verified before backend worker count exceeds `1`
-- [ ] First push to main triggers CI → deploy → health check successfully
-- [ ] Old monolith service disabled
+Create these resources in Coolify Cloud.
+
+### Production server
+
+- `frontend-prod`
+- `backend-prod`
+- `mongodb-prod`
+- `redis-prod`
+
+### Staging server
+
+- `frontend-staging`
+- `backend-staging`
+- `mongodb-staging`
+- `redis-staging`
+
+### App resource type
+
+For both frontend and backend:
+
+1. Use **Docker Image**
+2. Point the resource at the GHCR image name already produced by CI
+3. Set the initial image tag to any valid SHA tag or a temporary placeholder tag that exists
+4. Disable **Auto Deploy from Source**
+
+The GitHub Actions workflows drive deploys by calling the Coolify API and changing the image tag on the existing app resources.
 
 ---
 
-## Rollback
+## Step 3: Configure domains
 
-### Automatic
-If post-deploy health checks fail, the `deploy-coolify.yml` workflow restores the previously recorded image tag for the failed service and restarts it.
+### Production
 
-### Manual
-1. Go to Coolify → the failing service → Deployments
-2. Click "Rollback" on the previous deployment
-3. Or: re-run the GitHub Actions deploy workflow with a specific image tag via `workflow_dispatch`
+- frontend: `thespecialwedding.io`
+- backend: `api.thespecialwedding.io`
+
+### Staging
+
+- frontend: `staging.thespecialwedding.io`
+- backend: `api.staging.thespecialwedding.io`
+
+Recommended health checks:
+
+- frontend: `/`
+- backend: `/health/readyz`
 
 ---
 
-## Monitoring
+## Step 4: Configure environment variables
 
-After deployment, the workflow posts a summary to the GitHub Actions run with:
-- Image tags deployed
-- Health check results
-- Deploy duration
-- Links to Coolify dashboard
+Keep staging and production variables fully separate.
 
-You can also set up GitHub Actions notifications (Slack, email) on workflow failure.
+### Frontend app variables
+
+Required for both `frontend-prod` and `frontend-staging`:
+
+- `NODE_ENV=production`
+- `FRONTEND_URL=https://thespecialwedding.io` or `https://staging.thespecialwedding.io`
+- `INTERNAL_API_BASE_URL=...`
+
+Important note:
+
+- The frontend image is now runtime-portable. Browser API calls resolve from the current hostname, so the same image can move from staging to production.
+- `INTERNAL_API_BASE_URL` is still important for **server-rendered** fetches. In split-service deployments this should point at the backend reachable from the frontend container.
+
+Use one of these patterns:
+
+1. Preferred: a Coolify-private backend URL if your Coolify network exposes one
+2. Acceptable: the public API domain for that environment
+
+Examples:
+
+- production frontend:
+  - `FRONTEND_URL=https://thespecialwedding.io`
+  - `INTERNAL_API_BASE_URL=https://api.thespecialwedding.io`
+- staging frontend:
+  - `FRONTEND_URL=https://staging.thespecialwedding.io`
+  - `INTERNAL_API_BASE_URL=https://api.staging.thespecialwedding.io`
+
+`NEXT_PUBLIC_API_BASE_URL` is no longer the deployment-critical knob for browser routing in this split-service setup. It can still be set if you want explicit public override behavior, but it is no longer required for staging-first promotion.
+
+### Backend app variables
+
+Required:
+
+- Mongo URL for that environment only
+- Redis URL for that environment only
+- `FRONTEND_URL` for that environment
+- environment-specific `CORS_ORIGINS`
+- environment-specific host validation inputs (`ALLOWED_HOSTS` or derived config)
+
+Examples:
+
+- production backend:
+  - `FRONTEND_URL=https://thespecialwedding.io`
+  - `CORS_ORIGINS=["https://thespecialwedding.io","https://api.thespecialwedding.io"]`
+- staging backend:
+  - `FRONTEND_URL=https://staging.thespecialwedding.io`
+  - `CORS_ORIGINS=["https://staging.thespecialwedding.io","https://api.staging.thespecialwedding.io"]`
+
+### Data services
+
+- `backend-prod` points only to `mongodb-prod` and `redis-prod`
+- `backend-staging` points only to `mongodb-staging` and `redis-staging`
+
+Do not clone live planner or guest data into staging. Use fixtures or sanitized seed data instead.
+
+---
+
+## Step 5: Add GitHub Actions secrets
+
+Add these repository secrets.
+
+### Shared Coolify access
+
+- `COOLIFY_BASE_URL`
+- `COOLIFY_API_TOKEN`
+
+### Production app UUIDs
+
+- `COOLIFY_PRODUCTION_FRONTEND_UUID`
+- `COOLIFY_PRODUCTION_BACKEND_UUID`
+
+### Staging app UUIDs
+
+- `COOLIFY_STAGING_FRONTEND_UUID`
+- `COOLIFY_STAGING_BACKEND_UUID`
+
+### Staging smoke credentials
+
+- `STAGING_SMOKE_ADMIN_EMAIL`
+- `STAGING_SMOKE_ADMIN_PASSWORD`
+- `STAGING_SMOKE_COUPLE_EMAIL`
+- `STAGING_SMOKE_COUPLE_PASSWORD`
+- `STAGING_SMOKE_PUBLIC_WEDDING_SLUG`
+
+### Production smoke credentials
+
+- `PRODUCTION_SMOKE_ADMIN_EMAIL`
+- `PRODUCTION_SMOKE_ADMIN_PASSWORD`
+- `PRODUCTION_SMOKE_PUBLIC_WEDDING_SLUG`
+
+Use dedicated smoke accounts. Do not use a real planner or couple account as your deploy verification identity.
+
+---
+
+## Step 6: Understand the deploy flow
+
+### Automatic staging deploy
+
+When CI succeeds on `main`:
+
+1. `ci.yml` builds the backend and frontend once
+2. CI pushes SHA-tagged images to GHCR
+3. `deploy-coolify.yml` deploys that SHA to staging
+4. `verify_environment.py` checks:
+   - frontend health
+   - backend liveness/readiness
+   - public wedding route
+   - admin login
+   - planner read path
+   - notification SSE
+   - couple login
+   - couple dashboard
+5. If verification fails, the workflow restores the previous SHA tag for the changed services
+
+### Manual production promotion
+
+When staging is good:
+
+1. Run [`.github/workflows/promote-coolify-production.yml`](/Users/emmanuelakinwale/Desktop/WeddingWebApp/.github/workflows/promote-coolify-production.yml)
+2. Enter the exact image tag that passed staging
+3. Select `both`, `frontend`, or `backend`
+4. The workflow deploys that SHA to production
+5. It re-checks:
+   - frontend health
+   - backend readiness
+   - public wedding route
+   - admin login
+   - planner read path
+6. If verification fails, the workflow restores the previous SHA tag for the changed service
+
+You can also use the production workflow as a manual rollback tool by supplying an earlier known-good SHA tag.
+
+---
+
+## Step 7: Cutover checklist
+
+- [ ] Production DO server registered in Coolify Cloud
+- [ ] Staging DO server registered in Coolify Cloud
+- [ ] Production frontend/backend/Mongo/Redis resources created
+- [ ] Staging frontend/backend/Mongo/Redis resources created
+- [ ] Source-based auto deploy disabled on both frontend and backend app resources
+- [ ] Domains assigned correctly
+- [ ] Health checks configured correctly
+- [ ] `FRONTEND_URL` and `INTERNAL_API_BASE_URL` set correctly on both frontend apps
+- [ ] Backend env vars separated by environment
+- [ ] GitHub secrets added
+- [ ] Dedicated smoke-test accounts created
+- [ ] Staging seed data loaded
+- [ ] First `main` merge reaches staging successfully
+- [ ] Manual production promotion by SHA succeeds
+- [ ] Rollback tested by redeploying a previous SHA
+
+---
+
+## Operational notes
+
+### Why this is still simpler than Kubernetes
+
+Pros:
+
+- real staging
+- controlled production promotion
+- independent frontend/backend deploys
+- separate staging and production failure domains
+- much lower operational overhead than DOKS/GKE before launch
+
+Cons:
+
+- production app and production data still share one server
+- no Kubernetes rolling-update orchestration
+- scaling is still environment-level, not cluster-level
+
+That tradeoff is intentional for launch.
+
+### SSE and Redis
+
+Keep Redis enabled in both environments. SSE, caching, and rate limiting all depend on it. Do not experiment with no-Redis production rollouts in this two-server model.
+
+### Backups
+
+Keep production and staging snapshots independent. Never use production as staging’s backup source.

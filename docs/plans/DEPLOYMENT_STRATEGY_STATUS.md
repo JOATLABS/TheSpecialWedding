@@ -59,9 +59,9 @@ Recommended use:
 
 - keep this as the short-term launch posture if speed of deployment matters more than infrastructure change this week
 
-### 2. Split-Service Coolify
+### 2. Split-Service Coolify with Real Staging
 
-**Status:** best next-step architecture
+**Status:** selected next-step rollout path
 
 Primary repo assets already exist:
 
@@ -69,14 +69,19 @@ Primary repo assets already exist:
 - [Dockerfile.frontend](../../Dockerfile.frontend)
 - [.github/workflows/ci.yml](../../.github/workflows/ci.yml)
 - [.github/workflows/deploy-coolify.yml](../../.github/workflows/deploy-coolify.yml)
+- [.github/workflows/promote-coolify-production.yml](../../.github/workflows/promote-coolify-production.yml)
+- [.github/workflows/coolify-deploy-shared.yml](../../.github/workflows/coolify-deploy-shared.yml)
+- [scripts/deploy/verify_environment.py](../../scripts/deploy/verify_environment.py)
 - [COOLIFY_SPLIT_DEPLOY_GUIDE.md](./COOLIFY_SPLIT_DEPLOY_GUIDE.md)
 
 Pros:
 
 - frontend and backend stop fighting inside one container
+- staging and production live on separate workload servers
 - backend worker tuning becomes independent from Next.js runtime tuning
-- frontend and backend can be rolled back independently
-- CI-gated deploy flow is already present in the repo
+- frontend and backend can be rolled back independently by immutable SHA
+- CI-gated deploy flow is present in the repo
+- production deploys are manual promotions of a staged SHA, not rebuilds
 - still preserves the modular-monolith code architecture
 
 Cons:
@@ -88,7 +93,7 @@ Cons:
 
 Recommended use:
 
-- this is the next deployment milestone after the current single-container setup is stable enough to stop firefighting
+- this is now the intended launch rollout path: two DO workload servers, one production and one staging, both managed through Coolify Cloud
 
 ### 3. Vercel Frontend + DigitalOcean Backend
 
@@ -168,10 +173,11 @@ The split-service path is close enough to be credible, but it is not yet "flip t
 
 ### Still Needs Attention
 
-- create and verify two actual Coolify resources in production
-- move environment variables into clearly separated frontend and backend scopes
+- create and verify the two full environment stacks in Coolify Cloud
+- move environment variables into clearly separated frontend/backend and staging/production scopes
+- configure `INTERNAL_API_BASE_URL` correctly on each frontend service for split-service SSR fetches
 - confirm Redis-backed SSE coordination before running multi-worker or multi-instance backend deployments
-- perform a true cutover test with frontend and backend on separate Coolify services
+- perform a true cutover test with staging promotion before production cutover
 - confirm package/image ownership alignment for GHCR image references if the repository owner changes
 
 ### Fixed During This Review
@@ -181,19 +187,12 @@ The split-service path is close enough to be credible, but it is not yet "flip t
 
 ## Recommendation
 
-If the goal is the fastest safe path:
+If the goal is the next launch-safe platform step:
 
-1. Keep the hardened single-container Coolify deployment as the short-term production posture.
-2. Treat split-service Coolify as the next infrastructure milestone, not as a distant idea.
-3. Do not spend time reviving the Vercel + DigitalOcean path.
-4. Do not move to microservices yet.
-
-If the goal is the best next infrastructure change:
-
-1. Create the two Coolify services.
-2. Run the existing CI and Coolify deployment workflow against them.
-3. Validate SSE, health checks, and env separation.
-4. Cut over domains.
+1. Keep the current single-container Coolify runtime live until cutover day.
+2. Build the two-server Coolify staging/production topology described in [COOLIFY_SPLIT_DEPLOY_GUIDE.md](./COOLIFY_SPLIT_DEPLOY_GUIDE.md).
+3. Let `main` auto-deploy staging after CI.
+4. Promote production manually by SHA only after staging validation passes.
 5. Retire the monolith service only after the split path proves stable.
 
 ## Historical Docs
