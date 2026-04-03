@@ -159,6 +159,7 @@ Set all environment variables in the Coolify dashboard. The container exposes po
 Recommended next deployment path:
 
 - [Split-service Coolify rollout guide](docs/plans/COOLIFY_SPLIT_DEPLOY_GUIDE.md)
+- [GitHub secret sync script](scripts/deploy/sync_github_secrets.sh)
 - [Deployment strategy status](docs/plans/DEPLOYMENT_STRATEGY_STATUS.md)
 
 Repo rollout status:

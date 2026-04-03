@@ -33,6 +33,8 @@ archive/
 .vscode/
 app/api/__pycache__/
 .env.local
+scripts/deploy/*.local.env
+scripts/deploy/github-secrets.env
 *.cpython-311.pyc
 ssh-to-backend.sh
 backend-manager.sh

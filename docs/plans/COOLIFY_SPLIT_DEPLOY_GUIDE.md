@@ -198,6 +198,54 @@ Add these repository secrets.
 
 Use dedicated smoke accounts. Do not use a real planner or couple account as your deploy verification identity.
 
+### Automate secret sync and later rotation
+
+The repo now includes a helper script so you do not have to hand-enter these in the GitHub UI every time you rotate them.
+
+Files:
+
+- [`scripts/deploy/github-secrets.example.env`](/Users/emmanuelakinwale/Desktop/WeddingWebApp/scripts/deploy/github-secrets.example.env)
+- [`scripts/deploy/sync_github_secrets.sh`](/Users/emmanuelakinwale/Desktop/WeddingWebApp/scripts/deploy/sync_github_secrets.sh)
+
+Recommended flow:
+
+1. Copy the example file to a local, ignored file:
+
+   ```bash
+   cp scripts/deploy/github-secrets.example.env scripts/deploy/github-secrets.local.env
+   ```
+
+2. Fill in the real values.
+
+3. Run a dry run first:
+
+   ```bash
+   scripts/deploy/sync_github_secrets.sh \
+     --env-file scripts/deploy/github-secrets.local.env \
+     --repo YOUR_GITHUB_OWNER/WeddingWebApp \
+     --scope all \
+     --dry-run
+   ```
+
+4. If the secret list looks correct, run the real sync:
+
+   ```bash
+   scripts/deploy/sync_github_secrets.sh \
+     --env-file scripts/deploy/github-secrets.local.env \
+     --repo YOUR_GITHUB_OWNER/WeddingWebApp \
+     --scope all
+   ```
+
+Useful subsets:
+
+- `--scope shared` when rotating only `COOLIFY_BASE_URL`, `COOLIFY_API_TOKEN`, or the Coolify app UUIDs
+- `--scope staging` when rotating only staging smoke credentials
+- `--scope production` when rotating only production smoke credentials
+
+Important note:
+
+- The current deploy workflows use **repository secrets**, not GitHub environment secrets, because they reference names like `COOLIFY_STAGING_BACKEND_UUID` directly in the workflow callers. The sync script matches that current workflow contract.
+
 ---
 
 ## Step 6: Understand the deploy flow
