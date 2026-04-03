@@ -264,6 +264,25 @@ class TeamManagementService:
             },
         }
 
+    async def _restore_pending_invite_lock(
+        self,
+        team_member_id: ObjectId,
+        updated_at: datetime,
+    ) -> None:
+        """Release an invite acceptance lock and restore the record to pending."""
+        await self.team_collection.update_one(
+            {
+                "_id": team_member_id,
+                "status": "accepting",
+            },
+            {
+                "$set": {
+                    "status": TeamMemberStatus.PENDING.value,
+                    "updated_at": updated_at,
+                }
+            },
+        )
+
     # ─── Seat Enforcement ─────────────────────────────────────────────────
 
     async def check_seat_limit(self, owner_id: str, owner_email: str) -> Dict[str, Any]:
@@ -663,11 +682,7 @@ class TeamManagementService:
                 if isinstance(expires_at, datetime) and expires_at.tzinfo is None:
                     expires_at = expires_at.replace(tzinfo=timezone.utc)
                 if datetime.now(timezone.utc) > expires_at:
-                    # Rollback: set back to pending
-                    await self.team_collection.update_one(
-                        {"_id": doc["_id"]},
-                        {"$set": {"status": TeamMemberStatus.PENDING.value, "updated_at": now}}
-                    )
+                    await self._restore_pending_invite_lock(doc["_id"], now)
                     raise HTTPException(
                         status_code=400,
                         detail="This invitation has expired. Please ask your team admin to resend it."
@@ -703,11 +718,7 @@ class TeamManagementService:
                     )
                     return {"success": True, "message": "Invitation accepted. You can now log in."}
 
-                # Rollback: set back to pending
-                await self.team_collection.update_one(
-                    {"_id": doc["_id"]},
-                    {"$set": {"status": TeamMemberStatus.PENDING.value, "updated_at": now}}
-                )
+                await self._restore_pending_invite_lock(doc["_id"], now)
                 raise HTTPException(
                     status_code=409,
                     detail="An account with this email already exists. Please contact the team admin."
@@ -775,6 +786,16 @@ class TeamManagementService:
             return {"success": True, "message": "Invitation accepted. You can now log in."}
 
         except HTTPException:
+            if created_user_object_id is not None:
+                try:
+                    await self.users_collection.delete_one({"_id": created_user_object_id})
+                except Exception as rollback_error:
+                    logger.error(
+                        "[TeamMgmt:accept] Failed to roll back created team member user %s: %s",
+                        created_user_object_id,
+                        rollback_error,
+                    )
+            await self._restore_pending_invite_lock(doc["_id"], now)
             raise
         except Exception as e:
             if created_user_object_id is not None:
@@ -787,10 +808,7 @@ class TeamManagementService:
                         rollback_error,
                     )
             # Unexpected error: rollback the transitional state
-            await self.team_collection.update_one(
-                {"_id": doc["_id"]},
-                {"$set": {"status": TeamMemberStatus.PENDING.value, "updated_at": now}}
-            )
+            await self._restore_pending_invite_lock(doc["_id"], now)
             logger.error("[TeamMgmt:accept] Unexpected error during invite acceptance: %s", str(e))
             raise HTTPException(status_code=500, detail="An error occurred while accepting the invitation. Please try again.")
 
