@@ -6,7 +6,7 @@ import Link from 'next/link';
 import { getApiBaseUrl } from '@/utils/env';
 import { useAdmin } from '@/contexts/AdminContext';
 import { toast } from 'sonner';
-import { formatAdminDate, DEFAULT_TIMEZONE } from '@/utils/dateFormat';
+import { formatAdminDate } from '@/utils/dateFormat';
 import { Button } from '../../../../components/ui/Button';
 import { Card } from '../../../../components/ui/Card';
 import {
@@ -38,6 +38,38 @@ interface Wedding {
   _id?: string;
   couple_names: string;
   date: string;
+}
+
+function splitCoupleNames(coupleNames: string): [string, string] {
+  const normalized = coupleNames.trim();
+  if (!normalized) {
+    return ['', ''];
+  }
+
+  const parts = normalized.split(/\s+(?:&|and)\s+/i).map((part) => part.trim()).filter(Boolean);
+  if (parts.length <= 1) {
+    return [normalized, ''];
+  }
+
+  return [parts[0], parts.slice(1).join(' & ')];
+}
+
+function formatWeddingOptionDate(value?: string): string {
+  if (!value) {
+    return 'No date';
+  }
+
+  const datePrefix = value.trim().match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (datePrefix) {
+    const [, year, month, day] = datePrefix;
+    return new Date(Number(year), Number(month) - 1, Number(day)).toLocaleDateString('en-US', {
+      month: 'short',
+      day: 'numeric',
+      year: 'numeric',
+    });
+  }
+
+  return formatAdminDate(value);
 }
 
 export default function SendPackagePage() {
@@ -107,12 +139,12 @@ export default function SendPackagePage() {
   const handleWeddingSelect = (weddingId: string) => {
     const wedding = weddings.find(w => (w.id || w._id) === weddingId);
     if (wedding) {
-      const names = wedding.couple_names.split(' & ');
+      const [partner1Name, partner2Name] = splitCoupleNames(wedding.couple_names);
       setFormData(prev => ({
         ...prev,
         wedding_id: weddingId,
-        partner1_name: names[0] || '',
-        partner2_name: names[1] || '',
+        partner1_name: partner1Name,
+        partner2_name: partner2Name,
         wedding_date: wedding.date ? wedding.date.split('T')[0] : ''
       }));
     } else {
@@ -171,7 +203,7 @@ export default function SendPackagePage() {
       // Build contract URL
       if (result.contract?.token) {
         const contractBase = typeof window !== 'undefined' ? window.location.origin : '';
-        setContractUrl(`${contractBase}/contract/${result.contract.token}`);
+        setContractUrl(`${contractBase}/contracts/${result.contract.token}`);
       }
 
       toast.success('Package sent successfully!');
@@ -355,7 +387,7 @@ export default function SendPackagePage() {
                     <option value="">Select a wedding...</option>
                     {weddings.map((wedding) => (
                       <option key={wedding.id || wedding._id} value={wedding.id || wedding._id}>
-                        {wedding.couple_names} ({wedding.date ? formatAdminDate(wedding.date) : 'No date'})
+                        {wedding.couple_names} ({formatWeddingOptionDate(wedding.date)})
                       </option>
                     ))}
                   </select>

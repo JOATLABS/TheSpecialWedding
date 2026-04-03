@@ -1,6 +1,12 @@
 from fastapi import APIRouter, HTTPException, Depends, Query
-from app.dependencies.auth_extended import get_current_user_extended, ExtendedAuthUser
+from app.dependencies.auth_extended import (
+    get_current_user_extended, ExtendedAuthUser,
+    enforce_team_permission, require_team_or_planner,
+    get_accessible_wedding_ids
+)
+from app.core.cache import cache, CacheKeys
 from app.core.database import mongo
+from bson import ObjectId
 from app.models.planner_metrics import (
     PlannerMetricsResponse,
     MetricsSummaryModel,
@@ -13,11 +19,15 @@ from app.models.planner_metrics import (
 )
 from datetime import datetime
 from typing import Any, Optional, List
+from math import ceil
+import hashlib
 import logging
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+PLANNER_WEDDINGS_CACHE_TTL_SECONDS = 15
 
 
 def _safe_isoformat(value: Any) -> str:
@@ -70,16 +80,42 @@ def _calculate_rsvp_status(rsvp: dict) -> str:
     return "pending"
 
 
+def _planner_weddings_scope_key(
+    current_user: ExtendedAuthUser,
+    include_cancelled: bool,
+    accessible_ids: Optional[List[str]],
+) -> str:
+    scope_parts = [
+        current_user.email or "anonymous",
+        "root" if current_user.is_root_admin else "scoped",
+        "include_cancelled" if include_cancelled else "active_only",
+    ]
+    if accessible_ids is not None:
+        digest = hashlib.sha256(",".join(sorted(accessible_ids)).encode("utf-8")).hexdigest()[:12]
+        scope_parts.append(digest)
+    return CacheKeys.planner_weddings(":".join(scope_parts), include_cancelled)
+
+
+def _normalize_cached_planner_wedding(payload: dict[str, Any]) -> dict[str, Any]:
+    if "id" in payload:
+        return payload
+    if "_id" in payload:
+        normalized = dict(payload)
+        normalized["id"] = str(normalized.pop("_id"))
+        return normalized
+    return payload
+
+
 @router.get("/planner/metrics", tags=["Wedding Planner"], response_model=PlannerMetricsResponse)
-async def get_planner_metrics(current_user: ExtendedAuthUser = Depends(get_current_user_extended)) -> PlannerMetricsResponse:
+async def get_planner_metrics(current_user: ExtendedAuthUser = Depends(require_team_or_planner)) -> PlannerMetricsResponse:
     """
     Get comprehensive metrics for wedding planner dashboard.
 
     ROOT_ADMIN sees all weddings, wedding planners see only their assigned weddings.
+    Team members with "assigned" access see only their assigned weddings.
     """
 
-    if not (current_user.is_wedding_planner or current_user.is_root_admin):
-        raise HTTPException(status_code=403, detail="Access denied. Wedding planner or ROOT_ADMIN role required.")
+    enforce_team_permission(current_user, "view_analytics")
 
     try:
         weddings_collection = mongo.get_weddings_collection()
@@ -88,6 +124,7 @@ async def get_planner_metrics(current_user: ExtendedAuthUser = Depends(get_curre
 
         # Build query based on user role
         # ROOT_ADMIN can see all weddings, planners only see their assigned weddings
+        # Team members use accessible_wedding_ids for filtering
         if current_user.is_root_admin:
             query: dict[str, Any] = {"status": {"$ne": "cancelled"}}
         else:
@@ -95,8 +132,14 @@ async def get_planner_metrics(current_user: ExtendedAuthUser = Depends(get_curre
                 "assigned_planner_email": current_user.email,
                 "status": {"$ne": "cancelled"}
             }
+            # Apply team member wedding scope filter
+            accessible_ids = get_accessible_wedding_ids(current_user)
+            if accessible_ids is not None:
+                query["_id"] = {"$in": [ObjectId(id) for id in accessible_ids]}
 
-        weddings = await weddings_collection.find(query).to_list(length=None)
+        # Safety cap: typical planner/admin has <5k weddings
+        MAX_WEDDINGS = 5000
+        weddings = await weddings_collection.find(query).to_list(length=MAX_WEDDINGS)
         current_date = datetime.now()
 
         # Activity query used for both recent activity and /planner/activity-log
@@ -106,7 +149,7 @@ async def get_planner_metrics(current_user: ExtendedAuthUser = Depends(get_curre
             assigned_weddings = await weddings_collection.find(
                 {"assigned_planner_email": current_user.email},
                 {"_id": 1}
-            ).to_list(length=None)
+            ).to_list(length=MAX_WEDDINGS)
 
             wedding_id_values: list[Any] = []
             for wedding in assigned_weddings:
@@ -174,10 +217,12 @@ async def get_planner_metrics(current_user: ExtendedAuthUser = Depends(get_curre
                 metrics["summary"]["active_weddings"] += 1
 
             # Get all guests for this wedding (need plus-one and invite_sent data)
+            # Safety cap: large weddings may have up to 5000 guests
+            MAX_WEDDING_GUESTS = 5000
             guest_docs = await guests_collection.find(
                 {"wedding_id": wedding_id_str},
                 {"_id": 1, "number_of_plus_ones_allowed": 1, "invite_sent": 1}
-            ).to_list(length=None)
+            ).to_list(length=MAX_WEDDING_GUESTS)
             guest_count = len(guest_docs)
             metrics["summary"]["total_guests"] += guest_count
 
@@ -204,12 +249,13 @@ async def get_planner_metrics(current_user: ExtendedAuthUser = Depends(get_curre
             metrics["summary"]["total_plus_ones_submitted"] += submitted_plus_ones
 
             # Get RSVP statistics - handle both ObjectId and string formats for wedding_id
+            # Safety cap: max guest RSVPs (same as guest cap)
             rsvps = await rsvps_collection.find({
                 "$or": [
                     {"wedding_id": wedding_id},
                     {"wedding_id": wedding_id_str}
                 ]
-            }).to_list(length=None)
+            }).to_list(length=MAX_WEDDING_GUESTS)
 
             confirmed = 0
             declined = 0
@@ -316,7 +362,9 @@ async def get_planner_metrics(current_user: ExtendedAuthUser = Depends(get_curre
                 user_query = {"email": current_user.email}
 
             user_id_values: list[Any] = []
-            users_for_revenue = await users_collection.find(user_query, {"_id": 1}).to_list(length=None)
+            # Safety cap: fetch revenue users (typically <10k)
+            MAX_REVENUE_USERS = 10000
+            users_for_revenue = await users_collection.find(user_query, {"_id": 1}).to_list(length=MAX_REVENUE_USERS)
             for user in users_for_revenue:
                 user_id = user.get("_id")
                 if user_id is None:
@@ -396,7 +444,8 @@ async def get_planner_metrics(current_user: ExtendedAuthUser = Depends(get_curre
             monthly_revenue = 0.0
 
             try:
-                revenue_docs = await subscriptions_collection.aggregate(revenue_pipeline).to_list(length=None)
+                # Aggregate result should be single doc, but cap at 10 for safety
+                revenue_docs = await subscriptions_collection.aggregate(revenue_pipeline).to_list(length=10)
                 if revenue_docs:
                     monthly_revenue = float(revenue_docs[0].get("monthly", 0) or 0)
             except Exception as exc:
@@ -438,7 +487,8 @@ async def get_planner_metrics(current_user: ExtendedAuthUser = Depends(get_curre
                 }
             ).sort([("timestamp", -1), ("created_at", -1)]).limit(10)
 
-            activity_docs = await cursor.to_list(length=None)
+            # Activity already limited by .limit(10) in cursor
+            activity_docs = await cursor.to_list(length=10)
             for activity in activity_docs:
                 recent_activity.append(ActivityItemModel(
                     id=str(activity.get("_id")),
@@ -479,15 +529,15 @@ async def get_planner_metrics(current_user: ExtendedAuthUser = Depends(get_curre
 
 @router.get("/planner/activity-log", tags=["Wedding Planner"], response_model=ActivityLogResponse)
 async def get_activity_log(
-    current_user: ExtendedAuthUser = Depends(get_current_user_extended),
-    limit: int = Query(default=50, ge=1, le=200, description="Maximum number of activities to return")
+    current_user: ExtendedAuthUser = Depends(require_team_or_planner),
+    page: int = Query(default=1, ge=1, le=10000, description="Page number (1-indexed)"),
+    limit: int = Query(default=50, ge=1, le=200, description="Maximum number of activities to return per page")
 ) -> ActivityLogResponse:
     """
     Get detailed activity log for wedding planner.
     """
 
-    if not (current_user.is_wedding_planner or current_user.is_root_admin):
-        raise HTTPException(status_code=403, detail="Access denied. Wedding planner or ROOT_ADMIN role required.")
+    enforce_team_permission(current_user, "view_analytics")
 
     try:
         activity_logs_collection = mongo.get_collection("activity_logs")
@@ -497,10 +547,12 @@ async def get_activity_log(
             query: dict[str, Any] = {}
         else:
             weddings_collection = mongo.get_weddings_collection()
+            # Safety cap: planner's assigned weddings (typically <1k)
+            MAX_PLANNER_WEDDINGS = 1000
             assigned_weddings = await weddings_collection.find(
                 {"assigned_planner_email": current_user.email},
                 {"_id": 1}
-            ).to_list(length=None)
+            ).to_list(length=MAX_PLANNER_WEDDINGS)
 
             wedding_id_values: list[Any] = []
             for wedding in assigned_weddings:
@@ -520,6 +572,12 @@ async def get_activity_log(
                 ]
             }
 
+        # Count total documents first for pagination metadata
+        total = await activity_logs_collection.count_documents(query)
+
+        # Calculate skip value for pagination
+        skip = (page - 1) * limit
+
         cursor = activity_logs_collection.find(
             query,
             {
@@ -531,10 +589,10 @@ async def get_activity_log(
                 "wedding_id": 1,
                 "metadata": 1,
             }
-        ).sort([("timestamp", -1), ("created_at", -1)]).limit(limit)
+        ).sort([("timestamp", -1), ("created_at", -1)]).skip(skip).limit(limit)
 
-        activities_raw = await cursor.to_list(length=None)
-        total = await activity_logs_collection.count_documents(query)
+        # Activity results already bounded by .limit(limit) above
+        activities_raw = await cursor.to_list(length=limit)
 
         activities: List[ActivityItemModel] = []
         for activity in activities_raw:
@@ -547,9 +605,15 @@ async def get_activity_log(
                 metadata=activity.get("metadata", {}),
             ))
 
+        # Calculate total pages
+        pages = ceil(total / limit) if total > 0 else 0
+
         return ActivityLogResponse(
             activities=activities,
-            total=total
+            total=total,
+            page=page,
+            limit=limit,
+            pages=pages
         )
 
     except HTTPException:
@@ -561,32 +625,67 @@ async def get_activity_log(
 
 @router.get("/planner/weddings", tags=["Wedding Planner"], response_model=List[PlannerWeddingModel])
 async def get_planner_weddings(
-    current_user: ExtendedAuthUser = Depends(get_current_user_extended),
+    current_user: ExtendedAuthUser = Depends(require_team_or_planner),
     include_cancelled: bool = Query(default=False, description="Include cancelled weddings")
 ) -> List[PlannerWeddingModel]:
     """
     Get all weddings assigned to the current planner.
 
     ROOT_ADMIN sees all weddings, wedding planners see only their assigned weddings.
+    Team members with "assigned" access see only their assigned weddings.
     """
 
-    if not (current_user.is_wedding_planner or current_user.is_root_admin):
-        raise HTTPException(status_code=403, detail="Access denied. Wedding planner or ROOT_ADMIN role required.")
+    enforce_team_permission(current_user, "view_analytics")
 
     try:
         weddings_collection = mongo.get_weddings_collection()
 
         # Build query based on user role
+        accessible_ids: Optional[List[str]] = None
         if current_user.is_root_admin:
             query: dict[str, Any] = {}
         else:
             query = {"assigned_planner_email": current_user.email}
+            # Apply team member wedding scope filter
+            accessible_ids = get_accessible_wedding_ids(current_user)
+            if accessible_ids is not None:
+                query["_id"] = {"$in": [ObjectId(id) for id in accessible_ids]}
 
         # Optionally exclude cancelled weddings
         if not include_cancelled:
             query["status"] = {"$ne": "cancelled"}
 
-        weddings = await weddings_collection.find(query).to_list(length=None)
+        cache_key = _planner_weddings_scope_key(current_user, include_cancelled, accessible_ids)
+        cached_weddings = await cache.get(cache_key)
+        if cached_weddings is not None:
+            return [PlannerWeddingModel(**_normalize_cached_planner_wedding(wedding)) for wedding in cached_weddings]
+
+        # Safety cap: typical planner has <5k weddings
+        MAX_WEDDINGS_LIST = 5000
+        weddings = await weddings_collection.find(
+            query,
+            {
+                "couple_names": 1,
+                "date": 1,
+                "slug": 1,
+                "assigned_planner_email": 1,
+                "assigned_planner_id": 1,
+                "status": 1,
+                "venue": 1,
+                "guest_count": 1,
+                "created_at": 1,
+                "updated_at": 1,
+                "events": 1,
+                "privacy_settings": 1,
+                "rsvp_config": 1,
+                "theme_config": 1,
+                "registries": 1,
+                "faqs": 1,
+                "our_story": 1,
+                "wedding_party": 1,
+                "featured_image": 1,
+            },
+        ).to_list(length=MAX_WEDDINGS_LIST)
 
         # Convert ObjectId to string and format response
         wedding_list: List[PlannerWeddingModel] = []
@@ -616,6 +715,12 @@ async def get_planner_weddings(
 
         # Sort by date (upcoming first)
         wedding_list.sort(key=lambda x: x.date or "9999-12-31")
+
+        await cache.set(
+            cache_key,
+            [wedding.model_dump(by_alias=False) for wedding in wedding_list],
+            expire=PLANNER_WEDDINGS_CACHE_TTL_SECONDS,
+        )
 
         return wedding_list
 

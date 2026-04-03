@@ -11,6 +11,13 @@ from typing import Dict, Any, List, Optional, Iterable
 from datetime import datetime, timedelta, timezone
 from app.dependencies.auth_extended import require_root_admin, ExtendedAuthUser
 from app.core.database import mongo
+from app.utils.query_validation import (
+    validated_string_filter,
+    validated_status_filter,
+    validated_enum_filter,
+    validated_date_string,
+    validated_boolean_filter
+)
 from bson import ObjectId
 import logging
 
@@ -24,14 +31,31 @@ except ImportError:
 
 
 def _normalize_timestamp(value: Any) -> Optional[str]:
-    """Return an ISO formatted timestamp string with Z suffix for UTC indication."""
+    """Return an ISO formatted timestamp string with Z suffix for UTC indication.
+
+    Ensures the output never has both a UTC offset (+00:00) AND a Z suffix,
+    which would produce an invalid ISO 8601 string that JavaScript cannot parse.
+    """
     if isinstance(value, datetime):
-        # Add Z suffix to indicate UTC time (critical for correct frontend timezone conversion)
         iso_str = value.isoformat()
-        return iso_str if iso_str.endswith("Z") else iso_str + "Z"
+        # Replace +00:00 offset with Z (they mean the same thing, but JS
+        # rejects strings that have both, e.g. "...+00:00Z")
+        if iso_str.endswith("+00:00"):
+            return iso_str[:-6] + "Z"
+        if iso_str.endswith("Z"):
+            return iso_str
+        # No timezone info at all — assume UTC
+        return iso_str + "Z"
     if isinstance(value, str):
-        # Ensure existing strings have Z suffix if they look like UTC timestamps
-        if value and not value.endswith("Z") and "+" not in value and "-" not in value[-6:]:
+        if not value:
+            return None
+        # Fix the +00:00 → Z canonical form
+        if value.endswith("+00:00"):
+            return value[:-6] + "Z"
+        if value.endswith("Z"):
+            return value
+        # No offset marker — assume UTC
+        if "+" not in value and "-" not in value[-6:]:
             return value + "Z"
         return value
     return None
@@ -183,6 +207,166 @@ def _extract_error_detail(error: Dict[str, Any]) -> Dict[str, Any]:
     detail["troubleshooting_hints"] = _generate_troubleshooting_hints(detail)
 
     return detail
+
+
+def _merge_query_filters(*filters: Dict[str, Any]) -> Dict[str, Any]:
+    """Combine query fragments while avoiding empty `$and` wrappers."""
+    active_filters = [query for query in filters if query]
+    if not active_filters:
+        return {}
+    if len(active_filters) == 1:
+        return active_filters[0]
+    return {"$and": active_filters}
+
+
+def _error_severity_query(bucket: str) -> Dict[str, Any]:
+    """Return an errors-collection severity query aligned with `_derive_severity`."""
+    explicit_severity_missing = {
+        "$or": [
+            {"severity": {"$exists": False}},
+            {"severity": None},
+            {"severity": ""},
+        ]
+    }
+
+    if bucket == "critical":
+        return {
+            "$or": [
+                {"severity": "critical"},
+                {
+                    "$and": [
+                        explicit_severity_missing,
+                        {"status_code": {"$gte": 500}},
+                    ]
+                },
+            ]
+        }
+    if bucket == "warning":
+        return {
+            "$or": [
+                {"severity": "warning"},
+                {
+                    "$and": [
+                        explicit_severity_missing,
+                        {"status_code": {"$gte": 400, "$lt": 500}},
+                    ]
+                },
+            ]
+        }
+    if bucket == "other":
+        return {
+            "severity": {
+                "$exists": True,
+                "$nin": ["critical", "warning", None, ""],
+            }
+        }
+    return {}
+
+
+def _audit_severity_query(bucket: str) -> Dict[str, Any]:
+    """Return an audit-logs severity query aligned with `_derive_severity`."""
+    if bucket == "critical":
+        return {"response_status": {"$gte": 500}}
+    if bucket == "warning":
+        return {"response_status": {"$gte": 400, "$lt": 500}}
+    if bucket == "other":
+        return {"response_status": {"$lt": 0}}
+    return {"response_status": {"$gte": 400}}
+
+
+def _build_errors_query(
+    since: datetime,
+    severity: str = "all",
+    acknowledged: Optional[bool] = None,
+) -> Dict[str, Any]:
+    """Build the canonical errors-collection query for dashboard summaries and lists."""
+    base_query: Dict[str, Any] = {"timestamp": {"$gte": since}}
+    if acknowledged is not None:
+        base_query["acknowledged"] = acknowledged
+    return _merge_query_filters(base_query, _error_severity_query(severity))
+
+
+def _build_audit_logs_query(since: datetime, severity: str = "all") -> Dict[str, Any]:
+    """Build the canonical audit-logs query for dashboard summaries and lists."""
+    return _merge_query_filters(
+        {"timestamp": {"$gte": since}},
+        _audit_severity_query(severity),
+    )
+
+
+async def _safe_count_documents(collection_name: str, query: Dict[str, Any]) -> int:
+    """Count documents without failing the whole dashboard when one source errors."""
+    try:
+        return await mongo.db[collection_name].count_documents(query)
+    except Exception as exc:
+        logger.warning("Failed to count %s: %s", collection_name, exc)
+        return 0
+
+
+async def _compute_error_scope_summary(
+    since: datetime,
+    severity: str = "all",
+    acknowledged: Optional[bool] = None,
+) -> Dict[str, int]:
+    """Return full-scope error counts for the selected window and filters."""
+    include_audit_logs = acknowledged is not True
+    errors_query = _build_errors_query(since, severity, acknowledged)
+    audit_query = _build_audit_logs_query(since, severity)
+
+    total_errors = await _safe_count_documents("errors", errors_query)
+    total_audit = (
+        await _safe_count_documents("audit_logs", audit_query)
+        if include_audit_logs
+        else 0
+    )
+    total = total_errors + total_audit
+
+    if severity == "critical":
+        critical = total
+        warning = 0
+        other = 0
+    elif severity == "warning":
+        critical = 0
+        warning = total
+        other = 0
+    elif severity == "other":
+        critical = 0
+        warning = 0
+        other = total
+    else:
+        critical = await _safe_count_documents("errors", _build_errors_query(since, "critical", acknowledged))
+        critical += (
+            await _safe_count_documents("audit_logs", _build_audit_logs_query(since, "critical"))
+            if include_audit_logs
+            else 0
+        )
+
+        warning = await _safe_count_documents("errors", _build_errors_query(since, "warning", acknowledged))
+        warning += (
+            await _safe_count_documents("audit_logs", _build_audit_logs_query(since, "warning"))
+            if include_audit_logs
+            else 0
+        )
+
+        other = await _safe_count_documents("errors", _build_errors_query(since, "other", acknowledged))
+
+    if acknowledged is True:
+        unacknowledged = 0
+    elif acknowledged is False:
+        unacknowledged = total
+    else:
+        unacknowledged = await _safe_count_documents("errors", _build_errors_query(since, severity, False))
+        if include_audit_logs:
+            unacknowledged += total_audit
+
+    return {
+        "total": total,
+        "critical": critical,
+        "warning": warning,
+        "other": other,
+        "unacknowledged": unacknowledged,
+        "acknowledged": max(total - unacknowledged, 0),
+    }
 
 
 def _generate_troubleshooting_hints(error_detail: Dict[str, Any]) -> List[str]:
@@ -392,6 +576,7 @@ router = APIRouter(prefix="/platform", tags=["ROOT_ADMIN", "Monitoring"])
 
 @router.get("/health")
 async def get_platform_health(
+    days: int = Query(1, ge=1, le=90, description="Error summary window in days"),
     current_user: ExtendedAuthUser = Depends(require_root_admin)
 ) -> Dict[str, Any]:
     """
@@ -399,13 +584,14 @@ async def get_platform_health(
 
     Returns:
         - System health (database, disk, memory, CPU)
-        - Error statistics (24h)
+        - Error statistics (selected window)
         - Business metrics (users, subscriptions, MRR/ARR)
         - Performance metrics (slow endpoints)
     """
     now = datetime.now(timezone.utc)
     day_ago = now - timedelta(days=1)
     week_ago = now - timedelta(days=7)
+    error_window_start = now - timedelta(days=days)
 
     try:
         # ==================== SYSTEM HEALTH ====================
@@ -486,61 +672,26 @@ async def get_platform_health(
 
         # ==================== ERROR MONITORING ====================
 
-        errors_collection_total = 0
-        errors_collection_critical = 0
-        self_hosted_errors = 0
+        error_summary = await _compute_error_scope_summary(error_window_start)
 
-        # Get errors from audit_logs (existing collection)
+        # Top endpoints are based on the same selected error window.
         error_pipeline = [
             {
-                "$match": {
-                    "timestamp": {"$gte": day_ago},
-                    "response_status": {"$gte": 400}
-                }
+                "$match": _build_audit_logs_query(error_window_start, "all")
             },
             {
-                "$facet": {
-                    "total": [{"$count": "count"}],
-                    "critical": [
-                        {"$match": {"response_status": {"$gte": 500}}},
-                        {"$count": "count"}
-                    ],
-                    "by_endpoint": [
-                        {"$group": {"_id": "$path", "count": {"$sum": 1}}},
-                        {"$sort": {"count": -1}},
-                        {"$limit": 5}
-                    ]
-                }
+                "$group": {"_id": "$path", "count": {"$sum": 1}}
+            },
+            {
+                "$sort": {"count": -1}
+            },
+            {
+                "$limit": 5
             }
         ]
 
         error_stats_cursor = mongo.db["audit_logs"].aggregate(error_pipeline)
-        error_stats_list = await error_stats_cursor.to_list(length=1)
-        error_stats = error_stats_list[0] if error_stats_list else {}
-
-        audit_total_errors = error_stats.get("total", [{}])[0].get("count", 0) if error_stats.get("total") else 0
-        audit_critical_errors = error_stats.get("critical", [{}])[0].get("count", 0) if error_stats.get("critical") else 0
-        top_error_endpoints = error_stats.get("by_endpoint", [])
-
-        # Check if errors collection exists (self-hosted error tracking)
-        try:
-            self_hosted_errors = await mongo.db["errors"].count_documents({
-                "timestamp": {"$gte": day_ago},
-                "acknowledged": False
-            })
-            errors_collection_total = await mongo.db["errors"].count_documents({
-                "timestamp": {"$gte": day_ago}
-            })
-            errors_collection_critical = await mongo.db["errors"].count_documents({
-                "timestamp": {"$gte": day_ago},
-                "severity": "critical"
-            })
-        except Exception:
-            # Collection might not exist yet
-            pass
-
-        total_errors = audit_total_errors + errors_collection_total
-        critical_errors = audit_critical_errors + errors_collection_critical
+        top_error_endpoints = await error_stats_cursor.to_list(length=5)
 
         # Build consolidated recent error list from both error sources
         recent_error_docs: List[Dict[str, Any]] = []
@@ -559,9 +710,12 @@ async def get_platform_health(
                     break
 
         try:
-            errors_collection_cursor = mongo.db["errors"].find({
-                "timestamp": {"$gte": day_ago}
-            }).sort("timestamp", -1).limit(10)
+            errors_collection_cursor = (
+                mongo.db["errors"]
+                .find(_build_errors_query(error_window_start))
+                .sort("timestamp", -1)
+                .limit(10)
+            )
             extend_recent_errors(await errors_collection_cursor.to_list(length=10))
         except Exception as exc:
             logger.warning("Failed to load recent errors from errors collection: %s", exc)
@@ -569,10 +723,12 @@ async def get_platform_health(
         if len(recent_error_docs) < 10:
             remaining = 10 - len(recent_error_docs)
             if remaining > 0:
-                audit_recent_cursor = mongo.db["audit_logs"].find({
-                    "timestamp": {"$gte": day_ago},
-                    "response_status": {"$gte": 400}
-                }).sort("timestamp", -1).limit(remaining)
+                audit_recent_cursor = (
+                    mongo.db["audit_logs"]
+                    .find(_build_audit_logs_query(error_window_start))
+                    .sort("timestamp", -1)
+                    .limit(remaining)
+                )
                 extend_recent_errors(await audit_recent_cursor.to_list(length=remaining))
 
         recent_error_docs.sort(
@@ -823,8 +979,8 @@ async def get_platform_health(
 
         # ==================== COMPILE RESPONSE ====================
 
-        # Use Z suffix to indicate UTC time (critical for correct frontend timezone conversion)
-        generated_at = now.isoformat() + "Z"
+        # Use _normalize_timestamp to safely produce a Z-suffixed ISO string
+        generated_at = _normalize_timestamp(now) or now.isoformat()
 
         return {
             "generated_at": generated_at,
@@ -839,10 +995,17 @@ async def get_platform_health(
                 "psutil_available": PSUTIL_AVAILABLE
             },
             "errors": {
-                "total_24h": total_errors,
-                "critical_24h": critical_errors,
-                "unacknowledged": self_hosted_errors,
-                "error_rate_per_hour": round(total_errors / 24, 2),
+                "window_days": days,
+                "total": error_summary["total"],
+                "critical": error_summary["critical"],
+                "warning": error_summary["warning"],
+                "other": error_summary["other"],
+                "unacknowledged": error_summary["unacknowledged"],
+                "acknowledged": error_summary["acknowledged"],
+                "total_24h": error_summary["total"] if days == 1 else None,
+                "critical_24h": error_summary["critical"] if days == 1 else None,
+                "error_rate_per_hour": round(error_summary["total"] / max(days * 24, 1), 2),
+                "error_rate_per_day": round(error_summary["total"] / max(days, 1), 2),
                 "top_error_endpoints": [
                     {"endpoint": item.get("_id"), "count": item.get("count", 0)}
                     for item in top_error_endpoints
@@ -955,7 +1118,7 @@ async def save_metrics_snapshot(
     to build historical data for trends/charts.
     """
     # Get current metrics
-    metrics = await get_platform_health(current_user)
+    metrics = await get_platform_health(current_user=current_user)
 
     # Save to platform_metrics collection
     snapshot = {
@@ -1002,10 +1165,17 @@ async def save_metrics_snapshot(
             "psutil_available": health_metrics.get("psutil_available", False),
         },
         "errors": {
+            "window_days": error_metrics.get("window_days"),
+            "total": error_metrics.get("total"),
+            "critical": error_metrics.get("critical"),
+            "warning": error_metrics.get("warning"),
+            "other": error_metrics.get("other"),
             "total_24h": error_metrics.get("total_24h"),
             "critical_24h": error_metrics.get("critical_24h"),
             "unacknowledged": error_metrics.get("unacknowledged"),
+            "acknowledged": error_metrics.get("acknowledged"),
             "error_rate_per_hour": error_metrics.get("error_rate_per_hour"),
+            "error_rate_per_day": error_metrics.get("error_rate_per_day"),
         },
         "business": {
             "total_users": business_metrics.get("total_users"),
@@ -1063,79 +1233,52 @@ async def save_metrics_snapshot(
 
 @router.get("/errors/recent")
 async def get_recent_errors(
+    page: int = Query(1, ge=1, le=10000, description="Page number"),
     limit: int = Query(50, ge=1, le=200, description="Number of errors per page"),
-    cursor: Optional[str] = Query(None, description="Cursor for pagination (last error_id from previous page)"),
-    direction: str = Query("next", description="Pagination direction: 'next' or 'prev'"),
-    severity: Optional[str] = Query(None, description="Filter by severity: all, critical, warning"),
+    days: int = Query(1, ge=1, le=90, description="Error list window in days"),
+    severity: Optional[str] = Query(None, description="Filter by severity: all, critical, warning, other"),
     acknowledged: Optional[bool] = Query(None, description="Filter by acknowledged status"),
     current_user: ExtendedAuthUser = Depends(require_root_admin)
 ) -> Dict[str, Any]:
     """
-    Get recent errors with filtering and cursor-based pagination.
+    Get recent errors with filtering and page-based pagination.
 
-    Cursor-based pagination provides O(1) performance regardless of offset,
-    unlike skip() which degrades at high offsets.
+    Uses skip/limit pagination for reliable page navigation across
+    both the errors and audit_logs collections.
 
     Args:
+        page: Page number (1-indexed)
         limit: Number of errors per page (1-200)
-        cursor: The error_id from the last item of the previous page
-        direction: 'next' for older errors, 'prev' for newer errors
+        days: Error list window in days
         severity: Filter by severity level
         acknowledged: Filter by acknowledged status
     """
+    from math import ceil
+
+    severity = validated_status_filter(severity, ["critical", "warning", "other", "all"])
+    acknowledged = validated_boolean_filter(acknowledged)
+
     now = datetime.now(timezone.utc)
-    default_cutoff = now - timedelta(days=30)
+    default_cutoff = now - timedelta(days=days)
+    errors_query = _build_errors_query(default_cutoff, severity, acknowledged)
+    audit_query = _build_audit_logs_query(default_cutoff, severity)
+    error_summary = await _compute_error_scope_summary(default_cutoff, severity, acknowledged)
 
-    # Build base query for errors collection
-    errors_query: Dict[str, Any] = {"timestamp": {"$gte": default_cutoff}}
-    if acknowledged is not None:
-        errors_query["acknowledged"] = acknowledged
-    if severity == "critical":
-        errors_query["$or"] = [
-            {"severity": "critical"},
-            {"status_code": {"$gte": 500}},
-        ]
-    elif severity == "warning":
-        errors_query["$or"] = [
-            {"severity": {"$exists": True, "$ne": "critical"}},
-            {
-                "$and": [
-                    {"severity": {"$exists": False}},
-                    {"status_code": {"$gte": 400, "$lt": 500}},
-                ]
-            },
-        ]
+    total_errors = await _safe_count_documents("errors", errors_query)
+    total_audit = (
+        await _safe_count_documents("audit_logs", audit_query)
+        if acknowledged is not True
+        else 0
+    )
 
-    # Get total count for UI display
-    total_errors = 0
-    total_audit = 0
-    try:
-        total_errors = await mongo.db["errors"].count_documents(errors_query)
-    except Exception as exc:
-        logger.warning("Failed to count errors: %s", exc)
+    total_count = error_summary["total"]
+    total_pages = max(1, ceil(total_count / limit))
+    page = min(page, total_pages)  # Clamp page to valid range
+    skip = (page - 1) * limit
 
-    # Build audit_logs query for fallback
-    audit_query: Dict[str, Any] = {
-        "timestamp": {"$gte": default_cutoff},
-        "response_status": {"$gte": 400},
-    }
-    if severity == "critical":
-        audit_query["response_status"] = {"$gte": 500}
-    elif severity == "warning":
-        audit_query["response_status"] = {"$gte": 400, "$lt": 500}
-
-    # Only count audit_logs if not filtering for acknowledged=True
-    if acknowledged is not True:
-        try:
-            total_audit = await mongo.db["audit_logs"].count_documents(audit_query)
-        except Exception as exc:
-            logger.warning("Failed to count audit_logs: %s", exc)
-
-    total_count = total_errors + total_audit
-
-    # Fetch errors with cursor-based pagination
+    # Fetch errors using skip/limit pagination
     errors_docs: List[Dict[str, Any]] = []
-    seen_ids = set()
+    seen_ids: set = set()
 
     def extend_errors(docs: Iterable[Dict[str, Any]], max_items: int):
         added = 0
@@ -1151,60 +1294,42 @@ async def get_recent_errors(
             errors_docs.append(doc)
             added += 1
 
+    # Determine how many items to pull from each collection based on skip offset
+    # Primary source: errors collection (sorted newest first)
+    # Fallback: audit_logs (for remaining slots after errors are exhausted)
+    errors_to_skip = min(skip, total_errors)
+    errors_to_fetch = min(limit, total_errors - errors_to_skip)
+
     try:
-        # Apply cursor-based pagination using _id range query
-        cursor_query = errors_query.copy()
-
-        if cursor:
-            # Find the cursor document to get its _id for range query
-            cursor_doc = None
-            if ObjectId.is_valid(cursor):
-                cursor_doc = await mongo.db["errors"].find_one({"_id": ObjectId(cursor)})
-            if not cursor_doc:
-                cursor_doc = await mongo.db["errors"].find_one({"error_id": cursor})
-
-            if cursor_doc and "_id" in cursor_doc:
-                cursor_id = cursor_doc["_id"]
-                # For descending sort (newest first):
-                # - "next" page: get items with _id < cursor_id (older)
-                # - "prev" page: get items with _id > cursor_id (newer)
-                if direction == "prev":
-                    cursor_query["_id"] = {"$gt": cursor_id}
-                    sort_direction = 1  # Ascending to get items just after cursor
-                else:
-                    cursor_query["_id"] = {"$lt": cursor_id}
-                    sort_direction = -1  # Descending (normal order)
-            else:
-                sort_direction = -1
-        else:
-            sort_direction = -1  # Default: newest first
-
-        # Fetch one extra to determine if there are more pages
-        fetch_limit = limit + 1
-        db_cursor = mongo.db["errors"].find(cursor_query).sort("_id", sort_direction).limit(fetch_limit)
-        fetched_docs = await db_cursor.to_list(length=fetch_limit)
-
-        # If going backwards, reverse to maintain consistent order
-        if direction == "prev" and cursor:
-            fetched_docs.reverse()
-
-        # Check if there are more results
-        has_more = len(fetched_docs) > limit
-        if has_more:
-            fetched_docs = fetched_docs[:limit]
-
-        extend_errors(fetched_docs, limit)
-
+        if errors_to_fetch > 0:
+            db_cursor = (
+                mongo.db["errors"]
+                .find(errors_query)
+                .sort("_id", -1)
+                .skip(errors_to_skip)
+                .limit(errors_to_fetch)
+            )
+            fetched_docs = await db_cursor.to_list(length=errors_to_fetch)
+            extend_errors(fetched_docs, errors_to_fetch)
     except Exception as exc:
-        logger.warning("Failed to query self-hosted errors collection: %s", exc)
+        logger.warning("Failed to query errors collection: %s", exc)
 
-    # Include audit_logs for remaining items if needed (only for first page without cursor)
-    include_audit_fallback = acknowledged is not True and len(errors_docs) < limit and not cursor
-    if include_audit_fallback:
-        remaining = limit - len(errors_docs)
-        if remaining > 0:
-            audit_cursor = mongo.db["audit_logs"].find(audit_query).sort("timestamp", -1).limit(remaining)
+    # Fill remaining slots from audit_logs if needed
+    remaining = limit - len(errors_docs)
+    if remaining > 0 and acknowledged is not True:
+        # How many audit_logs to skip (offset into audit_logs space)
+        audit_offset = max(0, skip - total_errors)
+        try:
+            audit_cursor = (
+                mongo.db["audit_logs"]
+                .find(audit_query)
+                .sort("timestamp", -1)
+                .skip(audit_offset)
+                .limit(remaining)
+            )
             extend_errors(await audit_cursor.to_list(length=remaining), remaining)
+        except Exception as exc:
+            logger.warning("Failed to query audit_logs: %s", exc)
 
     errors_docs.sort(
         key=lambda doc: _coerce_datetime(doc.get("timestamp")) or datetime.min,
@@ -1212,27 +1337,18 @@ async def get_recent_errors(
     )
     normalized_errors = [_extract_error_summary(error) for error in errors_docs]
 
-    # Calculate cursors for next/prev navigation
-    next_cursor = None
-    prev_cursor = None
-
-    if normalized_errors:
-        # Next cursor: last item's error_id (for fetching older errors)
-        next_cursor = normalized_errors[-1].get("error_id") if has_more or (cursor and direction == "prev") else None
-        # Prev cursor: first item's error_id (for fetching newer errors)
-        prev_cursor = normalized_errors[0].get("error_id") if cursor else None
-
-    total_pages = (total_count + limit - 1) // limit if limit > 0 else 1
-
     return {
         "errors": normalized_errors,
         "total": total_count,
+        "window_days": days,
+        "window_start": _normalize_timestamp(default_cutoff),
+        "window_end": _normalize_timestamp(now),
+        "summary": error_summary,
+        "page": page,
+        "pages": total_pages,
         "limit": limit,
-        "total_pages": total_pages,
-        "has_next": next_cursor is not None,
-        "has_prev": prev_cursor is not None,
-        "next_cursor": next_cursor,
-        "prev_cursor": prev_cursor,
+        "has_next": page < total_pages,
+        "has_prev": page > 1,
         "filters": {
             "severity": severity,
             "acknowledged": acknowledged
@@ -1406,6 +1522,10 @@ async def export_errors(
         days: Export errors from the last N days (default: 30)
     """
     try:
+        # Validate format parameter
+        format = validated_enum_filter(format, ["json", "csv"]) or "json"
+        acknowledged = validated_boolean_filter(acknowledged)
+
         cutoff_date = datetime.now(timezone.utc) - timedelta(days=days)
 
         # Build query

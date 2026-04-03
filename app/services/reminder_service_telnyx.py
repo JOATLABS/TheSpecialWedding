@@ -5,6 +5,8 @@ import telnyx
 from fastapi import HTTPException
 from datetime import datetime, timezone
 from app.core.database import mongo
+from app.utils.contact_sanitizer import normalize_phone_e164
+from app.utils.wedding_event_types import normalize_event_type
 import logging
 
 logger = logging.getLogger(__name__)
@@ -36,62 +38,88 @@ class TelnyxReminderService:
         self.log_collection = mongo.db["reminders_sent"]
     
     async def send_reminders(self, event_type: str, message: str, target_group: str):
-        if event_type not in {"traditional", "white_wedding", "reception"}:
-            raise HTTPException(status_code=400, detail="Invalid event type")
+        try:
+            event_type = normalize_event_type(event_type)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
         if target_group not in {"guests", "plus-ones", "all"}:
             raise HTTPException(status_code=400, detail="Invalid target group")
 
         logs = []
         now = datetime.now(timezone.utc)
+        skipped_no_phone = 0
+        skipped_opted_out = 0
+
+        # Pre-fetch all RSVPs attending this event type to avoid N+1 queries
+        rsvp_lookup = {}
+        async for rsvp in self.rsvp_collection.find({"attending": event_type}):
+            rsvp_lookup[rsvp["guest_id"]] = rsvp
 
         # Guests
         if target_group in {"guests", "all"}:
             async for guest in self.guest_collection.find({}):
-                rsvp = await self.rsvp_collection.find_one({"guest_id": guest["_id"]})
-                if rsvp and event_type in rsvp.get("attending", []):
+                rsvp = rsvp_lookup.get(guest["_id"])
+                if rsvp:
                     phone = guest.get("phone")
-                    # Check if guest has opted in for SMS reminders
                     sms_opt_in = guest.get("sms_opt_in", False)
-                    if phone and sms_opt_in:
-                        status = self._send_sms(phone, message)
-                        logs.append(self._log(
-                            phone,
-                            guest["_id"],
-                            message,
-                            "guest",
-                            event_type,
-                            status,
-                            now,
-                        ))
+                    if not phone:
+                        skipped_no_phone += 1
+                        continue
+                    if not sms_opt_in:
+                        skipped_opted_out += 1
+                        continue
+                    status = self._send_sms(phone, message)
+                    logs.append(self._log(
+                        phone,
+                        guest["_id"],
+                        message,
+                        "guest",
+                        event_type,
+                        status,
+                        now,
+                    ))
 
         # Plus-ones
         if target_group in {"plus-ones", "all"}:
             async for po in self.plus_one_collection.find({}):
                 if event_type in po.get("attending", []):
                     phone = po.get("phone")
-                    if phone:
-                        status = self._send_sms(phone, message)
-                        logs.append(self._log(
-                            phone,
-                            po["guest_id"],
-                            message,
-                            "plus-one",
-                            event_type,
-                            status,
-                            now,
-                        ))
+                    sms_opt_in = po.get("sms_opt_in", None)
+                    if sms_opt_in is False:  # Explicitly opted out
+                        skipped_opted_out += 1
+                        continue
+                    if not phone:
+                        skipped_no_phone += 1
+                        continue
+                    status = self._send_sms(phone, message)
+                    logs.append(self._log(
+                        phone,
+                        po["guest_id"],
+                        message,
+                        "plus-one",
+                        event_type,
+                        status,
+                        now,
+                    ))
 
         if logs:
             await self.log_collection.insert_many(logs)
 
-        return {"sent": len(logs), "provider": "telnyx"}
+        return {
+            "sent": len(logs),
+            "skipped_no_phone": skipped_no_phone,
+            "skipped_opted_out": skipped_opted_out,
+            "provider": "telnyx"
+        }
     
     def _send_sms(self, to: str, body: str) -> str:
         try:
-            # Ensure phone number is in E.164 format
-            if not to.startswith('+'):
-                to = f"+1{to}"  # Assume US number if no country code
-            
+            # Sanitize and normalize phone to E.164 format
+            normalized = normalize_phone_e164(to)
+            if not normalized:
+                return f"failed: Invalid phone number: {to!r}"
+            to = normalized
+
             # Create message with Telnyx
             message = telnyx.Message.create(
                 from_=self.from_phone,

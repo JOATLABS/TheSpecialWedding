@@ -4,6 +4,8 @@ Setup Root Admin User Script
 
 Creates the root admin user on application startup if it doesn't exist.
 Uses environment variables ROOT_ADMIN_EMAIL and ROOT_ADMIN_PASSWORD.
+This script only manages the root admin account. It does not create any
+TEST_* planner, vendor, couple, or team-member accounts from `.env`.
 
 Usage:
     python scripts/setup_admin_user.py --auto-create
@@ -16,14 +18,14 @@ import os
 import sys
 import argparse
 import asyncio
-from datetime import datetime
+from datetime import datetime, timezone
 
 # Add parent directory to path for imports
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 
 async def setup_admin_user(auto_create: bool = False):
-    """Create root admin user if it doesn't exist."""
+    """Create the root admin user if it doesn't exist."""
 
     # Import after path setup
     from app.core.database import mongo
@@ -38,12 +40,13 @@ async def setup_admin_user(auto_create: bool = False):
         return True
 
     print(f"[INFO] Checking for root admin user: {admin_email}")
+    print("[INFO] TEST_* accounts are manual-flow fixtures and are not created by this script.")
 
     try:
         # Get collection (Motor connects lazily on first query)
         users_collection = mongo.get_users_collection()
 
-        # Check if admin already exists
+        # Check if admin already exists by email
         existing_user = await users_collection.find_one({"email": admin_email})
 
         if existing_user:
@@ -52,9 +55,25 @@ async def setup_admin_user(auto_create: bool = False):
             if existing_user.get("role") != "ROOT_ADMIN":
                 await users_collection.update_one(
                     {"email": admin_email},
-                    {"$set": {"role": "ROOT_ADMIN", "updated_at": datetime.utcnow()}}
+                    {"$set": {"role": "ROOT_ADMIN", "updated_at": datetime.now(timezone.utc)}}
                 )
                 print("[UPDATED] Upgraded user role to ROOT_ADMIN")
+            return True
+
+        # Check if a ROOT_ADMIN exists with a different email (email migration)
+        existing_root = await users_collection.find_one({"role": "ROOT_ADMIN"})
+        if existing_root and existing_root["email"] != admin_email:
+            old_email = existing_root["email"]
+            password_hash = get_password_hash(admin_password)
+            await users_collection.update_one(
+                {"_id": existing_root["_id"]},
+                {"$set": {
+                    "email": admin_email,
+                    "password_hash": password_hash,
+                    "updated_at": datetime.now(timezone.utc),
+                }}
+            )
+            print(f"[MIGRATED] Root admin email updated: {old_email} → {admin_email}")
             return True
 
         # Confirm creation in interactive mode
@@ -68,14 +87,14 @@ async def setup_admin_user(auto_create: bool = False):
         password_hash = get_password_hash(admin_password)
 
         admin_doc = {
-            "_id": f"user_{int(datetime.utcnow().timestamp() * 1000)}",
+            "_id": f"user_{int(datetime.now(timezone.utc).timestamp() * 1000)}",
             "email": admin_email,
             "password_hash": password_hash,
             "role": "ROOT_ADMIN",
             "is_active": True,
             "email_verified": True,
-            "created_at": datetime.utcnow(),
-            "updated_at": datetime.utcnow(),
+            "created_at": datetime.now(timezone.utc),
+            "updated_at": datetime.now(timezone.utc),
             "registration_source": "system_init",
             # Root admin has unlimited access
             "max_weddings": 999,

@@ -24,6 +24,18 @@ const STATUS_STYLES: Record<VendorDashboardResponse['tasks'][number]['status'], 
   completed: 'bg-emerald-200/50 text-emerald-900 border border-emerald-300/60',
 };
 
+const pageShellClass =
+  'min-h-screen bg-gradient-to-br from-slate-50 via-white to-rose-50 py-12 text-slate-900 dark:from-slate-950 dark:via-slate-900 dark:to-slate-950 dark:text-white';
+
+const glassPanelClass =
+  'rounded-3xl border border-slate-200/80 bg-white/85 shadow-sm backdrop-blur-2xl dark:border-white/10 dark:bg-white/10';
+
+const glassSoftPanelClass =
+  'rounded-2xl border border-slate-200/80 bg-white/70 shadow-sm backdrop-blur-xl dark:border-white/15 dark:bg-white/15 dark:shadow-inner';
+
+const pillClass =
+  'rounded-full border border-slate-200 bg-white/80 px-3 py-1 text-xs font-medium text-slate-600 dark:border-white/10 dark:bg-white/10 dark:text-slate-200/80';
+
 function formatDisplayDate(value?: string | null): string {
   if (!value) return '—';
   const formatted = formatUtcDate(value, {
@@ -129,8 +141,8 @@ export default function VendorDashboardPage(): ReactElement {
 
   if (loading) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-slate-950">
-        <div className="rounded-3xl border border-white/10 bg-white/10 px-10 py-8 text-lg text-white shadow-xl backdrop-blur-xl">
+      <div className={`${pageShellClass} flex items-center justify-center`}>
+        <div className="rounded-3xl border border-slate-200 bg-white px-10 py-8 text-lg text-slate-900 shadow-xl backdrop-blur-xl dark:border-white/10 dark:bg-white/10 dark:text-white">
           Loading your workspace…
         </div>
       </div>
@@ -139,7 +151,7 @@ export default function VendorDashboardPage(): ReactElement {
 
   if (error) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-slate-950">
+      <div className={`${pageShellClass} flex items-center justify-center`}>
         <div className="max-w-md space-y-4 rounded-3xl border border-red-300/40 bg-red-50/80 px-8 py-6 text-red-900 shadow-xl backdrop-blur-lg">
           <h1 className="text-xl font-semibold">We couldn’t open your workspace</h1>
           <p className="text-sm leading-relaxed text-red-700 dark:text-red-300/90">{error}</p>
@@ -163,7 +175,7 @@ export default function VendorDashboardPage(): ReactElement {
 
   if (!dashboard) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-slate-950 text-white">
+      <div className={`${pageShellClass} flex items-center justify-center`}>
         No vendor data available.
       </div>
     );
@@ -172,86 +184,86 @@ export default function VendorDashboardPage(): ReactElement {
   const showcaseName = userProfile?.user_data?.company_name || userProfile?.email || 'Your team';
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 py-12 text-white">
+    <div className={pageShellClass}>
       <div className="mx-auto flex w-full max-w-6xl flex-col gap-10 px-6">
         <header className="grid gap-6 lg:grid-cols-[1.35fr,1fr]">
-          <section className="relative overflow-hidden rounded-3xl border border-white/10 bg-white/10 p-8 shadow-[0_40px_60px_-40px_rgba(15,23,42,0.8)] backdrop-blur-2xl">
-            <div className="pointer-events-none absolute -left-10 -top-10 h-48 w-48 rounded-full bg-rose-400/30 blur-3xl" />
-            <div className="pointer-events-none absolute bottom-0 right-0 h-56 w-56 rounded-full bg-sky-400/20 blur-3xl" />
+          <section className={`${glassPanelClass} relative overflow-hidden p-8 dark:shadow-[0_40px_60px_-40px_rgba(15,23,42,0.8)]`}>
+            <div className="pointer-events-none absolute -left-10 -top-10 h-48 w-48 rounded-full bg-rose-300/35 blur-3xl dark:bg-rose-400/30" />
+            <div className="pointer-events-none absolute bottom-0 right-0 h-56 w-56 rounded-full bg-sky-200/40 blur-3xl dark:bg-sky-400/20" />
 
             <div className="relative flex flex-col gap-6">
               <div>
-                <p className="text-sm font-semibold uppercase tracking-[0.2em] text-slate-200/70">Vendor workspace</p>
-                <h1 className="mt-2 text-3xl font-semibold tracking-tight text-white md:text-4xl">
+                <p className="text-sm font-semibold uppercase tracking-[0.2em] text-slate-500 dark:text-slate-200/70">Vendor workspace</p>
+                <h1 className="mt-2 text-3xl font-semibold tracking-tight text-slate-900 dark:text-white md:text-4xl">
                   Welcome back, {showcaseName}
                 </h1>
-                <p className="mt-3 max-w-xl text-sm text-slate-200/80">
+                <p className="mt-3 max-w-xl text-sm text-slate-600 dark:text-slate-200/80">
                   Track planner requests, keep your deliverables on schedule, and handoff forms without leaving this split-glass workspace.
                 </p>
               </div>
 
               <dl className="grid gap-4 sm:grid-cols-3">
-                <div className="rounded-2xl border border-white/15 bg-white/15 p-4 text-sm shadow-inner backdrop-blur-xl">
-                  <dt className="text-slate-200/70">Open tasks</dt>
-                  <dd className="mt-2 text-3xl font-semibold text-white">{dashboard.stats.open_tasks}</dd>
-                  <p className="mt-1 text-xs text-slate-200/60">{pendingTasks.length} in motion today</p>
+                <div className={`${glassSoftPanelClass} p-4 text-sm`}>
+                  <dt className="text-slate-500 dark:text-slate-200/70">Open tasks</dt>
+                  <dd className="mt-2 text-3xl font-semibold text-slate-900 dark:text-white">{dashboard.stats.open_tasks}</dd>
+                  <p className="mt-1 text-xs text-slate-500 dark:text-slate-200/60">{pendingTasks.length} in motion today</p>
                 </div>
-                <div className="rounded-2xl border border-white/15 bg-white/15 p-4 text-sm shadow-inner backdrop-blur-xl">
-                  <dt className="text-slate-200/70">Completed today</dt>
-                  <dd className="mt-2 text-3xl font-semibold text-white">{completedTasksToday}</dd>
-                  <p className="mt-1 text-xs text-slate-200/60">Keep the momentum going</p>
+                <div className={`${glassSoftPanelClass} p-4 text-sm`}>
+                  <dt className="text-slate-500 dark:text-slate-200/70">Completed today</dt>
+                  <dd className="mt-2 text-3xl font-semibold text-slate-900 dark:text-white">{completedTasksToday}</dd>
+                  <p className="mt-1 text-xs text-slate-500 dark:text-slate-200/60">Keep the momentum going</p>
                 </div>
-                <div className="rounded-2xl border border-white/15 bg-white/15 p-4 text-sm shadow-inner backdrop-blur-xl">
-                  <dt className="text-slate-200/70">Assigned weddings</dt>
-                  <dd className="mt-2 text-3xl font-semibold text-white">{dashboard.weddings.length}</dd>
-                  <p className="mt-1 text-xs text-slate-200/60">Across {dashboard.profile.services.length || 1} service focus{dashboard.profile.services.length === 1 ? '' : 'es'}</p>
+                <div className={`${glassSoftPanelClass} p-4 text-sm`}>
+                  <dt className="text-slate-500 dark:text-slate-200/70">Assigned weddings</dt>
+                  <dd className="mt-2 text-3xl font-semibold text-slate-900 dark:text-white">{dashboard.weddings.length}</dd>
+                  <p className="mt-1 text-xs text-slate-500 dark:text-slate-200/60">Across {dashboard.profile.services.length || 1} service focus{dashboard.profile.services.length === 1 ? '' : 'es'}</p>
                 </div>
               </dl>
             </div>
           </section>
 
-          <aside className="flex h-full flex-col justify-between gap-4 rounded-3xl border border-white/10 bg-white/10 p-6 shadow-[0_40px_60px_-40px_rgba(59,130,246,0.5)] backdrop-blur-2xl">
+          <aside className={`${glassPanelClass} flex h-full flex-col justify-between gap-4 p-6 dark:shadow-[0_40px_60px_-40px_rgba(59,130,246,0.5)]`}>
             <div>
-              <h2 className="text-base font-semibold text-white">Planner pulse</h2>
-              <p className="mt-2 text-sm text-slate-200/70">
+              <h2 className="text-base font-semibold text-slate-900 dark:text-white">Planner pulse</h2>
+              <p className="mt-2 text-sm text-slate-600 dark:text-slate-200/70">
                 {dashboard.stats.pending_forms === 0
                   ? 'Everything shared with planners is up to date.'
                   : `You have ${dashboard.stats.pending_forms} form${dashboard.stats.pending_forms === 1 ? '' : 's'} awaiting completion.`}
               </p>
             </div>
 
-            <div className="grid gap-3 text-sm text-slate-200/80">
-              <div className="flex items-center justify-between rounded-2xl border border-white/10 bg-white/10 px-4 py-3 backdrop-blur-xl">
+            <div className="grid gap-3 text-sm text-slate-700 dark:text-slate-200/80">
+              <div className={`${glassSoftPanelClass} flex items-center justify-between px-4 py-3`}>
                 <span>Automation ready</span>
-                <span className="text-base font-semibold text-white">{dashboard.stats.completed_forms}</span>
+                <span className="text-base font-semibold text-slate-900 dark:text-white">{dashboard.stats.completed_forms}</span>
               </div>
-              <div className="flex items-center justify-between rounded-2xl border border-white/10 bg-white/10 px-4 py-3 backdrop-blur-xl">
+              <div className={`${glassSoftPanelClass} flex items-center justify-between px-4 py-3`}>
                 <span>Live services</span>
-                <span className="text-base font-semibold text-white">{dashboard.profile.services.length}</span>
+                <span className="text-base font-semibold text-slate-900 dark:text-white">{dashboard.profile.services.length}</span>
               </div>
-              <div className="flex items-center justify-between rounded-2xl border border-white/10 bg-white/10 px-4 py-3 backdrop-blur-xl">
+              <div className={`${glassSoftPanelClass} flex items-center justify-between px-4 py-3`}>
                 <span>Open items</span>
-                <span className="text-base font-semibold text-white">{dashboard.stats.open_tasks}</span>
+                <span className="text-base font-semibold text-slate-900 dark:text-white">{dashboard.stats.open_tasks}</span>
               </div>
             </div>
           </aside>
         </header>
 
         <main className="grid gap-6 lg:grid-cols-[2fr,1fr]">
-          <section className="rounded-3xl border border-white/10 bg-white/10 p-6 shadow-[0_30px_50px_-40px_rgba(14,165,233,0.6)] backdrop-blur-2xl">
+          <section className={`${glassPanelClass} p-6 dark:shadow-[0_30px_50px_-40px_rgba(14,165,233,0.6)]`}>
             <div className="flex items-center justify-between gap-4 pb-4">
               <div>
-                <h2 className="text-lg font-semibold text-white">Action queue</h2>
-                <p className="mt-1 text-sm text-slate-200/70">Prioritised by due date across every wedding you support.</p>
+                <h2 className="text-lg font-semibold text-slate-900 dark:text-white">Action queue</h2>
+                <p className="mt-1 text-sm text-slate-600 dark:text-slate-200/70">Prioritised by due date across every wedding you support.</p>
               </div>
-              <div className="rounded-full border border-white/10 bg-white/10 px-3 py-1 text-xs font-medium text-slate-200/80">
+              <div className={pillClass}>
                 {pendingTasks.length} open items
               </div>
             </div>
 
-            <div className="divide-y divide-white/5">
+            <div className="divide-y divide-slate-200/70 dark:divide-white/5">
               {dashboard.tasks.length === 0 ? (
-                <div className="rounded-2xl border border-dashed border-white/10 bg-white/5 p-10 text-center text-slate-200/70">
+                <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 p-10 text-center text-slate-600 dark:border-white/10 dark:bg-white/5 dark:text-slate-200/70">
                   All of your planner requests are complete. We’ll surface new items here when they’re assigned.
                 </div>
               ) : (
@@ -259,18 +271,18 @@ export default function VendorDashboardPage(): ReactElement {
                   <article key={task.id} className="flex flex-col gap-3 py-4 md:flex-row md:items-start md:justify-between">
                     <div className="space-y-2">
                       <div className="flex flex-wrap items-center gap-3">
-                        <h3 className="text-base font-semibold text-white">{task.task}</h3>
+                        <h3 className="text-base font-semibold text-slate-900 dark:text-white">{task.task}</h3>
                         <span className={`rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-wide ${STATUS_STYLES[task.status]}`}>
                           {task.status.replace('_', ' ')}
                         </span>
                       </div>
-                      <p className="text-sm text-slate-200/70">{task.category || 'General'}</p>
-                      <div className="flex flex-wrap gap-3 text-xs text-slate-200/60">
-                        <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1">{task.wedding_name || 'Wedding'}</span>
-                        <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1">
+                      <p className="text-sm text-slate-600 dark:text-slate-200/70">{task.category || 'General'}</p>
+                      <div className="flex flex-wrap gap-3 text-xs text-slate-500 dark:text-slate-200/60">
+                        <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 dark:border-white/10 dark:bg-white/5">{task.wedding_name || 'Wedding'}</span>
+                        <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 dark:border-white/10 dark:bg-white/5">
                           Due {task.due_date ? formatDisplayDate(task.due_date) : 'soon'}
                         </span>
-                        {task.notes && <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1">Note available</span>}
+                        {task.notes && <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 dark:border-white/10 dark:bg-white/5">Note available</span>}
                       </div>
                     </div>
 
@@ -283,7 +295,7 @@ export default function VendorDashboardPage(): ReactElement {
                         disabled={updatingTaskId === task.id}
                         value={task.status}
                         onChange={(event) => handleStatusChange(task.id, event.target.value as typeof task.status)}
-                        className="rounded-xl border border-white/15 bg-white/15 px-4 py-2 text-sm text-white shadow-inner transition focus:border-white/40 focus:outline-none focus:ring-2 focus:ring-white/40 disabled:opacity-60"
+                        className="rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm text-slate-900 shadow-sm transition focus:border-wedding-rose/60 focus:outline-none focus:ring-2 focus:ring-wedding-rose/20 disabled:opacity-60 dark:border-white/15 dark:bg-white/15 dark:text-white dark:shadow-inner dark:focus:border-white/40 dark:focus:ring-white/40"
                       >
                         {STATUS_OPTIONS.map((option) => (
                           <option key={option.value} value={option.value} className="text-slate-900">
@@ -298,28 +310,28 @@ export default function VendorDashboardPage(): ReactElement {
             </div>
           </section>
 
-          <aside className="flex h-full flex-col gap-4 rounded-3xl border border-white/10 bg-white/10 p-6 shadow-[0_30px_50px_-40px_rgba(236,72,153,0.6)] backdrop-blur-2xl">
+          <aside className={`${glassPanelClass} flex h-full flex-col gap-4 p-6 dark:shadow-[0_30px_50px_-40px_rgba(236,72,153,0.6)]`}>
             <div>
-              <h2 className="text-lg font-semibold text-white">Planner forms</h2>
-              <p className="mt-1 text-sm text-slate-200/70">Complete these before your next sync to keep planners unblocked.</p>
+              <h2 className="text-lg font-semibold text-slate-900 dark:text-white">Planner forms</h2>
+              <p className="mt-1 text-sm text-slate-600 dark:text-slate-200/70">Complete these before your next sync to keep planners unblocked.</p>
             </div>
 
             <div className="space-y-3 overflow-y-auto pr-1 text-sm">
               {dashboard.forms.pending.length === 0 && dashboard.forms.completed.length === 0 ? (
-                <div className="rounded-2xl border border-dashed border-white/10 bg-white/5 px-4 py-10 text-center text-slate-200/70">
+                <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 px-4 py-10 text-center text-slate-600 dark:border-white/10 dark:bg-white/5 dark:text-slate-200/70">
                   No planner questionnaires to complete right now.
                 </div>
               ) : (
                 <ul className="space-y-3">
                   {dashboard.forms.pending.map((form) => (
-                    <li key={form.id} className="rounded-2xl border border-white/10 bg-white/10 p-4 shadow-inner backdrop-blur-xl">
-                      <p className="text-sm font-semibold text-white">{form.form_name}</p>
-                      <p className="mt-1 text-xs text-slate-200/70">{form.wedding_name}</p>
-                      <p className="mt-1 text-xs text-slate-200/60">Sent {formatDisplayDate(form.sent_at)}</p>
+                    <li key={form.id} className={`${glassSoftPanelClass} p-4`}>
+                      <p className="text-sm font-semibold text-slate-900 dark:text-white">{form.form_name}</p>
+                      <p className="mt-1 text-xs text-slate-500 dark:text-slate-200/70">{form.wedding_name}</p>
+                      <p className="mt-1 text-xs text-slate-500 dark:text-slate-200/60">Sent {formatDisplayDate(form.sent_at)}</p>
                       {form.access_token && (
                         <a
-                          href={`/vendor-form/${form.id}?token=${form.access_token}`}
-                          className="mt-3 inline-flex items-center justify-center rounded-xl border border-white/15 bg-white/15 px-3 py-1 text-xs font-semibold text-white transition hover:border-white/40 hover:bg-white/25"
+                          href={`/vendor-form/${form.id}/${encodeURIComponent(form.access_token)}`}
+                          className="mt-3 inline-flex items-center justify-center rounded-xl border border-slate-300 bg-white px-3 py-1 text-xs font-semibold text-slate-900 transition hover:border-slate-400 hover:bg-slate-50 dark:border-white/15 dark:bg-white/15 dark:text-white dark:hover:border-white/40 dark:hover:bg-white/25"
                         >
                           Open form
                         </a>
@@ -328,8 +340,8 @@ export default function VendorDashboardPage(): ReactElement {
                   ))}
 
                   {dashboard.forms.completed.length > 0 && (
-                    <li className="rounded-2xl border border-white/10 bg-white/5 p-4 text-xs text-slate-200/70">
-                      <p className="font-semibold text-white">Completed</p>
+                    <li className="rounded-2xl border border-slate-200 bg-slate-50 p-4 text-xs text-slate-600 dark:border-white/10 dark:bg-white/5 dark:text-slate-200/70">
+                      <p className="font-semibold text-slate-900 dark:text-white">Completed</p>
                       <ul className="mt-2 space-y-2">
                         {dashboard.forms.completed.map((form) => (
                           <li key={form.id} className="flex items-center justify-between gap-2">
@@ -352,18 +364,18 @@ export default function VendorDashboardPage(): ReactElement {
           {dashboard.weddings.map((wedding) => (
             <div
               key={wedding.id}
-              className="flex flex-col gap-3 rounded-3xl border border-white/10 bg-white/10 p-5 shadow-[0_20px_40px_-40px_rgba(96,165,250,0.8)] backdrop-blur-2xl"
+              className={`${glassPanelClass} flex flex-col gap-3 p-5 dark:shadow-[0_20px_40px_-40px_rgba(96,165,250,0.8)]`}
             >
               <div className="flex items-center justify-between gap-2">
-                <h3 className="text-base font-semibold text-white">{wedding.name}</h3>
-                <span className="rounded-full border border-white/15 bg-white/15 px-3 py-1 text-xs font-medium text-slate-200/80">
+                <h3 className="text-base font-semibold text-slate-900 dark:text-white">{wedding.name}</h3>
+                <span className={pillClass}>
                   {wedding.status.replace('_', ' ')}
                 </span>
               </div>
-              <p className="text-sm text-slate-200/70">{wedding.location || 'Location pending'}</p>
-              <p className="text-xs text-slate-200/60">Event date {formatDisplayDate(wedding.date)}</p>
-              <div className="flex items-center gap-3 text-xs text-slate-200/70">
-                <span className="rounded-full border border-white/10 bg-white/10 px-3 py-1">
+              <p className="text-sm text-slate-600 dark:text-slate-200/70">{wedding.location || 'Location pending'}</p>
+              <p className="text-xs text-slate-500 dark:text-slate-200/60">Event date {formatDisplayDate(wedding.date)}</p>
+              <div className="flex items-center gap-3 text-xs text-slate-600 dark:text-slate-200/70">
+                <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 dark:border-white/10 dark:bg-white/10">
                   {wedding.tasks_completed}/{wedding.tasks_total} tasks complete
                 </span>
               </div>
@@ -371,7 +383,7 @@ export default function VendorDashboardPage(): ReactElement {
           ))}
 
           {dashboard.weddings.length === 0 && (
-            <div className="rounded-3xl border border-dashed border-white/10 bg-white/5 p-6 text-sm text-slate-200/70">
+            <div className="rounded-3xl border border-dashed border-slate-200 bg-slate-50 p-6 text-sm text-slate-600 dark:border-white/10 dark:bg-white/5 dark:text-slate-200/70">
               You’re not assigned to any weddings yet. Invitations from planners will appear here the moment they’re sent.
             </div>
           )}

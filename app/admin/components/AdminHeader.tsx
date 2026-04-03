@@ -30,8 +30,7 @@ export default function AdminHeader() {
     if (userProfile.is_root_admin) {
       return [
         ...baseLinks,
-        { href: '/admin/saas', label: 'Platform Management', roles: ['ROOT_ADMIN'] },
-        { href: '/admin/metrics', label: 'Platform Metrics', roles: ['ROOT_ADMIN'] },
+        { href: '/admin/saas', label: 'SaaS Management', roles: ['ROOT_ADMIN'] },
         { href: '/admin/notifications', label: 'Notifications', roles: ['ROOT_ADMIN'] },
         { href: '/admin/support', label: 'Support', roles: ['ROOT_ADMIN'] },
       ];
@@ -50,6 +49,7 @@ export default function AdminHeader() {
       return [
         ...baseLinks,
         { href: '/admin/vendor', label: 'My Tasks', roles: ['vendor'] },
+        { href: '/portal/ads', label: 'Advertising', roles: ['vendor'] },
       ];
     }
 
@@ -60,7 +60,7 @@ export default function AdminHeader() {
 
   return (
     <>
-      <header className="glass px-4 sm:px-6 md:px-8 py-3 sm:py-4 flex items-center justify-between relative">
+      <header className="glass px-4 sm:px-6 md:px-8 py-3 sm:py-4 flex items-center justify-between relative" role="banner">
         <div>
           <h1 className="font-heading text-xl sm:text-2xl text-wedding-rose">
             {userProfile?.is_root_admin ? 'Admin Panel' :
@@ -73,9 +73,9 @@ export default function AdminHeader() {
             </p>
           )}
         </div>
-        
+
         {/* Desktop Navigation */}
-        <nav className="hidden lg:flex space-x-4 xl:space-x-6 font-medium">
+        <nav className="hidden lg:flex space-x-4 xl:space-x-6 font-medium" aria-label="Main navigation">
           {navLinks.map((link) => (
             <Link
               key={link.href}
@@ -86,8 +86,9 @@ export default function AdminHeader() {
             </Link>
           ))}
           <button
-            onClick={logout}
+            onClick={() => logout()}
             className="text-red-500 hover:underline"
+            aria-label="Logout from account"
           >
             Logout
           </button>
@@ -96,14 +97,17 @@ export default function AdminHeader() {
         {/* Mobile Menu Button */}
         <button
           onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-          className="lg:hidden p-2 rounded-lg hover:bg-white/10 transition"
-          aria-label="Toggle menu"
+          className="lg:hidden rounded-lg p-2 transition hover:bg-slate-100 dark:hover:bg-white/10"
+          aria-label={mobileMenuOpen ? 'Close navigation menu' : 'Open navigation menu'}
+          aria-expanded={mobileMenuOpen}
+          aria-controls="mobile-nav-menu"
         >
           <svg
             className="w-6 h-6"
             fill="none"
             stroke="currentColor"
             viewBox="0 0 24 24"
+            aria-hidden="true"
           >
             {mobileMenuOpen ? (
               <path
@@ -126,13 +130,13 @@ export default function AdminHeader() {
 
       {/* Mobile Navigation Menu */}
       {mobileMenuOpen && (
-        <div className="lg:hidden glass border-t border-white/10">
+        <div className="glass border-t border-slate-200 dark:border-white/10 lg:hidden" id="mobile-nav-menu" role="navigation" aria-label="Mobile navigation">
           <nav className="flex flex-col px-4 py-2 font-medium">
             {navLinks.map((link) => (
               <Link
                 key={link.href}
                 href={link.href}
-                className="py-3 px-2 hover:bg-white/10 rounded-lg transition"
+                className="rounded-lg px-2 py-3 transition hover:bg-slate-100 dark:hover:bg-white/10"
                 onClick={() => setMobileMenuOpen(false)}
               >
                 {link.label}
@@ -143,7 +147,7 @@ export default function AdminHeader() {
                 logout();
                 setMobileMenuOpen(false);
               }}
-              className="py-3 px-2 text-red-500 hover:bg-white/10 rounded-lg transition text-left"
+              className="rounded-lg px-2 py-3 text-left text-red-500 transition hover:bg-red-50 dark:hover:bg-white/10"
             >
               Logout
             </button>

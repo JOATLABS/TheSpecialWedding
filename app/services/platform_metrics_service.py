@@ -170,7 +170,10 @@ class PlatformMetricsService:
             self._count_documents(users_collection, {})
         )
         active_task = asyncio.create_task(
-            self._count_documents(users_collection, {"is_active": True})
+            self._count_documents(
+                users_collection,
+                {"is_active": True, "last_login": {"$gte": period_start}},
+            )
         )
         new_task = asyncio.create_task(
             self._count_documents(
@@ -222,17 +225,41 @@ class PlatformMetricsService:
             ],
         )
 
-        status_breakdown: Dict[str, int] = {
-            str(doc.get("_id")): int(doc.get("count", 0)) for doc in status_docs
+        total_subscriptions_task = asyncio.create_task(
+            self._count_documents(subscriptions_collection, {})
+        )
+        status_aliases = {
+            "canceled": "cancelled",
+            "trialing": "trial",
         }
+        status_breakdown: Dict[str, int] = {}
+        for doc in status_docs:
+            raw_status = str(doc.get("_id") or "").strip()
+            canonical_status = status_aliases.get(raw_status, raw_status or "unknown")
+            status_breakdown[canonical_status] = (
+                status_breakdown.get(canonical_status, 0) + int(doc.get("count", 0))
+            )
 
         # Ensure all expected status keys exist with default 0 to prevent NaN in frontend
-        expected_statuses = ["active", "trial", "cancelled", "expired", "suspended", "pending_payment"]
+        expected_statuses = [
+            "active",
+            "trial",
+            "cancelled",
+            "expired",
+            "suspended",
+            "pending_payment",
+            "pending_checkout",
+            "past_due",
+        ]
         for status in expected_statuses:
             if status not in status_breakdown:
                 status_breakdown[status] = 0
 
-        total_subscriptions = sum(status_breakdown.values())
+        total_subscriptions = await total_subscriptions_task
+        accounted_statuses = sum(status_breakdown.values())
+        unknown_statuses = max(total_subscriptions - accounted_statuses, 0)
+        if unknown_statuses > 0:
+            status_breakdown["unknown"] = status_breakdown.get("unknown", 0) + unknown_statuses
 
         active_plans_task = asyncio.create_task(
             self._count_documents(plans_collection, {"is_active": True})
@@ -536,8 +563,10 @@ class PlatformMetricsService:
     async def _calculate_revenue_summary(
         self, subscriptions_collection: Any, plans_collection: Any
     ) -> Dict[str, Any]:
+        # --- Step 1: Revenue aggregation from subscriptions ---
         pipeline: List[Dict[str, Any]] = [
-            # Include both active and trial subscriptions in plan breakdown
+            # Keep trial users visible in the plan breakdown, but only count paid
+            # active subscriptions toward recurring revenue.
             {"$match": {"status": {"$in": ["active", "trial"]}}},
             {
                 "$lookup": {
@@ -554,6 +583,7 @@ class PlatformMetricsService:
                 "$project": {
                     "plan_id": "$plan_doc._id",
                     "plan_name": "$plan_doc.name",
+                    "status": "$status",
                     "billing_interval": "$billing_interval",
                     "price_monthly": {
                         "$ifNull": ["$plan_doc.price_monthly", 0]
@@ -567,6 +597,7 @@ class PlatformMetricsService:
                 "$project": {
                     "plan_id": 1,
                     "plan_name": 1,
+                    "status": 1,
                     "monthly_revenue": {
                         "$switch": {
                             "branches": [
@@ -604,21 +635,49 @@ class PlatformMetricsService:
                             },
                         }
                     },
-                    "annual_revenue": {
-                        "$cond": [
-                            {"$gt": ["$price_yearly", 0]},
-                            "$price_yearly",
-                            {"$multiply": ["$price_monthly", 12]},
-                        ]
-                    },
+                    "annual_revenue": 0,
                 }
             },
             {
                 "$group": {
                     "_id": "$plan_id",
                     "plan_name": {"$first": "$plan_name"},
-                    "monthly": {"$sum": "$monthly_revenue"},
-                    "annual": {"$sum": "$annual_revenue"},
+                    "monthly": {
+                        "$sum": {
+                            "$cond": [
+                                {"$eq": ["$status", "active"]},
+                                "$monthly_revenue",
+                                0,
+                            ]
+                        }
+                    },
+                    "annual": {
+                        "$sum": {
+                            "$cond": [
+                                {"$eq": ["$status", "active"]},
+                                {"$multiply": ["$monthly_revenue", 12]},
+                                0,
+                            ]
+                        }
+                    },
+                    "active_users": {
+                        "$sum": {
+                            "$cond": [
+                                {"$eq": ["$status", "active"]},
+                                1,
+                                0,
+                            ]
+                        }
+                    },
+                    "trial_users": {
+                        "$sum": {
+                            "$cond": [
+                                {"$eq": ["$status", "trial"]},
+                                1,
+                                0,
+                            ]
+                        }
+                    },
                 }
             },
         ]
@@ -640,6 +699,8 @@ class PlatformMetricsService:
             plan_name = doc.get("plan_name") or "Unassigned"
             monthly = float(doc.get("monthly", 0))
             annual = float(doc.get("annual", 0))
+            active_users = int(doc.get("active_users", 0))
+            trial_users = int(doc.get("trial_users", 0))
 
             if plan_id is None:
                 logger.warning(
@@ -653,10 +714,38 @@ class PlatformMetricsService:
                 "name": plan_name,
                 "monthly_revenue": monthly,
                 "annual_revenue": annual,
+                "active_users": active_users,
+                "trial_users": trial_users,
             }
 
             monthly_total += monthly
             annual_total += annual
+
+        # --- Step 2: Ensure ALL active plans appear in the breakdown ---
+        # Plans with zero subscriptions won't appear in the aggregation above,
+        # so we fetch all active plans and backfill any that are missing.
+        try:
+            all_active_plans = await self._aggregate(
+                plans_collection,
+                [
+                    {"$match": {"is_active": True}},
+                    {"$project": {"_id": 1, "name": 1}},
+                ],
+            )
+        except Exception as exc:  # pragma: no cover
+            logger.debug("Active plans query failed: %s", exc)
+            all_active_plans = []
+
+        for plan_doc in all_active_plans:
+            key = str(plan_doc.get("_id"))
+            if key not in plan_breakdown:
+                plan_breakdown[key] = {
+                    "name": plan_doc.get("name", "Unknown"),
+                    "monthly_revenue": 0.0,
+                    "annual_revenue": 0.0,
+                    "active_users": 0,
+                    "trial_users": 0,
+                }
 
         return {"monthly": monthly_total, "annual": annual_total, "plans": plan_breakdown}
 
@@ -667,7 +756,7 @@ class PlatformMetricsService:
         async for plan in self._iterate_documents(
             plans_collection,
             {},
-            {"price_monthly": 1, "price_yearly": 1, "name": 1},
+            {"price_monthly": 1, "price_yearly": 1, "name": 1, "is_active": 1},
         ):
             plans_lookup[plan.get("_id")] = plan
 
@@ -678,7 +767,7 @@ class PlatformMetricsService:
         async for subscription in self._iterate_documents(
             subscriptions_collection,
             {"status": {"$in": ["active", "trial"]}},
-            {"plan_id": 1, "billing_interval": 1},
+            {"plan_id": 1, "billing_interval": 1, "status": 1},
         ):
             plan = plans_lookup.get(subscription.get("plan_id"), {})
             plan_id = subscription.get("plan_id")
@@ -686,11 +775,12 @@ class PlatformMetricsService:
             price_monthly = float(plan.get("price_monthly") or 0)
             price_yearly = float(plan.get("price_yearly") or 0)
             interval = subscription.get("billing_interval")
+            sub_status = str(subscription.get("status", ""))
 
             monthly_value = self._calculate_monthly_value(
                 price_monthly, price_yearly, interval
             )
-            annual_value = price_yearly if price_yearly else monthly_value * 12
+            annual_value = monthly_value * 12
 
             if plan_id is None:
                 logger.warning(
@@ -702,14 +792,36 @@ class PlatformMetricsService:
             key = str(plan_id) if plan_id is not None else "unknown"
             plan_entry = plan_breakdown.setdefault(
                 key,
-                {"name": plan_name, "monthly_revenue": 0.0, "annual_revenue": 0.0},
+                {
+                    "name": plan_name,
+                    "monthly_revenue": 0.0,
+                    "annual_revenue": 0.0,
+                    "active_users": 0,
+                    "trial_users": 0,
+                },
             )
 
-            plan_entry["monthly_revenue"] += monthly_value
-            plan_entry["annual_revenue"] += annual_value
+            if sub_status == "active":
+                plan_entry["monthly_revenue"] += monthly_value
+                plan_entry["annual_revenue"] += annual_value
+                plan_entry["active_users"] += 1
+                monthly_total += monthly_value
+                annual_total += annual_value
+            elif sub_status == "trial":
+                plan_entry["trial_users"] += 1
 
-            monthly_total += monthly_value
-            annual_total += annual_value
+        # Backfill active plans with no subscriptions
+        for plan_id_raw, plan_doc in plans_lookup.items():
+            if plan_doc.get("is_active", False):
+                key = str(plan_id_raw)
+                if key not in plan_breakdown:
+                    plan_breakdown[key] = {
+                        "name": plan_doc.get("name", "Unknown"),
+                        "monthly_revenue": 0.0,
+                        "annual_revenue": 0.0,
+                        "active_users": 0,
+                        "trial_users": 0,
+                    }
 
         return {"monthly": monthly_total, "annual": annual_total, "plans": plan_breakdown}
 

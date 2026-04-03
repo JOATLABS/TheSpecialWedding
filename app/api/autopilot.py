@@ -15,6 +15,7 @@ import logging
 import os
 
 from app.services.autopilot_service import autopilot_service
+from app.dependencies.auth_extended import require_admin_or_planner, ExtendedAuthUser
 
 logger = logging.getLogger(__name__)
 
@@ -211,6 +212,48 @@ async def get_autopilot_status(
 
     except Exception as e:
         logger.error(f"Error getting autopilot status: {str(e)}")
+        return {
+            "status": "error",
+            "error": str(e),
+            "timestamp": datetime.now(timezone.utc).isoformat()
+        }
+
+
+@router.get("/admin-status")
+async def get_autopilot_admin_status(
+    current_user: ExtendedAuthUser = Depends(require_admin_or_planner),
+) -> Dict[str, Any]:
+    """Get autopilot status and metrics (admin/planner-facing, uses Bearer auth)."""
+    try:
+        scheduled_count = await autopilot_service.scheduled_payments.count_documents(
+            {"status": "scheduled"}
+        )
+        failed_count = await autopilot_service.scheduled_payments.count_documents(
+            {"status": "failed", "max_retries_reached": {"$ne": True}}
+        )
+        pending_retry_count = await autopilot_service.scheduled_payments.count_documents(
+            {"status": "failed", "next_retry_at": {"$exists": True}, "max_retries_reached": {"$ne": True}}
+        )
+        succeeded_today = await autopilot_service.scheduled_payments.count_documents({
+            "status": "succeeded",
+            "paid_at": {
+                "$gte": datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
+            }
+        })
+
+        return {
+            "status": "active",
+            "metrics": {
+                "scheduled_payments": scheduled_count,
+                "failed_pending_retry": failed_count,
+                "pending_retries": pending_retry_count,
+                "succeeded_today": succeeded_today
+            },
+            "timestamp": datetime.now(timezone.utc).isoformat()
+        }
+
+    except Exception as e:
+        logger.error(f"Error getting autopilot admin status: {str(e)}")
         return {
             "status": "error",
             "error": str(e),

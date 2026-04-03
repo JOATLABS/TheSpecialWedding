@@ -87,8 +87,12 @@ export function CreateTemplateModal({
 
   useEffect(() => {
     if (isOpen) {
-      setFormState(defaultFormState());
-      setLocalError('');
+      const frame = window.requestAnimationFrame(() => {
+        setFormState(defaultFormState());
+        setLocalError('');
+      });
+
+      return () => window.cancelAnimationFrame(frame);
     }
   }, [isOpen]);
 

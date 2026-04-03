@@ -10,6 +10,7 @@ import { Card } from '../../../../components/ui/Card';
 import PackageForm, { type PackageFormData } from '../../../../components/packages/PackageForm';
 import { ArrowLeft, Loader2, Eye } from 'lucide-react';
 import { Button } from '../../../../components/ui/Button';
+import PageHeader from '../../../components/PageHeader';
 
 export default function EditPackagePage() {
   const router = useRouter();
@@ -115,17 +116,17 @@ export default function EditPackagePage() {
   if (error || !packageData) {
     return (
       <div className="space-y-6">
-        <div className="flex items-center gap-4">
+        <PageHeader
+          title="Edit Package"
+          description="Package not found"
+        >
           <Link
             href="/admin/packages"
             className="p-2 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors"
           >
             <ArrowLeft size={20} />
           </Link>
-          <h1 className="text-2xl sm:text-3xl font-semibold leading-tight text-slate-900 dark:text-white">
-            Edit Package
-          </h1>
-        </div>
+        </PageHeader>
 
         <Card className="p-12 text-center">
           <p className="text-red-600 dark:text-red-400">{error || 'Package not found'}</p>
@@ -139,31 +140,23 @@ export default function EditPackagePage() {
 
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-        <div className="flex items-center gap-4">
-          <Link
-            href="/admin/packages"
-            className="p-2 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors"
-          >
-            <ArrowLeft size={20} />
-          </Link>
-          <div>
-            <h1 className="text-2xl sm:text-3xl font-semibold leading-tight text-slate-900 dark:text-white">
-              Edit Package
-            </h1>
-            <p className="text-slate-600 dark:text-slate-400 mt-1">
-              {packageData.name}
-            </p>
-          </div>
-        </div>
+      <PageHeader
+        title="Edit Package"
+        description={packageData.name}
+      >
+        <Link
+          href="/admin/packages"
+          className="p-2 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors"
+        >
+          <ArrowLeft size={20} />
+        </Link>
         <Link href={`/admin/packages/${packageId}/preview`}>
           <Button variant="outline" className="flex items-center gap-2">
             <Eye size={16} />
             Preview
           </Button>
         </Link>
-      </div>
+      </PageHeader>
 
       {/* Form */}
       <PackageForm

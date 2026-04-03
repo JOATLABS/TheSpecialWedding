@@ -33,39 +33,108 @@ function reportConfigError(errorType: string, message: string, variableName: str
   }
 }
 
-/**
- * Get the API base URL
- *
- * @throws {Error} if NEXT_PUBLIC_API_BASE_URL is not set or misconfigured
- * NO FALLBACKS - the build must have this variable properly baked in
- */
-export function getApiBaseUrl(): string {
-  const url = process.env.NEXT_PUBLIC_API_BASE_URL;
+const LOCAL_HOSTNAMES = new Set(['localhost', '127.0.0.1']);
 
-  if (!url) {
-    const errorMsg = 'CRITICAL: NEXT_PUBLIC_API_BASE_URL environment variable is not set. ' +
-      'This must be configured in your deployment environment. ' +
-      'Check Coolify secrets or .env file.';
-    console.error(errorMsg);
-    reportConfigError('MissingEnvVar', errorMsg, 'NEXT_PUBLIC_API_BASE_URL');
-    throw new Error(errorMsg);
+function normalizeBaseUrl(url: string): string {
+  return url.trim().replace(/\/+$/, '');
+}
+
+function deriveApiOrigin(protocol: string, hostname: string): string | null {
+  if (!hostname) {
+    return null;
   }
 
-  if (typeof window !== 'undefined') {
-    const hostname = window.location.hostname;
-    const isLocalDev = hostname === 'localhost' || hostname === '127.0.0.1';
+  const normalizedProtocol = protocol === 'https:' ? 'https:' : 'http:';
 
-    if (!isLocalDev && url.includes('localhost')) {
-      const errorMsg = `CRITICAL: NEXT_PUBLIC_API_BASE_URL is set to "${url}" but app is running on "${hostname}". ` +
-        'The API URL was not properly configured during build. ' +
-        'Ensure Coolify secrets are set correctly and rebuild.';
-      console.error(errorMsg);
-      reportConfigError('MisconfiguredEnvVar', errorMsg, 'NEXT_PUBLIC_API_BASE_URL', url);
-      throw new Error(errorMsg);
+  if (LOCAL_HOSTNAMES.has(hostname)) {
+    return `${normalizedProtocol}//${hostname}:8000`;
+  }
+
+  if (hostname === 'thespecialwedding.io' || hostname === 'www.thespecialwedding.io') {
+    return `${normalizedProtocol}//api.thespecialwedding.io`;
+  }
+
+  if (hostname === 'staging.thespecialwedding.io') {
+    return `${normalizedProtocol}//api.staging.thespecialwedding.io`;
+  }
+
+  if (hostname.startsWith('api.')) {
+    return `${normalizedProtocol}//${hostname}`;
+  }
+
+  return `${normalizedProtocol}//api.${hostname}`;
+}
+
+function deriveApiBaseUrlFromFrontendUrl(frontendUrl?: string): string | null {
+  if (!frontendUrl) {
+    return null;
+  }
+
+  try {
+    const parsed = new URL(frontendUrl);
+    const derived = deriveApiOrigin(parsed.protocol, parsed.hostname);
+    return derived ? normalizeBaseUrl(derived) : null;
+  } catch {
+    return null;
+  }
+}
+
+function getConfiguredApiBaseUrl(): string {
+  const internalUrl = process.env.INTERNAL_API_BASE_URL?.trim();
+  if (internalUrl) {
+    return normalizeBaseUrl(internalUrl);
+  }
+
+  const publicUrl = process.env.NEXT_PUBLIC_API_BASE_URL?.trim();
+  if (publicUrl) {
+    return normalizeBaseUrl(publicUrl);
+  }
+
+  const derivedFromFrontend = deriveApiBaseUrlFromFrontendUrl(process.env.FRONTEND_URL?.trim());
+  if (derivedFromFrontend) {
+    return derivedFromFrontend;
+  }
+
+  if (process.env.NODE_ENV !== 'production') {
+    return 'http://localhost:8000';
+  }
+
+  const errorMsg = 'CRITICAL: Could not resolve API base URL. Configure INTERNAL_API_BASE_URL, ' +
+    'NEXT_PUBLIC_API_BASE_URL, or FRONTEND_URL for this deployment.';
+  console.error(errorMsg);
+  reportConfigError('MissingEnvVar', errorMsg, 'INTERNAL_API_BASE_URL | NEXT_PUBLIC_API_BASE_URL | FRONTEND_URL');
+  throw new Error(errorMsg);
+}
+
+/**
+ * Get the API base URL.
+ *
+ * In split-service deployments, the frontend image must be environment-neutral
+ * so the same SHA can be promoted from staging to production. Browser callers
+ * therefore derive the API host from the current origin, while server-side
+ * callers use the deployment env vars.
+ */
+export function getApiBaseUrl(): string {
+  if (typeof window !== 'undefined') {
+    const derived = deriveApiOrigin(window.location.protocol, window.location.hostname);
+    if (derived) {
+      return normalizeBaseUrl(derived);
     }
   }
 
-  return url;
+  return getConfiguredApiBaseUrl();
+}
+
+/**
+ * Get the server-side API base URL.
+ *
+ * In single-container deployments such as the current Coolify setup, the
+ * frontend can bypass the public proxy and talk to the colocated backend over
+ * loopback. That removes an unnecessary network hop for server-rendered data
+ * fetches while preserving the public browser-facing API base URL.
+ */
+export function getServerApiBaseUrl(): string {
+  return getConfiguredApiBaseUrl();
 }
 
 /**
@@ -87,5 +156,9 @@ export function getFrontendUrl(): string {
  * Check if API base URL is configured
  */
 export function isApiConfigured(): boolean {
-  return !!process.env.NEXT_PUBLIC_API_BASE_URL;
+  try {
+    return !!getApiBaseUrl();
+  } catch {
+    return false;
+  }
 }

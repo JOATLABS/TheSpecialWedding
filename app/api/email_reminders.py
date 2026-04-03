@@ -2,11 +2,13 @@
 
 from fastapi import APIRouter, HTTPException, Depends, Query, Form, UploadFile, File
 from app.services.email_service_resend import ResendEmailService
-from app.dependencies.auth_extended import require_wedding_planner_only, ExtendedAuthUser, check_wedding_access, require_admin_or_planner
+from app.dependencies.auth_extended import require_wedding_planner_only, ExtendedAuthUser, check_wedding_access, require_admin_or_planner, enforce_team_permission
 from app.services.wedding_service import WeddingService
 from app.core.config import settings
+from app.utils.response import dict_response
 from pydantic import BaseModel
 from typing import Optional
+from app.services.sse_manager import sse_manager
 import base64
 import logging
 
@@ -43,16 +45,19 @@ class EmailReminderModel(BaseModel):
 @router.get("/email/status", tags=["Admin"])
 def get_email_status():
     """Check if email service is configured and available"""
-    return {
-        "available": email_available,
-        "provider": "resend",
-        "message": "Email service configured and ready" if email_available else "Email service not configured (RESEND_API_KEY missing)"
-    }
+    return dict_response(
+        data={
+            "available": email_available,
+            "provider": "resend",
+        },
+        message="Email service configured and ready" if email_available else "Email service not configured (RESEND_API_KEY missing)"
+    )
 
 
 @router.post("/email/send-invites", tags=["Admin"])
 async def send_email_invites(payload: EmailInviteModel, current_user: ExtendedAuthUser = Depends(require_wedding_planner_only)):
     """Send RSVP invitation emails (JSON endpoint)"""
+    enforce_team_permission(current_user, "send_rsvp")
     if not email_available or email_service is None:
         raise HTTPException(status_code=503, detail="Email service not configured")
 
@@ -71,6 +76,12 @@ async def send_email_invites(payload: EmailInviteModel, current_user: ExtendedAu
         attachments=[]
     )
 
+    # Broadcast invite status change so planner UI refreshes guest list
+    await sse_manager.broadcast_data_change(
+        current_user.email, "invite", "created",
+        wedding_id=wedding["_id"],
+    )
+
     return result
 
 
@@ -83,6 +94,7 @@ async def send_email_invites_with_attachment(
     current_user: ExtendedAuthUser = Depends(require_wedding_planner_only)
 ):
     """Send RSVP invitation emails with attachment (multipart/form-data endpoint)"""
+    enforce_team_permission(current_user, "send_rsvp")
     if not email_available or email_service is None:
         raise HTTPException(status_code=503, detail="Email service not configured")
 
@@ -112,12 +124,19 @@ async def send_email_invites_with_attachment(
         attachments=attachments
     )
 
+    # Broadcast invite status change so planner UI refreshes guest list
+    await sse_manager.broadcast_data_change(
+        current_user.email, "invite", "created",
+        wedding_id=wedding["_id"],
+    )
+
     return result
 
 
 @router.post("/email/send-reminders", tags=["Admin"])
 async def send_email_reminders(payload: EmailReminderModel, current_user: ExtendedAuthUser = Depends(require_admin_or_planner)):
     """Send event reminder emails"""
+    enforce_team_permission(current_user, "send_reminders")
     if not email_available or email_service is None:
         raise HTTPException(status_code=503, detail="Email service not configured")
 
@@ -226,6 +245,12 @@ async def send_individual_email_reminder(
                     {"$set": {"invite_sent": True, "invite_sent_date": datetime.now(timezone.utc)}}
                 )
                 logger.info(f"Set invite_sent=True for guest {payload.guest_name} (email reminder)")
+
+            # Broadcast invite status change
+            await sse_manager.broadcast_data_change(
+                current_user.email, "invite", "created",
+                wedding_id=str(wedding["_id"]),
+            )
             return {"sent": 1, "success": True}
         else:
             return {"sent": 0, "success": False, "error": result.get("error", "Unknown error")}
@@ -252,12 +277,13 @@ async def get_email_logs(
     # Wedding planners can only see logs for their assigned weddings
     if current_user.is_wedding_planner:
         from app.core.database import mongo
-        # Get weddings assigned to this planner
+        # Get weddings assigned to this planner (safety cap: typical planner has <1k weddings)
+        MAX_PLANNER_WEDDINGS = 1000
         weddings_cursor = mongo.db["weddings"].find(
             {"assigned_planner_email": current_user.email},
             {"_id": 1}
         )
-        weddings = await weddings_cursor.to_list(length=None)
+        weddings = await weddings_cursor.to_list(length=MAX_PLANNER_WEDDINGS)
         wedding_ids = [w["_id"] for w in weddings]
 
         if not wedding_ids:

@@ -3,6 +3,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { getApiBaseUrl } from '@/utils/env';
 import { useRouter } from 'next/navigation';
+import { bootstrapAdminAuthToken } from '@/utils/adminAuthStorage';
 
 import { GlassCard } from '../ui/GlassCard';
 import { ThemeConfig } from '@/types/wedding';
@@ -43,6 +44,8 @@ const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
 const MAX_RETRIES = 3;
 const INITIAL_RETRY_DELAY_MS = 1000; // 1 second, doubles each retry
 
+// Alternate pricing renderer kept aligned with the live subscription system.
+// The homepage currently renders pricing inline in app/page.tsx.
 export const PricingSection: React.FC<PricingSectionProps> = ({ theme, onPlanSelect }) => {
   const router = useRouter();
   const [plans, setPlans] = useState<SubscriptionPlan[]>([]);
@@ -142,15 +145,14 @@ export const PricingSection: React.FC<PricingSectionProps> = ({ theme, onPlanSel
     }
   }, [getCachedPlans, setCachedPlans]);
 
-  const handleSelectPlan = (plan: SubscriptionPlan) => {
+  const handleSelectPlan = async (plan: SubscriptionPlan) => {
     setActivePlanId(plan._id);
     onPlanSelect?.({ id: plan._id, name: plan.name });
 
-    // If user is authenticated, redirect to billing page with pre-selected plan
-    const token = localStorage.getItem('authToken');
-    if (token) {
+    const accessToken = await bootstrapAdminAuthToken();
+    if (accessToken) {
       const billingInterval = isYearly ? 'yearly' : 'monthly';
-      router.push(`/admin/billing?plan=${encodeURIComponent(plan._id)}&interval=${billingInterval}`);
+      router.push(`/admin/planner/billing?plan=${encodeURIComponent(plan._id)}&interval=${billingInterval}`);
     }
   };
 

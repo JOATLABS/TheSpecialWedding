@@ -13,6 +13,7 @@ from app.models.budget import (
 )
 from app.utils.security_validator import SecurityValidator
 from app.utils.serializers import serialize_mongo_doc
+from app.utils.id_utils import to_object_id, to_str_id, normalize_doc_id
 import logging
 
 logger = logging.getLogger(__name__)
@@ -31,6 +32,13 @@ def _get_ai_cache_service():
 
 
 class BudgetService:
+    # Safety caps for list queries to prevent memory overload
+    MAX_CATEGORIES = 5000
+    MAX_QUOTES = 10000
+    MAX_TEMPLATES = 1000
+    MAX_PAYMENT_RECORDS = 50000
+    MAX_ALERTS = 5000
+
     def __init__(self):
         self.budget_categories = mongo.db["budget_categories"]
         self.vendor_quotes = mongo.db["vendor_quotes"]
@@ -63,9 +71,9 @@ class BudgetService:
             # Check if adding this category would exceed the wedding's total budget
             wedding_total_budget = wedding.get("total_budget", 0)
             if wedding_total_budget > 0:
-                # Get existing categories
+                # Get existing categories (safety cap: typical wedding has <5k categories)
                 cursor = self.budget_categories.find({"wedding_id": wedding_id})
-                existing_categories = await cursor.to_list(length=None)
+                existing_categories = await cursor.to_list(length=self.MAX_CATEGORIES)
                 existing_total = sum(cat.get("budgeted_amount", 0) for cat in existing_categories)
                 new_category_amount = category_data.get("budgeted_amount", 0)
 
@@ -109,9 +117,9 @@ class BudgetService:
     async def get_wedding_budget(self, wedding_id: str) -> Dict:
         """Get complete budget for a wedding"""
         try:
-            # Get all categories for this wedding
+            # Get all categories for this wedding (safety cap applied)
             cursor = self.budget_categories.find({"wedding_id": wedding_id})
-            categories = await cursor.to_list(length=None)
+            categories = await cursor.to_list(length=self.MAX_CATEGORIES)
 
             # Serialize categories (convert ObjectId to string)
             serialized_categories = []
@@ -125,11 +133,11 @@ class BudgetService:
             # Get budget summary
             summary = await self._calculate_budget_summary(wedding_id)
 
-            # Get recent alerts
+            # Get recent alerts (already limited by .limit(10) in cursor)
             alerts_cursor = self.budget_alerts.find(
                 {"wedding_id": wedding_id, "is_resolved": False}
             ).sort("created_at", -1).limit(10)
-            alerts = await alerts_cursor.to_list(length=None)
+            alerts = await alerts_cursor.to_list(length=10)
 
             # Serialize alerts (convert ObjectId to string)
             serialized_alerts = []
@@ -155,8 +163,11 @@ class BudgetService:
     async def update_budget_category(self, category_id: str, update_data: Dict) -> Dict:
         """Update an existing budget category"""
         try:
+            # Standardize ID to PyObjectId (compatible with to_object_id)
+            obj_id = PyObjectId(to_object_id(category_id, "category_id"))
+
             # Validate category exists
-            category = await self.budget_categories.find_one({"_id": PyObjectId(category_id)})
+            category = await self.budget_categories.find_one({"_id": obj_id})
             if not category:
                 raise ValueError("Budget category not found")
 
@@ -167,12 +178,12 @@ class BudgetService:
                 wedding_total_budget = wedding.get("total_budget", 0) if wedding else 0
 
                 if wedding_total_budget > 0:
-                    # Get all categories except this one
+                    # Get all categories except this one (safety cap applied)
                     cursor = self.budget_categories.find({
                         "wedding_id": wedding_id,
-                        "_id": {"$ne": PyObjectId(category_id)}
+                        "_id": {"$ne": obj_id}
                     })
-                    other_categories = await cursor.to_list(length=None)
+                    other_categories = await cursor.to_list(length=self.MAX_CATEGORIES)
                     other_total = sum(cat.get("budgeted_amount", 0) for cat in other_categories)
                     new_amount = update_data["budgeted_amount"]
 
@@ -192,7 +203,7 @@ class BudgetService:
 
             # Update category
             result = await self.budget_categories.update_one(
-                {"_id": PyObjectId(category_id)},
+                {"_id": obj_id},
                 {"$set": update_data}
             )
 
@@ -223,19 +234,22 @@ class BudgetService:
     async def delete_budget_category(self, category_id: str) -> bool:
         """Delete a budget category"""
         try:
+            # Standardize ID to PyObjectId
+            obj_id = PyObjectId(to_object_id(category_id, "category_id"))
+
             # Get category to get wedding_id
-            category = await self.budget_categories.find_one({"_id": PyObjectId(category_id)})
+            category = await self.budget_categories.find_one({"_id": obj_id})
             if not category:
                 raise ValueError("Budget category not found")
 
             wedding_id = category["wedding_id"]
 
             # Delete associated quotes and payments
-            await self.vendor_quotes.delete_many({"category_id": category_id})
-            await self.payment_records.delete_many({"category_id": category_id})
+            await self.vendor_quotes.delete_many({"category_id": to_str_id(category_id)})
+            await self.payment_records.delete_many({"category_id": to_str_id(category_id)})
 
             # Delete category
-            result = await self.budget_categories.delete_one({"_id": PyObjectId(category_id)})
+            result = await self.budget_categories.delete_one({"_id": obj_id})
 
             if result.deleted_count == 0:
                 raise ValueError("Failed to delete category")
@@ -281,7 +295,8 @@ class BudgetService:
                 query["service_category"] = service_category
 
             cursor = self.vendor_quotes.find(query).sort("created_at", -1)
-            quotes = await cursor.to_list(length=None)
+            # Safety cap for vendor quotes (typical wedding has <10k quotes)
+            quotes = await cursor.to_list(length=self.MAX_QUOTES)
             return [serialize_mongo_doc(quote) for quote in quotes]
 
         except Exception as e:
@@ -417,7 +432,8 @@ class BudgetService:
                 query["wedding_type"] = wedding_type
 
             cursor = self.budget_templates.find(query).sort("name", 1)
-            templates = await cursor.to_list(length=None)
+            # Safety cap for templates (typically <1k public templates)
+            templates = await cursor.to_list(length=self.MAX_TEMPLATES)
             return [self._serialize_template(template) for template in templates if template]
 
         except Exception as e:
@@ -507,7 +523,7 @@ class BudgetService:
                 raise ValueError("Budget template not found")
             # Clear existing categories (optional - could be made configurable)
             cursor = self.budget_categories.find({"wedding_id": wedding_id})
-            existing_categories = await cursor.to_list(length=None)
+            existing_categories = await cursor.to_list(length=self.MAX_CATEGORIES)
             if existing_categories:
                 logger.warning(f"Wedding {wedding_id} already has {len(existing_categories)} budget categories")
             # Create categories from template
@@ -656,15 +672,15 @@ class BudgetService:
     async def get_payment_history(self, wedding_id: str) -> List[Dict]:
         """Get payment history for a wedding"""
         try:
-            # Get all categories for this wedding
+            # Get all categories for this wedding (safety cap applied)
             cursor = self.budget_categories.find({"wedding_id": wedding_id})
-            categories = await cursor.to_list(length=None)
+            categories = await cursor.to_list(length=self.MAX_CATEGORIES)
             category_ids = [str(cat["_id"]) for cat in categories]
-            # Get all payments for these categories
+            # Get all payments for these categories (safety cap applied)
             payments_cursor = self.payment_records.find(
                 {"category_id": {"$in": category_ids}}
             ).sort("payment_date", -1)
-            payments = await payments_cursor.to_list(length=None)
+            payments = await payments_cursor.to_list(length=self.MAX_PAYMENT_RECORDS)
 
             # Add category name to each payment
             category_names = {str(cat["_id"]): cat["name"] for cat in categories}
@@ -676,6 +692,94 @@ class BudgetService:
 
         except Exception as e:
             logger.error(f"Failed to get payment history: {str(e)}")
+            raise
+
+    async def get_outgoing_payments_overview(self, weddings: List[Dict[str, Any]]) -> Dict[str, Any]:
+        """
+        Get aggregated outgoing payment data for the admin money dashboard.
+
+        The dashboard needs a wedding list for filters/forecasting plus one
+        rolled-up payment row per budget category with spend.
+        """
+        try:
+            wedding_lookup: Dict[str, Dict[str, str]] = {}
+            for wedding in weddings:
+                wedding_id = str(wedding.get("_id") or wedding.get("id") or "")
+                if not wedding_id:
+                    continue
+
+                wedding_lookup[wedding_id] = {
+                    "id": wedding_id,
+                    "title": (
+                        wedding.get("title")
+                        or wedding.get("couple_names")
+                        or wedding.get("name")
+                        or "Wedding"
+                    ),
+                }
+
+            if not wedding_lookup:
+                return {"payments": [], "count": 0, "weddings": [], "weddings_total": 0}
+
+            wedding_ids = list(wedding_lookup.keys())
+            categories_cursor = self.budget_categories.find({
+                "wedding_id": {"$in": wedding_ids},
+                "actual_spent": {"$gt": 0},
+            })
+            categories = await categories_cursor.to_list(length=self.MAX_CATEGORIES)
+
+            latest_payment_by_category: Dict[str, Dict[str, Any]] = {}
+            category_ids = [str(category["_id"]) for category in categories if category.get("_id") is not None]
+            if category_ids:
+                latest_payment_pipeline = [
+                    {"$match": {"category_id": {"$in": category_ids}}},
+                    {"$sort": {"payment_date": -1}},
+                    {
+                        "$group": {
+                            "_id": "$category_id",
+                            "vendor_name": {"$first": "$vendor_name"},
+                            "payment_date": {"$first": "$payment_date"},
+                        }
+                    },
+                ]
+                latest_payments = await self.payment_records.aggregate(latest_payment_pipeline).to_list(length=len(category_ids))
+                latest_payment_by_category = {
+                    str(payment["_id"]): payment
+                    for payment in latest_payments
+                }
+
+            payments: List[Dict[str, Any]] = []
+            for category in categories:
+                category_id = str(category["_id"])
+                wedding_id = str(category.get("wedding_id") or "")
+                wedding_meta = wedding_lookup.get(wedding_id, {"title": "Wedding"})
+                latest_payment = latest_payment_by_category.get(category_id, {})
+                payments.append({
+                    "id": category_id,
+                    "vendor_name": latest_payment.get("vendor_name") or category.get("vendor_name") or category.get("name") or "Unknown Vendor",
+                    "vendor_email": category.get("vendor_email"),
+                    "category": category.get("name") or "Service",
+                    "wedding_title": wedding_meta.get("title", "Wedding"),
+                    "wedding_id": wedding_id,
+                    "amount": float(category.get("actual_spent", 0) or 0),
+                    "budgeted": float(category.get("budgeted_amount", 0) or 0),
+                    "status": category.get("payment_status") or "pending",
+                    "due_date": None,
+                    "paid_at": serialize_mongo_doc(latest_payment).get("payment_date") if latest_payment else None,
+                })
+
+            payments.sort(key=lambda payment: payment.get("paid_at") or "", reverse=True)
+            weddings_payload = sorted(wedding_lookup.values(), key=lambda wedding: wedding["title"].lower())
+
+            return {
+                "payments": payments,
+                "count": len(payments),
+                "weddings": weddings_payload,
+                "weddings_total": len(weddings_payload),
+            }
+
+        except Exception as e:
+            logger.error(f"Failed to get outgoing payments overview: {str(e)}")
             raise
 
     async def get_payment(self, payment_id: str) -> Optional[Dict]:
@@ -763,9 +867,9 @@ class BudgetService:
             # Get budget summary
             summary = await self._calculate_budget_summary(wedding_id)
 
-            # Get categories with details
+            # Get categories with details (safety cap applied)
             cursor = self.budget_categories.find({"wedding_id": wedding_id})
-            categories = await cursor.to_list(length=None)
+            categories = await cursor.to_list(length=self.MAX_CATEGORIES)
 
             # Get payment history
             payments = await self.get_payment_history(wedding_id)
@@ -860,7 +964,7 @@ class BudgetService:
     async def _calculate_budget_summary(self, wedding_id: str) -> BudgetSummary:
         """Calculate budget summary for a wedding"""
         cursor = self.budget_categories.find({"wedding_id": wedding_id})
-        categories = await cursor.to_list(length=None)
+        categories = await cursor.to_list(length=self.MAX_CATEGORIES)
 
         # Get the wedding's total budget from the wedding document
         wedding = await self.weddings.find_one({"_id": wedding_id})
@@ -872,12 +976,12 @@ class BudgetService:
 
         total_spent = sum(cat.get("actual_spent", 0) for cat in categories)
 
-        # Calculate committed amounts (accepted quotes)
+        # Calculate committed amounts (accepted quotes) (safety cap applied)
         quotes_cursor = self.vendor_quotes.find({
             "wedding_id": wedding_id,
             "status": "accepted"
         })
-        accepted_quotes = await quotes_cursor.to_list(length=None)
+        accepted_quotes = await quotes_cursor.to_list(length=self.MAX_QUOTES)
         total_committed = sum(quote.get("quote_amount", 0) for quote in accepted_quotes)
 
         remaining_budget = total_budget - total_spent
@@ -906,7 +1010,7 @@ class BudgetService:
     async def _update_wedding_budget_total(self, wedding_id: str):
         """Update the total budget amount in the wedding document"""
         cursor = self.budget_categories.find({"wedding_id": wedding_id})
-        categories = await cursor.to_list(length=None)
+        categories = await cursor.to_list(length=self.MAX_CATEGORIES)
         total_budget = sum(cat.get("budgeted_amount", 0) for cat in categories)
         await self.weddings.update_one(
             {"_id": wedding_id},
@@ -916,7 +1020,7 @@ class BudgetService:
     async def _check_budget_alerts(self, wedding_id: str):
         """Check for budget alerts and create notifications"""
         cursor = self.budget_categories.find({"wedding_id": wedding_id})
-        categories = await cursor.to_list(length=None)
+        categories = await cursor.to_list(length=self.MAX_CATEGORIES)
 
         # Check if total category budgets exceed wedding's total budget
         wedding = await self.weddings.find_one({"_id": wedding_id})
@@ -1015,7 +1119,8 @@ class BudgetService:
             query["is_resolved"] = False
 
         cursor = self.budget_alerts.find(query).sort("created_at", -1)
-        alerts = await cursor.to_list(length=None)
+        # Safety cap for alerts (safety cap applied)
+        alerts = await cursor.to_list(length=self.MAX_ALERTS)
 
         return [serialize_mongo_doc(alert) for alert in alerts]
 
@@ -1051,7 +1156,8 @@ class BudgetService:
     async def _get_quotes_summary(self, wedding_id: str) -> Dict:
         """Get summary of vendor quotes for a wedding"""
         cursor = self.vendor_quotes.find({"wedding_id": wedding_id})
-        quotes = await cursor.to_list(length=None)
+        # Safety cap for quotes (safety cap applied)
+        quotes = await cursor.to_list(length=self.MAX_QUOTES)
 
         if not quotes:
             return {"total_quotes": 0}

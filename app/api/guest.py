@@ -4,9 +4,14 @@ from typing import List, Optional, Literal, Any
 import inspect
 from app.services.guest_service import GuestService
 from app.services.activity_log_service import activity_log_service
+from app.services.sse_manager import sse_manager
 from app.models.guest import UpdateGuestRequest, GuestModel, CreateGuestRequest
-from app.dependencies.auth_extended import require_wedding_planner_only, ExtendedAuthUser, check_wedding_access
+from app.dependencies.auth_extended import require_wedding_planner_only, ExtendedAuthUser, check_wedding_access, enforce_team_permission
 from app.utils.token_generator import generate_token
+from app.utils.response import success_response, error_response, dict_response
+from app.utils.query_validation import (
+    validated_string_filter
+)
 from app.core.database import mongo
 from bson import ObjectId
 from bson.errors import InvalidId
@@ -44,15 +49,16 @@ async def get_guest(token: str, wedding_id: str = Query(...)):
         return await guest_service.get_guest_by_token(token, wedding_id)
     except HTTPException as e:
         raise e
-    except Exception:
+    except Exception as e:
+        logger.error(f"Unexpected error getting guest by token: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="Unexpected error occurred")
 
 
 @router.get("/invite/search", tags=["Guest"])
 async def search_guest(
     wedding_id: str = Query(..., description="Wedding ID to search within"),
-    phone: str = Query(None, description="Guest phone number"),
-    name: str = Query(None, description="Guest name"),
+    phone: Optional[str] = Query(None, description="Guest phone number"),
+    name: Optional[str] = Query(None, description="Guest name"),
     current_user: ExtendedAuthUser = Depends(require_wedding_planner_only)
 ):
     """
@@ -64,6 +70,10 @@ async def search_guest(
         raise HTTPException(status_code=403, detail="Access to this wedding denied")
 
     try:
+        # Validate search parameters
+        phone = validated_string_filter(phone, max_length=20)
+        name = validated_string_filter(name, max_length=100)
+
         return await guest_service.get_guest_by_phone_or_name(
             phone=phone,
             name=name,
@@ -71,17 +81,23 @@ async def search_guest(
         )
     except HTTPException as e:
         raise e
-    except Exception:
+    except Exception as e:
+        logger.error(f"Unexpected error searching guests: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="Unexpected error occurred")
 
 
 @router.get("/guests", tags=["Admin"])
-async def list_guests(wedding_id: str = Query(...), current_user: ExtendedAuthUser = Depends(require_wedding_planner_only)):
+async def list_guests(
+    wedding_id: str = Query(...),
+    page: int = Query(1, ge=1, le=10000, description="Page number (1-indexed)"),
+    limit: int = Query(50, ge=1, le=100, description="Number of guests per page"),
+    current_user: ExtendedAuthUser = Depends(require_wedding_planner_only)
+):
     # Check if user has access to this wedding
     if not await check_wedding_access(current_user, wedding_id):
         raise HTTPException(status_code=403, detail="Access to this wedding denied")
     try:
-        return await guest_service.list_guests_by_wedding(wedding_id)
+        return await guest_service.list_guests_by_wedding(wedding_id, page=page, limit=limit)
     except HTTPException as e:
         raise e
     except Exception:
@@ -95,6 +111,7 @@ async def update_guest(
     current_user: ExtendedAuthUser = Depends(require_wedding_planner_only)
 ):
     """Update guest information. Only updateable fields: name, phone, email, group_id, role, plus_one settings."""
+    enforce_team_permission(current_user, "manage_guests")
     # Get guest to check wedding access
     guest = await guest_service.get_guest(guest_id)
     if inspect.isawaitable(guest):
@@ -112,11 +129,18 @@ async def update_guest(
                 wedding_id=guest.get("wedding_id"),
                 guest_name=(result or {}).get("name", guest.get("name", "Unknown")),
                 planner_email=current_user.email,
+                guest_id=guest_id,
                 changes=update_dict,
                 updated_by=current_user.email
             )
         except Exception as log_err:
             logger.warning(f"Failed to log guest update activity: {log_err}")
+
+        # Notify connected clients so they see the change instantly
+        await sse_manager.broadcast_data_change(
+            current_user.email, "guest", "updated",
+            wedding_id=str(guest.get("wedding_id", "")), record_id=guest_id,
+        )
 
         return result
     except HTTPException as e:
@@ -127,6 +151,7 @@ async def update_guest(
 
 @router.delete("/guests/{guest_id}", tags=["Admin"])
 async def delete_guest(guest_id: str, current_user: ExtendedAuthUser = Depends(require_wedding_planner_only)):
+    enforce_team_permission(current_user, "manage_guests")
     # Get guest to check wedding access
     guest = await guest_service.get_guest(guest_id)
     if inspect.isawaitable(guest):
@@ -142,15 +167,22 @@ async def delete_guest(guest_id: str, current_user: ExtendedAuthUser = Depends(r
                 wedding_id=guest.get("wedding_id"),
                 guest_name=guest.get("name", "Unknown"),
                 planner_email=current_user.email,
+                guest_id=guest_id,
                 deleted_by=current_user.email
             )
         except Exception as log_err:
             logger.warning(f"Failed to log guest delete activity: {log_err}")
 
+        await sse_manager.broadcast_data_change(
+            current_user.email, "guest", "deleted",
+            wedding_id=str(guest.get("wedding_id", "")), record_id=guest_id,
+        )
+
         return result
     except HTTPException as e:
         raise e
-    except Exception:
+    except Exception as e:
+        logger.error(f"Unexpected error deleting guest: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="Unexpected error occurred")
 
 
@@ -161,6 +193,7 @@ async def create_guest(
     current_user: ExtendedAuthUser = Depends(require_wedding_planner_only)
 ):
     """Create a single guest for a wedding."""
+    enforce_team_permission(current_user, "manage_guests")
     # Check if user has access to this wedding
     if not await check_wedding_access(current_user, wedding_id):
         raise HTTPException(status_code=403, detail="Access to this wedding denied")
@@ -173,11 +206,17 @@ async def create_guest(
                 wedding_id=wedding_id,
                 guest_name=result.get("name", guest_data.name),
                 planner_email=current_user.email,
+                guest_id=result.get("id"),
                 guest_email=result.get("email"),
                 added_by=current_user.email
             )
         except Exception as log_err:
             logger.warning(f"Failed to log guest create activity: {log_err}")
+
+        await sse_manager.broadcast_data_change(
+            current_user.email, "guest", "created",
+            wedding_id=wedding_id, record_id=result.get("id"),
+        )
 
         return result
     except HTTPException as e:
@@ -244,7 +283,8 @@ async def get_guest_activity(
             {"_id": 1, "type": 1, "message": 1, "timestamp": 1, "created_at": 1, "metadata": 1}
         ).sort([("timestamp", -1), ("created_at", -1)]).limit(limit)
 
-        activities_raw = await cursor.to_list(length=None)
+        # Bounded by the limit parameter already set by caller (max 100)
+        activities_raw = await cursor.to_list(length=limit)
 
         activities = []
         for activity in activities_raw:
@@ -263,7 +303,7 @@ async def get_guest_activity(
                 },
             })
 
-        return {"activities": activities, "total": len(activities)}
+        return dict_response(data={"activities": activities, "total": len(activities)})
 
     except HTTPException:
         raise
@@ -292,6 +332,7 @@ async def update_seating_constraints(
     This endpoint updates the guest records directly, which are then used
     by the AI seating optimization to create better arrangements.
     """
+    enforce_team_permission(current_user, "manage_seating")
     # Check wedding access
     if not await check_wedding_access(current_user, wedding_id):
         raise HTTPException(status_code=403, detail="Access to this wedding denied")
@@ -400,12 +441,14 @@ async def update_seating_constraints(
         except Exception as log_err:
             logger.warning(f"Failed to log seating constraints activity: {log_err}")
 
-        return {
-            "success": True,
-            "updated_count": len(results["updated"]),
-            "error_count": len(results["errors"]),
-            "details": results
-        }
+        return dict_response(
+            data={
+                "updated_count": len(results["updated"]),
+                "error_count": len(results["errors"]),
+                "details": results
+            },
+            message="Seating constraints updated"
+        )
 
     except Exception as err:
         logger.error(f"Failed to update seating constraints: {str(err)}")
@@ -437,7 +480,9 @@ async def get_seating_constraints(
             ]
         })
 
-        guests = await cursor.to_list(length=None)
+        # Safety cap: most weddings have far fewer guests with constraints
+        MAX_CONSTRAINED_GUESTS = 5000
+        guests = await cursor.to_list(length=MAX_CONSTRAINED_GUESTS)
 
         # Build unique constraint pairs
         must_sit_together = set()
@@ -477,7 +522,8 @@ async def get_seating_constraints(
                 "_id": {"$in": missing_oids},
                 "wedding_id": wedding_id
             })
-            missing_guests = await missing_cursor.to_list(length=None)
+            # Already limited by size of missing_ids (max 5000 from above fetch)
+            missing_guests = await missing_cursor.to_list(length=5000)
             for g in missing_guests:
                 guest_names[str(g.get("_id"))] = g.get("name", "Unknown")
 
@@ -491,16 +537,13 @@ async def get_seating_constraints(
                 for p in pairs
             ]
 
-        return {
-            "wedding_id": wedding_id,
-            "must_sit_together": format_pairs(must_sit_together),
-            "must_sit_apart": format_pairs(must_sit_apart),
-            "summary": {
-                "total_must_sit_together": len(must_sit_together),
-                "total_must_sit_apart": len(must_sit_apart),
-                "guests_with_constraints": len(guests)
-            }
-        }
+        return dict_response(
+            data={
+                "must_sit_together": format_pairs(must_sit_together),
+                "must_sit_apart": format_pairs(must_sit_apart),
+            },
+            message="Seating constraints retrieved"
+        )
 
     except Exception as err:
         logger.error(f"Failed to get seating constraints: {str(err)}")

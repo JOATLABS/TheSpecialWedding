@@ -1,13 +1,35 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { getApiBaseUrl } from '@/utils/env';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useAdmin } from '@/contexts/AdminContext';
 import { Wedding, WeddingEvent, RegistryItem, FAQItem, OurStory, WeddingPartyMember, PrivacySettings, WeddingPartySyncSettings } from '@/types/wedding';
 import { formatAdminTimestamp, DEFAULT_TIMEZONE } from '@/utils/dateFormat';
+import { EVENT_TIME_FORMAT_HINT, getEventTimeValidationMessage, normalizeEventTimeInput } from '@/utils/eventTime';
+import {
+  createCustomWeddingEventTypeKey,
+  getWeddingEventLabel,
+  getWeddingEventSelectValue,
+  WEDDING_EVENT_SELECT_OPTIONS,
+} from '@/utils/weddingEvents';
 import { PaymentCollectionButton } from '@/components/payments/PaymentCollectionButton';
+import { CampaignSponsoredRail } from '../../vendors/components/CampaignSponsoredRail';
+// Direct imports — avoids Turbopack barrel-evaluation bug with lucide-react
+// (Turbopack instantiates ALL 900+ icon module factories when importing from the barrel,
+// and message-circle.js factory fails during this process)
+import Users from 'lucide-react/dist/esm/icons/users';
+import Mail from 'lucide-react/dist/esm/icons/mail';
+import Send from 'lucide-react/dist/esm/icons/send';
+import RefreshCw from 'lucide-react/dist/esm/icons/refresh-cw';
+import Plus from 'lucide-react/dist/esm/icons/plus';
+import Loader2 from 'lucide-react/dist/esm/icons/loader-2';
+import ShieldOff from 'lucide-react/dist/esm/icons/shield-off';
+import ShieldCheck from 'lucide-react/dist/esm/icons/shield-check';
+import HeartHandshake from 'lucide-react/dist/esm/icons/heart-handshake';
+import { toast } from 'sonner';
+
 
 // Wedding party group mappings for sync
 // Wedding party = bridesmaids, groomsmen, maid of honor, best man
@@ -28,18 +50,20 @@ interface Guest {
 }
 
 export default function WeddingDetailsPage() {
- const { token } = useAdmin();
+ const { token, userProfile, isLoading: authLoading } = useAdmin();
  const params = useParams();
  const router = useRouter();
  const weddingId = params.id as string;
 
  const [wedding, setWedding] = useState<Wedding | null>(null);
- const [loading, setLoading] = useState(true);
- const [saving, setSaving] = useState(false);
- const [error, setError] = useState<string>('');
- const [activeTab, setActiveTab] = useState<'events' | 'rsvp' | 'privacy' | 'registry' | 'faq' | 'theme' | 'story'>('events');
+	 const [loading, setLoading] = useState(true);
+	 const [saving, setSaving] = useState(false);
+	 const [error, setError] = useState<string>('');
+	 const [eventTimeErrors, setEventTimeErrors] = useState<Record<number, string>>({});
+	 const [activeTab, setActiveTab] = useState<'events' | 'rsvp' | 'privacy' | 'registry' | 'faq' | 'theme' | 'story' | 'couple'>('events');
  const [syncing, setSyncing] = useState(false);
  const [guests, setGuests] = useState<Guest[]>([]);
+ const [showAdRail, setShowAdRail] = useState(false);
 
  const fetchWedding = useCallback(async () => {
  try {
@@ -105,8 +129,44 @@ export default function WeddingDetailsPage() {
  }, [token, weddingId]);
 
  useEffect(() => {
+ if (authLoading || !userProfile) return;
+
+ if (userProfile.is_root_admin) {
+ router.replace('/admin/weddings');
+ return;
+ }
+
  fetchWedding();
- }, [fetchWedding]);
+	 }, [authLoading, fetchWedding, router, userProfile]);
+
+	 const buildEventTimeErrors = (events: WeddingEvent[]): Record<number, string> => {
+	 return events.reduce<Record<number, string>>((acc, event, index) => {
+	 const message = getEventTimeValidationMessage(event.details?.time);
+	 if (message) acc[index] = message;
+	 return acc;
+	 }, {});
+	 };
+
+	 const clearEventTimeError = (index: number) => {
+	 setEventTimeErrors((prev) => {
+	 if (!(index in prev)) return prev;
+	 const next = { ...prev };
+	 delete next[index];
+	 return next;
+	 });
+	 };
+
+	 const reindexEventTimeErrorsAfterRemoval = (index: number) => {
+	 setEventTimeErrors((prev) => {
+	 const next: Record<number, string> = {};
+	 Object.entries(prev).forEach(([key, value]) => {
+	 const numericKey = Number(key);
+	 if (numericKey < index) next[numericKey] = value;
+	 if (numericKey > index) next[numericKey - 1] = value;
+	 });
+	 return next;
+	 });
+	 };
 
  // Fetch guests for wedding party sync
  const fetchGuests = useCallback(async () => {
@@ -204,22 +264,50 @@ export default function WeddingDetailsPage() {
    }
  };
 
- const saveWedding = async () => {
- if (!wedding) return;
+	 const saveWedding = async () => {
+	 if (!wedding) return;
 
- setSaving(true);
- setError('');
+	 const hasUnnamedCustomEvent = wedding.events.some(
+	 (event) => getWeddingEventSelectValue(event) === 'other' && !event.custom_type_label?.trim()
+	 );
+	 if (hasUnnamedCustomEvent) {
+	 setError('Give every custom event a name before saving.');
+	 toast.error('Give every custom event a name before saving.');
+	 return;
+	 }
 
- try {
- const baseUrl = getApiBaseUrl();
- const response = await fetch(`${baseUrl}/admin/weddings/${weddingId}`, {
- method: 'PUT',
+	 const nextEventTimeErrors = buildEventTimeErrors(wedding.events);
+	 if (Object.keys(nextEventTimeErrors).length > 0) {
+	 setEventTimeErrors(nextEventTimeErrors);
+	 setError('Fix the invalid event time fields before saving.');
+	 toast.error('Fix the invalid event time fields before saving.');
+	 return;
+	 }
+
+	 setSaving(true);
+	 setError('');
+
+	 try {
+	 const normalizedWedding = {
+	 ...wedding,
+	 events: wedding.events.map((event) => ({
+	 ...event,
+	 details: event.details
+	 ? { ...event.details, time: normalizeEventTimeInput(event.details.time) || undefined }
+	 : event.details,
+	 })),
+	 };
+	 setWedding(normalizedWedding);
+
+	 const baseUrl = getApiBaseUrl();
+	 const response = await fetch(`${baseUrl}/admin/weddings/${weddingId}`, {
+	 method: 'PUT',
  headers: {
  'Authorization': `Bearer ${token}`,
  'Content-Type': 'application/json',
  },
- body: JSON.stringify(wedding),
- });
+	 body: JSON.stringify(normalizedWedding),
+	 });
 
  if (!response.ok) {
  throw new Error('Failed to save wedding details');
@@ -235,14 +323,22 @@ export default function WeddingDetailsPage() {
  };
 
  // Event management functions
- const updateEvent = (index: number, event: WeddingEvent) => {
- if (!wedding) return;
- const newEvents = [...wedding.events];
- newEvents[index] = event;
- setWedding({ ...wedding, events: newEvents });
- };
+	 const updateEvent = (index: number, event: WeddingEvent) => {
+	 if (!wedding) return;
+	 const newEvents = [...wedding.events];
+	 newEvents[index] = event;
+	 setWedding({ ...wedding, events: newEvents });
+	 if (eventTimeErrors[index]) {
+	 const message = getEventTimeValidationMessage(event.details?.time);
+	 if (message) {
+	 setEventTimeErrors((prev) => ({ ...prev, [index]: message }));
+	 } else {
+	 clearEventTimeError(index);
+	 }
+	 }
+	 };
 
- const addEvent = () => {
+const addEvent = () => {
  if (!wedding) return;
  setWedding({
  ...wedding,
@@ -250,11 +346,59 @@ export default function WeddingDetailsPage() {
  });
  };
 
- const removeEvent = (index: number) => {
+ const updateEventTypeSelection = (index: number, selectedValue: string) => {
  if (!wedding) return;
+
+ const nextEvents = [...wedding.events];
+ const currentEvent = nextEvents[index];
+
+ if (selectedValue === 'other') {
+ nextEvents[index] = {
+ ...currentEvent,
+ type: currentEvent.custom_type_label
+ ? currentEvent.type
+ : createCustomWeddingEventTypeKey('custom_event'),
+ custom_type_label: currentEvent.custom_type_label || '',
+ };
+ } else {
+ nextEvents[index] = {
+ ...currentEvent,
+ type: selectedValue,
+ custom_type_label: undefined,
+ };
+ }
+
  setWedding({
  ...wedding,
- events: wedding.events.filter((_, i) => i !== index)
+ events: nextEvents,
+ });
+ };
+
+ const updateCustomEventLabel = (index: number, customLabel: string) => {
+ if (!wedding) return;
+
+ const nextEvents = [...wedding.events];
+ const currentEvent = nextEvents[index];
+ nextEvents[index] = {
+ ...currentEvent,
+ type: currentEvent.custom_type_label
+ ? currentEvent.type
+ : createCustomWeddingEventTypeKey(customLabel || 'custom_event'),
+ custom_type_label: customLabel,
+ };
+
+ setWedding({
+ ...wedding,
+ events: nextEvents,
+ });
+ };
+
+	 const removeEvent = (index: number) => {
+	 if (!wedding) return;
+	 reindexEventTimeErrorsAfterRemoval(index);
+	 setWedding({
+	 ...wedding,
+	 events: wedding.events.filter((_, i) => i !== index)
  });
  };
 
@@ -306,7 +450,7 @@ export default function WeddingDetailsPage() {
  });
  };
 
- if (loading) {
+ if (authLoading || userProfile?.is_root_admin || loading) {
  return (
  <div className="min-h-screen bg-gradient-to-br from-wedding-ivory to-rose-50 dark:from-slate-900 dark:to-slate-800 p-6 flex items-center justify-center">
  <div className="animate-spin h-12 w-12 border-4 border-wedding-rose border-t-transparent rounded-full"></div>
@@ -329,7 +473,9 @@ export default function WeddingDetailsPage() {
 
  return (
  <div className="min-h-screen bg-gradient-to-br from-wedding-ivory to-rose-50 dark:from-slate-900 dark:to-slate-800 p-4 sm:p-6">
- <div className="max-w-6xl mx-auto">
+ <div className="max-w-7xl mx-auto">
+ <div className={`grid grid-cols-1 ${showAdRail ? 'lg:grid-cols-4' : ''} gap-6`}>
+ <div className={showAdRail ? 'lg:col-span-3' : ''}>
  {/* Header */}
  <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-xl overflow-hidden mb-8">
  <div className="bg-gradient-to-r from-wedding-navy to-wedding-gold px-4 sm:px-8 py-4 sm:py-6">
@@ -341,7 +487,7 @@ export default function WeddingDetailsPage() {
  <div className="flex gap-2 sm:gap-3 w-full sm:w-auto">
  <Link
  href="/admin/weddings"
- className="bg-white/20 text-white px-4 sm:px-6 py-2 sm:py-3 rounded-lg font-semibold hover:bg-white/30 transition-colors text-sm sm:text-base flex-1 sm:flex-initial text-center"
+ className="rounded-lg border border-white/70 bg-white/90 px-4 py-2 text-center text-sm font-semibold text-wedding-navy shadow-sm transition-colors hover:bg-white sm:flex-initial sm:px-6 sm:py-3 sm:text-base flex-1 dark:border-white/20 dark:bg-white/10 dark:text-white dark:hover:bg-white/20"
  >
  Back
  </Link>
@@ -356,12 +502,12 @@ export default function WeddingDetailsPage() {
  weddingTitle={wedding?.couple_names || 'Wedding'}
  variant="outline"
  size="default"
- className="bg-white/20 text-white border-white/30 hover:bg-white/30 text-sm sm:text-base"
+ className="border-white/70 bg-white/90 text-sm text-wedding-navy hover:bg-white sm:text-base dark:border-white/20 dark:bg-white/10 dark:text-white dark:hover:bg-white/20"
  />
  <button
  onClick={saveWedding}
  disabled={saving}
- className="bg-white text-wedding-navy px-4 sm:px-6 py-2 sm:py-3 rounded-lg font-semibold hover:bg-gray-50 dark:bg-transparent transition-colors disabled:opacity-50 text-sm sm:text-base flex-1 sm:flex-initial"
+ className="rounded-lg bg-wedding-navy px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-wedding-navy/90 disabled:opacity-50 sm:flex-initial sm:px-6 sm:py-3 sm:text-base flex-1 dark:bg-white dark:text-wedding-navy dark:hover:bg-slate-100"
  >
  {saving ? 'Saving...' : 'Save Changes'}
  </button>
@@ -381,17 +527,18 @@ export default function WeddingDetailsPage() {
  <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-xl overflow-hidden mb-8">
  <div className="border-b border-gray-200 dark:border-gray-700">
  <nav className="flex overflow-x-auto scrollbar-hide">
- {(['events', 'rsvp', 'privacy', 'registry', 'faq', 'theme', 'story'] as const).map((tab) => (
+ {(['events', 'rsvp', 'privacy', 'registry', 'faq', 'theme', 'story', 'couple'] as const).map((tab) => (
  <button
  key={tab}
  onClick={() => setActiveTab(tab)}
- className={`px-3 sm:px-6 py-3 sm:py-4 text-xs sm:text-sm font-medium capitalize whitespace-nowrap ${
+ className={`px-3 sm:px-6 py-3 sm:py-4 text-xs sm:text-sm font-medium capitalize whitespace-nowrap flex items-center gap-1.5 ${
  activeTab === tab
  ? 'text-wedding-navy dark:text-wedding-gold border-b-2 border-wedding-rose dark:border-wedding-gold'
  : 'text-gray-600 dark:text-gray-400 hover:text-wedding-navy dark:hover:text-gray-200'
  }`}
  >
- {tab === 'rsvp' ? 'RSVP' : tab === 'faq' ? 'FAQ' : tab === 'story' ? 'Story' : tab}
+ {tab === 'couple' && <HeartHandshake className="w-4 h-4" />}
+ {tab === 'rsvp' ? 'RSVP' : tab === 'faq' ? 'FAQ' : tab === 'story' ? 'Story' : tab === 'couple' ? 'Couple' : tab}
  </button>
  ))}
  </nav>
@@ -415,7 +562,7 @@ export default function WeddingDetailsPage() {
  <div key={index} className="border border-gray-200 dark:border-gray-700 rounded-lg p-6 space-y-4">
  <div className="flex justify-between items-start">
  <h3 className="text-lg font-semibold capitalize text-gray-900 dark:text-gray-100">
- {event.type.replace('_', ' ')} - {event.date}
+ {getWeddingEventLabel(event.type, event.custom_type_label)} - {event.date}
  </h3>
  <button
  onClick={() => removeEvent(index)}
@@ -431,17 +578,30 @@ export default function WeddingDetailsPage() {
  Event Type
  </label>
  <select
- value={event.type}
- onChange={(e) => updateEvent(index, { ...event, type: e.target.value as any })}
+ value={getWeddingEventSelectValue(event)}
+ onChange={(e) => updateEventTypeSelection(index, e.target.value)}
  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100"
  >
- <option value="traditional">Traditional</option>
- <option value="white_wedding">White Wedding</option>
- <option value="reception">Reception</option>
- <option value="engagement">Engagement</option>
- <option value="rehearsal">Rehearsal Dinner</option>
+ {WEDDING_EVENT_SELECT_OPTIONS.map((option) => (
+ <option key={option.value} value={option.value}>{option.label}</option>
+ ))}
  </select>
  </div>
+
+ {getWeddingEventSelectValue(event) === 'other' && (
+ <div>
+ <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+ Custom Event Name
+ </label>
+ <input
+ type="text"
+ value={event.custom_type_label || ''}
+ onChange={(e) => updateCustomEventLabel(index, e.target.value)}
+ placeholder="e.g., Welcome Party"
+ className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100"
+ />
+ </div>
+ )}
 
  <div>
  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
@@ -475,17 +635,39 @@ export default function WeddingDetailsPage() {
  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
  Time
  </label>
- <input
- type="text"
- value={event.details?.time || ''}
- onChange={(e) => updateEvent(index, {
- ...event,
- details: { ...event.details, time: e.target.value }
- })}
- className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100"
- placeholder="e.g., 3:00 PM"
- />
- </div>
+	 <input
+	 type="text"
+	 value={event.details?.time || ''}
+	 onChange={(e) => updateEvent(index, {
+	 ...event,
+	 details: { ...event.details, time: e.target.value }
+	 })}
+	 onBlur={(e) => {
+	 const normalizedTime = normalizeEventTimeInput(e.target.value);
+	 updateEvent(index, {
+	 ...event,
+	 details: { ...event.details, time: normalizedTime }
+	 });
+	 const message = getEventTimeValidationMessage(normalizedTime);
+	 if (message) {
+	 setEventTimeErrors((prev) => ({ ...prev, [index]: message }));
+	 } else {
+	 clearEventTimeError(index);
+	 }
+	 }}
+	 aria-invalid={Boolean(eventTimeErrors[index])}
+	 className={`w-full px-3 py-2 border rounded bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 ${
+	 eventTimeErrors[index]
+	 ? 'border-red-500 dark:border-red-400'
+	 : 'border-gray-300 dark:border-gray-600'
+	 }`}
+	 placeholder="e.g., 3:00 PM"
+	 title={EVENT_TIME_FORMAT_HINT}
+	 />
+	 {eventTimeErrors[index] && (
+	 <p className="mt-1 text-xs text-red-600 dark:text-red-300">{eventTimeErrors[index]}</p>
+	 )}
+	 </div>
 
  <div className="lg:col-span-2">
  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
@@ -1403,9 +1585,303 @@ export default function WeddingDetailsPage() {
  </div>
  </div>
  )}
+
+ {/* Couple Tab */}
+ {activeTab === 'couple' && (
+ <CoupleTab weddingId={weddingId} token={token || ''} />
+ )}
+
+ </div>
+
+ {/* Right Sidebar - Sponsored Vendors (hidden when ads disabled) */}
+ <div className={showAdRail ? 'lg:col-span-1' : 'hidden'}>
+ <div className="sticky top-6">
+ <CampaignSponsoredRail onVisibilityChange={setShowAdRail} />
+ </div>
+ </div>
+ </div>
  </div>
  </div>
  </div>
  </div>
  );
+}
+
+
+// ============================================================================
+// COUPLE TAB — Manages couple access, messaging, and digest emails
+// ============================================================================
+
+interface CoupleUser {
+  id: string;
+  email: string;
+  partner1_name?: string;
+  partner2_name?: string;
+  wedding_id: string;
+  is_active: boolean;
+  setup_completed: boolean;
+  last_login?: string;
+  created_at?: string;
+}
+
+function CoupleTab({ weddingId, token }: { weddingId: string; token: string }) {
+  const [couples, setCouples] = useState<CoupleUser[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [showInviteForm, setShowInviteForm] = useState(false);
+  const [inviteEmail, setInviteEmail] = useState('');
+  const [invitePartner1, setInvitePartner1] = useState('');
+  const [invitePartner2, setInvitePartner2] = useState('');
+  const [inviting, setInviting] = useState(false);
+
+  const fetchCouples = useCallback(async () => {
+    if (!token || !weddingId) return;
+    try {
+      const res = await fetch(`${getApiBaseUrl()}/admin/couple-portal/couples?wedding_id=${weddingId}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setCouples(data.couples || []);
+      }
+    } catch (err) {
+      console.error('Failed to fetch couples', err);
+    } finally {
+      setLoading(false);
+    }
+  }, [token, weddingId]);
+
+  useEffect(() => {
+    fetchCouples();
+  }, [fetchCouples]);
+
+  // Invite couple
+  const handleInvite = async () => {
+    if (!inviteEmail || !invitePartner1) {
+      toast.error('Email and partner name are required');
+      return;
+    }
+    setInviting(true);
+    try {
+      const res = await fetch(`${getApiBaseUrl()}/admin/couple-portal/invite`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email: inviteEmail,
+          partner1_name: invitePartner1,
+          partner2_name: invitePartner2 || undefined,
+          wedding_id: weddingId,
+        }),
+      });
+      if (res.ok) {
+        toast.success('Invitation sent!');
+        setShowInviteForm(false);
+        setInviteEmail('');
+        setInvitePartner1('');
+        setInvitePartner2('');
+        fetchCouples();
+      } else {
+        const err = await res.json();
+        toast.error(err.detail || 'Failed to send invitation');
+      }
+    } catch {
+      toast.error('Failed to connect to server');
+    } finally {
+      setInviting(false);
+    }
+  };
+
+  // Revoke/Restore access
+  const handleToggleAccess = async (coupleId: string, isActive: boolean) => {
+    const action = isActive ? 'revoke' : 'restore';
+    try {
+      const res = await fetch(`${getApiBaseUrl()}/couple-portal/couples/${coupleId}/${action}`, {
+        method: 'PATCH',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      });
+      if (res.ok) {
+        toast.success(`Access ${action}d`);
+        fetchCouples();
+      } else {
+        const err = await res.json();
+        toast.error(err.detail || `Failed to ${action} access`);
+      }
+    } catch {
+      toast.error('Failed to connect');
+    }
+  };
+
+  // Resend invite
+  const handleResend = async (coupleId: string) => {
+    try {
+      const res = await fetch(`${getApiBaseUrl()}/admin/couple-portal/resend-invite`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ couple_id: coupleId }),
+      });
+      if (res.ok) {
+        toast.success('Invitation resent');
+      } else {
+        const err = await res.json();
+        toast.error(err.detail || 'Failed to resend');
+      }
+    } catch {
+      toast.error('Failed to connect');
+    }
+  };
+
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-12">
+        <Loader2 className="w-6 h-6 animate-spin text-blue-500" />
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-8">
+      {/* Couple Access Section */}
+      <div>
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-2xl font-bold text-wedding-navy dark:text-gray-100">Couple Access</h2>
+          <button
+            onClick={() => setShowInviteForm(true)}
+            className="flex items-center gap-2 px-4 py-2 bg-wedding-sage text-white text-sm rounded-lg hover:bg-opacity-90 transition-colors"
+          >
+            <Plus className="w-4 h-4" />
+            Invite Couple
+          </button>
+        </div>
+
+        {couples.length === 0 ? (
+          <div className="text-center py-10 text-gray-400 dark:text-gray-500">
+            <Users className="w-10 h-10 mx-auto mb-3 opacity-50" />
+            <p className="font-medium">No couple linked yet</p>
+            <p className="text-sm mt-1">Invite the couple so they can view and collaborate on their wedding details.</p>
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {couples.map((couple) => (
+              <div key={couple.id} className="bg-gray-50 dark:bg-slate-700/50 rounded-xl p-4 flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className={`w-10 h-10 rounded-full flex items-center justify-center text-white text-sm font-medium ${
+                    couple.is_active ? 'bg-green-500' : couple.setup_completed ? 'bg-red-400' : 'bg-amber-400'
+                  }`}>
+                    {(couple.partner1_name || 'C').charAt(0)}
+                  </div>
+                  <div>
+                    <p className="font-medium text-gray-800 dark:text-gray-200 text-sm">
+                      {couple.partner1_name}{couple.partner2_name ? ` & ${couple.partner2_name}` : ''}
+                    </p>
+                    <p className="text-xs text-gray-500 dark:text-gray-400">{couple.email}</p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-3">
+                  <span className={`text-xs px-2 py-1 rounded-full ${
+                    couple.is_active
+                      ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
+                      : couple.setup_completed
+                      ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'
+                      : 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400'
+                  }`}>
+                    {couple.is_active ? 'Active' : couple.setup_completed ? 'Revoked' : 'Pending Setup'}
+                  </span>
+
+                  {!couple.setup_completed && (
+                    <button
+                      onClick={() => handleResend(couple.id)}
+                      className="text-xs text-blue-600 hover:underline flex items-center gap-1"
+                      title="Resend invitation email"
+                    >
+                      <RefreshCw className="w-3 h-3" />
+                      Resend
+                    </button>
+                  )}
+
+                  {couple.setup_completed && (
+                    <button
+                      onClick={() => handleToggleAccess(couple.id, couple.is_active)}
+                      className={`text-xs flex items-center gap-1 ${
+                        couple.is_active ? 'text-red-600 hover:text-red-700' : 'text-green-600 hover:text-green-700'
+                      }`}
+                    >
+                      {couple.is_active ? (
+                        <><ShieldOff className="w-3 h-3" /> Revoke Access</>
+                      ) : (
+                        <><ShieldCheck className="w-3 h-3" /> Restore Access</>
+                      )}
+                    </button>
+                  )}
+
+                  {couple.last_login && (
+                    <span className="text-xs text-gray-400 dark:text-gray-500" title="Last login">
+                      {new Date(couple.last_login).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                    </span>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+
+      {/* Invite Modal */}
+      {showInviteForm && (
+        <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
+          <div className="bg-white dark:bg-slate-800 rounded-xl shadow-xl w-full max-w-md p-6">
+            <h3 className="text-lg font-semibold text-gray-800 dark:text-gray-200 mb-4">Invite Couple</h3>
+            <div className="space-y-3">
+              <div>
+                <label className="block text-sm text-gray-600 dark:text-gray-400 mb-1">Email *</label>
+                <input
+                  type="email"
+                  value={inviteEmail}
+                  onChange={(e) => setInviteEmail(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-200 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-slate-700 text-gray-800 dark:text-gray-200"
+                  placeholder="couple@email.com"
+                />
+              </div>
+              <div>
+                <label className="block text-sm text-gray-600 dark:text-gray-400 mb-1">Partner 1 Name *</label>
+                <input
+                  type="text"
+                  value={invitePartner1}
+                  onChange={(e) => setInvitePartner1(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-200 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-slate-700 text-gray-800 dark:text-gray-200"
+                  placeholder="First partner's name"
+                />
+              </div>
+              <div>
+                <label className="block text-sm text-gray-600 dark:text-gray-400 mb-1">Partner 2 Name</label>
+                <input
+                  type="text"
+                  value={invitePartner2}
+                  onChange={(e) => setInvitePartner2(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-200 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-slate-700 text-gray-800 dark:text-gray-200"
+                  placeholder="Second partner's name"
+                />
+              </div>
+            </div>
+            <div className="flex justify-end gap-3 mt-6">
+              <button
+                onClick={() => setShowInviteForm(false)}
+                className="px-4 py-2 text-sm text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleInvite}
+                disabled={inviting}
+                className="px-4 py-2 bg-wedding-sage text-white text-sm rounded-lg hover:bg-opacity-90 disabled:opacity-50 flex items-center gap-2"
+              >
+                {inviting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+                Send Invitation
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
 }

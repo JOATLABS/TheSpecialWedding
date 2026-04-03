@@ -1,8 +1,10 @@
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 from typing import List, Optional
 from bson import ObjectId
 from datetime import datetime
 import re
+from app.utils.contact_sanitizer import sanitize_phone, sanitize_email, validate_email_format
+from app.utils.wedding_event_types import normalize_event_type_list
 
 
 class PyObjectId(ObjectId):
@@ -22,6 +24,23 @@ class PyObjectId(ObjectId):
 
 
 class PlusOneModel(BaseModel):
+    model_config = ConfigDict(
+        validate_by_name=True,
+        json_encoders={ObjectId: str},
+        json_schema_extra={
+            "example": {
+                "guest_id": "60c7d3e9e1b1fdbb4f12d9aa",
+                "name": "Jane Doe",
+                "phone": "1234567890",
+                "email": "jane.doe@example.com",
+                "attending": ["reception"],
+                "dietary": "Vegetarian",
+                "sms_opt_in": True,
+                "email_opt_in": True
+            }
+        },
+    )
+
     guest_id: str = Field(...)  # Store as string, convert to ObjectId when needed
     name: str = Field(..., min_length=2, max_length=100)
     phone: Optional[str] = None
@@ -37,38 +56,27 @@ class PlusOneModel(BaseModel):
 
     @field_validator("phone")
     def validate_phone(cls, value):
-        if value and not re.match(r"^\+?\d{10,15}$", value):
+        if not value:
+            return None
+        # Sanitize: strip whitespace and delimiters like (), -, .
+        value = sanitize_phone(value)
+        if not value:
+            return None
+        if not re.match(r"^\+?\d{10,15}$", value):
             raise ValueError("Phone number must be 10 to 15 digits, optionally prefixed with +")
         return value
 
     @field_validator("email")
     def validate_email(cls, v):
-        if v is None:
-            return v
-        email_pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
-        if not re.match(email_pattern, v):
-            raise ValueError('Invalid email format')
-        return v.lower().strip()
+        if not v:
+            return None
+        v = sanitize_email(v)
+        if not v:
+            return None
+        if not validate_email_format(v):
+            raise ValueError("Invalid email format")
+        return v
 
     @field_validator("attending")
     def validate_attending(cls, v):
-        valid_events = {"traditional", "white_wedding", "reception", "engagement", "rehearsal"}
-        if not all(event in valid_events for event in v):
-            raise ValueError("Invalid event(s) in attending list")
-        return v
-
-    class Config:
-        allow_population_by_field_name = True
-        json_encoders = {ObjectId: str}
-        json_schema_extra = {
-            "example": {
-                "guest_id": "60c7d3e9e1b1fdbb4f12d9aa",
-                "name": "Jane Doe",
-                "phone": "1234567890",
-                "email": "jane.doe@example.com",
-                "attending": ["reception"],
-                "dietary": "Vegetarian",
-                "sms_opt_in": True,
-                "email_opt_in": True
-            }
-        }
+        return normalize_event_type_list(v)

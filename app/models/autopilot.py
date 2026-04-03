@@ -34,7 +34,7 @@ class ScheduleItem(BaseModel):
     fixed_date: Optional[date] = None
 
     # Amount (one of these should be set)
-    amount: Optional[Decimal] = Field(None, ge=0)
+    amount: Optional[float] = Field(None, ge=0)
     percentage: Optional[float] = Field(None, ge=0, le=100)
 
     @field_serializer('amount', when_used='json')
@@ -61,8 +61,8 @@ class WeddingPackage(MongoModel):
     description: Optional[str] = Field(None, max_length=2000)
     services: List[PackageServiceItem] = Field(default_factory=list)
 
-    # Pricing
-    total_amount: Decimal = Field(..., ge=0)
+    # Pricing (stored as float for MongoDB BSON compatibility)
+    total_amount: float = Field(..., ge=0)
     currency: str = Field(default="usd", pattern="^[a-z]{3}$")
 
     # Payment schedule
@@ -80,7 +80,7 @@ class WeddingPackage(MongoModel):
     # Usage stats
     contracts_count: int = Field(default=0, ge=0)
 
-    @field_serializer('total_amount', when_used='json')
+    @field_serializer('total_amount', when_used='always')
     def serialize_total_amount(self, value) -> float:
         return float(value) if value else 0.0
 
@@ -135,6 +135,10 @@ class Contract(MongoModel):
     couple: CoupleInfo
     wedding_date: Optional[date] = None
     venue: Optional[str] = Field(None, max_length=200)
+    planner_name: Optional[str] = Field(None, max_length=200)
+    planner_email: Optional[str] = Field(None, max_length=254)
+    planner_phone: Optional[str] = Field(None, max_length=50)
+    planner_logo: Optional[str] = None
 
     # Package snapshot (in case package is updated later)
     package_snapshot: dict = Field(default_factory=dict)
@@ -188,7 +192,7 @@ class ScheduledPayment(MongoModel):
 
     # Payment details
     name: str = Field(..., min_length=1, max_length=100)
-    amount: Decimal = Field(..., ge=0)
+    amount: float = Field(..., ge=0)
     currency: str = Field(default="usd", pattern="^[a-z]{3}$")
     due_date: date
 

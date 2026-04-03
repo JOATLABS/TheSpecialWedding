@@ -4,6 +4,7 @@ import React, { useState, useEffect } from 'react';
 import { getApiBaseUrl } from '@/utils/env';
 import { useParams, useRouter } from 'next/navigation';
 import { Card } from '@/components/ui/Card';
+import { useAdmin } from '@/contexts/AdminContext';
 import { formatDateTime } from '@/utils/dateFormat';
 import { toast } from 'sonner';
 
@@ -48,6 +49,7 @@ interface ErrorDetails {
 export default function ErrorDetailsPage() {
   const params = useParams();
   const router = useRouter();
+  const { token, isLoading: authLoading } = useAdmin();
   const errorId = params.errorId as string;
 
   const [error, setError] = useState<ErrorDetails | null>(null);
@@ -58,7 +60,6 @@ export default function ErrorDetailsPage() {
     const fetchErrorDetails = async () => {
       try {
         const baseUrl = getApiBaseUrl();
-        const token = localStorage.getItem('admin_token') || sessionStorage.getItem('admin_token');
 
         if (!token) {
           setFetchError('Authentication required. Please log in.');
@@ -70,7 +71,8 @@ export default function ErrorDetailsPage() {
           headers: {
             'Authorization': `Bearer ${token}`,
             'Content-Type': 'application/json'
-          }
+          },
+          credentials: 'include',
         });
 
         if (!response.ok) {
@@ -90,22 +92,22 @@ export default function ErrorDetailsPage() {
       }
     };
 
-    if (errorId) {
+    if (!authLoading && errorId) {
       fetchErrorDetails();
     }
-  }, [errorId]);
+  }, [authLoading, errorId, token]);
 
   const handleAcknowledge = async () => {
     try {
       const baseUrl = getApiBaseUrl();
-      const token = localStorage.getItem('admin_token') || sessionStorage.getItem('admin_token');
 
       const response = await fetch(`${baseUrl}/admin/platform/errors/${errorId}/acknowledge`, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json'
-        }
+        },
+        credentials: 'include',
       });
 
       if (response.ok) {

@@ -3,7 +3,7 @@
 from fastapi import APIRouter, HTTPException, Depends, Query
 from app.services.reminder_service_telnyx import TelnyxReminderService
 from app.services.reminder_utilities_telnyx import TelnyxRSVPReminderHelper
-from app.dependencies.auth_extended import require_wedding_planner_only, ExtendedAuthUser, check_wedding_access
+from app.dependencies.auth_extended import require_wedding_planner_only, ExtendedAuthUser, check_wedding_access, enforce_team_permission
 from app.services.wedding_service import WeddingService
 from pydantic import BaseModel
 from typing import Optional
@@ -43,6 +43,7 @@ def get_telnyx_status():
 @router.post("/reminders/telnyx/send", tags=["Admin"])
 async def send_reminder_telnyx(payload: TelnyxReminderModel, current_user: ExtendedAuthUser = Depends(require_wedding_planner_only)):
     """Send SMS reminders using Telnyx"""
+    enforce_team_permission(current_user, "send_reminders")
     if not telnyx_available:
         raise HTTPException(status_code=503, detail="Telnyx service not configured")
     
@@ -59,6 +60,7 @@ async def send_reminder_telnyx(payload: TelnyxReminderModel, current_user: Exten
 @router.post("/reminders/telnyx/send-invites", tags=["Admin"])
 async def send_invites_telnyx(payload: SlugModel, current_user: ExtendedAuthUser = Depends(require_wedding_planner_only)):
     """Send RSVP invite links using Telnyx"""
+    enforce_team_permission(current_user, "send_rsvp")
     if not telnyx_available:
         raise HTTPException(status_code=503, detail="Telnyx service not configured")
     

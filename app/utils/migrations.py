@@ -259,7 +259,21 @@ migration_registry = MigrationRegistry()
 migration_manager = MigrationManager()
 
 
-# ==================== EXAMPLE MIGRATIONS ====================
+# ==================== HELPERS ====================
+
+async def _safe_create_index(collection, keys, **kwargs):
+    """Create an index, silently skipping if an equivalent index already exists."""
+    from pymongo.errors import OperationFailure
+    try:
+        await collection.create_index(keys, **kwargs)
+    except OperationFailure as e:
+        if e.code == 85:  # IndexOptionsConflict
+            logger.debug(f"Index on {keys} already exists under a different name, skipping")
+        else:
+            raise
+
+
+# ==================== MIGRATIONS ====================
 
 @migration_registry.register(
     "001",
@@ -268,14 +282,12 @@ migration_manager = MigrationManager()
 )
 async def migration_001_init_errors(db):
     """Initialize errors collection for self-hosted error tracking"""
-
-    # Create indexes for errors collection
-    await db["errors"].create_index("error_id", unique=True)
-    await db["errors"].create_index("timestamp")
-    await db["errors"].create_index("error_type")
-    await db["errors"].create_index("acknowledged")
-    await db["errors"].create_index([("timestamp", -1), ("acknowledged", 1)])
-
+    errors = db["errors"]
+    await _safe_create_index(errors, "error_id", unique=True)
+    await _safe_create_index(errors, "timestamp")
+    await _safe_create_index(errors, "error_type")
+    await _safe_create_index(errors, "acknowledged")
+    await _safe_create_index(errors, [("timestamp", -1), ("acknowledged", 1)])
     logger.info("Created indexes for errors collection")
 
 
@@ -286,11 +298,9 @@ async def migration_001_init_errors(db):
 )
 async def migration_002_platform_metrics(db):
     """Create platform_metrics collection for historical tracking"""
-
-    # Create time-series optimized indexes
-    await db["platform_metrics"].create_index("timestamp")
-    await db["platform_metrics"].create_index([("timestamp", -1)])
-
+    metrics = db["platform_metrics"]
+    await _safe_create_index(metrics, "timestamp")
+    await _safe_create_index(metrics, [("timestamp", -1)])
     logger.info("Created platform_metrics collection")
 
 
@@ -340,11 +350,10 @@ class Migration003:
 )
 async def migration_004_backup_tracking(db):
     """Create backup tracking collection"""
-
-    await db["backup_history"].create_index("backup_date")
-    await db["backup_history"].create_index([("backup_date", -1)])
-    await db["backup_history"].create_index("status")
-
+    backups = db["backup_history"]
+    await _safe_create_index(backups, "backup_date")
+    await _safe_create_index(backups, [("backup_date", -1)])
+    await _safe_create_index(backups, "status")
     logger.info("Created backup_history collection")
 
 
@@ -355,38 +364,19 @@ async def migration_004_backup_tracking(db):
 )
 async def migration_005_users_indexes(db):
     """Add production-critical indexes to users collection for performance"""
+    users = db["users"]
 
-    # Email index - CRITICAL for authentication (unique constraint)
-    await db["users"].create_index("email", unique=True)
-    logger.info("Created unique index on users.email")
-
-    # Role and status compound index - for listing users by type
-    await db["users"].create_index([("role", 1), ("is_active", 1)])
-    logger.info("Created compound index on users.(role, is_active)")
-
-    # Subscription status index - for subscription management queries
-    await db["users"].create_index("subscription_status")
-    logger.info("Created index on users.subscription_status")
-
-    # Trial end date index - for trial expiration checks
-    await db["users"].create_index("trial_end_date")
-    logger.info("Created index on users.trial_end_date")
-
-    # Stripe customer ID index - for webhook processing
-    await db["users"].create_index("stripe_customer_id", sparse=True)
-    logger.info("Created sparse index on users.stripe_customer_id")
-
-    # Created at index - for analytics and reporting
-    await db["users"].create_index([("created_at", -1)])
-    logger.info("Created descending index on users.created_at")
-
-    # Compound index for trial expiration queries
-    await db["users"].create_index([
+    await _safe_create_index(users, "email", unique=True)
+    await _safe_create_index(users, [("role", 1), ("is_active", 1)])
+    await _safe_create_index(users, "subscription_status")
+    await _safe_create_index(users, "trial_end_date")
+    await _safe_create_index(users, "stripe_customer_id", sparse=True)
+    await _safe_create_index(users, [("created_at", -1)])
+    await _safe_create_index(users, [
         ("subscription_status", 1),
         ("trial_end_date", 1),
         ("is_active", 1)
     ])
-    logger.info("Created compound index for trial expiration queries")
 
     logger.info("All users collection indexes created successfully")
 
@@ -462,3 +452,72 @@ async def migration_006_activity_log_indexes(db):
     )
 
     logger.info("All TTL indexes created successfully")
+
+
+@migration_registry.register(
+    "007",
+    "Repair team invite token consumption",
+    "Unsets consumed team invite tokens and repairs partially accepted team-member invites left pending by null-token index conflicts"
+)
+async def migration_007_repair_team_invites(db):
+    """Repair team-member records that were left inconsistent by invite_token=null collisions."""
+    team_members = db["team_members"]
+    users = db["users"]
+    now = datetime.now(timezone.utc)
+
+    # Sparse unique indexes still include explicit null values, so accepted invites
+    # must remove invite_token entirely rather than store null.
+    null_token_result = await team_members.update_many(
+        {"invite_token": None},
+        {
+            "$unset": {
+                "invite_token": "",
+                "invite_token_expires_at": "",
+            },
+            "$set": {"updated_at": now},
+        },
+    )
+    logger.info(
+        "Unset null team invite tokens on %s records",
+        null_token_result.modified_count,
+    )
+
+    repaired = 0
+    cursor = team_members.find({
+        "status": {"$in": ["pending", "accepting"]},
+        "user_id": None,
+    })
+    async for member in cursor:
+        user = await users.find_one({
+            "email": member.get("email"),
+            "role": "team_member",
+            "parent_planner_id": member.get("owner_id"),
+            "team_member_id": str(member.get("_id")),
+        })
+        if not user:
+            continue
+
+        accepted_at = user.get("created_at") or member.get("updated_at") or now
+        if isinstance(accepted_at, datetime) and accepted_at.tzinfo is None:
+            accepted_at = accepted_at.replace(tzinfo=timezone.utc)
+
+        await team_members.update_one(
+            {"_id": member["_id"]},
+            {
+                "$set": {
+                    "user_id": str(user["_id"]),
+                    "first_name": user.get("first_name"),
+                    "last_name": user.get("last_name"),
+                    "status": "active",
+                    "accepted_at": accepted_at,
+                    "updated_at": now,
+                },
+                "$unset": {
+                    "invite_token": "",
+                    "invite_token_expires_at": "",
+                },
+            },
+        )
+        repaired += 1
+
+    logger.info("Repaired %s partially accepted team-member invites", repaired)

@@ -6,6 +6,8 @@ from app.core.database import mongo
 from datetime import datetime, timezone
 from typing import List, Optional
 from app.utils.csv_export import CSVExportUtils
+from app.utils.id_utils import to_object_id
+from app.utils.wedding_event_types import normalize_event_type_list
 
 
 class AdminRSVPService:
@@ -14,11 +16,18 @@ class AdminRSVPService:
         self.rsvp_collection = mongo.db["rsvps"]
         self.plus_one_collection = mongo.db["plus_ones"]
 
-    async def get_all_rsvps(self, wedding_id=None):
+    async def get_all_rsvps(self, wedding_id=None, guest_ids: Optional[List[str]] = None):
         try:
-            # Filter by wedding_id if provided
-            query = {"wedding_id": wedding_id} if wedding_id else {}
-            guests = await self.guest_collection.find(query).to_list(length=None)
+            guest_query = {"wedding_id": wedding_id} if wedding_id else {}
+
+            if guest_ids is not None:
+                if not guest_ids:
+                    return []
+                guest_query["_id"] = {
+                    "$in": [to_object_id(guest_id, "guest_id") for guest_id in guest_ids]
+                }
+
+            guests = await self.guest_collection.find(guest_query).to_list(length=None)
             result = []
 
             if not guests:
@@ -221,9 +230,10 @@ class AdminRSVPService:
                 raise HTTPException(status_code=404, detail="Guest not found")
 
             # Validate attending events
-            valid_events = {"traditional", "white_wedding", "reception", "engagement", "rehearsal"}
-            if attending and not all(event in valid_events for event in attending):
-                raise HTTPException(status_code=400, detail="Invalid event(s) in attending list")
+            try:
+                attending = normalize_event_type_list(attending)
+            except ValueError as exc:
+                raise HTTPException(status_code=400, detail=str(exc))
 
             # Upsert RSVP
             rsvp_data = {

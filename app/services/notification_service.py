@@ -45,6 +45,26 @@ class NotificationService:
             if not result.inserted_id:
                 raise HTTPException(status_code=500, detail="Failed to create notification")
 
+            # ── WebPush: push to targeted user if applicable ──
+            try:
+                target = notification.get("target_audience")
+                user_id = notification.get("user_id")
+                if user_id:
+                    # Direct-targeted notification → push to that user
+                    await self._send_push_to_user(
+                        user_id,
+                        notification["title"],
+                        notification["message"],
+                    )
+                elif target == "root_admin":
+                    # System alert targeting root admin
+                    await self._send_push_to_admin(
+                        notification["title"],
+                        notification["message"],
+                    )
+            except Exception as push_err:
+                logger.warning("WebPush delivery failed (non-blocking): %s", str(push_err))
+
             return {
                 "id": str(result.inserted_id),
                 "message": "Notification created successfully",
@@ -107,7 +127,8 @@ class NotificationService:
             # Validate ObjectId
             try:
                 obj_id = ObjectId(notification_id)
-            except:
+            except Exception as e:
+                logger.error(f"Invalid ObjectId provided: {notification_id}, error: {e}", exc_info=True)
                 raise HTTPException(status_code=400, detail="Invalid notification ID")
 
             notification = await self.notifications_collection.find_one({"_id": obj_id})
@@ -133,7 +154,8 @@ class NotificationService:
             # Validate ObjectId
             try:
                 obj_id = ObjectId(notification_id)
-            except:
+            except Exception as e:
+                logger.error(f"Invalid ObjectId provided: {notification_id}, error: {e}", exc_info=True)
                 raise HTTPException(status_code=400, detail="Invalid notification ID")
 
             # Check if notification exists
@@ -171,7 +193,8 @@ class NotificationService:
             # Validate ObjectId
             try:
                 obj_id = ObjectId(notification_id)
-            except:
+            except Exception as e:
+                logger.error(f"Invalid ObjectId provided: {notification_id}, error: {e}", exc_info=True)
                 raise HTTPException(status_code=400, detail="Invalid notification ID")
 
             # Delete notification
@@ -382,13 +405,14 @@ class NotificationService:
             logger.error(f"Error getting user notifications: {str(e)}")
             raise HTTPException(status_code=500, detail=f"Error retrieving user notifications: {str(e)}")
 
-    async def mark_notification_read(self, notification_id: str, user_id: str) -> dict:
+    async def mark_notification_read(self, notification_id: str, user_id: str, user_role: str = "wedding_planner") -> dict:
         """Mark notification as read by user"""
         try:
             # Validate ObjectId
             try:
                 obj_id = ObjectId(notification_id)
-            except:
+            except Exception as e:
+                logger.error(f"Invalid ObjectId provided: {notification_id}, error: {e}", exc_info=True)
                 raise HTTPException(status_code=400, detail="Invalid notification ID")
 
             # Check if already read by this user
@@ -419,7 +443,7 @@ class NotificationService:
             # Broadcast updated count via SSE
             from app.services.sse_manager import sse_manager
             try:
-                counts = await self.get_user_notification_count(user_id, "wedding_planner")
+                counts = await self.get_user_notification_count(user_id, user_role)
                 task = asyncio.create_task(
                     sse_manager.broadcast_to_user(user_id, "notification-count", counts)
                 )
@@ -435,7 +459,7 @@ class NotificationService:
             logger.error(f"Error marking notification as read: {str(e)}")
             raise HTTPException(status_code=500, detail=f"Error marking notification as read: {str(e)}")
 
-    async def mark_all_notifications_read(self, user_id: str) -> dict:
+    async def mark_all_notifications_read(self, user_id: str, user_role: str = "wedding_planner") -> dict:
         """Mark all notifications as read for a user"""
         try:
             # Find all notifications that haven't been read by this user yet
@@ -457,7 +481,7 @@ class NotificationService:
             # Broadcast updated count via SSE
             from app.services.sse_manager import sse_manager
             try:
-                counts = await self.get_user_notification_count(user_id, "wedding_planner")
+                counts = await self.get_user_notification_count(user_id, user_role)
                 task = asyncio.create_task(
                     sse_manager.broadcast_to_user(user_id, "notification-count", counts)
                 )
@@ -480,7 +504,8 @@ class NotificationService:
             # Validate ObjectId
             try:
                 obj_id = ObjectId(notification_id)
-            except:
+            except Exception as e:
+                logger.error(f"Invalid ObjectId provided: {notification_id}, error: {e}", exc_info=True)
                 raise HTTPException(status_code=400, detail="Invalid notification ID")
 
             # Check if notification is dismissible
@@ -703,6 +728,51 @@ class NotificationService:
             logger.error(f"Error counting target audience: {str(e)}")
             return 0
 
+    # ==================== WEB PUSH HELPERS ====================
+
+    async def _check_push_enabled(self, user_email: str) -> bool:
+        """Check if user has push notifications enabled (defaults to True)."""
+        try:
+            user = await self.users_collection.find_one(
+                {"email": user_email},
+                {"push_notifications_enabled": 1},
+            )
+            if user:
+                return user.get("push_notifications_enabled", True)
+            return True
+        except Exception:
+            return True
+
+    async def _send_push_to_user(self, user_email: str, title: str, message: str) -> None:
+        """Send a WebPush notification to a specific user (non-blocking)."""
+        if not await self._check_push_enabled(user_email):
+            return
+        from app.services.web_push_service import web_push_service
+        if web_push_service.enabled:
+            await web_push_service.send_notification(
+                user_id=user_email,
+                title=title,
+                body=message,
+                tag="admin_notification",
+            )
+
+    async def _send_push_to_admin(self, title: str, message: str) -> None:
+        """Send a WebPush notification to root admin (non-blocking)."""
+        import os
+        root_admin_email = os.getenv(
+            "ROOT_ADMIN_EMAIL", "thedeveloper@thespecialwedding.io"
+        )
+        if not await self._check_push_enabled(root_admin_email):
+            return
+        from app.services.web_push_service import web_push_service
+        if web_push_service.enabled:
+            await web_push_service.send_notification(
+                user_id=root_admin_email,
+                title=title,
+                body=message,
+                tag="admin_system_alert",
+            )
+
     # ==================== NOTIFICATION TEMPLATE METHODS ====================
 
     async def create_template(self, template_data: dict, created_by: str) -> dict:
@@ -777,7 +847,8 @@ class NotificationService:
         try:
             try:
                 obj_id = ObjectId(template_id)
-            except:
+            except Exception as e:
+                logger.error(f"Invalid ObjectId provided: {template_id}, error: {e}", exc_info=True)
                 raise HTTPException(status_code=400, detail="Invalid template ID")
 
             template = await self.templates_collection.find_one({"_id": obj_id})
@@ -800,7 +871,8 @@ class NotificationService:
         try:
             try:
                 obj_id = ObjectId(template_id)
-            except:
+            except Exception as e:
+                logger.error(f"Invalid ObjectId provided: {template_id}, error: {e}", exc_info=True)
                 raise HTTPException(status_code=400, detail="Invalid template ID")
 
             existing = await self.templates_collection.find_one({"_id": obj_id})
@@ -834,7 +906,8 @@ class NotificationService:
         try:
             try:
                 obj_id = ObjectId(template_id)
-            except:
+            except Exception as e:
+                logger.error(f"Invalid ObjectId provided: {template_id}, error: {e}", exc_info=True)
                 raise HTTPException(status_code=400, detail="Invalid template ID")
 
             result = await self.templates_collection.delete_one({"_id": obj_id})
@@ -849,3 +922,77 @@ class NotificationService:
         except Exception as e:
             logger.error(f"Error deleting template: {str(e)}")
             raise HTTPException(status_code=500, detail=f"Error deleting template: {str(e)}")
+
+    # =========================================================================
+    # TEAM MANAGEMENT NOTIFICATIONS
+    # =========================================================================
+
+    async def notify_team_member_accepted(
+        self,
+        owner_email: str,
+        member_name: str,
+        member_email: str,
+        member_role: str,
+    ) -> dict:
+        """Notify the planner owner when a team member accepts their invite."""
+        return await self.create_notification(
+            notification_data={
+                "title": "Team Member Joined",
+                "message": f"{member_name} ({member_role}) has accepted your team invitation and can now access the platform.",
+                "type": "team_member_accepted",
+                "target_audience": "planner",
+                "user_id": owner_email,
+                "is_dismissible": True,
+                "priority": "normal",
+            },
+            created_by="system",
+        )
+
+    async def notify_team_member_action(
+        self,
+        owner_email: str,
+        member_name: str,
+        member_role: str,
+        action_description: str,
+        wedding_name: Optional[str] = None,
+    ) -> dict:
+        """
+        Notify the planner owner when a team member performs a significant action.
+
+        Used for destructive or high-impact actions: deleting guests, modifying
+        budgets, sending bulk communications, etc.
+        """
+        wedding_context = f" on {wedding_name}" if wedding_name else ""
+        return await self.create_notification(
+            notification_data={
+                "title": "Team Activity",
+                "message": f"{member_name} ({member_role}) {action_description}{wedding_context}.",
+                "type": "team_member_action",
+                "target_audience": "planner",
+                "user_id": owner_email,
+                "is_dismissible": True,
+                "priority": "normal",
+            },
+            created_by="system",
+        )
+
+    async def notify_team_member_deactivated(
+        self,
+        owner_email: str,
+        member_name: str,
+        member_email: str,
+        deactivated_by: str,
+    ) -> dict:
+        """Notify the planner owner when a team member is deactivated."""
+        return await self.create_notification(
+            notification_data={
+                "title": "Team Member Deactivated",
+                "message": f"{member_name} ({member_email}) has been deactivated by {deactivated_by}.",
+                "type": "team_member_deactivated",
+                "target_audience": "planner",
+                "user_id": owner_email,
+                "is_dismissible": True,
+                "priority": "low",
+            },
+            created_by="system",
+        )

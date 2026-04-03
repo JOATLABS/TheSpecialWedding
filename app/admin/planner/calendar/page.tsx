@@ -16,9 +16,11 @@ import {
   STATUS_CONFIG,
   TaskCategory,
 } from '@/services/calendarApi';
+import { useConfirmDialog } from '@/components/ui/ConfirmDialog';
 import TaskModal from './components/TaskModal';
 import GoogleCalendarConnect from './components/GoogleCalendarConnect';
 import { toast } from 'sonner';
+import { Calendar as CalendarIcon, Plus, Repeat, Clock, Trash2, Loader2, X } from 'lucide-react';
 import PageHeader from '../../components/PageHeader';
 
 // AI Types
@@ -108,6 +110,7 @@ interface Wedding {
 export default function PlannerCalendarPage() {
   const { token, userProfile, fetchUserProfile } = useAdmin();
   const router = useRouter();
+  const { confirm } = useConfirmDialog();
 
   // Calendar state
   const [currentYear, setCurrentYear] = useState(new Date().getFullYear());
@@ -372,7 +375,13 @@ export default function PlannerCalendarPage() {
   const handleDeleteTask = async (task: PlannerTask) => {
     if (!token) return;
 
-    const confirmed = window.confirm('Are you sure you want to delete this task?');
+    const confirmed = await confirm({
+      title: 'Delete Task',
+      message: 'Are you sure you want to delete this task?',
+      variant: 'danger',
+      confirmText: 'Delete',
+      cancelText: 'Cancel',
+    });
     if (!confirmed) return;
 
     try {
@@ -404,29 +413,31 @@ export default function PlannerCalendarPage() {
         title="Planning Calendar"
         description="Manage your tasks and schedule"
       >
-        <button
-          onClick={() => {
-            setSelectedTask(null);
-            setSelectedDate(new Date());
-            setTaskModalOpen(true);
-          }}
-          className="inline-flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors"
-        >
-          <svg
-            className="w-5 h-5"
-            fill="none"
-            stroke="currentColor"
-            viewBox="0 0 24 24"
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => {
+              setSelectedTask(null);
+              setSelectedDate(new Date());
+              setTaskModalOpen(true);
+            }}
+            className="inline-flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors"
           >
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeWidth={2}
-              d="M12 4v16m8-8H4"
-            />
-          </svg>
-          New Task
-        </button>
+            <svg
+              className="w-5 h-5"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M12 4v16m8-8H4"
+              />
+            </svg>
+            New Task
+          </button>
+        </div>
       </PageHeader>
 
       {/* Google Calendar Connection */}
@@ -1079,6 +1090,9 @@ export default function PlannerCalendarPage() {
         defaultDate={selectedDate}
         onSuccess={handleTaskSuccess}
       />
+
     </div>
   );
 }
+
+/* Meetings are now handled as tasks with category "meeting" — no separate modal needed. */

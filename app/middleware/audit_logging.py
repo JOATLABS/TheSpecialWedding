@@ -10,25 +10,41 @@ import logging
 from datetime import datetime, timezone
 from typing import Dict, Any, Optional
 from app.core.database import mongo
+from app.core.settings import settings
+from app.utils.auth_utils import verify_token
 import hashlib
 import asyncio
+import os
+from uuid import uuid4
 
 
 # Setup audit logger
 audit_logger = logging.getLogger("audit")
 audit_logger.setLevel(logging.INFO)
+audit_logger.propagate = False
 
-# File handler for audit logs
-file_handler = logging.FileHandler("audit.log")
-file_handler.setLevel(logging.INFO)
 
-# Formatter for audit logs
-formatter = logging.Formatter(
-    '%(asctime)s - %(levelname)s - %(message)s',
-    datefmt='%Y-%m-%d %H:%M:%S'
-)
-file_handler.setFormatter(formatter)
-audit_logger.addHandler(file_handler)
+def _ensure_audit_file_handler(log_file_path: str) -> None:
+    """Attach a single configured file handler for structured audit log output."""
+    normalized_path = os.path.abspath(log_file_path)
+
+    for handler in audit_logger.handlers:
+        if isinstance(handler, logging.FileHandler) and getattr(handler, "baseFilename", None) == normalized_path:
+            return
+
+    log_dir = os.path.dirname(normalized_path)
+    if log_dir:
+        os.makedirs(log_dir, exist_ok=True)
+
+    file_handler = logging.FileHandler(normalized_path)
+    file_handler.setLevel(logging.INFO)
+    file_handler.setFormatter(
+        logging.Formatter(
+            '%(asctime)s - %(levelname)s - %(message)s',
+            datefmt='%Y-%m-%d %H:%M:%S'
+        )
+    )
+    audit_logger.addHandler(file_handler)
 
 
 class AuditLoggingMiddleware(BaseHTTPMiddleware):
@@ -40,8 +56,8 @@ class AuditLoggingMiddleware(BaseHTTPMiddleware):
         app,
         log_to_db: bool = True,
         log_to_file: bool = True,
-        sensitive_paths: list = None,
-        excluded_paths: list = None
+        sensitive_paths: list[str] | None = None,
+        excluded_paths: list[str] | None = None
     ):
         super().__init__(app)
         self.log_to_db = log_to_db
@@ -56,12 +72,18 @@ class AuditLoggingMiddleware(BaseHTTPMiddleware):
             "/health",
             "/docs",
             "/openapi.json",
-            "/static/"
+            "/static/",
+            "/_next/",
+            "/favicon",
+            "/robots.txt",
+            "/sitemap.xml",
         ]
 
         # Audit collection in database
-        if self.log_to_db:
-            self.audit_collection = mongo.db["audit_logs"]
+        self.audit_collection = mongo.db["audit_logs"] if self.log_to_db else None
+
+        if self.log_to_file:
+            _ensure_audit_file_handler(settings.audit_log_file)
 
     def _should_log(self, path: str) -> bool:
         """Determine if request should be logged"""
@@ -83,7 +105,7 @@ class AuditLoggingMiddleware(BaseHTTPMiddleware):
         if forwarded:
             ip_address = forwarded.split(",")[0].strip()
         else:
-            ip_address = request.headers.get("X-Real-IP") or request.client.host
+            ip_address = request.headers.get("X-Real-IP") or (request.client.host if request.client else "unknown")
 
         # Get user agent
         user_agent = request.headers.get("User-Agent", "Unknown")
@@ -91,15 +113,32 @@ class AuditLoggingMiddleware(BaseHTTPMiddleware):
         # Get authentication info
         auth_header = request.headers.get("Authorization", "")
         is_authenticated = bool(auth_header)
+        user_email = None
+        user_role = None
+        if auth_header.startswith("Bearer "):
+            try:
+                payload = verify_token(auth_header.split(" ", 1)[1])
+                user_email = payload.get("sub")
+                user_role = payload.get("role")
+            except Exception:
+                # Invalid tokens should still be logged, just without decoded identity.
+                pass
 
         return {
+            "request_id": request.headers.get("X-Request-ID") or str(uuid4()),
             "ip_address": ip_address,
             "user_agent": user_agent,
             "is_authenticated": is_authenticated,
+            "user_email": user_email,
+            "user_role": user_role,
             "method": request.method,
             "path": request.url.path,
-            "query_params": dict(request.query_params)
+            "host": request.headers.get("host"),
+            "referer": request.headers.get("referer"),
+            "origin": request.headers.get("origin"),
+            "query_params": dict(request.query_params),
         }
+
     def _sanitize_data(self, data: Any) -> Any:
         """Sanitize sensitive data before logging"""
         if isinstance(data, dict):
@@ -133,12 +172,18 @@ class AuditLoggingMiddleware(BaseHTTPMiddleware):
         """Create audit log entry"""
         return {
             "timestamp": datetime.now(timezone.utc),
+            "request_id": request_info["request_id"],
             "event_type": self._determine_event_type(request_info["method"], request_info["path"]),
-            "user_id": user_id,
+            "user_id": user_id or request_info.get("user_email"),
+            "user_email": request_info.get("user_email"),
+            "user_role": request_info.get("user_role"),
             "ip_address": request_info["ip_address"],
             "user_agent": request_info["user_agent"],
             "method": request_info["method"],
             "path": request_info["path"],
+            "host": request_info.get("host"),
+            "referer": request_info.get("referer"),
+            "origin": request_info.get("origin"),
             "query_params": self._sanitize_data(request_info["query_params"]),
             "response_status": response_status,
             "response_time_ms": round(response_time * 1000, 2),
@@ -169,17 +214,28 @@ class AuditLoggingMiddleware(BaseHTTPMiddleware):
     def _generate_session_hash(self, request_info: Dict[str, Any]) -> str:
         """Generate a session hash for correlating requests"""
         session_data = f"{request_info['ip_address']}:{request_info['user_agent']}"
-        return hashlib.md5(session_data.encode()).hexdigest()[:16]
+        return hashlib.sha256(session_data.encode()).hexdigest()[:16]
+
     async def _log_to_database(self, audit_entry: Dict[str, Any]):
         """Log audit entry to database"""
         try:
-            await asyncio.get_event_loop().run_in_executor(
-                None,
-                self.audit_collection.insert_one,
-                audit_entry
-            )
+            if self.audit_collection is None:
+                return
+            await self.audit_collection.insert_one(audit_entry)
         except Exception as e:
             audit_logger.error(f"Failed to log to database: {str(e)}")
+
+    def _track_background_task(self, task: asyncio.Task) -> None:
+        """Surface async logging failures instead of silently swallowing them."""
+        try:
+            task.result()
+        except Exception as exc:  # pragma: no cover - defensive logging path
+            audit_logger.error(f"Background audit logging task failed: {exc}")
+
+    def _schedule_database_log(self, audit_entry: Dict[str, Any]) -> None:
+        task = asyncio.create_task(self._log_to_database(audit_entry))
+        task.add_done_callback(self._track_background_task)
+
     def _log_to_file(self, audit_entry: Dict[str, Any]):
         """Log audit entry to file"""
         # Convert datetime to string for JSON serialization
@@ -221,12 +277,13 @@ class AuditLoggingMiddleware(BaseHTTPMiddleware):
 
             # Log to database (async)
             if self.log_to_db:
-                asyncio.create_task(self._log_to_database(audit_entry))
+                self._schedule_database_log(audit_entry)
 
             # Log to file
             if self.log_to_file:
                 self._log_to_file(audit_entry)
 
+            response.headers.setdefault("X-Request-ID", request_info["request_id"])
             return response
 
         except Exception as e:
@@ -242,7 +299,7 @@ class AuditLoggingMiddleware(BaseHTTPMiddleware):
 
             # Log error
             if self.log_to_db:
-                asyncio.create_task(self._log_to_database(audit_entry))
+                self._schedule_database_log(audit_entry)
 
             if self.log_to_file:
                 self._log_to_file(audit_entry)

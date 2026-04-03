@@ -1,14 +1,16 @@
 'use client';
 import React, { Suspense, useCallback, useContext, useEffect, useState } from 'react';
-import { getApiBaseUrl } from '@/utils/env';
 import { useParams, useSearchParams } from 'next/navigation';
 import { WeddingContext } from '@/contexts/WeddingContext';
 import { LandingLayout } from '@/components/landing-page/LandingLayout';
 import { GalleryImage } from '@/types/landing';
 import GuestVerificationModal from '@/components/GuestVerificationModal';
-
-const API_BASE_URL = getApiBaseUrl();
-const API_URL = API_BASE_URL.replace('/admin', ''); // Remove /admin for public endpoints
+import {
+  buildPublicGalleryAccess,
+  fetchPublicGalleryPage,
+  type PublicGalleryAccess,
+} from '@/utils/publicGallery';
+import { exchangeGuestInviteToken, fetchGuestSessionAccess } from '@/utils/guestAccess';
 
 function WeddingLandingContent() {
  const contextWedding = useContext(WeddingContext);
@@ -16,139 +18,128 @@ function WeddingLandingContent() {
  const searchParams = useSearchParams();
  const slug = params.slug as string;
 
- // Read rsvp_token from URL query param
+ // Legacy compatibility for already-issued invite links.
  const rsvpTokenParam = searchParams.get('rsvp_token');
 
  const [wedding, setWedding] = useState<any>(null);
  const [guest, setGuest] = useState<any>(null);
  const [images, setImages] = useState<GalleryImage[]>([]);
- const [error, setError] = useState<string | null>(null);
  const [accessGranted, setAccessGranted] = useState(false);
  const [loading, setLoading] = useState(true);
- const [rsvpToken, setRsvpToken] = useState<string | null>(null);
+ const [galleryAccess, setGalleryAccess] = useState<PublicGalleryAccess | null>(null);
+ const [openGuestRsvpOnLoad, setOpenGuestRsvpOnLoad] = useState(false);
 
- // Fetch wedding data using RSVP token (bypasses privacy verification)
- const fetchWeddingByToken = useCallback(async (tokenValue: string) => {
-   try {
-     const res = await fetch(`${API_URL}/weddings/guest-access/${slug}/${tokenValue}`);
-     if (!res.ok) {
-       const errorData = await res.json().catch(() => ({}));
-       throw new Error(errorData.detail || 'Failed to access wedding');
-     }
-     const data = await res.json();
-     const { wedding: weddingResult, guest: guestResult } = data;
-
-     // Map _id to id for WeddingContext compatibility
-     const weddingForContext = {
-       ...weddingResult,
-       id: weddingResult.id || weddingResult._id || slug,
-       slug: weddingResult.slug || slug,
-     };
-
-     setWedding(weddingForContext);
-     setGuest(guestResult);
-     setAccessGranted(true);
-   } catch (err: any) {
-     console.error('Failed to load wedding via token:', err);
-     // Fall back to normal flow on token failure
-     if (contextWedding?.privacy_mode === 'public') {
-       setWedding(contextWedding);
-       setAccessGranted(true);
-     }
-   } finally {
-     setLoading(false);
+ const hydrateGuestSession = useCallback(async () => {
+   const data = await fetchGuestSessionAccess(slug);
+   if (!data?.wedding) {
+     return false;
    }
- }, [slug, contextWedding]);
+
+   const weddingForContext = {
+     ...data.wedding,
+     id: data.wedding.id || data.wedding._id || slug,
+     slug: data.wedding.slug || slug,
+   };
+
+   setWedding(weddingForContext);
+   setGuest(data.guest ?? null);
+   setGalleryAccess(buildPublicGalleryAccess(data.guest));
+   setAccessGranted(true);
+   return true;
+ }, [slug]);
 
  useEffect(() => {
-   if (rsvpTokenParam && !accessGranted) {
-     // Store token in state and clean URL to prevent refresh issues
-     // Guard: only fetch once (accessGranted prevents re-fetch if contextWedding updates)
-     setRsvpToken(rsvpTokenParam);
-     // Persist token in sessionStorage so it survives page refresh
-     try { sessionStorage.setItem('rsvp_token_' + slug, rsvpTokenParam); } catch {}
-     window.history.replaceState({}, '', `/${slug}`);
-     fetchWeddingByToken(rsvpTokenParam);
-   } else if (!rsvpTokenParam && !accessGranted) {
-     // Check sessionStorage for a persisted token (survives page refresh)
-     let storedToken: string | null = null;
-     try { storedToken = sessionStorage.getItem('rsvp_token_' + slug); } catch {}
-     if (storedToken) {
-       setRsvpToken(storedToken);
-       fetchWeddingByToken(storedToken);
-     } else if (contextWedding?.privacy_mode === 'public') {
-       // Wedding is explicitly set to public, grant access immediately
-       setWedding(contextWedding);
-       setAccessGranted(true);
-       setLoading(false);
-     } else {
-       // Wedding requires authentication (default: private)
-       setLoading(false);
-     }
-   }
- // eslint-disable-next-line react-hooks/exhaustive-deps
- }, [contextWedding, rsvpTokenParam, slug]);
+   let cancelled = false;
 
- const handleGuestVerified = (weddingData: any, guestData?: any) => {
+   const loadWedding = async () => {
+     setLoading(true);
+
+     try {
+       let shouldAutoOpenRsvp = false;
+
+       if (rsvpTokenParam) {
+         try {
+           await exchangeGuestInviteToken(slug, rsvpTokenParam);
+           shouldAutoOpenRsvp = true;
+         } finally {
+           window.history.replaceState({}, '', `/${slug}`);
+         }
+       } else if (typeof window !== 'undefined' && window.location.hash === '#rsvp') {
+         shouldAutoOpenRsvp = true;
+         window.history.replaceState({}, '', `/${slug}`);
+       }
+
+       const hasSessionAccess = await hydrateGuestSession();
+       if (cancelled) {
+         return;
+       }
+
+       if (hasSessionAccess) {
+         setOpenGuestRsvpOnLoad(shouldAutoOpenRsvp);
+         return;
+       }
+
+       if (contextWedding?.privacy_mode === 'public') {
+         setWedding(contextWedding);
+         setGuest(null);
+         setGalleryAccess(buildPublicGalleryAccess(null));
+         setAccessGranted(true);
+       } else {
+         setAccessGranted(false);
+       }
+     } catch (err: any) {
+       console.error('Failed to load wedding access:', err);
+       if (contextWedding?.privacy_mode === 'public') {
+         setWedding(contextWedding);
+         setGuest(null);
+         setGalleryAccess(buildPublicGalleryAccess(null));
+         setAccessGranted(true);
+       } else {
+         setAccessGranted(false);
+       }
+     } finally {
+       if (!cancelled) {
+         setLoading(false);
+       }
+     }
+   };
+
+   void loadWedding();
+
+   return () => {
+     cancelled = true;
+   };
+ }, [contextWedding, hydrateGuestSession, rsvpTokenParam, slug]);
+
+ const handleGuestVerified = (
+  weddingData: any,
+  guestData?: any,
+  accessData?: PublicGalleryAccess | null,
+ ) => {
  setWedding(weddingData);
  setGuest(guestData);
+ setGalleryAccess(accessData ?? buildPublicGalleryAccess(guestData));
  setAccessGranted(true);
-
- // Fetch gallery for verified users
- fetchGallery(weddingData, guestData);
  };
 
  const fetchGallery = useCallback(
- async (weddingData?: any, guestData?: any) => {
-  if (!slug) return;
-
-  const targetWedding = weddingData || wedding;
-  const targetGuest = guestData || guest;
+ async () => {
+  if (!slug || !wedding) return;
 
   try {
-    // For public weddings, use the simple gallery endpoint
-    // For private/password weddings, use the verified endpoint with query params
-    const isPublic = targetWedding?.privacy_mode === 'public';
-
-    let galleryUrl: string;
-    if (isPublic) {
-      // Public gallery endpoint
-      galleryUrl = `${API_URL}/gallery?wedding_slug=${encodeURIComponent(slug)}`;
-    } else {
-      // Build query params for verified endpoint
-      const params = new URLSearchParams({ wedding_slug: slug });
-
-      // Add authentication parameters based on what we have
-      if (targetGuest?.token) {
-        params.append('token', targetGuest.token);
-      } else if (targetGuest?.name) {
-        params.append('name', targetGuest.name);
-        if (targetGuest.phone) {
-          params.append('phone', targetGuest.phone);
-        }
-      }
-
-      galleryUrl = `${API_URL}/gallery/verified?${params.toString()}`;
-    }
-
-    const res = await fetch(galleryUrl, {
-      method: isPublic ? 'GET' : 'POST',
+    const galleryPage = await fetchPublicGalleryPage({
+      slug,
+      privacyMode: wedding.privacy_mode,
+      access: galleryAccess,
+      limit: 12,
     });
-
-    if (res.ok) {
-      const data = await res.json();
-      setImages(data.map((img: any) => ({ key: img.key, url: img.url })));
-    } else {
-      // If gallery fails, don't show error - just continue without images
-      console.warn('Gallery access failed, continuing without images');
-      setImages([]);
-    }
+    setImages(galleryPage.items);
   } catch (err: any) {
     console.warn('Gallery could not be loaded:', err);
     setImages([]); // Continue without gallery instead of showing error
   }
  },
- [guest, slug, wedding]
+ [galleryAccess, slug, wedding]
  );
 
  // Fetch gallery when access is granted and we have wedding data
@@ -169,18 +160,6 @@ function WeddingLandingContent() {
  );
  }
 
- if (error) {
- return (
- <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-rose-50 to-pink-50 dark:from-slate-900 dark:to-slate-800">
- <div className="text-center bg-white dark:bg-slate-800 p-8 rounded-lg shadow-sm dark:shadow-slate-900/50 max-w-md">
- <div className="text-4xl mb-4 text-red-500 dark:text-red-400"></div>
- <h2 className="text-xl font-semibold text-gray-900 dark:text-gray-100 mb-2">Unable to Load Wedding</h2>
- <p className="text-gray-600 dark:text-gray-300 mb-4">{error}</p>
- </div>
- </div>
- );
- }
-
  // Show verification modal if access not granted
  if (!accessGranted) {
  return (
@@ -188,6 +167,7 @@ function WeddingLandingContent() {
  <GuestVerificationModal
  slug={slug}
  onVerified={handleGuestVerified}
+ privacyInfo={contextWedding}
  />
  </div>
  );
@@ -203,7 +183,7 @@ function WeddingLandingContent() {
  );
  }
 
- return <LandingLayout wedding={wedding} images={images} guest={guest} rsvpToken={rsvpToken} />;
+ return <LandingLayout wedding={wedding} images={images} guest={guest} openGuestRsvpOnLoad={openGuestRsvpOnLoad} />;
 }
 
 export default function WeddingLandingPage() {

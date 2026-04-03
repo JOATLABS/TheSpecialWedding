@@ -98,10 +98,14 @@ python scripts/seed_subscription_plans.py
 # 5. Create root admin user
 python scripts/setup_admin_user.py
 
-# 6. Start the backend
+# 6. Create planner/vendor/couple/team-member test accounts manually
+#    through the frontend flows when needed. The TEST_* values in .env
+#    are fixture credentials for manual QA, not auto-seeded users.
+
+# 7. Start the backend
 uvicorn app.main:app --reload --port 8000
 
-# 7. Start the frontend (separate terminal)
+# 8. Start the frontend (separate terminal)
 npm run dev
 ```
 
@@ -116,11 +120,13 @@ The platform requires these environment variables (set via `.env` or Coolify das
 | `CORS_ORIGINS` | Allowed origins (comma-separated) |
 | `NEXT_PUBLIC_API_BASE_URL` | Backend API URL for frontend |
 | `FRONTEND_URL` | Frontend URL for generated links |
+| `INTERNAL_API_BASE_URL` | Server-side API URL used by the frontend container for SSR/data fetches |
 | `TWILIO_ACCOUNT_SID` | Twilio account SID |
 | `TWILIO_AUTH_TOKEN` | Twilio auth token |
 | `TWILIO_MESSAGING_SERVICE_SID` | Twilio messaging service |
 | `TWILIO_STATUS_CALLBACK_URL` | Webhook URL for delivery tracking |
 | `RESEND_API_KEY` | Resend email API key |
+| `RESEND_BILLING_EMAIL` | Dedicated sender address for Stripe billing/invoice emails |
 | `STRIPE_SECRET_KEY` | Stripe secret key |
 | `STRIPE_WEBHOOK_SECRET` | Stripe webhook signing secret |
 | `GOOGLE_GEMINI_API_KEY` | Google Gemini API key |
@@ -133,7 +139,7 @@ The platform requires these environment variables (set via `.env` or Coolify das
 
 ### Production Deployment (Coolify)
 
-The platform deploys as a single Docker container via `Dockerfile.coolify`:
+The current production path deploys as a single Docker container via `Dockerfile.coolify`:
 
 ```bash
 # Dockerfile Location in Coolify: Dockerfile.coolify
@@ -141,7 +147,28 @@ The platform deploys as a single Docker container via `Dockerfile.coolify`:
 # Supervisor manages both processes
 ```
 
-Set all environment variables in the Coolify dashboard. The container exposes port 3000 (Next.js) and 8000 (FastAPI) internally, with Supervisor orchestrating both.
+Runtime details:
+
+- frontend process: `npm start` on port `3000`
+- backend process: `/usr/local/bin/start-backend.sh` on port `8000`
+- backend worker count comes from `WEB_CONCURRENCY` and defaults to `2`
+- if `REDIS_ENABLED` is not truthy, the backend forces `WEB_CONCURRENCY=1` so SSE remains correct across workers
+
+Set all environment variables in the Coolify dashboard. The container exposes port `3000` (Next.js) and `8000` (FastAPI) internally, with Supervisor orchestrating both.
+
+Recommended next deployment path:
+
+- [Split-service Coolify rollout guide](docs/plans/COOLIFY_SPLIT_DEPLOY_GUIDE.md)
+- [GitHub secret sync script](scripts/deploy/sync_github_secrets.sh)
+- [Deployment strategy status](docs/plans/DEPLOYMENT_STRATEGY_STATUS.md)
+
+Repo rollout status:
+
+- staging auto-deploy after CI: [`.github/workflows/deploy-coolify.yml`](/Users/emmanuelakinwale/Desktop/WeddingWebApp/.github/workflows/deploy-coolify.yml)
+- manual production promotion by immutable SHA: [`.github/workflows/promote-coolify-production.yml`](/Users/emmanuelakinwale/Desktop/WeddingWebApp/.github/workflows/promote-coolify-production.yml)
+- shared deploy verification and rollback logic: [`.github/workflows/coolify-deploy-shared.yml`](/Users/emmanuelakinwale/Desktop/WeddingWebApp/.github/workflows/coolify-deploy-shared.yml)
+
+Historical deployment docs for older Vercel/DigitalOcean or droplet-only setups remain in `docs/`, but they are no longer the primary source of truth.
 
 ## Roles
 

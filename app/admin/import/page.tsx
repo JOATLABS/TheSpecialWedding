@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { getApiBaseUrl } from '@/utils/env';
 import { useAdmin } from '@/contexts/AdminContext';
 import { Card } from '@/components/ui/Card';
+import PageHeader from '../components/PageHeader';
 
 interface Wedding {
  id?: string;
@@ -30,13 +31,19 @@ interface Guest {
  updated_at?: string;
 }
 
+interface GuestImportResult {
+ imported: number;
+ tokens: string[];
+ warnings?: string[];
+}
+
 export default function AdminImportPage() {
  const { token } = useAdmin();
  const [file, setFile] = useState<File | null>(null);
  const [weddings, setWeddings] = useState<Wedding[]>([]);
  const [selectedWedding, setSelectedWedding] = useState<string>('');
  const [loading, setLoading] = useState(false);
- const [result, setResult] = useState<{ imported: number; tokens: string[] } | null>(null);
+ const [result, setResult] = useState<GuestImportResult | null>(null);
  const [error, setError] = useState<string>('');
  const [guests, setGuests] = useState<Guest[]>([]);
  const [loadingGuests, setLoadingGuests] = useState(false);
@@ -182,17 +189,14 @@ export default function AdminImportPage() {
  };
 
  return (
- <div className="min-h-screen dark:bg-transparent p-4 sm:p-6">
- <div className="max-w-4xl mx-auto space-y-8">
+ <div className="space-y-6">
+ <PageHeader
+   title="Import Guests"
+   description="Upload a CSV file to import guest information"
+ />
+ <div className="max-w-4xl space-y-8">
  {/* === IMPORT FORM CARD === */}
  <Card className="overflow-hidden">
- {/* Card header with sage→gold gradient */}
- <div className="bg-gradient-to-r from-wedding-sage to-wedding-gold px-8 py-6">
- <h1 className="text-3xl font-elegant text-white">Import Guests</h1>
- <p className="text-wedding-ivory mt-2">
- Upload a CSV file to import guest information
- </p>
- </div>
 
  <div className="p-4 sm:p-6 md:p-8 space-y-6 sm:space-y-8">
  {/* CSV Format Documentation */}
@@ -280,7 +284,21 @@ export default function AdminImportPage() {
  )}
  {result && (
  <div className="p-4 sm:p-6 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg">
- {/* … */}
+ <p className="font-semibold text-green-700 dark:text-green-300">
+ Successfully imported {result.imported} guests!
+ </p>
+ {result.warnings && result.warnings.length > 0 && (
+ <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 p-3 dark:border-amber-700 dark:bg-amber-900/20">
+ <p className="text-sm font-medium text-amber-800 dark:text-amber-200">
+ {result.warnings.length} row{result.warnings.length === 1 ? '' : 's'} skipped during import.
+ </p>
+ <ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-amber-700 dark:text-amber-300">
+ {result.warnings.map((warning, index) => (
+ <li key={`${warning}-${index}`}>{warning}</li>
+ ))}
+ </ul>
+ </div>
+ )}
  </div>
  )}
 

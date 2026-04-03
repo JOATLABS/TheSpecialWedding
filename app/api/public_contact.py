@@ -34,7 +34,7 @@ class ContactSalesResponse(BaseModel):
 async def submit_contact_request(payload: ContactSalesRequest, background_tasks: BackgroundTasks) -> ContactSalesResponse:
     """Capture a sales inquiry, notify the root admin, and queue an email."""
 
-    root_admin_email = os.getenv("ROOT_ADMIN_EMAIL", "thedeveloper@thespecialwedding.com")
+    root_admin_email = os.getenv("ROOT_ADMIN_EMAIL", "thedeveloper@thespecialwedding.io")
     if not root_admin_email:
         logger.error("ROOT_ADMIN_EMAIL is not configured; cannot route sales inquiry.")
         raise HTTPException(status_code=500, detail="Sales contact is not configured.")

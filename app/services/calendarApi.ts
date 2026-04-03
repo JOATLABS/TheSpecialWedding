@@ -28,6 +28,7 @@ export type TaskCategory =
   | 'legal'
   | 'budget'
   | 'guest_management'
+  | 'meeting'
   | 'other';
 
 export interface PlannerTask {
@@ -439,6 +440,7 @@ export const CATEGORY_LABELS: Record<TaskCategory, string> = {
   legal: 'Legal & Documents',
   budget: 'Budget & Payments',
   guest_management: 'Guest Management',
+  meeting: 'Couple Meeting',
   other: 'Other',
 };
 

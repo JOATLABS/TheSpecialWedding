@@ -22,8 +22,7 @@ describe('formsApi', () => {
     if (originalFetch) {
       global.fetch = originalFetch;
     } else {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      delete (global as any).fetch;
+      delete (global as typeof globalThis & { fetch?: typeof fetch }).fetch;
     }
   });
 

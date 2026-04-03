@@ -7,6 +7,22 @@ export default function WeddingThemedHero() {
   const [mouseY, setMouseY] = useState(0);
   const [rsvpCount, setRsvpCount] = useState(0);
   const [guestCount, setGuestCount] = useState(0);
+  const [confettiParticles] = useState(() => (
+    Array.from({ length: 20 }, () => ({
+      left: `${Math.random() * 100}%`,
+      top: `${-10 + Math.random() * 20}%`,
+      animationDelay: `${Math.random() * 3}s`,
+      animationDuration: `${3 + Math.random() * 2}s`,
+      icon: ['💍', '💐', '🎉', '✨', '💕', '🥂'][Math.floor(Math.random() * 6)],
+    }))
+  ));
+  const [sparklePositions] = useState(() => (
+    Array.from({ length: 6 }, (_, index) => ({
+      left: `${20 + Math.random() * 60}%`,
+      top: `${20 + Math.random() * 60}%`,
+      animationDelay: `${index * 0.3}s`,
+    }))
+  ));
 
   useEffect(() => {
     const handleMouseMove = (e: MouseEvent) => {
@@ -51,18 +67,18 @@ export default function WeddingThemedHero() {
   return (
     <div className="relative w-full h-full flex items-center justify-center perspective-1000">
       {/* Confetti particles - wedding celebration theme */}
-      {[...Array(20)].map((_, i) => (
+      {confettiParticles.map((particle, i) => (
         <div
           key={`confetti-${i}`}
           className="absolute confetti"
           style={{
-            left: `${Math.random() * 100}%`,
-            top: `${-10 + Math.random() * 20}%`,
-            animationDelay: `${Math.random() * 3}s`,
-            animationDuration: `${3 + Math.random() * 2}s`,
+            left: particle.left,
+            top: particle.top,
+            animationDelay: particle.animationDelay,
+            animationDuration: particle.animationDuration,
           }}
         >
-          {['💍', '💐', '🎉', '✨', '💕', '🥂'][Math.floor(Math.random() * 6)]}
+          {particle.icon}
         </div>
       ))}
 
@@ -161,14 +177,14 @@ export default function WeddingThemedHero() {
                 </div>
                 {/* Floating sparkles */}
                 <div className="absolute inset-0 sparkle-container">
-                  {[...Array(6)].map((_, i) => (
+                  {sparklePositions.map((sparkle, i) => (
                     <div
                       key={i}
                       className="absolute sparkle"
                       style={{
-                        left: `${20 + Math.random() * 60}%`,
-                        top: `${20 + Math.random() * 60}%`,
-                        animationDelay: `${i * 0.3}s`,
+                        left: sparkle.left,
+                        top: sparkle.top,
+                        animationDelay: sparkle.animationDelay,
                       }}
                     >
                       ✨

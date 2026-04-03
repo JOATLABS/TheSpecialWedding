@@ -35,7 +35,7 @@ def _get_web_push_service():
 
 
 # Root admin email - the platform developer
-ROOT_ADMIN_EMAIL = os.getenv("ROOT_ADMIN_EMAIL", "thedeveloper@thespecialwedding.com")
+ROOT_ADMIN_EMAIL = os.getenv("ROOT_ADMIN_EMAIL", "thedeveloper@thespecialwedding.io")
 
 # Critical environment variables that MUST be set for the platform to function
 CRITICAL_ENV_VARS = {
@@ -58,6 +58,9 @@ RECOMMENDED_ENV_VARS = {
     "S3_ACCESS_KEY_ID": "S3/R2 access key ID",
     "S3_SECRET_ACCESS_KEY": "S3/R2 secret access key",
     "S3_BUCKET_NAME": "S3/R2 bucket name for file uploads",
+    "S3_GUEST_MEDIA_BUCKET_NAME": "Dedicated guest memories R2 bucket",
+    "CLOUDFLARE_ACCOUNT_ID": "Cloudflare account identifier for Stream ingest",
+    "CLOUDFLARE_STREAM_API_TOKEN": "Cloudflare API token with Stream permissions",
 }
 
 

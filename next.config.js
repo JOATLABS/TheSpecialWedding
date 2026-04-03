@@ -20,21 +20,31 @@ const buildRemotePattern = (value, defaultProtocol = 'https') => {
 const remotePatterns = [
   buildRemotePattern(process.env.S3_ENDPOINT_URL),
   buildRemotePattern(process.env.MEDIA_DOMAIN),
+  buildRemotePattern(process.env.AD_MEDIA_DOMAIN),
+  buildRemotePattern(process.env.BLOG_MEDIA_DOMAIN),
 ].filter(Boolean)
 
 const nextConfig = {
-  // Proxy API requests to backend in Coolify single-container deployment
-  // The backend runs on port 8000 inside the container
+  // Proxy API requests to backend
+  // - Coolify (single container): proxies to localhost:8000
+  // - Kubernetes (separate containers): proxies to backend K8s service
   async rewrites() {
-    // In production (Coolify), proxy to localhost:8000 inside container
     const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || '';
 
-    // Only enable rewrites for production single-container deployment
-    if (process.env.NODE_ENV === 'production' && !apiBaseUrl.includes('api.thespecialwedding')) {
+    // Skip rewrites if frontend calls the API directly via public domain
+    if (apiBaseUrl.includes('api.thespecialwedding')) {
+      return [];
+    }
+
+    // K8s: backend service is at http://backend.wedding-app.svc.cluster.local:8000
+    // Coolify: backend is at http://localhost:8000 in same container
+    const backendUrl = process.env.BACKEND_SERVICE_URL || 'http://localhost:8000';
+
+    if (process.env.NODE_ENV === 'production') {
       return [
         {
           source: '/api/proxy/:path*',
-          destination: 'http://localhost:8000/:path*',
+          destination: `${backendUrl}/:path*`,
         },
       ];
     }

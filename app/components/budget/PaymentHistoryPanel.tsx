@@ -5,6 +5,7 @@ import type { BudgetCategory, PaymentRecord } from '../../types/budget';
 import { Card } from '../ui/Card';
 import { Button } from '../ui/Button';
 import { formatDate } from '@/utils/dateFormat';
+import { useConfirmDialog } from '@/components/ui/ConfirmDialog';
 
 interface PaymentHistoryPanelProps {
   payments: PaymentRecord[];
@@ -48,6 +49,7 @@ export function PaymentHistoryPanel({
   onEditPayment,
   onDeletePayment,
 }: PaymentHistoryPanelProps) {
+  const { confirm } = useConfirmDialog();
   const [categoryFilter, setCategoryFilter] = useState<string>('all');
   const [methodFilter, setMethodFilter] = useState<PaymentMethodFilter>('all');
   const [statusFilter, setStatusFilter] = useState<PaymentStatusFilter>('all');
@@ -57,9 +59,6 @@ export function PaymentHistoryPanel({
     const map = new Map<string, string>();
     categories.forEach((category) => {
       map.set(category.id, category.name);
-      if (category._id && !map.has(category._id)) {
-        map.set(category._id, category.name);
-      }
     });
     return map;
   }, [categories]);
@@ -182,7 +181,7 @@ export function PaymentHistoryPanel({
               >
                 <option value="all">All categories</option>
                 {categories.map((category) => {
-                  const optionValue = category.id || category._id;
+                  const optionValue = category.id;
                   if (!optionValue) {
                     return null;
                   }
@@ -315,8 +314,15 @@ export function PaymentHistoryPanel({
                           {onDeletePayment && (
                             <button
                               type="button"
-                              onClick={() => {
-                                if (window.confirm(`Delete this ${formatCurrency(payment.amount)} payment? This cannot be undone.`)) {
+                              onClick={async () => {
+                                const confirmed = await confirm({
+                                  title: 'Delete Payment',
+                                  message: `Delete this ${formatCurrency(payment.amount)} payment? This cannot be undone.`,
+                                  variant: 'danger',
+                                  confirmText: 'Delete',
+                                  cancelText: 'Cancel',
+                                });
+                                if (confirmed) {
                                   onDeletePayment(payment);
                                 }
                               }}

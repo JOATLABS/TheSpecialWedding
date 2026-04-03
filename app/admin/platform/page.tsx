@@ -5,9 +5,11 @@ import { getApiBaseUrl } from '@/utils/env';
 import { useRouter } from 'next/navigation';
 import { useAdmin } from '@/contexts/AdminContext';
 import { Card } from '@/components/ui/Card';
-import { formatDateTime } from '@/utils/dateFormat';
+import { formatAdminTimestamp, DEFAULT_TIMEZONE } from '@/utils/dateFormat';
 import { toast } from 'sonner';
 import PageHeader from '../components/PageHeader';
+import { usePagination } from '@/admin/hooks/usePagination';
+import { GlassPagination } from '@/admin/components/ui/glass/GlassPagination';
 import {
   Server,
   Database,
@@ -66,9 +68,25 @@ interface ErrorSummary {
 }
 
 interface ErrorMetrics {
-  total_24h: number;
-  critical_24h: number;
+  window_days: number;
+  total: number;
+  critical: number;
+  warning: number;
+  other: number;
+  unacknowledged: number;
+  acknowledged: number;
+  total_24h?: number | null;
+  critical_24h?: number | null;
   recent_errors: ErrorSummary[];
+}
+
+interface ErrorScopeSummary {
+  total: number;
+  critical: number;
+  warning: number;
+  other: number;
+  unacknowledged: number;
+  acknowledged: number;
 }
 
 interface EndpointPerformance {
@@ -150,12 +168,25 @@ interface PlatformMetrics {
 }
 
 type TabType = 'health' | 'errors' | 'performance' | 'backups';
-type SeverityFilter = 'all' | 'critical' | 'warning';
+type SeverityFilter = 'all' | 'critical' | 'warning' | 'other';
 type AcknowledgedFilter = 'all' | 'true' | 'false';
+
+const ERROR_WINDOW_OPTIONS = [
+  { value: 1, label: '24 hours' },
+  { value: 7, label: '7 days' },
+  { value: 30, label: '30 days' },
+  { value: 90, label: '90 days' },
+];
+
+const formatErrorWindowLabel = (days: number) => {
+  if (days <= 1) return '24h';
+  return `${days}d`;
+};
 
 export default function PlatformInfrastructurePage() {
   const router = useRouter();
-  const { userProfile } = useAdmin();
+  const { userProfile, token, isLoading: authLoading } = useAdmin();
+  const adminTimezone = userProfile?.user_data?.timezone || DEFAULT_TIMEZONE;
   const [metrics, setMetrics] = useState<PlatformMetrics | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -164,33 +195,47 @@ export default function PlatformInfrastructurePage() {
 
   // Error filtering state
   const [allErrors, setAllErrors] = useState<ErrorSummary[]>([]);
+  const [errorSummary, setErrorSummary] = useState<ErrorScopeSummary | null>(null);
+  const [errorWindowDays, setErrorWindowDays] = useState(1);
   const [severityFilter, setSeverityFilter] = useState<SeverityFilter>('all');
   const [acknowledgedFilter, setAcknowledgedFilter] = useState<AcknowledgedFilter>('all');
-  const [errorLimit, setErrorLimit] = useState(50);
   const [loadingErrors, setLoadingErrors] = useState(false);
   const [acknowledgingIds, setAcknowledgingIds] = useState<Set<string>>(new Set());
   const [acknowledgingAll, setAcknowledgingAll] = useState(false);
 
-  // Cursor-based pagination state
-  const [totalErrors, setTotalErrors] = useState(0);
-  const [totalPages, setTotalPages] = useState(1);
-  const [hasNextPage, setHasNextPage] = useState(false);
-  const [hasPrevPage, setHasPrevPage] = useState(false);
-  const [nextCursor, setNextCursor] = useState<string | null>(null);
-  const [prevCursor, setPrevCursor] = useState<string | null>(null);
-  const [cursorHistory, setCursorHistory] = useState<string[]>([]);  // Track cursor history for "First" button
+  // Page-based pagination
+  const errorPagination = usePagination({ initialItemsPerPage: 50 });
+  const {
+    currentPage: errorCurrentPage,
+    itemsPerPage: errorItemsPerPage,
+    setPage: setErrorPage,
+    setTotalItems: setErrorTotalItems,
+  } = errorPagination;
 
   // Access control - ROOT ADMIN only
   useEffect(() => {
-    if (userProfile && !userProfile.is_root_admin) {
-      router.push('/admin/planner');
+    if (authLoading) {
+      return;
     }
-  }, [userProfile, router]);
+
+    if (userProfile && !userProfile.is_root_admin) {
+      setLoading(false);
+      router.replace('/admin/planner');
+    }
+  }, [authLoading, userProfile, router]);
 
   const fetchMetrics = useCallback(async () => {
     try {
+      if (authLoading || !userProfile) {
+        return;
+      }
+
+      if (!userProfile.is_root_admin) {
+        setLoading(false);
+        return;
+      }
+
       const baseUrl = getApiBaseUrl();
-      const token = localStorage.getItem('admin_token') || sessionStorage.getItem('admin_token');
 
       if (!token) {
         setError('Authentication required. Please log in.');
@@ -198,12 +243,23 @@ export default function PlatformInfrastructurePage() {
         return;
       }
 
-      const response = await fetch(`${baseUrl}/admin/platform/health`, {
+      const params = new URLSearchParams({
+        days: errorWindowDays.toString(),
+      });
+
+      const response = await fetch(`${baseUrl}/admin/platform/health?${params}`, {
         headers: {
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json'
-        }
+        },
+        credentials: 'include',
       });
+
+      if (response.status === 403) {
+        setLoading(false);
+        router.replace('/admin/planner');
+        return;
+      }
 
       if (!response.ok) {
         throw new Error(`Failed to fetch metrics: ${response.statusText}`);
@@ -218,20 +274,28 @@ export default function PlatformInfrastructurePage() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [authLoading, errorWindowDays, router, token, userProfile]);
 
-  const fetchAllErrors = useCallback(async (cursor?: string | null, direction: 'next' | 'prev' = 'next') => {
+  const fetchAllErrors = useCallback(async () => {
     try {
       setLoadingErrors(true);
+
+      if (authLoading || !userProfile) {
+        return;
+      }
+
       const baseUrl = getApiBaseUrl();
-      const token = localStorage.getItem('admin_token') || sessionStorage.getItem('admin_token');
+
+      if (!userProfile.is_root_admin) {
+        return;
+      }
 
       if (!token) return;
 
       const params = new URLSearchParams({
-        limit: errorLimit.toString(),
-        direction,
-        ...(cursor && { cursor }),
+        days: errorWindowDays.toString(),
+        page: errorCurrentPage.toString(),
+        limit: errorItemsPerPage.toString(),
         ...(severityFilter !== 'all' && { severity: severityFilter }),
         ...(acknowledgedFilter !== 'all' && { acknowledged: acknowledgedFilter })
       });
@@ -240,92 +304,76 @@ export default function PlatformInfrastructurePage() {
         headers: {
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json'
-        }
+        },
+        credentials: 'include',
       });
+
+      if (response.status === 403) {
+        router.replace('/admin/planner');
+        return;
+      }
 
       if (response.ok) {
         const data = await response.json();
         setAllErrors(data.errors || []);
-        setTotalErrors(data.total || 0);
-        setTotalPages(data.total_pages || 1);
-        setHasNextPage(data.has_next || false);
-        setHasPrevPage(data.has_prev || false);
-        setNextCursor(data.next_cursor || null);
-        setPrevCursor(data.prev_cursor || null);
+        setErrorTotalItems(data.summary?.total ?? data.total ?? 0);
+        setErrorSummary(data.summary || null);
       }
     } catch (err) {
       console.error('Error fetching errors:', err);
     } finally {
       setLoadingErrors(false);
     }
-  }, [errorLimit, severityFilter, acknowledgedFilter]);
+  }, [authLoading, errorCurrentPage, errorItemsPerPage, errorWindowDays, severityFilter, acknowledgedFilter, router, setErrorTotalItems, token, userProfile]);
 
   useEffect(() => {
+    if (authLoading) {
+      return;
+    }
+
+    if (!userProfile || !userProfile.is_root_admin) {
+      return;
+    }
+
     fetchMetrics();
 
     if (autoRefresh) {
       const interval = setInterval(fetchMetrics, 30000);
       return () => clearInterval(interval);
     }
-  }, [fetchMetrics, autoRefresh]);
+  }, [authLoading, fetchMetrics, autoRefresh, userProfile]);
 
   useEffect(() => {
+    if (authLoading) {
+      return;
+    }
+
+    if (!userProfile || !userProfile.is_root_admin) {
+      return;
+    }
+
     if (activeTab === 'errors') {
       fetchAllErrors();
     }
-  }, [activeTab, fetchAllErrors]);
+  }, [activeTab, authLoading, fetchAllErrors, userProfile]);
 
-  // Reset cursor when filters change
+  // Reset to page 1 when filters change
   useEffect(() => {
-    setNextCursor(null);
-    setPrevCursor(null);
-    setCursorHistory([]);
-  }, [errorLimit, severityFilter, acknowledgedFilter]);
-
-  const handleNextPage = () => {
-    if (nextCursor && hasNextPage) {
-      // Save current first item's cursor to history for going back
-      if (allErrors.length > 0 && allErrors[0].error_id) {
-        setCursorHistory(prev => [...prev, allErrors[0].error_id]);
-      }
-      fetchAllErrors(nextCursor, 'next');
-    }
-  };
-
-  const handlePrevPage = () => {
-    if (cursorHistory.length > 0) {
-      // Go back using cursor history
-      const newHistory = [...cursorHistory];
-      const prevPageCursor = newHistory.pop();
-      setCursorHistory(newHistory);
-      // If we're at the beginning of history, fetch first page
-      if (newHistory.length === 0) {
-        fetchAllErrors(undefined, 'next');
-      } else {
-        fetchAllErrors(prevPageCursor, 'prev');
-      }
-    } else if (prevCursor) {
-      fetchAllErrors(prevCursor, 'prev');
-    }
-  };
-
-  const handleFirstPage = () => {
-    setCursorHistory([]);
-    fetchAllErrors(undefined, 'next');
-  };
+    setErrorPage(1);
+  }, [severityFilter, acknowledgedFilter, errorWindowDays, setErrorPage]);
 
   const handleAcknowledgeError = async (errorId: string) => {
     setAcknowledgingIds(prev => new Set(prev).add(errorId));
     try {
       const baseUrl = getApiBaseUrl();
-      const token = localStorage.getItem('admin_token') || sessionStorage.getItem('admin_token');
 
       const response = await fetch(`${baseUrl}/admin/platform/errors/${errorId}/acknowledge`, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json'
-        }
+        },
+        credentials: 'include',
       });
 
       if (response.ok) {
@@ -364,7 +412,6 @@ export default function PlatformInfrastructurePage() {
     setAcknowledgingAll(true);
     try {
       const baseUrl = getApiBaseUrl();
-      const token = localStorage.getItem('admin_token') || sessionStorage.getItem('admin_token');
 
       // Use bulk acknowledge endpoint for better performance
       const response = await fetch(`${baseUrl}/admin/platform/errors/acknowledge-bulk`, {
@@ -373,6 +420,7 @@ export default function PlatformInfrastructurePage() {
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json'
         },
+        credentials: 'include',
         body: JSON.stringify({
           error_ids: unacknowledgedErrors.map(e => e.error_id)
         })
@@ -431,7 +479,7 @@ export default function PlatformInfrastructurePage() {
     return { text: 'Healthy', color: 'text-green-600 dark:text-green-400' };
   };
 
-  if (loading) {
+  if (authLoading || loading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <div className="text-center">
@@ -444,8 +492,8 @@ export default function PlatformInfrastructurePage() {
 
   if (error && !metrics) {
     return (
-      <div className="p-8">
-        <div className="max-w-4xl mx-auto">
+      <div className="space-y-6">
+        <div>
           <Card className="p-6 border-red-200 dark:border-red-800 bg-red-50 dark:bg-red-900/20">
             <div className="flex items-center gap-3 mb-4">
               <AlertTriangle className="w-6 h-6 text-red-600 dark:text-red-400" />
@@ -466,9 +514,20 @@ export default function PlatformInfrastructurePage() {
 
   if (!metrics) return null;
 
+  const selectedErrorWindowLabel = formatErrorWindowLabel(errorWindowDays);
+  const healthErrorWindowLabel = formatErrorWindowLabel(metrics.errors?.window_days || errorWindowDays);
+  const fullScopeErrorSummary: ErrorScopeSummary = errorSummary ?? {
+    total: errorPagination.totalItems,
+    critical: 0,
+    warning: 0,
+    other: 0,
+    unacknowledged: 0,
+    acknowledged: 0,
+  };
+
   const tabs = [
     { id: 'health' as TabType, label: 'System Health', icon: Activity },
-    { id: 'errors' as TabType, label: `Errors (${metrics.errors?.total_24h || 0})`, icon: AlertTriangle },
+    { id: 'errors' as TabType, label: 'Errors', icon: AlertTriangle },
     { id: 'performance' as TabType, label: 'Performance', icon: Zap },
     { id: 'backups' as TabType, label: 'Backups', icon: Shield },
   ];
@@ -479,6 +538,20 @@ export default function PlatformInfrastructurePage() {
         title="Platform Infrastructure"
         description="System health, errors, performance, and backups"
       >
+        <label className="flex items-center gap-2 text-sm text-slate-500 dark:text-slate-400">
+          <span>Error window</span>
+          <select
+            value={errorWindowDays}
+            onChange={(e) => setErrorWindowDays(Number(e.target.value))}
+            className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-200"
+          >
+            {ERROR_WINDOW_OPTIONS.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+        </label>
         <label className="flex items-center gap-2 text-sm text-slate-500 dark:text-slate-400">
           <input
             type="checkbox"
@@ -500,13 +573,7 @@ export default function PlatformInfrastructurePage() {
       {/* Last Updated */}
       <div className="flex items-center gap-2 text-sm text-gray-500 dark:text-gray-400">
         <Clock className="w-4 h-4" />
-        Last updated: {formatDateTime(metrics.generated_at, {
-          month: 'short',
-          day: 'numeric',
-          hour: 'numeric',
-          minute: '2-digit',
-          second: '2-digit'
-        })}
+        Last updated: {formatAdminTimestamp(metrics.generated_at, adminTimezone)}
       </div>
 
       {/* Tabs */}
@@ -793,7 +860,14 @@ export default function PlatformInfrastructurePage() {
           {/* Quick Error Summary */}
           <Card className="p-6">
             <div className="flex items-center justify-between mb-4">
-              <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100">Error Summary (24h)</h3>
+              <div>
+                <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
+                  Error Summary ({healthErrorWindowLabel})
+                </h3>
+                <p className="text-sm text-gray-500 dark:text-gray-400">
+                  These totals use the same selected error window as the Errors tab.
+                </p>
+              </div>
               <button
                 onClick={() => setActiveTab('errors')}
                 className="text-sm text-primary-600 dark:text-primary-400 hover:underline flex items-center gap-1"
@@ -801,14 +875,14 @@ export default function PlatformInfrastructurePage() {
                 View all errors <ChevronRight className="w-4 h-4" />
               </button>
             </div>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-4">
               <div className="flex items-center gap-4 p-4 bg-gray-50 dark:bg-slate-800 rounded-lg">
                 <div className="w-12 h-12 bg-red-100 dark:bg-red-900/30 rounded-lg flex items-center justify-center">
                   <AlertTriangle className="w-6 h-6 text-red-600 dark:text-red-400" />
                 </div>
                 <div>
                   <p className="text-sm font-medium text-gray-500 dark:text-gray-400">Total Errors</p>
-                  <p className="text-2xl font-bold text-gray-900 dark:text-gray-100">{metrics.errors?.total_24h || 0}</p>
+                  <p className="text-2xl font-bold text-gray-900 dark:text-gray-100">{metrics.errors?.total || 0}</p>
                 </div>
               </div>
               <div className="flex items-center gap-4 p-4 bg-gray-50 dark:bg-slate-800 rounded-lg">
@@ -817,18 +891,34 @@ export default function PlatformInfrastructurePage() {
                 </div>
                 <div>
                   <p className="text-sm font-medium text-gray-500 dark:text-gray-400">Critical</p>
-                  <p className="text-2xl font-bold text-gray-900 dark:text-gray-100">{metrics.errors?.critical_24h || 0}</p>
+                  <p className="text-2xl font-bold text-gray-900 dark:text-gray-100">{metrics.errors?.critical || 0}</p>
                 </div>
               </div>
               <div className="flex items-center gap-4 p-4 bg-gray-50 dark:bg-slate-800 rounded-lg">
-                <div className="w-12 h-12 bg-green-100 dark:bg-green-900/30 rounded-lg flex items-center justify-center">
-                  <CheckCircle className="w-6 h-6 text-green-600 dark:text-green-400" />
+                <div className="w-12 h-12 bg-yellow-100 dark:bg-yellow-900/30 rounded-lg flex items-center justify-center">
+                  <AlertTriangle className="w-6 h-6 text-yellow-600 dark:text-yellow-400" />
                 </div>
                 <div>
-                  <p className="text-sm font-medium text-gray-500 dark:text-gray-400">Status</p>
-                  <p className="text-2xl font-bold text-gray-900 dark:text-gray-100">
-                    {(metrics.errors?.total_24h || 0) === 0 ? 'Healthy' : 'Issues'}
-                  </p>
+                  <p className="text-sm font-medium text-gray-500 dark:text-gray-400">Warnings</p>
+                  <p className="text-2xl font-bold text-gray-900 dark:text-gray-100">{metrics.errors?.warning || 0}</p>
+                </div>
+              </div>
+              <div className="flex items-center gap-4 p-4 bg-gray-50 dark:bg-slate-800 rounded-lg">
+                <div className="w-12 h-12 bg-blue-100 dark:bg-blue-900/30 rounded-lg flex items-center justify-center">
+                  <Bell className="w-6 h-6 text-blue-600 dark:text-blue-300" />
+                </div>
+                <div>
+                  <p className="text-sm font-medium text-gray-500 dark:text-gray-400">Other Severities</p>
+                  <p className="text-2xl font-bold text-gray-900 dark:text-gray-100">{metrics.errors?.other || 0}</p>
+                </div>
+              </div>
+              <div className="flex items-center gap-4 p-4 bg-gray-50 dark:bg-slate-800 rounded-lg">
+                <div className="w-12 h-12 bg-slate-200 dark:bg-slate-700 rounded-lg flex items-center justify-center">
+                  <CheckCircle className="w-6 h-6 text-slate-700 dark:text-slate-200" />
+                </div>
+                <div>
+                  <p className="text-sm font-medium text-gray-500 dark:text-gray-400">Unacknowledged</p>
+                  <p className="text-2xl font-bold text-gray-900 dark:text-gray-100">{metrics.errors?.unacknowledged || 0}</p>
                 </div>
               </div>
             </div>
@@ -851,6 +941,7 @@ export default function PlatformInfrastructurePage() {
                   <option value="all">All Severities</option>
                   <option value="critical">Critical Only</option>
                   <option value="warning">Warning Only</option>
+                  <option value="other">Other Only</option>
                 </select>
               </div>
               <div>
@@ -868,8 +959,8 @@ export default function PlatformInfrastructurePage() {
               <div>
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Limit</label>
                 <select
-                  value={errorLimit}
-                  onChange={(e) => setErrorLimit(Number(e.target.value))}
+                  value={errorPagination.itemsPerPage}
+                  onChange={(e) => errorPagination.setItemsPerPage(Number(e.target.value))}
                   className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-slate-800 text-gray-900 dark:text-gray-100 text-sm"
                 >
                   <option value={25}>25 per page</option>
@@ -894,37 +985,49 @@ export default function PlatformInfrastructurePage() {
           </Card>
 
           {/* Error Statistics */}
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
             <Card className="p-4">
               <p className="text-sm font-medium text-gray-500 dark:text-gray-400">
-                {severityFilter !== 'all' || acknowledgedFilter !== 'all' ? 'Total Matching' : 'Total Errors (30d)'}
+                {severityFilter !== 'all' || acknowledgedFilter !== 'all'
+                  ? `Total Matching (${selectedErrorWindowLabel})`
+                  : `Total Errors (${selectedErrorWindowLabel})`}
               </p>
-              <p className="text-2xl font-bold text-gray-900 dark:text-gray-100 mt-1">{totalErrors}</p>
-              {totalPages > 1 && (
+              <p className="text-2xl font-bold text-gray-900 dark:text-gray-100 mt-1">{errorPagination.totalItems}</p>
+              {errorPagination.totalPages > 1 && (
                 <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                  Showing {allErrors.length} of {totalErrors}
+                  Showing {allErrors.length} of {errorPagination.totalItems}
                 </p>
               )}
             </Card>
             <Card className="p-4">
-              <p className="text-sm font-medium text-gray-500 dark:text-gray-400">Critical (this page)</p>
+              <p className="text-sm font-medium text-gray-500 dark:text-gray-400">Critical</p>
               <p className="text-2xl font-bold text-red-600 dark:text-red-400 mt-1">
-                {allErrors.filter(e => e.severity === 'critical').length}
+                {fullScopeErrorSummary.critical}
               </p>
             </Card>
             <Card className="p-4">
-              <p className="text-sm font-medium text-gray-500 dark:text-gray-400">Warnings (this page)</p>
+              <p className="text-sm font-medium text-gray-500 dark:text-gray-400">Warnings</p>
               <p className="text-2xl font-bold text-yellow-600 dark:text-yellow-400 mt-1">
-                {allErrors.filter(e => e.severity === 'warning').length}
+                {fullScopeErrorSummary.warning}
               </p>
             </Card>
             <Card className="p-4">
-              <p className="text-sm font-medium text-gray-500 dark:text-gray-400">Unacknowledged (this page)</p>
+              <p className="text-sm font-medium text-gray-500 dark:text-gray-400">Other Severities</p>
+              <p className="text-2xl font-bold text-blue-600 dark:text-blue-400 mt-1">
+                {fullScopeErrorSummary.other}
+              </p>
+            </Card>
+            <Card className="p-4">
+              <p className="text-sm font-medium text-gray-500 dark:text-gray-400">Unacknowledged</p>
               <p className="text-2xl font-bold text-gray-900 dark:text-gray-100 mt-1">
-                {allErrors.filter(e => !e.acknowledged).length}
+                {fullScopeErrorSummary.unacknowledged}
               </p>
             </Card>
           </div>
+
+          <p className="text-sm text-gray-500 dark:text-gray-400">
+            The cards above summarize the full filtered result set for the selected error window. They should reconcile with the total count shown for this tab.
+          </p>
 
           {/* Errors Table */}
           {loadingErrors ? (
@@ -943,81 +1046,92 @@ export default function PlatformInfrastructurePage() {
               </p>
             </Card>
           ) : (
-            <Card className="overflow-hidden">
-              <div className="overflow-x-auto">
-                <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
+            <div className="space-y-4">
+              <GlassPagination
+                currentPage={errorPagination.currentPage}
+                totalPages={errorPagination.totalPages}
+                totalItems={errorPagination.totalItems}
+                itemsPerPage={errorPagination.itemsPerPage}
+                onPageChange={errorPagination.setPage}
+                variant="compact"
+                itemLabel="errors"
+              />
+              <Card className="overflow-hidden">
+                <table className="w-full table-fixed divide-y divide-gray-200 dark:divide-gray-700">
                   <thead className="bg-gray-50 dark:bg-slate-800">
                     <tr>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Severity</th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Error Type</th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Message</th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Endpoint</th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Timestamp</th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Status</th>
-                      <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Actions</th>
+                      <th className="w-[72px] px-3 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Severity</th>
+                      <th className="w-[14%] px-3 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Error Type</th>
+                      <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Message</th>
+                      <th className="w-[18%] px-3 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Endpoint</th>
+                      <th className="w-[110px] px-3 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Timestamp</th>
+                      <th className="w-[80px] px-3 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Status</th>
+                      <th className="w-[120px] px-3 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Actions</th>
                     </tr>
                   </thead>
                   <tbody className="bg-white dark:bg-slate-900 divide-y divide-gray-200 dark:divide-gray-700">
                     {allErrors.map((err) => (
                       <tr key={err.error_id} className="hover:bg-gray-50 dark:hover:bg-slate-800">
-                        <td className="px-6 py-4 whitespace-nowrap">
-                          <span className={`px-2 py-1 rounded-full text-xs font-medium ${
+                        <td className="px-3 py-3">
+                          <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${
                             err.severity === 'critical'
                               ? 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400'
-                              : 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-400'
+                              : err.severity === 'warning'
+                                ? 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-400'
+                                : 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300'
                           }`}>
                             {err.severity}
                           </span>
                         </td>
-                        <td className="px-6 py-4 whitespace-nowrap">
-                          <p className="text-sm font-medium text-gray-900 dark:text-gray-100">{err.error_type}</p>
+                        <td className="px-3 py-3">
+                          <p className="text-sm font-medium text-gray-900 dark:text-gray-100 truncate" title={err.error_type}>{err.error_type}</p>
                         </td>
-                        <td className="px-6 py-4">
+                        <td className="px-3 py-3">
                           <p
-                            className="text-sm text-gray-700 dark:text-gray-300 max-w-md truncate cursor-help hover:text-gray-900 dark:hover:text-gray-100 transition-colors"
+                            className="text-sm text-gray-700 dark:text-gray-300 truncate cursor-help hover:text-gray-900 dark:hover:text-gray-100 transition-colors"
                             title={err.message}
                           >
                             {err.message}
                           </p>
                         </td>
-                        <td className="px-6 py-4 whitespace-nowrap">
+                        <td className="px-3 py-3">
                           <p
-                            className="text-sm text-gray-500 dark:text-gray-400 font-mono max-w-xs truncate cursor-help"
+                            className="text-sm text-gray-500 dark:text-gray-400 font-mono truncate cursor-help"
                             title={err.endpoint || 'N/A'}
                           >
                             {err.endpoint || 'N/A'}
                           </p>
                         </td>
-                        <td className="px-6 py-4 whitespace-nowrap">
-                          <p className="text-sm text-gray-500 dark:text-gray-400">
-                            {formatDateTime(err.timestamp, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}
+                        <td className="px-3 py-3">
+                          <p className="text-xs text-gray-500 dark:text-gray-400 whitespace-nowrap">
+                            {formatAdminTimestamp(err.timestamp, adminTimezone)}
                           </p>
                         </td>
-                        <td className="px-6 py-4 whitespace-nowrap">
+                        <td className="px-3 py-3">
                           {err.acknowledged ? (
-                            <span className="px-2 py-1 bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400 rounded text-xs font-medium">
-                              Acknowledged
+                            <span className="px-1.5 py-0.5 bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400 rounded text-xs font-medium">
+                              Ack'd
                             </span>
                           ) : (
-                            <span className="px-2 py-1 bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-200 rounded text-xs font-medium">
+                            <span className="px-1.5 py-0.5 bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-200 rounded text-xs font-medium">
                               New
                             </span>
                           )}
                         </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-right">
+                        <td className="px-3 py-3 text-right whitespace-nowrap">
                           {!err.acknowledged && (
                             <button
                               onClick={() => handleAcknowledgeError(err.error_id)}
                               disabled={acknowledgingIds.has(err.error_id)}
-                              className="inline-flex items-center gap-1 text-green-600 hover:text-green-800 dark:text-green-400 dark:hover:text-green-300 disabled:opacity-50 text-sm font-medium mr-4"
+                              className="inline-flex items-center gap-1 text-green-600 hover:text-green-800 dark:text-green-400 dark:hover:text-green-300 disabled:opacity-50 text-xs font-medium mr-2"
                             >
                               {acknowledgingIds.has(err.error_id) && <Loader2 className="w-3 h-3 animate-spin" />}
-                              {acknowledgingIds.has(err.error_id) ? 'Saving...' : 'Acknowledge'}
+                              {acknowledgingIds.has(err.error_id) ? '...' : 'Ack'}
                             </button>
                           )}
                           <button
                             onClick={() => router.push(`/admin/platform/errors/${err.error_id}`)}
-                            className="text-primary-600 hover:text-primary-800 dark:text-primary-400 text-sm font-medium"
+                            className="text-primary-600 hover:text-primary-800 dark:text-primary-400 text-xs font-medium"
                           >
                             Details
                           </button>
@@ -1026,51 +1140,22 @@ export default function PlatformInfrastructurePage() {
                     ))}
                   </tbody>
                 </table>
-              </div>
             </Card>
+            </div>
           )}
 
           {/* Pagination Controls */}
-          {(hasNextPage || hasPrevPage || cursorHistory.length > 0) && (
-            <Card className="p-4">
-              <div className="flex items-center justify-between">
-                <div className="text-sm text-gray-600 dark:text-gray-400">
-                  Showing {allErrors.length} of {totalErrors} total errors
-                  {cursorHistory.length > 0 && (
-                    <span className="ml-2 text-gray-400">
-                      (Page {cursorHistory.length + 1})
-                    </span>
-                  )}
-                </div>
-                <div className="flex items-center gap-2">
-                  <button
-                    onClick={handleFirstPage}
-                    disabled={cursorHistory.length === 0 || loadingErrors}
-                    className="px-3 py-1 text-sm border border-gray-300 dark:border-gray-600 rounded hover:bg-gray-100 dark:hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
-                    First
-                  </button>
-                  <button
-                    onClick={handlePrevPage}
-                    disabled={(cursorHistory.length === 0 && !hasPrevPage) || loadingErrors}
-                    className="px-3 py-1 text-sm border border-gray-300 dark:border-gray-600 rounded hover:bg-gray-100 dark:hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
-                    Previous
-                  </button>
-                  <span className="px-3 py-1 text-sm font-medium bg-primary-100 dark:bg-primary-900 text-primary-700 dark:text-primary-300 rounded">
-                    {cursorHistory.length + 1}
-                  </span>
-                  <button
-                    onClick={handleNextPage}
-                    disabled={!hasNextPage || loadingErrors}
-                    className="px-3 py-1 text-sm border border-gray-300 dark:border-gray-600 rounded hover:bg-gray-100 dark:hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
-                    Next
-                  </button>
-                </div>
-              </div>
-            </Card>
-          )}
+          <GlassPagination
+            currentPage={errorPagination.currentPage}
+            totalPages={errorPagination.totalPages}
+            totalItems={errorPagination.totalItems}
+            itemsPerPage={errorPagination.itemsPerPage}
+            isLoading={loadingErrors}
+            onPageChange={errorPagination.setPage}
+            onItemsPerPageChange={errorPagination.setItemsPerPage}
+            pageSizeOptions={[25, 50, 100, 200]}
+            itemLabel="errors"
+          />
         </div>
       )}
 
@@ -1184,7 +1269,7 @@ export default function PlatformInfrastructurePage() {
                   <p className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-2">Last Backup</p>
                   {metrics.backups.last_backup_date ? (
                     <p className="text-lg font-semibold text-gray-900 dark:text-gray-100">
-                      {formatDateTime(metrics.backups.last_backup_date, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}
+                      {formatAdminTimestamp(metrics.backups.last_backup_date, adminTimezone)}
                     </p>
                   ) : (
                     <p className="text-lg text-gray-500 dark:text-gray-400">No backups yet</p>

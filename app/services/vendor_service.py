@@ -6,6 +6,7 @@ Handles all business logic for the vendor management feature.
 """
 
 import os
+import re
 import secrets
 import string
 import logging
@@ -32,6 +33,7 @@ logger = logging.getLogger(__name__)
 # =============================================================================
 # CONFIGURATION CONSTANTS
 # =============================================================================
+SYSTEM_CREATED_BY = "system@thespecialwedding.com"
 TOKEN_EXPIRY_DAYS = int(os.getenv("CONTRACT_TOKEN_EXPIRY_DAYS", "30"))
 DEPOSIT_DUE_DAYS = int(os.getenv("DEPOSIT_DUE_DAYS", "7"))
 MAX_FILE_SIZE_MB = int(os.getenv("MAX_CONTRACT_FILE_SIZE_MB", "10"))
@@ -39,6 +41,15 @@ MAX_FILE_SIZE_BYTES = MAX_FILE_SIZE_MB * 1024 * 1024
 MEDIA_DOMAIN = os.getenv("MEDIA_DOMAIN")
 if not MEDIA_DOMAIN:
     logging.getLogger(__name__).warning("MEDIA_DOMAIN environment variable is not set")
+
+# Allowed MIME types for contract uploads
+ALLOWED_CONTRACT_TYPES = {
+    "application/pdf",
+    "image/jpeg",
+    "image/png",
+    "application/msword",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+}
 
 
 # =============================================================================
@@ -107,12 +118,60 @@ class VendorService:
         return f"CON-{timestamp}-{random_suffix}"
 
     @staticmethod
+    def _build_public_vendor_contract_link(base_url: str, contract_id: str, access_token: str) -> str:
+        normalized_base = base_url.rstrip("/")
+        return f"{normalized_base}/vendor-contract/{contract_id}/{access_token}"
+
+    @staticmethod
     def _serialize_doc(doc: Dict) -> Dict:
         """Normalize a MongoDB document for API response: ensure both 'id' and '_id' are string."""
         if "_id" in doc:
             doc["id"] = str(doc["_id"])
             doc["_id"] = str(doc["_id"])
         return doc
+
+    @staticmethod
+    def _get_vendor_service_label(
+        service_category: str,
+        custom_service_category: Optional[str] = None,
+    ) -> str:
+        if service_category == "other" and custom_service_category:
+            return custom_service_category.strip()
+
+        labels = {
+            "dj": "DJ",
+            "mc": "MC / Host",
+            "hair_makeup": "Hair & Makeup",
+            "photo_booth": "Photo Booth",
+        }
+        return labels.get(service_category, service_category.replace("_", " ").title())
+
+    @staticmethod
+    def _normalize_vendor_category_data(data: Dict[str, Any], existing: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        normalized = dict(data)
+
+        service_category = normalized.get("service_category")
+        if service_category is None and existing:
+            service_category = existing.get("service_category")
+
+        custom_category = normalized.get("custom_service_category")
+        if custom_category is None and existing:
+            custom_category = existing.get("custom_service_category")
+
+        if isinstance(custom_category, str):
+            custom_category = custom_category.strip() or None
+
+        if service_category == "other":
+            if not custom_category:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Please enter a custom vendor category when selecting Other.",
+                )
+            normalized["custom_service_category"] = custom_category
+        elif "custom_service_category" in normalized or existing:
+            normalized["custom_service_category"] = None
+
+        return normalized
 
     async def _get_planner_contract_settings(self, planner_email: str) -> Dict[str, Any]:
         """
@@ -207,6 +266,7 @@ class VendorService:
     async def create_vendor_profile(self, data: dict, created_by: str) -> dict:
         """Create a new vendor in the directory"""
         try:
+            data = self._normalize_vendor_category_data(data)
             vendor = {
                 **data,
                 "created_by": created_by,
@@ -237,6 +297,134 @@ class VendorService:
         except Exception as e:
             logger.error(f"Failed to create vendor profile: {str(e)}")
             raise HTTPException(status_code=500, detail="Failed to create vendor")
+
+    async def upsert_scraped_vendor(self, data: dict) -> dict:
+        """
+        Insert or update a vendor discovered by the scraper job.
+
+        Dedup logic:
+        1. Match by google_place_id (most reliable)
+        2. Match by normalized business_name + city + service_category
+        Never overwrites a planner-added (source=manual) vendor.
+
+        Returns the vendor doc (inserted or existing).
+        """
+        try:
+            now = datetime.now(timezone.utc)
+            google_place_id = data.get("google_place_id")
+            business_name = data.get("business_name", "").strip()
+            city = (data.get("city") or "").strip()
+            service_category = data.get("service_category")
+
+            # -- Dedup: check if vendor already exists --
+            existing = None
+            if google_place_id:
+                existing = await self.vendor_profiles.find_one(
+                    {"google_place_id": google_place_id}
+                )
+
+            if not existing and business_name and city:
+                # Escape regex metacharacters to prevent injection via business_name/city
+                safe_name = re.escape(business_name)
+                safe_city = re.escape(city)
+                existing = await self.vendor_profiles.find_one({
+                    "business_name": {"$regex": f"^{safe_name}$", "$options": "i"},
+                    "city": {"$regex": f"^{safe_city}$", "$options": "i"},
+                    "service_category": service_category,
+                })
+
+            # Third dedup tier: business_name + state + category (when city is empty)
+            state = (data.get("state") or "").strip()
+            if not existing and business_name and not city and state:
+                safe_name = re.escape(business_name)
+                safe_state = re.escape(state)
+                existing = await self.vendor_profiles.find_one({
+                    "business_name": {"$regex": f"^{safe_name}$", "$options": "i"},
+                    "state": {"$regex": f"^{safe_state}$", "$options": "i"},
+                    "service_category": service_category,
+                })
+
+            # If it exists and was manually added by a planner, don't touch it
+            if existing and existing.get("source", "manual") == "manual":
+                logger.debug(
+                    f"Skipping scraped vendor '{business_name}' — already exists as manual entry"
+                )
+                existing["_id"] = str(existing["_id"])
+                return existing
+
+            # If it exists as a previously scraped entry, refresh it
+            if existing:
+                update_fields: Dict[str, Any] = {
+                    "scraped_at": now,
+                    "updated_at": now,
+                }
+                # Only update fields that have new non-empty values
+                for field in [
+                    "phone", "website", "address", "state", "country",
+                    "postal_code", "service_description", "logo_url",
+                    "typical_price_min", "typical_price_max",
+                ]:
+                    new_val = data.get(field)
+                    if new_val is not None and new_val != "":
+                        update_fields[field] = new_val
+
+                # Update portfolio_urls only if we have a website and it's not already there
+                new_website = data.get("website")
+                if new_website:
+                    existing_urls = existing.get("portfolio_urls") or []
+                    if new_website not in existing_urls:
+                        update_fields["portfolio_urls"] = [new_website]
+
+                await self.vendor_profiles.update_one(
+                    {"_id": existing["_id"]},
+                    {"$set": update_fields}
+                )
+                existing["_id"] = str(existing["_id"])
+                existing.update(update_fields)
+                logger.info(f"Refreshed scraped vendor: {business_name} in {city}")
+                return existing
+
+            # -- Insert new scraped vendor --
+            vendor = {
+                "business_name": business_name,
+                "email": data.get("email", ""),
+                "phone": data.get("phone"),
+                "website": data.get("website"),
+                "address": data.get("address"),
+                "city": city,
+                "state": data.get("state"),
+                "country": data.get("country", "US"),
+                "postal_code": data.get("postal_code"),
+                "service_category": service_category,
+                "custom_service_category": data.get("custom_service_category"),
+                "service_subcategories": data.get("service_subcategories", []),
+                "service_description": data.get("service_description"),
+                "logo_url": data.get("logo_url"),
+                "portfolio_urls": [data["website"]] if data.get("website") else [],
+                "typical_price_min": data.get("typical_price_min"),
+                "typical_price_max": data.get("typical_price_max"),
+                "currency": data.get("currency", "USD"),
+                "tags": data.get("tags", []),
+                "source": "scraped",
+                "google_place_id": google_place_id,
+                "scraped_at": now,
+                "scraped_from_state": data.get("scraped_from_state"),
+                "created_by": SYSTEM_CREATED_BY,
+                "weddings_count": 0,
+                "total_revenue": 0.0,
+                "is_active": True,
+                "created_at": now,
+                "updated_at": now,
+            }
+
+            result = await self.vendor_profiles.insert_one(vendor)
+            vendor["_id"] = str(result.inserted_id)
+            logger.info(f"Inserted scraped vendor: {business_name} in {city} [{service_category}]")
+            return vendor
+
+        except Exception as e:
+            logger.error(f"Failed to upsert scraped vendor '{data.get('business_name')}': {str(e)}")
+            raise
 
     async def get_vendor_profiles(
         self,
@@ -316,8 +504,15 @@ class VendorService:
     async def update_vendor_profile(self, vendor_id: str, data: dict, created_by: str) -> dict:
         """Update a vendor profile"""
         try:
+            existing = await self.vendor_profiles.find_one(
+                {"_id": ObjectId(vendor_id), "created_by": created_by}
+            )
+            if not existing:
+                raise HTTPException(status_code=404, detail="Vendor not found")
+
             # Remove None values
             update_data = {k: v for k, v in data.items() if v is not None}
+            update_data = self._normalize_vendor_category_data(update_data, existing=existing)
             update_data["updated_at"] = datetime.now(timezone.utc)
 
             result = await self.vendor_profiles.find_one_and_update(
@@ -506,6 +701,7 @@ class VendorService:
                 "vendor_name": vendor["business_name"],
                 "vendor_email": vendor["email"],
                 "service_category": vendor["service_category"],
+                "custom_service_category": vendor.get("custom_service_category"),
                 "quote_ids": [],
                 "contract_id": None,
                 "service_notes": service_notes,
@@ -559,9 +755,12 @@ class VendorService:
         created_by: str
     ) -> dict:
         """Update vendor assignment status"""
-        valid_statuses = ["inquiry", "quoted", "contracted", "confirmed", "completed", "cancelled"]
-        if status not in valid_statuses:
-            raise HTTPException(status_code=400, detail=f"Invalid status. Must be one of: {valid_statuses}")
+        from app.models.vendor import VendorAssignmentStatus
+        try:
+            VendorAssignmentStatus(status)
+        except ValueError:
+            valid = [s.value for s in VendorAssignmentStatus]
+            raise HTTPException(status_code=400, detail=f"Invalid status. Must be one of: {valid}")
 
         try:
             result = await self.vendor_assignments.find_one_and_update(
@@ -729,7 +928,10 @@ class VendorService:
                 "couple_names": wedding.get("couple_names", ""),
                 "wedding_date": wedding.get("date", ""),
                 "wedding_venue": wedding.get("venue", ""),
-                "service_category": vendor["service_category"],
+                "service_category": self._get_vendor_service_label(
+                    vendor["service_category"],
+                    vendor.get("custom_service_category"),
+                ),
                 "total_amount": total_amount,
                 "deposit_amount": (total_amount * deposit_percentage / 100) if deposit_percentage else 0,
                 "planner_name": f"{planner.get('first_name', '')} {planner.get('last_name', '')}".strip() if planner else "",
@@ -795,7 +997,8 @@ class VendorService:
                 "vendor_phone": vendor.get("phone"),
                 "vendor_address": vendor.get("address"),
                 "service_category": vendor["service_category"],
-                "contract_title": f"{vendor['service_category'].replace('_', ' ').title()} Services Contract",
+                "custom_service_category": vendor.get("custom_service_category"),
+                "contract_title": f"{self._get_vendor_service_label(vendor['service_category'], vendor.get('custom_service_category'))} Services Contract",
                 "contract_number": placeholder_data["contract_number"],
                 "sections": sections,
                 "terms_and_conditions": terms_and_conditions,
@@ -966,7 +1169,7 @@ class VendorService:
 
             # Generate contract link
             base_url = os.getenv("FRONTEND_URL", "")
-            contract_link = f"{base_url}/vendor-contract/{contract_id}?token={contract['access_token']}"
+            contract_link = self._build_public_vendor_contract_link(base_url, contract_id, contract["access_token"])
 
             # Build email
             subject = f"Contract for Review: {contract['contract_title']}"
@@ -998,7 +1201,7 @@ class VendorService:
                             <h3>Contract Details:</h3>
                             <p><strong>Contract:</strong> {contract['contract_title']}</p>
                             <p><strong>Contract #:</strong> {contract.get('contract_number', 'N/A')}</p>
-                            <p><strong>Service:</strong> {contract['service_category'].replace('_', ' ').title()}</p>
+                            <p><strong>Service:</strong> {self._get_vendor_service_label(contract['service_category'], contract.get('custom_service_category'))}</p>
                             <p><strong>Total Amount:</strong> ${contract['total_amount']:,.2f}</p>
                             {f"<p><strong>Deposit Required:</strong> ${contract['deposit_amount']:,.2f}</p>" if contract.get('deposit_amount') else ''}
                         </div>
@@ -1638,6 +1841,13 @@ class VendorService:
     ) -> dict:
         """Upload a contract document to S3"""
         try:
+            # Validate MIME type
+            if file.content_type not in ALLOWED_CONTRACT_TYPES:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"File type '{file.content_type}' not allowed. Allowed types: {', '.join(sorted(ALLOWED_CONTRACT_TYPES))}"
+                )
+
             # Generate unique key
             timestamp = datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')
             filename = f"contracts/{contract_id}/{document_type}_{timestamp}_{file.filename}"
@@ -1662,6 +1872,8 @@ class VendorService:
 
             return {"url": file_url, "key": filename}
 
+        except HTTPException:
+            raise
         except ClientError as e:
             logger.error(f"S3 upload error: {str(e)}")
             raise HTTPException(status_code=500, detail="Failed to upload document")
@@ -1733,8 +1945,8 @@ class VendorService:
                 raise HTTPException(status_code=404, detail="Wedding not found")
 
             # Validate file is PDF
-            if not file.content_type or 'pdf' not in file.content_type.lower():
-                raise HTTPException(status_code=400, detail="File must be a PDF")
+            if file.content_type != "application/pdf":
+                raise HTTPException(status_code=400, detail="File must be a PDF (application/pdf)")
 
             # Read file content
             content = await file.read()
@@ -1767,6 +1979,7 @@ class VendorService:
                 "vendor_phone": vendor.get("phone"),
                 "vendor_address": vendor.get("address"),
                 "service_category": vendor["service_category"],
+                "custom_service_category": vendor.get("custom_service_category"),
                 "contract_title": contract_title,
                 "contract_number": self._generate_contract_number(),
                 "contract_type": ContractType.UPLOADED_PDF.value,

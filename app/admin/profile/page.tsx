@@ -306,12 +306,11 @@ export default function ProfilePage() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 max-w-4xl">
       <PageHeader
         title="Account Settings"
         description="Manage your profile and security settings"
       />
-      <div className="max-w-4xl mx-auto">
         <div className="bg-white dark:bg-slate-800 rounded-lg shadow-lg p-6">
           {/* Tab Navigation */}
           <div className="flex space-x-1 mb-6 border-b border-gray-200 dark:border-slate-700">
@@ -595,7 +594,6 @@ export default function ProfilePage() {
             </form>
           )}
         </div>
-      </div>
     </div>
   );
 }

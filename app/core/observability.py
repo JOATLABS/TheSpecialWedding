@@ -278,7 +278,8 @@ class SystemMonitor:
                     "packets_sent": network.packets_sent,
                     "packets_recv": network.packets_recv
                 }
-            except:
+            except Exception as e:
+                logger.warning(f"Failed to collect network metrics: {e}", exc_info=True)
                 network_stats = {}
 
             # Process info

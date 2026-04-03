@@ -18,66 +18,75 @@ async def retry_pending_meter_events(current_user: ExtendedAuthUser = Depends(re
     ROOT_ADMIN only.
     """
     try:
-        pending_weddings = await mongo.db["weddings"].find({"meter_pending": True}).to_list(length=None)
+        # Batch process pending weddings with cursor to avoid loading all into memory
+        # Using batched processing for background task
+        BATCH_SIZE = 100
+        cursor = mongo.db["weddings"].find({"meter_pending": True})
+        batch = await cursor.to_list(length=BATCH_SIZE)
+
         retried = 0
         succeeded = 0
         failed = []
 
-        for wedding in pending_weddings:
-            planner_email = wedding.get("assigned_planner_email")
-            if not planner_email:
-                failed.append({"wedding_id": wedding.get("_id"), "reason": "no_planner_email"})
-                continue
+        while batch:
+            for wedding in batch:
+                planner_email = wedding.get("assigned_planner_email")
+                if not planner_email:
+                    failed.append({"wedding_id": wedding.get("_id"), "reason": "no_planner_email"})
+                    continue
 
-            planner = await mongo.get_users_collection().find_one({"email": planner_email})
-            if not planner:
-                failed.append({"wedding_id": wedding.get("_id"), "reason": "planner_not_found"})
-                continue
+                planner = await mongo.get_users_collection().find_one({"email": planner_email})
+                if not planner:
+                    failed.append({"wedding_id": wedding.get("_id"), "reason": "planner_not_found"})
+                    continue
 
-            user_id = str(planner.get("_id"))
-            sub = await mongo.db["user_subscriptions"].find_one({
-                "user_id": user_id,
-                "status": SubscriptionStatus.ACTIVE.value
-            })
-            if not sub or not sub.get("stripe_customer_id") or not sub.get("plan_id"):
-                failed.append({"wedding_id": wedding.get("_id"), "reason": "no_active_subscription"})
-                continue
+                user_id = str(planner.get("_id"))
+                sub = await mongo.db["user_subscriptions"].find_one({
+                    "user_id": user_id,
+                    "status": SubscriptionStatus.ACTIVE.value
+                })
+                if not sub or not sub.get("stripe_customer_id") or not sub.get("plan_id"):
+                    failed.append({"wedding_id": wedding.get("_id"), "reason": "no_active_subscription"})
+                    continue
 
-            plan = await mongo.db["subscription_plans"].find_one({"_id": sub["plan_id"]})
-            if not plan or not plan.get("is_metered") or not plan.get("meter_event_name"):
-                failed.append({"wedding_id": wedding.get("_id"), "reason": "plan_not_metered"})
-                continue
+                plan = await mongo.db["subscription_plans"].find_one({"_id": sub["plan_id"]})
+                if not plan or not plan.get("is_metered") or not plan.get("meter_event_name"):
+                    failed.append({"wedding_id": wedding.get("_id"), "reason": "plan_not_metered"})
+                    continue
 
-            retried += 1
-            # Idempotency key for retry: ALWAYS use current period since we're billing for NOW
-            # Note: billed_period stores the LAST successful billing, not the target period
-            # Using current period ensures:
-            # 1. Retries for THIS month are idempotent (won't double-bill this month)
-            # 2. If last month failed and we're now in a new month, we bill for new month
-            current_billing_period = datetime.now(timezone.utc).strftime("%Y-%m")
-            idempotency_key = f"meter_retry_{wedding.get('_id')}_{sub['stripe_customer_id']}_{current_billing_period}"
+                retried += 1
+                # Idempotency key for retry: ALWAYS use current period since we're billing for NOW
+                # Note: billed_period stores the LAST successful billing, not the target period
+                # Using current period ensures:
+                # 1. Retries for THIS month are idempotent (won't double-bill this month)
+                # 2. If last month failed and we're now in a new month, we bill for new month
+                current_billing_period = datetime.now(timezone.utc).strftime("%Y-%m")
+                idempotency_key = f"meter_retry_{wedding.get('_id')}_{sub['stripe_customer_id']}_{current_billing_period}"
 
-            meter_result = stripe_service.report_meter_event(
-                event_name=plan["meter_event_name"],
-                payload={
-                    "stripe_customer_id": sub["stripe_customer_id"],
-                    "value": "1"
-                },
-                identifier=idempotency_key
-            )
-            if meter_result.get("status") == "success":
-                succeeded += 1
-                await mongo.db["weddings"].update_one(
-                    {"_id": wedding.get("_id")},
-                    {"$set": {
-                        "last_billed_at": datetime.now(timezone.utc),
-                        "billed_period": datetime.now(timezone.utc).strftime("%Y-%m"),
-                        "meter_pending": False,
-                        "meter_pending_reason": None
-                    }}
+                meter_result = stripe_service.report_meter_event(
+                    event_name=plan["meter_event_name"],
+                    payload={
+                        "stripe_customer_id": sub["stripe_customer_id"],
+                        "value": "1"
+                    },
+                    identifier=idempotency_key
                 )
-            else:
-                failed.append({"wedding_id": wedding.get("_id"), "reason": meter_result.get("message") or "retry_failed"})
+                if meter_result.get("status") == "success":
+                    succeeded += 1
+                    await mongo.db["weddings"].update_one(
+                        {"_id": wedding.get("_id")},
+                        {"$set": {
+                            "last_billed_at": datetime.now(timezone.utc),
+                            "billed_period": datetime.now(timezone.utc).strftime("%Y-%m"),
+                            "meter_pending": False,
+                            "meter_pending_reason": None
+                        }}
+                    )
+                else:
+                    failed.append({"wedding_id": wedding.get("_id"), "reason": meter_result.get("message") or "retry_failed"})
+
+            # Fetch next batch
+            batch = await cursor.to_list(length=BATCH_SIZE)
 
         return {
             "retried": retried,

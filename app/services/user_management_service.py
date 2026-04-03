@@ -48,6 +48,44 @@ class UserManagementService:
         """Generate a secure invitation token"""
         return ''.join(secrets.choice(string.ascii_letters + string.digits) for _ in range(32))
 
+    def _build_user_query(
+        self,
+        role_filter: Optional[str] = None,
+        status_filter: Optional[str] = None,
+        search: Optional[str] = None,
+    ) -> dict:
+        """Build a Mongo query for user directory filters."""
+        clauses: list[dict[str, Any]] = []
+
+        if role_filter:
+            clauses.append({"role": role_filter})
+
+        normalized_status = (status_filter or "").strip().lower()
+        if normalized_status == "active":
+            clauses.append({"is_active": True})
+            clauses.append({"is_suspended": {"$ne": True}})
+        elif normalized_status == "suspended":
+            clauses.append({"is_suspended": True})
+        elif normalized_status == "inactive":
+            clauses.append({"is_active": False})
+            clauses.append({"is_suspended": {"$ne": True}})
+
+        if search:
+            clauses.append({
+                "$or": [
+                    {"email": {"$regex": search, "$options": "i"}},
+                    {"company_name": {"$regex": search, "$options": "i"}},
+                    {"first_name": {"$regex": search, "$options": "i"}},
+                    {"last_name": {"$regex": search, "$options": "i"}},
+                ]
+            })
+
+        if not clauses:
+            return {}
+        if len(clauses) == 1:
+            return clauses[0]
+        return {"$and": clauses}
+
     async def get_trial_settings(self) -> dict:
         """Get trial settings from SAAS config"""
         # Return defaults (can be extended to read from database later)
@@ -247,7 +285,7 @@ class UserManagementService:
                 frontend_url = os.getenv("FRONTEND_URL")
                 if not frontend_url:
                     raise ValueError("FRONTEND_URL environment variable is required")
-                setup_url = f"{frontend_url}/setup-account?token={token}"
+                setup_url = f"{frontend_url.rstrip('/')}/setup-account/{token}"
                 # Create professional invitation email
                 html_content = self._generate_invitation_email_html(
                     email=email,
@@ -277,16 +315,60 @@ class UserManagementService:
             # Log error without exposing sensitive information
             return False
 
-    async def list_users(self, role_filter: Optional[str] = None) -> List[dict]:
-        """List all users with optional role filter"""
+    async def list_users(
+        self,
+        role_filter: Optional[str] = None,
+        page: int = 1,
+        limit: int = 50,
+        search: Optional[str] = None,
+        status_filter: Optional[str] = None,
+    ) -> dict:
+        """List all users with optional role filter, pagination, and search"""
         try:
-            query = {}
-            if role_filter:
-                query["role"] = role_filter
+            from math import ceil
 
-            users = await self.users_collection.find(query, {"password_hash": 0, "password": 0}).to_list(length=None)  # Exclude password fields
+            query = self._build_user_query(
+                role_filter=role_filter,
+                status_filter=status_filter,
+                search=search,
+            )
+            scope_query = self._build_user_query(role_filter=role_filter)
+
+            # Count total matching documents
+            total = await self.users_collection.count_documents(query)
+
+            # Calculate skip and pages
+            skip = (page - 1) * limit
+            pages = ceil(total / limit) if total > 0 else 1
+
+            users = await self.users_collection.find(query, {"password_hash": 0, "password": 0}).skip(skip).limit(limit).to_list(length=None)
+
+            scope_total = await self.users_collection.count_documents(scope_query)
+            scope_active = await self.users_collection.count_documents(
+                self._build_user_query(role_filter=role_filter, status_filter="active")
+            )
+            scope_suspended = await self.users_collection.count_documents(
+                self._build_user_query(role_filter=role_filter, status_filter="suspended")
+            )
+            scope_inactive = await self.users_collection.count_documents(
+                self._build_user_query(role_filter=role_filter, status_filter="inactive")
+            )
+
+            role_breakdown_docs = await self.users_collection.aggregate([
+                {
+                    "$group": {
+                        "_id": {"$ifNull": ["$role", "unknown"]},
+                        "count": {"$sum": 1},
+                    }
+                }
+            ]).to_list(length=None)
+            role_breakdown = {
+                str(doc.get("_id") or "unknown"): int(doc.get("count", 0))
+                for doc in role_breakdown_docs
+            }
 
             # Serialize and calculate wedding_count for each user
+            serialized_users = []
             for user in users:
                 # Serialize to handle ObjectId and datetime objects
                 user = serialize_mongo_doc(user)
@@ -301,8 +383,22 @@ class UserManagementService:
                     ]
                 })
                 user["wedding_count"] = wedding_count
+                serialized_users.append(user)
 
-            return users
+            return {
+                "users": serialized_users,
+                "total": total,
+                "page": page,
+                "pages": pages,
+                "limit": limit,
+                "summary": {
+                    "total": scope_total,
+                    "active": scope_active,
+                    "suspended": scope_suspended,
+                    "inactive": scope_inactive,
+                },
+                "role_breakdown": role_breakdown,
+            }
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Error listing users: {str(e)}")
 
@@ -361,7 +457,7 @@ class UserManagementService:
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Error updating user: {str(e)}")
 
-    async def delete_user(self, user_id: str) -> dict:
+    async def delete_user(self, user_id: str, actor_email: Optional[str] = None) -> dict:
         """Delete user"""
         try:
             from bson import ObjectId
@@ -376,6 +472,13 @@ class UserManagementService:
             user = await self.users_collection.find_one({"_id": obj_id})
             if not user:
                 raise HTTPException(status_code=404, detail="User not found")
+
+            if user.get("role") == "ROOT_ADMIN":
+                raise HTTPException(status_code=400, detail="ROOT_ADMIN accounts cannot be deleted")
+
+            if actor_email and user.get("email") == actor_email:
+                raise HTTPException(status_code=400, detail="You cannot delete your own account")
+
             # Check if user has assigned weddings
             assigned_weddings = await self.weddings_collection.find({"assigned_planner_email": user["email"]}).to_list(length=None)
             if assigned_weddings:
@@ -451,7 +554,7 @@ class UserManagementService:
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Error unassigning wedding: {str(e)}")
 
-    async def suspend_user(self, user_id: str) -> dict:
+    async def suspend_user(self, user_id: str, actor_email: Optional[str] = None) -> dict:
         """Suspend user account"""
         try:
             from bson import ObjectId
@@ -462,13 +565,20 @@ class UserManagementService:
             except Exception:
                 raise HTTPException(status_code=400, detail="Invalid user ID format")
 
+            target_user = await self.users_collection.find_one({"_id": obj_id}, {"email": 1, "role": 1})
+            if not target_user:
+                raise HTTPException(status_code=404, detail="User not found")
+
+            if target_user.get("role") == "ROOT_ADMIN":
+                raise HTTPException(status_code=400, detail="ROOT_ADMIN accounts cannot be suspended")
+
+            if actor_email and target_user.get("email") == actor_email:
+                raise HTTPException(status_code=400, detail="You cannot suspend your own account")
+
             result = await self.users_collection.update_one(
                 {"_id": obj_id},
                 {"$set": {"is_active": False, "is_suspended": True, "updated_at": datetime.now(timezone.utc)}}
             )
-
-            if result.matched_count == 0:
-                raise HTTPException(status_code=404, detail="User not found")
 
             return {"message": "User suspended successfully"}
 
@@ -532,7 +642,9 @@ class UserManagementService:
 
         If the invitation includes trial_days > 0, creates a Stripe Subscription
         with trial period so usage can be tracked and billing starts automatically
-        when the trial ends.
+        when the trial ends. Zero-day invites remain admin-verified, but they
+        are placed into the payment-required state so they must complete billing
+        before accessing planner features.
         """
         try:
             # Validate token first
@@ -557,8 +669,11 @@ class UserManagementService:
             trial_end_behavior = invite_data.get("trial_end_behavior", "pause")
             stripe_customer_id = invitation.get("stripe_customer_id")
 
-            # Determine subscription status based on trial configuration
-            subscription_status = "trial" if trial_days > 0 else "inactive"
+            # Determine subscription status based on trial configuration.
+            # Admin-invited users with no trial should follow the existing
+            # payment-required Stripe Checkout path instead of landing as
+            # accessible unpaid planners.
+            subscription_status = "trial" if trial_days > 0 else "pending_payment"
             trial_end_date = datetime.now(timezone.utc) + timedelta(days=trial_days) if trial_days > 0 else None
             stripe_subscription_id = None
 
@@ -848,17 +963,39 @@ class UserManagementService:
     async def verify_email(self, token: str) -> dict:
         """Verify email address using verification token"""
         try:
-            # Find user with matching verification token
+            # Find user with matching verification token that hasn't been verified yet
             user = await self.users_collection.find_one({
                 "email_verification_token": token,
                 "email_verified": False
             })
 
+            # If not found, check if the user was already verified (e.g. by the
+            # Stripe checkout webhook which sets email_verified=True).  The token
+            # is still present in the document so we can locate the user.
             if not user:
+                already_verified = await self.users_collection.find_one({
+                    "email_verification_token": token,
+                    "email_verified": True
+                })
+                if already_verified:
+                    # Clean up the token now that the user clicked the link
+                    await self.users_collection.update_one(
+                        {"_id": already_verified["_id"]},
+                        {"$unset": {
+                            "email_verification_token": "",
+                            "verification_token_expires": ""
+                        }}
+                    )
+                    return {
+                        "message": "Email verified successfully! Your account is now active. You can log in.",
+                        "email": already_verified["email"],
+                        "verified_at": datetime.now(timezone.utc).isoformat()
+                    }
                 raise HTTPException(status_code=400, detail="Invalid or expired verification token")
 
             # Check if token has expired
-            if user.get("verification_token_expires") and user["verification_token_expires"] < datetime.now(timezone.utc):
+            token_expires = user.get("verification_token_expires")
+            if token_expires and isinstance(token_expires, datetime) and token_expires < datetime.now(timezone.utc):
                 raise HTTPException(status_code=400, detail="Verification token has expired. Please register again.")
 
             # Update user to verified status
@@ -1722,7 +1859,7 @@ class UserManagementService:
                     self.logger.error("FRONTEND_URL environment variable is required")
                     return success_message
 
-                reset_url = f"{frontend_url}/reset-password?token={reset_token}"
+                reset_url = f"{frontend_url.rstrip('/')}/reset-password/{reset_token}"
                 html_content = self._generate_password_reset_email_html(
                     email=email,
                     first_name=user.get("first_name", ""),

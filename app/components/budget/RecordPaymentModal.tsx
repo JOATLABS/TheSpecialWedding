@@ -63,11 +63,15 @@ export function RecordPaymentModal({
 
   useEffect(() => {
     if (isOpen) {
-      setFormState({
-        ...defaultFormState(),
-        vendorName: suggestedVendorName || '',
+      const frame = window.requestAnimationFrame(() => {
+        setFormState({
+          ...defaultFormState(),
+          vendorName: suggestedVendorName || '',
+        });
+        setLocalError('');
       });
-      setLocalError('');
+
+      return () => window.cancelAnimationFrame(frame);
     }
   }, [isOpen, category?.id, suggestedVendorName]);
 

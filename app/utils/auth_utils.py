@@ -5,6 +5,9 @@ from typing import Optional
 import bcrypt
 import jwt
 from dotenv import load_dotenv
+from fastapi import Response
+
+from app.core.settings import settings, Environment
 
 load_dotenv()
 
@@ -14,6 +17,7 @@ if not SECRET_KEY:
 
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60
+ACCESS_TOKEN_COOKIE_MAX_AGE = ACCESS_TOKEN_EXPIRE_MINUTES * 60
 
 # Pre-computed hash for timing attack mitigation
 # Hash of 'dummy_password_for_timing_mitigation' with bcrypt rounds=12
@@ -53,3 +57,24 @@ def verify_token(token: str):
         return payload
     except jwt.InvalidTokenError:
         raise ValueError("Invalid token")
+
+
+def set_auth_cookie(response: Response, cookie_name: str, token: str, max_age: int = ACCESS_TOKEN_COOKIE_MAX_AGE) -> None:
+    response.set_cookie(
+        key=cookie_name,
+        value=token,
+        max_age=max_age,
+        expires=max_age,
+        httponly=True,
+        secure=settings.environment in (Environment.STAGING, Environment.PRODUCTION),
+        samesite="strict",
+        path="/",
+    )
+
+
+def clear_auth_cookie(response: Response, cookie_name: str) -> None:
+    response.delete_cookie(
+        key=cookie_name,
+        path="/",
+        samesite="strict",
+    )

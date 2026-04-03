@@ -7,12 +7,16 @@ import { Dialog, Transition } from '@headlessui/react';
 import RSVPForm from '@/components/RSVPForm';
 import AlreadyRSVPedScreen from '@/components/AlreadyRSVPedScreen';
 import { WeddingContext } from '@/contexts/WeddingContext';
+import {
+  fetchGuestSessionAccess,
+  requestGuestSessionOtp,
+  verifyGuestSessionOtp,
+} from '@/utils/guestAccess';
 
 type ModalStep = 'loading' | 'otp_request' | 'otp_verify' | 'rsvp_form' | 'already_rsvped';
 
 interface RSVPModalProps {
   isOpen: boolean;
-  token: string;
   slug: string;
   onClose: () => void;
 }
@@ -32,7 +36,7 @@ function lightenColor(hex: string, amount: number): string {
   return `rgb(${lr}, ${lg}, ${lb})`;
 }
 
-export default function RSVPModal({ isOpen, token, slug, onClose }: RSVPModalProps) {
+export default function RSVPModal({ isOpen, slug, onClose }: RSVPModalProps) {
   const [step, setStep] = useState<ModalStep>('loading');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -40,7 +44,6 @@ export default function RSVPModal({ isOpen, token, slug, onClose }: RSVPModalPro
   const [guestData, setGuestData] = useState<any>(null);
   const [weddingData, setWeddingData] = useState<any>(null);
   const [rsvpData, setRsvpData] = useState<any>(null);
-  const [guestId, setGuestId] = useState('');
   const [otp, setOtp] = useState('');
   const [resendCooldown, setResendCooldown] = useState(0);
   const [editMode, setEditMode] = useState(false);
@@ -73,10 +76,13 @@ export default function RSVPModal({ isOpen, token, slug, onClose }: RSVPModalPro
     setIsTokenExpired(false);
     setOtp('');
     setOtpContactType('');
+    setResendCooldown(0);
+    setStep('loading');
+    setGuestData(null);
+    setWeddingData(null);
+    setRsvpData(null);
     onClose();
   };
-
-  const apiBase = (process.env.NEXT_PUBLIC_API_BASE_URL || '').replace('/admin', '');
 
   // Cooldown timer for OTP resend
   useEffect(() => {
@@ -90,7 +96,7 @@ export default function RSVPModal({ isOpen, token, slug, onClose }: RSVPModalPro
   // Fetch guest + wedding data when modal opens
   useEffect(() => {
     if (isOpen && !weddingData) {
-      fetchInitialData();
+      void fetchInitialData();
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen]);
@@ -100,28 +106,12 @@ export default function RSVPModal({ isOpen, token, slug, onClose }: RSVPModalPro
     setError('');
     setIsTokenExpired(false);
     try {
-      const res = await fetch(`${apiBase}/weddings/guest-access/${slug}/${token}`);
-      if (!res.ok) {
-        const errorData = await res.json().catch(() => ({}));
-        const errorMessage = errorData.detail || '';
-
-        const isExpired = res.status === 401 || res.status === 404 ||
-          errorMessage.toLowerCase().includes('expired') ||
-          errorMessage.toLowerCase().includes('invalid') ||
-          errorMessage.toLowerCase().includes('not found');
-
-        if (isExpired) {
-          setIsTokenExpired(true);
-          throw new Error('Your invitation link has expired or is no longer valid. Please contact the couple for a new link.');
-        }
-
-        throw new Error(errorMessage || 'Unable to load your invitation. Please check the link and try again.');
-      }
-      const data = await res.json();
-      const { wedding, guest, rsvp } = data;
+      const data = await fetchGuestSessionAccess(slug);
+      const { wedding, guest, rsvp, otp_verified } = data || {};
 
       if (!wedding || !guest) {
-        throw new Error('Invitation data not found. Please check the link and try again.');
+        setIsTokenExpired(true);
+        throw new Error('Your invitation link has expired or is no longer valid. Please contact the couple for a new link.');
       }
 
       const weddingForContext = {
@@ -133,8 +123,12 @@ export default function RSVPModal({ isOpen, token, slug, onClose }: RSVPModalPro
       setWeddingData(weddingForContext);
       setGuestData(guest);
       setRsvpData(rsvp);
-      setGuestId(guest.id || guest._id);
-      setStep('otp_request');
+
+      if (otp_verified) {
+        setStep(rsvp?.has_rsvp && !editMode ? 'already_rsvped' : 'rsvp_form');
+      } else {
+        setStep('otp_request');
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load invitation');
       setStep('loading');
@@ -147,35 +141,10 @@ export default function RSVPModal({ isOpen, token, slug, onClose }: RSVPModalPro
     setLoading(true);
     setError('');
     try {
-      const response = await fetch(`${apiBase}/otp/request`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ guest_id: guestId }),
-      });
-
-      const data = await response.json().catch(() => ({}));
-
-      if (!response.ok) {
-        // Handle structured error response { message, error_code, retry_after }
-        const detail = data.detail;
-        if (typeof detail === 'object' && detail !== null) {
-          if (detail.retry_after) {
-            setResendCooldown(detail.retry_after);
-          }
-          throw new Error(detail.message || 'Failed to send verification code');
-        }
-        throw new Error(typeof detail === 'string' ? detail : 'Failed to send verification code');
-      }
-
+      const data = await requestGuestSessionOtp();
       setOtpContactType(data.contact_type || 'phone');
       setResendCooldown(65);
       setStep('otp_verify');
-
-      // If email fallback was used, show that info
-      if (data.fallback_used) {
-        setError(''); // Clear any previous errors
-        // The OTP verify step will show the appropriate channel message
-      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'An error occurred');
     } finally {
@@ -190,38 +159,25 @@ export default function RSVPModal({ isOpen, token, slug, onClose }: RSVPModalPro
     setError('');
 
     try {
-      const response = await fetch(`${apiBase}/otp/verify`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ guest_id: guestId, otp }),
-      });
-
-      const verifyData = await response.json().catch(() => ({}));
-
-      if (!response.ok) {
-        throw new Error(verifyData.detail || 'Invalid verification code');
-      }
-
+      const verifyData = await verifyGuestSessionOtp(otp);
       if (verifyData.guest) {
         setGuestData(verifyData.guest);
-        setGuestId(verifyData.guest.id || verifyData.guest._id);
       }
 
-      let latestRsvp = rsvpData;
-      const accessRes = await fetch(`${apiBase}/weddings/guest-access/${slug}/${token}`);
-      if (accessRes.ok) {
-        const data = await accessRes.json();
-        if (data.wedding) {
-          const weddingForContext = {
-            ...data.wedding,
-            id: data.wedding.id || data.wedding._id || slug,
-            slug: data.wedding.slug || slug,
-          };
-          setWeddingData(weddingForContext);
-        }
-        latestRsvp = data.rsvp || null;
-        setRsvpData(latestRsvp);
+      const sessionData = await fetchGuestSessionAccess(slug);
+      const latestRsvp = sessionData?.rsvp || null;
+      if (sessionData?.wedding) {
+        const weddingForContext = {
+          ...sessionData.wedding,
+          id: sessionData.wedding.id || sessionData.wedding._id || slug,
+          slug: sessionData.wedding.slug || slug,
+        };
+        setWeddingData(weddingForContext);
       }
+      if (sessionData?.guest) {
+        setGuestData(sessionData.guest);
+      }
+      setRsvpData(latestRsvp);
 
       if (latestRsvp?.has_rsvp && !editMode) {
         setStep('already_rsvped');
@@ -241,26 +197,7 @@ export default function RSVPModal({ isOpen, token, slug, onClose }: RSVPModalPro
     setError('');
 
     try {
-      const response = await fetch(`${apiBase}/otp/request`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ guest_id: guestId }),
-      });
-
-      const data = await response.json().catch(() => ({}));
-
-      if (!response.ok) {
-        // Handle structured error response { message, error_code, retry_after }
-        const detail = data.detail;
-        if (typeof detail === 'object' && detail !== null) {
-          if (detail.retry_after) {
-            setResendCooldown(detail.retry_after);
-          }
-          throw new Error(detail.message || 'Failed to resend code');
-        }
-        throw new Error(typeof detail === 'string' ? detail : 'Failed to resend code');
-      }
-
+      const data = await requestGuestSessionOtp();
       if (data.contact_type) {
         setOtpContactType(data.contact_type);
       }
@@ -455,7 +392,7 @@ export default function RSVPModal({ isOpen, token, slug, onClose }: RSVPModalPro
         return (
           <RSVPForm
             guest={guestData}
-            token={token}
+            slug={slug}
             existingRsvp={editMode ? rsvpData : null}
             onSuccess={handleRSVPSuccess}
             onViewWeddingPage={handleClose}

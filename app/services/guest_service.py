@@ -3,7 +3,9 @@ from app.core.database import mongo
 from datetime import datetime, timezone
 from typing import Optional
 import logging
+from math import ceil
 from app.utils.token_generator import generate_token
+from app.utils.id_utils import to_object_id, to_str_id, normalize_doc_id
 
 logger = logging.getLogger(__name__)
 
@@ -41,7 +43,7 @@ class GuestService:
             guest = await self.collection.find_one({"token": token, "wedding_id": wedding_id})
             if not guest:
                 raise HTTPException(status_code=404, detail="Guest not found")
-            guest["id"] = str(guest["_id"])
+            normalize_doc_id(guest)
             guest.pop("_id", None)
             return guest
         except Exception as e:
@@ -49,17 +51,12 @@ class GuestService:
 
     async def get_guest(self, guest_id: str):
         """Fetch a guest by ObjectId or string id."""
-        from bson import ObjectId
-        try:
-            obj_id = ObjectId(guest_id)
-        except Exception:
-            raise HTTPException(status_code=400, detail="Invalid guest id")
-
+        obj_id = to_object_id(guest_id, "guest_id")
         guest = await self.collection.find_one({"_id": obj_id})
         if not guest:
             raise HTTPException(status_code=404, detail="Guest not found")
 
-        guest["id"] = str(guest["_id"])
+        normalize_doc_id(guest)
         guest.pop("_id", None)
         return guest
     
@@ -68,17 +65,71 @@ class GuestService:
         update_data = {"updated_at": datetime.now(timezone.utc)}
         if created:
             update_data["created_at"] = datetime.now(timezone.utc)
-        
+
+        obj_id = to_object_id(guest_id, "guest_id")
         await self.collection.update_one(
-            {"_id": guest_id},
+            {"_id": obj_id},
             {"$set": update_data}
         )
 
-    async def list_guests_by_wedding(self, wedding_id: str):
+    async def list_guests_by_wedding(self, wedding_id: str, page: int = 1, limit: int = 50):
+        """
+        Retrieve guests for a wedding with pagination.
+
+        Args:
+            wedding_id: The wedding ID to filter by
+            page: Page number (1-indexed), defaults to 1
+            limit: Number of guests per page, defaults to 50
+
+        Returns:
+            A dict containing:
+            - guests: List of guest documents
+            - total: Total number of guests for this wedding
+            - page: Current page number
+            - pages: Total number of pages
+            - limit: Guests per page
+        """
+        try:
+            # Count total documents
+            total = await self.collection.count_documents({"wedding_id": wedding_id})
+
+            # Calculate pagination
+            skip = (page - 1) * limit
+            pages = ceil(total / limit) if limit > 0 else 0
+
+            # Fetch paginated results
+            guests = await self.collection.find({"wedding_id": wedding_id}).skip(skip).limit(limit).to_list(length=limit)
+
+            # Normalize IDs
+            for guest in guests:
+                normalize_doc_id(guest)
+                guest.pop("_id", None)
+
+            return {
+                "guests": guests,
+                "total": total,
+                "page": page,
+                "pages": pages,
+                "limit": limit
+            }
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Error retrieving guests: {str(e)}")
+
+    async def list_all_guests_by_wedding(self, wedding_id: str):
+        """
+        Retrieve all guests for a wedding without pagination.
+        Used for features like seating optimization that need the full guest list.
+
+        Args:
+            wedding_id: The wedding ID to filter by
+
+        Returns:
+            A list of all guest documents for the wedding
+        """
         try:
             guests = await self.collection.find({"wedding_id": wedding_id}).to_list(length=None)
             for guest in guests:
-                guest["id"] = str(guest["_id"])
+                normalize_doc_id(guest)
                 guest.pop("_id", None)
             return guests
         except Exception as e:
@@ -86,28 +137,27 @@ class GuestService:
     
     async def update_guest(self, guest_id: str, update_data: dict):
         try:
-            from bson import ObjectId
-            
             # Remove fields that shouldn't be updated
             update_data.pop("_id", None)
             update_data.pop("id", None)
             update_data.pop("token", None)  # Don't allow token changes
             update_data.pop("wedding_id", None)  # Don't allow wedding changes
-            
+
             # Add timestamp
             update_data["updated_at"] = datetime.now(timezone.utc)
-            
+
+            obj_id = to_object_id(guest_id, "guest_id")
             result = await self.collection.update_one(
-                {"_id": ObjectId(guest_id)},
+                {"_id": obj_id},
                 {"$set": update_data}
             )
-            
+
             if result.matched_count == 0:
                 raise HTTPException(status_code=404, detail="Guest not found")
 
             # Return updated guest
-            updated_guest = await self.collection.find_one({"_id": ObjectId(guest_id)})
-            updated_guest["id"] = str(updated_guest["_id"])
+            updated_guest = await self.collection.find_one({"_id": obj_id})
+            normalize_doc_id(updated_guest)
             updated_guest.pop("_id", None)
 
             # Invalidate AI cache for seating optimization
@@ -122,21 +172,19 @@ class GuestService:
     
     async def delete_guest(self, guest_id: str):
         try:
-            from bson import ObjectId
-            
             # Convert guest_id to ObjectId
-            guest_obj_id = ObjectId(guest_id)
-            guest_id_str = str(guest_obj_id)
-            
+            guest_obj_id = to_object_id(guest_id, "guest_id")
+            guest_id_str = to_str_id(guest_obj_id)
+
             # Check if guest exists
             guest = await self.collection.find_one({"_id": guest_obj_id})
             if not guest:
                 raise HTTPException(status_code=404, detail="Guest not found")
-            
+
             # Get collections for RSVPs and plus-ones
             rsvp_collection = mongo.db["rsvps"]
             plus_one_collection = mongo.db["plus_ones"]
-            
+
             # Delete associated RSVPs (handle both ObjectId and string formats)
             rsvp_result = await rsvp_collection.delete_many({
                 "$or": [
@@ -144,7 +192,7 @@ class GuestService:
                     {"guest_id": guest_id_str}
                 ]
             })
-            
+
             # Delete associated plus-ones (typically stored with string guest_id)
             plus_one_result = await plus_one_collection.delete_many({
                 "$or": [
@@ -152,7 +200,7 @@ class GuestService:
                     {"guest_id": guest_id_str}
                 ]
             })
-            
+
             # Clean up orphan seating constraint references (T2/T6)
             # Remove this guest's ID from other guests' must_sit_with and must_sit_apart arrays
             wedding_id = guest.get("wedding_id")
@@ -222,7 +270,7 @@ class GuestService:
             guest = await self.collection.find_one(query)
             if not guest:
                 raise HTTPException(status_code=404, detail="Guest not found")
-            guest["id"] = str(guest["_id"])
+            normalize_doc_id(guest)
             guest.pop("_id", None)
             return guest
         except HTTPException:
@@ -265,7 +313,7 @@ class GuestService:
             }
 
             result = await self.collection.insert_one(doc)
-            doc["id"] = str(result.inserted_id)
+            doc["id"] = to_str_id(result.inserted_id)
             doc.pop("_id", None)
 
             # Invalidate AI cache for seating optimization

@@ -4,6 +4,7 @@ import csv
 from fastapi import UploadFile, HTTPException
 from app.core.database import mongo
 from app.utils.token_generator import generate_token
+from app.utils.contact_sanitizer import sanitize_phone, sanitize_email, validate_phone_format, validate_email_format
 from datetime import datetime, timezone
 
 
@@ -20,8 +21,9 @@ class GuestImportService:
 
         success = 0
         tokens = []
+        warnings = []
 
-        for row in reader:
+        for row_number, row in enumerate(reader, start=2):
             name = row.get("name")
             phone = row.get("phone", None)
             email = row.get("email", None)
@@ -30,13 +32,27 @@ class GuestImportService:
             number_of_plus_ones_allowed = int(row.get("number_of_plus_ones_allowed", "0")) if row.get("number_of_plus_ones_allowed", "").isdigit() else 0
             group_id = row.get("group_id", None)
 
-            if not name or len(name) < 2:
-                # TODO log invalid entry
+            if not name or len(name.strip()) < 2:
+                warnings.append(
+                    f"Row {row_number} was skipped: name is required and must be at least 2 characters."
+                )
                 continue
+
+            # Sanitize phone: strip whitespace and delimiters like (), -, .
+            phone = sanitize_phone(phone)
+            if phone and not validate_phone_format(phone):
+                phone = None  # Drop invalid phone but keep the guest if email exists
+
+            # Sanitize email: strip whitespace and lowercase
+            email = sanitize_email(email)
+            if email and not validate_email_format(email):
+                email = None  # Drop invalid email but keep the guest if phone exists
 
             # Require at least phone or email for contact
             if not phone and not email:
-                # TODO log invalid entry and should not continue because atleast one is required
+                warnings.append(
+                    f"Row {row_number} was skipped: at least one valid phone or email is required."
+                )
                 continue
 
             token = generate_token()
@@ -49,8 +65,8 @@ class GuestImportService:
                 "wedding_id": wedding_id,
                 "name": name.strip(),
                 "token": token,
-                "phone": phone.strip() if phone else None,
-                "email": email.strip() if email else None,
+                "phone": phone,
+                "email": email,
                 "role": role,
                 "group_id": group_id,
                 "plus_one_allowed": plus_one_allowed,
@@ -69,4 +85,4 @@ class GuestImportService:
             except Exception:
                 continue
 
-        return {"imported": success, "tokens": tokens}
+        return {"imported": success, "tokens": tokens, "warnings": warnings}

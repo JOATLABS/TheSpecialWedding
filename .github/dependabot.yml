@@ -1,0 +1,100 @@
+# =============================================================================
+# Dependabot Configuration - Automated Dependency Updates
+# Keeps npm and pip packages up to date with grouped PRs
+# =============================================================================
+version: 2
+
+updates:
+  # ── npm (frontend + dev dependencies) ──────────────────────────────────────
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+      timezone: "America/New_York"
+    open-pull-requests-limit: 10
+    reviewers:
+      - "Etastic"
+    labels:
+      - "dependencies"
+      - "npm"
+    # Group minor/patch updates into single PRs to reduce noise
+    groups:
+      react-ecosystem:
+        patterns:
+          - "react*"
+          - "@types/react*"
+          - "next*"
+          - "eslint-config-next"
+      three-ecosystem:
+        patterns:
+          - "three*"
+          - "@react-three/*"
+          - "@types/three"
+      ui-libraries:
+        patterns:
+          - "@headlessui/*"
+          - "@heroicons/*"
+          - "lucide-react"
+          - "framer-motion"
+          - "tailwind*"
+          - "recharts"
+          - "sonner"
+      stripe:
+        patterns:
+          - "@stripe/*"
+      testing:
+        patterns:
+          - "@playwright/*"
+          - "playwright"
+          - "puppeteer"
+          - "@types/puppeteer"
+      minor-and-patch:
+        update-types:
+          - "minor"
+          - "patch"
+        exclude-patterns:
+          - "react*"
+          - "next*"
+          - "three*"
+          - "@react-three/*"
+          - "@stripe/*"
+          - "@headlessui/*"
+          - "@heroicons/*"
+          - "@playwright/*"
+
+  # ── pip (backend dependencies) ─────────────────────────────────────────────
+  - package-ecosystem: "pip"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+      timezone: "America/New_York"
+    open-pull-requests-limit: 5
+    reviewers:
+      - "Etastic"
+    labels:
+      - "dependencies"
+      - "python"
+    groups:
+      fastapi-ecosystem:
+        patterns:
+          - "fastapi*"
+          - "uvicorn*"
+          - "starlette*"
+          - "pydantic*"
+      minor-and-patch:
+        update-types:
+          - "minor"
+          - "patch"
+
+  # ── GitHub Actions versions ────────────────────────────────────────────────
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    labels:
+      - "dependencies"
+      - "github-actions"

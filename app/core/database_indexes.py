@@ -358,6 +358,14 @@ async def create_user_indexes():
         )
         logger.info("Created TTL index: idx_pending_payment_ttl (pending signups)")
 
+        # 3. Advertising vendor status queries (Phase 10 - admin vendor list)
+        await collection.create_index(
+            [("role", ASCENDING), ("vendor_account_status", ASCENDING)],
+            name="idx_user_role_vendor_status",
+            partialFilterExpression={"role": "advertising_vendor"},
+        )
+        logger.info("Created index: idx_user_role_vendor_status (vendor admin queries)")
+
         return True
     except Exception as e:
         logger.error(f"Error creating user indexes: {str(e)}")
@@ -455,8 +463,9 @@ async def create_payment_indexes():
         return True
     except Exception as e:
         logger.error(f"Error creating payment indexes: {str(e)}")
-        
-        
+        return False
+
+
 async def create_admin_activity_log_indexes():
     """
     Create indexes for admin_activity_log collection (ROOT_ADMIN actions)
@@ -569,7 +578,15 @@ async def create_activity_logs_indexes():
         )
         logger.info("Created index: idx_type_timestamp")
 
-        # 7. TTL index - Auto-delete after 90 days
+        # 7. Wedding ID + metadata.guest_id (for guest-specific activity filtering)
+        await collection.create_index(
+            [("wedding_id", ASCENDING), ("metadata.guest_id", ASCENDING), ("timestamp", DESCENDING)],
+            name="idx_wedding_guest_timestamp",
+            sparse=True,
+        )
+        logger.info("Created index: idx_wedding_guest_timestamp")
+
+        # 8. TTL index - Auto-delete after 90 days
         await collection.create_index(
             [("timestamp", ASCENDING)],
             name="idx_activity_logs_ttl",
@@ -690,7 +707,8 @@ async def create_errors_indexes():
             try:
                 await collection.drop_index(old_index_name)
                 logger.info(f"Dropped old conflicting index: {old_index_name}")
-            except Exception:
+            except Exception as e:
+                logger.debug(f"Index {old_index_name} doesn't exist or couldn't be dropped: {e}")
                 pass  # Index doesn't exist, that's fine
 
         # 1. TTL index on timestamp - also serves as the timestamp sorting index
@@ -808,6 +826,73 @@ async def create_kb_articles_indexes():
         return False
 
 
+async def create_blog_articles_indexes():
+    """
+    Create indexes for blog_articles collection
+
+    Key queries that need optimization:
+    1. Get article by slug (single article view) - UNIQUE
+    2. List published articles by category (main listing)
+    3. Featured articles sorting
+    4. Full-text search on title, excerpt, and content
+    5. View count for popular articles
+    """
+    collection = mongo.db["blog_articles"]
+
+    try:
+        # 1. Unique slug index (for URL lookup)
+        await collection.create_index(
+            [("slug", ASCENDING)],
+            name="idx_blog_slug_unique",
+            unique=True
+        )
+        logger.info("Created index: idx_blog_slug_unique")
+
+        # 2. Status + category + created_at (main listing query)
+        await collection.create_index(
+            [("status", ASCENDING), ("category", ASCENDING), ("created_at", DESCENDING)],
+            name="idx_blog_status_category_created"
+        )
+        logger.info("Created index: idx_blog_status_category_created")
+
+        # 3. Featured articles
+        await collection.create_index(
+            [("status", ASCENDING), ("featured", DESCENDING), ("created_at", DESCENDING)],
+            name="idx_blog_featured_articles"
+        )
+        logger.info("Created index: idx_blog_featured_articles")
+
+        # 4. Full-text search on title, excerpt, and content
+        await collection.create_index(
+            [("title", TEXT), ("content", TEXT), ("excerpt", TEXT)],
+            name="idx_blog_text_search",
+            default_language="english",
+            weights={"title": 10, "excerpt": 5, "content": 1}
+        )
+        logger.info("Created index: idx_blog_text_search (full-text search)")
+
+        # 5. View count for popular articles
+        await collection.create_index(
+            [("status", ASCENDING), ("view_count", DESCENDING)],
+            name="idx_blog_popular_articles"
+        )
+        logger.info("Created index: idx_blog_popular_articles")
+
+        # 6. Published date sorting (public listing)
+        await collection.create_index(
+            [("status", ASCENDING), ("published_at", DESCENDING)],
+            name="idx_blog_published_at"
+        )
+        logger.info("Created index: idx_blog_published_at")
+
+        logger.info("All blog articles indexes created successfully")
+        return True
+
+    except Exception as e:
+        logger.error(f"Error creating blog articles indexes: {str(e)}")
+        return False
+
+
 async def create_invitation_indexes():
     """
     Create indexes for user_invitations collection
@@ -852,6 +937,900 @@ async def create_invitation_indexes():
         return False
 
 
+async def create_team_member_indexes():
+    """
+    Create indexes for team_members collection
+
+    Key queries:
+    1. List team members by owner (planner's team page)
+    2. Fast invite token lookup (accept flow)
+    3. User ID lookup (auth middleware — resolve team permissions)
+    4. Prevent duplicate invites per planner
+    5. Auth hydration: user_id + status for get_member_permissions
+    """
+    collection = mongo.db["team_members"]
+    try:
+        # 1. Unique constraint: one invite per email per planner
+        await collection.create_index(
+            [("owner_id", ASCENDING), ("email", ASCENDING)],
+            name="idx_owner_email_unique",
+            unique=True,
+        )
+        logger.info("Created index: idx_owner_email_unique")
+
+        # 2. Invite token lookup (public accept endpoint)
+        await collection.create_index(
+            [("invite_token", ASCENDING)],
+            name="idx_invite_token",
+            unique=True,
+            sparse=True,  # Allow null after token is consumed
+        )
+        logger.info("Created index: idx_invite_token")
+
+        # 3. User ID lookup (auth middleware loads team data on every request)
+        await collection.create_index(
+            [("user_id", ASCENDING)],
+            name="idx_team_member_user_id",
+            sparse=True,  # Only populated once invite is accepted
+        )
+        logger.info("Created index: idx_team_member_user_id")
+
+        # 4. Owner listing sorted by status + created (team management page)
+        await collection.create_index(
+            [("owner_id", ASCENDING), ("status", ASCENDING), ("created_at", DESCENDING)],
+            name="idx_owner_status_created",
+        )
+        logger.info("Created index: idx_owner_status_created")
+
+        # 5. Compound index for auth hydration query pattern (user_id + status)
+        await collection.create_index(
+            [("user_id", ASCENDING), ("status", ASCENDING)],
+            name="idx_user_id_status",
+            sparse=True
+        )
+        logger.info("Created index: idx_user_id_status")
+
+        # 6. Parent planner lookup on users collection (for team queries)
+        users_collection = mongo.get_users_collection()
+        await users_collection.create_index(
+            [("parent_planner_id", ASCENDING)],
+            name="idx_parent_planner_id",
+            sparse=True,  # Only team_member users have this field
+        )
+        logger.info("Created index: idx_parent_planner_id (users collection)")
+
+        logger.info("All team_member indexes created successfully")
+        return True
+    except Exception as e:
+        logger.error(f"Error creating team_member indexes: {str(e)}")
+        return False
+
+
+async def create_advertising_indexes():
+    """
+    Create indexes for all advertising collections.
+
+    Collections indexed:
+    - sponsored_vendors: Ad serving queries (placement + priority sort)
+    - ad_events: Analytics queries (vendor stats, type counts, placement analysis)
+    - ad_leads: Lead funnel queries (status, vendor, planner, type)
+    - ad_feature_flags: Singleton lookup by feature_key
+    - planner_ad_preferences: Unique planner lookup
+    - ad_stats_daily: Pre-aggregated rollup queries (date, vendor, placement)
+
+    Total: 18 indexes across 6 collections
+    """
+
+    # =========================================================================
+    # sponsored_vendors — 3 indexes (ad-serving hot path)
+    # =========================================================================
+    sponsored = mongo.db["sponsored_vendors"]
+    try:
+        # 1. Primary ad-serving query: active vendors for a placement, sorted by priority
+        # Powers: get_sponsored_vendors(), get_sponsored_vendors_filtered()
+        await sponsored.create_index(
+            [
+                ("is_active", ASCENDING),
+                ("placement", ASCENDING),
+                ("priority", DESCENDING),
+            ],
+            name="idx_sponsored_active_placement_priority",
+        )
+        logger.info("Created index: idx_sponsored_active_placement_priority")
+
+        # 2. Vendor profile lookup (for vendor performance dashboard)
+        await sponsored.create_index(
+            [
+                ("vendor_profile_id", ASCENDING),
+                ("is_active", ASCENDING),
+            ],
+            name="idx_sponsored_vendor_profile",
+        )
+        logger.info("Created index: idx_sponsored_vendor_profile")
+
+        # 3. Admin listing by creation date (recent first)
+        await sponsored.create_index(
+            [("created_at", DESCENDING)],
+            name="idx_sponsored_created_desc",
+        )
+        logger.info("Created index: idx_sponsored_created_desc")
+
+        # 4. Review queue queries: filter by review_status, sort by created_at
+        # Powers: get_review_queue(), get_review_queue_counts()
+        await sponsored.create_index(
+            [("review_status", ASCENDING), ("created_at", DESCENDING)],
+            name="idx_sponsored_review_status_created",
+        )
+        logger.info("Created index: idx_sponsored_review_status_created")
+
+        logger.info("All sponsored_vendors indexes created successfully")
+    except Exception as e:
+        logger.error(f"Error creating sponsored_vendors indexes: {str(e)}")
+
+    # =========================================================================
+    # ad_events — 5 indexes (highest volume collection)
+    # =========================================================================
+    ad_events = mongo.db["ad_events"]
+    try:
+        # 1. Vendor stats query: count events for a vendor within date range
+        # Powers: get_ad_stats() — the #1 most frequent analytics query
+        await ad_events.create_index(
+            [
+                ("sponsored_vendor_id", ASCENDING),
+                ("created_at", DESCENDING),
+            ],
+            name="idx_ad_events_vendor_date",
+        )
+        logger.info("Created index: idx_ad_events_vendor_date")
+
+        # 2. Event type + date: dashboard overview (impression trend, click trend)
+        await ad_events.create_index(
+            [
+                ("event_type", ASCENDING),
+                ("created_at", DESCENDING),
+            ],
+            name="idx_ad_events_type_date",
+        )
+        logger.info("Created index: idx_ad_events_type_date")
+
+        # 3. Three-field compound: per-vendor breakdown by event type over time
+        # Powers: Vendor Performance tab — impressions vs clicks vs leads per vendor
+        await ad_events.create_index(
+            [
+                ("sponsored_vendor_id", ASCENDING),
+                ("event_type", ASCENDING),
+                ("created_at", DESCENDING),
+            ],
+            name="idx_ad_events_vendor_type_date",
+        )
+        logger.info("Created index: idx_ad_events_vendor_type_date")
+
+        # 4. Placement + date: compare performance across placements
+        await ad_events.create_index(
+            [
+                ("placement", ASCENDING),
+                ("created_at", DESCENDING),
+            ],
+            name="idx_ad_events_placement_date",
+        )
+        logger.info("Created index: idx_ad_events_placement_date")
+
+        # 5. TTL index: auto-prune raw events after 90 days
+        # Aggregated data preserved in ad_stats_daily indefinitely
+        await ad_events.create_index(
+            [("created_at", ASCENDING)],
+            name="idx_ad_events_ttl",
+            expireAfterSeconds=90 * 24 * 60 * 60,  # 90 days
+        )
+        logger.info("Created TTL index: idx_ad_events_ttl (90 days)")
+
+        logger.info("All ad_events indexes created successfully")
+    except Exception as e:
+        logger.error(f"Error creating ad_events indexes: {str(e)}")
+
+    # =========================================================================
+    # ad_leads — 4 indexes (lead funnel + vendor performance)
+    # =========================================================================
+    ad_leads = mongo.db["ad_leads"]
+    try:
+        # 1. Lead funnel: count leads by status within date range
+        await ad_leads.create_index(
+            [
+                ("status", ASCENDING),
+                ("created_at", DESCENDING),
+            ],
+            name="idx_ad_leads_status_date",
+        )
+        logger.info("Created index: idx_ad_leads_status_date")
+
+        # 2. Vendor-specific lead list (sorted by most recent)
+        await ad_leads.create_index(
+            [
+                ("vendor_profile_id", ASCENDING),
+                ("created_at", DESCENDING),
+            ],
+            name="idx_ad_leads_vendor_date",
+        )
+        logger.info("Created index: idx_ad_leads_vendor_date")
+
+        # 3. Three-field compound: leads by type and status over time
+        # Powers: Lead funnel stacked bar chart in dashboard
+        await ad_leads.create_index(
+            [
+                ("lead_type", ASCENDING),
+                ("status", ASCENDING),
+                ("created_at", DESCENDING),
+            ],
+            name="idx_ad_leads_type_status_date",
+        )
+        logger.info("Created index: idx_ad_leads_type_status_date")
+
+        # 4. Per-planner lead history
+        await ad_leads.create_index(
+            [
+                ("planner_id", ASCENDING),
+                ("created_at", DESCENDING),
+            ],
+            name="idx_ad_leads_planner_date",
+        )
+        logger.info("Created index: idx_ad_leads_planner_date")
+
+        logger.info("All ad_leads indexes created successfully")
+    except Exception as e:
+        logger.error(f"Error creating ad_leads indexes: {str(e)}")
+
+    # =========================================================================
+    # planner_ad_preferences — 1 unique index
+    # =========================================================================
+    planner_prefs = mongo.db["planner_ad_preferences"]
+    try:
+        # Unique planner lookup — one preference doc per planner
+        # Powers: get_planner_preferences(), hide_vendor(), unhide_vendor(), etc.
+        await planner_prefs.create_index(
+            [("planner_id", ASCENDING)],
+            name="idx_planner_prefs_planner_id",
+            unique=True,
+        )
+        logger.info("Created index: idx_planner_prefs_planner_id (unique)")
+    except Exception as e:
+        logger.error(f"Error creating planner_ad_preferences indexes: {str(e)}")
+
+    # =========================================================================
+    # ad_feature_flags — 1 unique index (singleton collection)
+    # =========================================================================
+    feature_flags = mongo.db["ad_feature_flags"]
+    try:
+        # Unique feature key lookup — prevents duplicate flags
+        await feature_flags.create_index(
+            [("feature_key", ASCENDING)],
+            name="idx_feature_flags_key",
+            unique=True,
+        )
+        logger.info("Created index: idx_feature_flags_key (unique)")
+    except Exception as e:
+        logger.error(f"Error creating ad_feature_flags indexes: {str(e)}")
+
+    # =========================================================================
+    # ad_stats_daily — 4 indexes (pre-aggregated rollup queries)
+    # =========================================================================
+    stats_daily = mongo.db["ad_stats_daily"]
+    try:
+        # 1. Unique compound: one rollup per vendor per placement per day
+        # Enables upsert-based rollup computation ($merge with "on" clause)
+        await stats_daily.create_index(
+            [
+                ("date", ASCENDING),
+                ("sponsored_vendor_id", ASCENDING),
+                ("placement", ASCENDING),
+            ],
+            name="idx_stats_daily_unique",
+            unique=True,
+        )
+        logger.info("Created index: idx_stats_daily_unique (unique compound)")
+
+        # 2. Vendor-specific stats sorted by date (Vendor Performance tab)
+        await stats_daily.create_index(
+            [
+                ("sponsored_vendor_id", ASCENDING),
+                ("date", DESCENDING),
+            ],
+            name="idx_stats_daily_vendor_date",
+        )
+        logger.info("Created index: idx_stats_daily_vendor_date")
+
+        # 3. Date-descending scan for overview tab (all vendors in date range)
+        await stats_daily.create_index(
+            [("date", DESCENDING)],
+            name="idx_stats_daily_date_desc",
+        )
+        logger.info("Created index: idx_stats_daily_date_desc")
+
+        # 4. Placement + date for placement comparison analytics
+        await stats_daily.create_index(
+            [
+                ("placement", ASCENDING),
+                ("date", DESCENDING),
+            ],
+            name="idx_stats_daily_placement_date",
+        )
+        logger.info("Created index: idx_stats_daily_placement_date")
+
+        logger.info("All ad_stats_daily indexes created successfully")
+    except Exception as e:
+        logger.error(f"Error creating ad_stats_daily indexes: {str(e)}")
+
+    logger.info("All advertising indexes created/verified (19 total)")
+    return True
+
+
+async def create_campaign_platform_indexes():
+    """
+    Create indexes for the independent vendor advertising campaign platform.
+
+    Collections: ad_campaigns, ad_creatives, campaign_day_stats,
+    placement_day_stats, ad_fraud_signals, vendor_ad_billing.
+    Also adds campaign_id indexes on existing ad_events and ad_leads.
+
+    PRD Sections 6-8. Vendor images in separate R2 bucket (S3_AD_BUCKET_NAME).
+    """
+
+    # =========================================================================
+    # ad_campaigns — 6 indexes
+    # =========================================================================
+    campaigns = mongo.db["ad_campaigns"]
+    try:
+        await campaigns.create_index(
+            [("vendor_id", ASCENDING), ("status", ASCENDING)],
+            name="idx_campaigns_vendor_status",
+        )
+        await campaigns.create_index(
+            [("status", ASCENDING), ("submitted_at", DESCENDING)],
+            name="idx_campaigns_status_submitted",
+        )
+        await campaigns.create_index(
+            [("status", ASCENDING), ("target_categories", ASCENDING),
+             ("start_date", ASCENDING), ("end_date", ASCENDING)],
+            name="idx_campaigns_serving_eligibility",
+        )
+        await campaigns.create_index(
+            [("status", ASCENDING), ("quality_score", DESCENDING)],
+            name="idx_campaigns_active_quality",
+        )
+        await campaigns.create_index(
+            [("created_at", DESCENDING)],
+            name="idx_campaigns_created_desc",
+        )
+        await campaigns.create_index(
+            [("vendor_email", ASCENDING)],
+            name="idx_campaigns_vendor_email",
+        )
+        logger.info("All ad_campaigns indexes created (6)")
+    except Exception as e:
+        logger.error(f"Error creating ad_campaigns indexes: {str(e)}")
+
+    # =========================================================================
+    # ad_creatives — 3 indexes
+    # =========================================================================
+    creatives = mongo.db["ad_creatives"]
+    try:
+        await creatives.create_index(
+            [("campaign_id", ASCENDING), ("review_status", ASCENDING)],
+            name="idx_creatives_campaign_review",
+        )
+        await creatives.create_index(
+            [("review_status", ASCENDING), ("created_at", DESCENDING)],
+            name="idx_creatives_review_queue",
+        )
+        await creatives.create_index(
+            [("vendor_id", ASCENDING), ("created_at", DESCENDING)],
+            name="idx_creatives_vendor_date",
+        )
+        logger.info("All ad_creatives indexes created (3)")
+    except Exception as e:
+        logger.error(f"Error creating ad_creatives indexes: {str(e)}")
+
+    # =========================================================================
+    # campaign_day_stats — 3 indexes
+    # =========================================================================
+    campaign_stats = mongo.db["campaign_day_stats"]
+    try:
+        await campaign_stats.create_index(
+            [("date", ASCENDING), ("campaign_id", ASCENDING)],
+            name="idx_campaign_stats_unique",
+            unique=True,
+        )
+        await campaign_stats.create_index(
+            [("campaign_id", ASCENDING), ("date", DESCENDING)],
+            name="idx_campaign_stats_campaign_date",
+        )
+        await campaign_stats.create_index(
+            [("vendor_id", ASCENDING), ("date", DESCENDING)],
+            name="idx_campaign_stats_vendor_date",
+        )
+        logger.info("All campaign_day_stats indexes created (3)")
+    except Exception as e:
+        logger.error(f"Error creating campaign_day_stats indexes: {str(e)}")
+
+    # =========================================================================
+    # placement_day_stats — 2 indexes
+    # =========================================================================
+    placement_stats = mongo.db["placement_day_stats"]
+    try:
+        await placement_stats.create_index(
+            [("date", ASCENDING), ("placement", ASCENDING)],
+            name="idx_placement_stats_unique",
+            unique=True,
+        )
+        await placement_stats.create_index(
+            [("placement", ASCENDING), ("date", DESCENDING)],
+            name="idx_placement_stats_trend",
+        )
+        logger.info("All placement_day_stats indexes created (2)")
+    except Exception as e:
+        logger.error(f"Error creating placement_day_stats indexes: {str(e)}")
+
+    # =========================================================================
+    # ad_fraud_signals — 2 indexes (including 7-day TTL)
+    # =========================================================================
+    fraud = mongo.db["ad_fraud_signals"]
+    try:
+        await fraud.create_index(
+            [("campaign_id", ASCENDING), ("flagged_at", DESCENDING)],
+            name="idx_fraud_campaign_flagged",
+        )
+        await fraud.create_index(
+            [("created_at", ASCENDING)],
+            name="idx_fraud_signals_ttl",
+            expireAfterSeconds=7 * 24 * 60 * 60,  # 7 days
+        )
+        logger.info("All ad_fraud_signals indexes created (2, incl. TTL)")
+    except Exception as e:
+        logger.error(f"Error creating ad_fraud_signals indexes: {str(e)}")
+
+    # =========================================================================
+    # vendor_ad_billing — 2 indexes
+    # =========================================================================
+    billing = mongo.db["vendor_ad_billing"]
+    try:
+        await billing.create_index(
+            [("vendor_id", ASCENDING), ("billing_period_start", DESCENDING)],
+            name="idx_billing_vendor_period",
+        )
+        await billing.create_index(
+            [("campaign_id", ASCENDING), ("billing_period_start", DESCENDING)],
+            name="idx_billing_campaign_period",
+        )
+        logger.info("All vendor_ad_billing indexes created (2)")
+    except Exception as e:
+        logger.error(f"Error creating vendor_ad_billing indexes: {str(e)}")
+
+    # =========================================================================
+    # ad_events — add campaign_id compound index (supplements existing indexes)
+    # =========================================================================
+    ad_events = mongo.db["ad_events"]
+    try:
+        await ad_events.create_index(
+            [("campaign_id", ASCENDING), ("event_type", ASCENDING),
+             ("created_at", DESCENDING)],
+            name="idx_ad_events_campaign_type_date",
+            sparse=True,
+        )
+        await ad_events.create_index(
+            [("click_id", ASCENDING)],
+            name="idx_ad_events_click_id",
+            unique=True,
+            sparse=True,
+        )
+        # TTL index already created in create_advertising_indexes() as idx_ad_events_ttl
+        # Fraud detection + event dedup: event_type + campaign + planner + time
+        # Field order matches dedup query in planner_ad_interaction_service._is_duplicate_event
+        await ad_events.create_index(
+            [("event_type", ASCENDING), ("campaign_id", ASCENDING),
+             ("planner_id", ASCENDING), ("created_at", DESCENDING)],
+            name="idx_ad_events_dedup_fraud",
+        )
+        # Session anomaly detection
+        await ad_events.create_index(
+            [("session_id", ASCENDING), ("created_at", DESCENDING)],
+            name="idx_ad_events_session_date",
+            sparse=True,
+        )
+        logger.info("Campaign platform ad_events indexes created (4)")
+    except Exception as e:
+        logger.error(f"Error creating campaign ad_events indexes: {str(e)}")
+
+    # =========================================================================
+    # ad_leads — add campaign_id index (supplements existing indexes)
+    # =========================================================================
+    ad_leads = mongo.db["ad_leads"]
+    try:
+        await ad_leads.create_index(
+            [("campaign_id", ASCENDING), ("created_at", DESCENDING)],
+            name="idx_ad_leads_campaign_date",
+            sparse=True,
+        )
+        logger.info("Campaign platform ad_leads index created (1)")
+    except Exception as e:
+        logger.error(f"Error creating campaign ad_leads indexes: {str(e)}")
+
+    # =========================================================================
+    # vendor_profiles — sponsored ad dedup index (Phase 3)
+    # =========================================================================
+    vendor_profiles = mongo.db["vendor_profiles"]
+
+    # Unique compound index for race-safe add-to-directory dedup
+    # Only applies to profiles created from sponsored ads (partial filter).
+    # Older local databases may already have a broken version of this index
+    # that also matches null `source_campaign_id` values, which blocks manual
+    # vendor creation for planners after the first vendor.
+    desired_vendor_profile_index = {
+        "key": [("created_by", 1), ("source_campaign_id", 1)],
+        "unique": True,
+        "partialFilterExpression": {"source_campaign_id": {"$type": "string"}},
+    }
+    existing_vendor_profile_indexes = await vendor_profiles.index_information()
+    existing_sponsored_dedup = existing_vendor_profile_indexes.get("idx_sponsored_ad_dedup")
+
+    if existing_sponsored_dedup:
+        existing_key = existing_sponsored_dedup.get("key")
+        existing_unique = existing_sponsored_dedup.get("unique", False)
+        existing_partial = existing_sponsored_dedup.get("partialFilterExpression")
+
+        if (
+            existing_key != desired_vendor_profile_index["key"]
+            or existing_unique != desired_vendor_profile_index["unique"]
+            or existing_partial != desired_vendor_profile_index["partialFilterExpression"]
+        ):
+            await vendor_profiles.drop_index("idx_sponsored_ad_dedup")
+            logger.info("Dropped stale idx_sponsored_ad_dedup index on vendor_profiles")
+
+    await vendor_profiles.create_index(
+        desired_vendor_profile_index["key"],
+        unique=desired_vendor_profile_index["unique"],
+        partialFilterExpression=desired_vendor_profile_index["partialFilterExpression"],
+        name="idx_sponsored_ad_dedup",
+    )
+
+    # =========================================================================
+    # vendor_profiles — scraper dedup & filtering indexes
+    # =========================================================================
+    try:
+        # google_place_id unique index (sparse — only applies to scraped vendors)
+        await vendor_profiles.create_index(
+            [("google_place_id", ASCENDING)],
+            unique=True,
+            sparse=True,
+            name="idx_vendor_google_place_id",
+        )
+        logger.info("Created index: idx_vendor_google_place_id")
+
+        # Compound index for scraper name+city+category dedup
+        await vendor_profiles.create_index(
+            [("business_name", ASCENDING), ("city", ASCENDING), ("service_category", ASCENDING)],
+            name="idx_vendor_name_city_category",
+        )
+        logger.info("Created index: idx_vendor_name_city_category")
+
+        # Source filter (e.g. list all scraped vendors)
+        await vendor_profiles.create_index(
+            [("source", ASCENDING), ("is_active", ASCENDING)],
+            name="idx_vendor_source_active",
+        )
+        logger.info("Created index: idx_vendor_source_active")
+
+        logger.info("Vendor scraper indexes created (3)")
+    except Exception as e:
+        logger.error(f"Error creating vendor scraper indexes: {str(e)}")
+
+    logger.info("All campaign platform indexes created/verified (25 total)")
+    return True
+
+
+async def create_billing_indexes():
+    """
+    Create indexes for billing-related collections
+
+    Collections: ad_lead_charges, vendor_free_tier, vendor_ad_billing (additional indexes)
+
+    Key queries:
+    1. Get charges by campaign_id sorted by created_at (campaign charge history)
+    2. Get charges by vendor_id sorted by created_at (vendor charge history)
+    3. Get charge by lead_id (one charge per lead - unique)
+    4. Get charge by stripe_invoice_item_id (Stripe reconciliation)
+    5. Get free tier record by vendor_id (unique)
+    6. Check active free tier by is_free and expires_at
+    7. Get invoices by payment_status (invoice finalization queries)
+    """
+
+    # =========================================================================
+    # ad_lead_charges — 4 indexes
+    # =========================================================================
+    ad_lead_charges = mongo.db["ad_lead_charges"]
+    try:
+        # 1. Campaign charge history (campaign_id + created_at descending)
+        await ad_lead_charges.create_index(
+            [("campaign_id", ASCENDING), ("created_at", DESCENDING)],
+            name="idx_lead_charges_campaign_date",
+        )
+        logger.info("Created index: idx_lead_charges_campaign_date")
+
+        # 2. Vendor charge history (vendor_id + created_at descending)
+        await ad_lead_charges.create_index(
+            [("vendor_id", ASCENDING), ("created_at", DESCENDING)],
+            name="idx_lead_charges_vendor_date",
+        )
+        logger.info("Created index: idx_lead_charges_vendor_date")
+
+        # 3. Unique index on lead_id (one charge per lead)
+        await ad_lead_charges.create_index(
+            [("lead_id", ASCENDING)],
+            name="idx_lead_charges_lead_id",
+            unique=True,
+        )
+        logger.info("Created index: idx_lead_charges_lead_id (unique)")
+
+        # 4. Stripe reconciliation (sparse index for stripe_invoice_item_id)
+        await ad_lead_charges.create_index(
+            [("stripe_invoice_item_id", ASCENDING)],
+            name="idx_lead_charges_stripe_invoice_item",
+            sparse=True,
+        )
+        logger.info("Created index: idx_lead_charges_stripe_invoice_item (sparse)")
+
+        logger.info("All ad_lead_charges indexes created (4)")
+    except Exception as e:
+        logger.error(f"Error creating ad_lead_charges indexes: {str(e)}")
+
+    # =========================================================================
+    # vendor_free_tier — 2 indexes
+    # =========================================================================
+    vendor_free_tier = mongo.db["vendor_free_tier"]
+    try:
+        # 1. Unique index on vendor_id (one record per vendor)
+        await vendor_free_tier.create_index(
+            [("vendor_id", ASCENDING)],
+            name="idx_free_tier_vendor_id",
+            unique=True,
+        )
+        logger.info("Created index: idx_free_tier_vendor_id (unique)")
+
+        # 2. Active free tier lookup (is_free + expires_at)
+        await vendor_free_tier.create_index(
+            [("is_free", ASCENDING), ("expires_at", ASCENDING)],
+            name="idx_free_tier_active_lookup",
+        )
+        logger.info("Created index: idx_free_tier_active_lookup")
+
+        logger.info("All vendor_free_tier indexes created (2)")
+    except Exception as e:
+        logger.error(f"Error creating vendor_free_tier indexes: {str(e)}")
+
+    # =========================================================================
+    # vendor_ad_billing — additional payment_status index
+    # =========================================================================
+    vendor_ad_billing = mongo.db["vendor_ad_billing"]
+    try:
+        # Payment status index (for invoice finalization queries)
+        await vendor_ad_billing.create_index(
+            [("payment_status", ASCENDING)],
+            name="idx_billing_payment_status",
+        )
+        logger.info("Created index: idx_billing_payment_status")
+
+        logger.info("Additional vendor_ad_billing indexes created (1)")
+    except Exception as e:
+        logger.error(f"Error creating additional vendor_ad_billing indexes: {str(e)}")
+
+    logger.info("All billing indexes created/verified (7 total)")
+
+    # =========================================================================
+    # planner_ad_preferences — 1 index
+    # =========================================================================
+    planner_prefs = mongo.db["planner_ad_preferences"]
+    try:
+        await planner_prefs.create_index(
+            [("planner_id", ASCENDING)],
+            name="idx_planner_prefs_planner_id",
+            unique=True,
+        )
+        logger.info("Created index: idx_planner_prefs_planner_id (unique)")
+    except Exception as e:
+        logger.error(f"Error creating planner_ad_preferences indexes: {str(e)}")
+
+    return True
+
+
+async def create_couple_portal_indexes():
+    """
+    Create indexes for couple portal collections: couple_users, couple_updates, archived_weddings.
+
+    Key queries:
+    1. couple_users: login by email, invite token lookup, list by planner, list by wedding
+    2. couple_updates: updates feed by wedding_id sorted by created_at
+    3. archived_weddings: lookup by original wedding_id
+    """
+    try:
+        couple_users = mongo.db["couple_users"]
+
+        # Login: find by email (unique per wedding, not globally unique since same email could be in multiple weddings)
+        await couple_users.create_index(
+            [("email", ASCENDING), ("wedding_id", ASCENDING)],
+            unique=True,
+            name="idx_couple_email_wedding",
+            background=True
+        )
+
+        # Invite token lookup (used during setup flow)
+        await couple_users.create_index(
+            [("invite_token", ASCENDING)],
+            name="idx_couple_invite_token",
+            sparse=True,
+            background=True
+        )
+
+        # List couples by planner (planner management page)
+        await couple_users.create_index(
+            [("planner_id", ASCENDING), ("created_at", DESCENDING)],
+            name="idx_couple_planner_created",
+            background=True
+        )
+
+        # List couples by wedding (portal service lookups)
+        await couple_users.create_index(
+            [("wedding_id", ASCENDING)],
+            name="idx_couple_wedding",
+            background=True
+        )
+
+        couple_updates = mongo.db["couple_updates"]
+
+        # Updates feed: by wedding_id, sorted by created_at desc
+        await couple_updates.create_index(
+            [("wedding_id", ASCENDING), ("created_at", DESCENDING)],
+            name="idx_updates_wedding_created",
+            background=True
+        )
+
+        archived_weddings = mongo.db["archived_weddings"]
+
+        # Lookup archived wedding by original ID
+        await archived_weddings.create_index(
+            [("original_wedding_id", ASCENDING)],
+            unique=True,
+            name="idx_archived_original_id",
+            background=True
+        )
+
+        # Sprint 3: Password reset token lookup
+        await couple_users.create_index(
+            [("password_reset_token", ASCENDING)],
+            name="idx_couple_reset_token",
+            sparse=True,
+            background=True
+        )
+
+        # Sprint 3: couple_messages collection
+        couple_messages = mongo.db["couple_messages"]
+
+        # Message history per wedding (chronological feed)
+        await couple_messages.create_index(
+            [("wedding_id", ASCENDING), ("_id", DESCENDING)],
+            name="idx_messages_wedding_id",
+            background=True
+        )
+
+        # Unread count queries (couple checking planner messages, planner checking couple messages)
+        await couple_messages.create_index(
+            [("wedding_id", ASCENDING), ("sender_role", ASCENDING), ("read_by_couple", ASCENDING)],
+            name="idx_messages_unread_couple",
+            background=True
+        )
+        await couple_messages.create_index(
+            [("wedding_id", ASCENDING), ("sender_role", ASCENDING), ("read_by_planner", ASCENDING)],
+            name="idx_messages_unread_planner",
+            background=True
+        )
+
+        # Sprint 4: custom_form_templates collection
+        custom_templates = mongo.db["custom_form_templates"]
+
+        await custom_templates.create_index(
+            [("planner_email", ASCENDING), ("created_at", DESCENDING)],
+            name="idx_custom_templates_planner",
+            background=True
+        )
+
+        # Sprint 5: planner_tasks meeting queries
+        planner_tasks = mongo.get_planner_tasks_collection()
+        await planner_tasks.create_index(
+            [("wedding_id", ASCENDING), ("category", ASCENDING), ("planner_email", ASCENDING), ("start_date", ASCENDING)],
+            name="idx_planner_tasks_meeting_lookup",
+            background=True
+        )
+
+        logger.info("Couple portal indexes created/verified (couple_users, couple_updates, couple_messages, archived_weddings, custom_form_templates, planner_tasks)")
+
+    except Exception as e:
+        logger.error(f"Error creating couple portal indexes: {e}")
+
+
+async def create_guest_media_indexes():
+    """
+    Create indexes for guest-uploaded memories and export jobs.
+
+    Collections:
+    1. guest_media_assets
+    2. guest_media_exports
+    """
+    try:
+        guest_media_assets = mongo.db["guest_media_assets"]
+
+        await guest_media_assets.create_index(
+            [("wedding_id", ASCENDING), ("uploaded_at", DESCENDING)],
+            name="idx_guest_media_wedding_uploaded",
+            background=True,
+        )
+        await guest_media_assets.create_index(
+            [("wedding_id", ASCENDING), ("review_status", ASCENDING), ("uploaded_at", DESCENDING)],
+            name="idx_guest_media_review_queue",
+            background=True,
+        )
+        await guest_media_assets.create_index(
+            [("wedding_id", ASCENDING), ("media_type", ASCENDING), ("uploaded_at", DESCENDING)],
+            name="idx_guest_media_media_type",
+            background=True,
+        )
+        await guest_media_assets.create_index(
+            [("wedding_id", ASCENDING), ("event_type", ASCENDING), ("uploaded_at", DESCENDING)],
+            name="idx_guest_media_event_type",
+            background=True,
+        )
+        await guest_media_assets.create_index(
+            [("upload_batch_id", ASCENDING)],
+            name="idx_guest_media_upload_batch",
+            background=True,
+        )
+        await guest_media_assets.create_index(
+            [("original_key", ASCENDING)],
+            name="idx_guest_media_original_key",
+            unique=True,
+            background=True,
+        )
+        await guest_media_assets.create_index(
+            [("stream_uid", ASCENDING)],
+            name="idx_guest_media_stream_uid",
+            sparse=True,
+            background=True,
+        )
+        await guest_media_assets.create_index(
+            [("wedding_id", ASCENDING), ("uploader_name", ASCENDING), ("uploaded_at", DESCENDING)],
+            name="idx_guest_media_uploader",
+            background=True,
+        )
+        await guest_media_assets.create_index(
+            [("wedding_id", ASCENDING), ("upload_status", ASCENDING), ("created_at", DESCENDING)],
+            name="idx_guest_media_upload_status",
+            background=True,
+        )
+
+        guest_media_exports = mongo.db["guest_media_exports"]
+
+        await guest_media_exports.create_index(
+            [("wedding_id", ASCENDING), ("created_at", DESCENDING)],
+            name="idx_guest_media_exports_wedding_created",
+            background=True,
+        )
+        await guest_media_exports.create_index(
+            [("status", ASCENDING), ("created_at", DESCENDING)],
+            name="idx_guest_media_exports_status",
+            background=True,
+        )
+
+        logger.info("Guest media indexes created/verified")
+    except Exception as e:
+        logger.error(f"Error creating guest media indexes: {e}")
+
+
 async def create_all_indexes():
     """Create all database indexes (called on app startup)"""
     try:
@@ -871,7 +1850,14 @@ async def create_all_indexes():
         await create_security_audit_logs_indexes()
         await create_errors_indexes()
         await create_kb_articles_indexes()  # Knowledge Base articles
+        await create_blog_articles_indexes()  # Blog articles
         await create_invitation_indexes()  # User invitation cleanup
+        await create_team_member_indexes()  # Team management
+        await create_advertising_indexes()  # Legacy advertising (19 indexes)
+        await create_campaign_platform_indexes()  # Campaign platform (21 indexes)
+        await create_billing_indexes()  # Billing collections (7 indexes)
+        await create_couple_portal_indexes()  # Couple portal (6 indexes)
+        await create_guest_media_indexes()  # Couple guest memories
         logger.info("All database indexes created/verified")
     except Exception as e:
         logger.error(f"Error creating database indexes: {str(e)}")

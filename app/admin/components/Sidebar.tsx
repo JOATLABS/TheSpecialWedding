@@ -6,26 +6,29 @@ import NextImage from 'next/image';
 import { usePathname } from 'next/navigation';
 import { useAdmin } from '@/contexts/AdminContext';
 import {
+  Bell,
+  Calendar,
+  ChevronLeft,
+  CreditCard,
+  ExternalLink,
+  FileText,
+  Heart,
+  HelpCircle,
+  Image,
+  Layers,
   LayoutDashboard,
+  LayoutGrid,
+  LogOut,
+  Mail,
+  Megaphone,
+  Package,
+  PlusCircle,
+  Server,
+  Store,
+  UserPlus,
   Users,
   Wallet,
-  LogOut,
-  ChevronLeft,
-  Heart,
-  Bell,
-  FileText,
-  Store,
-  HelpCircle,
   X,
-  CreditCard,
-  Layers,
-  TrendingUp,
-  Server,
-  Calendar,
-  Image,
-  Package,
-  LayoutGrid,
-  type LucideIcon
 } from 'lucide-react';
 
 interface SidebarProps {
@@ -34,24 +37,33 @@ interface SidebarProps {
   isMobile: boolean;
 }
 
+type LucideIcon = React.ForwardRefExoticComponent<
+  Omit<React.SVGProps<SVGSVGElement>, 'ref'> & { size?: number | string } & React.RefAttributes<SVGSVGElement>
+>;
+
 interface NavItem {
   name: string;
   href: string;
   icon: LucideIcon;
   adminOnly?: boolean;
   plannerOnly?: boolean;
+  shortcut?: boolean;
+  external?: boolean;
 }
 
 // Navigation items for Root Admin/Developer (platform-level management only)
 const adminNavItems: NavItem[] = [
   { name: 'Dashboard', href: '/admin', icon: LayoutDashboard },
-  { name: 'Business Analytics', href: '/admin/metrics', icon: TrendingUp },
   { name: 'Platform', href: '/admin/platform', icon: Server },
   { name: 'SaaS Management', href: '/admin/saas', icon: Layers },
-  { name: 'Planners', href: '/admin/users', icon: Users },
+  { name: 'Accounts', href: '/admin/users', icon: Users },
   { name: 'Billing', href: '/admin/billing', icon: CreditCard },
+  { name: 'Ad Platform', href: '/admin/ads', icon: Megaphone },
   { name: 'Notifications', href: '/admin/notifications', icon: Bell },
   { name: 'Support', href: '/admin/support', icon: HelpCircle },
+  // Shortcuts: quick access for ad platform workflows (after all main nav items)
+  { name: 'Create Vendor', href: '/portal/ads/campaigns/new', icon: PlusCircle, shortcut: true },
+  { name: 'Vendor Portal', href: '/portal/ads', icon: ExternalLink, shortcut: true, external: true },
 ];
 
 // Navigation items for Wedding Planners
@@ -61,6 +73,7 @@ const plannerNavItems: NavItem[] = [
   { name: 'Weddings', href: '/admin/weddings', icon: Heart },
   { name: 'Packages', href: '/admin/packages', icon: Package },
   { name: 'Guests', href: '/admin/guests', icon: Users },
+  { name: 'Inbox', href: '/admin/inbox', icon: Mail },
   { name: 'Gallery', href: '/admin/gallery/upload', icon: Image },
   { name: 'Budget', href: '/admin/budget', icon: Wallet },
   { name: 'Money', href: '/admin/money', icon: CreditCard },
@@ -69,6 +82,7 @@ const plannerNavItems: NavItem[] = [
   { name: 'Reminders', href: '/admin/reminders', icon: Bell },
   { name: 'Notifications', href: '/admin/notifications', icon: Bell },
   { name: 'Seating', href: '/admin/seating', icon: LayoutGrid },
+  { name: 'Team', href: '/admin/planner/team', icon: UserPlus, plannerOnly: true },
   { name: 'Support', href: '/admin/support', icon: HelpCircle },
 ];
 
@@ -77,9 +91,27 @@ export default function Sidebar({ isOpen, setIsOpen, isMobile }: SidebarProps) {
   const { userProfile, logout } = useAdmin();
 
   const isActive = (href: string) => {
-    if (href === '/admin' && pathname === '/admin') return true;
-    if (href !== '/admin' && pathname.startsWith(href)) return true;
+    // Exact match for root admin and planner dashboard
+    if (href === '/admin' || href === '/admin/planner') return pathname === href;
+    // Prefix match for all other pages
+    if (pathname.startsWith(href)) return true;
     return false;
+  };
+
+  // Map permissions to nav item names for team member filtering
+  const permissionNavMap: Record<string, string[]> = {
+    manage_guests: ['Guests'],
+    manage_budget: ['Budget'],
+    manage_gallery: ['Gallery'],
+    manage_seating: ['Seating'],
+    manage_vendors: ['Vendors'],
+    manage_forms: ['Forms'],
+    manage_contracts: ['Vendors'],
+    manage_packages: ['Packages'],
+    send_rsvp: ['Guests'],
+    send_reminders: ['Reminders'],
+    view_analytics: [],
+    manage_wedding_settings: ['Weddings'],
   };
 
   // Determine which navigation items to show based on user role
@@ -91,9 +123,25 @@ export default function Sidebar({ isOpen, setIsOpen, isMobile }: SidebarProps) {
       return adminNavItems;
     }
 
-    // Wedding planner gets planner navigation
+    // Wedding planner gets full planner navigation
     if (userProfile.is_wedding_planner) {
       return plannerNavItems;
+    }
+
+    // Team members get filtered navigation based on their permissions
+    if (userProfile.is_team_member && userProfile.team_permissions) {
+      const allowedNavNames = new Set(['Dashboard', 'Calendar', 'Notifications', 'Inbox', 'Support']);
+      const perms = userProfile.team_permissions;
+
+      for (const [permKey, navNames] of Object.entries(permissionNavMap)) {
+        if (perms[permKey]) {
+          navNames.forEach((name) => allowedNavNames.add(name));
+        }
+      }
+
+      return plannerNavItems.filter(
+        (item) => !item.plannerOnly && allowedNavNames.has(item.name)
+      );
     }
 
     // Default to planner navigation for other roles
@@ -109,6 +157,7 @@ export default function Sidebar({ isOpen, setIsOpen, isMobile }: SidebarProps) {
         <div
           onClick={() => setIsOpen(false)}
           className="fixed inset-0 bg-black/50 z-40 lg:hidden transition-opacity duration-200"
+          aria-hidden="true"
         />
       )}
 
@@ -123,18 +172,19 @@ export default function Sidebar({ isOpen, setIsOpen, isMobile }: SidebarProps) {
           ${isMobile ? (isOpen ? 'translate-x-0' : '-translate-x-full') : ''}
         `}
         style={{ width: isOpen ? '18rem' : '5rem' }}
+        role="navigation"
+        aria-label="Main navigation"
       >
         {/* Logo Section */}
         <div className="flex items-center justify-between h-16 px-3 border-b border-slate-200/50 dark:border-slate-700/50">
           <Link href={userProfile?.is_root_admin ? '/admin' : '/admin/planner'} className="flex items-center flex-1 min-w-0 mr-2">
             {isOpen ? (
-              <NextImage
+              <img
                 src="/logo.svg"
                 alt="The Special Wedding"
-                width={140}
+                width={144}
                 height={36}
-                className="h-9 w-auto"
-                priority
+                className="block shrink-0"
               />
             ) : (
               <NextImage
@@ -169,32 +219,54 @@ export default function Sidebar({ isOpen, setIsOpen, isMobile }: SidebarProps) {
         </div>
 
         {/* Navigation */}
-        <nav className="flex-1 overflow-y-auto py-4 px-3 space-y-1">
-          {filteredNavItems.map((item) => {
+        <nav className="flex-1 overflow-y-auto py-4 px-3 space-y-1" aria-label="Sidebar navigation menu">
+          {filteredNavItems.map((item, index) => {
             const Icon = item.icon;
-            const active = isActive(item.href);
+            const active = !item.shortcut && isActive(item.href);
+
+            // Show "Shortcuts" section label before first shortcut item
+            const isFirstShortcut = item.shortcut && (index === 0 || !filteredNavItems[index - 1]?.shortcut);
 
             return (
-              <Link
-                key={item.href}
-                href={item.href}
-                onClick={() => isMobile && setIsOpen(false)}
-                className={`
-                  flex items-center gap-3 px-3 py-2.5 rounded-xl
-                  transition-colors duration-200
-                  ${active
-                    ? 'bg-primary-50 dark:bg-primary-900/20 text-primary-600 dark:text-primary-400'
-                    : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
-                  }
-                `}
-              >
-                <Icon size={20} className={active ? 'text-primary-500' : ''} />
-                {isOpen && (
-                  <span className="font-medium text-sm whitespace-nowrap overflow-hidden">
-                    {item.name}
-                  </span>
+              <React.Fragment key={item.name + item.href}>
+                {isFirstShortcut && isOpen && (
+                  <p className="px-3 pt-4 pb-1 text-[10px] font-bold uppercase tracking-widest text-slate-400 dark:text-slate-500">
+                    Shortcuts
+                  </p>
                 )}
-              </Link>
+                <Link
+                  key={item.href}
+                  href={item.href}
+                  onClick={() => isMobile && setIsOpen(false)}
+                  {...(item.external ? { target: '_blank', rel: 'noopener noreferrer' } : {})}
+                  className={`
+                    flex items-center gap-3 px-3 py-2.5 rounded-xl
+                    transition-colors duration-200
+                    ${item.shortcut
+                      ? 'text-wedding-gold hover:bg-amber-50 dark:hover:bg-amber-900/10'
+                      : active
+                        ? 'bg-primary-50 dark:bg-primary-900/20 text-primary-600 dark:text-primary-400'
+                        : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
+                    }
+                  `}
+                  aria-current={active ? 'page' : undefined}
+                  title={!isOpen ? item.name : undefined}
+                >
+                  <Icon size={20} className={item.shortcut ? 'text-wedding-gold' : active ? 'text-primary-500' : ''} aria-hidden="true" />
+                  {isOpen && (
+                    <>
+                      <span className="font-medium text-sm whitespace-nowrap overflow-hidden">
+                        {item.name}
+                      </span>
+                      {item.shortcut && (
+                        <span className="ml-auto text-[9px] font-extrabold uppercase tracking-wide bg-wedding-gold text-slate-900 px-1.5 py-0.5 rounded">
+                          shortcut
+                        </span>
+                      )}
+                    </>
+                  )}
+                </Link>
+              </React.Fragment>
             );
           })}
         </nav>
@@ -202,10 +274,12 @@ export default function Sidebar({ isOpen, setIsOpen, isMobile }: SidebarProps) {
         {/* User Section */}
         <div className="p-3 border-t border-slate-200/50 dark:border-slate-700/50">
           <button
-            onClick={logout}
+            onClick={() => logout()}
             className="flex items-center gap-3 w-full px-3 py-2.5 rounded-xl text-slate-600 dark:text-slate-400 hover:bg-red-50 dark:hover:bg-red-900/20 hover:text-red-600 dark:hover:text-red-400 transition-colors"
+            aria-label="Logout from account"
+            title="Logout"
           >
-            <LogOut size={20} />
+            <LogOut size={20} aria-hidden="true" />
             {isOpen && (
               <span className="font-medium text-sm">
                 Logout

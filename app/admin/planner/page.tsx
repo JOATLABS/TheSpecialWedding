@@ -3,10 +3,13 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { getApiBaseUrl } from '@/utils/env';
 import { useAdmin } from '@/contexts/AdminContext';
+import { useSSE } from '@/hooks/useSSE';
 import { useRouter } from 'next/navigation';
 import { formatDate as formatUtcDate, formatDateTime } from '@/utils/dateFormat';
 import PageHeader from '../components/PageHeader';
 import OnboardingModal from '../components/OnboardingModal';
+import { CampaignSponsoredRail } from '../vendors/components/CampaignSponsoredRail';
+import { fetchEngagementSignals, type WeddingEngagementSignal } from '@/services/behavioralAnalyticsApi';
 
 interface Wedding {
  id: string;
@@ -54,7 +57,7 @@ interface AIInsight {
 }
 
 export default function WeddingPlannerDashboard() {
- const { token, userProfile, fetchUserProfile } = useAdmin();
+ const { token, userProfile, fetchUserProfile, expireSession } = useAdmin();
  const router = useRouter();
  const [weddings, setWeddings] = useState<Wedding[]>([]);
  const [stats, setStats] = useState<RSVPStats>({ total_guests: 0, total_plus_ones_allowed: 0, total_plus_ones_submitted: 0, confirmed: 0, confirmed_plus_ones_allowed: 0, confirmed_plus_ones_submitted: 0, declined: 0, pending: 0, pending_plus_ones_allowed: 0 });
@@ -71,8 +74,21 @@ export default function WeddingPlannerDashboard() {
  // Onboarding modal state
  const [isOnboardingOpen, setIsOnboardingOpen] = useState(false);
  const [hasUserDismissedOnboarding, setHasUserDismissedOnboarding] = useState(false);
+ const [showAdRail, setShowAdRail] = useState(false);
+
+ // Engagement signals state
+ const [engagementSignals, setEngagementSignals] = useState<WeddingEngagementSignal[]>([]);
+ const engagementMap = React.useMemo(() => {
+   const map = new Map<string, WeddingEngagementSignal>();
+   engagementSignals.forEach((s) => map.set(s.wedding_id, s));
+   return map;
+ }, [engagementSignals]);
 
  const fetchMyWeddings = useCallback(async () => {
+ if (!token) {
+ setLoading(false);
+ return;
+ }
  try {
  const baseUrl = getApiBaseUrl();
  // Use the new optimized metrics API
@@ -98,6 +114,9 @@ export default function WeddingPlannerDashboard() {
  pending_plus_ones_allowed: data.summary.pending_plus_ones_allowed || 0,
  });
  setRecentActivity(data.recent_activity);
+ } else if (response.status === 401) {
+ expireSession();
+ return;
  } else {
  setError('Failed to fetch dashboard data');
  }
@@ -106,7 +125,7 @@ export default function WeddingPlannerDashboard() {
  } finally {
  setLoading(false);
  }
- }, [token]);
+ }, [expireSession, token]);
 
  // Fetch AI insights for selected wedding
  const fetchAIInsights = useCallback(async (weddingId: string, forceRefresh = false) => {
@@ -191,7 +210,22 @@ export default function WeddingPlannerDashboard() {
  }
 
  fetchMyWeddings();
+
+ // Fetch engagement signals (non-blocking)
+ if (token) {
+   fetchEngagementSignals(token)
+     .then((data) => setEngagementSignals(data.signals))
+     .catch((err) => console.error('[Planner] Failed to load engagement signals:', err));
+ }
  }, [fetchMyWeddings, fetchUserProfile, router, token, userProfile]);
+
+ // Real-time updates via SSE — refetch wedding list when the server
+ // signals any wedding, guest, or RSVP change.
+ useSSE({
+   resources: ['wedding', 'guest', 'rsvp'],
+   onDataChange: fetchMyWeddings,
+   enabled: !!token,
+ });
 
  // Check if onboarding should be shown (one-time only for new planners)
  useEffect(() => {
@@ -233,6 +267,23 @@ export default function WeddingPlannerDashboard() {
  title={`Welcome back, ${userProfile?.user_data?.company_name || userProfile?.email}!`}
  description="Here's what's happening with your weddings today."
  />
+
+ <div className={`grid grid-cols-1 ${showAdRail ? 'lg:grid-cols-4' : ''} gap-6`}>
+ <div className={showAdRail ? 'lg:col-span-3' : ''}>
+ <div className="space-y-6">
+
+ {/* Team Member Access Notice */}
+ {userProfile?.is_team_member && userProfile?.team_wedding_access === 'assigned' && (
+ <div className="text-sm text-gray-600 dark:text-gray-400 bg-gray-50 dark:bg-slate-900/50 rounded-lg px-4 py-3 border border-gray-200 dark:border-slate-700 flex items-start gap-3">
+ <svg className="w-5 h-5 text-gray-400 dark:text-gray-500 flex-shrink-0 mt-0.5" fill="currentColor" viewBox="0 0 20 20">
+ <path fillRule="evenodd" d="M18 5v8a2 2 0 01-2 2h-5l-5 4v-4H4a2 2 0 01-2-2V5a2 2 0 012-2h12a2 2 0 012 2zm-11-1a1 1 0 11-2 0 1 1 0 012 0zM8 9a1 1 0 100-2 1 1 0 000 2zm5-1a1 1 0 11-2 0 1 1 0 012 0z" clipRule="evenodd" />
+ </svg>
+ <div>
+ <p className="font-medium text-gray-700 dark:text-gray-300">Filtered View</p>
+ <p className="text-gray-600 dark:text-gray-400">Showing data for your {userProfile.team_assigned_wedding_ids?.length || 0} assigned wedding{(userProfile.team_assigned_wedding_ids?.length || 0) !== 1 ? 's' : ''}</p>
+ </div>
+ </div>
+ )}
 
  {/* Stats Cards */}
  <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
@@ -371,6 +422,44 @@ export default function WeddingPlannerDashboard() {
  {wedding.status || 'active'}
  </span>
  </div>
+ {/* Engagement Signals */}
+ {engagementMap.has(wedding.id) && (() => {
+   const sig = engagementMap.get(wedding.id)!;
+   return (
+     <div className="flex flex-wrap items-center gap-2 mt-2">
+       {sig.rsvps_last_7d > 0 && (
+         <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300">
+           {sig.rsvps_last_7d} RSVPs this week
+         </span>
+       )}
+       {sig.needs_attention.includes('inactive_14d') && (
+         <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300">
+           Inactive 14+ days
+         </span>
+       )}
+       {sig.needs_attention.includes('no_rsvps_yet') && (
+         <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300">
+           No RSVPs yet
+         </span>
+       )}
+       {sig.needs_attention.includes('low_response_rate') && (
+         <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-300">
+           Low response rate ({sig.response_rate}%)
+         </span>
+       )}
+       {sig.needs_attention.includes('pending_forms') && (
+         <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300">
+           {sig.forms_total - sig.forms_completed} forms pending
+         </span>
+       )}
+       {sig.last_activity_at && sig.days_since_activity !== null && sig.days_since_activity <= 7 && sig.needs_attention.length === 0 && (
+         <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300">
+           Active recently
+         </span>
+       )}
+     </div>
+   );
+ })()}
  </div>
  <div className="flex space-x-2">
  <button
@@ -694,6 +783,16 @@ export default function WeddingPlannerDashboard() {
         onClose={() => setIsOnboardingOpen(false)}
         onComplete={handleOnboardingComplete}
       />
+ </div>
+ </div>
+
+ {/* Right Sidebar - Sponsored Vendors (hidden when ads disabled) */}
+ <div className={showAdRail ? 'lg:col-span-1' : 'hidden'}>
+ <div className="sticky top-6">
+ <CampaignSponsoredRail onVisibilityChange={setShowAdRail} />
+ </div>
+ </div>
+ </div>
  </div>
  );
 }

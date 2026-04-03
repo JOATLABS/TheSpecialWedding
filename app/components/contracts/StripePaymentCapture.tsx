@@ -1,7 +1,6 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { loadStripe, Stripe, StripeElements } from '@stripe/stripe-js';
 import {
   Elements,
   PaymentElement,
@@ -10,22 +9,12 @@ import {
 } from '@stripe/react-stripe-js';
 import { CreditCard, Lock, CheckCircle, Loader2, AlertCircle } from 'lucide-react';
 import { Button } from '../ui/Button';
-
-// Load Stripe outside component to avoid recreating on each render
-let stripePromise: Promise<Stripe | null> | null = null;
-
-const getStripe = () => {
-  if (!stripePromise) {
-    const key = process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY;
-    if (key) {
-      stripePromise = loadStripe(key);
-    }
-  }
-  return stripePromise;
-};
+import { getApiBaseUrl } from '@/utils/env';
+import { getStripeClient, preloadStripeClient } from '@/utils/stripeClient';
 
 interface PaymentCaptureFormProps {
   clientSecret: string;
+  customerId?: string;
   onPaymentMethodCaptured: (paymentData: PaymentMethodData) => void;
   onError: (error: string) => void;
   disabled?: boolean;
@@ -40,6 +29,7 @@ export interface PaymentMethodData {
 
 function PaymentCaptureForm({
   clientSecret,
+  customerId,
   onPaymentMethodCaptured,
   onError,
   disabled = false
@@ -84,23 +74,36 @@ function PaymentCaptureForm({
 
         if (typeof paymentMethodId === 'string') {
           // Retrieve payment method details from API
-          const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || '';
+          const baseUrl = getApiBaseUrl();
           const response = await fetch(`${baseUrl}/public/payment-method/${paymentMethodId}`);
 
           if (response.ok) {
             const pmData = await response.json();
+            const resolvedCustomerId = pmData.customer || customerId || '';
+            if (!resolvedCustomerId) {
+              setError('Unable to attach this payment method to a customer record');
+              onError('Unable to attach this payment method to a customer record');
+              setLoading(false);
+              return;
+            }
             setCaptured(true);
             onPaymentMethodCaptured({
-              customerId: pmData.customer || '',
+              customerId: resolvedCustomerId,
               paymentMethodId: paymentMethodId,
               last4: pmData.card?.last4 || '****',
               brand: pmData.card?.brand || 'card'
             });
           } else {
             // Fallback if we can't get details
+            if (!customerId) {
+              setError('Unable to retrieve payment method details');
+              onError('Unable to retrieve payment method details');
+              setLoading(false);
+              return;
+            }
             setCaptured(true);
             onPaymentMethodCaptured({
-              customerId: '',
+              customerId,
               paymentMethodId: paymentMethodId,
               last4: '****',
               brand: 'card'
@@ -192,6 +195,7 @@ function PaymentCaptureForm({
 
 interface StripePaymentCaptureProps {
   clientSecret: string;
+  customerId?: string;
   onPaymentMethodCaptured: (paymentData: PaymentMethodData) => void;
   onError: (error: string) => void;
   disabled?: boolean;
@@ -199,14 +203,36 @@ interface StripePaymentCaptureProps {
 
 export default function StripePaymentCapture({
   clientSecret,
+  customerId,
   onPaymentMethodCaptured,
   onError,
   disabled = false
 }: StripePaymentCaptureProps) {
   const [stripeLoaded, setStripeLoaded] = useState(false);
+  const [loadError, setLoadError] = useState('');
 
   useEffect(() => {
-    getStripe()?.then(() => setStripeLoaded(true));
+    let mounted = true;
+
+    preloadStripeClient()
+      .then(() => getStripeClient())
+      .then((stripe) => {
+        if (!mounted) return;
+        if (stripe) {
+          setStripeLoaded(true);
+        } else {
+          setLoadError('Unable to load secure payment fields. Please try again.');
+        }
+      })
+      .catch((error) => {
+        if (!mounted) return;
+        const message = error instanceof Error ? error.message : 'Unable to load secure payment fields.';
+        setLoadError(message);
+      });
+
+    return () => {
+      mounted = false;
+    };
   }, []);
 
   if (!clientSecret) {
@@ -227,6 +253,24 @@ export default function StripePaymentCapture({
     );
   }
 
+  if (loadError) {
+    return (
+      <div className="p-6 bg-red-50 dark:bg-red-900/20 rounded-xl border border-red-200 dark:border-red-800">
+        <div className="flex items-center gap-3">
+          <AlertCircle className="text-red-500" size={24} />
+          <div>
+            <p className="font-medium text-red-700 dark:text-red-300">
+              Payment fields failed to load
+            </p>
+            <p className="text-sm text-red-600 dark:text-red-400">
+              {loadError}
+            </p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   if (!stripeLoaded) {
     return (
       <div className="flex items-center justify-center p-12">
@@ -237,7 +281,7 @@ export default function StripePaymentCapture({
 
   return (
     <Elements
-      stripe={getStripe()}
+      stripe={getStripeClient()}
       options={{
         clientSecret,
         appearance: {
@@ -256,6 +300,7 @@ export default function StripePaymentCapture({
     >
       <PaymentCaptureForm
         clientSecret={clientSecret}
+        customerId={customerId}
         onPaymentMethodCaptured={onPaymentMethodCaptured}
         onError={onError}
         disabled={disabled}

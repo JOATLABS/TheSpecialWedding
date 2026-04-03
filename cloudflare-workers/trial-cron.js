@@ -23,7 +23,7 @@
  * Cost: $0/month (FREE tier)
  */
 
-export default {
+const worker = {
   async scheduled(event, env, ctx) {
     const cronTime = event.cron;
     console.log(`Trial cron triggered: ${cronTime}`);
@@ -101,6 +101,8 @@ export default {
     }
   }
 };
+
+export default worker;
 
 /**
  * Run complete trial maintenance (warnings + expiration)

@@ -15,6 +15,14 @@ from app.dependencies.auth_extended import (
     get_current_user_extended,
     ExtendedAuthUser,
     require_wedding_planner,
+    enforce_team_permission,
+)
+from app.utils.query_validation import (
+    validated_page,
+    validated_limit_extended,
+    validated_string_filter,
+    validated_status_filter,
+    calculate_pagination_params
 )
 from app.models.calendar import (
     CalendarEventCreate,
@@ -105,7 +113,8 @@ async def _get_wedding_name(wedding_id: Optional[str]) -> Optional[str]:
         oid = ObjectId(wedding_id) if ObjectId.is_valid(wedding_id) else wedding_id
         wedding = await mongo.get_weddings_collection().find_one({"_id": oid})
         return wedding.get("couple_names") if wedding else None
-    except Exception:
+    except Exception as e:
+        logger.debug(f"Failed to get wedding name for {wedding_id}: {e}")
         return None
 
 
@@ -224,6 +233,7 @@ async def disconnect_google_calendar(
 
     Removes stored OAuth tokens. Tasks are preserved but sync is disabled.
     """
+    enforce_team_permission(current_user, "manage_wedding_settings")
     result = await google_calendar_service.disconnect(current_user.email)
     return result
 
@@ -272,6 +282,7 @@ async def create_task(
     If Google Calendar is connected and sync_to_google is True,
     the event will also be created in Google Calendar.
     """
+    enforce_team_permission(current_user, "manage_wedding_settings")
     tasks_collection = mongo.get_planner_tasks_collection()
 
     now = datetime.now(UTC)
@@ -347,7 +358,7 @@ async def list_tasks(
     category: Optional[str] = Query(None, description="Filter by category"),
     start_date: Optional[datetime] = Query(None, description="Filter tasks after this date"),
     end_date: Optional[datetime] = Query(None, description="Filter tasks before this date"),
-    page: int = Query(default=1, ge=1, description="Page number"),
+    page: int = Query(default=1, ge=1, le=10000, description="Page number"),
     page_size: int = Query(default=50, ge=1, le=200, description="Items per page"),
 ) -> TaskListResponse:
     """
@@ -357,6 +368,11 @@ async def list_tasks(
     Results are sorted by start_date ascending.
     """
     tasks_collection = mongo.get_planner_tasks_collection()
+
+    # Validate filter parameters
+    wedding_id = validated_string_filter(wedding_id, max_length=100)
+    status = validated_status_filter(status, ['pending', 'in_progress', 'completed', 'on_hold'])
+    category = validated_string_filter(category, max_length=50)
 
     # Build query
     query: dict[str, Any] = {"planner_email": current_user.email}
@@ -379,8 +395,8 @@ async def list_tasks(
     total = await tasks_collection.count_documents(query)
 
     # Get paginated tasks
-    skip = (page - 1) * page_size
-    cursor = tasks_collection.find(query).sort("start_date", 1).skip(skip).limit(page_size)
+    skip, limit = calculate_pagination_params(page, page_size)
+    cursor = tasks_collection.find(query).sort("start_date", 1).skip(skip).limit(limit)
     tasks = await cursor.to_list(length=page_size)
 
     # Get wedding names for all tasks
@@ -459,6 +475,7 @@ async def update_task(
     If the task is synced to Google Calendar, the Google event
     will also be updated.
     """
+    enforce_team_permission(current_user, "manage_wedding_settings")
     tasks_collection = mongo.get_planner_tasks_collection()
 
     try:
@@ -522,6 +539,7 @@ async def delete_task(
     If the task is synced to Google Calendar, the Google event
     will also be deleted.
     """
+    enforce_team_permission(current_user, "manage_wedding_settings")
     tasks_collection = mongo.get_planner_tasks_collection()
 
     try:
@@ -567,6 +585,7 @@ async def sync_task_to_google(
     Creates the event in Google Calendar if not already synced,
     or updates it if already synced.
     """
+    enforce_team_permission(current_user, "manage_wedding_settings")
     # Check if Google Calendar is connected
     status = await google_calendar_service.get_connection_status(current_user.email)
     if not status.get("connected"):
@@ -622,6 +641,7 @@ async def bulk_update_task_status(
     """
     Update status for multiple tasks at once.
     """
+    enforce_team_permission(current_user, "manage_wedding_settings")
     if status not in ["pending", "in_progress", "completed", "cancelled"]:
         raise HTTPException(status_code=400, detail="Invalid status value")
 

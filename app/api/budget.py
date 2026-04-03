@@ -7,9 +7,19 @@ from app.dependencies.auth_extended import (
     ExtendedAuthUser,
     check_wedding_access,
     require_wedding_planner,
+    require_admin_or_planner,
+    require_team_or_planner,
+    enforce_team_permission,
+    get_accessible_wedding_ids,
 )
 from app.models.budget import BudgetCategory, VendorQuote, BudgetTemplate, PaymentRecord
+from app.utils.response import success_response, error_response, dict_response
+from app.utils.query_validation import (
+    validated_string_filter,
+    validated_boolean_filter
+)
 import logging
+from bson import ObjectId
 
 logger = logging.getLogger(__name__)
 
@@ -115,7 +125,7 @@ class CostEstimationRequest(BaseModel):
 @router.get("/weddings/{wedding_id}/budget", tags=["Budget"])
 async def get_wedding_budget(
     wedding_id: str,
-    current_user: ExtendedAuthUser = Depends(get_current_user_extended)
+    current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
 ):
     """Get complete budget information for a wedding"""
     try:
@@ -134,13 +144,45 @@ async def get_wedding_budget(
         logger.error(f"Failed to get wedding budget: {str(e)}")
         raise HTTPException(status_code=500, detail="Failed to retrieve budget information")
 
+
+@router.get("/budget/payments/overview", tags=["Budget"])
+async def get_budget_payments_overview(
+    current_user: ExtendedAuthUser = Depends(require_team_or_planner)
+):
+    """Get outgoing payment overview for the admin money dashboard."""
+    try:
+        weddings_query: Dict[str, Any]
+        if current_user.is_root_admin:
+            weddings_query = {}
+        elif current_user.is_team_member:
+            weddings_query = {"assigned_planner_email": current_user.team_owner_email}
+            accessible_ids = get_accessible_wedding_ids(current_user)
+            if accessible_ids is not None:
+                weddings_query["_id"] = {
+                    "$in": [ObjectId(wedding_id) if ObjectId.is_valid(wedding_id) else wedding_id for wedding_id in accessible_ids]
+                }
+        else:
+            weddings_query = {"assigned_planner_email": current_user.email}
+
+        weddings_cursor = budget_service.weddings.find(
+            weddings_query,
+            {"title": 1, "couple_names": 1, "name": 1}
+        )
+        weddings = await weddings_cursor.to_list(length=budget_service.MAX_CATEGORIES)
+        return await budget_service.get_outgoing_payments_overview(weddings)
+
+    except Exception as e:
+        logger.error(f"Failed to get outgoing payments overview: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to retrieve outgoing payment overview")
+
 @router.post("/weddings/{wedding_id}/budget/category", tags=["Budget"])
 async def create_budget_category(
     wedding_id: str,
     category_data: CreateBudgetCategoryRequest,
-    current_user: ExtendedAuthUser = Depends(get_current_user_extended)
+    current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
 ):
     """Create a new budget category for a wedding"""
+    enforce_team_permission(current_user, "manage_budget")
     try:
         # Check if user has access to this wedding
         if not await check_wedding_access(current_user, wedding_id):
@@ -150,7 +192,7 @@ async def create_budget_category(
             wedding_id,
             category_data.dict(exclude_unset=True)
         )
-        return {"message": "Budget category created successfully", "category": category}
+        return dict_response(data={"category": category}, message="Budget category created successfully")
 
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -164,9 +206,10 @@ async def create_budget_category(
 async def update_budget_category(
     category_id: str,
     update_data: UpdateBudgetCategoryRequest,
-    current_user: ExtendedAuthUser = Depends(get_current_user_extended)
+    current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
 ):
     """Update an existing budget category"""
+    enforce_team_permission(current_user, "manage_budget")
     try:
         # Verify wedding access via category lookup
         category = await budget_service.get_budget_category(category_id)
@@ -179,7 +222,7 @@ async def update_budget_category(
             category_id,
             update_data.dict(exclude_unset=True)
         )
-        return {"message": "Budget category updated successfully", "category": updated_category}
+        return dict_response(data={"category": updated_category}, message="Budget category updated successfully")
 
     except HTTPException:
         raise
@@ -192,9 +235,10 @@ async def update_budget_category(
 @router.delete("/budget/category/{category_id}", tags=["Budget"])
 async def delete_budget_category(
     category_id: str,
-    current_user: ExtendedAuthUser = Depends(get_current_user_extended)
+    current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
 ):
     """Delete a budget category"""
+    enforce_team_permission(current_user, "manage_budget")
     try:
         # Verify wedding access via category lookup
         category = await budget_service.get_budget_category(category_id)
@@ -205,7 +249,7 @@ async def delete_budget_category(
 
         success = await budget_service.delete_budget_category(category_id)
         if success:
-            return {"message": "Budget category deleted successfully"}
+            return dict_response(message="Budget category deleted successfully")
         else:
             raise HTTPException(status_code=400, detail="Failed to delete budget category")
     except HTTPException:
@@ -221,16 +265,19 @@ async def delete_budget_category(
 @router.get("/weddings/{wedding_id}/quotes", tags=["Budget", "Vendors"])
 async def get_vendor_quotes(
     wedding_id: str,
-    service_category: Optional[str] = Query(None),
-    current_user: ExtendedAuthUser = Depends(get_current_user_extended)
+    service_category: Optional[str] = Query(None, description="Filter by service category"),
+    current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
 ):
     """Get vendor quotes for a wedding, optionally filtered by service category"""
     try:
         if not await check_wedding_access(current_user, wedding_id):
             raise HTTPException(status_code=403, detail="Access to this wedding denied")
 
+        # Validate filter parameter
+        service_category = validated_string_filter(service_category, max_length=100)
+
         quotes = await budget_service.get_vendor_quotes(wedding_id, service_category)
-        return {"quotes": quotes, "count": len(quotes)}
+        return dict_response(data={"quotes": quotes, "count": len(quotes)})
 
     except PermissionError as e:
         raise HTTPException(status_code=403, detail=str(e))
@@ -242,9 +289,10 @@ async def get_vendor_quotes(
 async def create_vendor_quote(
     wedding_id: str,
     quote_data: CreateVendorQuoteRequest,
-    current_user: ExtendedAuthUser = Depends(get_current_user_extended)
+    current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
 ):
     """Create a new vendor quote"""
+    enforce_team_permission(current_user, "manage_budget")
     try:
         if not await check_wedding_access(current_user, wedding_id):
             raise HTTPException(status_code=403, detail="Access to this wedding denied")
@@ -252,7 +300,7 @@ async def create_vendor_quote(
             wedding_id,
             quote_data.dict(exclude_unset=True)
         )
-        return {"message": "Vendor quote created successfully", "quote": quote}
+        return dict_response(data={"quote": quote}, message="Vendor quote created successfully")
     except PermissionError as e:
         raise HTTPException(status_code=403, detail=str(e))
     except Exception as e:
@@ -263,7 +311,7 @@ async def create_vendor_quote(
 async def compare_vendor_quotes(
     wedding_id: str,
     service_category: str,
-    current_user: ExtendedAuthUser = Depends(get_current_user_extended)
+    current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
 ):
     """Compare vendor quotes for a specific service category"""
     try:
@@ -284,9 +332,10 @@ async def update_quote_status(
     quote_id: str,
     status: str = Body(..., embed=True),
     notes: Optional[str] = Body(None, embed=True),
-    current_user: ExtendedAuthUser = Depends(get_current_user_extended)
+    current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
 ):
     """Update vendor quote status (accept/reject/pending)"""
+    enforce_team_permission(current_user, "manage_budget")
     try:
         if status not in ["pending", "accepted", "rejected", "expired"]:
             raise HTTPException(status_code=400, detail="Invalid status")
@@ -299,7 +348,7 @@ async def update_quote_status(
             raise HTTPException(status_code=403, detail="Access to this wedding denied")
 
         updated_quote = await budget_service.update_quote_status(quote_id, status, notes)
-        return {"message": f"Quote status updated to {status}", "quote": updated_quote}
+        return dict_response(data={"quote": updated_quote}, message=f"Quote status updated to {status}")
 
     except HTTPException:
         raise
@@ -314,9 +363,10 @@ async def rate_vendor_quote(
     quote_id: str,
     rating: int = Body(..., embed=True, ge=1, le=5),
     notes: Optional[str] = Body(None, embed=True),
-    current_user: ExtendedAuthUser = Depends(get_current_user_extended)
+    current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
 ):
     """Rate a vendor quote (1-5 stars)"""
+    enforce_team_permission(current_user, "manage_budget")
     try:
         # Verify wedding access via quote lookup
         quote = await budget_service.get_vendor_quote(quote_id)
@@ -326,7 +376,7 @@ async def rate_vendor_quote(
             raise HTTPException(status_code=403, detail="Access to this wedding denied")
 
         updated_quote = await budget_service.rate_vendor_quote(quote_id, rating, notes)
-        return {"message": "Quote rated successfully", "quote": updated_quote}
+        return dict_response(data={"quote": updated_quote}, message="Quote rated successfully")
 
     except HTTPException:
         raise
@@ -340,13 +390,16 @@ async def rate_vendor_quote(
 
 @router.get("/budget/templates", tags=["Budget"])
 async def get_budget_templates(
-    wedding_type: Optional[str] = Query(None),
-    current_user: ExtendedAuthUser = Depends(get_current_user_extended)
+    wedding_type: Optional[str] = Query(None, description="Filter by wedding type"),
+    current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
 ):
     """Get available budget templates"""
     try:
+        # Validate filter parameter
+        wedding_type = validated_string_filter(wedding_type, max_length=50)
+
         templates = await budget_service.get_budget_templates(wedding_type)
-        return {"templates": templates, "count": len(templates)}
+        return dict_response(data={"templates": templates, "count": len(templates)})
 
     except Exception as e:
         logger.error(f"Failed to get budget templates: {str(e)}")
@@ -363,7 +416,7 @@ async def create_budget_template(
             request_data.model_dump(),
             created_by=current_user.email,
         )
-        return {"message": "Budget template created successfully", "template": template}
+        return dict_response(data={"template": template}, message="Budget template created successfully")
 
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -377,7 +430,7 @@ async def create_budget_template(
 async def apply_budget_template(
     wedding_id: str,
     request_data: ApplyBudgetTemplateRequest,
-    current_user: ExtendedAuthUser = Depends(get_current_user_extended)
+    current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
 ):
     """Apply a budget template to a wedding"""
     try:
@@ -388,7 +441,7 @@ async def apply_budget_template(
             request_data.template_id,
             request_data.total_budget
         )
-        return {"message": "Budget template applied successfully", "result": result}
+        return dict_response(data={"result": result}, message="Budget template applied successfully")
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     except PermissionError as e:
@@ -403,9 +456,10 @@ async def apply_budget_template(
 async def record_payment(
     category_id: str,
     payment_data: RecordPaymentRequest,
-    current_user: ExtendedAuthUser = Depends(get_current_user_extended)
+    current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
 ):
     """Record a payment for a budget category"""
+    enforce_team_permission(current_user, "manage_budget")
     try:
         category = await budget_service.get_budget_category(category_id)
         if not category:
@@ -418,7 +472,7 @@ async def record_payment(
             category_id,
             payment_data.dict(exclude_unset=True)
         )
-        return {"message": "Payment recorded successfully", "payment": payment}
+        return dict_response(data={"payment": payment}, message="Payment recorded successfully")
 
     except HTTPException:
         raise
@@ -436,7 +490,7 @@ async def record_payment(
 async def update_payment(
     payment_id: str,
     payment_data: RecordPaymentRequest,
-    current_user: ExtendedAuthUser = Depends(get_current_user_extended)
+    current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
 ):
     """Update an existing payment record"""
     try:
@@ -455,7 +509,7 @@ async def update_payment(
             payment_id,
             payment_data.dict(exclude_unset=True)
         )
-        return {"message": "Payment updated successfully", "payment": result}
+        return dict_response(data={"payment": result}, message="Payment updated successfully")
     except HTTPException:
         raise
     except ValueError as e:
@@ -467,7 +521,7 @@ async def update_payment(
 @router.delete("/budget/payment/{payment_id}", tags=["Budget"])
 async def delete_payment(
     payment_id: str,
-    current_user: ExtendedAuthUser = Depends(get_current_user_extended)
+    current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
 ):
     """Delete a payment record"""
     try:
@@ -484,7 +538,7 @@ async def delete_payment(
 
         success = await budget_service.delete_payment(payment_id)
         if success:
-            return {"message": "Payment deleted successfully"}
+            return dict_response(message="Payment deleted successfully")
         raise HTTPException(status_code=400, detail="Failed to delete payment")
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
@@ -497,7 +551,7 @@ async def delete_payment(
 @router.get("/weddings/{wedding_id}/payments", tags=["Budget"])
 async def get_payment_history(
     wedding_id: str,
-    current_user: ExtendedAuthUser = Depends(get_current_user_extended)
+    current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
 ):
     """Get payment history for a wedding"""
     from fastapi.responses import JSONResponse
@@ -506,7 +560,7 @@ async def get_payment_history(
             raise HTTPException(status_code=403, detail="Access to this wedding denied")
 
         payments = await budget_service.get_payment_history(wedding_id)
-        return {"payments": payments, "count": len(payments)}
+        return dict_response(data={"payments": payments, "count": len(payments)})
 
     except PermissionError as e:
         raise HTTPException(status_code=403, detail=str(e))
@@ -526,7 +580,7 @@ async def get_payment_history(
 async def set_total_budget(
     wedding_id: str,
     request_data: SetTotalBudgetRequest,
-    current_user: ExtendedAuthUser = Depends(get_current_user_extended)
+    current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
 ):
     """Set or update the overall total budget for a wedding"""
     try:
@@ -538,7 +592,7 @@ async def set_total_budget(
             {"$set": {"total_budget": request_data.total_budget}}
         )
         logger.info(f"Updated total budget for wedding {wedding_id} to ${request_data.total_budget:,.2f}")
-        return {"message": "Total budget updated", "total_budget": request_data.total_budget}
+        return dict_response(data={"total_budget": request_data.total_budget}, message="Total budget updated")
 
     except HTTPException:
         raise
@@ -552,7 +606,7 @@ async def set_total_budget(
 @router.get("/weddings/{wedding_id}/budget/report", tags=["Budget", "Reports"])
 async def generate_financial_report(
     wedding_id: str,
-    current_user: ExtendedAuthUser = Depends(get_current_user_extended)
+    current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
 ):
     """Generate comprehensive financial report for a wedding"""
     try:
@@ -573,7 +627,7 @@ async def generate_financial_report(
 @router.post("/budget/estimate", tags=["Budget"])
 def estimate_wedding_costs(
     estimation_request: CostEstimationRequest,
-    current_user: ExtendedAuthUser = Depends(get_current_user_extended)
+    current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
 ):
     """Estimate wedding costs based on guest count, type, and region"""
     try:
@@ -591,11 +645,13 @@ def estimate_wedding_costs(
 
 @router.get("/budget/categories/suggestions", tags=["Budget"])
 def get_category_suggestions(
-    wedding_type: str = Query(default="traditional"),
-    current_user: ExtendedAuthUser = Depends(get_current_user_extended)
+    wedding_type: str = Query(default="traditional", description="Wedding type for category suggestions"),
+    current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
 ):
     """Get suggested budget categories for a wedding type"""
     try:
+        # Validate wedding type parameter
+        wedding_type = validated_string_filter(wedding_type, max_length=50) or "traditional"
         # Standard category suggestions
         category_suggestions = {
             "traditional": [
@@ -640,13 +696,16 @@ def get_category_suggestions(
 @router.get("/budget/alerts/{wedding_id}", tags=["Budget"])
 async def get_budget_alerts(
     wedding_id: str,
-    include_resolved: bool = Query(default=False),
-    current_user: ExtendedAuthUser = Depends(get_current_user_extended)
+    include_resolved: bool = Query(default=False, description="Include resolved alerts"),
+    current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
 ):
     """Get budget alerts for a wedding"""
     try:
         if not await check_wedding_access(current_user, wedding_id):
             raise HTTPException(status_code=403, detail="Access to this wedding denied")
+
+        # Validate filter parameter
+        include_resolved = validated_boolean_filter(include_resolved) or False
 
         alerts = await budget_service.get_budget_alerts(wedding_id, include_resolved)
         return {"alerts": alerts}
@@ -661,7 +720,7 @@ async def get_budget_alerts(
 @router.put("/budget/alerts/{alert_id}/read", tags=["Budget"])
 async def mark_alert_as_read(
     alert_id: str,
-    current_user: ExtendedAuthUser = Depends(get_current_user_extended)
+    current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
 ):
     """Mark a budget alert as read"""
     try:
@@ -676,7 +735,7 @@ async def mark_alert_as_read(
 @router.put("/budget/alerts/{alert_id}/resolve", tags=["Budget"])
 async def resolve_alert(
     alert_id: str,
-    current_user: ExtendedAuthUser = Depends(get_current_user_extended)
+    current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
 ):
     """Resolve a budget alert"""
     try:

@@ -2,12 +2,19 @@
 Knowledge Base API Endpoints
 Community-driven documentation system for wedding planners
 """
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, Field, field_validator
 from typing import Optional, List
 from app.dependencies.auth_extended import require_root_admin, require_admin_or_planner, ExtendedAuthUser
 from app.services.knowledge_base_service import knowledge_base_service
-from app.models.knowledge_base import KB_CATEGORIES
+from app.models.knowledge_base import KB_CATEGORIES, KB_STATUSES
+from app.utils.rate_limiter import (
+    public_read_limiter,
+    public_search_limiter,
+    public_slug_limiter,
+    check_rate_limit,
+    get_client_ip,
+)
 import logging
 
 logger = logging.getLogger(__name__)
@@ -25,6 +32,8 @@ class ArticleCreateRequest(BaseModel):
     category: str = Field(default="general", description="Article category")
     tags: List[str] = Field(default_factory=list, description="Article tags")
     status: str = Field(default="published", description="Article status")
+    card_image: Optional[str] = Field(None, max_length=500, description="Card/thumbnail image URL")
+    og_image: Optional[str] = Field(None, max_length=500, description="OG/social share image URL")
 
     @field_validator('category')
     @classmethod
@@ -36,8 +45,8 @@ class ArticleCreateRequest(BaseModel):
     @field_validator('status')
     @classmethod
     def validate_status(cls, v):
-        if v not in ['draft', 'published']:
-            raise ValueError('Status must be draft or published')
+        if v not in KB_STATUSES:
+            raise ValueError(f"Status must be one of: {', '.join(KB_STATUSES)}")
         return v
 
     @field_validator('tags')
@@ -58,6 +67,8 @@ class ArticleUpdateRequest(BaseModel):
     status: Optional[str] = None
     featured: Optional[bool] = None
     order: Optional[int] = None
+    card_image: Optional[str] = Field(None, max_length=500)
+    og_image: Optional[str] = Field(None, max_length=500)
 
     @field_validator('category')
     @classmethod
@@ -69,8 +80,8 @@ class ArticleUpdateRequest(BaseModel):
     @field_validator('status')
     @classmethod
     def validate_status(cls, v):
-        if v is not None and v not in ['draft', 'published', 'archived']:
-            raise ValueError('Status must be draft, published, or archived')
+        if v is not None and v not in KB_STATUSES:
+            raise ValueError(f"Status must be one of: {', '.join(KB_STATUSES)}")
         return v
 
 
@@ -91,6 +102,7 @@ class MarkOfficialRequest(BaseModel):
 
 @router.get("/kb/articles", tags=["Knowledge Base"])
 async def get_articles(
+    request: Request,
     page: int = Query(1, ge=1, description="Page number"),
     limit: int = Query(20, ge=1, le=50, description="Items per page"),
     category: Optional[str] = Query(None, description="Filter by category"),
@@ -103,7 +115,11 @@ async def get_articles(
     Get published KB articles with optional filtering
     - All authenticated planners can access
     - Supports search, category filter, and pagination
+    - Rate limited to 60 requests per minute per IP
     """
+    client_ip = get_client_ip(request)
+    await check_rate_limit(client_ip, public_read_limiter)
+
     return await knowledge_base_service.get_articles(
         page=page,
         limit=limit,
@@ -117,6 +133,7 @@ async def get_articles(
 
 @router.get("/kb/articles/slug/{slug}", tags=["Knowledge Base"])
 async def get_article_by_slug(
+    request: Request,
     slug: str,
     current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
 ):
@@ -124,23 +141,33 @@ async def get_article_by_slug(
     Get a specific article by its slug
     - Increments view count on access
     - Returns full article content with author info
+    - Rate limited to 100 requests per minute per IP
     """
+    client_ip = get_client_ip(request)
+    await check_rate_limit(client_ip, public_slug_limiter)
+
     return await knowledge_base_service.get_article_by_slug(slug, increment_view=True)
 
 
 @router.get("/kb/categories", tags=["Knowledge Base"])
 async def get_categories(
+    request: Request,
     current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
 ):
     """
     Get all KB categories with article counts
     - Used for sidebar navigation
+    - Rate limited to 60 requests per minute per IP
     """
+    client_ip = get_client_ip(request)
+    await check_rate_limit(client_ip, public_read_limiter)
+
     return await knowledge_base_service.get_categories_with_counts()
 
 
 @router.get("/kb/search", tags=["Knowledge Base"])
 async def search_articles(
+    request: Request,
     q: str = Query(..., min_length=2, max_length=100, description="Search query"),
     limit: int = Query(20, ge=1, le=50, description="Max results"),
     current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
@@ -149,7 +176,11 @@ async def search_articles(
     Full-text search across KB articles
     - Searches title, excerpt, content, and tags
     - Returns only published articles
+    - Rate limited to 30 requests per minute per IP
     """
+    client_ip = get_client_ip(request)
+    await check_rate_limit(client_ip, public_search_limiter)
+
     return await knowledge_base_service.search_articles(query=q, limit=limit)
 
 
@@ -172,13 +203,18 @@ async def get_my_articles(
 
 @router.get("/kb/articles/{article_id}/related", tags=["Knowledge Base"])
 async def get_related_articles(
+    request: Request,
     article_id: str,
     limit: int = Query(5, ge=1, le=10),
     current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
 ):
     """
     Get related articles based on category and tags
+    - Rate limited to 60 requests per minute per IP
     """
+    client_ip = get_client_ip(request)
+    await check_rate_limit(client_ip, public_read_limiter)
+
     return await knowledge_base_service.get_related_articles(
         article_id=article_id,
         limit=limit
@@ -225,7 +261,9 @@ async def create_article(
         excerpt=article_data.excerpt,
         category=article_data.category,
         tags=article_data.tags,
-        status=article_data.status
+        status=article_data.status,
+        card_image=article_data.card_image,
+        og_image=article_data.og_image,
     )
 
     logger.info(f"Creating KB article '{article_data.title}' by {current_user.email}")
@@ -257,7 +295,9 @@ async def update_article(
         tags=article_data.tags,
         status=article_data.status,
         featured=article_data.featured,
-        order=article_data.order
+        order=article_data.order,
+        card_image=article_data.card_image,
+        og_image=article_data.og_image,
     )
 
     return await knowledge_base_service.update_article(
@@ -338,12 +378,16 @@ async def get_all_articles_admin(
     - Includes draft, published, and archived articles
     - For moderation purposes
     """
+    if status is not None and status not in KB_STATUSES:
+        allowed_statuses = ", ".join(KB_STATUSES)
+        raise HTTPException(status_code=400, detail=f"Status must be one of: {allowed_statuses}")
+
     return await knowledge_base_service.get_articles(
         page=page,
         limit=limit,
         category=category,
         search=search,
-        status=status if status else "published",
+        status=status,
         featured_only=False,
         official_only=False
     )
