@@ -326,7 +326,7 @@ jobs:
 
       - name: Create GitHub Release
         if: steps.analyze-commits.outputs.bump_type != 'none'
-        uses: softprops/action-gh-release@v1
+        uses: softprops/action-gh-release@v2
         with:
           tag_name: "v${{ steps.new-version.outputs.version }}"
           name: "v${{ steps.new-version.outputs.version }}"
