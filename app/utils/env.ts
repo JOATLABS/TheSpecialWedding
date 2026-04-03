@@ -69,6 +69,22 @@ export function getApiBaseUrl(): string {
 }
 
 /**
+ * Get the server-side API base URL.
+ *
+ * In single-container deployments such as the current Coolify setup, the
+ * frontend can bypass the public proxy and talk to the colocated backend over
+ * loopback. That removes an unnecessary network hop for server-rendered data
+ * fetches while preserving the public browser-facing API base URL.
+ */
+export function getServerApiBaseUrl(): string {
+  const internalUrl = process.env.INTERNAL_API_BASE_URL?.trim();
+  if (internalUrl) {
+    return internalUrl;
+  }
+  return getApiBaseUrl();
+}
+
+/**
  * Get the frontend base URL (for server-side use only)
  * @throws {Error} if FRONTEND_URL is not set
  */

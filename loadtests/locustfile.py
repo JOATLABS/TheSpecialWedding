@@ -43,25 +43,27 @@ def _env_first(*names: str, default: str | None = None) -> str | None:
     return default
 
 
-def _require_env(*names: str) -> str:
-    value = _env_first(*names)
-    if value:
-        return value
-    joined = ", ".join(names)
-    raise RuntimeError(f"Missing required environment variable. Expected one of: {joined}")
-
-
 API_HOST = (_env_first("LOCUST_API_HOST", "NEXT_PUBLIC_API_BASE_URL", default="http://localhost:8000") or "").rstrip("/")
 FRONTEND_HOST = (_env_first("LOCUST_FRONTEND_HOST", "FRONTEND_URL", default="http://localhost:3000") or "").rstrip("/")
 
 WEDDING_SLUG = _env_first("LOCUST_WEDDING_SLUG", default="james-and-mel") or "james-and-mel"
 WEDDING_ID_OVERRIDE = _env_first("LOCUST_WEDDING_ID")
 
-PLANNER_EMAIL = _require_env("LOCUST_PLANNER_EMAIL", "TEST_PLANNER_WITH_PACKAGE_EMAIL")
-PLANNER_PASSWORD = _require_env("LOCUST_PLANNER_PASSWORD", "TEST_PLANNER_WITH_PACKAGE_PASSWORD")
+PLANNER_BEARER_TOKEN = _env_first("LOCUST_PLANNER_BEARER_TOKEN")
+COUPLE_BEARER_TOKEN = _env_first("LOCUST_COUPLE_BEARER_TOKEN")
 
-COUPLE_EMAIL = _require_env("LOCUST_COUPLE_EMAIL", "TEST_COUPLE_EMAIL")
-COUPLE_PASSWORD = _require_env("LOCUST_COUPLE_PASSWORD", "TEST_COUPLE_PASSWORD")
+PLANNER_EMAIL = _env_first("LOCUST_PLANNER_EMAIL", "TEST_PLANNER_WITH_PACKAGE_EMAIL", default="") or ""
+PLANNER_PASSWORD = _env_first("LOCUST_PLANNER_PASSWORD", "TEST_PLANNER_WITH_PACKAGE_PASSWORD", default="") or ""
+COUPLE_EMAIL = _env_first("LOCUST_COUPLE_EMAIL", "TEST_COUPLE_EMAIL", default="") or ""
+COUPLE_PASSWORD = _env_first("LOCUST_COUPLE_PASSWORD", "TEST_COUPLE_PASSWORD", default="") or ""
+
+if not PLANNER_BEARER_TOKEN:
+    if not PLANNER_EMAIL or not PLANNER_PASSWORD:
+        raise RuntimeError("Planner credentials are required unless LOCUST_PLANNER_BEARER_TOKEN is set")
+
+if not COUPLE_BEARER_TOKEN:
+    if not COUPLE_EMAIL or not COUPLE_PASSWORD:
+        raise RuntimeError("Couple credentials are required unless LOCUST_COUPLE_BEARER_TOKEN is set")
 
 
 class JsonApiUser(HttpUser):
@@ -124,16 +126,19 @@ class PlannerApiUser(JsonApiUser):
     weight = 2
 
     def on_start(self) -> None:
-        login = self._request_json(
-            "POST",
-            "/admin/token",
-            name="POST /admin/token",
-            json={"email": PLANNER_EMAIL, "password": PLANNER_PASSWORD},
-        )
-        if not login or "access_token" not in login:
-            raise StopUser("Planner login failed")
+        if PLANNER_BEARER_TOKEN:
+            self.auth_headers = {"Authorization": f"Bearer {PLANNER_BEARER_TOKEN}"}
+        else:
+            login = self._request_json(
+                "POST",
+                "/admin/token",
+                name="POST /admin/token",
+                json={"email": PLANNER_EMAIL, "password": PLANNER_PASSWORD},
+            )
+            if not login or "access_token" not in login:
+                raise StopUser("Planner login failed")
 
-        self.auth_headers = {"Authorization": f"Bearer {login['access_token']}"}
+            self.auth_headers = {"Authorization": f"Bearer {login['access_token']}"}
         self.wedding_id = WEDDING_ID_OVERRIDE or self._discover_wedding_id()
         if not self.wedding_id:
             raise StopUser("Unable to discover a planner wedding id for load testing")
@@ -213,6 +218,10 @@ class CouplePortalApiUser(JsonApiUser):
     weight = 1
 
     def on_start(self) -> None:
+        if COUPLE_BEARER_TOKEN:
+            self.auth_headers = {"Authorization": f"Bearer {COUPLE_BEARER_TOKEN}"}
+            return
+
         login = self._request_json(
             "POST",
             "/couple/login",

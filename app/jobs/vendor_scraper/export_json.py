@@ -48,6 +48,9 @@ EXPORT_FIELDS = {
     "created_at": 1,
 }
 
+# Max vendors to export in a single batch to avoid OOM
+EXPORT_BATCH_SIZE = 5000
+
 
 def _serialize_datetime(obj):
     """JSON serializer for datetime objects."""
@@ -59,6 +62,9 @@ def _serialize_datetime(obj):
 async def export_vendors(output_path: str, since_hours: int | None = None):
     """
     Export scraped vendors from MongoDB to a JSON file.
+
+    Streams results in batches to avoid loading the entire collection
+    into memory at once.
 
     Args:
         output_path: Where to write the JSON file
@@ -77,23 +83,30 @@ async def export_vendors(output_path: str, since_hours: int | None = None):
         cutoff = datetime.now(timezone.utc) - timedelta(hours=since_hours)
         query["scraped_at"] = {"$gte": cutoff}
 
-    cursor = collection.find(query, EXPORT_FIELDS).sort("scraped_at", -1)
-    vendors = await cursor.to_list(length=None)
+    try:
+        cursor = collection.find(query, EXPORT_FIELDS).sort("scraped_at", -1).batch_size(EXPORT_BATCH_SIZE)
 
-    if not vendors:
-        logger.warning("No scraped vendors found matching the criteria.")
-        # Write empty array so the file exists
+        # Stream to file: write opening bracket, then each doc, then closing bracket
+        count = 0
         with open(output_path, "w") as f:
-            json.dump([], f)
+            f.write("[\n")
+            async for doc in cursor:
+                if count > 0:
+                    f.write(",\n")
+                json.dump(doc, f, indent=2, default=_serialize_datetime)
+                count += 1
+            f.write("\n]\n")
+
+        if count == 0:
+            logger.warning("No scraped vendors found matching the criteria.")
+            # Overwrite with clean empty array
+            with open(output_path, "w") as f:
+                json.dump([], f)
+        else:
+            logger.info(f"Exported {count} vendors to {output_path}")
+
+    finally:
         mongo.close()
-        return
-
-    # Write JSON
-    with open(output_path, "w") as f:
-        json.dump(vendors, f, indent=2, default=_serialize_datetime)
-
-    logger.info(f"Exported {len(vendors)} vendors to {output_path}")
-    mongo.close()
 
 
 def main():

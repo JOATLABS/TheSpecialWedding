@@ -73,7 +73,10 @@ async def get_dashboard(couple: dict = Depends(require_couple_auth)):
 @router.get("/couple/portal/events", tags=["Couple Portal"])
 async def get_events(couple: dict = Depends(require_couple_auth)):
     """Get wedding events/timeline."""
-    wedding = await mongo.get_weddings_collection().find_one({"_id": couple["wedding_id"]})
+    wedding = await mongo.get_weddings_collection().find_one(
+        {"_id": couple["wedding_id"]},
+        {"events": 1, "date": 1, "timezone": 1},
+    )
     if not wedding:
         raise HTTPException(status_code=404, detail="Wedding not found")
 

@@ -26,6 +26,7 @@ class GuestVerificationService:
     _rsvp_link_max_attempts = 3
     _rsvp_link_lockout_duration = 600  # 10 minutes
     _attempt_lock_duration = 15
+    _privacy_info_cache_ttl = 30
 
     def __init__(self):
         self.guest_service = GuestService()
@@ -637,7 +638,28 @@ class GuestVerificationService:
     async def get_wedding_privacy_info(self, slug: str) -> Dict[str, Any]:
         """Get privacy information about a wedding without granting access"""
         try:
-            wedding = await self.wedding_service.get_wedding_by_slug(slug)
+            cache_key = CacheKeys.wedding_privacy_info(slug)
+            cached_response = await cache.get(cache_key)
+            if cached_response is not None:
+                return cached_response
+
+            wedding = await self.weddings_collection.find_one(
+                {"slug": slug},
+                {
+                    "couple_names": 1,
+                    "date": 1,
+                    "privacy_settings": 1,
+                    "featured_image": 1,
+                    "theme_config": 1,
+                    "rsvp_config": 1,
+                    "events": 1,
+                    "registries": 1,
+                    "faqs": 1,
+                    "our_story": 1,
+                    "venue": 1,
+                    "wedding_party": 1,
+                },
+            )
             if not wedding:
                 raise HTTPException(status_code=404, detail="Wedding not found")
 
@@ -676,6 +698,7 @@ class GuestVerificationService:
                     "wedding_party": wedding.get("wedding_party", []),
                 })
 
+            await cache.set(cache_key, response, expire=self._privacy_info_cache_ttl)
             return response
 
         except HTTPException:

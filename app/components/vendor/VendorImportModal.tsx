@@ -85,6 +85,9 @@ function formatFileSize(bytes: number): string {
 const categoryLabel = (cat: string) =>
   cat.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
 
+const MAX_FILE_SIZE_MB = 10;
+const MAX_FILE_SIZE_BYTES = MAX_FILE_SIZE_MB * 1024 * 1024;
+
 // ─── Component ───────────────────────────────────────────────────────────────
 
 export default function VendorImportModal({
@@ -122,6 +125,11 @@ export default function VendorImportModal({
 
     if (!file.name.endsWith('.json')) {
       setError('Only .json files are accepted');
+      return;
+    }
+
+    if (file.size > MAX_FILE_SIZE_BYTES) {
+      setError(`File is too large (${(file.size / 1024 / 1024).toFixed(1)} MB). Maximum is ${MAX_FILE_SIZE_MB} MB.`);
       return;
     }
 
@@ -314,10 +322,15 @@ export default function VendorImportModal({
                 </div>
                 <div className="rounded-xl border border-amber-200/60 bg-amber-50 p-2.5 text-center dark:border-amber-800 dark:bg-amber-900/20">
                   <p className="text-lg font-bold text-amber-700 dark:text-amber-400">
-                    {new Set(parsed.vendors.map((v) => v.city).filter(Boolean)).size}
+                    {(() => {
+                      const cities = new Set(parsed.vendors.map((v) => v.city).filter(Boolean)).size;
+                      if (cities > 0) return cities;
+                      // Fallback to state count when city data isn't populated
+                      return new Set(parsed.vendors.map((v) => v.state).filter(Boolean)).size;
+                    })()}
                   </p>
                   <p className="text-[10px] font-semibold uppercase tracking-wider text-amber-500">
-                    Cities
+                    {new Set(parsed.vendors.map((v) => v.city).filter(Boolean)).size > 0 ? 'Cities' : 'States'}
                   </p>
                 </div>
               </div>
@@ -336,7 +349,7 @@ export default function VendorImportModal({
                     <span className="shrink-0 text-slate-400">
                       {categoryLabel(v.service_category)}
                     </span>
-                    <span className="shrink-0 text-slate-300">{v.city || '—'}</span>
+                    <span className="shrink-0 text-slate-300">{v.city || v.state || '—'}</span>
                   </div>
                 ))}
                 {parsed.vendors.length > 20 && (

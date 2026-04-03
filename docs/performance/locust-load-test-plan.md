@@ -86,8 +86,15 @@ If you want to override them, set:
 - `LOCUST_WEDDING_SLUG`
 - `LOCUST_PLANNER_EMAIL`
 - `LOCUST_PLANNER_PASSWORD`
+- `LOCUST_PLANNER_BEARER_TOKEN`
 - `LOCUST_COUPLE_EMAIL`
 - `LOCUST_COUPLE_PASSWORD`
+- `LOCUST_COUPLE_BEARER_TOKEN`
+
+Token overrides are useful for steady-state read benchmarks because they let you
+separate login throttling from the authenticated read workload. If a bearer
+token override is present, the Locust user skips the login request and reuses
+the provided token.
 
 ## Install
 
@@ -176,6 +183,27 @@ The script defaults to:
 
 - frontend: `http://localhost:3000`
 - backend: `http://localhost:8000`
+
+## Production-Mode Local Run
+
+For a trustworthy local baseline, do not benchmark `next dev` and `uvicorn --reload`.
+Run the frontend and backend in production mode on alternate ports and point
+Locust at those ports instead.
+
+Example:
+
+```bash
+# terminal 1
+PORT=3100 npm run start
+
+# terminal 2
+./.venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8100 --workers 2
+
+# terminal 3
+LOCUST_FRONTEND_HOST=http://127.0.0.1:3100 \
+LOCUST_API_HOST=http://127.0.0.1:8100 \
+locust -f loadtests/locustfile.py --headless --users 25 --spawn-rate 5 --run-time 10m
+```
 
 ## What To Record
 

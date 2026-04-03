@@ -1,6 +1,6 @@
 import { cache } from 'react';
 
-import { getApiBaseUrl } from '@/utils/env';
+import { getServerApiBaseUrl } from '@/utils/env';
 import { isNonWeddingSlug } from '@/utils/slug-constants';
 
 export interface WeddingPrivacyInfo {
@@ -28,17 +28,28 @@ export type WeddingPrivacyInfoResult =
   | { kind: 'not_found' }
   | { kind: 'error'; status: number | null; message: string };
 
+function getPrivacyInfoRevalidateSeconds(): number {
+  const parsed = Number.parseInt(process.env.WEDDING_PRIVACY_INFO_REVALIDATE_SECONDS ?? '30', 10);
+  if (Number.isFinite(parsed) && parsed > 0) {
+    return parsed;
+  }
+  return 30;
+}
+
 export const fetchWeddingPrivacyInfo = cache(async (slug: string): Promise<WeddingPrivacyInfoResult> => {
   if (isNonWeddingSlug(slug)) {
     return { kind: 'not_found' };
   }
 
-  const baseUrl = getApiBaseUrl();
+  const baseUrl = getServerApiBaseUrl();
   const apiUrl = baseUrl.replace('/admin', '');
 
   try {
     const response = await fetch(`${apiUrl}/weddings/privacy-info/${slug}`, {
-      cache: 'no-store',
+      next: {
+        revalidate: getPrivacyInfoRevalidateSeconds(),
+        tags: [`wedding-privacy:${slug}`],
+      },
     });
 
     if (response.status === 404) {
