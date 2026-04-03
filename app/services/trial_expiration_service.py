@@ -52,11 +52,13 @@ class TrialExpirationService:
                 user_id = str(user["_id"])
 
                 # Mark trial as expired in users collection
+                # Note: is_active stays True so the planner can still log in
+                # and access the billing page to upgrade. Only admin-deactivated
+                # accounts should have is_active=False.
                 await self.users_collection.update_one(
                     {"_id": user["_id"]},
                     {"$set": {
                         "subscription_status": "expired",
-                        "is_active": False,
                         "trial_expired_at": now
                     }}
                 )
@@ -71,8 +73,13 @@ class TrialExpirationService:
                     }}
                 )
 
-                # Send trial expired email
-                await self.send_trial_expired_email(user)
+                # Send trial expired email — wrapped in try/except so a single
+                # email failure doesn't break the loop for remaining users
+                try:
+                    await self.send_trial_expired_email(user)
+                except Exception as email_err:
+                    logger.error(f"Failed to send expiration email to {user.get('email')}: {email_err}")
+
                 expired_count += 1
 
                 logger.info(f"Expired trial for user: {user['email']}")
@@ -88,38 +95,78 @@ class TrialExpirationService:
             return {"error": str(e)}
 
     async def send_trial_warning_emails(self) -> dict:
-        """Send warning emails for trials expiring soon"""
+        """Send warning emails for trials expiring soon.
+
+        Email schedule:
+          - Day -7: Single early warning (existing trial_warning_sent flag)
+          - Day -3: "3 days left" (trial_countdown_last_day = 3)
+          - Day -2: "2 days left" (trial_countdown_last_day = 2)
+          - Day -1: "Last day"   (trial_countdown_last_day = 1)
+        """
         try:
             trial_settings = await self.get_trial_settings()
-            warning_days = trial_settings.get("trial_warning_days", 7)
-
             now = datetime.now(timezone.utc)
-            warning_date = now + timedelta(days=warning_days)
 
-            # Find users whose trials expire within warning period using Motor async cursor
+            warning_count = 0
+
+            # ── 7-day early warning (single shot) ──────────────────
+            early_warning_days = trial_settings.get("trial_warning_days", 7)
+            early_warning_date = now + timedelta(days=early_warning_days)
+
             cursor = self.users_collection.find({
                 "subscription_status": "trial",
-                "trial_end_date": {"$lte": warning_date, "$gt": now},
+                "trial_end_date": {"$lte": early_warning_date, "$gt": now + timedelta(days=3)},
                 "trial_warning_sent": {"$ne": True},
                 "is_active": True,
                 "email_verified": True
             })
-            warning_users = await cursor.to_list(length=None)
+            early_users = await cursor.to_list(length=None)
 
-            warning_count = 0
-
-            for user in warning_users:
+            for user in early_users:
                 days_remaining = (user["trial_end_date"] - now).days
-
-                # Send warning email
                 if await self.send_trial_warning_email(user, days_remaining):
-                    # Mark warning as sent
                     await self.users_collection.update_one(
                         {"_id": user["_id"]},
                         {"$set": {"trial_warning_sent": True, "warning_sent_at": now}}
                     )
                     warning_count += 1
-                    logger.info(f"Sent trial warning to user: {user['email']}")
+                    logger.info(f"Sent 7-day trial warning to: {user['email']}")
+
+            # ── 3-day countdown (daily emails) ─────────────────────
+            countdown_date = now + timedelta(days=3)
+
+            cursor = self.users_collection.find({
+                "subscription_status": "trial",
+                "trial_end_date": {"$lte": countdown_date, "$gt": now},
+                "is_active": True,
+                "email_verified": True
+            })
+            countdown_users = await cursor.to_list(length=None)
+
+            for user in countdown_users:
+                days_remaining = max((user["trial_end_date"] - now).days, 0)
+                # Which "day" email should we send? day 3 = first, day 1 = last
+                target_day = days_remaining + 1  # e.g. 2 days remaining → day 3 email
+                if days_remaining == 0:
+                    target_day = 1  # Expiring today
+
+                last_sent_day = user.get("trial_countdown_last_day", 0)
+
+                # Simpler logic: target_day counts down 3→2→1
+                # We send if trial_countdown_last_day != target_day
+                if user.get("trial_countdown_last_day") == target_day:
+                    continue  # Already sent today's email
+
+                if await self.send_trial_warning_email(user, days_remaining):
+                    await self.users_collection.update_one(
+                        {"_id": user["_id"]},
+                        {"$set": {
+                            "trial_countdown_last_day": target_day,
+                            "trial_countdown_last_sent": now,
+                        }}
+                    )
+                    warning_count += 1
+                    logger.info(f"Sent countdown email (day {target_day}, {days_remaining} days left) to: {user['email']}")
 
             return {
                 "message": "Trial warning check completed",
@@ -131,36 +178,71 @@ class TrialExpirationService:
             logger.error(f"Error in trial warning check: {str(e)}")
             return {"error": str(e)}
 
-    async def send_trial_warning_email(self, user: dict, days_remaining: int) -> bool:
-        """Send trial warning email to user"""
-        try:
-            if not self.email_service.configured:
+    async def send_trial_warning_email(self, user: dict, days_remaining: int, max_retries: int = 2) -> bool:
+        """Send trial warning email to user with retry logic.
+
+        Args:
+            user: User document from MongoDB
+            days_remaining: Number of days until trial expires
+            max_retries: Maximum retry attempts on transient failures (default 2)
+
+        Returns:
+            True if email sent successfully, False otherwise
+        """
+        import asyncio
+
+        if not self.email_service.configured:
+            logger.warning("Email service not configured — skipping trial warning email")
+            return False
+
+        email = user.get("email")
+        if not email:
+            logger.error(f"User {user.get('_id')} has no email address — skipping trial warning")
+            return False
+
+        first_name = user.get("first_name", "")
+
+        html_content = self._generate_trial_warning_email_html(
+            email=email,
+            first_name=first_name,
+            days_remaining=days_remaining
+        )
+
+        subject = f"Your Special Wedding Trial Expires in {days_remaining} Day{'s' if days_remaining != 1 else ''}"
+
+        for attempt in range(max_retries + 1):
+            try:
+                result = await self.email_service.send_email(
+                    to_email=email,
+                    subject=subject,
+                    html_content=html_content,
+                    from_name="Special Wedding Team",
+                    email_type="trial_warning"
+                )
+
+                if result.get("success", False):
+                    return True
+
+                # Non-retryable failure (e.g. invalid email)
+                error_msg = result.get("error", "Unknown error")
+                logger.error(f"Trial warning email to {email} failed: {error_msg}")
                 return False
 
-            email = user["email"]
-            first_name = user.get("first_name", "")
+            except Exception as e:
+                if attempt < max_retries:
+                    wait_s = (attempt + 1) * 2  # 2s, 4s backoff
+                    logger.warning(
+                        f"Trial warning email to {email} failed (attempt {attempt + 1}/{max_retries + 1}), "
+                        f"retrying in {wait_s}s: {e}"
+                    )
+                    await asyncio.sleep(wait_s)
+                else:
+                    logger.error(
+                        f"Trial warning email to {email} failed after {max_retries + 1} attempts: {e}"
+                    )
+                    return False
 
-            html_content = self._generate_trial_warning_email_html(
-                email=email,
-                first_name=first_name,
-                days_remaining=days_remaining
-            )
-
-            subject = f" Your Special Wedding Trial Expires in {days_remaining} Days"
-
-            result = await self.email_service.send_email(
-                to_email=email,
-                subject=subject,
-                html_content=html_content,
-                from_name="Special Wedding Team",
-                email_type="trial_warning"
-            )
-
-            return result.get("success", False)
-
-        except Exception as e:
-            logger.error(f"Error sending trial warning email to {user.get('email', 'unknown')}: {str(e)}")
-            return False
+        return False
 
     async def send_trial_expired_email(self, user: dict) -> bool:
         """Send trial expired email to user"""

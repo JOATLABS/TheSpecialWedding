@@ -1,8 +1,9 @@
-from fastapi import APIRouter, HTTPException, Depends, Request
+from fastapi import APIRouter, HTTPException, Depends, Request, Response
 from typing import Optional, Literal
 from pydantic import BaseModel, Field
 from app.services.guest_verification_service import GuestVerificationService
 from app.dependencies.auth_extended import require_admin_or_planner, ExtendedAuthUser, check_wedding_access
+from app.dependencies.guest_access import get_guest_access_session, set_guest_access_session
 
 router = APIRouter()
 verification_service = GuestVerificationService()
@@ -35,7 +36,7 @@ class RequestRSVPLinkRequest(BaseModel):
 
 
 @router.post("/weddings/verify-guest-access/{slug}", tags=["Guest"])
-async def verify_guest_access(slug: str, verification: GuestVerificationRequest):
+async def verify_guest_access(slug: str, verification: GuestVerificationRequest, response: Response):
     """
     Verify visitor access to view a wedding page based on privacy settings.
 
@@ -52,7 +53,7 @@ async def verify_guest_access(slug: str, verification: GuestVerificationRequest)
     try:
         result = await verification_service.verify_wedding_page_access(
             slug=slug,
-            verification_data=verification.dict()
+            verification_data=verification.dict(),
         )
 
         if not result.get("access"):
@@ -67,11 +68,23 @@ async def verify_guest_access(slug: str, verification: GuestVerificationRequest)
                 headers={"X-Auth-Required": result.get("required_auth", "private")}
             )
 
+        guest = result.get("guest")
+        auth_method = result.get("auth_method")
+        if auth_method and auth_method != "public":
+            set_guest_access_session(
+                response,
+                wedding_slug=slug,
+                wedding_id=str(result["wedding"]["id"]),
+                guest_id=guest.get("id") if guest else None,
+                auth_method=auth_method,
+                otp_verified=auth_method.endswith("_otp"),
+            )
+
         return {
             "access": True,
             "wedding": result["wedding"],
-            "guest": result.get("guest"),
-            "auth_method": result.get("auth_method")
+            "guest": guest,
+            "auth_method": auth_method,
         }
     except HTTPException:
         raise
@@ -120,10 +133,73 @@ async def get_wedding_with_token_access(slug: str, token: str):
         raise HTTPException(status_code=500, detail=f"Token verification error: {str(e)}")
 
 
+@router.post("/weddings/guest-access/{slug}/{token}/exchange", tags=["Guest"])
+async def exchange_wedding_token_access(slug: str, token: str, response: Response):
+    """
+    Exchange a guest invite token for a short-lived HttpOnly guest session.
+
+    The raw invite token remains the emailed entry credential, but the browser
+    is moved onto a tokenless session flow immediately after first use.
+    """
+    try:
+        result = await verification_service.get_rsvp_access_by_token(slug, token)
+        if not result.get("access"):
+            raise HTTPException(status_code=403, detail="Invalid guest token")
+
+        guest = result.get("guest")
+        set_guest_access_session(
+            response,
+            wedding_slug=slug,
+            wedding_id=str(result["wedding"]["id"]),
+            guest_id=guest.get("id") if guest else None,
+            auth_method=result.get("auth_method", "token"),
+            otp_verified=False,
+        )
+
+        return {
+            "wedding": result["wedding"],
+            "guest": guest,
+            "rsvp": result.get("rsvp"),
+            "auth_method": result.get("auth_method", "token"),
+            "otp_verified": False,
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Token exchange error: {str(e)}")
+
+
+@router.get("/weddings/guest-access/session/{slug}", tags=["Guest"])
+async def get_wedding_with_session_access(slug: str, request: Request):
+    """
+    Get wedding and guest data from the guest access session cookie.
+    """
+    try:
+        session = get_guest_access_session(request, slug=slug)
+        result = await verification_service.get_session_access(
+            slug=slug,
+            wedding_id=session.wedding_id,
+            guest_id=session.guest_id,
+            auth_method=session.auth_method,
+            otp_verified=session.otp_verified,
+        )
+
+        return {
+            "wedding": result["wedding"],
+            "guest": result.get("guest"),
+            "rsvp": result.get("rsvp"),
+            "auth_method": result.get("auth_method"),
+            "otp_verified": result.get("otp_verified", False),
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Guest session error: {str(e)}")
+
+
 @router.post("/guests/request-rsvp-link", tags=["Guest"])
 async def request_rsvp_link(
     request_data: RequestRSVPLinkRequest,
-    http_request: Request
 ):
     """
     Request personal RSVP link to be sent via SMS or email.
@@ -141,14 +217,10 @@ async def request_rsvp_link(
         Generic success message regardless of whether guest was found
     """
     try:
-        # Get client IP for rate limiting
-        client_ip = http_request.client.host if http_request.client else "unknown"
-
         result = await verification_service.request_and_send_rsvp_link(
             slug=request_data.slug,
             contact=request_data.contact,
             contact_type=request_data.contact_type,
-            client_ip=client_ip
         )
 
         return result

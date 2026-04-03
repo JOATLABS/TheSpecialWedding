@@ -5,6 +5,1569 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.28.1] - 2026-04-03
+
+### Changed
+
+- **Two-server Coolify staging-first rollout wiring** (`/.github/workflows/coolify-deploy-shared.yml`, `/.github/workflows/deploy-coolify.yml`, `/.github/workflows/promote-coolify-production.yml`, `/scripts/deploy/verify_environment.py`, `/docs/plans/COOLIFY_SPLIT_DEPLOY_GUIDE.md`, `/docs/plans/DEPLOYMENT_STRATEGY_STATUS.md`, `/README.md`) — Replaced the old production-only split-service deploy flow with a real two-environment release path: CI still builds the frontend and backend once, staging now auto-deploys after successful `main` CI, and production is promoted manually by the exact same immutable SHA tag. Added a shared Coolify deploy/verify/rollback workflow, a reusable Python smoke verifier for frontend health, backend health, admin login, planner reads, public wedding load, couple login, couple dashboard, and SSE, and rewrote the deployment guide around two DO workload servers managed by Coolify Cloud rather than the earlier single-environment split-service assumption.
+- **Frontend image made staging-promotable without rebuild** (`/app/utils/env.ts`, `/app/admin/guests/page.tsx`, `/app/admin/inbox/page.tsx`, `/app/admin/seating/page.tsx`, `/app/admin/weddings/[id]/seating/page.tsx`, `/app/admin/components/seating/SeatingConstraintsModal.tsx`, `/app/admin/planner/billing/connect.tsx`, `/app/admin/billing/success/page.tsx`, `/app/components/RequestRSVPLinkModal.tsx`, `/app/components/payments/CollectPaymentModal.tsx`, `/app/components/saas/SignupModal.tsx`, `/app/components/saas/apiClient.ts`, `/Dockerfile.frontend`, `/.github/workflows/ci.yml`, `/.env.example`) — Browser-side API routing now derives from the current hostname instead of depending on a production-only baked `NEXT_PUBLIC_API_BASE_URL`, while server-rendered frontend fetches rely on `INTERNAL_API_BASE_URL` / `FRONTEND_URL`. This lets the same frontend image move from staging to production without rebuilding, and CI now builds the frontend around `FRONTEND_URL` rather than a production-only public API URL.
+- **GitHub Actions secret sync/rotation automation for the new Coolify rollout** (`/scripts/deploy/sync_github_secrets.sh`, `/scripts/deploy/github-secrets.example.env`, `/.gitignore`, `/docs/plans/COOLIFY_SPLIT_DEPLOY_GUIDE.md`, `/README.md`) — Added a local env-driven `gh secret set` helper so the required Coolify deploy secrets and smoke-test credentials can be pushed into GitHub in one repeatable step instead of being managed by hand in the UI. The helper supports scoped updates for `shared`, `staging`, `production`, and `all`, and the deployment guide now documents the dry-run and rotation workflow.
+
+## [2.28.0] - 2026-04-02
+
+### Added
+
+- **Behavioral analytics engine and cross-dashboard product metrics** (`/app/services/behavioral_analytics_service.py`, `/app/api/behavioral_analytics.py`, `/app/services/behavioralAnalyticsApi.ts`) — New `BehavioralAnalyticsService` computes WAU/MAU with stickiness ratio, a 5-step planner activation funnel (signed up → onboarding → first wedding → first invite → first RSVP), 4-month retention cohort analysis using the union of login and activity signals, MRR movement waterfall (new/churned/net/trial-to-paid), and week-over-week change indicators — all derived from existing collections via MongoDB aggregation pipelines without requiring new event tracking infrastructure. Exposes admin-auth endpoints under `/admin/behavioral-analytics`, `/admin/engagement-signals`, `/admin/weddings/{id}/non-responders`, and `/admin/weddings/{id}/budget-breakdown`, plus couple-auth cookie-based endpoints under `/couple/portal/non-responders` and `/couple/portal/budget-breakdown`.
+- **Root admin dashboard product health surface** (`/app/admin/saas/page.tsx`) — Added four new sections after the existing Recent Signups panel: Product Health (WAU with trend arrows, MAU, stickiness ratio as north-star card), Activation Funnel (5-step gradient progress bars with step-to-step and overall conversion rates), Retention Cohorts + MRR Movement (side-by-side cohort table with color-coded retention badges and MRR waterfall with trial conversion rate), and Engagement Velocity (RSVP velocity trend, platform response rate, active engaged weddings count).
+- **Planner dashboard per-wedding engagement signals** (`/app/admin/planner/page.tsx`) — Each wedding card in the planner dashboard now shows inline engagement badges: blue for recent RSVP activity, amber for 14+ day inactivity, red for zero RSVPs, orange for low response rates, purple for pending forms, and green for recently active weddings with no attention flags. Signals are computed server-side via `get_planner_engagement_signals()` and mapped per-wedding using a `useMemo` lookup.
+- **Couple portal wedding readiness, non-responders, and budget breakdown** (`/app/couple/dashboard/page.tsx`) — Three new components in the couple dashboard: `WeddingReadinessCard` showing a weighted progress score (40% RSVP + 20% guest list + 20% events + 20% venue) with milestone checkboxes and color-coded progress bar; `NonRespondersCard` listing guests who haven't RSVPed sorted by days-since-invite with expandable list and urgency color coding; and `BudgetBreakdownCard` rendering a stacked bar chart plus per-category mini progress bars with a 10-color palette. Non-responders and budget data fetch through couple-auth cookie endpoints.
+
+### Changed
+
+- **Couple portal endpoints use dedicated couple-auth routes** (`/app/main.py`, `/app/api/behavioral_analytics.py`) — The couple-facing non-responders and budget breakdown endpoints use `require_couple_auth` with cookie-based JWT instead of admin Bearer token auth. The `couple_router` is registered at the `/couple` prefix so the couple dashboard calls `/couple/portal/non-responders` and `/couple/portal/budget-breakdown` with `coupleFetch()` credentials, matching the existing couple portal auth pattern.
+
+### Fixed
+
+- **Deployment documentation and split-service Coolify rollback alignment** (`/docs/plans/DEPLOYMENT_STRATEGY_STATUS.md`, `/docs/plans/COOLIFY_SPLIT_DEPLOY_GUIDE.md`, `/README.md`, `/docs/architecture/Architecture_Doc.md`, `/docs/architecture/BRANCH_MANAGEMENT.md`, `/docs/automation/DEPLOYMENT.md`, `/docs/guides/DEPLOYMENT_SETUP.md`, `/.github/workflows/deploy-coolify.yml`) — Added a repo-grounded deployment strategy status document that separates the current single-container Coolify runtime from the recommended split-service Coolify path and explicitly marks older Vercel/DigitalOcean and droplet-only guides as historical. The split-service guide now matches the real GitHub Actions flow: API-driven deploys by Coolify application UUID rather than webhook-based deploys. The Coolify deploy workflow now records each service's pre-deploy image tag and uses that exact tag for automatic rollback instead of resetting to `latest`, which was not a true rollback after a bad image push.
+- **Root admin planner invite modal viewport and mobile layout** (`/app/admin/users/page.tsx`) — Reworked the invite-planner modal to use a viewport-capped shell with an actual scrollable body, widened it to the existing admin modal width, and made the dense two-column sections responsive so long forms no longer clip below the fold without any visible scroll affordance on shorter screens or mobile-sized widths.
+- **Single-container Coolify performance guardrails for public SSR and login bursts** (`/Dockerfile.coolify`, `/app/utils/env.ts`, `/app/utils/weddingPrivacyInfo.ts`, `/app/middleware/rate_limiting.py`, `/loadtests/locustfile.py`, `/docs/performance/locust-load-test-plan.md`) — The Coolify runtime now starts the backend through a dedicated wrapper that honors `WEB_CONCURRENCY` and falls back to a single worker automatically when Redis-backed cross-worker SSE fan-out is unavailable. Server-rendered public wedding bootstrap fetches now prefer the internal loopback API URL and use short revalidation instead of unconditional `no-store`, reducing self-inflicted frontend→backend proxy churn in the single-container deployment. Login throttling is now identity-aware with a separate IP backstop so multiple planners or team members behind one office IP do not trip a shared five-requests-per-minute bucket, and the Locust harness now supports bearer-token overrides so steady-state read benchmarks can exclude login churn.
+- **Planner/couple/public read hot paths flattened for the single-container Coolify runtime** (`/app/api/planner_metrics.py`, `/app/services/couple_portal_service.py`, `/app/api/couple_portal.py`, `/app/services/guest_verification_service.py`, `/app/core/cache.py`) — Added short-TTL Redis-backed caches for planner wedding lists, couple portal dashboard payloads, and public wedding privacy bootstrap responses; narrowed planner/couple/privacy reads to the fields they actually render; and parallelized the couple dashboard fan-out instead of serially waiting on independent guest, budget, contract, forms, updates, and memories queries. In the production-shaped Locust rerun, the aggregate profile improved from `10` failures / `68.5 ms` average / `p99 1100 ms` / `24.1 s max` to `0` failures / `7.38 ms` average / `p99 24 ms` / `210 ms max`, with the previous `/admin/planner/weddings` and `/couple/portal/dashboard` tail spikes collapsing into low-double-digit millisecond reads.
+- **Behavioral analytics auth, startup, and null-safety hardening** (`/app/api/behavioral_analytics.py`, `/app/services/behavioral_analytics_service.py`, `/app/admin/saas/page.tsx`, `/app/couple/dashboard/page.tsx`, `/tests/backend/test_behavioral_analytics_contract.py`) — Fixed the backend import crash by sourcing `ExtendedAuthUser` from the auth dependency module, moved planner/admin analytics routes onto the team-aware auth pattern, enforced the existing `view_analytics` permission, and added wedding-access checks before exposing per-wedding guest/budget data. Reworked planner engagement signals to respect team-member planner scope and batch wedding aggregates instead of issuing per-wedding N+1 queries. Retention cohorts now use true calendar month boundaries and a real union of login/activity users, trial conversion metrics no longer depend on the unwritten `state_history` field, and the SaaS/couple dashboards now tolerate partial analytics payloads without crashing on missing nested objects.
+- **Behavioral analytics runtime cost reduced with cache-backed hot paths** (`/app/services/behavioral_analytics_service.py`, `/tests/backend/test_behavioral_analytics_contract.py`) — Added short-TTL caching for the root-admin behavioral dashboard payload and planner engagement signals, and replaced the remaining unbounded signup/cohort materializations with streamed cursor scans so the analytics endpoints stop recomputing the same heavy aggregates on every dashboard refresh.
+- **Runtime warning cleanup for local and staging imports** (`/app/models/plus_one.py`, `/app/core/settings.py`, `/app/services/security_audit_service.py`, `/.env.example`, `/tests/backend/test_settings.py`) — Migrated the remaining Pydantic v1 config usage in the plus-one model to `ConfigDict(validate_by_name=True)` and moved security audit file logging onto a settings-backed repo-local path (`logs/security_audit.log`) with automatic directory creation and duplicate-handler suppression. This removes the noisy local import warnings without changing production override behavior.
+- **MongoDB aggregation syntax for RSVP detection** (`/app/services/behavioral_analytics_service.py`) — Fixed invalid `$not: {$size: 0}` and duplicate `$ne` dict key patterns in the RSVP confirmation query. Now uses `$type: "array"` combined with `$ne: []` to correctly identify confirmed RSVPs (non-empty `attending` arrays), matching the existing `_calculate_rsvp_status()` logic in `planner_metrics.py`.
+
+### Known Issues
+
+- Behavioral analytics aggregation pipelines run on every dashboard load without caching — may become expensive at scale. Consider adding a scheduled snapshot pattern similar to `PlatformMetricsService`.
+- The `fetchNonResponders()` and `fetchBudgetBreakdown()` functions in the TypeScript API service use admin Bearer-token auth and are intended for planner-side use only. Separate `fetchCoupleNonResponders()` and `fetchCoupleBudgetBreakdown()` functions are provided for couple-auth access.
+
+## [Unreleased] - 2026-03-30
+
+### Added
+
+- **Locust read-only load test harness and runbook** (`/loadtests/locustfile.py`, `/docs/performance/locust-load-test-plan.md`, `/docs/performance/README.md`) — Added a repo-local Locust setup for safe staging load tests across the public wedding pages, planner dashboard reads, and couple portal reads. The harness deliberately excludes side-effecting flows such as OTP, RSVP submission, reminder sends, package sends, contract signing, and payment mutations, and the new performance runbook documents environment overrides, ramp stages, and pass/fail criteria.
+- **Couple-owned guest memories uploads with QR intake, review, and export workflows** (`/app/[slug]/upload/[uploadToken]/page.tsx`, `/app/[slug]/upload/[uploadToken]/upload-client.tsx`, `/app/api/guest_memories.py`, `/app/services/guest_media_service.py`, `/app/services/guestMemoriesApi.ts`, `/app/couple/components/CoupleMemoriesSection.tsx`, `/app/couple/components/CoupleSidebar.tsx`, `/app/couple/dashboard/page.tsx`, `/app/models/wedding.py`, `/app/core/database_indexes.py`, `/app/services/couple_portal_service.py`) — Replaced the old guest check-in direction with a couple-facing guest media system: guests can scan a QR code, identify themselves, optionally tag uploads to a wedding event, upload photos or videos directly to a dedicated guest-media storage flow, and couples can review pending memories, keep or reject them, rotate or close the upload link, stream processed videos, download originals, and request bulk exports from the private couple portal.
+
+### Changed
+
+- **Public wedding bootstrap now distinguishes missing weddings from upstream failures** (`/app/[slug]/layout.tsx`, `/app/utils/weddingPrivacyInfo.ts`, `/tests/unit/weddingPrivacyInfo.test.ts`) — The `/:slug` server layout no longer collapses rate limits, backend errors, or malformed `privacy-info` responses into `notFound()`. True `404`s still render the wedding not-found route, while `429` and `5xx` failures now surface through the existing route error boundary instead of masquerading as missing weddings.
+- **Route-family backend rate-limit buckets for public, admin, and couple traffic** (`/app/middleware/rate_limiting.py`, `/tests/backend/test_rate_limiting_middleware.py`) — Split the old shared non-auth `api` bucket into dedicated route-family buckets so public wedding metadata/gallery traffic no longer competes with authenticated planner and couple dashboard reads behind the same client IP. Also corrected dynamic guest-verification path matching so `/weddings/verify-guest-access/{slug}` no longer falls through into the generic bucket, and added focused middleware tests to pin the bucket classifier.
+- **Dedicated billing sender for Stripe emails** (`/app/core/settings.py`, `/app/services/stripe_service.py`, `/.env.example`, `/README.md`, `/tests/backend/test_stripe_checkout_lifecycle.py`) — Stripe-originated billing notifications and subscription activation emails now use `RESEND_BILLING_EMAIL` when configured, falling back to the default transactional sender otherwise. This keeps invoice and billing communication on the new `billing@thespecialwedding.io` address without changing the sender identity for the rest of the platform’s emails.
+- **Stripe planner checkout trial + activation lifecycle hardening** (`/app/services/stripe_service.py`, `/app/api/stripe_payment.py`, `/app/admin/planner/billing/page.tsx`, `/app/components/saas/SignupModal.tsx`, `/tests/backend/test_stripe_checkout_lifecycle.py`) — Planner billing and public signup now send explicit trial intent into Stripe Checkout instead of silently inheriting plan defaults. Zero-day invited planners and the public signup flow no longer pick up a hidden plan-level free trial, initial subscription activation emails/in-app notifications now come from `checkout.session.completed` after the local subscription sync finishes, and recurring `invoice.paid` notifications now skip the initial subscription invoice to avoid race-driven gaps and duplicate confirmation messages.
+- **Planner billing-state truthfulness and invite-trial reset hardening** (`/app/admin/planner/billing/page.tsx`, `/app/admin/users/page.tsx`) — The planner billing surface now treats `pending_checkout`, `pending_payment`, `inactive`, and other unpaid statuses as payment-required states instead of falling through to the active-subscription management view, and the root-admin invite modal now resets from the fetched platform default without overwriting an explicit zero-day invite with a stale 30-day trial default.
+- **Guest RSVP/OTP session hardening** (`/app/dependencies/guest_access.py`, `/app/api/guest_verification.py`, `/app/api/otp.py`, `/app/api/rspv.py`, `/app/api/gallery_public.py`, `/app/services/guest_verification_service.py`, `/app/services/otp_service.py`, `/app/services/rsvp_service.py`, `/app/[slug]/page.tsx`, `/app/[slug]/gallery/page.tsx`, `/app/[slug]/invite/[token]/page.tsx`, `/app/otp/verify/page.tsx`, `/app/components/RSVPModal.tsx`, `/app/components/RSVPForm.tsx`, `/app/components/GuestVerificationModal.tsx`, `/app/components/landing-page/LandingLayout.tsx`, `/app/utils/guestAccess.ts`, `/app/utils/publicGallery.ts`, `/app/core/settings.py`, `/.env.example`, `/tests/backend/test_guest_access_session_contract.py`) — Replaced the remaining guest-facing raw invite-token browser flow with a short-lived HttpOnly `guest_access_session` cookie. Invite links now exchange into a server-managed guest session, the landing page/OTP/RSVP/gallery flows now use session-backed endpoints with credentialed requests, guest-facing API responses stop echoing `guest.token`, and legacy query-token paths are reduced to one-time compatibility shims with immediate URL cleanup instead of long-lived browser storage.
+- **Invited planner billing lifecycle alignment** (`/app/services/user_management_service.py`, `/app/dependencies/auth_extended.py`, `/app/components/AdminRouteGuard.tsx`, `/app/admin/page.tsx`, `/app/admin/components/TrialBanner.tsx`, `/app/contexts/AdminContext.tsx`, `/app/admin/planner/billing/page.tsx`) — Admin-invited planners now follow the same timed-trial-to-billing model as the rest of the subscription system: invited accounts with trial days still enter a real trial, while zero-day invites enter the existing payment-required Checkout state instead of slipping into usable unpaid planner access. Billing blocking, login redirects, banners, and the billing page now consistently treat unpaid `pending` / `pending_payment` / `inactive` planner states as billing-only access.
+- **Resources/blog dark-surface typography fix and guest memories runbook expansion** (`/app/components/blog/MarkdownArticle.tsx`, `/app/resources/ResourcesClient.tsx`, `/app/resources/blog/[slug]/BlogArticleContent.tsx`, `/docs/testing/deployment-browser-e2e-runbook.md`) — Made the shared blog markdown renderer accept an explicit dark theme so article body copy and headings stay legible on the dark resources surfaces without relying on a global `dark` class, and expanded the deployment browser runbook to cover the planner guest-memories operations screen, public guest upload flow, and couple review/export validation path end to end.
+- **Vendor public-link hardening** (`/app/api/vendor_forms.py`, `/app/api/vendor_contract_public.py`, `/app/services/vendor_service.py`, `/app/services/vendorManagementApi.ts`, `/app/admin/vendor/page.tsx`, `/app/vendor-form/[form_id]/page.tsx`, `/app/vendor-form/[form_id]/[token]/page.tsx`, `/app/vendor-form/[form_id]/VendorFormPageClient.tsx`, `/app/vendor-contract/[id]/page.tsx`, `/app/vendor-contract/[id]/[token]/page.tsx`, `/app/vendor-contract/[id]/PublicContractPageClient.tsx`, `/tests/backend/test_public_token_transport_contract.py`) — Canonical vendor form and vendor contract links now use path-scoped tokens instead of `?token=...`, legacy query-token links are immediately redirected onto the canonical path form, and public vendor contract signing now sends signer identity in the JSON body rather than the URL query string. Added focused regression coverage to pin the canonical routes and redirect behavior.
+- **Couple, account-reset, and team-invite public-link hardening** (`/app/api/couple_invite.py`, `/app/api/couple_auth.py`, `/app/services/user_management_service.py`, `/app/services/team_management_service.py`, `/app/couple/setup/page.tsx`, `/app/couple/setup/[token]/page.tsx`, `/app/couple/setup/CoupleSetupPageClient.tsx`, `/app/couple/reset-password/page.tsx`, `/app/couple/reset-password/[token]/page.tsx`, `/app/couple/reset-password/CoupleResetPasswordPageClient.tsx`, `/app/setup-account/page.tsx`, `/app/setup-account/[token]/page.tsx`, `/app/setup-account/SetupAccountPageClient.tsx`, `/app/reset-password/page.tsx`, `/app/reset-password/[token]/page.tsx`, `/app/reset-password/ResetPasswordPageClient.tsx`, `/app/admin/team/accept/page.tsx`, `/app/admin/team/accept/[token]/page.tsx`, `/app/admin/team/accept/AcceptInvitePageClient.tsx`, `/tests/backend/test_setup_reset_token_transport_contract.py`) — Couple invite, couple reset-password, admin setup-account, admin reset-password, and team accept-invite links now use canonical path tokens instead of `?token=...`. Legacy query-token entry points remain temporarily compatible, but they immediately redirect onto the canonical path route. The client pages were split into explicit server wrappers plus client renderers so the redirect happens before the browser settles on the old query URL, and focused regression coverage now pins those canonical routes and updated email-link generators.
+- **Security report refresh and residual public-token hardening plan** (`/security_best_practices_report.md`) — Re-audited the current codebase after the earlier SSE/docs/trusted-host hardening landed, confirmed that the critical/high blockers remain fixed, documented the safer guest-memories transport posture, and added two still-open medium findings for residual public URL-token transport and vendor-signing PII-in-query usage, along with a phased remediation plan.
+- **Homepage testimonial hydration stabilization** (`/app/page.tsx`) — Deferred the public homepage marketing-data refresh until after the initial client hydration pass, and aligned the stale testimonial fallback copy with the current public testimonial API content so the landing page no longer trips a recoverable hydration mismatch when the browser replaces SSR fallback testimonials with admin-configured live content.
+- **Planner-managed guest memories rollout operations** (`/app/admin/memories/page.tsx`, `/app/admin/memories/error.tsx`, `/app/admin/components/Sidebar.tsx`, `/app/components/guest-memories/GuestMemoriesSummaryCard.tsx`, `/app/couple/components/CoupleMemoriesSection.tsx`, `/app/api/guest_memories.py`, `/app/services/guestMemoriesApi.ts`, `/app/services/guest_export_service.py`, `/tests/backend/test_guest_memories_service.py`) — Added a planner-facing Guest Memories operations surface that reuses the existing memories backend state, QR generation, and styling primitives instead of creating a parallel feature stack. Planners can now choose a wedding, copy the active upload link, generate or download the QR code, download a printable guest-memories sign PDF, close or reopen uploads, rotate the upload link, and monitor high-level submission counts, while couples keep private review and download control inside the couple portal.
+- **Guest memories privacy, validation, and durable job recovery hardening** (`/app/services/guest_media_service.py`, `/app/api/guest_memories.py`, `/app/main.py`, `/app/services/guestMemoriesApi.ts`, `/app/couple/components/CoupleMemoriesSection.tsx`, `/tests/backend/test_guest_memories_service.py`) — Locked guest memories back down to authenticated asset access instead of long-lived public bucket and video URLs, revalidated uploaded objects against the reserved file size and MIME contract during finalize, moved video ingest and export recovery onto the leader-elected background scheduler so work survives process restarts, removed duplicate list-fetch churn from the couple memories UI, and added focused backend regression coverage for the new finalize/privacy rules.
+- **Guest memories Cloudflare Stream hardening** (`/app/services/guest_media_service.py`, `/tests/backend/test_guest_memories_service.py`, `/.env.example`, `/app/services/config_validator.py`) — Made Cloudflare Stream copies private at creation time instead of patching them after ingest, added origin allowlisting and failed-video state handling based on the Stream status payload, preflighted the signed R2 source URL for the HEAD and ranged-GET behavior Stream copy expects, reused short-lived signed playback tokens to reduce routine Cloudflare API churn, and removed the stale `GUEST_MEDIA_DOMAIN` guest-memories config path that no longer matches the authenticated delivery model.
+- **Guest memories Stream env isolation** (`/app/services/guest_media_service.py`, `/.env.example`, `/app/services/config_validator.py`) — Kept the existing shared `CLOUDFLARE_ACCOUNT_ID` variable for account targeting and isolated only the guest-memories Stream credential behind `CLOUDFLARE_STREAM_API_TOKEN` so the feature no longer collides with any generic Cloudflare API token already used elsewhere in production.
+- **Guest memories regression test packaging fix** (`/.gitignore`, `/tests/backend/test_guest_memories_service.py`) — Stopped the new backend regression coverage from being silently excluded by the repository ignore rules and made the test module import-safe in lean local Python environments so the guest-memories hardening assertions can actually run during backend verification.
+- **Guest memories platform validation and lint hardening** (`/app/components/saas/PlannerAuthSection.tsx`, `/app/components/budget/CreateTemplateModal.tsx`, `/app/components/budget/RecordPaymentModal.tsx`, `/app/components/budget/VendorQuoteCard.tsx`, `/app/components/contracts/DigitalSignature.tsx`, `/app/components/landing-page/AnchorNav.tsx`, `/app/components/landing-page/EventLocationSection.tsx`, `/app/components/landing-page/WeddingDarkModeToggle.tsx`, `/app/components/saas/IsometricPlatformHero.tsx`, `/app/components/saas/PlannerAuthModal.tsx`, `/app/components/saas/SaasNav.tsx`, `/app/components/saas/WeddingThemedHero.tsx`, `/app/contexts/ThemeContext.tsx`, `/app/page.tsx`, `/app/verify-email/[token]/page.tsx`, `/.env.example`, `/app/services/config_validator.py`) — Cleared the remaining React Compiler and lint blockers surfaced during the guest-memories rollout, updated environment/config validation for the new storage and streaming requirements, and revalidated the release path with a clean `npm run lint`, a successful production `npm run build`, and a successful backend `python3 -m compileall app` pass.
+- **Legacy planner check-in runtime retirement** (`/app/main.py`, `/app/api/checkin.py`, `/app/services/checkin_service.py`) — Removed the mounted admin check-in API and deleted the unused runtime implementation so the shipped product no longer exposes the abandoned guest check-in path alongside the new couple-owned guest memories flow.
+
+- **Money dashboard aggregation, scheduler leadership, and deploy-gate cleanup** (`/app/admin/money/page.tsx`, `/app/api/budget.py`, `/app/api/contracts.py`, `/app/api/health.py`, `/app/api/stripe_payment.py`, `/app/services/budget_service.py`, `/app/services/contract_service.py`, `/app/main.py`, `/package.json`, `/eslint.config.mjs`, `/app/api/gallery_upload.py`, `/app/components/GuestVerificationModalOld.tsx`) — The money dashboard now reads joined incoming/outgoing payment overview endpoints instead of fanning out one HTTP request per contract and per wedding budget, the Stripe subscription endpoint now returns the plan limits/pricing the page already needs, and the readiness probe now checks the real Redis client instead of an undefined symbol. Background billing/rollup schedulers now use a Mongo-backed lease so only one replica runs them at a time, the ESLint gate now uses Next 16’s flat config instead of crashing before linting, and the legacy unwired gallery router / old guest verification modal were removed from the tree.
+- **Public guest/gallery access dedupe and paginated gallery reads** (`/app/[slug]/layout.tsx`, `/app/[slug]/page.tsx`, `/app/[slug]/gallery/page.tsx`, `/app/components/GuestVerificationModal.tsx`, `/app/components/landing-page/LandingLayout.tsx`, `/app/api/gallery_public.py`, `/app/services/gallery_upload_service.py`, `/app/types/wedding.ts`, `/app/utils/publicGallery.ts`) — Public wedding routes now reuse the server-fetched privacy payload instead of refetching it in the guest verification modal, token-based invite access now follows the dedicated token endpoint instead of the generic verification POST, and verified gallery reads now reuse durable guest tokens/passwords instead of re-triggering the wrong auth path. Public gallery responses are now bounded and paginated with a load-more flow on the full gallery page, while the admin gallery list now paginates through the full bucket instead of truncating at the first object page.
+- **Shared Redis-backed public and guest rate limiting** (`/app/core/cache.py`, `/app/utils/rate_limiter.py`, `/app/services/guest_verification_service.py`, `/app/api/blog.py`, `/app/api/knowledge_base.py`) — Public blog and knowledge-base read throttles now use shared Redis counters with proxy-aware client IP extraction instead of per-process in-memory deques, so the limits hold when API replicas scale out. Guest verification, RSVP token access, and RSVP-link resend throttles now use shared hashed Redis keys with memory fallback for local/dev, and the RSVP-link resend limiter now scopes by wedding as well as contact instead of unintentionally colliding across unrelated events.
+- **Atomic guest verification attempt serialization** (`/app/core/cache.py`, `/app/services/guest_verification_service.py`, `/app/api/guest_verification.py`, `/app/api/gallery_public.py`, `/tests/backend/test_guest_verification_rate_limit.py`) — Guest page verification, RSVP token access, and RSVP-link resend now take a short-lived distributed lock before checking and recording failures, which removes the check-then-record race that previously allowed concurrent attempts sharing the same identifier to overshoot the lockout threshold. The lock scope now matches the shared failure-counter scope so password-protected and anonymous attempts are serialized correctly across replicas instead of only within one process.
+- **Public vendor profile normalization and custom category rendering** (`/app/api/vendor_public.py`, `/app/vendors/page.tsx`, `/app/vendors/[id]/page.tsx`, `/app/vendors/[id]/layout.tsx`) — The public vendor API now backfills missing array fields like `service_subcategories` and `portfolio_urls` for older vendor records, preventing the public vendor detail page from crashing on sparse documents. The public directory and detail page also now render planner-defined custom vendor labels such as `Family MC` instead of collapsing every `other` category back to a generic `Other`.
+- **Production hardening for SSE auth and FastAPI docs exposure** (`/app/api/notification_stream.py`, `/app/contexts/SSEContext.tsx`, `/app/core/settings.py`, `/app/main.py`, `/.env.example`, `/tests/backend/test_settings.py`, `/tests/backend/test_notification_stream_contract.py`) — The admin notification stream now authenticates from the existing `admin_token` HttpOnly cookie instead of accepting bearer JWTs in the URL query string, and interactive FastAPI docs/schema are now controlled by an explicit `ENABLE_API_DOCS` setting that defaults to enabled outside production and disabled in production. The root API payload now advertises `/docs` only when docs are actually exposed.
+- **Knowledge base status contract and route cleanup** (`/app/models/knowledge_base.py`, `/app/api/knowledge_base.py`, `/app/services/knowledge_base_service.py`, `/app/admin/components/kb/ArticleEditor.tsx`, `/tests/backend/test_knowledge_base_contract.py`) — Removed the stray `pending_review` status from the KB contract, standardized the shared status set on `draft`, `published`, and `archived`, expanded the editor to match that contract, fixed the admin “all articles” service path so it can truly fetch every status, stopped the main article list query from loading full `content`/`feedback` blobs unnecessarily, and removed the unwired double-prefixed feedback-summary endpoint.
+- **Legacy auth/API surface removal** (`/app/contexts/AdminContext.tsx`, `/app/hooks/index.ts`) — Completed the admin auth cleanup by treating `AdminProvider` / `useAdmin()` as the only supported admin auth and API surface, deleting the unused `AuthContext` / `APIContext` compatibility files and the dead generic request-hook layer that had only existed for that legacy model, and shrinking the shared hooks barrel back down to the live app hooks that still have real consumers.
+- **Planner-defined vendor categories and wedding events** (`/app/models/vendor.py`, `/app/services/vendorManagementApi.ts`, `/app/services/vendor_service.py`, `/app/admin/vendors/page.tsx`, `/app/admin/vendors/contracts/[id]/page.tsx`, `/app/admin/vendors/contracts/new/page.tsx`, `/app/models/wedding.py`, `/app/types/wedding.ts`, `/app/utils/weddingEvents.ts`, `/app/utils/wedding_event_types.py`, `/app/admin/weddings/page.tsx`, `/app/admin/weddings/[id]/page.tsx`, `/app/components/RSVPForm.tsx`, `/app/admin/reminders/page.tsx`, `/app/admin/guests/page.tsx`, `/app/models/rsvp.py`, `/app/models/plus_one.py`, `/app/services/admin_rsvp_service.py`, `/app/services/reminder_service.py`, `/app/services/reminder_service_twilio.py`, `/app/services/reminder_service_telnyx.py`, `/app/services/couple_portal_service.py`, `/app/couple/dashboard/page.tsx`) — Planners can now use a first-class `MC / Host` vendor category, choose `Other` with a required custom vendor label, and define truly custom wedding event names without breaking RSVP, reminders, guest management, or couple-facing attendance summaries. The wedding editors now require a label before saving a custom event, and downstream contract/vendor screens render the real planner-defined category labels instead of collapsing them back to plain `Other`.
+- **Vendor sponsored-ad dedup index repair** (`/app/core/database_indexes.py`) — Startup now detects and replaces stale local `idx_sponsored_ad_dedup` index definitions on `vendor_profiles` that incorrectly matched `null` `source_campaign_id` values and blocked ordinary planner vendor creation after the first row. This keeps sponsored-ad dedup protection for imported ad leads without breaking normal vendor directory use.
+- **Fail-closed session resume across admin and couple portals** (`/app/contexts/AdminContext.tsx`, `/app/utils/adminAuthStorage.ts`, `/app/components/AdminRouteGuard.tsx`, `/app/admin/planner/page.tsx`, `/app/admin/saas/page.tsx`, `/app/contexts/CoupleAuthContext.tsx`, `/app/components/CoupleRouteGuard.tsx`, `/app/couple/layout.tsx`, `/app/couple/login/page.tsx`) — Long-idle browser resumes now do a single silent session revalidation on focus/pageshow/visibility return instead of leaving stale shells, hanging planner spinners, or zeroed SaaS cards on screen. Short window switches keep in-progress work intact when the session is still valid, while expired admin and couple sessions now clear state and redirect cleanly to login with an explicit session-expired message.
+- **Couple dashboard guest tracker overhaul** (`/app/services/couple_portal_service.py`, `/app/couple/dashboard/page.tsx`) — Reworked the couple-facing dashboard metrics so guest information is no longer collapsed into a single “Guests invited” number. The portal now distinguishes guest list target, live guest list size, invites sent, responses received, attending, declined, awaiting response, response rate, and event-by-event attendance so couples can answer common RSVP questions without needing the planner for basic status checks.
+- **Stripe contract-payment lifecycle hardening** (`/app/utils/stripeClient.ts`, `/app/components/contracts/StripePaymentCapture.tsx`, `/app/pay/[id]/page.tsx`, `/app/contracts/[token]/page.tsx`, `/app/services/autopilot_service.py`, `/app/services/stripe_service.py`, `/app/services/contract_service.py`, `/app/services/contract_email_service.py`, `/app/api/contracts.py`) — Contract and portal payment flows now share a single Stripe.js client across the session, preload it earlier, and use dynamic payment methods on SetupIntents instead of card-only configuration. Real contract charges now flow through one idempotent payment-success path for both deposits and scheduled installments, so budget sync, planner bell notifications, planner payment emails, and couple payment receipts with remaining-balance/payment-schedule breakdowns happen exactly once on actual charge success instead of being split between signing-time side effects and webhook retries.
+- **Contract schema alignment and snapshot hydration** (`/app/models/autopilot.py`, `/app/services/package_service.py`, `/app/services/contract_service.py`, `/app/api/contracts.py`, `/app/contracts/[token]/page.tsx`, `/app/portal/[token]/page.tsx`, `/app/components/contracts/ContractTemplate.tsx`, `/app/services/contract_email_service.py`, `/app/services/contract_pdf_service.py`) — The autopilot contract model now explicitly carries planner branding/contact snapshot fields, package send snapshots the linked planner and wedding metadata into the contract, contract reads normalize `partner1_name` / `partner2_name` into a consistent couple display shape and backfill missing venue/planner/package snapshot fields from source records, the public contract endpoint exposes the planner details the frontend already expects, and the contract page, portal, emails, and PDF generator now all read the same schema instead of mixing the new couple model with legacy `name` / `partner_name` aliases.
+- **Package contract delivery and couple payment/signature hardening** (`/app/services/package_service.py`, `/app/services/contract_email_service.py`, `/app/admin/packages/[id]/send/page.tsx`, `/app/components/contracts/StripePaymentCapture.tsx`, `/app/components/contracts/ContractTemplate.tsx`, `/app/contracts/[token]/page.tsx`, `/app/api/contracts.py`) — Package send now dispatches the couple invitation email as part of the success path and rolls back the contract if delivery fails, the planner success screen points to the real `/contracts/[token]` route, the couple contract payment step loads Stripe from the backend config instead of hanging on a missing `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY`, payment capture now carries the Stripe customer ID through to the signature request so signing no longer dies with a 422 validation error, and the public contract template now preserves calendar dates without timezone drift.
+- **Paid packages without installment schedules now charge in full on signing** (`/app/utils/payment_schedule.py`, `/app/services/package_service.py`, `/app/services/contract_service.py`, `/app/services/contract_email_service.py`, `/app/services/contract_pdf_service.py`, `/app/components/contracts/ContractTemplate.tsx`) — An empty package payment schedule is now treated as a single full-payment milestone due on signing instead of “save card but never charge”. Package snapshots, contract hydration, scheduled-payment creation, receipts, PDFs, and the public contract view now all resolve that fallback the same way, so couples signing a one-time package get a real charge path and the remaining-balance logic only stays nonzero when the planner explicitly configured installments.
+- **Mixed-format resources/blog rendering hardening** (`/app/components/blog/MarkdownArticle.tsx`, `/app/resources/blog/[slug]/page.tsx`, `/app/services/blog_service.py`, `/app/utils/blog_content.py`, `/app/admin/components/blog/BlogArticleEditor.tsx`) — The shared blog renderer now supports markdown plus sanitized editorial HTML, the split-panel `/resources` reader and direct blog pages both use the same safe rich-text path, and admin blog writes normalize pasted HTML before storage so public articles no longer surface literal `<p>` and `<h3>` tags.
+- **Package send contract date normalization** (`/app/services/package_service.py`, `/app/services/contract_service.py`, `/app/utils/mongo_dates.py`, `/app/admin/packages/[id]/send/page.tsx`) — Fixed the package send flow so wedding dates and scheduled-payment due dates are converted into Mongo-safe UTC datetimes instead of crashing on raw Python `date` objects, and cleaned up the linked-wedding autofill so couples named with `and` populate both partner fields while wedding dates keep their intended calendar day in the dropdown.
+- **Public planner signup now requires email verification after checkout** (`/app/services/stripe_service.py`, `/app/admin/login/page.tsx`) — Stripe subscription webhooks no longer auto-mark `public_signup` planners as `email_verified`, so payment can complete without silently bypassing the verification gate. Paid-but-unverified planners now stay blocked from sign-in until they use the email link, and the planner login page shows a truthful post-checkout banner plus the actual backend auth error instead of collapsing verification failures into a generic bad-password message.
+- **Manual test-account contract clarified** (`/.env.example`, `/README.md`, `/docs/architecture/DEVELOPER_SETUP.md`, `/scripts/setup_admin_user.py`, `/scripts/reset_test_user_data.py`) — Documented that only the root admin is bootstrap-created at startup, while the `TEST_*` identities in `.env` are manual QA fixtures for signup, payment, invite, and acceptance flows and must be recreated through the frontend after a reset.
+- **Local test-user reset utility** (`/scripts/reset_test_user_data.py`) — Added a guarded reset script for local/dev environments that dry-runs by default, can wipe all account records plus user-generated planner/couple/vendor data when explicitly confirmed, and includes a verification mode to prove the `.env` test identities and reset collections are actually empty before reseeding.
+- **Shared glass component light-mode pass** (`/app/admin/components/ui/glass/GlassButton.tsx`, `/app/admin/components/ui/glass/GlassCard.tsx`, `/app/admin/components/ui/glass/GlassTable.tsx`, `/app/admin/components/ui/glass/GlassPagination.tsx`) — Rebased the reusable admin glass primitives onto explicit light-mode borders, backgrounds, hover states, and dropdown styling instead of translucent white-only treatments so platform, guests, support, vendors, seating, weddings, and planner surfaces that depend on them inherit stronger light-mode contrast automatically.
+- **Notifications page theme cleanup** (`/app/admin/notifications/page.tsx`) — Normalized the notifications workspace onto the same light-safe admin surfaces, inputs, tabs, cards, and modal styles used elsewhere in the dashboard, and removed several malformed/duplicated dark-mode utility strings so planner and root-admin notification views stay readable in both themes.
+- **Theme audit continuation for forms and wedding configuration** (`/app/admin/forms/page.tsx`, `/app/admin/weddings/[id]/page.tsx`, `/app/admin/components/AdminHeader.tsx`) — Hardened the next set of light-mode gaps by replacing the forms creation studio’s dark-first left rail and option cards with explicit light surfaces and slate typography, giving the wedding detail hero actions readable light-mode button treatments over the bright header gradient, and fixing the older admin mobile header/menu hover states so navigation affordances remain visible outside dark mode.
+- **Theme audit follow-up for planner/vendor flows** (`/app/admin/team/accept/page.tsx`, `/app/admin/vendor/page.tsx`) — Extended the light/dark audit beyond the planner team grid into the team-invite acceptance flow and vendor workspace, replacing dark-only cards, inputs, pills, and glass panels with explicit light surfaces and readable slate text while preserving the more dramatic dark presentation behind `dark:` overrides.
+- **Team member invite acceptance hardening** (`/app/services/team_management_service.py`, `/app/utils/migrations.py`) — The team-member accept flow now consumes invite tokens by unsetting them instead of writing `null`, retries can repair half-finished invite acceptances that already created the linked `users` record, and a startup migration heals the previously stranded pending invites that were left behind by the unique `idx_invite_token` null-collision bug.
+- **Planner team light-mode contrast alignment** (`/app/admin/planner/team/page.tsx`, `/app/admin/planner/team/InviteTeamMemberModal.tsx`, `/app/admin/planner/team/EditTeamMemberModal.tsx`, `/app/admin/planner/team/teamConstants.ts`) — Replaced the dark-only team-management cards, filters, table cells, and team-member modal shells with explicit light surfaces, readable slate text, and light-safe controls while preserving the existing darker treatment behind `dark:` overrides, so the planner team page now matches the rest of the planner portal in both themes.
+- **Root-admin metrics accuracy pass** (`/app/services/platform_metrics_service.py`, `/app/admin/saas/page.tsx`, `/app/admin/billing/page.tsx`, `/app/admin/page.tsx`, `/app/admin/support/page.tsx`) — Re-aligned root-admin analytics with the live Mongo data by counting active users from recent logins instead of account enablement, excluding trials from MRR/ARR while still showing trial counts, surfacing unknown/pending subscription states in billing totals, unpacking the admin activity response envelope correctly, and mapping support cards to the metrics the backend actually provides.
+- **Planner management page design realignment** (`/app/admin/users/page.tsx`) — Rebuilt the root-admin planner management surface around the same card, toolbar, table, and modal patterns used by the rest of the admin portal, replacing the older gradient-glass dashboard treatment with cleaner shared admin surfaces so the page now matches platform styling in both light and dark modes.
+- **Root-admin account directory scope alignment** (`/app/admin/users/page.tsx`, `/app/admin/components/Sidebar.tsx`, `/app/admin/saas/page.tsx`, `/app/services/user_management_service.py`, `/app/api/user_management.py`) — Converted the old planner-only `/admin/users` screen into a true root-admin account directory with explicit role tabs, accurate scope summaries, SaaS drill-down links into matching account slices, and protected-account safeguards so root admins can inspect every account type without mistaking total platform counts for planner-only data.
+- **Root-admin light-mode contrast pass** (`/app/admin/users/page.tsx`, `/app/admin/components/blog/BlogManager.tsx`, `/app/admin/components/blog/BlogCategorySidebar.tsx`, `/app/admin/components/blog/BlogArticleCard.tsx`, `/app/admin/components/blog/BlogArticleList.tsx`, `/app/admin/components/blog/BlogArticleEditor.tsx`, `/app/components/blog/MarkdownArticle.tsx`) — Replaced dark-only glass/text treatments on planner management and support-blog surfaces with explicit light-mode cards, inputs, and typography while preserving the darker glass styling behind `dark:` overrides, so root-admin pages keep readable hierarchy in both themes.
+- **Admin ads density and role-route alignment** (`/app/admin/ads/page.tsx`, `/app/components/AdminRouteGuard.tsx`, `/app/contexts/AdminContext.tsx`, `/app/admin/weddings/page.tsx`, `/app/admin/weddings/[id]/page.tsx`) — Compacted the root-admin ad platform cards and queue spacing, made the ads tab rails/filter sections behave on narrower desktop widths, and tightened shared admin role redirects so root admins land on `/admin`, planners land on `/admin/planner`, and planner-only wedding surfaces stop exposing the root-admin shell to the planner detail editor.
+- **Vendor portal settings admin-mode guard** (`/app/portal/ads/settings/page.tsx`, `/app/portal/ads/components/styles.ts`) — The vendor settings page now detects root-admin shell access and renders a deliberate admin preview state instead of throwing a broken “Failed to load profile” toast for non-vendor accounts, while also reusing shared vendor portal surface/input/button styles for the settings UI.
+- **Lint warning cleanup** (`/app/admin/guests/page.tsx`, `/app/admin/platform/page.tsx`, `/app/admin/support/page.tsx`, `/app/admin/users/page.tsx`, `/app/admin/vendors/page.tsx`, `/app/couple/dashboard/page.tsx`) — Stabilized hook dependencies, pagination callbacks, and callback props so the frontend now passes ESLint without React hook warnings.
+- **Blog/resources contract hardening** (`/app/resources/page.tsx`, `/app/resources/blog/[slug]/page.tsx`, `/app/admin/components/blog/BlogArticleEditor.tsx`, `/app/components/blog/MarkdownArticle.tsx`) — Unified markdown rendering between admin preview and public resources, wired `meta_title` into page metadata, aligned category display, and limited static blog fallbacks to non-production environments so deployed public content has one source of truth.
+- **Resources server-rendered blog index** (`/app/resources/page.tsx`, `/app/resources/ResourcesClient.tsx`, `/app/resources/resourcesShared.ts`, `/app/resources/blog/serverApi.ts`) — Moved the public blog-card fetch to the server with ISR, extracted shared resources/blog contracts, and kept the split-panel reader as a client shell so `/resources` ships indexed article content and crawlable article links in initial HTML without duplicating public fetch logic.
+- **Resources deployment hardening** (`/app/resources/page.tsx`, `/app/resources/ResourcesClient.tsx`, `/app/resources/blog/serverApi.ts`, `/app/sitemap.ts`) — Public blog/resources now distinguishes unavailable API responses from legitimate empty content, retries the blog feed client-side when the server render could not fetch it, and the sitemap no longer falls back to hardcoded blog slugs that can index dead URLs.
+- **Couple budget sync alignment** (`/app/services/couple_portal_service.py`) — Rewired the couple dashboard budget summary to read the same canonical planner budget sources as the main budget surface, using `weddings.total_budget` plus `budget_categories.actual_spent` instead of the stale legacy `budgets` collection.
+- **Alternate pricing renderer alignment** (`/app/components/saas/PricingSection.tsx`, `/app/admin/planner/billing/page.tsx`) — Updated the root-admin configurable pricing section to use the cookie-backed admin session bootstrap instead of legacy `authToken` storage checks, and wired its selected plan/interval redirect into the planner billing checkout surface.
+- **Root-admin metrics fetch guards** (`/app/admin/platform/page.tsx`, `/app/admin/billing/page.tsx`, `/app/contexts/AdminContext.tsx`) — Prevented planner sessions from calling `/admin/platform/health` and related root-admin metrics endpoints before the frontend redirect runs, and fixed stale token/profile role drift in the shared admin context so protected pages wait for confirmed root-admin auth instead of logging noisy `403 Forbidden` fetch errors.
+- **Platform errors scope clarity** (`/app/admin/platform/page.tsx`, `/docs/testing/deployment-browser-e2e-runbook.md`) — Removed the misleading mixed-scope error tab badge, added an explicit “Other Severities” current-page breakdown, and documented the 24-hour vs 30-day validation rules in the browser runbook so platform diagnostics are tested against the correct scope.
+- **Platform error window reconciliation** (`/app/api/admin_platform_metrics.py`, `/app/admin/platform/page.tsx`, `/tests/backend/test_platform_metrics.py`, `/docs/testing/deployment-browser-e2e-runbook.md`) — Added a shared error-window selector, literal `critical`/`warning`/`other` severity buckets, and full filtered-result summaries so the Health tab and Errors tab now reconcile against the same selected window instead of mixing 24-hour, 30-day, and current-page-only counts.
+- **Platform/root-admin defect fixes** (`/app/admin/platform/page.tsx`, `/app/admin/users/page.tsx`, `/app/api/planner_ad_preferences.py`, `/app/api/ai.py`, `/app/services/ai_service.py`, `/app/services/vendor_signup_service.py`, `/app/admin/budget/quotes/page.tsx`, `/app/admin/budget/templates/page.tsx`) — Aligned platform timestamps with the same admin timezone formatter used on the dashboard, replaced the broken planner “View Details” dead route with a real detail modal, fixed planner ad preference lookups to use the authenticated planner identity, stopped dashboard insights from masking upstream HTTP errors as generic 500s and let root-admin operational AI usage bypass planner subscription credit checks, corrected vendor signup service DB initialization, and authenticated the budget wedding pickers so they stop generating `/weddings` auth noise.
+- **Wedding event time validation** (`/app/admin/weddings/[id]/page.tsx`, `/app/admin/weddings/page.tsx`, `/app/models/wedding.py`, `/app/services/wedding_service.py`) — Kept event times as strings but added shared frontend validation and backend normalization so planners can only save structured time values like `3:00 PM`, `3 PM`, or `15:00`.
+- **Guest pagination performance** (`/app/admin/guests/page.tsx`, `/app/api/admin_rsvp.py`, `/app/api/plus_one.py`, `/app/services/admin_rsvp_service.py`, `/app/services/plus_one_service.py`) — Scoped RSVP and plus-one fetches to the currently paged guests instead of refetching wedding-wide related datasets on every page change.
+- **Authentication docs refresh** (`/docs/security/AUTHENTICATION_SYSTEM.md`, `/docs/security/SECURITY.md`) — Rewrote stale two-cookie/browser-storage documentation to match the current secure-cookie plus in-memory token bootstrap model and current role set.
+
+## [2.28.0] - 2026-03-24 — Planner Inbox, Couple Messaging, AI Chat Gating, Cache Fixes
+
+### Added
+
+- **Split-panel planner inbox** (`/app/admin/inbox/page.tsx`) — Full rewrite with conversation list + message detail split view, unread badges, real-time couple message display, and keyboard send (Enter).
+- **Shared inbox UI components** — `ChatInput.tsx`, `MessageBubble.tsx`, `InboxListItem.tsx`, `SplitPanelInbox.tsx` for reuse across planner and couple portals.
+- **Couple tab on wedding detail** (`/app/admin/weddings/[id]/page.tsx`) — New "Couple" tab with invite, revoke/restore access, and resend invite functionality.
+- **Weddings list inline notes/replies** (`/app/admin/weddings/page.tsx`) — Expanded with 532 new lines: planner notes with reply threads, sticky notes UI, message compose with send button.
+- **AI chat widget role gating** — Widget only renders for `is_wedding_planner` or `is_team_member` roles; hidden for root admins and couples.
+- **Autopilot status endpoint** (`/app/api/autopilot.py`) — New `/admin/status` endpoint for autopilot metrics.
+- **Vendor notification refactor** — Shared notification endpoints eliminating duplicate code across vendor portal.
+- **Task recurrence in calendar** — TaskModal now supports recurring tasks with presets (daily, weekly, monthly) and iCal RRULE generation.
+- **Couple portal UI components** — `CoupleSidebar.tsx`, `CoupleTopHeader.tsx`, `CoupleLayoutClient.tsx` for consistent layout matching admin portal.
+- **Error boundaries** — Added `error.tsx` for inbox, weddings, budget, billing, dashboard, forms, guests, metrics, notifications, packages, calendar, platform, saas, seating, support, users, vendors, and ads pages.
+- **Vendor portal notifications and settings pages** — New `/portal/ads/notifications/page.tsx` and `/portal/ads/settings/page.tsx`.
+- **Cursor pagination utility** (`/app/utils/cursor_pagination.py`) — Reusable cursor-based pagination for API endpoints.
+- **Rate limiter utility** (`/app/utils/rate_limiter.py`) — Configurable rate limiting for API routes.
+- **Dependency management script** (`/scripts/update-deps.mjs`) — Automated dependency updates with dry-run, interactive, and auto modes.
+- **Database scripts** — `cleanup_webhook_events.py` for Stripe webhook cleanup, `create_indexes_p0.py` for MongoDB index migration, `generate_types.sh` for TypeScript type generation from Pydantic models.
+- **Testing checklist** (`/docs/TESTING_CHECKLIST_v2.28.0.md`) — Comprehensive v2.28.0 QA checklist with 39 test cases across 6 sections.
+- **Architectural audit** (`/docs/qa/P0_ARCHITECTURAL_REFACTORS.md`) — P0 architectural refactors document.
+- **Couple portal visual audit** (`/docs/frontend/COUPLE_PORTAL_VISUAL_AUDIT.md`) — Visual discrepancy audit between couple and planner portals.
+
+### Changed
+
+- **Cache-Control middleware** (`/app/main.py`) — Rewrote to handle Next.js `_next/` assets separately (no-cache in dev, immutable in prod), added `/couple-portal/`, `/couple/`, `/admin/` to no-cache rules, and added mutation method no-cache for POST/PUT/PATCH/DELETE.
+- **Couple dashboard** (`/app/couple/dashboard/page.tsx`) — Added `cache: 'no-store'` to message fetch, major UI refactor with sidebar-driven navigation.
+- **Planner inbox fetch** (`/app/admin/inbox/page.tsx`) — Added `cache: 'no-store'` to prevent stale message data.
+- **Admin router ordering** — Reorganized to prioritize notification stream route.
+- **Stripe service** (`/app/services/stripe_service.py`) — Retained email verification token for user consistency, refactored payment handling.
+- **Couple portal service** — Switched to ResendEmailService for email sending.
+- **User management service** — Improved email verification logic, cleans up tokens for already-verified users.
+- **Couple login/setup pages** — Updated styles to align with design tokens, added password validation with visual feedback.
+- **Wedding detail page** — Conditional ad rail layout, added couple tab.
+- **Admin sidebar** — Updated navigation items and styling.
+- **Image assets** — Optimized/replaced dashboard, budget, forms, and wedding config screenshots.
+- **Icon imports in `[id]/page.tsx`** — Switched from barrel import to direct path imports to avoid Turbopack module factory instantiation bug.
+
+### Fixed
+
+- **BUG-001 (Critical):** Messages saved to DB but not displayed in inbox — caused by `Cache-Control: public, max-age=300` on `/couple-portal/` and `/admin/` routes falling through to catch-all. Fixed in middleware + frontend fetch calls.
+- **BUG-003 (Low):** Wedding date rendering "20270" instead of "2027" in certain views.
+
+### Known Issues
+
+- **BUG-002 (Medium):** AI chat widget z-index overlaps with inbox send button on certain pages. Workaround: use Enter key to send.
+- **Turbopack module factory error:** `lucide-react` barrel import triggers stale module factory instantiation in dev mode on `[id]/page.tsx`. Mitigated by switching to direct icon imports. Known Turbopack HMR bug tracked in vercel/next.js#84264.
+
+### Removed
+
+- **Couple portal standalone page** (`/app/admin/couple-portal/page.tsx`) — 1,770 lines removed; functionality moved to inbox and wedding detail couple tab.
+- **Unused dependencies** — Removed `@dnd-kit/utilities`, `is-number`, `victory-vendor` from package.json.
+
+---
+
+## [2.27.0] - 2026-03-24 — Couple Portal Redesign: Match Platform Design System
+
+### Context
+
+The couple-facing portal at `/couple/dashboard` looked like a completely separate app with its own layout (sticky header + horizontal tab bar), color scheme, and design patterns. This release redesigns it to match the platform's sidebar + top header layout, design tokens, and interaction patterns.
+
+### Added
+
+- **CoupleSidebar** (`/app/couple/components/CoupleSidebar.tsx`) — Collapsible sidebar matching the admin Sidebar structure. Navigation items: Dashboard, Timeline, Payments, Forms, Inbox, Registry, FAQ. Badge counts for unread inbox messages and pending forms. Mobile drawer with overlay.
+- **CoupleTopHeader** (`/app/couple/components/CoupleTopHeader.tsx`) — Top header matching admin TopHeader with mobile menu toggle, theme toggle (light/dark), couple name display, and sign out button.
+- **CoupleLayoutClient** (`/app/couple/components/CoupleLayoutClient.tsx`) — Client-side layout wrapper with ThemeProvider, mesh gradient background (matching admin layout), and public/authenticated page routing.
+
+### Changed
+
+- **Couple layout** (`/app/couple/layout.tsx`) — Rewritten to use CoupleLayoutClient wrapper while preserving server-side metadata exports.
+- **Couple dashboard** (`/app/couple/dashboard/page.tsx`) — Complete rewrite:
+  - Replaced horizontal tab bar with sidebar-driven section navigation
+  - Applied platform card styles: `bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700`
+  - Switched primary color from slate to indigo to match platform buttons
+  - Added responsive sidebar margin transitions matching admin layout
+  - Improved all dark mode token usage to slate palette
+  - Budget progress bar now color-coded (indigo → amber → red based on spend percentage)
+- **Payments + Contract merged** — Combined into single "Payments" section showing contract summary, payment overview, contract sections, and payment schedule in one view.
+- **Messages + Updates merged** — Combined into "Inbox" section with pill-toggle sub-tabs for Messages and Updates.
+- **UX copy improvements** — Rewrote empty states, error messages, button labels, and section headings for clarity and warmth (e.g., "Needs your input" instead of "Pending", "Your big day is X days away" instead of "Counting Down", more helpful empty state guidance).
+
+### Removed
+
+- Standalone sticky header with couple name + logout button (replaced by sidebar + top header)
+- Horizontal scrolling tab bar (replaced by sidebar navigation)
+- Meetings tab (meetings are now planner tasks with "Couple Meeting" category)
+- `MeetingsTab` component and `CoupleMeeting` interface
+
+### Technical Notes
+
+- Layout uses same ThemeProvider, mesh gradient, and responsive sidebar pattern as admin layout
+- Section switching via state (Option A from spec) to avoid new routes
+- All existing API endpoints preserved — no backend changes required
+- Zero TypeScript compilation errors introduced
+
+---
+
+## [2.26.0] - 2026-03-23 — Couple Portal Consolidation: Integrate into Existing Platform Pages
+
+### Context
+
+The couple portal (planner side) was built as a standalone page with its own tabs and design language. This release walks that back — every couple portal feature is now integrated into the existing platform pages where it belongs, eliminating duplicate UI and keeping the planner workflow in one place per domain.
+
+### Changed
+
+- **Program & Couple Notes → Weddings page** — Added "Program" (indigo) and "Notes" (amber) popup modal buttons on each wedding card. Planners manage run-of-show items and couple notes directly from the Weddings list without navigating away. Full CRUD: add/delete program items per event, status tracking and replies on notes.
+- **Messages → Inbox page** — Unified couple messaging into the existing Inbox page (done in prior session).
+- **Form Templates → Forms page** — Added "Custom Templates" section to the existing Forms page. Planners can browse saved templates, create forms from them, and delete templates — all inline with the existing forms library using the same glassmorphism card style.
+- **Meetings → Calendar task system** — Instead of a separate meetings module, added `meeting` ("Couple Meeting") as a task category in the existing Calendar task system. Planners schedule meetings using the same task form that already supports start/end times, recurring, Google Calendar sync, and reminders. Removed the standalone Meetings button and modal from the Calendar page (~250 lines deleted).
+- **Task modal compact layout** — Rewrote the Create/Edit Task modal to fit all fields on screen without scrolling: 4-column row for Wedding/Category/Priority/Color, inline date+time rows, merged Description and Notes into a single textarea.
+- **Dialog component fix** — Removed hardcoded `max-w-lg` from the shared Dialog component so callers can specify their own max-width. Added `max-h-[90vh] overflow-y-auto` as base defaults.
+
+### Removed
+
+- Standalone "Meetings" button and modal from Calendar page (replaced by task category)
+- `MeetingsModalContent` component and `Meeting` interface from Calendar page (~250 lines)
+- `meetingModalOpen` state from Calendar page
+
+### Technical Notes
+
+- `calendarApi.ts`: Added `'meeting'` to `TaskCategory` union and `CATEGORY_LABELS` map
+- `TaskModal.tsx`: Added `'meeting'` to `CATEGORIES` array, widened time inputs, compact form layout
+- `planner/calendar/page.tsx`: Removed meetings modal, button, state, and `MeetingsModalContent` function
+- `components/ui/Dialog.tsx`: Removed hardcoded `max-w-lg`, added viewport-constrained scrolling
+- `admin/forms/page.tsx`: Added custom templates state, fetch/create/delete handlers, and UI section
+- Backend category field is a free string — no backend changes needed for meeting category
+
+---
+
+## [2.25.0] - 2026-03-23 — Full-Stack Alignment Audit: P2/P3 Remediation
+
+### Context
+
+Resolved 27 misalignment items (15 P2, 12 P3) identified in the full-stack alignment audit covering 69 API files, 23 models, 64 services, and 271 frontend files. A post-implementation code review caught and fixed 2 additional critical bugs before merge.
+
+### Added
+
+- **Rate Limiting** (`app/utils/rate_limiter.py`) — In-memory sliding window rate limiter with per-IP tracking, DoS protection (auto-eviction at 10k IPs), and pre-configured limiters: `public_read_limiter` (60/min), `public_search_limiter` (30/min), `public_slug_limiter` (100/min). Applied to 3 blog endpoints and 5 knowledge base endpoints.
+- **Cursor-Based Pagination** (`app/utils/cursor_pagination.py`) — Base64-encoded cursors with `_id` + sort field for stable MongoDB pagination. Generic `CursorPage[T]` response model, `limit + 1` fetch pattern (no extra count query), `validated_cursor()` and `validated_cursor_limit()` FastAPI dependencies.
+- **Error Boundaries** (~20 `error.tsx` files) — Next.js App Router error boundaries for all admin pages: ads, billing, budget, couple-portal, dashboard, forms, guests, inbox, metrics, notifications, packages, planner/billing, planner/calendar, platform, saas, seating, support, users, vendors, weddings.
+- **Knowledge Base Feedback Summary** — `GET /admin/kb/feedback-summary` endpoint with MongoDB aggregation pipeline returning global stats, top 5 most/least helpful articles, and 20 most recent feedback comments.
+- **Admin RSVP Contact Fields** — Optional `phone` and `email` on `AdminRSVPUpdateRequest`; guest contact info updated before RSVP creation (non-None only, prevents accidental blanking).
+
+### Changed
+
+- **Vendor Assignment Status Enum** (`app/models/vendor.py`) — Formalized `VendorAssignmentStatus(str, Enum)` with 6 states: `inquiry → quoted → contracted → confirmed → completed → cancelled`. Added state machine docstring, changed field type from `str` to enum, added validation in `vendor_service.py` and regex pattern on the API query parameter.
+- **Payment Milestone Status Docs** — Added comprehensive state machine docstring to `PaymentMilestoneStatus` enum.
+- **Budget TypeScript Cleanup** (`app/types/budget.ts`, budget pages, `PaymentHistoryPanel.tsx`) — Removed `_id: string` from `BudgetCategory`, `VendorQuote`, and `BudgetTemplate` interfaces. Eliminated all `category.id || category._id` fallback patterns across budget page, templates page, and payment history panel.
+- **AdminContext Token Refresh** (`app/contexts/AdminContext.tsx`) — Added immediate post-login refresh for tokens with <10 min TTL. Introduced `activeToken` tracking so profile and team permissions fetches always use the freshest token.
+- **SMS Config Logging** (`app/core/sms_config.py`) — Module-level docstring documenting all env vars for Twilio/Telnyx. Unknown provider values now log a warning with fallback behavior.
+- **Trial Expiration Emails** (`app/services/trial_expiration_service.py`) — Retry logic (max 2 retries, 2s/4s exponential backoff), email validation, early return for unconfigured service, fixed subject line pluralization ("1 Day" vs "X Days"), individual failures no longer break the loop.
+- **Offset Pagination Deprecation** (`app/utils/query_validation.py`) — Deprecation docstring on `validated_skip()` pointing to `cursor_pagination` module.
+- **Planner Billing Migration Prep** (`app/admin/planner/billing/page.tsx`) — Destructured `apiRequest` from `useAdmin()` with TODO for migrating raw `fetch()` calls.
+
+### Fixed
+
+- **Stale Token in Profile Fetch** (Critical) — `AdminContext.tsx` profile fetch used original `access_token` instead of potentially refreshed token after post-login refresh, causing intermittent auth failures on login. Fixed with `activeToken` variable.
+- **Cursor Pagination `$or` Overwrite** (Critical) — `query_filter.update(cursor_query)` silently dropped existing `$or` clauses. Changed to `{"$and": [query_filter, cursor_query]}` for safe filter merging.
+
+### Code Review Ratings
+
+| Dimension       | Rating | Notes                                           |
+|-----------------|--------|-------------------------------------------------|
+| Security        | A-     | Rate limiting in place; naming concern (info)   |
+| Performance     | A      | Cursor pagination, no extra count queries        |
+| Correctness     | A      | 2 critical bugs found and fixed during review    |
+| Maintainability | A-     | Enums, deprecation notices, error boundaries     |
+
+---
+
+## [2.24.0] - 2026-03-23 — Couple Portal Sprint 6: Registry, FAQ, QR Code, Push Notifications & PWA
+
+### Context
+
+Sprint 6 builds out five features that were previously classified as P2 but had all backend infrastructure already in place. Registry and FAQ are full CRUD (couple and planner share the same data on the wedding model). QR code reuses the existing `generate_qr_code()` from guest export. Push notifications add couple-auth endpoints on top of the existing `WebPushService`. PWA adds manifest and service worker caching. SEO audit requirements (noindex, semantic HTML, ARIA labels, meta tags) baked into implementation.
+
+### Added
+
+- **Registry CRUD (Couple Portal)**
+  - `GET /couple/portal/registries` — List registries from wedding model
+  - `POST /couple/portal/registries` — Add registry item (syncs to wedding model)
+  - `PUT /couple/portal/registries/{index}` — Update registry item by index
+  - `DELETE /couple/portal/registries/{index}` — Delete registry item by index
+  - Registry tab in couple dashboard: responsive grid, color-coded buttons, add/edit/delete UI
+
+- **FAQ CRUD (Couple Portal)**
+  - `GET /couple/portal/faqs` — List FAQs from wedding model
+  - `POST /couple/portal/faqs` — Add FAQ item (syncs to wedding model)
+  - `PUT /couple/portal/faqs/{index}` — Update FAQ item by index
+  - `DELETE /couple/portal/faqs/{index}` — Delete FAQ item by index
+  - FAQ tab in couple dashboard: accordion-style cards, optional external links, add/edit/delete UI
+
+- **QR Code Widget**
+  - `GET /couple/portal/qr-code` — Generate QR code PNG for couple portal URL (reuses `guest_export_service.generate_qr_code()`)
+  - QR widget on Overview tab: generate + download PNG
+
+- **Push Notifications (Couple-Side)**
+  - `POST /couple/portal/push/subscribe` — Couple subscribes to browser push (couple auth)
+  - `DELETE /couple/portal/push/unsubscribe` — Couple unsubscribes from push
+  - `GET /couple/portal/push/status` — Check subscription status + VAPID key
+  - Push notification widget on Overview tab: enable/disable with real-time status
+
+- **PWA Support**
+  - `/public/manifest.json` — App manifest (name, icons, start URL, display standalone)
+  - Service worker caching: CacheFirst for static assets, NetworkFirst for HTML, StaleWhileRevalidate for images
+  - Service worker registration in couple dashboard
+  - Couple layout meta tags: `noindex`, `theme-color`, `apple-mobile-web-app` tags, viewport config
+
+### Changed
+
+- Extended `couple_portal.py` imports: `Response`, `guest_export_service`, `web_push_service`, `os`
+- Updated couple dashboard `TabType` union: added `'registry' | 'faq'`
+- Added `Gift`, `HelpCircle`, `QrCode`, `BellRing`, `Plus`, `Pencil`, `Trash2`, `ExternalLink`, `Download`, `BellOff` to lucide imports
+- Updated PRD: reclassified P2-2, P2-3, P2-5, P2-6, P2-7 as "Built (Sprint 6)"
+
+---
+
+## [2.23.0] - 2026-03-22 — Couple Portal Sprint 5: Note Replies & Meeting Scheduling
+
+### Context
+
+Sprint 5 completes all P1 features for the Couple Portal: threaded note replies (P1-6) and recurring meeting scheduling with Google Calendar integration (P1-2).
+
+### Added
+
+- **Threaded Note Replies (P1-6)**
+  - `POST /couple-portal/events/{event_index}/notes/{note_id}/reply` — Planner replies to event-level couple notes
+  - `POST /couple-portal/events/{event_index}/order-of-events/{item_id}/notes/{note_id}/reply` — Planner replies to item-level couple notes
+  - Replies stored with `reply_to` field in `EventNoteModel`, displayed threaded under parent notes
+  - Replying auto-marks parent note as "addressed"
+  - Planner NotesSection: reply button, inline reply input, threaded reply display with blue accent
+  - Couple dashboard: planner replies shown threaded below original notes on both event and item levels
+
+- **Recurring Meeting Scheduling (P1-2)**
+  - `POST /couple-portal/meetings` — Planner schedules meetings with Google Calendar sync
+  - `GET /couple-portal/meetings` — Planner lists meetings for a wedding
+  - `DELETE /couple-portal/meetings/{meeting_id}` — Cancel meeting (removes from Google Calendar)
+  - `GET /couple/portal/meetings` — Couple views upcoming meetings
+  - Meetings stored as planner tasks with `category="meeting"` — reuses existing `planner_tasks` collection
+  - Recurring support: weekly, biweekly, monthly presets with iCal RRULE generation
+  - Google Calendar sync via existing `google_calendar_service`
+  - Meetings tab in planner management page with scheduling form and meeting list
+  - Meetings tab in couple dashboard showing upcoming meetings
+
+### Changed
+
+- `EventNoteModel` — Added `reply_to` field for threading support
+- `TaskCategory` enum — Added `MEETING` category
+- PRD status updated to "Complete (Sprints 1-5 — all P0 and P1 features built)"
+
+## [2.22.0] - 2026-03-22 — Couple Portal Sprint 4: Archival, Form Templates, Error States, Polish
+
+### Context
+
+Sprint 4 focuses on wedding archival, reusable form templates, comprehensive error state handling for archived/revoked weddings, and mobile responsiveness polish.
+
+### Added
+
+- **Wedding Archival Flow**
+  - `POST /couple-portal/archive` — Planner triggers full wedding data snapshot (guests, RSVPs, budget, contracts, forms, updates, messages)
+  - `DELETE /couple-portal/archive` — Planner reverses archival, restores couple portal to active state
+  - Archive button with confirmation modal in planner management page
+  - Couples see read-only archived view with amber banner; write operations (messaging, forms, notes) blocked
+  - Reuses existing `archive_wedding_data()` service with messages extension
+
+- **Custom Form Templates**
+  - `POST /couple-portal/form-templates` — Save any form as a reusable custom template
+  - `GET /couple-portal/form-templates` — List all planner's saved templates
+  - `POST /couple-portal/form-templates/create-form` — Create new form from template for a wedding
+  - `DELETE /couple-portal/form-templates/{template_id}` — Delete saved template (with confirmation)
+  - Form Templates tab in planner management page with template cards, "Use Template" flow, delete
+
+- **Error State Handling**
+  - Archived wedding write-blocks on: `POST /couple/portal/messages`, form submission, event notes, item notes
+  - Consistent `403 Forbidden` with descriptive messages for archived wedding operations
+  - MessagesTab shows disabled state with archive icon when wedding is archived
+  - ObjectId validation on all Sprint 4 endpoints — returns `400 Bad Request` for invalid IDs
+
+- **Database Indexes** (`database_indexes.py`)
+  - `idx_custom_templates_planner` — Compound index `(planner_email, created_at DESC)` for template listing
+
+### Changed
+
+- **Mobile Responsiveness**
+  - Tab bar uses responsive padding (`px-2.5 sm:px-4`) and text size (`text-xs sm:text-sm`) for small screens
+  - Messages container uses viewport-relative height with min/max bounds
+  - Wedding selector + archive button stack vertically on mobile, row on desktop
+
+- **Planner Management Page**
+  - Added "Form Templates" tab to section navigation
+  - Archive button renders alongside wedding selector with `onArchived` callback for data refresh
+  - Template delete requires confirmation dialog
+
+### Security
+
+- ObjectId format validation on all archive and template endpoints prevents malformed ID exceptions
+- Wedding access checks (`check_wedding_access()`) on all planner endpoints
+- Archived wedding state checked before every couple write operation
+- Template ownership enforced — planners can only access/delete their own templates
+- Template saving strips wedding-specific settings to prevent data leakage
+
+---
+
+## [2.21.0] - 2026-03-22 — Couple Portal Sprint 3: Messaging, Password Reset, Email Digests
+
+### Context
+
+Sprint 3 completes the Couple Portal's communication layer with real-time couple↔planner messaging, a full password reset flow for couples, and planner-triggered email digest summaries.
+
+### Added
+
+- **Couple ↔ Planner Messaging**
+  - `POST /couple/portal/messages` — Couple sends a message to their planner
+  - `GET /couple/portal/messages` — Couple retrieves message history (cursor-based pagination)
+  - `GET /couple/portal/messages/unread-count` — Couple unread message count
+  - `POST /couple-portal/messages` — Planner sends a message to the couple
+  - `GET /couple-portal/messages` — Planner retrieves message history for a wedding
+  - `GET /couple-portal/messages/unread-count` — Planner unread message count
+  - Chat-style UI on both couple dashboard and planner management page
+  - Read receipts (eye icon) for messages read by the other party
+  - Real-time unread badge on Messages tab
+
+- **Couple Password Reset Flow**
+  - `POST /couple/forgot-password` — Request password reset email (anti-enumeration: consistent response)
+  - `GET /couple/reset-password/validate/{token}` — Validate reset token without consuming it
+  - `POST /couple/reset-password` — Atomic token consumption + password update via `find_one_and_update`
+  - Forgot password page (`app/couple/forgot-password/page.tsx`)
+  - Reset password page (`app/couple/reset-password/page.tsx`) with token validation, masked email display
+  - "Forgot your password?" link added to couple login page
+  - Branded HTML email template for reset link (matches invite email style)
+
+- **Email Notification Digest**
+  - `POST /couple-portal/send-digest` — Planner triggers digest email for a wedding's couple
+  - `generate_couple_digest()` — Aggregates unread messages, new updates, upcoming payments (14 days), pending forms
+  - `send_couple_digest_email()` — Branded HTML email with digest sections
+  - "Send Digest Email" button in planner messaging section
+
+- **Planner Notification Integration**
+  - New notification types: `couple_message`, `couple_note` registered in `NotificationType` Literal
+  - All couple actions notify planners via `planner_notification_service.create_notification()` (SSE + web push)
+  - Existing `/planner/activity-notifications` API filters by type — no duplicate endpoints needed
+
+- **Database Indexes** (`database_indexes.py`)
+  - `idx_couple_reset_token` — Sparse index on `couple_users.password_reset_token`
+  - `idx_messages_wedding_id` — Compound index `(wedding_id, _id DESC)` for message feed
+  - `idx_messages_unread_couple` / `idx_messages_unread_planner` — Targeted indexes for unread counts
+
+### Security
+
+- Password reset uses atomic `find_one_and_update` to prevent token reuse race conditions
+- Anti-enumeration on forgot-password: always returns identical response regardless of account existence
+- Reset tokens: 32 hex chars, 1-hour expiry, invalidated on use
+- Wedding existence validation before message insert
+- `check_wedding_access()` enforced on planner unread count endpoint
+- Read-mark operations execute before message fetch to prevent race conditions
+
+---
+
+## [2.20.0] - 2026-03-22 — Couple Portal Sprint 2: Planner Management + Order of Events CRUD + Contract Review
+
+### Context
+
+Sprint 2 builds on the Phase 1 foundation by adding the planner-side management page, full CRUD for the order of events / run of show, collaborative notes between couples and planners, contract review in the couple portal, and couple access management.
+
+### Added
+
+- **Planner Management Page** (`app/admin/couple-portal/page.tsx`)
+  - Three-tab layout: Couples, Program / Run of Show, Couple Notes
+  - Couples tab: view all couple accounts, invite new couples, resend invitations, revoke/restore access
+  - Program tab: add/edit/delete order-of-events items per ceremony with time, duration, description
+  - Notes tab: consolidated view of all couple notes with pending/seen/addressed status management
+
+- **Order of Events CRUD API** (planner side)
+  - `POST /couple-portal/events/{event_index}/order-of-events` — Add program item
+  - `PUT /couple-portal/events/{event_index}/order-of-events/{item_id}` — Update item
+  - `PUT /couple-portal/events/{event_index}/order-of-events/reorder` — Reorder items (drag-and-drop)
+  - `DELETE /couple-portal/events/{event_index}/order-of-events/{item_id}` — Remove item
+  - Optimistic concurrency control via `updated_at` version check prevents data loss from concurrent edits
+
+- **Collaborative Notes API**
+  - `POST /couple/portal/events/{event_index}/notes` — Couple adds event-level note
+  - `POST /couple/portal/events/{event_index}/order-of-events/{item_id}/notes` — Couple adds item-level note
+  - `PATCH /couple-portal/events/{event_index}/notes/{note_id}` — Planner updates note status
+  - `PATCH /couple-portal/events/{event_index}/order-of-events/{item_id}/notes/{note_id}` — Planner updates item note status
+  - Automatic planner notification on new couple notes (via `planner_notifications` collection)
+
+- **Contract Review in Couple Portal**
+  - `GET /couple/portal/contracts` — Dedicated endpoint returning contract sections, payment schedule, and status
+  - `get_contract_for_couple()` — New service method in `CouplePortalService` (single DB query, no N+1)
+  - Contract tab in couple dashboard: package name, status timeline, sections (terms/scope), payment summary and schedule
+
+- **Couple Access Management**
+  - `PATCH /couple-portal/couples/{couple_id}/revoke` — Revoke couple's portal access
+  - `PATCH /couple-portal/couples/{couple_id}/restore` — Restore previously revoked access
+
+- **Enhanced Couple Dashboard**
+  - Timeline tab now shows expandable order of events with times, durations, and descriptions
+  - Inline note submission: couples can add notes to specific program items or general event notes
+  - Note status badges (pending/seen/addressed) visible to couples
+  - New Contract tab with full contract details, sections, and payment schedule
+
+### Security
+
+- All planner endpoints use `require_team_or_planner` + `enforce_team_permission('manage_contracts')` + `check_wedding_access()`
+- All couple endpoints use `require_couple_auth` dependency
+- Optimistic concurrency control on order-of-events writes (409 Conflict on stale data)
+
+---
+
+## [2.19.0] - 2026-03-22 — Couple Portal (Phase 1) + Order of Events with Collaborative Notes
+
+### Context
+
+The platform had a basic token-based payment portal for couples (`/portal/[token]`) but no way for couples to log in, view wedding updates, fill out forms, or communicate with their planner. Planners also had no way to share a detailed order of events / run of show for each ceremony, and couples had no mechanism to leave feedback on program items.
+
+### Added
+
+- **Couple Authentication System**
+  - `app/api/couple_auth.py` — Public auth endpoints: password setup from magic link, login (24-hour JWT), invite token verification, profile retrieval
+  - `app/api/couple_invite.py` — Planner-side invitation management: invite couple via email, resend invite, list all couples (requires planner auth with `manage_contracts` permission)
+  - `app/couple/login/page.tsx` — Couple login page with navy/gold wedding theme
+  - `app/couple/setup/page.tsx` — Magic link password setup page with token verification
+  - Couples stored in separate `couple_users` MongoDB collection (not the main `users` collection) for clean role separation
+
+- **Couple Portal Dashboard**
+  - `app/couple/dashboard/page.tsx` — Main dashboard with 5 tabs: Overview, Timeline, Payments, Forms, Updates
+  - `app/couple/layout.tsx` — Root layout with gradient background
+  - `app/couple/forms/[formId]/page.tsx` — Dynamic form filling page (text, email, phone, number, date, textarea, select, checkbox)
+  - Overview tab: stat cards, budget progress, venue/planner info, upcoming events
+  - Timeline tab: event cards with date, venue, attire, time details
+  - Payments tab: package summary, individual payment items with status badges
+  - Forms tab: shared forms list with pending/submitted status
+  - Updates tab: planner update feed with milestone cards (gold/rose gradient)
+
+- **Couple Portal Service Layer**
+  - `app/services/couple_portal_service.py` — Aggregates data from weddings, guests, budgets, contracts, forms, and updates collections. Exposes only safe data (guest totals, budget totals — no individual records). Includes `archive_wedding_data()` for wedding archival.
+
+- **Couple Portal API**
+  - `app/api/couple_portal.py` — Dashboard data, events, paginated updates, form submission with planner notification, form details with existing responses, planner update creation
+
+- **Order of Events / Run of Show**
+  - `OrderOfEventsItemModel` — New Pydantic model for individual program steps (title, description, time, duration, display order, notes)
+  - `EventNoteModel` — New Pydantic model for collaborative notes (author_role, text, status: pending/seen/addressed)
+  - `EventModel.order_of_events` — Detailed program steps within each ceremony (e.g., Grand Entrance → First Dance → Cake Cutting → Toasts)
+  - `EventModel.event_notes` — General event-level notes from planner or couple
+
+- **New MongoDB Collections**
+  - `couple_users` — Couple accounts with invite tokens, password hashes, wedding references
+  - `couple_updates` — Planner-to-couple update feed with milestone support
+  - `archived_weddings` — Complete wedding data snapshots for analytics after wedding completion
+
+- **Planner UI**
+  - Added "Couple Portal" nav item to `app/admin/components/Sidebar.tsx` with HeartHandshake icon
+
+- **Documentation**
+  - `docs/plans/couple/FEATURE_SCOPE_couple_portal.md` — Comprehensive feature spec (revised from original read-only scope)
+  - `docs/plans/couple/portal-mockups.html` — Visual mockups for all 8 portal screens
+
+### Changed
+
+- **`app/models/wedding.py`** — Extended `EventModel` with two new optional fields: `order_of_events` (List[OrderOfEventsItemModel], defaults to []) and `event_notes` (List[EventNoteModel], defaults to []). Added `EventNoteModel` and `OrderOfEventsItemModel` classes. Fully backward-compatible — existing events without these fields deserialize with empty lists.
+
+- **`app/types/wedding.ts`** — Added TypeScript interfaces `EventNote`, `OrderOfEventsItem` and extended `WeddingEvent` with optional `order_of_events` and `event_notes` fields.
+
+- **`app/main.py`** — Registered three new routers: `couple_auth_router` (public), `couple_portal_router` (public), `couple_invite_router` (admin prefix).
+
+### Backward Compatibility
+
+- All new fields on `EventModel` use `default_factory=list`, so existing MongoDB documents load without any migration
+- All existing consumers (weddings admin, guests page, RSVP form, landing page, couple dashboard) only access `type`, `date`, and `details` — unaffected by the new fields
+- TypeScript types use optional (`?`) for new fields — no frontend compilation impact
+- Verified with round-trip serialization tests against old documents, minimal documents, and new documents with full order-of-events data
+
+## [2.18.0] - 2026-03-22 — Customer Reviews Configuration for SaaS Management
+
+### Context
+
+The SaaS landing page displayed customer testimonials, but they were hardcoded in `app/page.tsx` with a `// TODO: Fetch testimonials from API when endpoint exists` comment. The admin SaaS management page had no way to manage these reviews — the original "SaaS Content" tab that would have covered this was removed for performance reasons, leaving a gap between what appeared on the landing page and what root admins could configure.
+
+### Added
+
+- **`app/api/testimonials.py`** — Dedicated testimonials CRUD API with six endpoints:
+  - `GET /saas/public/testimonials` — Public (no auth), returns active testimonials sorted by display order. Auto-seeds the collection with four default testimonials if empty.
+  - `GET /saas/testimonials` — Admin listing of all testimonials (active + hidden), ROOT_ADMIN only.
+  - `POST /saas/testimonials` — Create a new testimonial with name, company, role, quote, display order, and active flag.
+  - `PUT /saas/testimonials/{id}` — Partial update of any testimonial fields.
+  - `DELETE /saas/testimonials/{id}` — Permanent deletion.
+  - `PUT /saas/testimonials/{id}/toggle` — Toggle active/inactive status.
+
+- **Customer Reviews tab in `app/admin/saas/page.tsx`** — Fourth tab on the SaaS management page (alongside Overview, Subscription Plans, and Ad Platform):
+  - Card grid displaying each testimonial with name, role, company, quote preview, active/hidden badge, display order, and last-updated date.
+  - Inline Edit, Hide/Show, and Delete actions per card.
+  - Modal form for creating and editing testimonials with fields for name, role, company, quote text, display order, and active checkbox.
+  - Empty state with call-to-action when no testimonials exist.
+
+### Changed
+
+- **`app/page.tsx`** — Landing page now fetches testimonials from `GET /saas/public/testimonials` on mount via `useEffect`. Falls back to four hardcoded testimonials if the API is unreachable. Replaced two generic testimonials with four feature-rich testimonials covering the full platform (guest management, seating, budgets, contracts, AI pricing, vendor coordination, gallery, reminders, calendar sync, forms, wedding config, and knowledge base).
+
+- **`app/api/saas_config.py`** — Updated `_get_default_saas_config()` testimonials array to match the new four-testimonial set and added a sync comment pointing to `testimonials.py`.
+
+- **`app/main.py`** — Registered `testimonials_router` at `/saas` prefix.
+
+### Migration Notes
+
+- The `testimonials` MongoDB collection is auto-seeded on first read if empty — no manual migration required.
+- Existing `saas_config.testimonials` data (in the monolithic config blob) is no longer the source of truth for the landing page; the dedicated `testimonials` collection is authoritative.
+- The four default testimonials reference real platform features by name (seating orchestrator, contract canvas, forms canvas, etc.) to serve as both social proof and feature discovery.
+
+## [2.17.0] - 2026-03-20 — Shared Pagination System for Admin Dashboard
+
+### Context
+
+The admin dashboard had ~25 pages with tables that either had no pagination at all (loading all records into the DOM), or had broken/inconsistent pagination implementations (some cursor-based, some client-side-only). Large datasets like platform errors (1000+ records) and guest lists were loading everything at once, causing slow renders and poor UX. The platform errors page was additionally stuck at 2 pages because the cursor lookup only searched the `errors` collection but not the `audit_logs` collection.
+
+### Added
+
+- **`app/admin/components/ui/glass/GlassPagination.tsx`** — New shared pagination component with two variants:
+  - `full`: Shows page numbers, first/last buttons, per-page dropdown, and "Showing X–Y of Z" summary
+  - `compact`: Minimal "Page X of Y" display with prev/next buttons for use as a top-of-table nav
+  - Defensive defaults on all numeric props (`totalItems = 0`, `currentPage = 1`, etc.) so the component never crashes on `undefined` values
+  - Optional `onPageChange` (called with `?.()` guard) so it can render safely even when callbacks aren't provided
+  - Glass-morphism styling consistent with the existing design system
+
+- **`app/admin/hooks/usePagination.ts`** — Shared pagination state hook providing:
+  - `currentPage`, `itemsPerPage`, `totalItems`, `totalPages` (computed)
+  - `setPage()`, `setItemsPerPage()`, `setTotalItems()`, `updateFromResponse()`
+  - `queryParams` (ready-to-use `{ page, limit }` object) and `skip` (for skip/limit APIs)
+  - Configurable `initialPage` and `initialItemsPerPage` (defaults to 50)
+
+### Changed
+
+- **`app/api/admin_platform_metrics.py`** — Replaced cursor-based pagination on `GET /errors/recent` with page-based (`page`, `limit` query params). Fixed `_normalize_timestamp()` which was producing `+00:00Z` (double timezone suffix) that JavaScript's `new Date()` rejected as Invalid Date. Backend now correctly splits pagination across both `errors` and `audit_logs` collections based on skip offset.
+
+- **`app/admin/platform/page.tsx`** — Rewrote errors tab pagination from cursor-based state (`cursorHistory`, `nextCursor`, `prevCursor`, etc.) to `usePagination` hook + `GlassPagination` component. Changed table to `table-fixed` layout with explicit column widths to prevent horizontal overflow. Shortened column labels ("Acknowledged" → "Ack'd").
+
+- **`app/services/guest_service.py`** + **`app/api/guest.py`** — Added `page`/`limit` params to `GET /guests`, replaced `to_list(length=None)` with skip/limit queries.
+
+- **`app/api/user_management.py`** + **`app/services/user_management_service.py`** — Added `page`, `limit`, `search` pagination to user listing endpoints.
+
+- **`app/api/wedding.py`** + **`app/services/wedding_service.py`** — Added `page`, `limit`, `search` pagination to wedding listing endpoints.
+
+- **`app/admin/guests/page.tsx`** — Server-side pagination with compact top nav + full bottom pagination.
+
+- **`app/admin/users/page.tsx`** — Server-side pagination with search, filter-reset-to-page-1 on input change.
+
+- **`app/admin/vendors/page.tsx`** — Server-side pagination integrated with existing search/category/preferred filters.
+
+- **`app/admin/weddings/page.tsx`** — Server-side pagination. Refactored client-side filtering from `useCallback` + `useEffect` (which caused infinite re-render loops) to a clean `useMemo` pattern with a separate filter-reset effect.
+
+- **`app/admin/support/page.tsx`** — Server-side pagination with inline page-reset in filter event handlers.
+
+- **`app/admin/planner/team/page.tsx`** — Server-side pagination with compact top + full bottom nav. Fixed incorrect `goToPage()` method calls (doesn't exist on the hook) to `setPage()`.
+
+- **`app/admin/planner/activity-log/page.tsx`** — Server-side pagination with compact top + full bottom nav.
+
+- **`app/admin/planner/billing/page.tsx`** — Client-side pagination for invoice history using `usePagination` with `Array.slice()`.
+
+### Fixed
+
+- **Infinite re-render loops on all paginated pages** — Every page that used `pagination` (the whole object) as a `useCallback` dependency caused infinite loops because `usePagination()` returns a new object reference on every render. Fixed by destructuring to specific primitive values (`pagination.currentPage`, `pagination.itemsPerPage`) in all dependency arrays.
+
+- **Secondary infinite loop from `updateFromResponse`** — All pages were calling `pagination.updateFromResponse({ total, page })` which set both `totalItems` AND `currentPage`. Setting `totalItems` changed `totalPages`, which caused `setPage` (useCallback depending on `totalPages`) to be recreated, triggering filter-reset effects that called `setPage(1)`, changing `currentPage`, which triggered fetch callbacks. Replaced all `updateFromResponse()` calls with `setTotalItems()` across 7 pages.
+
+- **Weddings page filter cascade loop** — `filterWeddings` was a `useCallback` depending on `allWeddings`. When fetch completed → `allWeddings` updated → `filterWeddings` recreated → effect fired → `pagination.setPage(1)` → `currentPage` changed → `fetchWeddings` triggered again. Fixed by converting to `useMemo` (pure computation, no side effects) with a separate `useEffect` that only resets page on actual filter input changes.
+
+- **GlassPagination crash on undefined props** — Three planner pages passed `pagination={pagination}` as a single object prop instead of individual props. Since `GlassPaginationProps` has no `pagination` prop, all numeric values were `undefined`, causing `.toLocaleString()` crash. Fixed all usages to pass individual props AND added defensive defaults in the component itself.
+
+- **Platform errors stuck at 2 pages** — Cursor-based pagination only searched the `errors` collection for the cursor document. When results spanned both `errors` and `audit_logs`, the cursor was never found and pagination broke. Replaced with page-based pagination.
+
+- **Blank timestamps on platform errors** — `_normalize_timestamp()` appended `Z` to timestamps that already had `+00:00`, producing `+00:00Z` which JavaScript rejects. Fixed to replace `+00:00` with `Z` instead of appending.
+
+- **Named vs default export mismatch** — Three planner pages used `import GlassPagination from ...` (default import) but the component uses `export function GlassPagination` (named export). Fixed all to `import { GlassPagination } from ...`.
+
+### Migration Notes
+
+- All paginated pages now default to 50 items per page with a per-page dropdown offering 10/25/50/100 options
+- The `usePagination` hook's `updateFromResponse()` method still exists but is no longer called by any page — all pages use `setTotalItems()` instead to avoid re-render loops
+- Backend pagination endpoints all follow the `?page=1&limit=50` pattern; the `usePagination` hook also exposes `skip` for APIs that use skip/limit
+- No database migrations required — all changes are frontend pagination state + backend query parameter handling
+
+## [2.16.0] - 2026-03-19 — Merge Business Analytics into SaaS Management + Fix Plan Breakdown Bugs
+
+### Context
+
+The admin dashboard had two separate pages for related data: "Business Analytics" (`/admin/metrics`) showed detailed platform metrics (user growth, subscription revenue, operational load), while "SaaS Management" (`/admin/saas`) had a basic Overview tab with just four metric cards and a plan distribution list. This split was confusing — the Business Analytics page had all the real data, but the SaaS Management Overview (the natural first stop) was too sparse to be useful.
+
+Additionally, the Business Analytics Plan Breakdown table had three data bugs: a missing third plan, hardcoded "N/A" for user counts, and a missing status in the expected list.
+
+### Fixed
+
+- **Missing plan in Plan Breakdown** — `_calculate_revenue_summary()` in `platform_metrics_service.py` only showed plans that had active/trial subscriptions. Plans with zero subscriptions (e.g. a newly created plan) were silently omitted. Added a second query that fetches all active plans from `subscription_plans` and backfills any missing ones with zeroed-out values. Applied to both the main aggregation pipeline and the fallback path.
+- **Hardcoded "N/A" for Active Users / Trial Users** — The frontend Plan Breakdown table had literal `<td>N/A</td>` instead of real data. The backend aggregation pipeline never counted users per plan. Added `active_users` and `trial_users` conditional counters to the `$group` stage, and updated the frontend to render `formatNumber(plan.active_users ?? 0)`.
+- **Missing `pending_checkout` status** — The `expected_statuses` list in `_compile_subscription_metrics()` didn't include `pending_checkout`, which exists in the database. Added it so the status always appears with a default of 0.
+
+### Changed
+
+- **`app/admin/saas/page.tsx`** — Replaced the basic Overview tab with the full Business Analytics dashboard:
+  - Added all Platform Metrics types (`PlatformMetricsResponse`, `TimeframeKey`, etc.) and helper functions (`formatCurrency`, `formatNumber`, `formatPercentage`)
+  - New state: `metrics`, `metricsTimeframe`, `metricsLoading` (replaces old `analyticsOverview` and `planBreakdown`)
+  - Replaced two API calls (`/saas/analytics/overview` + `/saas/analytics/revenue`) with a single `/saas/analytics/platform?timeframe=` call
+  - Added `fetchMetricsOnly()` for lightweight timeframe changes without re-fetching plans/planners
+  - Added `useMemo` hooks for `roleBreakdown` and `statusBreakdown`
+  - Overview tab now shows: User Growth (4 cards), Subscription & Revenue (3 cards + Plan Breakdown table), Operational Load (Weddings, Forms, Communications), and Recent Signups (expanded from 3 to 5 entries with active/inactive badges)
+  - Cleaned up unused `'planners'` from the tab type union
+  - Updated page header: "SAAS Admin Dashboard" → "SaaS Management" with description "Platform analytics, subscription plans, and configuration"
+
+- **`app/admin/metrics/page.tsx`** — Converted from the full Business Analytics page to a lightweight redirect (`router.replace('/admin/saas')`) so bookmarks, browser history, and stale links still work.
+
+- **`app/admin/components/Sidebar.tsx`** — Removed the "Business Analytics" nav item (`/admin/metrics`) from the admin sidebar. Removed unused `TrendingUp` import.
+
+- **`app/admin/components/AdminHeader.tsx`** — Consolidated duplicate header links: removed "Platform Management" and "Platform Metrics" entries, replaced with a single "SaaS Management" link to `/admin/saas`.
+
+- **`app/admin/page.tsx`** — Updated the "Analytics" quick action card on the root admin dashboard to link to `/admin/saas` instead of `/admin/metrics`.
+
+- **`app/services/platform_metrics_service.py`** — Backend fixes described in the Fixed section above. Both `_calculate_revenue_summary()` (main pipeline) and `_revenue_fallback()` now return `active_users` and `trial_users` per plan and backfill all active plans.
+
+### Migration Notes
+
+- `/admin/metrics` now redirects to `/admin/saas` — no dead links
+- The `/admin/support` page's API call to `/admin/metrics/dashboard` is a backend API endpoint (not a frontend route) and is unaffected
+- The Subscription Plans and Ad Platform tabs in SaaS Management are untouched
+- All backend API endpoints remain unchanged — no Python route changes needed for the frontend migration
+
+## [2.15.0] - 2026-03-19 — Advertising Campaign Platform Phase 3: Planner Interaction Flows
+
+### Context
+
+Phase 3 of the advertising platform rebuild. Phases 1-2 built the data models, vendor campaign service, admin moderation service, campaign rollup service, and all associated API routes. Phase 3 implements the two planner-facing interaction flows: "Add to Directory" and "Request Quote" — how planners engage with sponsored vendor cards in the rail.
+
+The old architecture required a planner to manually find and add vendors. In the new campaign platform, vendors advertise independently, and planners interact with sponsored cards that appear contextually. These interactions create attribution trails (ad_leads, ad_events) and feed the campaign analytics pipeline.
+
+### Added
+
+- **`app/services/planner_ad_interaction_service.py`** — Planner ad interaction service
+  - **Add to Directory flow** (roadmap 3.3): copies vendor info from active campaign into planner's `vendor_profiles` collection, tagged with `source: 'sponsored_ad'` and `source_campaign_id` for attribution. Creates `ad_lead` (type: `add_to_directory`, status: `converted`) and `ad_event` (type: `vendor_added_to_directory`). Increments campaign `lead_count` + `conversion_count`. Returns 409 if duplicate.
+  - **Request Quote flow** (roadmap 3.4): creates `ad_lead` (type: `quote_request`, status: `pending`) with message and optional `wedding_context` (date, location, guest_count, venue, budget_range). Sends branded HTML email to vendor via Resend email service with reply-to set to planner's email. Auto-adds vendor to directory if not already present. Gracefully handles email service failures.
+  - **Sponsored cards serving** (`get_sponsored_cards`): returns active campaigns enriched with primary creative, filtered to exclude vendors the planner already added, deduplicated by vendor_id, sorted by quality_score.
+  - **Directory status check**: quick lookup for frontend button state (Add to Directory vs. Already Added).
+
+- **`app/api/planner_ad_interactions.py`** — Planner ad interaction API router (4 routes at `/planner/ads/*`)
+  - `GET /sponsored-cards` — Get contextual sponsored vendor cards for the planner rail. Supports location, categories (comma-separated), and limit (1-10) query params.
+  - `POST /add-to-directory` (201) — Add vendor from campaign to planner's directory. Body: `{campaign_id, click_id?}`.
+  - `POST /request-quote` (201) — Send quote request to vendor. Body: `{campaign_id, message, wedding_id?, wedding_context?, click_id?, auto_add_to_directory?}`. Message required (1-2000 chars).
+  - `GET /directory-status` — Check if vendor already in planner's directory. Query: `campaign_id`.
+  - Auth: `require_planner_or_admin` dependency — allows `is_wedding_planner` or root admin.
+  - Request/response models: `AddToDirectoryRequest`, `RequestQuoteRequest`, `WeddingContext` (Pydantic).
+
+### Changed
+
+- **`app/main.py`** — Registered `planner_ad_interactions_router` (Planner Ad Interactions) between admin campaigns and vendor public routers.
+
+### Architecture Notes
+
+- Planner interaction flows operate on the NEW campaign-centric platform (`ad_campaigns`), NOT the old `sponsored_vendors` system
+- Attribution chain: planner sees sponsored card → clicks Add/Quote → `ad_event` + `ad_lead` created with `campaign_id` → campaign counters incremented → appears in vendor portal leads → appears in campaign rollup stats
+- VendorProfile entries created from campaigns are tagged with `source: 'sponsored_ad'`, `source_campaign_id`, `source_vendor_id`, `source_creative_id` for full attribution
+- Email service is optional (injected via constructor); if unavailable, quote requests still succeed and appear in vendor portal leads
+- Duplicate detection: planner cannot add the same campaign's vendor twice (keyed on `created_by` + `source_campaign_id`)
+
+### Tests Added
+
+- `tests/backend/test_planner_ad_interaction_service.py` — 33 async tests covering add-to-directory (11), request-quote (13), sponsored cards (6), directory status (3)
+- `tests/backend/test_planner_ad_interactions_api.py` — 44 tests covering all 4 routes, auth boundaries, request validation, service integration, error handling
+
+## [2.14.0] - 2026-03-19 — Advertising Campaign Platform Phase 2: Vendor & Admin Backend
+
+### Context
+
+This is Phase 2 of the advertising platform rebuild. The old architecture was keyed on `vendor_profile_id` from the planner vendor directory — external vendors could not advertise without a planner adding them first. The rebuild centers everything on `ad_campaigns` with independent vendor identity (`role: advertising_vendor`).
+
+Phase 1 (v2.13.1) laid the data model foundation. Phase 2 builds the full service layer and API surface for both vendor self-service and root admin moderation.
+
+### Added
+
+- **`app/services/admin_campaign_service.py`** — Root admin campaign operations service
+  - Review queue: FIFO by `submitted_at` with primary creative inlined for review card display
+  - Review counts by status for dashboard widgets (pending_review, active, paused, rejected, draft, completed)
+  - Campaign review actions: approve (auto-approves all pending creatives), reject, request-changes (returns to draft with notes)
+  - Creative review: separate queue, approve, reject with notes
+  - Campaign monitoring: list all campaigns across vendors, admin pause (policy concerns), admin deactivate (emergency kill from any non-terminal status)
+  - Revenue/engagement dashboard: aggregates impressions, clicks, leads, unique planners from `ad_events` (free tier = $0 spend)
+  - Planner feedback: surfaces hidden vendors, suppressed categories, reduced frequency requests
+  - Fraud signals: list and update investigation status from `ad_fraud_signals` (7-day TTL)
+  - Vendor account management: list `advertising_vendor` accounts
+  - Platform config: get/update advertising feature flags
+
+- **`app/api/vendor_campaigns.py`** — Vendor portal API router (14 routes at `/portal/ads/*`)
+  - Campaign CRUD: `POST /campaigns`, `GET /campaigns`, `GET /campaigns/{id}`, `PUT /campaigns/{id}`, `DELETE /campaigns/{id}` (draft only)
+  - Lifecycle: `POST /campaigns/{id}/submit` (validates readiness), `POST /campaigns/{id}/pause`
+  - Stats: `GET /campaigns/{id}/stats` (lifetime totals + daily time series from `campaign_day_stats`)
+  - Creatives: `POST /campaigns/{id}/creatives`, `GET /campaigns/{id}/creatives`, `PUT /creatives/{id}`, `POST /campaigns/{id}/creatives/{id}/set-primary`
+  - Leads: `GET /leads` (all leads across vendor's campaigns)
+  - Billing: `GET /billing` (placeholder, free tier)
+  - Auth: `require_advertising_vendor` dependency — allows `is_advertising_vendor` or root admin
+
+- **`app/api/admin_campaigns.py`** — Admin campaign API router (18 routes at `/admin/ads/campaigns/*`)
+  - Review: `GET /review`, `GET /review/counts`, `PUT /{id}/approve`, `PUT /{id}/reject`, `PUT /{id}/request-changes`
+  - Creative review: `GET /review/creatives`, `PUT /review/creatives/{id}/approve`, `PUT /review/creatives/{id}/reject`
+  - Monitor: `GET /` (all campaigns), `PUT /{id}/pause`, `PUT /{id}/deactivate`
+  - Dashboard: `GET /revenue`, `GET /feedback`, `GET /fraud-signals`, `PUT /fraud-signals/{id}`
+  - Management: `GET /vendors`, `GET /config`, `PUT /config`
+  - Auth: `require_root_admin` on all endpoints
+
+- **`app/services/campaign_rollup_service.py`** — Campaign-centric daily rollup service
+  - `campaign_day_stats` rollup: groups by `campaign_id` (not `sponsored_vendor_id`), includes event counts, lead breakdowns, unique reach, hourly distributions, CTR
+  - `placement_day_stats` rollup: groups by placement type — platform-level reporting on which placements perform best
+  - Only processes events with `campaign_id` set (new platform events, ignores legacy)
+  - Enriches `vendor_id` from `ad_campaigns` collection
+  - `backfill_rollups()` for initial setup or recovery
+  - `compute_daily_rollup()` entry point runs both rollups
+
+### Changed
+
+- **`app/main.py`** — Registered new routers and integrated campaign rollup into nightly scheduler
+  - Added `vendor_campaigns_router` (Vendor Campaigns) and `admin_campaigns_router` (Admin Campaigns)
+  - Nightly scheduler now runs: legacy rollup → campaign rollup → expired campaign auto-completion
+  - Legacy `advertising_router` kept for backward compatibility (will be removed in Phase 5)
+
+### Architecture Notes
+
+- Vendor campaigns router (`/portal/ads/*`) is fully independent from planner auth — vendors sign up at `vendor.thespecialwedding.io` with `role: advertising_vendor`
+- Admin campaigns router (`/admin/ads/campaigns/*`) coexists with legacy `/admin/ads/*` router — no route conflicts because of the `/campaigns` prefix
+- Campaign rollup service coexists with legacy `ad_rollup_service.py` — both run nightly, each processing their own event subset
+- All new services follow the established pattern: `__init__(db)`, `_serialize()`, `_to_oid()`, async Motor operations
+
+## [2.13.0] - 2026-03-18 — Trial & Subscription Lifecycle, Billing Paywall, Stripe Plan Sync
+
+### Added
+
+- **Trial expiration warning system** — 7-day early warning email + 3-day countdown (daily emails on days 3, 2, 1) before trial expires. Tracked via `trial_warning_sent` and `trial_countdown_last_day` fields
+- **In-app trial banner** (`TrialBanner.tsx`) — persistent banner for planners within 3 days of expiration or with expired/cancelled subscriptions. Shows contextual messaging with "Upgrade Now" CTA
+- **Billing paywall for expired planners** — expired/cancelled/suspended planners are redirected to `/admin/planner/billing` via `AdminRouteGuard`. Cannot access any feature pages until they resubscribe
+- **Reactivation flow on billing page** — expired planners see "Reactivate Your Account" with plan cards and fresh Stripe Checkout sessions (not the Portal update flow which doesn't work for expired subs)
+- **Subscription gate in `get_current_user_extended`** — path-based whitelist blocks expired planners on feature endpoints (402) while allowing access to profile, billing, and Stripe endpoints. Root admin always bypasses
+- **Stripe plan change sync** — webhook handler now resolves `plan_id` from the current Stripe price on subscription items instead of relying on stale `metadata.plan_id`. Handles Portal-initiated plan changes correctly
+- **User ID fallback in webhook handler** — when `metadata.user_id` is missing (Portal changes), looks up user from `user_subscriptions` or `stripe_customers` collection so both DB collections stay in sync
+- **Migration script** (`migrate_subscription_fields.py`) — backfills `user_email`, `start_date`, `created_by` on existing `user_subscriptions` records + `trial_warning_sent`, `registration_source` on users. Runs on deploy via Dockerfile
+- **Sync script** (`sync_stripe_subscription.py`) — manually syncs a user's subscription state from Stripe to the platform DB. Handles Stripe API v2023+ where period dates moved to subscription items
+- **Force-expire script** (`force_expire_trial.py`) — test utility to force-expire a planner's trial for development testing
+- **Knowledge base article** — "Understanding Your Trial, Billing & Subscription" added to `seed_knowledge_base.py` (category: billing-subscription)
+- **ROOT_ADMIN email migration** in `setup_admin_user.py` — detects existing ROOT_ADMIN with different email and migrates it to match env var
+
+### Fixed
+
+- **Stripe webhook secret** — `.env` had placeholder `whsec_YOUR_NEW_VALUE`, replaced with actual Stripe CLI signing secret
+- **Trial expiration no longer sets `is_active=False`** — expired planners keep `is_active=True` so they can still log in and reach the billing page. Only admin-deactivated accounts use `is_active=False`
+- **Auth-layer trial expiration syncs both collections** — `get_current_user_extended` now updates `user_subscriptions` alongside `users` when auto-expiring a trial
+- **Email failure no longer breaks expiration batch** — `send_trial_expired_email` wrapped in try/except so one failed email doesn't skip remaining users
+- **SSE notification stream auth** (`notification_stream.py`) — replaced duplicated auth logic with call to `get_current_user_extended`, eliminating 401 polling from stale/divergent auth code
+- **Budget endpoints** (`budget.py`) — 16 endpoints changed from `get_current_user_extended` to `require_admin_or_planner` to enforce subscription paywall
+- **Advertising endpoints** (`advertising.py`) — 5 endpoints same fix
+- **Frontend 402 handling** — `apiRequest` in `AdminContext.tsx` now redirects to billing on 402 instead of showing generic error. Login flow handles 402 from profile fetch gracefully
+- **`datetime.utcnow()` deprecation** — replaced with `datetime.now(timezone.utc)` in `setup_admin_user.py`
+
+### Changed
+
+- **`UserModel`** — added `trial_warning_sent`, `trial_expired_at`, `registration_source` fields to match service layer usage
+- **`UserUpdateModel`** — added `trial_end_date` field for admin user updates
+- **`AdminRouteGuard`** — checks `subscription_status` and redirects expired planners to billing before rendering any page
+- **`/admin/page.tsx`** — expired planners redirected to `/admin/planner/billing` instead of `/admin/planner` (prevents redirect loop)
+- **Billing page** — treats expired/cancelled subscriptions same as no subscription, showing plan selection with "Reactivate Your Account" messaging and fresh checkout buttons
+- **Dockerfile.coolify** — startup chain includes `migrate_subscription_fields.py`
+
+## [2.12.4] - 2026-03-18 — Standalone Ad Admin Pages + Sidebar Navigation
+
+### Fixed
+
+- **Advertising page 422 crash** -- `/admin/advertising` called `getVendorDirectory(token, { limit: 1000 })` but backend enforces `limit <= 100`. Changed to `limit: 100`
+- **Structured error parsing** -- Added `extractErrorMessage()` helper to `vendorManagementApi.ts` that handles string, dict (feature gate), and array (Pydantic 422) error formats. Applied to all 24 API error handlers
+
+### Added
+
+- **4 standalone ad admin pages** -- Broke the tabbed `/admin/ads/console` into separate pages matching the mockup sidebar structure. Each page is its own route with `RootAdminGuard`, page header, and self-contained state:
+  - `/admin/ads/creative-review` -- Campaign review queue with approve/reject/request changes
+  - `/admin/ads/performance` -- Metrics, platform health, vendor leaderboard
+  - `/admin/ads/config` -- Feature flags, serving limits, review workflow, data pipeline controls
+  - `/admin/ads/revenue` -- Revenue placeholder (billing not active)
+- **Root admin sidebar** -- 4 advertising nav items: Creative Review, All Campaigns, Performance, Ad Config. Each links directly to its own page (no tabs, no query params)
+
+## [2.12.3] - 2026-03-18 — Feature Gate Error Handling & Drawer Visual Fix
+
+### Fixed
+
+- **Vendor dashboard 403 error crash** -- `getVendorDashboard` threw `[object Object]` when the feature gate returned a structured error dict. Now extracts `detail.message` string before throwing
+- **7 vendor management API functions** with same broken error parsing -- `getVendorCategories`, `getWeddingVendors`, `getContractTemplates`, `getContracts`, `getPaymentMilestones`, `getPaymentLinks` all fixed to handle structured `detail` objects from feature gate 403s
+- **Drawer stats grid** -- Changed from 2-column (Weddings, Total Revenue) to 3-column (Weddings, Rating, Starting at) matching the mockup spec. Shows `typical_price_min` with currency prefix
+
+## [2.12.2] - 2026-03-17 — Full System QA: Data Flow Integrity & Visual Audit
+
+### Security
+
+- **planner_id enforcement** -- `POST /events` endpoint now always overrides `planner_id` from authenticated user instead of trusting frontend value
+
+### Fixed
+
+- **ObjectId serialization in rollup service** -- `get_dashboard_stats()` and `get_vendor_leaderboard()` now serialize `_id` fields via `_serialize_rollup_doc()`. Previously returned raw ObjectIds causing JSON serialization failures
+- **wedding_id missing from drawer events** -- `SponsoredVendorDetailsDrawer` now accepts `weddingId` prop and passes it to all 4 `recordAdEvent` calls (vendor_profile_view, vendor_added_to_wedding, contact_click, dismiss). Previously all drawer interactions had null wedding attribution
+- **WCAG touch targets** -- All interactive elements in admin console updated from 36px to 44px minimum height (10 instances: dropdowns, buttons, inputs)
+
+### QA Audit Results (3 parallel agents)
+
+- **API alignment**: 26 endpoints verified, all request/response structures match between TS interfaces and Python models
+- **Visual fidelity**: 85% match against HTML mockups across all 8 views. No blocking gaps.
+- **Data flow**: Event tracking chain verified from frontend through rollup. click_id attribution intact. CTR calculation correct (impression_served only). Wedding attribution now complete across all 5 frontend components.
+
+## [2.12.1] - 2026-03-17 — Team Management Phases 5 & 6: Activity Logs & Notifications
+
+### Added
+
+- **Activity log enrichment (Phase 6A)** -- `log_activity()` now accepts `actor_name` and `actor_role` fields, stored on every log entry. All 6 team member log methods now include member name and role in messages (e.g. "John (Editor) accepted their team invitation" instead of "john@email.com accepted their team invitation")
+- **Team notification types (Phase 6B)** -- Added 3 methods to `NotificationService`: `notify_team_member_accepted` (alerts owner when member joins), `notify_team_member_action` (alerts owner on high-impact team member actions with wedding context), `notify_team_member_deactivated` (alerts owner when member is deactivated)
+
+### Verified (already implemented in prior sessions)
+
+- Phase 5A: AdminContext `UserProfile` interface already has `is_team_member`, `team_permissions`, `team_wedding_access`, `team_assigned_wedding_ids` -- populated from `/admin/team/permissions` on login
+- Phase 5B: Dashboard already filtered for team members via `get_accessible_wedding_ids()` in planner_metrics.py backend, with "Filtered View" notice on frontend
+
+## [2.12.0] - 2026-03-17 — Team Management Phase 3: Endpoint Permission Protection
+
+### Security
+
+- **All 10 previously unprotected API files now have team permission enforcement.** Team members accessing these endpoints without the required permission will receive a 403 error instead of unrestricted access.
+
+| File | Permission | Enforcement Count |
+|------|-----------|------------------|
+| gallery_admin.py | manage_gallery | 4 |
+| gallery_upload.py | manage_gallery | 3 (NEW) |
+| vendor_dashboard.py | manage_vendors | 2 (NEW) |
+| reminder.py | send_reminders | 2 |
+| reminder_twilio.py | send_reminders | 5 |
+| forms.py | manage_forms | 9 |
+| planner_metrics.py | view_analytics | 4 |
+| wedding.py | manage_wedding_settings | 3 |
+| planner_calendar.py | manage_wedding_settings | 7 |
+| packages.py | manage_contracts | 7 (FIXED: was manage_packages) |
+
+### Fixed
+
+- **packages.py invalid permission key** -- Changed `manage_packages` (not in valid permission keys) to `manage_contracts`
+- **gallery_upload.py missing protection** -- Added `enforce_team_permission` with `manage_gallery` to DELETE and POST endpoints
+- **vendor_dashboard.py missing protection** -- Added `enforce_team_permission` with `manage_vendors` to PATCH task endpoint
+
+## [2.11.9] - 2026-03-17 — Billing Page Layout Fix & Cancel Subscription Bug
+
+### Fixed
+
+- **Billing page card padding** — All `Card` components on the billing page were missing internal padding (`p-6`), causing text like "0 / 10", "0.0 / 50 GB" to clip against the right edge of the viewport
+- **Billing page grid overflow** — Added `min-w-0` and `overflow-hidden` to both grid columns so content stays within its allocated track instead of bleeding past the column boundary
+- **Cancel Subscription redirected to payment update** — The "Cancel Subscription" button called `handleManageBilling()` which sent no `flow_type` to the backend. The backend defaulted `null` to `"payment_method_update"`, so clicking cancel always opened Stripe's payment method page instead of the cancellation flow
+- **Backend portal session default** — `create-portal-session` API no longer defaults `null` flow type to `"payment_method_update"`. A `null` flow type now opens the general Stripe billing portal overview
+
+### Added
+
+- **`subscription_cancel` Stripe portal flow** — New flow type supported in both frontend and backend. The "Cancel Subscription" button now opens Stripe's cancellation flow directly with the correct subscription ID
+- **Cancel button styling** — Cancel Subscription button now has red border/text styling to visually distinguish it as a destructive action
+
+## [2.11.8] - 2026-03-17 — Fix Package Creation Crash (Decimal BSON Serialization)
+
+### Fixed
+
+- **Package creation crash** — `WeddingPackage.total_amount` used Python `Decimal` type which BSON cannot encode, causing `InvalidDocument: cannot encode object: Decimal(...)` on `insert_one`. Changed to `float` in the model and service layer. Same fix applied to `ScheduleItem.amount` and `PaymentExecution.amount` to prevent the same issue in contracts
+- **"Create & Activate" always saved as draft** — `CreatePackageRequest` was missing the `status` field so the frontend's status choice was silently dropped. Added `status: Optional[str]` with pattern validation to the request model so packages can be created directly as active
+
+### Changed
+
+- **`WeddingPackage.total_amount`** — `Decimal` → `float` (MongoDB stores as BSON double regardless)
+- **`ScheduleItem.amount`** — `Decimal` → `float` for BSON compatibility
+- **`PaymentExecution.amount`** — `Decimal` → `float` for BSON compatibility
+- **`field_serializer` on `total_amount`** — Changed from `when_used='json'` to `when_used='always'` so float conversion applies in `model_dump()` too
+
+## [2.11.7] - 2026-03-17 — Feature Flag Config ObjectId + AI Bug Verification
+
+### Fixed
+
+- **Feature flag config endpoint ObjectId** -- `PUT /admin/ads/feature-flag/config` now serializes `_id` to string before returning response
+
+### Verified (already fixed in prior sessions)
+
+- BUG-006: `model=model` in error handler -- already uses `locals().get("model", "unknown")`
+- BUG-008: JSON parse failure -- already raises `AIInvalidResponseError` instead of returning raw object
+- BUG-009: Credit deduction before validation -- already resolved because parsing happens inside `_call_gemini`, so `increment_usage` is only reached on valid responses
+
+## [2.11.6] - 2026-03-17 — ObjectId Serialization & Attribution Tracking
+
+### Fixed
+
+- **ObjectId serialization across entire advertising service** -- All 15+ methods that return MongoDB documents now convert `_id` from ObjectId to string via `_serialize_doc()` helper. Prevents JSON serialization 500 errors on every ad-related API endpoint
+- **Wedding ID attribution** -- `SponsoredVendorsRail` and `SponsoredMilestoneModule` now pass `wedding_id` in all `recordAdEvent` calls. All 4 milestone module instances on wedding detail page receive `weddingId` from route params
+
+## [2.11.5] - 2026-03-17 — Advertising Frontend-Backend Alignment Audit
+
+### Fixed
+
+- **RecordAdEventRequest interface** -- Added missing `wedding_id`, `planner_id`, `session_id`, `click_id` fields; removed nonexistent `user_id`. Attribution tracking context was lost without these fields
+- **create_lead() planner_id validation** -- Required `planner_id` field now enforced with 400 error instead of silently writing null
+- **Date range null comparison** -- Sponsored vendor date queries now use `$in: [None]` + `$exists: false` for explicit null/missing coverage
+- **Model timestamp fields** -- Added `created_at`/`updated_at` to AdEvent, AdLead, PlannerAdPreference, AdvertisingFeatureFlag models to match what service layer writes
+
+### Added
+
+- **Review status index** -- Compound index `(review_status, created_at)` on sponsored_vendors for review queue queries
+
+## [2.11.4] - 2026-03-17 — Root Admin & Loading State Layout Consistency
+
+### Fixed
+
+- **Loading state `min-h-screen` overflow** — Replaced `min-h-screen` on loading/empty state returns across 6 pages (root admin dashboard, SaaS management, Billing, Vendors, Forms) with `py-24` padding so spinners center within the admin layout instead of pushing past the viewport
+- **Forms loading state** — Removed decorative gradient background (`bg-gradient-to-br`) and glass-blur card from loading spinner to match the simple, consistent loading pattern used across all other pages
+
+## [2.11.3] - 2026-03-17 — Ad Rail Layout Fix & Budget Page Ads
+
+### Fixed
+
+- **Vendors page ad layout** -- `SponsoredVendorsRail` moved from inline stacked position to proper right-sidebar column using `lg:grid-cols-4` grid layout, matching the Dashboard page pattern
+- **SponsoredVendorDetailsDrawer build error** -- Replaced missing `@/hooks/useToast` import with `sonner` toast
+
+### Added
+
+- **Budget page sponsored vendors rail** -- Added `SponsoredVendorsRail` to the Budget page in a right-sidebar column. All four planner-facing pages (Dashboard, Vendors, Wedding Detail, Budget) now have consistent ad placement: horizontal scroll on mobile, vertical right rail on desktop
+
+## [2.11.2] - 2026-03-17 — Root Admin Page Layout Consistency
+
+### Fixed
+
+- **Profile page centering** — Removed `max-w-4xl mx-auto` wrapper from Account Settings page so content fills the full available width like all other admin pages
+- **Planner Billing page centering** — Removed `max-w-4xl mx-auto` from the no-subscription state and `max-w-5xl mx-auto` from the billing dashboard state
+- **Platform page error state** — Replaced `max-w-4xl mx-auto` + `p-8` wrapper on the error fallback with standard `space-y-6` wrapper
+- **Vendors page JSX parse error** — Fixed Turbopack build failure caused by a JSX comment placed between closing tags in the grid layout
+
+## [2.11.1] - 2026-03-17 — Vendor Details Drawer Wiring
+
+### Added
+
+- **SponsoredVendorDetailsDrawer wired to card clicks** -- Clicking a sponsored vendor card in the SponsoredVendorsRail now opens a slide-out drawer with full vendor details, pricing, contact info, portfolio, and 4 action buttons instead of navigating to a new page
+
+## [2.11.0] - 2026-03-17 — Dashboard UI Consistency & Inbox Resizable Panels
+
+### Fixed
+
+- **Page layout alignment** — Removed `max-w-*` + `mx-auto` centering from 8 admin pages (Calendar, Guests, Gallery, Inbox, Reminders, Weddings, Budget, Seating) so all pages fill the available width consistently, matching the admin layout's built-in padding
+- **Wedding selector dropdown inconsistency** — Standardized the "Select Wedding" dropdown across all pages to use the same inline label + dropdown pattern with identical card container, border radius, padding, and focus ring styling. Previously each page had a unique style (Gallery had a heart-icon oversized dropdown, Reminders had a stacked label, Seating used glass-blur, Guests used a block label)
+- **Sidebar active state for Dashboard** — `isActive()` in `Sidebar.tsx` now uses exact-match for `/admin/planner` instead of `startsWith`, so navigating to Calendar (`/admin/planner/calendar`) or Team (`/admin/planner/team`) no longer falsely highlights the Dashboard nav item
+- **"Dashboard" label bleeding into sub-pages** — `getPageTitle()` in `layout.tsx` changed from `pathname.includes('/admin/planner')` to `pathname === '/admin/planner'` so Calendar, Team, and Billing pages no longer show "Dashboard" in the top header bar
+- **Inbox page wrapper** — Replaced `min-h-screen bg-gray-50` + `max-w-7xl mx-auto px-4` with standard `space-y-6` wrapper matching all other pages
+
+### Added
+
+- **Inbox resizable panels** — The message list and preview panes now have a draggable vertical divider (grip handle) that lets planners resize the two panels horizontally between 20% and 70% width. Defaults to a 40/60 split. Uses mouse event listeners for smooth drag behavior with cursor feedback
+
+### Changed
+
+- **Budget page** — Replaced `Card` component wrapper for wedding selector with standard `div` to match the uniform card styling used across all pages
+- **Seating page** — Replaced glass-blur (`backdrop-blur-xl`, `bg-white/70`) wedding selector with standard opaque card styling for visual consistency
+- **Reminders page** — Consolidated the two-row wedding selector + channel picker into a single inline row within the standard card container
+
+## [2.10.9] - 2026-03-17 — Views 3-5 QA Audit & Tech Debt Fixes
+
+### Fixed
+
+- **Feature flag config back-fill** — Existing feature flag documents in MongoDB now auto-migrate to include new review workflow config keys, preventing frontend crashes
+- **Feature flag `_id` serialization** — ObjectId converted to string before JSON response
+- **Category filter clobber** — `get_sponsored_vendors_filtered()` no longer overwrites `target_categories` when both category filter and hidden categories are set
+- **Hidden vendor ObjectId validation** — Invalid ObjectId strings in hidden vendor preferences no longer crash the query
+- **Dashboard stats unbounded cursor** — Added 5000-document limit to `get_dashboard_stats()`
+- **Duplicate `getFeatureFlag` export** — Removed duplicate function in `advertisingApi.ts` that caused build error
+- **`SponsoredVendor` TypeScript interface** — Added `review_status`, `reviewed_by`, `reviewed_at`, `review_notes` fields; removed unsafe `as any` casts
+
+### Added
+
+- **Campaigns table Budget column** — Shows daily/lifetime budget from campaign metadata
+- **Campaigns table CPL column** — Placeholder for cost-per-lead (will compute from billing when Stripe is connected)
+- **Review-aware status badges** — Campaign status now distinguishes pending_review, rejected, changes_requested from active/paused
+
+### Verified
+
+- View 3 (Directory Boosts) — `BoostedVendorCard` already integrated in vendor directory grid
+- View 4 (Milestone Module) — `SponsoredMilestoneModule` already integrated on wedding detail page for 4 categories
+- View 5 (Vendor Ad Manager) — Core dashboard complete with metrics, weekly chart, conversion funnel, campaigns table
+
+## [2.10.8] - 2026-03-17 — View 7 Admin Moderation Console & Review Workflow
+
+### Added
+
+- **Creative review workflow** — Campaigns now submit as `pending_review` and require root admin approval before going live. New `AdReviewStatus` enum, review fields on `SponsoredVendor`, and `ReviewCampaignRequest` model
+- **Review API endpoints** — `GET /admin/ads/review-queue`, `GET /admin/ads/review-queue/counts`, `PUT /admin/ads/sponsored-vendors/{id}/review`, `PUT /admin/ads/feature-flag/config`
+- **View 7 Admin Console** (`/admin/ads/console`) — 4-tab root admin page: Creative Review (queue with approve/reject/request changes), Performance Dashboard (metrics, daily trend, leaderboard), System Config (feature flags, serving limits, review workflow, data pipeline), Revenue & Billing (placeholder with real vs. planned feature inventory)
+- **Vendor placeholder pages** — `/admin/vendor/ads/campaigns` (campaign list), `/admin/vendor/ads/leads` (lead list with filters), `/admin/vendor/ads/billing` (free tier notice, tracked data, coming-soon roadmap)
+
+### Changed
+
+- **Campaign Wizard** — Submits with `is_active: false` and `review_status: "pending_review"` instead of auto-activating
+- **Feature flag config** — Added `require_review`, `auto_approve_returning_vendors`, `review_sla_hours` to defaults
+
+## [2.10.7] - 2026-03-17 — Ad Image Upload with Separate S3 Bucket
+
+### Added
+
+- **Separate R2 bucket for vendor ad assets** — New `vendor-ad-assets` bucket isolates ad creative from wedding gallery content. New env vars: `S3_AD_BUCKET_NAME`, `AD_MEDIA_DOMAIN`
+- **`AdUploadService`** — Dedicated upload service for ad images (JPEG/PNG/WebP, max 5 MB) with presigned URL generation, keyed by `ads/{vendor_id}/{timestamp}_{filename}`
+- **`GET /admin/ads/upload-url`** — Backend endpoint returning presigned PUT URL for the ad bucket
+- **`POST /admin/ads/update-logo`** — Backend endpoint to persist CDN URL on vendor profile's `logo_url`
+- **Campaign Wizard drag-and-drop image uploader** — Step 5 (Creative) now has a proper file upload zone with drag-and-drop, progress states, preview with remove, and file validation. Replaces the plain text URL input
+- **`.env.example` rebuilt** — Full template with all current env variables using placeholder values
+
+### Changed
+
+- **`next.config.js`** — Added `AD_MEDIA_DOMAIN` to image `remotePatterns`
+
+## [2.10.6] - 2026-03-17 — Stripe Webhook Resilience & API v13+ Compatibility
+
+### Fixed
+
+- **Checkout session missing metadata** — `stripe.checkout.Session.create()` now includes `metadata` with `user_id`, `plan_id`, and `billing_interval` on the checkout session itself (previously only set on `subscription_data.metadata`). This ensures `_handle_checkout_completed` can resolve the user even when the checkout session webhook fires before the subscription is queryable.
+
+- **Webhook handler fallback for empty session metadata** — `_handle_checkout_completed` now falls back to retrieving `user_id` and `plan_id` from the Stripe subscription's metadata when the checkout session metadata is empty. Prevents permanent webhook failures with "Missing user_id or plan_id" for sessions created before the metadata fix.
+
+- **Stripe API v13+ compatibility for subscription period dates** — `_sync_subscription_state` now reads `current_period_start` and `current_period_end` from subscription items (Stripe API v13+ location) with fallback to top-level fields (legacy) and `start_date`. Prevents period dates from defaulting to `now` on active subscriptions.
+
+### Added
+
+- **`scripts/resend_checkout_webhook.py`** — Utility script to manually replay checkout completion sync for users whose Stripe webhook was missed (e.g., during local development without `stripe listen`). Uses pymongo directly for portability.
+
+## [2.10.5] - 2026-03-17 — Stripe Checkout: Subscription Record & Plan Sync Fixes
+
+### Fixed
+
+- **Subscription record missing status and created_at on checkout** — `create_checkout_session` upsert in `stripe_service.py` now sets `status: "pending_checkout"` and `$setOnInsert: {created_at}` so the admin billing dashboard shows a proper state instead of `"unknown"` with empty timestamps before the Stripe webhook fires.
+
+- **Users collection plan_id not updated during checkout** — When a user selects a plan during checkout via `/public/create-checkout-session`, the `users` collection `plan_id` was not updated (only the `user_subscriptions` record was). Now syncs `plan_id` on the user document when the checkout plan differs from what was stored at registration. (`app/api/stripe_payment.py`)
+
+## [2.10.4] - 2026-03-16 — Migrate Bulk SMS to Twilio Service & Add Throughput Throttling
+
+### Changed
+
+- **Frontend bulk event reminder migrated from legacy to Twilio service** — `handleSendEventReminder()` now calls `POST /admin/reminders/twilio/send` instead of the legacy `POST /admin/reminders/send`, gaining delivery tracking, messaging service SID routing, retry logic, and error classification
+- **SMS error handling improved on frontend** — Bulk event reminder SMS responses now surface errors to the user (previously silently ignored non-ok responses) and report skipped counts (no phone, opted out)
+
+### Added
+
+- **SMS throughput throttling** — All bulk SMS send loops (`TwilioReminderService.send_reminders()`, `TwilioRSVPReminderHelper.send_personalized_rsvp_links()`, `send-to-guests`, `send-to-plus-ones` endpoints) now include a configurable inter-message delay (default 350ms ≈ 2.8 req/s) to stay safely under the toll-free 3 MPS limit and avoid carrier flagging
+- **`SMS_THROTTLE_DELAY_MS` env var** — Configurable throttle delay between SMS API calls (default: 350ms for toll-free). Set to 100ms after upgrading to high-throughput toll-free (25+ MPS), or 50ms for short codes
+
+### Technical Notes
+
+- Twilio 10DLC default throughput: 1 MPS per number (varies by Trust Score up to ~75 MPS)
+- Toll-free default: 3 MPS (upgradeable to 25+ MPS)
+- Short code: 100 MPS
+- T-Mobile also enforces daily message limits per subscriber (separate from MPS)
+- Twilio queues messages internally (up to 36,000 segments per US long code), but firing API calls too fast triggers 429 rate limits
+- "Snowshoeing" (using multiple numbers to increase throughput) causes carrier filtering — use Messaging Service SID with a single sender pool instead
+
+## [2.10.3] - 2026-03-16 — Wire Planner Ad Actions (mailto, VendorAssignment, Vendor Images)
+
+### Added
+
+- **Request Quote mailto integration** — Ad cards now open planner's native email client with vendor email pre-filled, contextual subject line, and pre-drafted body
+- **Add to Wedding wiring** — Ad cards now create real VendorAssignment records via API instead of showing fake success toasts
+- **AdLead attribution** — Both quote requests and add-to-wedding actions create AdLead records for full funnel tracking
+- **Vendor image rendering** — Ad cards display vendor logo_url when available, falling back to category emoji
+
+### Changed
+
+- VendorProfile TypeScript interface now includes logo_url, service_radius, country, postal_code
+- BoostedVendorCard no longer accepts onAddToWedding/onRequestQuote callbacks (handles internally)
+- SponsoredVendorCard accepts weddingId/weddingName props for contextual actions
+
+## [2.10.2] - 2026-03-16 — Fix Systemic Datetime Comparison Errors
+
+### Fixed
+
+- **Offset-naive vs offset-aware datetime errors across entire app** — MongoDB Motor client was not configured with `tz_aware=True`, causing all datetimes returned from MongoDB to be timezone-naive. Any comparison with `datetime.now(timezone.utc)` raised `TypeError: can't compare offset-naive and offset-aware datetimes`. This affected `/otp/request`, `/verify-email`, `/admin/profile`, and many other endpoints (~8800 errors in production). Fixed by adding `tz_aware=True` and `tzinfo=datetime.timezone.utc` to `AsyncIOMotorClient` in `app/core/database.py` — a single root fix that resolves all datetime comparison errors system-wide.
+
+### Removed
+
+- Temporary test endpoint `/public/test/lookup-verification-token/{email}` removed from `app/api/user_management.py`
+- Debug logging and redundant per-method datetime workarounds removed from `app/services/user_management_service.py`
+
+## [2.10.1] - 2026-03-16 — QA Fixes: Validator Edge Cases, SMS Fallback Safety & Partial Success UI
+
+### Fixed
+
+- **Empty string phone stored instead of null** — All phone validators (`GuestModel`, `UpdateGuestRequest`, `CreateGuestRequest`, `PlusOneModel`) returned `""` instead of `None` when given an empty string, allowing invalid empty phone values in the database. Now consistently return `None` for any falsy input. Same fix applied to email validators. (`app/models/guest.py`, `app/models/plus_one.py`)
+
+- **Unsafe `or to` fallback in bulk SMS services** — `_send_sms()` in Twilio, Telnyx, and generic services used `normalize_phone_e164(to) or to`, which fell back to the raw unsanitized phone if normalization returned `None`. Now explicitly checks for `None` and returns a failure status with `invalid_number` error code instead of passing garbage to the SMS provider. (`app/services/reminder_service_twilio.py`, `app/services/reminder_service.py`, `app/services/reminder_service_telnyx.py`)
+
+- **Email error message showed `None` instead of original value** — `ResendEmailService.send_email()` sanitized the email before the error message, so whitespace-only emails produced `"Invalid recipient email: None"`. Now preserves the original value for the error message. (`app/services/email_service_resend.py`)
+
+- **Frontend partial success masked by error** — If guest SMS sent successfully but plus-one SMS endpoint returned an error, the UI threw and showed only the error, losing the guest success count. Both endpoints now catch errors independently and accumulate results, showing combined stats like "Sent 3 of 5. 2 failed." (`app/admin/reminders/page.tsx`)
+
+## [2.10.0] - 2026-03-16 — Contact Validation, Plus-One Individual Messaging & Guest Page Filters
+
+### Added
+
+- **Shared contact sanitization utility** — New `app/utils/contact_sanitizer.py` with `sanitize_phone()`, `normalize_phone_e164()`, `sanitize_email()`, `validate_phone_format()`, and `validate_email_format()` functions used across all models and send-time services for consistent phone/email handling.
+
+- **Plus-one individual SMS messaging** — New `POST /reminders/send-to-plus-ones` endpoint allows planners to send SMS reminders to specific plus-ones by ID. Includes wedding ownership verification (plus-one → guest → wedding chain), sms_opt_in compliance check, E.164 phone normalization, delivery tracking with message_sid, and activity logging with SSE broadcast. (`app/api/reminder_twilio.py`)
+
+- **Plus-ones in individual messaging UI** — Reminders page MultiSelect now merges guests and plus-ones with prefixed values (`guest:{token}` / `plusone:{id}`). Plus-ones display as "Name (Host's +1)" with phone sublabel. `handleSendIndividualMessage` splits by prefix and calls both endpoints in parallel. (`app/admin/reminders/page.tsx`)
+
+- **"Not Invited" guest tab** — Guest management page now has a dedicated "Not Invited" tab (previously lumped into "Awaiting RSVP") with correct filter logic checking `invite_sent` and RSVP status. (`app/admin/guests/page.tsx`)
+
+- **Clickable stat cards** — All guest stat cards (Total, RSVP'd, Pending, Not Invited) now set the active tab filter on click, with a visual ring highlight on the active card. (`app/admin/guests/page.tsx`)
+
+- **Email validators on GuestModel** — `GuestModel`, `UpdateGuestRequest`, and `CreateGuestRequest` now validate email format (strip whitespace, lowercase, regex check), matching the validation that `PlusOneModel` already had. (`app/models/guest.py`)
+
+### Fixed
+
+- **SMS opt-in compliance for plus-ones (Telnyx & generic)** — Telnyx and generic reminder services were sending SMS to plus-ones without checking `sms_opt_in` status. Both now skip explicitly opted-out plus-ones and track `skipped_opted_out` in return values. (`app/services/reminder_service.py`, `app/services/reminder_service_telnyx.py`)
+
+- **Missing E.164 normalization in generic SMS service** — `reminder_service.py` `_send_sms()` passed raw phone numbers to Twilio without any E.164 formatting. Now uses `normalize_phone_e164()` to strip delimiters and prepend country code. (`app/services/reminder_service.py`)
+
+- **Phone sanitization at model level** — All phone validators (`GuestModel`, `UpdateGuestRequest`, `CreateGuestRequest`, `PlusOneModel`) now sanitize input before validation — stripping whitespace, parentheses, dashes, dots, and spaces — so user-entered formats like `(234) 567-8901` are cleaned to `2345678901` instead of being rejected. (`app/models/guest.py`, `app/models/plus_one.py`)
+
+- **Send-time phone sanitization (defense-in-depth)** — All SMS send paths now run `normalize_phone_e164()` on phone numbers read from MongoDB before passing to Twilio/Telnyx, catching any data that bypassed model validation (CSV imports, direct DB edits, legacy data). (`app/api/reminder_twilio.py`, `app/services/reminder_service_twilio.py`, `app/services/reminder_service.py`, `app/services/reminder_service_telnyx.py`)
+
+- **Send-time email sanitization** — `ResendEmailService.send_email()` now sanitizes and validates recipient email before calling the Resend API, returning a clear error for invalid addresses instead of letting the API call fail. (`app/services/email_service_resend.py`)
+
+- **CSV import phone/email sanitization** — `GuestImportService.import_csv()` now uses `sanitize_phone()` and `sanitize_email()` with format validation instead of basic `.strip()`, so phones with delimiters (e.g. `(234) 567-8901` from spreadsheets) are cleaned before storage. Invalid phone/email values are dropped but the guest is kept if the other contact method is valid. (`app/services/import_service.py`)
+
+- **N+1 RSVP query in Telnyx service** — Replaced per-guest `find_one()` RSVP lookups with pre-fetch lookup map, matching the pattern used in the Twilio service. (`app/services/reminder_service_telnyx.py`)
+
+## [2.9.2] - 2026-03-16 — Guest Import: Non-Blocking Planner Warnings
+
+### Fixed
+
+- **Planner-visible CSV skip feedback** — Guest CSV imports now return inline warnings for skipped rows with CSV row numbers and reasons (invalid name or missing valid contact info) so planners can correct bad entries without the import failing. The warnings render in both admin import screens after a successful upload. (`app/services/import_service.py`, `app/admin/guests/page.tsx`, `app/admin/import/page.tsx`)
+
+## [2.9.1] - 2026-03-16 — Stripe Signup: Atomicity & Concurrency Hardening
+
+### Fixed
+
+- **Atomic Stripe customer creation** — `get_or_create_customer()` now rolls back the Stripe customer if the subsequent MongoDB write fails, preventing orphaned Stripe customers that are unreachable from the platform. Logs `CRITICAL` if the rollback itself fails for manual cleanup. (`app/services/stripe_service.py`)
+
+- **Concurrent checkout race condition** — `create_checkout_session()` now uses `find_one_and_update` with a 30-minute active-window guard so a second concurrent checkout for the same user is rejected with HTTP 409 instead of silently overwriting the first session. The losing Stripe session is expired automatically. (`app/services/stripe_service.py`)
+
+- **Transactional subscription sync** — `_sync_subscription_state()` now updates both the `user_subscriptions` and `users` collections inside a single MongoDB transaction, preventing split-brain states where one collection is updated but the other isn't. Gracefully falls back to sequential writes on standalone MongoDB (no replica set) with a warning. (`app/services/stripe_service.py`)
+
+## [2.9.0] - 2026-03-16 — Stripe Signup: Security Audit & Critical Fixes
+
+### Fixed
+
+- **Payment bypass vulnerability** — Planners with `pending_payment` status could log in and use the platform without completing Stripe checkout. Added subscription status gate in auth middleware that blocks `pending_payment`, `cancelled`, `suspended`, and `expired` users with appropriate 402 messages. (`app/dependencies/auth_extended.py`)
+
+- **Email enumeration on public checkout** — `POST /public/create-checkout-session` returned different error messages for valid vs. invalid emails, allowing attackers to enumerate registered users. Unified error messages to prevent information disclosure. (`app/api/stripe_payment.py`)
+
+- **Webhook infinite retry on permanent failures** — Missing metadata or deleted users caused webhook handler to return 500, making Stripe retry forever. Now returns 200 for permanent failures (missing data, user not found) while preserving 500 for transient errors (DB timeout, network) so Stripe correctly retries only retriable failures. (`app/api/stripe_payment.py`)
+
+- **User existence check in checkout webhook** — `_handle_checkout_completed` could activate subscriptions for deleted users. Added user existence verification before syncing subscription state. (`app/services/stripe_service.py`)
+
+### Added
+
+- **End-to-end Stripe signup test script** — Comprehensive test that exercises the full registration → email verification → plan listing → checkout session flow with cleanup, validation, and detailed error reporting. Run with `python tests/test_stripe_signup.py --api-url http://localhost:8000`. (`tests/test_stripe_signup.py`)
+
+## [2.8.0] - 2026-03-16 — Advertising: UX Copy Audit & Terminology Alignment
+
+### Fixed
+
+- **Placement label consistency** — Campaign wizard placement labels now match the canonical `getAdPlacementLabel()` function across all views (Vendor Rail, Vendor Detail, Milestone Module, Directory Boost).
+
+- **Category backend alignment** — Campaign wizard category options now send snake_case values matching backend `service_category` field (e.g., "photographer" not "Photography"), with human-readable labels for display.
+
+- **Vendor-facing copy** — Replaced developer-facing language in View 5 data annotation and chart footnotes with vendor-friendly explanations of how performance tracking works.
+
+- **UX microcopy improvements** — De-jargoned goal descriptions (removed CPC/CPL/CPA acronyms), clarified funnel labels ("Added to Wedding", "Bookings"), improved empty states, aligned mobile/desktop footer copy, enriched mobile tooltip, and showed human-readable pricing labels in campaign review step.
+
+- **Price format consistency** — BoostedVendorCard now uses `vendorProfile.currency` instead of hardcoded `$`, matching SponsoredVendorCard behavior.
+
+- **Ads sub-navigation** — Layout nav items now have distinct hrefs (/campaigns, /leads, /billing) so active state can function correctly.
+
+## [2.7.0] - 2026-03-16 — Advertising: Vendor Ad Manager (View 5) & Campaign Wizard (View 6)
+
+### Added
+
+- **Vendor Ad Manager dashboard** — Full rewrite of vendor advertising overview with 5 performance metric cards (Impressions, Clicks, Click Rate, Leads, Cost/Lead) with period-over-period change indicators, Performance by Week recharts bar chart, 5-step Conversion Funnel visualization, and Active Campaigns table with per-vendor lead counts. Uses parallel `getDashboardStats` + `getAdLeads` API calls. (`app/admin/vendor/ads/page.tsx`)
+
+- **6-step Campaign Creation Wizard** — Expanded from 5 to 6 steps matching mockup spec. New Pricing step (Step 4) with CPC/CPL/Fixed model selection and bid inputs. Budget step adds type toggle cards (Daily/Lifetime), estimated spend calculations, pacing strategy cards, and budget recommendation box. Creative step includes live preview with production-style "✦ Sponsored" badge. Full metadata capture for all wizard selections. (`app/admin/vendor/ads/campaigns/new/page.tsx`)
+
+- **`directory_boost` placement in wizard** — Campaign wizard now includes Directory Boost as a fourth placement option alongside Vendor Rail, Vendor Directory, and Milestone Pages.
+
+### Fixed
+
+- **Accessibility improvements** — Added `aria-label` and `aria-pressed` on all toggle buttons in campaign wizard. Added date range validation (endDate >= startDate). Fixed annotation text contrast from gray-400 to gray-600 for WCAG AA compliance.
+
+## [2.6.0] - 2026-03-16 — Advertising: Directory Boosts (View 3) & Milestone Modules (View 4)
+
+### Added
+
+- **BoostedVendorCard component** — New card for `directory_boost` placement with 120px image header, dual badges (⚡ Boosted + ✦ Sponsored), star ratings, price range, dual CTAs (Add to Wedding + Request Quote), full event tracking with click_id attribution, IntersectionObserver viewability, and WCAG 2.1 AA accessibility (44px targets, focus rings, ARIA). (`app/admin/vendors/components/BoostedVendorCard.tsx`)
+
+- **SponsoredMilestoneModule component** — New contextual ad module for `milestone_module` placement. Renders max 2 sponsored vendor cards scoped to a milestone category (venue, photographer, catering, florist). Generates contextual why-tags from wedding data (distance, guest capacity, budget match). Auto-suppresses when milestone is booked. Includes "Why am I seeing this?" tooltip and section hide controls. (`app/admin/vendors/components/SponsoredMilestoneModule.tsx`)
+
+- **Directory boost integration** — Vendor directory page fetches up to 2 boosted vendors, filters by planner preferences, renders them at the top of the grid before organic results, and shows boosted count indicator. (`app/admin/vendors/page.tsx`)
+
+- **Milestone module integration** — Wedding detail page renders 4 milestone modules (venue, photographer, catering, florist) in the main content column with category-specific budget context and venue booking detection. (`app/admin/weddings/[id]/page.tsx`)
+
+## [2.5.0] - 2026-03-16 — SSE Production Hardening: Cross-Worker Broadcast, Connection Consolidation & Nginx Tuning
+
+### Added
+- **Redis pub/sub for SSE cross-worker broadcast** — `SSEManager` now publishes events to a Redis channel so all uvicorn workers deliver data-change events to connected clients, not just the worker that handled the mutation; falls back to in-process delivery when Redis is unavailable (`app/services/sse_manager.py`)
+- **SSE Redis listener lifecycle** — `start_redis_listener()` / `stop_redis_listener()` wired into FastAPI lifespan in `app/main.py` for clean startup/shutdown
+- **Shared SSEProvider context** (`app/contexts/SSEContext.tsx`) — single EventSource connection per browser tab shared across all admin components via React context; eliminates the duplicate connection previously opened by TopHeader and useSSE independently
+- **Reconnect catch-up refetch** — when the SSE connection recovers after network loss or laptop sleep, a synthetic `__reconnected__` event fires so all `useSSE` consumers automatically refetch stale data instead of silently showing outdated information
+- **`useSSEEvent` hook** — low-level hook for subscribing to any SSE event type from the shared connection (used by TopHeader for notification-count/notification-new events)
+- **Dedicated nginx SSE location blocks** — added to `nginx-api-ssl.conf`, `nginx-api-backend.conf`, and `nginx-load-balancer.conf` with `proxy_buffering off`, `proxy_read_timeout 3600s`, and `chunked_transfer_encoding off` so events stream immediately without proxy buffering
+- **K8s SSE ingress** (`k8s/base/ingress-sse.yml`) — separate Ingress resource for `/admin/notifications/stream` with 1-hour timeouts and buffering disabled
+- **Global SSE connection ceiling** — `MAX_GLOBAL_CONNECTIONS = 2000` prevents unbounded memory growth from SSE connections across all users; returns `ConnectionError` when exceeded
+- **GZip bypass for SSE** — `SSEGzipBypassMiddleware` strips `Accept-Encoding` for SSE requests so the GZip middleware never buffers streaming event responses (`app/main.py`)
+- **SSE broadcast on all remaining mutation endpoints** — `broadcast_data_change()` calls added to: `rsvp_service.py` (public RSVP submission), `email_reminders.py` (3 send endpoints), `reminder_twilio.py` (bulk SMS + individual reminders), `reminder_utilities.py` (personalized links), `wedding.py` (create/update/delete), `plus_one.py` (create/update/delete)
+
+### Changed
+- **TopHeader.tsx** — removed ~140 lines of standalone EventSource management (connection, reconnection, auth probing, visibility handling); now subscribes to the shared SSEProvider via `useSSEEvent` hook
+- **useSSE.ts** — no longer creates its own EventSource; subscribes to the shared SSEProvider context and filters events by resource type and wedding ID
+- **admin/layout.tsx** — wrapped admin layout with `<SSEProvider>` between AdminProvider and ConfirmDialogProvider
+
+### Fixed
+- **Multi-worker event delivery** — previously, only ~25% of SSE clients received data-change events because the in-process singleton was isolated per uvicorn worker process; Redis pub/sub ensures all workers deliver every event
+- **Missed events after sleep/network loss** — previously no catch-up mechanism existed; clients that reconnected had stale UI until the next manual refresh or unrelated event
+- **Nginx buffering delayed SSE events** — `proxy_buffering on` in the general location block could delay or stall event delivery; SSE now has its own unbuffered location
+- **Duplicate browser connections** — 2 EventSource connections per tab (TopHeader + useSSE) consumed browser connection slots and doubled server-side queue memory; consolidated to 1
+
+## [2.4.0] - 2026-03-16 — Advertising: Code Review, Responsive Rail, Accessibility & Type Safety
+
+### Added
+
+- **Responsive sponsored vendors rail** — Desktop (lg: 1024px+) renders a vertical stacked rail with max 3 cards in the planner dashboard right sidebar; mobile renders a horizontal snap-scroll carousel with navigation arrows. Both layouts match the Vendor_Ad_Mockups.html design spec. (`SponsoredVendorsRail.tsx`, `SponsoredVendorCard.tsx`)
+
+- **Why-tag contextual relevance** — `getWhyTag()` function generates vendor-specific context (e.g., "Serves Austin · You may need a photographer") from profile data. Passed to both desktop and mobile card renders via `whyTag` prop. (`SponsoredVendorsRail.tsx`)
+
+- **WCAG 2.1 AA accessibility** — Full accessibility pass on sponsored vendor components:
+  - Semantic `<article>` cards with keyboard-accessible `<a>` link (Tab/Enter/Space navigable)
+  - 44px minimum touch targets on hide button, scroll arrows, info button, and CTA buttons
+  - ARIA carousel roles (`role="region"`, `aria-roledescription="carousel"`, `role="list"`, `role="listitem"`)
+  - Tooltip ARIA (`role="tooltip"`, `aria-controls`, `aria-expanded`)
+  - Live region (`aria-live="polite"`) announcing vendor dismissals to screen readers
+  - `focus-within:ring-2` visual focus indicator on cards
+  - Preferences control changed from `<span>` to `<button>`
+
+- **Feature flag guard on event recording** — `record_ad_event` endpoint now checks if advertising feature is enabled before recording; returns skip response when disabled. Prevents phantom event accumulation. (`app/api/advertising.py`)
+
+- **`wedding_overrides` in TypeScript interface** — `AdPreferences` now includes `wedding_overrides` field matching backend `PlannerAdPreference` model. (`advertisingApi.ts`)
+
+### Fixed
+
+- **$or query construction bug** — Date range filtering in `get_sponsored_vendors()` and `get_sponsored_vendors_filtered()` used malformed `$or` that could serve expired vendors. Replaced with proper `$and` + nested `$or`. (`advertising_service.py`)
+
+- **CTR double-counting** — `total_impressions` summed `impression_served + impression_viewable` (a subset, not additive), deflating CTR. Fixed in daily rollup, dashboard stats, and vendor leaderboard to use `impression_served` only. (`ad_rollup_service.py`, `advertising.py`)
+
+- **Lead endpoint vendor-role scoping** — Lead endpoints blocked vendor users entirely. Updated to allow vendors to see leads for their own profiles via email lookup with ObjectId conversion. (`advertising.py`)
+
+- **Missing `dashboard_rail` placement enum** — Backend `AdPlacement` enum had 4 values but frontend needed 5. Added `DASHBOARD_RAIL = "dashboard_rail"`. (`models/advertising.py`)
+
+- **Field name mismatch** — `AdPreferences.hidden_vendors` renamed to `hidden_vendor_ids` to match backend. (`advertisingApi.ts`)
+
+- **Contrast failures** — Gray text on white backgrounds upgraded from `gray-300`/`gray-400`/`gray-500` to `gray-600` (5.7:1 ratio), meeting WCAG AA 4.5:1 requirement. (`SponsoredVendorCard.tsx`, `SponsoredVendorsRail.tsx`)
+
+### Changed
+
+- **Frontend AdEventType cleaned** — Removed 4 legacy types (`impression`, `viewable_impression`, `detail_view`, `assignment`) that don't exist in backend enum. Reduced from 15 to 12 values. `getEventTypeLabel` updated to match. (`advertisingApi.ts`)
+
+- **Card component restructured** — `<div onClick>` replaced with `<article>` + `<a>` for accessibility. CTA buttons moved outside the link element to avoid nested interactive elements. (`SponsoredVendorCard.tsx`)
+
+---
+
+## [2.3.0] - 2026-03-16 — Landing Page Polish, Performance Fixes & Real-Time Architecture
+
+### Added
+
+- **Server-Sent Events (SSE) real-time update system** — Replaced 30-second polling with persistent SSE connections for instant data propagation across admin pages. Backend streams `guest_update`, `rsvp_update`, `wedding_update`, and `invite_sent` events. Frontend `useSSE` hook manages auto-reconnect with exponential backoff. (`app/api/sse.py`, `app/services/sse_manager.py`, `app/hooks/useSSE.ts`)
+- **`usePolling` hook** — Configurable interval polling with visibility-aware pause/resume. Still available as a fallback when SSE is not supported. (`app/hooks/usePolling.ts`)
+- **Shared normalised scroll ref for parallax sync** — `InfiniteScrollWrapper` writes the modulo-normalised scroll position to a shared React ref on every scroll event; `Modern3DBackground` reads from it in its rAF tick, eliminating any 1-frame desync at the loop boundary. (`app/components/ui/InfiniteScrollWrapper.tsx`, `app/components/landing-page/Modern3DBackground.tsx`, `app/components/landing-page/LandingLayout.tsx`)
+- **Feature scope documents** — Couple Portal (`docs/FEATURE_SCOPE_couple_portal.md`) and Guest Check-In (`docs/FEATURE_SCOPE_guest_checkin.md`) with architecture, effort estimates, and implementation plans.
+- **Performance & API Alignment Audit** — Full-stack review with 25 findings (6 critical, 8 high, 7 medium, 4 low) and prioritised action plan. (`docs/PERFORMANCE_AUDIT.html`)
+
+### Fixed
+
+- **Dashboard images returning 404** — `middleware.ts` matcher was intercepting static file paths because `isNonWeddingSlug()` returns true for any path containing a dot. Updated matcher to exclude dotted paths: `'/((?!_next/static|_next/image|api/|.*\\..*).*)'`. (`middleware.ts`)
+- **Rose petal animation stopping at hero section** — `PetalCanvas` was inside the hero `<section>` with `overflow-hidden`. Moved to `<main>` level and changed from `absolute` to `fixed inset-0 z-10`. (`app/components/ui/PetalCanvas.tsx`, `app/page.tsx`)
+- **Guest invite status not updating to "Pending" after SMS send** — The SMS service (`reminder_utilities.py`) sent via Twilio and logged to `reminders_sent` but never set `invite_sent: true` on the guest record. Added the missing `update_one()` after successful send. (`app/services/reminder_utilities.py`)
+- **Registry section misaligned on couple slug page** — Changed from fixed `md:grid-cols-2` to dynamic grid (1/2/3 columns based on count), reduced padding and gaps. (`app/components/landing-page/LandingLayout.tsx`)
+
+### Changed
+
+- **Landing page copy updates** — Replaced "2.8s QR check-in speed" metric with "13 Tools in one platform". Replaced fabricated check-in testimonial with AI pricing quote. Updated fallback pricing feature from "QR check-in & live counts" to "AI pricing suggestions". (`app/page.tsx`)
+- **Dashboard images switched to native `<img>`** — Replaced `next/image` `<Image>` components with `<img>` tags for dashboard screenshots. (`app/page.tsx`)
+- **Auto-refresh on guest management page** — Replaced the `visibilitychange`-only listener with `usePolling` (30s) and then SSE for continuous real-time updates. (`app/admin/guests/page.tsx`)
+- **Auto-refresh on planner dashboard** — Added real-time updates so wedding stats reflect new RSVPs and guest changes without manual reload. (`app/admin/planner/page.tsx`)
+
+### Removed
+
+- **SaaS admin content/theme tabs** — Removed "SAAS Content" tab (hero editor, statistics, trust indicators, animation settings) and "Theme & Design" tab (brand colors, backgrounds). Removed `ContentEditModal`, `DEFAULT_SAAS_CONFIG`, and related interfaces/functions. Landing page content is now hardcoded for performance. (`app/admin/saas/page.tsx`)
+
+## [2.2.0] - 2026-03-15 — Vendor Advertising Platform (Stages 1–3), Critical Bugfixes & Ad Analytics
+
+### Added
+
+- **Sponsored Vendor Rail component** (`app/admin/vendors/components/SponsoredVendorCard.tsx`, `SponsoredVendorsRail.tsx`, `SponsoredVendorDetailsDrawer.tsx`):
+
+  - Horizontal scrollable rail of sponsored vendor cards shown on planner dashboard and wedding detail pages
+  - IntersectionObserver-based viewable impression tracking (50% visible for 1+ second)
+  - Per-card `click_id` UUID generation for full conversion attribution across the click→lead→booking funnel
+  - "Hide this vendor" dismiss control that persists via planner ad preferences API
+  - "Why am I seeing this?" tooltip with HelpCircle icon explaining ad transparency
+  - "See all sponsored vendors" footer link for expanded directory view
+  - Wedding context selector dropdown for multi-wedding planners
+  - Preference-based filtering: fetches planner preferences on mount, filters hidden vendors/categories, respects reduced frequency toggle
+  - Details drawer with "Add to wedding", "Request quote", and "Message vendor" CTAs
+
+- **Sponsored Vendor Rail placements** (`app/admin/planner/page.tsx`, `app/admin/weddings/[id]/page.tsx`):
+
+  - Dashboard rail placement: right sidebar on the planner dashboard (`placement="dashboard_rail"`)
+  - Milestone module placement: right sidebar on wedding detail page (`placement="milestone_module"`)
+
+- **Ad event taxonomy** (`app/models/advertising.py`):
+
+  - Expanded from 7 to 12 event types: `impression_served`, `impression_viewable`, `click`, `vendor_profile_view`, `vendor_added_to_wedding`, `lead_created`, `vendor_invited`, `lead_accepted`, `vendor_responded`, `dismiss`, `hover`, `contact_click`
+  - Backend backward compatibility mapping for legacy event names (`impression` → `impression_served`, `viewable_impression` → `impression_viewable`, `detail_view` → `vendor_profile_view`, `assignment` → `vendor_added_to_wedding`)
+
+- **Ad leads system** (`app/models/advertising.py`, `app/services/advertising_service.py`, `app/api/advertising.py`, `app/services/advertisingApi.ts`):
+
+  - New `AdLead` model tracking planner-to-vendor interactions from sponsored ads with click_id attribution
+  - Lead types: `quote_request`, `message`, `add_to_wedding`, `vendor_invite`
+  - Lead statuses: `pending`, `contacted`, `responded`, `converted`, `closed`
+  - Backend: `POST /admin/ads/leads`, `GET /admin/ads/leads`, `GET /admin/ads/leads/{id}`, `PUT /admin/ads/leads/{id}/status`
+  - Frontend TypeScript types and API functions for full lead CRUD
+
+- **Planner ad preferences** (`app/models/advertising.py`, `app/services/advertising_service.py`, `app/api/advertising.py`, `app/services/advertisingApi.ts`):
+
+  - New `PlannerAdPreference` model with hidden vendor IDs, hidden categories, reduced frequency toggle, and per-wedding overrides
+  - Backend: `GET /admin/ads/preferences`, `PUT hide-vendor`, `PUT hide-category`, `PUT reduce-frequency`, `DELETE unhide-vendor/{vendor_id}`
+  - Frontend functions with correct HTTP methods and query parameter passing
+
+- **Vendor ads dashboard** (`app/admin/vendor/ads/page.tsx`, `app/admin/vendor/ads/layout.tsx`):
+
+  - 4-tab dashboard for vendor self-service: Overview (key metrics), Campaigns (table with status/metrics), Leads (table with status/actions), Billing (spend tracking)
+  - Layout with sub-navigation header
+  - "Advertising" nav link added to AdminHeader for vendor role users
+
+- **Campaign creation wizard** (`app/admin/vendor/ads/campaigns/new/page.tsx`):
+
+  - 5-step wizard: Goal selection → Placement & targeting → Budget configuration → Creative setup with live preview → Review & submit
+  - Creates one `SponsoredVendor` entry per selected placement
+  - Supports location targeting, service category targeting, daily/lifetime budgets, and custom creative (headline, description, image, CTA)
+
+- **Public vendor profile page** (`app/api/vendor_public.py`, `app/vendors/[id]/page.tsx`, `app/vendors/[id]/layout.tsx`, `app/vendors/layout.tsx`):
+
+  - Public (no auth) endpoint: `GET /api/v1/vendors/{vendor_id}/public` returning only safe fields (excludes internal_notes, tax_id, total_revenue)
+  - Full-page vendor profile with hero section, contact card, portfolio gallery, and service area info
+  - Registered in `main.py` on the public router
+
+### Fixed
+
+- **AdminContext.tsx crash — entire admin panel broken** (`app/contexts/AdminContext.tsx`):
+
+  - Root cause: Provider value referenced `auth.isAuthenticated`, `auth.token`, `auth.login`, `api.apiRequest` etc. but no `auth` or `api` objects existed — every page crashed on render
+  - Fix: replaced all references with direct variable names (`!!token`, `token`, `login`, `apiRequest`, etc.)
+
+- **403 response incorrectly logged users out** (`app/contexts/AdminContext.tsx`):
+
+  - `apiRequest()` and `fetchUserProfile()` both called `logout()` on HTTP 403 (permission denied) — should only logout on 401 (expired/invalid token)
+  - Fix: 401 triggers logout, 403 is left for the caller to handle (e.g., show "access denied" message)
+
+- **AI credit check key mismatch** (`app/api/ai.py`):
+
+  - `credit_check.get("has_credits", True)` used wrong key — `check_credits()` returns `"allowed"` not `"has_credits"`
+  - Fix: changed to `credit_check.get("allowed", True)` and aligned `credits_needed`/`credits_remaining` keys
+
+- **InsufficientCreditsError missing required `message` parameter** (`app/api/ai.py`):
+
+  - Constructor requires `message` as first positional arg, but it was omitted — raised `TypeError` instead of the intended credit error
+  - Fix: added `message=credit_check.get("message", "Insufficient AI credits")` with correct key names
+
+- **Vendor recommendation cache pollution** (`app/api/ai.py`):
+
+  - When `request.wedding_id` was `None`, `tenant_id` fell back to plain `user_id`, causing cross-user cache collisions
+  - Fix: use `f"user_{user_id}_no_wedding"` as tenant and force refresh when no wedding context
+
+- **Undefined `model` variable in AI error handler** (`app/services/ai_service.py`):
+
+  - `model` was defined inside `try` block but referenced in `except` — raised `NameError` masking the original error
+  - Fix: `locals().get("model", "unknown")`
+
+- **AIInvalidResponseError raised with args (takes none)** (`app/services/ai_service.py`):
+
+  - JSON parse failure path passed an f-string to `AIInvalidResponseError()` which accepts no constructor args
+  - Fix: `raise AIInvalidResponseError()` with no args, added warning log with parse details
+
+- **Frontend-backend URL mismatch for advertising endpoints** (`app/api/advertising.py`):
+
+  - Frontend called `/admin/ads/...` but backend router had prefix `/api/v1/ads`
+  - Fix: changed backend router prefix to `/admin/ads`
+
+- **toggleFeatureFlag sent JSON body instead of query parameter** (`app/services/advertisingApi.ts`):
+
+  - Backend uses `is_enabled: bool = Query(...)` but frontend sent `{ is_enabled }` as JSON body
+  - Fix: changed to query param in URL `?is_enabled=${isEnabled}`
+
+- **FeatureFlag config field names misaligned** (`app/services/advertisingApi.ts`, `app/admin/advertising/page.tsx`):
+
+  - Frontend: `enable_click_tracking`, `minimum_impression_threshold` — Backend: `enable_tracking`, `min_priority_threshold`, `impressions_per_session_limit`
+  - Fix: aligned TypeScript interface and admin page to match backend field names
+
+- **AdStats field name mismatch** (`app/services/advertisingApi.ts`):
+
+  - Frontend: `recent_events` — Backend: `recent_events_count`
+  - Fix: updated TypeScript `AdStats` interface
+
+- **Event type mismatches between frontend and backend** (`SponsoredVendorCard.tsx`, `SponsoredVendorDetailsDrawer.tsx`):
+
+  - Frontend sent `viewable_impression`, `detail_view`, `assignment` — Backend expected `impression_viewable`, `vendor_profile_view`, `vendor_added_to_wedding`
+  - Fix: updated all frontend event strings to match backend `AdEventType` enum values
+
+- **Missing FileText import** (`SponsoredVendorDetailsDrawer.tsx`):
+
+  - "Request quote" CTA used `<FileText />` icon but it wasn't imported from lucide-react
+  - Fix: added to imports
+
+- **React rules-of-hooks violation** (`SponsoredVendorsRail.tsx`):
+
+  - `useEffect` for impression tracking was placed after conditional `return null` statements — violates React's hook ordering rules and causes runtime crash
+  - Fix: moved `useEffect` before all conditional returns
+
+- **JSX structure broken in wedding detail page** (`app/admin/weddings/[id]/page.tsx`):
+
+  - SponsoredVendorsRail insertion broke the grid layout div nesting — mismatched closing tags caused TypeScript compilation failure
+  - Fix: corrected div hierarchy so `col-span-1` sidebar is properly nested as sibling to `col-span-3` main content inside the grid
+
+- **Ad preferences endpoints — HTTP method and parameter mismatches** (`app/services/advertisingApi.ts`):
+
+  - `hideAdVendor`: frontend POST with body → backend PUT with query param
+  - `unhideAdVendor`: frontend POST with body → backend DELETE with path param
+  - `hideAdCategory`: frontend POST with body → backend PUT with query param
+  - `toggleReducedFrequency`: wrong URL path and param name
+  - `updateAdLeadStatus`: URL missing `/status` suffix
+  - `getAdLeads`: `offset` param name → backend uses `skip`
+  - Fix: aligned all frontend API calls to match backend endpoint signatures exactly
+
+- **CreateAdLeadRequest missing required `lead_type` field** (`app/services/advertisingApi.ts`):
+
+  - Backend requires `lead_type: AdLeadType` but frontend interface omitted it entirely
+  - Fix: added `lead_type`, `message`, `quote_amount`, `click_id`, `placement` fields to match backend schema
+
+- **LeadStatus enum values misaligned** (`app/services/advertisingApi.ts`):
+
+  - Frontend: `new`, `contacted`, `engaged`, `accepted`, `rejected`, `archived`
+  - Backend: `pending`, `contacted`, `responded`, `converted`, `closed`
+  - Fix: aligned frontend `LeadStatus` type to match backend `AdLeadStatus` enum
+
+---
+
 ## [2.1.4] - 2026-03-10 — Budget Page Fixes, KB Typography & Inline Budget Editor
 
 ### Fixed
@@ -2225,6 +3788,19 @@ Engineering alignment review across frontend, backend, database models, and endp
   - Security audit logging for all verification attempts
   - Constant-time password comparison to prevent timing attacks
   - Replaced vulnerable name/phone matching with secure OTP verification
+
+## Unreleased
+
+### Fixed
+
+- **Admin login double-attempt regression** (`/app/contexts/AdminContext.tsx`) — Removed the March 26, 2026 hard-refresh login handoff that was discarding the in-memory token before the destination admin route could hydrate, and now commits the authenticated token/profile atomically before using client-side navigation so successful admin sign-ins do not bounce back to `/admin/login` on the first attempt.
+- **SaaS ad-platform migration completion** (`/app/admin/saas/page.tsx`) — Restored the missing ad-platform settings that were left behind during the move from `/admin/ads`, including fraud detection, vendor signup controls, data export, and pipeline status, and corrected the SaaS tab to use the real backend config keys instead of partial placeholder names.
+- **Ad platform config source-of-truth cleanup** (`/app/admin/ads/page.tsx`, `/app/admin/saas/page.tsx`) — Removed the stale duplicate "Platform Config" tab from the root-admin ads page and added a direct deep link into the SaaS Management ad-platform tab so configuration now lives in one place instead of two diverging surfaces.
+- Separated admin token refresh rate limiting from login throttling so `/admin/token/refresh` no longer shares the 5-per-minute login bucket or throws a middleware exception group instead of a clean `429` response.
+- Deduplicated client-side admin auth bootstrap refresh calls so concurrent mounts reuse one in-flight refresh request instead of stampeding the refresh endpoint.
+### Security
+
+- Added host-header allowlisting through FastAPI `TrustedHostMiddleware`, with trusted hosts derived from deployment URLs by default and overrideable via `ALLOWED_HOSTS`.
 
 ## [1.3.0] - 2024-08-21
 

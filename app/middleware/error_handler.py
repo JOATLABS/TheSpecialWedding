@@ -220,7 +220,8 @@ class ErrorHandlerMiddleware(BaseHTTPMiddleware):
         """Safely parse JSON payload from a JSONResponse."""
         try:
             return json.loads(bytes(response.body).decode("utf-8"))
-        except Exception:
+        except Exception as e:
+            logger.warning(f"Failed to extract payload from response: {e}", exc_info=True)
             return {}
 
     def _get_error_id(self, payload: Dict) -> str:

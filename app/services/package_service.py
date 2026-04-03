@@ -12,6 +12,8 @@ import logging
 from bson import ObjectId
 from app.core.database import mongo
 from app.models.autopilot import WeddingPackage, Contract, CoupleInfo
+from app.utils.mongo_dates import to_mongo_datetime
+from app.utils.payment_schedule import build_effective_payment_schedule
 
 logger = logging.getLogger(__name__)
 
@@ -27,6 +29,31 @@ class PackageService:
     def __init__(self):
         self.packages = mongo.db["packages"]
         self.contracts = mongo.db["contracts"]
+        self.users = mongo.db["users"]
+        self.weddings = mongo.db["weddings"]
+
+    @staticmethod
+    def _build_planner_snapshot(planner: Optional[Dict[str, Any]]) -> Dict[str, Optional[str]]:
+        planner = planner or {}
+        planner_name = (
+            planner.get("company_name")
+            or planner.get("business_name")
+            or planner.get("name")
+            or " ".join(
+                part for part in [planner.get("first_name"), planner.get("last_name")] if part
+            ).strip()
+            or planner.get("email")
+            or "Your Wedding Planner"
+        )
+        return {
+            "planner_name": planner_name,
+            "planner_email": planner.get("email"),
+            "planner_phone": planner.get("phone") or planner.get("support_phone"),
+            "planner_logo": planner.get("logo_url")
+            or planner.get("profile_image_url")
+            or planner.get("profile_image")
+            or planner.get("avatar_url"),
+        }
 
     async def create_package(self, planner_id: str, package_data: Dict) -> Dict:
         """
@@ -40,9 +67,10 @@ class PackageService:
             Created package dict with ID
         """
         try:
-            # Convert total_amount to Decimal if needed
+            # Keep total_amount as float for MongoDB BSON compatibility
+            # (BSON cannot encode Python Decimal, only float or Decimal128)
             if "total_amount" in package_data:
-                package_data["total_amount"] = Decimal(str(package_data["total_amount"]))
+                package_data["total_amount"] = float(package_data["total_amount"])
 
             package = WeddingPackage(
                 planner_id=planner_id,
@@ -50,6 +78,9 @@ class PackageService:
             )
 
             package_dict = package.model_dump(by_alias=True)
+            # Ensure total_amount is float for BSON serialization
+            if "total_amount" in package_dict:
+                package_dict["total_amount"] = float(package_dict["total_amount"])
             result = await self.packages.insert_one(package_dict)
 
             logger.info(f"Created package '{package.name}' for planner {planner_id}")
@@ -306,6 +337,27 @@ class PackageService:
                 else:
                     parsed_wedding_date = wedding_date
 
+            wedding = None
+            if wedding_id:
+                wedding = await self.weddings.find_one({"_id": wedding_id})
+                if wedding and not parsed_wedding_date and wedding.get("date"):
+                    wedding_date_value = wedding.get("date")
+                    if isinstance(wedding_date_value, str):
+                        parsed_wedding_date = date_type.fromisoformat(wedding_date_value)
+                    else:
+                        parsed_wedding_date = wedding_date_value
+
+            planner = None
+            try:
+                planner = await self.users.find_one({"_id": ObjectId(planner_id)})
+            except Exception:
+                planner = await self.users.find_one({"email": planner_id})
+
+            planner_snapshot = self._build_planner_snapshot(planner)
+            venue = None
+            if wedding:
+                venue = wedding.get("venue") or wedding.get("location")
+
             # Create couple info
             couple = CoupleInfo(**couple_data)
 
@@ -319,8 +371,9 @@ class PackageService:
                 "services": package.get("services", []),
                 "total_amount": float(package["total_amount"]),
                 "currency": package.get("currency", "usd"),
-                "payment_schedule": package.get("payment_schedule", []),
+                "payment_schedule": build_effective_payment_schedule(package),
                 "cancellation_policy": package.get("cancellation_policy", ""),
+                "late_payment_policy": package.get("late_payment_policy"),
                 "custom_terms": package.get("custom_terms")
             }
 
@@ -332,15 +385,32 @@ class PackageService:
                 token=token,
                 couple=couple,
                 wedding_date=parsed_wedding_date,
+                venue=venue,
+                planner_name=planner_snapshot.get("planner_name"),
+                planner_email=planner_snapshot.get("planner_email"),
+                planner_phone=planner_snapshot.get("planner_phone"),
+                planner_logo=planner_snapshot.get("planner_logo"),
                 package_snapshot=package_snapshot,
                 status="sent",
                 sent_at=datetime.now(timezone.utc)
             )
 
             contract_dict = contract.model_dump(by_alias=True)
+            contract_dict["wedding_date"] = to_mongo_datetime(contract.wedding_date)
             result = await self.contracts.insert_one(contract_dict)
+            created = await self.contracts.find_one({"_id": result.inserted_id})
+            serialized_contract = self._serialize_contract(created)
+            if serialized_contract is None:
+                raise ValueError("Failed to serialize created contract")
 
-            # Increment package contracts count
+            from app.services.contract_email_service import contract_email_service
+
+            email_sent = await contract_email_service.send_package_contract_email(serialized_contract)
+            if not email_sent:
+                await self.contracts.delete_one({"_id": result.inserted_id})
+                raise RuntimeError("Failed to send contract email to the couple")
+
+            # Increment package contracts count only after email succeeds
             await self.packages.update_one(
                 {"_id": ObjectId(package_id)},
                 {"$inc": {"contracts_count": 1}}
@@ -348,9 +418,7 @@ class PackageService:
 
             logger.info(f"Created contract for package {package_id} sent to {couple.email}")
 
-            # Return created contract
-            created = await self.contracts.find_one({"_id": result.inserted_id})
-            return self._serialize_contract(created)
+            return serialized_contract
 
         except Exception as e:
             logger.error(f"Failed to send package: {str(e)}")
@@ -412,6 +480,24 @@ class PackageService:
         if "_id" in serialized:
             serialized["id"] = str(serialized["_id"])
             serialized["_id"] = str(serialized["_id"])
+
+        if "wedding_date" in serialized and serialized["wedding_date"] and hasattr(serialized["wedding_date"], "isoformat"):
+            serialized["wedding_date"] = serialized["wedding_date"].isoformat()
+
+        couple = serialized.get("couple")
+        if isinstance(couple, dict):
+            partner1 = (couple.get("partner1_name") or couple.get("name") or "").strip()
+            partner2 = (couple.get("partner2_name") or couple.get("partner_name") or "").strip()
+            display_name = f"{partner1} & {partner2}" if partner2 else partner1
+            normalized_couple = {
+                **couple,
+                "partner1_name": partner1,
+                "partner2_name": partner2 or None,
+                "name": partner1,
+                "partner_name": partner2 or None,
+                "display_name": display_name,
+            }
+            serialized["couple"] = normalized_couple
 
         return serialized
 

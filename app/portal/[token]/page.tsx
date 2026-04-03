@@ -41,8 +41,11 @@ interface PortalData {
     id: string;
     status: string;
     couple: {
-      name: string;
+      partner1_name: string;
       email: string;
+      partner2_name?: string;
+      display_name?: string;
+      name?: string;
       partner_name?: string;
     };
     wedding_date?: string;

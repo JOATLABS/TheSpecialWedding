@@ -189,15 +189,44 @@ class EmailDistributionSettings(BaseModel):
     reminder_days: int = Field(default=7, description="Days until reminder")
 
 
+class FormType(str, Enum):
+    """Polymorphic discriminator for form types.
+
+    Per MongoDB Polymorphic Pattern best practices (Jan 2026), a discriminator
+    field enables different-shaped documents to coexist in a single collection
+    while maintaining efficient queries via compound indexes.
+    Ref: https://oneuptime.com/blog/post/2026-01-30-mongodb-polymorphic-patterns/view
+    """
+    GENERAL = "general"
+    VENDOR_INTAKE = "vendor_intake"
+    RSVP_CUSTOM = "rsvp_custom"
+    WEDDING_FEEDBACK = "wedding_feedback"
+    GUEST_FEEDBACK = "guest_feedback"
+    VENDOR_QUESTIONNAIRE = "vendor_questionnaire"
+    CONTACT_FORM = "contact_form"
+    SURVEY = "survey"
+    REGISTRATION = "registration"
+
+
 class FormModel(BaseModel):
     id: Optional[str] = Field(None, alias="_id", description="Form ID")
     name: str = Field(..., description="Internal form name")
+    form_type: FormType = Field(
+        default=FormType.GENERAL,
+        description="Polymorphic discriminator — identifies the form category for "
+                    "type-specific queries and indexes. Existing forms without this "
+                    "field default to 'general'.",
+    )
     settings: FormSettings = Field(..., description="Form configuration")
     fields: List[FormField] = Field(..., description="Form fields")
     email_distribution: Optional[EmailDistributionSettings] = Field(None, description="Email settings")
     created_by: str = Field(..., description="Creator email")
     wedding_id: Optional[str] = Field(None, description="Associated wedding ID")
-    template_type: Optional[str] = Field(None, description="Form template type")
+    template_type: Optional[str] = Field(
+        None,
+        description="DEPRECATED — use form_type instead. Retained for backward compatibility "
+                    "with existing documents. Will be removed in a future sprint.",
+    )
     is_active: bool = Field(default=True, description="Whether form is active")
     created_at: datetime = Field(default_factory=datetime.utcnow, description="Creation timestamp")
     updated_at: datetime = Field(default_factory=datetime.utcnow, description="Last update timestamp")
@@ -286,6 +315,10 @@ class FormDistribution(BaseModel):
 
 class CreateFormRequest(BaseModel):
     name: str = Field(..., description="Form name")
+    form_type: FormType = Field(
+        default=FormType.GENERAL,
+        description="Form category discriminator. Defaults to 'general' for backward compatibility.",
+    )
     settings: FormSettings = Field(..., description="Form settings")
     fields: List[FormField] = Field(..., description="Form fields")
     wedding_id: Optional[str] = Field(None, description="Associated wedding ID")

@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { Label } from '@/components/ui/Label';
 import { Textarea } from '@/components/ui/Textarea';
+import { useAdmin } from '@/contexts/AdminContext';
 import { Loader2, DollarSign, Send, Calendar, Mail, Link2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { createPaymentLink, sendPaymentLink, type PayerType, type RecipientType } from '@/services/vendorManagementApi';
@@ -44,6 +45,7 @@ export function VendorPaymentModal({
   coupleNames,
   onPaymentLinkCreated,
 }: VendorPaymentModalProps) {
+  const { token } = useAdmin();
   const [loading, setLoading] = useState(false);
   const [amount, setAmount] = useState('');
   const [description, setDescription] = useState('');
@@ -90,7 +92,6 @@ export function VendorPaymentModal({
     try {
       setLoading(true);
 
-      const token = localStorage.getItem('admin_token');
       if (!token) {
         toast.error('Please log in to create payment links');
         return;
@@ -168,7 +169,7 @@ export function VendorPaymentModal({
       <DialogContent className="sm:max-w-lg">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            <Link2 className="h-5 w-5 text-green-600" />
+            <Link2 className="h-5 w-5 text-green-600" aria-hidden="true" />
             Create Payment Link
           </DialogTitle>
           <DialogDescription>
@@ -179,9 +180,9 @@ export function VendorPaymentModal({
         {step === 'details' && (
           <div className="space-y-4 py-4">
             {/* Payment Flow Selection */}
-            <div className="space-y-2">
-              <Label>Who will pay?</Label>
-              <div className="grid grid-cols-2 gap-2">
+            <fieldset className="space-y-2">
+              <legend className="text-sm font-medium">Who will pay?</legend>
+              <div className="grid grid-cols-2 gap-2" role="group">
                 <button
                   type="button"
                   onClick={() => setPaymentFlow('couple_to_vendor')}
@@ -190,6 +191,9 @@ export function VendorPaymentModal({
                       ? 'border-green-500 bg-green-50 dark:bg-green-900/20'
                       : 'border-gray-200 dark:border-gray-700 hover:border-gray-300'
                   }`}
+                  role="radio"
+                  aria-checked={paymentFlow === 'couple_to_vendor'}
+                  aria-label={`Couple pays vendor: ${coupleNames || 'Couple'} pays ${vendorName}`}
                 >
                   <div className="font-medium text-sm">Couple pays Vendor</div>
                   <div className="text-xs text-gray-500 mt-1">
@@ -204,6 +208,9 @@ export function VendorPaymentModal({
                       ? 'border-green-500 bg-green-50 dark:bg-green-900/20'
                       : 'border-gray-200 dark:border-gray-700 hover:border-gray-300'
                   }`}
+                  role="radio"
+                  aria-checked={paymentFlow === 'planner_to_vendor'}
+                  aria-label={`Planner pays vendor: ${plannerName || 'You'} pays ${vendorName}`}
                 >
                   <div className="font-medium text-sm">I pay Vendor</div>
                   <div className="text-xs text-gray-500 mt-1">
@@ -211,13 +218,13 @@ export function VendorPaymentModal({
                   </div>
                 </button>
               </div>
-            </div>
+            </fieldset>
 
             {/* Amount */}
             <div className="space-y-2">
-              <Label htmlFor="amount">Amount (USD) *</Label>
+              <Label htmlFor="amount">Amount (USD) <span aria-label="required">*</span></Label>
               <div className="relative">
-                <DollarSign className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-500" />
+                <DollarSign className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-500" aria-hidden="true" />
                 <Input
                   id="amount"
                   type="number"
@@ -227,8 +234,11 @@ export function VendorPaymentModal({
                   value={amount}
                   onChange={(e) => setAmount(e.target.value)}
                   className="pl-9"
+                  aria-required="true"
+                  aria-describedby="amount-hint"
                 />
               </div>
+              <p id="amount-hint" className="text-xs text-gray-500">Enter the payment amount in USD</p>
             </div>
 
             {/* Description */}
@@ -258,25 +268,33 @@ export function VendorPaymentModal({
             </div>
 
             {/* Email Customization */}
-            <div className="border-t pt-4 mt-4">
-              <div className="flex items-center gap-2 mb-3">
-                <Mail className="h-4 w-4 text-gray-500" />
+            <fieldset className="border-t pt-4 mt-4">
+              <legend className="flex items-center gap-2 mb-3">
+                <Mail className="h-4 w-4 text-gray-500" aria-hidden="true" />
                 <span className="text-sm font-medium">Email Customization (Optional)</span>
-              </div>
+              </legend>
               <div className="space-y-3">
-                <Input
-                  placeholder="Custom email subject..."
-                  value={emailSubject}
-                  onChange={(e) => setEmailSubject(e.target.value)}
-                />
-                <Textarea
-                  placeholder="Add a personal message to the payment request email..."
-                  value={emailMessage}
-                  onChange={(e) => setEmailMessage(e.target.value)}
-                  rows={2}
-                />
+                <div>
+                  <Input
+                    id="email-subject"
+                    placeholder="Custom email subject..."
+                    value={emailSubject}
+                    onChange={(e) => setEmailSubject(e.target.value)}
+                    aria-label="Custom email subject (optional)"
+                  />
+                </div>
+                <div>
+                  <Textarea
+                    id="email-message"
+                    placeholder="Add a personal message to the payment request email..."
+                    value={emailMessage}
+                    onChange={(e) => setEmailMessage(e.target.value)}
+                    rows={2}
+                    aria-label="Custom message (optional)"
+                  />
+                </div>
               </div>
-            </div>
+            </fieldset>
           </div>
         )}
 

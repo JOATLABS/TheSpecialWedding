@@ -1,19 +1,27 @@
 import logging
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from app.models.wedding import WeddingModel
 from app.services.wedding_service import WeddingService
+from app.services.cascade_delete_service import cascade_delete_service
 from app.dependencies.auth_extended import (
     require_root_admin,
     require_admin_or_planner,
+    require_team_or_planner,
     ExtendedAuthUser,
-    check_wedding_access
+    check_wedding_access,
+    enforce_team_permission,
+    get_accessible_wedding_ids
 )
 from app.services.subscription_service import SubscriptionService
 from app.services.stripe_service import stripe_service
 from app.models.subscription import SubscriptionStatus
+from app.utils.response import dict_response
+from app.services.sse_manager import sse_manager
 from app.core.database import mongo
 from datetime import datetime, timezone
 from bson import ObjectId
+from math import ceil
+from typing import Optional
 
 logger = logging.getLogger(__name__)
 
@@ -23,16 +31,33 @@ subscription_service = SubscriptionService()
 
 
 @router.get("/weddings", tags=["Admin"])
-async def list_weddings(current_user: ExtendedAuthUser = Depends(require_admin_or_planner)):
-    """List weddings - ROOT_ADMIN sees all, planners see only assigned"""
+async def list_weddings(
+    page: int = Query(1, ge=1, le=10000),
+    limit: int = Query(50, ge=1, le=100),
+    search: Optional[str] = Query(None),
+    current_user: ExtendedAuthUser = Depends(require_team_or_planner)
+):
+    """
+    List weddings with pagination - ROOT_ADMIN sees all, planners see only assigned.
+    Team members with "assigned" access see only their assigned weddings.
+    """
     if current_user.is_root_admin:
-        return await wedding_service.list_weddings_with_planner_info()
-    return await wedding_service.list_weddings_for_planner(current_user.email)
+        return await wedding_service.list_weddings_with_planner_info(page=page, limit=limit, search=search)
+
+    # Get accessible wedding IDs for team members
+    accessible_ids = get_accessible_wedding_ids(current_user)
+    if accessible_ids is not None:
+        # Team member with "assigned" access - filter by their assigned weddings
+        return await wedding_service.list_weddings_for_planner(current_user.email, accessible_ids=accessible_ids, page=page, limit=limit, search=search)
+
+    # Planner owner or team member with "all" access
+    return await wedding_service.list_weddings_for_planner(current_user.email, page=page, limit=limit, search=search)
 
 
 @router.post("/weddings", tags=["Admin"])
-async def create_wedding(wedding: WeddingModel, current_user: ExtendedAuthUser = Depends(require_admin_or_planner)):
+async def create_wedding(wedding: WeddingModel, current_user: ExtendedAuthUser = Depends(require_team_or_planner)):
     """Create a new wedding with subscription metering"""
+    enforce_team_permission(current_user, "manage_wedding_settings")
     # Enforce limits for planners
     if not current_user.is_root_admin:
         user_id = current_user.user_data.get("_id")
@@ -76,7 +101,8 @@ async def create_wedding(wedding: WeddingModel, current_user: ExtendedAuthUser =
                     if isinstance(current_period_start, str):
                         try:
                             current_period_start = datetime.fromisoformat(current_period_start.replace("Z", "+00:00"))
-                        except Exception:
+                        except Exception as e:
+                            logger.warning(f"Failed to parse current_period_start: {current_period_start}, error: {e}")
                             current_period_start = None
                     if isinstance(current_period_start, datetime) and current_period_start.tzinfo is None:
                         current_period_start = current_period_start.replace(tzinfo=datetime.now(timezone.utc).astimezone().tzinfo)
@@ -88,7 +114,8 @@ async def create_wedding(wedding: WeddingModel, current_user: ExtendedAuthUser =
                         if isinstance(last_billed_at, str):
                             try:
                                 last_billed_at = datetime.fromisoformat(last_billed_at.replace("Z", "+00:00"))
-                            except Exception:
+                            except Exception as e:
+                                logger.warning(f"Failed to parse last_billed_at: {last_billed_at}, error: {e}")
                                 last_billed_at = None
 
                     already_billed_this_period = (
@@ -130,12 +157,19 @@ async def create_wedding(wedding: WeddingModel, current_user: ExtendedAuthUser =
         except Exception as e:
             logger.error(f"Error reporting meter event on creation: {e}")
 
+    # Broadcast SSE data-change so planner UI updates
+    await sse_manager.broadcast_data_change(
+        current_user.email, "wedding", "created",
+        wedding_id=str(wedding_data.get("_id", "")),
+    )
+
     return result
 
 
 @router.put("/weddings/{wedding_id}", tags=["Admin"])
-async def update_wedding_admin(wedding_id: str, wedding: dict, current_user: ExtendedAuthUser = Depends(require_admin_or_planner)):
+async def update_wedding_admin(wedding_id: str, wedding: dict, current_user: ExtendedAuthUser = Depends(require_team_or_planner)):
     """Update a wedding via admin interface - with access control"""
+    enforce_team_permission(current_user, "manage_wedding_settings")
     # Check if user has access to this wedding
     if not await check_wedding_access(current_user, wedding_id):
         raise HTTPException(status_code=403, detail="Access to this wedding denied")
@@ -143,18 +177,61 @@ async def update_wedding_admin(wedding_id: str, wedding: dict, current_user: Ext
     # Add update metadata
     wedding["updated_by"] = current_user.email
 
-    return await wedding_service.update_wedding(wedding_id, wedding)
+    result = await wedding_service.update_wedding(wedding_id, wedding)
+
+    # Broadcast SSE data-change so planner UI updates
+    await sse_manager.broadcast_data_change(
+        current_user.email, "wedding", "updated",
+        wedding_id=wedding_id,
+    )
+
+    return result
 
 
 @router.delete("/weddings/{wedding_id}", tags=["Admin"])
-async def delete_wedding_admin(wedding_id: str, current_user: ExtendedAuthUser = Depends(require_root_admin)):
-    """Soft-delete a wedding (mark cancelled) to prevent billing avoidance."""
+async def delete_wedding_admin(
+    wedding_id: str,
+    current_user: ExtendedAuthUser = Depends(require_root_admin),
+    hard_delete: bool = False
+):
+    """
+    Delete a wedding and all dependent data.
+
+    By default, performs a soft delete (archives records with deleted_at/deleted_by fields).
+    If hard_delete=true, permanently removes all data (irreversible).
+
+    For soft delete with billing:
+    - Marks wedding status as 'cancelled'
+    - Archives all dependent records (guests, forms, budget, etc.)
+    - Handles meter reversal if on metered subscription
+    - Preserves data for audit and recovery
+
+    For hard delete:
+    - Permanently removes all records from database
+    - Should only be used for compliance, testing, or data cleanup
+    - WARNING: This is IRREVERSIBLE
+    """
     wedding = await mongo.db["weddings"].find_one({"_id": wedding_id})
     if not wedding:
         raise HTTPException(status_code=404, detail="Wedding not found")
 
-    # Attempt meter reversal only once per period to keep billing accurate without enabling avoidance
+    if hard_delete:
+        # Perform hard delete via cascade service
+        try:
+            result = await cascade_delete_service.hard_delete_wedding(wedding_id, current_user.email)
+            logger.info(f"Hard deleted wedding {wedding_id}: {result}")
+            await sse_manager.broadcast_data_change(
+                current_user.email, "wedding", "deleted",
+                wedding_id=wedding_id,
+            )
+            return result
+        except Exception as e:
+            logger.error(f"Hard delete failed for wedding {wedding_id}: {str(e)}")
+            raise HTTPException(status_code=500, detail=f"Hard delete failed: {str(e)}")
+
+    # Perform soft delete with meter handling
     try:
+        # Attempt meter reversal only once per period to keep billing accurate without enabling avoidance
         planner_email = wedding.get("assigned_planner_email")
         if planner_email:
             planner = await mongo.get_users_collection().find_one({"email": planner_email})
@@ -194,22 +271,38 @@ async def delete_wedding_admin(wedding_id: str, current_user: ExtendedAuthUser =
                                 "meter_pending_reason": None if reversal_success else reverse_result.get("message") or "meter_reversal_failed"
                             }}
                         )
-    except Exception as exc:
-        logger.error(f"Meter reversal on cancellation failed: {exc}")
 
-    # Preserve billing marker; do not decrement usage to avoid gaming billing
-    await mongo.db["weddings"].update_one(
-        {"_id": wedding_id},
-        {"$set": {
-            "status": "cancelled",
-            "cancelled_at": datetime.now(timezone.utc)
-        }}
-    )
-    return {"message": "Wedding cancelled (soft delete); billing usage preserved"}
+        # Perform soft delete cascade
+        result = await cascade_delete_service.soft_delete_wedding(wedding_id, current_user.email)
+
+        # Also mark wedding status as cancelled for backward compatibility
+        await mongo.db["weddings"].update_one(
+            {"_id": wedding_id},
+            {"$set": {
+                "status": "cancelled",
+                "cancelled_at": datetime.now(timezone.utc)
+            }}
+        )
+
+        logger.info(f"Soft deleted wedding {wedding_id}: {result}")
+        result["message"] = "Wedding cancelled (soft delete); all dependent records archived; billing usage preserved"
+
+        await sse_manager.broadcast_data_change(
+            current_user.email, "wedding", "deleted",
+            wedding_id=wedding_id,
+        )
+
+        return result
+
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.error(f"Delete operation failed for wedding {wedding_id}: {exc}")
+        raise HTTPException(status_code=500, detail=f"Delete operation failed: {str(exc)}")
 
 
 @router.get("/weddings/{wedding_id}", tags=["Wedding"])
-async def get_wedding(wedding_id: str, current_user: ExtendedAuthUser = Depends(require_admin_or_planner)):
+async def get_wedding(wedding_id: str, current_user: ExtendedAuthUser = Depends(require_team_or_planner)):
     """Get a wedding by ID - with access control"""
     # Check if user has access to this wedding
     if not await check_wedding_access(current_user, wedding_id):
@@ -230,9 +323,3 @@ async def get_wedding_by_slug(slug: str):
     privacy_info = await verification_service.get_wedding_privacy_info(slug)
 
     return privacy_info
-
-
-@router.delete("/weddings/{wedding_id}", tags=["Admin"])
-async def delete_wedding(wedding_id: str, current_user: ExtendedAuthUser = Depends(require_root_admin)):
-    """Alias soft-delete: mark cancelled; do not remove from billing usage."""
-    return await delete_wedding_admin(wedding_id, current_user)

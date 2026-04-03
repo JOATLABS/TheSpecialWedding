@@ -4,7 +4,8 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 from typing import List, Optional
 from app.services.reminder_utilities import RSVPReminderHelper
-from app.dependencies.auth_extended import require_admin_or_planner
+from app.services.sse_manager import sse_manager
+from app.dependencies.auth_extended import require_admin_or_planner, ExtendedAuthUser
 
 router = APIRouter()
 
@@ -21,9 +22,20 @@ class SlugModel(BaseModel):
     slug: str
     custom_message: Optional[str] = None
 
-@router.post("/reminders/send-personalized-links", tags=["Admin"], dependencies=[Depends(require_admin_or_planner)])
-async def send_invite_links(payload: SlugModel):
-    return await reminder_helper.send_personalized_rsvp_links(slug=payload.slug, custom_message=payload.custom_message)
+@router.post("/reminders/send-personalized-links", tags=["Admin"])
+async def send_invite_links(payload: SlugModel, current_user: ExtendedAuthUser = Depends(require_admin_or_planner)):
+    result = await reminder_helper.send_personalized_rsvp_links(slug=payload.slug, custom_message=payload.custom_message)
+
+    # Broadcast invite status change so planner UI refreshes
+    from app.core.database import mongo
+    wedding = await mongo.db["weddings"].find_one({"slug": payload.slug}, {"_id": 1})
+    if wedding:
+        await sse_manager.broadcast_data_change(
+            current_user.email, "invite", "created",
+            wedding_id=str(wedding["_id"]),
+        )
+
+    return result
 
 @router.post("/reminders/simulate-rsvp", tags=["Admin"], dependencies=[Depends(require_admin_or_planner)])
 async def simulate_rsvp(payload: RSVPRequestModel):

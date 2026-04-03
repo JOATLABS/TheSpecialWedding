@@ -8,6 +8,7 @@ import {
   GoogleCalendarStatus,
 } from '@/services/calendarApi';
 import { useAdmin } from '@/contexts/AdminContext';
+import { useConfirmDialog } from '@/components/ui/ConfirmDialog';
 import { formatAdminTimestamp, DEFAULT_TIMEZONE } from '@/utils/dateFormat';
 
 interface GoogleCalendarConnectProps {
@@ -18,6 +19,7 @@ export default function GoogleCalendarConnect({
   onStatusChange,
 }: GoogleCalendarConnectProps) {
   const { token } = useAdmin();
+  const { confirm } = useConfirmDialog();
   const [status, setStatus] = useState<GoogleCalendarStatus | null>(null);
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState(false);
@@ -62,9 +64,13 @@ export default function GoogleCalendarConnect({
   const handleDisconnect = async () => {
     if (!token) return;
 
-    const confirmed = window.confirm(
-      'Are you sure you want to disconnect Google Calendar? Your tasks will be preserved but no longer sync.'
-    );
+    const confirmed = await confirm({
+      title: 'Disconnect Google Calendar',
+      message: 'Are you sure you want to disconnect Google Calendar? Your tasks will be preserved but no longer sync.',
+      variant: 'warning',
+      confirmText: 'Disconnect',
+      cancelText: 'Cancel',
+    });
 
     if (!confirmed) return;
 

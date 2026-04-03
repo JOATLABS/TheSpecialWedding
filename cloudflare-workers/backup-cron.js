@@ -32,7 +32,7 @@ async function fetchWithTimeout(url, options = {}, timeoutMs = 10000) {
   }
 }
 
-export default {
+const worker = {
 	async scheduled(event, env, ctx) {
 		console.log('Starting daily backup cron job...');
 
@@ -75,6 +75,8 @@ export default {
 		}
 	}
 };
+
+export default worker;
 
 /**
  * Send success notification email via Resend

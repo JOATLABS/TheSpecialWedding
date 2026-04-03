@@ -1,13 +1,23 @@
 'use client';
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { getApiBaseUrl } from '@/utils/env';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { useAdmin } from '@/contexts/AdminContext';
 import { Card } from '../../components/ui/Card';
-import { ContentEditModal } from '../components/ContentEditModal';
-import { formatDate } from '@/utils/dateFormat';
+import { formatDate, formatDateTime } from '@/utils/dateFormat';
 import PageHeader from '../components/PageHeader';
+import { toast } from 'sonner';
+import { Settings, Download, Database, RefreshCw, Save, TrendingUp, TrendingDown, Minus, Activity, Users, Zap, DollarSign } from 'lucide-react';
+import { fetchBehavioralAnalytics, type BehavioralAnalyticsResponse } from '@/services/behavioralAnalyticsApi';
+import {
+  getAdminConfig,
+  getAdminPipelineStatus,
+  exportAdminData,
+  updateAdminConfig,
+  type PlatformConfig,
+  type PipelineStatus,
+} from '@/services/campaignAdvertisingApi';
 
 interface SubscriptionPlan {
  _id: string;
@@ -36,16 +46,6 @@ interface SubscriptionPlan {
  updated_at: string;
 }
 
-interface SaasContentSection {
- id: string;
- section: string;
- content: any;
- isActive: boolean;
- displayOrder: number;
- updatedBy: string;
- updatedAt: string;
-}
-
 interface WeddingPlanner {
  id: string;
  email: string;
@@ -59,249 +59,193 @@ interface WeddingPlanner {
  timezone?: string;
 }
 
-interface AnalyticsOverview {
-  total_planners: number;
-  active_planners: number;
-  total_weddings: number;
-  active_plans: number;
-  monthly_revenue: number;
-  yearly_revenue: number;
-  projected_annual_revenue: number;
+// ---------- Platform Metrics types (merged from Business Analytics) ----------
+
+interface RoleBreakdown {
+  [role: string]: number;
 }
 
-interface PlanBreakdown {
-  plan_id: string;
-  plan_name: string;
-  active_users: number;
-  trial_users: number;
+interface PlatformMetricsResponse {
+  generated_at: string;
+  timeframe: string;
+  users: {
+    total: number;
+    active: number;
+    new_in_period: number;
+    growth_rate: number;
+    role_breakdown: RoleBreakdown;
+  };
+  subscriptions: {
+    total: number;
+    status_breakdown: {
+      trial: number;
+      active: number;
+      cancelled: number;
+      expired: number;
+      [status: string]: number;
+    };
+    active_plans: number;
+    monthly_recurring_revenue: number;
+    yearly_recurring_revenue: number;
+    projected_annual_revenue: number;
+    plan_breakdown: {
+      [planId: string]: {
+        name: string;
+        monthly_revenue: number;
+        annual_revenue: number;
+        active_users: number;
+        trial_users: number;
+      };
+    };
+  };
+  operations: {
+    weddings: {
+      total: number;
+      active: number;
+      upcoming: number;
+      created_in_period: number;
+      guest_total: number;
+      rsvp_total: number;
+    };
+    forms: {
+      total: number;
+      new_in_period: number;
+      responses_total: number;
+      responses_in_period: number;
+    };
+    communications: {
+      notifications_sent: number;
+      notifications_in_period: number;
+      email_logs_total: number;
+      emails_sent_in_period: number;
+      ai_events_total: number;
+      ai_events_in_period: number;
+    };
+  };
 }
 
-interface RevenueAnalytics {
-  plan_breakdown: PlanBreakdown[];
+type TimeframeKey = '7d' | '30d' | '90d' | '1y';
+
+const TIMEFRAME_OPTIONS: Array<{ value: TimeframeKey; label: string }> = [
+  { value: '7d', label: 'Last 7 Days' },
+  { value: '30d', label: 'Last 30 Days' },
+  { value: '90d', label: 'Last 90 Days' },
+  { value: '1y', label: 'Last 12 Months' },
+];
+
+function formatCurrency(amount: number): string {
+  return new Intl.NumberFormat('en-US', {
+    style: 'currency',
+    currency: 'USD',
+    maximumFractionDigits: 0,
+  }).format(amount);
 }
 
-interface ThemeConfig {
- primary_color: string;
- secondary_color: string;
- background_image?: string;
- fallback_images: string[];
+function formatNumber(amount: number): string {
+  return new Intl.NumberFormat('en-US').format(amount);
 }
 
-interface SaasFullConfig {
- // Legacy hero fields (backward compatibility)
- hero_title: string;
- hero_subtitle: string;
- hero_description: string;
+/* Landing page content (hero, features, stats, theme, etc.) is now hardcoded
+   in app/page.tsx for performance. The SaaS Content and Theme tabs have been
+   removed. Subscription plans, analytics, and customer reviews remain admin-configurable. */
 
- // Modern hero fields (benefit-driven)
- hero_headline?: string;
- hero_subheadline?: string;
- hero_problem_statement?: string;
- hero_solution_statement?: string;
-
- // CTA buttons
- hero_cta_primary: string;
- hero_cta_secondary: string;
- contact_cta_label?: string;
- contact_url?: string;
-
- // Product showcase
- hero_screenshot_primary?: string;
- hero_screenshot_secondary?: string;
- demo_video_url?: string;
- show_product_demo?: boolean;
-
- // Layout settings
- hero_layout?: string;
- hero_image_position?: string;
- show_decorative_logo?: boolean;
-
- // Trust indicators
- trust_indicators: string[];
-
- // Legacy statistics (generic)
- statistics: Array<{
- label: string;
- value: string;
- }>;
- statistics_enabled: boolean;
-
- // Modern impact metrics (specific, measurable)
- impact_metrics?: Array<{
- metric: string;
- label: string;
- icon?: string;
- }>;
- show_impact_metrics?: boolean;
-
- // Customer logos (social proof)
- customer_logos?: Array<{
- name: string;
- logo_url: string;
- }>;
- show_customer_logos?: boolean;
-
- // Content sections
- features: Array<{
- title: string;
- description: string;
- status: 'available' | 'coming_soon';
- order: number;
- }>;
- benefits: Array<{
- title: string;
- description: string;
- order: number;
- }>;
- testimonials: Array<{
- name: string;
- company: string;
- role: string;
- content: string;
- order: number;
- }>;
-
- // Section toggles
- features_enabled: boolean;
- benefits_enabled: boolean;
- testimonials_enabled: boolean;
-
- // Theme configuration
- theme: ThemeConfig;
-
- // Animation settings
- animations_enabled?: boolean;
- scroll_animations?: boolean;
- animation_speed?: string;
+interface Testimonial {
+  _id: string;
+  name: string;
+  company: string;
+  role: string;
+  quote: string;
+  avatar_url?: string;
+  is_active: boolean;
+  display_order: number;
+  created_at?: string;
+  updated_at?: string;
+  created_by?: string;
 }
 
-// Default SaaS configuration (used as fallback if API fails)
-const DEFAULT_SAAS_CONFIG: SaasFullConfig = {
-  // Legacy hero fields
-  hero_title: "Welcome to Special Wedding",
-  hero_subtitle: "Wedding Planning Made Simple",
-  hero_description: "The ultimate wedding planning platform for professional wedding planners. Manage multiple weddings, coordinate with vendors, and create beautiful wedding websites with AI-powered tools.",
-
-  // Modern hero fields
-  hero_headline: "Manage 10+ Weddings Simultaneously",
-  hero_subheadline: "For Professional Wedding Planners",
-  hero_problem_statement: "Stop juggling spreadsheets, email chains, and vendor chaos",
-  hero_solution_statement: "One platform to manage guests, vendors, timelines, and budgets—all in sync",
-
-  // CTAs
-  hero_cta_primary: "Start Free Trial",
-  hero_cta_secondary: "Watch Demo",
-  contact_cta_label: "Contact Sales",
-  contact_url: "mailto:sales@specialwedding.com",
-
-  // Product showcase
-  hero_screenshot_primary: undefined,
-  demo_video_url: undefined,
-  show_product_demo: false,
-
-  // Layout
-  hero_layout: "split",
-  hero_image_position: "right",
-  show_decorative_logo: true, // Keep legacy by default
-
-  // Trust & social proof
-  trust_indicators: ["Free 30-day trial", "No setup fees", "Cancel anytime"],
-
-  // Legacy statistics
-  statistics: [
-    { label: "Wedding Planners Trust Us", value: "500+" },
-    { label: "Weddings Managed", value: "10K+" },
-    { label: "Uptime Guarantee", value: "99.9%" }
-  ],
-  statistics_enabled: true,
-
-  // Modern impact metrics
-  impact_metrics: [
-    { metric: "15 hours/week", label: "Average time saved per planner" },
-    { metric: "80%", label: "Reduction in vendor miscommunication" },
-    { metric: "2.5x", label: "Increase in weddings managed per year" }
-  ],
-  show_impact_metrics: false,
-
-  // Customer logos
-  customer_logos: [],
-  show_customer_logos: false,
-
-  // Content sections
-  features: [
-    {
-      title: "Complete Wedding Management",
-      description: "Manage multiple weddings with ease. Track guests, RSVPs, vendors, and timelines all in one place.",
-      status: "available",
-      order: 1
-    },
-    {
-      title: "AI Presentation Generator",
-      description: "Create stunning wedding presentations in minutes with our AI-powered design tools.",
-      status: "coming_soon",
-      order: 5
-    }
-  ],
-  benefits: [
-    {
-      title: "Save Time",
-      description: "Automate repetitive tasks and streamline wedding planning operations",
-      order: 1
-    },
-    {
-      title: "Scale Your Business",
-      description: "Manage multiple weddings efficiently and grow your planning business",
-      order: 2
-    }
-  ],
-  testimonials: [
-    {
-      name: "Sarah Johnson",
-      company: "Elegant Events Planning",
-      role: "Senior Wedding Planner",
-      content: "Special Wedding has revolutionized how I manage my clients' weddings. The AI tools save me hours every week!",
-      order: 1
-    }
-  ],
-
-  // Section toggles
-  features_enabled: true,
-  benefits_enabled: true,
-  testimonials_enabled: true,
-
-  // Theme
-  theme: {
-    primary_color: "#1e3a5f",
-    secondary_color: "#d4af37",
-    fallback_images: [
-      "/wedding-images/wedding-ceremony.jpg",
-      "/wedding-images/wedding-reception.jpg"
-    ]
+const EMPTY_BEHAVIORAL_METRICS: BehavioralAnalyticsResponse = {
+  generated_at: '',
+  timeframe: '30d',
+  weekly_active_users: {
+    current: 0,
+    previous_week: 0,
+    change: 0,
+    change_percent: 0,
+    mau: 0,
+    stickiness_ratio: 0,
   },
-
-  // Animations
-  animations_enabled: true,
-  scroll_animations: true,
-  animation_speed: "medium"
+  activation_funnel: {
+    period: 'last_30_days',
+    steps: [],
+    conversion_rate: 0,
+    signups_90d: 0,
+  },
+  retention_cohorts: { cohorts: [] },
+  engagement_signals: {
+    rsvp_velocity: {
+      current_7d: 0,
+      previous_7d: 0,
+      change: 0,
+      trend: 'flat',
+    },
+    platform_response_rate: 0,
+    active_engaged_weddings: 0,
+    north_star_metric: 0,
+  },
+  mrr_movement: {
+    current_mrr: 0,
+    new_mrr: 0,
+    churned_mrr: 0,
+    net_change: 0,
+    net_change_percent: 0,
+    trial_conversions: 0,
+    trial_conversion_rate: 0,
+  },
+  week_over_week: {
+    new_users: { current: 0, previous: 0, change: 0, change_percent: 0, trend: 'flat' },
+    new_weddings: { current: 0, previous: 0, change: 0, change_percent: 0, trend: 'flat' },
+    new_rsvps: { current: 0, previous: 0, change: 0, change_percent: 0, trend: 'flat' },
+    active_users: { current: 0, previous: 0, change: 0, change_percent: 0, trend: 'flat' },
+  },
 };
 
 const SaasAdminDashboard = () => {
  const router = useRouter();
- const { userProfile } = useAdmin();
- const [activeTab, setActiveTab] = useState<'overview' | 'plans' | 'content' | 'theme' | 'planners'>('overview');
+ const searchParams = useSearchParams();
+ const { userProfile, token, expireSession } = useAdmin();
+ const [activeTab, setActiveTab] = useState<'overview' | 'plans' | 'reviews' | 'ad-config'>('overview');
  const [plans, setPlans] = useState<SubscriptionPlan[]>([]);
- const [contentSections, setContentSections] = useState<SaasContentSection[]>([]);
  const [planners, setPlanners] = useState<WeddingPlanner[]>([]);
- const [saasConfig, setSaasConfig] = useState<SaasFullConfig | null>(null);
  const [loading, setLoading] = useState(true);
  const [showCreatePlanModal, setShowCreatePlanModal] = useState(false);
  const [editingPlan, setEditingPlan] = useState<SubscriptionPlan | null>(null);
  const [error, setError] = useState<string | null>(null);
- const [editModalOpen, setEditModalOpen] = useState(false);
- const [editingSectionType, setEditingSectionType] = useState<string>('');
- const [editingSectionData, setEditingSectionData] = useState<any>(null);
- const [analyticsOverview, setAnalyticsOverview] = useState<AnalyticsOverview | null>(null);
- const [planBreakdown, setPlanBreakdown] = useState<PlanBreakdown[]>([]);
+ // Platform metrics state (merged from Business Analytics)
+ const [metrics, setMetrics] = useState<PlatformMetricsResponse | null>(null);
+ const [metricsTimeframe, setMetricsTimeframe] = useState<TimeframeKey>('30d');
+ const [metricsLoading, setMetricsLoading] = useState(false);
+	 const [behavioralMetrics, setBehavioralMetrics] = useState<BehavioralAnalyticsResponse | null>(null);
+	 const [behavioralLoading, setBehavioralLoading] = useState(false);
+	 const safeBehavioralMetrics = behavioralMetrics ? {
+	   ...EMPTY_BEHAVIORAL_METRICS,
+	   ...behavioralMetrics,
+	   weekly_active_users: behavioralMetrics.weekly_active_users ?? EMPTY_BEHAVIORAL_METRICS.weekly_active_users,
+	   activation_funnel: {
+	     ...EMPTY_BEHAVIORAL_METRICS.activation_funnel,
+	     ...behavioralMetrics.activation_funnel,
+	     steps: behavioralMetrics.activation_funnel?.steps ?? EMPTY_BEHAVIORAL_METRICS.activation_funnel.steps,
+	   },
+	   retention_cohorts: {
+	     cohorts: behavioralMetrics.retention_cohorts?.cohorts ?? EMPTY_BEHAVIORAL_METRICS.retention_cohorts.cohorts,
+	   },
+	   engagement_signals: {
+	     ...EMPTY_BEHAVIORAL_METRICS.engagement_signals,
+	     ...behavioralMetrics.engagement_signals,
+	     rsvp_velocity: behavioralMetrics.engagement_signals?.rsvp_velocity ?? EMPTY_BEHAVIORAL_METRICS.engagement_signals.rsvp_velocity,
+	   },
+	   mrr_movement: behavioralMetrics.mrr_movement ?? EMPTY_BEHAVIORAL_METRICS.mrr_movement,
+	   week_over_week: behavioralMetrics.week_over_week ?? EMPTY_BEHAVIORAL_METRICS.week_over_week,
+	 } : null;
 
   // ROOT_ADMIN access control - redirect non-root admins
   useEffect(() => {
@@ -312,7 +256,6 @@ const SaasAdminDashboard = () => {
   const fetchData = useCallback(async () => {
     try {
       const baseUrl = getApiBaseUrl();
-      const token = localStorage.getItem('admin_token') || sessionStorage.getItem('admin_token');
 
       if (!token) {
         setLoading(false);
@@ -324,7 +267,11 @@ const SaasAdminDashboard = () => {
         'Content-Type': 'application/json'
       };
 
-      const plansResponse = await fetch(`${baseUrl}/subscription-plans?include_inactive=true`, { headers });
+      const plansResponse = await fetch(`${baseUrl}/subscription-plans?include_inactive=true`, { headers, credentials: 'include' });
+      if (plansResponse.status === 401) {
+        expireSession();
+        return;
+      }
       if (plansResponse.ok) {
         const plansData = await plansResponse.json();
         console.log('[SaaS Admin] Subscription plans loaded:', plansData.length, 'plans');
@@ -335,7 +282,11 @@ const SaasAdminDashboard = () => {
         console.error('[SaaS Admin] Error details:', errorText);
       }
 
-      const plannersResponse = await fetch(`${baseUrl}/saas/wedding-planners`, { headers });
+      const plannersResponse = await fetch(`${baseUrl}/saas/wedding-planners`, { headers, credentials: 'include' });
+      if (plannersResponse.status === 401) {
+        expireSession();
+        return;
+      }
       if (plannersResponse.ok) {
         const plannersData = await plannersResponse.json();
         setPlanners(plannersData.map((planner: any) => ({
@@ -351,42 +302,26 @@ const SaasAdminDashboard = () => {
         })) );
       }
 
-      const configResponse = await fetch(`${baseUrl}/saas/saas-config`, { headers });
-      if (configResponse.ok) {
-        const configData = await configResponse.json();
-        setSaasConfig(configData);
-      } else {
-        setSaasConfig(DEFAULT_SAAS_CONFIG);
+      // Fetch platform metrics for the Overview tab (replaces old analytics/overview + revenue calls)
+      const metricsResponse = await fetch(`${baseUrl}/saas/analytics/platform?timeframe=${metricsTimeframe}`, { headers, credentials: 'include' });
+      if (metricsResponse.status === 401) {
+        expireSession();
+        return;
+      }
+      if (metricsResponse.ok) {
+        const metricsData = await metricsResponse.json();
+        setMetrics(metricsData);
       }
 
-      const sectionsResponse = await fetch(`${baseUrl}/saas/content-sections`, { headers });
-      if (sectionsResponse.ok) {
-        const sectionsData = await sectionsResponse.json();
-        setContentSections(sectionsData.map((section: any) => ({
-          id: section._id || section.id,
-          section: section.section,
-          content: section.content,
-          isActive: section.is_active,
-          displayOrder: section.display_order,
-          updatedBy: section.updated_by,
-          updatedAt: section.updated_at
-        })) );
-      }
-
-      // Fetch analytics overview for dashboard statistics
-      const analyticsResponse = await fetch(`${baseUrl}/saas/analytics/overview`, { headers });
-      if (analyticsResponse.ok) {
-        const analyticsData = await analyticsResponse.json();
-        setAnalyticsOverview(analyticsData);
-      }
-
-      // Fetch revenue breakdown for per-plan user counts
-      const revenueResponse = await fetch(`${baseUrl}/saas/analytics/revenue`, { headers });
-      if (revenueResponse.ok) {
-        const revenueData = await revenueResponse.json();
-        if (revenueData.plan_breakdown) {
-          setPlanBreakdown(revenueData.plan_breakdown);
-        }
+      // Fetch behavioral analytics (WAU, funnels, retention, MRR movement)
+      try {
+        setBehavioralLoading(true);
+        const behavioralData = await fetchBehavioralAnalytics(token, metricsTimeframe);
+        setBehavioralMetrics(behavioralData);
+      } catch (err) {
+        console.error('[SaaS Admin] Failed to load behavioral analytics:', err);
+      } finally {
+        setBehavioralLoading(false);
       }
     } catch (error) {
       console.error('Error fetching SaaS data:', error);
@@ -473,15 +408,75 @@ const SaasAdminDashboard = () => {
         }
       ]);
 
-      setSaasConfig(prev => prev ?? DEFAULT_SAAS_CONFIG);
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [expireSession, metricsTimeframe, token]);
 
   useEffect(() => {
     fetchData();
   }, [fetchData]);
+
+  useEffect(() => {
+    const requestedTab = searchParams.get('tab');
+    if (requestedTab === 'overview' || requestedTab === 'plans' || requestedTab === 'reviews' || requestedTab === 'ad-config') {
+      setActiveTab(requestedTab);
+    }
+  }, [searchParams]);
+
+  // Refetch only platform metrics when timeframe changes (without re-fetching plans/planners)
+  const fetchMetricsOnly = useCallback(async (tf: TimeframeKey) => {
+    try {
+      setMetricsLoading(true);
+      const baseUrl = getApiBaseUrl();
+      if (!token) return;
+      const headers = {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json'
+      };
+      const res = await fetch(`${baseUrl}/saas/analytics/platform?timeframe=${tf}`, { headers, credentials: 'include' });
+      if (res.status === 401) {
+        expireSession();
+        return;
+      }
+      if (res.ok) {
+        setMetrics(await res.json());
+      }
+    } catch (err) {
+      console.error('Failed to refresh platform metrics', err);
+    } finally {
+      setMetricsLoading(false);
+    }
+  }, [expireSession, token]);
+
+  const handleTimeframeChange = useCallback((tf: TimeframeKey) => {
+    setMetricsTimeframe(tf);
+    fetchMetricsOnly(tf);
+  }, [fetchMetricsOnly]);
+
+  const openAccountsDirectory = useCallback((role?: string) => {
+    if (!role || role === 'all') {
+      router.push('/admin/users');
+      return;
+    }
+    router.push(`/admin/users?role=${encodeURIComponent(role)}`);
+  }, [router]);
+
+  // Memoised derived data for the overview tab
+  const roleBreakdown = useMemo(() => {
+    if (!metrics) return [] as Array<{ role: string; count: number }>;
+    return Object.entries(metrics.users.role_breakdown)
+      .map(([role, count]) => ({ role, count }))
+      .sort((a, b) => b.count - a.count);
+  }, [metrics]);
+
+  const statusBreakdown = useMemo(() => {
+    if (!metrics) return [] as Array<{ status: string; count: number }>;
+    return Object.entries(metrics.subscriptions.status_breakdown).map(([status, count]) => ({
+      status,
+      count,
+    }));
+  }, [metrics]);
 
  const handleCreatePlan = () => {
  setEditingPlan(null);
@@ -500,13 +495,13 @@ const SaasAdminDashboard = () => {
 
  try {
  const baseUrl = getApiBaseUrl();
- const token = localStorage.getItem('admin_token') || sessionStorage.getItem('admin_token');
  const response = await fetch(`${baseUrl}/subscription-plans/${planId}`, {
  method: 'DELETE',
  headers: {
  'Authorization': `Bearer ${token}`,
  'Content-Type': 'application/json'
- }
+ },
+ credentials: 'include',
  });
 
  if (response.ok) {
@@ -524,7 +519,6 @@ const SaasAdminDashboard = () => {
  const handleSavePlan = async (planData: any) => {
  try {
  const baseUrl = getApiBaseUrl();
- const token = localStorage.getItem('admin_token') || sessionStorage.getItem('admin_token');
 
  const isEditing = !!editingPlan;
  const url = isEditing
@@ -539,6 +533,7 @@ const SaasAdminDashboard = () => {
  'Authorization': `Bearer ${token}`,
  'Content-Type': 'application/json'
  },
+ credentials: 'include',
  body: JSON.stringify(planData)
  });
 
@@ -548,7 +543,8 @@ const SaasAdminDashboard = () => {
  headers: {
  'Authorization': `Bearer ${token}`,
  'Content-Type': 'application/json'
- }
+ },
+ credentials: 'include',
  });
  if (plansResponse.ok) {
  const updatedPlans = await plansResponse.json();
@@ -567,114 +563,6 @@ const SaasAdminDashboard = () => {
  }
  };
 
- const handleSaveSaasConfig = async (configToSave?: SaasFullConfig | React.MouseEvent) => {
- // Handle both direct config object and mouse event from button clicks
- const configData = (configToSave && 'hero_title' in configToSave) ? configToSave : saasConfig;
- if (!configData) {
- alert('No configuration data to save');
- return;
- }
-
- try {
- const baseUrl = getApiBaseUrl();
- const token = localStorage.getItem('admin_token') || sessionStorage.getItem('admin_token');
- if (!token) {
- alert('Authentication token not found. Please log in again.');
- return;
- }
-
- // Create a clean copy of the config to avoid circular references
- const cleanConfig: SaasFullConfig = {
- hero_title: configData.hero_title,
- hero_subtitle: configData.hero_subtitle,
- hero_description: configData.hero_description,
- hero_cta_primary: configData.hero_cta_primary,
- hero_cta_secondary: configData.hero_cta_secondary,
- trust_indicators: configData.trust_indicators || [],
- statistics: configData.statistics || [],
- features: configData.features || [],
- benefits: configData.benefits || [],
- testimonials: configData.testimonials || [],
- features_enabled: configData.features_enabled,
- benefits_enabled: configData.benefits_enabled,
- testimonials_enabled: configData.testimonials_enabled,
- statistics_enabled: configData.statistics_enabled,
- theme: {
- primary_color: configData.theme.primary_color,
- secondary_color: configData.theme.secondary_color,
- background_image: configData.theme.background_image,
- fallback_images: configData.theme.fallback_images || []
- }
- };
-
- console.log('Saving SAAS config:', cleanConfig);
- const response = await fetch(`${baseUrl}/saas/saas-config`, {
- method: 'PUT',
- headers: {
- 'Authorization': `Bearer ${token}`,
- 'Content-Type': 'application/json'
- },
- body: JSON.stringify(cleanConfig)
- });
-
- const responseData = await response.text();
- console.log('Response status:', response.status);
- console.log('Response data:', responseData);
-
- if (response.ok) {
- alert('SAAS configuration saved successfully');
- } else {
- let errorMessage = 'Failed to save configuration';
- try {
- const errorData = JSON.parse(responseData);
- errorMessage = errorData.detail || errorMessage;
- } catch (parseError) {
- errorMessage = responseData || errorMessage;
- }
- throw new Error(errorMessage);
- }
- } catch (error) {
- console.error('Error saving SAAS config:', error);
- const errorMessage = error instanceof Error ? error.message : String(error);
- alert(`Failed to save SAAS configuration: ${errorMessage}`);
- throw error; // Re-throw so caller can handle it
- }
- };
-
- const handleEditContent = (sectionType: string) => {
- if (!saasConfig) return;
-
- let sectionData = {};
-
- switch (sectionType) {
- case 'hero':
- sectionData = {
- hero_title: saasConfig.hero_title,
- hero_subtitle: saasConfig.hero_subtitle,
- hero_description: saasConfig.hero_description,
- hero_cta_primary: saasConfig.hero_cta_primary,
- hero_cta_secondary: saasConfig.hero_cta_secondary
- };
- break;
- case 'statistics':
- sectionData = {
- statistics: saasConfig.statistics || []
- };
- break;
- case 'trust_indicators':
- sectionData = {
- trust_indicators: saasConfig.trust_indicators || []
- };
- break;
- default:
- console.warn('Unknown section type:', sectionType);
- return;
- }
- setEditingSectionType(sectionType);
- setEditingSectionData(sectionData);
- setEditModalOpen(true);
- };
-
  const handleCreatePlanner = async () => {
  const email = prompt('Enter planner email:');
  const companyName = prompt('Enter company name:');
@@ -682,13 +570,13 @@ const SaasAdminDashboard = () => {
 
  try {
  const baseUrl = getApiBaseUrl();
- const token = localStorage.getItem('admin_token') || sessionStorage.getItem('admin_token');
  const response = await fetch(`${baseUrl}/saas/wedding-planners`, {
  method: 'POST',
  headers: {
  'Authorization': `Bearer ${token}`,
  'Content-Type': 'application/json'
  },
+ credentials: 'include',
  body: JSON.stringify({
  email,
  company_name: companyName
@@ -712,7 +600,6 @@ const SaasAdminDashboard = () => {
  const handleTogglePlannerStatus = async (plannerId: string) => {
  try {
  const baseUrl = getApiBaseUrl();
- const token = localStorage.getItem('admin_token') || sessionStorage.getItem('admin_token');
  // Find the planner to get current status
  const planner = planners.find(p => p.id === plannerId);
  if (!planner) {
@@ -728,7 +615,8 @@ const SaasAdminDashboard = () => {
  headers: {
  'Authorization': `Bearer ${token}`,
  'Content-Type': 'application/json'
- }
+ },
+ credentials: 'include',
  });
 
  if (!statusResponse.ok) {
@@ -753,6 +641,7 @@ const SaasAdminDashboard = () => {
  'Authorization': `Bearer ${token}`,
  'Content-Type': 'application/json'
  },
+ credentials: 'include',
  body: JSON.stringify({
  plan_id: defaultPlan._id,
  billing_interval: 'monthly',
@@ -778,7 +667,8 @@ const SaasAdminDashboard = () => {
  headers: {
  'Authorization': `Bearer ${token}`,
  'Content-Type': 'application/json'
- }
+ },
+ credentials: 'include',
  });
  } catch (subError) {
  console.warn('Error cancelling subscription:', subError);
@@ -806,7 +696,6 @@ const SaasAdminDashboard = () => {
  const handleAssignPlan = async (plannerId: string, planId: string) => {
  try {
  const baseUrl = getApiBaseUrl();
- const token = localStorage.getItem('admin_token') || sessionStorage.getItem('admin_token');
  // First, cancel existing subscription if any
  try {
  await fetch(`${baseUrl}/users/${plannerId}/subscription`, {
@@ -814,7 +703,8 @@ const SaasAdminDashboard = () => {
  headers: {
  'Authorization': `Bearer ${token}`,
  'Content-Type': 'application/json'
- }
+ },
+ credentials: 'include',
  });
  } catch (error) {
  // Ignore if no existing subscription
@@ -826,6 +716,7 @@ const SaasAdminDashboard = () => {
  'Authorization': `Bearer ${token}`,
  'Content-Type': 'application/json'
  },
+ credentials: 'include',
  body: JSON.stringify({
  plan_id: planId,
  billing_interval: 'monthly',
@@ -849,7 +740,7 @@ const SaasAdminDashboard = () => {
 
  if (loading) {
  return (
- <div className="min-h-screen flex items-center justify-center">
+ <div className="flex items-center justify-center py-24">
  <div className="text-center">
  <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
  <p className="text-gray-600 dark:text-gray-400">Loading SAAS Dashboard...</p>
@@ -861,26 +752,26 @@ const SaasAdminDashboard = () => {
  return (
  <div className="space-y-6">
  <PageHeader
- title="SAAS Admin Dashboard"
- description="Manage your wedding planning platform"
+ title="SaaS Management"
+ description="Platform analytics, subscription plans, and configuration"
  />
 
  {/* Navigation Tabs */}
- <div className="border-b border-slate-200 dark:border-slate-700">
+ <div className="border-b border-gray-200 dark:border-gray-700">
  <nav className="flex space-x-8">
  {[
  { key: 'overview', label: 'Overview' },
  { key: 'plans', label: 'Subscription Plans' },
- { key: 'content', label: 'SAAS Content' },
- { key: 'theme', label: 'Theme & Design' }
+ { key: 'reviews', label: 'Customer Reviews' },
+ { key: 'ad-config', label: 'Ad Platform' }
  ].map((tab) => (
  <button
  key={tab.key}
  onClick={() => setActiveTab(tab.key as any)}
  className={`py-4 px-1 border-b-2 font-medium text-sm ${
  activeTab === tab.key
- ? 'border-blue-500 text-blue-600 dark:text-blue-400'
- : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300 hover:border-slate-300'
+ ? 'border-wedding-rose text-wedding-rose'
+ : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
  }`}
  >
  {tab.label}
@@ -893,108 +784,493 @@ const SaasAdminDashboard = () => {
  <div>
  {activeTab === 'overview' && (
  <div className="space-y-6">
- <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
- <Card className="p-6">
- <div className="flex items-center">
- <div className="flex-shrink-0">
- <div className="w-8 h-8 bg-blue-100 rounded-md flex items-center justify-center">
- <div className="w-4 h-4 bg-blue-600 rounded"></div>
- </div>
- </div>
- <div className="ml-5 w-0 flex-1">
- <dl>
- <dt className="text-sm font-medium text-gray-500 dark:text-gray-400 truncate">Total Planners</dt>
- <dd className="text-lg font-medium text-gray-900 dark:text-gray-100">{planners.length}</dd>
- </dl>
- </div>
- </div>
- </Card>
+   {/* Timeframe selector */}
+   <div className="flex items-center justify-between">
+     <p className="text-sm text-gray-500 dark:text-gray-400">
+       {metrics ? (
+         <>
+           Updated {formatDateTime(metrics.generated_at, { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' })}
+           {' · '}
+           {TIMEFRAME_OPTIONS.find((o) => o.value === metrics.timeframe)?.label || metrics.timeframe}
+         </>
+       ) : 'Loading analytics…'}
+     </p>
+     <select
+       value={metricsTimeframe}
+       onChange={(e) => handleTimeframeChange(e.target.value as TimeframeKey)}
+       className="rounded-lg border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-700 px-4 py-2 text-sm font-medium text-slate-900 dark:text-white shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
+     >
+       {TIMEFRAME_OPTIONS.map((option) => (
+         <option key={option.value} value={option.value}>{option.label}</option>
+       ))}
+     </select>
+   </div>
 
- <Card className="p-6">
- <div className="flex items-center">
- <div className="flex-shrink-0">
- <div className="w-8 h-8 bg-green-100 rounded-md flex items-center justify-center">
- <div className="w-4 h-4 bg-green-600 rounded"></div>
- </div>
- </div>
- <div className="ml-5 w-0 flex-1">
- <dl>
- <dt className="text-sm font-medium text-gray-500 dark:text-gray-400 truncate">Active Plans</dt>
- <dd className="text-lg font-medium text-gray-900 dark:text-gray-100">{plans.filter(p => p.is_active).length}</dd>
- </dl>
- </div>
- </div>
- </Card>
+   {metricsLoading && (
+     <div className="flex items-center justify-center py-4">
+       <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-600"></div>
+     </div>
+   )}
 
- <Card className="p-6">
- <div className="flex items-center">
- <div className="flex-shrink-0">
- <div className="w-8 h-8 bg-purple-100 rounded-md flex items-center justify-center">
- <div className="w-4 h-4 bg-purple-600 rounded"></div>
- </div>
- </div>
- <div className="ml-5 w-0 flex-1">
- <dl>
- <dt className="text-sm font-medium text-gray-500 dark:text-gray-400 truncate">Total Weddings</dt>
- <dd className="text-lg font-medium text-gray-900 dark:text-gray-100">{analyticsOverview?.total_weddings ?? 0}</dd>
- </dl>
- </div>
- </div>
- </Card>
+   {metrics && (
+     <>
+       {/* ── User Growth ── */}
+       <section className="space-y-4">
+         <h2 className="text-xl font-semibold text-gray-900 dark:text-white">User Growth</h2>
+         <div className="grid gap-6 md:grid-cols-2 xl:grid-cols-4">
+           <button
+             type="button"
+             onClick={() => openAccountsDirectory('all')}
+             className="w-full text-left"
+           >
+           <Card className="p-6 transition-shadow hover:shadow-xl">
+             <p className="text-sm font-medium text-gray-500 dark:text-gray-400">Total Accounts</p>
+             <p className="mt-2 text-3xl font-bold text-gray-900 dark:text-white">{formatNumber(metrics.users.total)}</p>
+             <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">Active Roles: {roleBreakdown.length}</p>
+           </Card>
+           </button>
+           <Card className="p-6">
+             <p className="text-sm font-medium text-gray-500 dark:text-gray-400">Active This Period</p>
+             <p className="mt-2 text-3xl font-bold text-gray-900 dark:text-white">{formatNumber(metrics.users.active)}</p>
+             <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">Signed in during the selected timeframe</p>
+           </Card>
+           <Card className="p-6">
+             <p className="text-sm font-medium text-gray-500 dark:text-gray-400">New Accounts</p>
+             <p className="mt-2 text-3xl font-bold text-gray-900 dark:text-white">{formatNumber(metrics.users.new_in_period)}</p>
+             <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">Within selected timeframe</p>
+           </Card>
+           <Card className="p-6">
+             <p className="text-sm font-medium text-gray-500 dark:text-gray-400">Role Distribution</p>
+             <div className="mt-3 flex flex-wrap gap-2 text-xs">
+               {roleBreakdown.map(({ role, count }) => (
+                 <button
+                   key={role}
+                   type="button"
+                   onClick={() => openAccountsDirectory(role)}
+                   className="rounded-full bg-gray-100 dark:bg-slate-700 px-3 py-1 text-gray-900 dark:text-white shadow-sm transition-colors hover:bg-gray-200 dark:hover:bg-slate-600"
+                 >
+                   {role.replace('_', ' ')} · {formatNumber(count)}
+                 </button>
+               ))}
+               {roleBreakdown.length === 0 && <span className="text-gray-500 dark:text-gray-400">No accounts recorded.</span>}
+             </div>
+           </Card>
+         </div>
+       </section>
 
- <Card className="p-6">
- <div className="flex items-center">
- <div className="flex-shrink-0">
- <div className="w-8 h-8 bg-yellow-100 rounded-md flex items-center justify-center">
- <div className="w-4 h-4 bg-yellow-600 rounded"></div>
- </div>
- </div>
- <div className="ml-5 w-0 flex-1">
- <dl>
- <dt className="text-sm font-medium text-gray-500 dark:text-gray-400 truncate">Monthly Revenue</dt>
- <dd className="text-lg font-medium text-gray-900 dark:text-gray-100">${analyticsOverview?.monthly_revenue ?? 0}</dd>
- </dl>
- </div>
- </div>
- </Card>
- </div>
+       {/* ── Subscription & Revenue ── */}
+       <section className="space-y-4">
+         <h2 className="text-xl font-semibold text-gray-900 dark:text-white">Subscription &amp; Revenue</h2>
+         <div className="grid gap-6 lg:grid-cols-3">
+           <Card className="p-6">
+             <p className="text-sm font-medium text-gray-500 dark:text-gray-400">Active Subscriptions</p>
+             <p className="mt-2 text-3xl font-bold text-gray-900 dark:text-white">
+               {formatNumber(metrics.subscriptions.status_breakdown.active)}
+             </p>
+             <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+               Total subscription records {formatNumber(metrics.subscriptions.total)}
+             </p>
+             <ul className="mt-3 space-y-1 text-sm text-gray-600 dark:text-gray-400">
+               {statusBreakdown.map(({ status, count }) => (
+                 <li key={status} className="flex justify-between">
+                   <span className="capitalize">{status.replace('_', ' ')}</span>
+                   <span>{formatNumber(count)}</span>
+                 </li>
+               ))}
+             </ul>
+           </Card>
+           <Card className="p-6">
+             <p className="text-sm font-medium text-gray-500 dark:text-gray-400">Recurring Revenue</p>
+             <p className="mt-2 text-3xl font-bold text-gray-900 dark:text-white">
+               {formatCurrency(metrics.subscriptions.monthly_recurring_revenue)}
+             </p>
+             <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+               Annual Projection {formatCurrency(metrics.subscriptions.projected_annual_revenue)}
+             </p>
+             <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+               Yearly Contracts {formatCurrency(metrics.subscriptions.yearly_recurring_revenue)}
+             </p>
+             <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+               Trials excluded from recurring revenue totals
+             </p>
+           </Card>
+           <Card className="p-6">
+             <p className="text-sm font-medium text-gray-500 dark:text-gray-400">Subscription Plans</p>
+             <p className="mt-2 text-3xl font-bold text-gray-900 dark:text-white">{metrics.subscriptions.active_plans}</p>
+             <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">Active plans available to assign</p>
+           </Card>
+         </div>
 
- <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
- <Card className="p-6">
- <h3 className="text-lg font-medium text-gray-900 dark:text-gray-100 mb-4">Recent Signups</h3>
- <div className="space-y-3">
- {planners.slice(0, 3).map((planner) => (
- <div key={planner.id} className="flex items-center justify-between">
- <div>
- <p className="text-sm font-medium text-gray-900 dark:text-gray-100">{planner.companyName}</p>
- <p className="text-sm text-gray-500 dark:text-gray-400">{planner.email}</p>
- </div>
- <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
- Active
- </span>
- </div>
- ))}
- </div>
- </Card>
+         {/* Plan Breakdown table */}
+         <Card className="overflow-hidden">
+           <div className="border-b border-gray-200 dark:border-slate-700 px-6 py-4">
+             <h3 className="text-sm font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">Plan Breakdown</h3>
+           </div>
+           <div className="overflow-x-auto">
+             <table className="min-w-full divide-y divide-gray-200 dark:divide-slate-700 text-sm">
+               <thead className="bg-gray-50 dark:bg-slate-700 text-left text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                 <tr>
+                   <th className="px-6 py-3">Plan</th>
+                   <th className="px-6 py-3">Active Users</th>
+                   <th className="px-6 py-3">Trial Users</th>
+                   <th className="px-6 py-3">MRR</th>
+                   <th className="px-6 py-3">ARR</th>
+                 </tr>
+               </thead>
+               <tbody className="divide-y divide-gray-200 dark:divide-slate-700 text-gray-700 dark:text-gray-300">
+                 {Object.keys(metrics.subscriptions.plan_breakdown).length === 0 && (
+                   <tr>
+                     <td className="px-6 py-4" colSpan={5}>
+                       No subscription plan activity recorded yet.
+                     </td>
+                   </tr>
+                 )}
+                 {Object.entries(metrics.subscriptions.plan_breakdown).map(([planId, plan]) => (
+                   <tr key={planId} className="hover:bg-gray-50 dark:hover:bg-slate-700">
+                     <td className="px-6 py-4 font-medium text-gray-900 dark:text-white">
+                       {plan.name || planId}
+                     </td>
+                     <td className="px-6 py-4">{formatNumber(plan.active_users ?? 0)}</td>
+                     <td className="px-6 py-4">{formatNumber(plan.trial_users ?? 0)}</td>
+                     <td className="px-6 py-4">{formatCurrency(plan.monthly_revenue)}</td>
+                     <td className="px-6 py-4">{formatCurrency(plan.annual_revenue)}</td>
+                   </tr>
+                 ))}
+               </tbody>
+             </table>
+           </div>
+         </Card>
+       </section>
 
- <Card className="p-6">
- <h3 className="text-lg font-medium text-gray-900 dark:text-gray-100 mb-4">Plan Distribution</h3>
- <div className="space-y-3">
- {plans.map((plan) => (
- <div key={plan._id} className="flex items-center justify-between">
- <span className="text-sm text-gray-900 dark:text-gray-100">{plan.name}</span>
- <span className="text-sm text-gray-500 dark:text-gray-400">
- {(() => {
-  const breakdown = planBreakdown.find(b => b.plan_id === plan._id || b.plan_name === plan.name);
-  const count = breakdown ? breakdown.active_users + breakdown.trial_users : 0;
-  return `${count} user${count !== 1 ? 's' : ''}`;
-})()}
- </span>
- </div>
- ))}
- </div>
- </Card>
- </div>
+       {/* ── Operational Load ── */}
+       <section className="space-y-4">
+         <h2 className="text-xl font-semibold text-gray-900 dark:text-white">Operational Load</h2>
+         <div className="grid gap-6 lg:grid-cols-2">
+           <Card className="p-6">
+             <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Wedding Projects</h3>
+             <div className="mt-4 grid grid-cols-2 gap-4 text-sm text-gray-600 dark:text-gray-400">
+               <div>
+                 <p className="font-medium text-gray-900 dark:text-white">Total Weddings</p>
+                 <p className="text-2xl font-semibold text-gray-900 dark:text-white">{formatNumber(metrics.operations.weddings.total)}</p>
+               </div>
+               <div>
+                 <p className="font-medium text-gray-900 dark:text-white">Active</p>
+                 <p className="text-2xl font-semibold text-gray-900 dark:text-white">{formatNumber(metrics.operations.weddings.active)}</p>
+               </div>
+               <div>
+                 <p className="font-medium text-gray-900 dark:text-white">Upcoming</p>
+                 <p className="text-2xl font-semibold text-gray-900 dark:text-white">{formatNumber(metrics.operations.weddings.upcoming)}</p>
+               </div>
+               <div>
+                 <p className="font-medium text-gray-900 dark:text-white">New This Period</p>
+                 <p className="text-2xl font-semibold text-gray-900 dark:text-white">{formatNumber(metrics.operations.weddings.created_in_period)}</p>
+               </div>
+             </div>
+             <div className="mt-4 rounded-lg bg-gray-50 dark:bg-slate-700 px-4 py-3 text-sm text-gray-600 dark:text-gray-400">
+               <p>Guests managed: {formatNumber(metrics.operations.weddings.guest_total)}</p>
+               <p>RSVP records: {formatNumber(metrics.operations.weddings.rsvp_total)}</p>
+             </div>
+           </Card>
+
+           <Card className="p-6">
+             <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Form Engagement</h3>
+             <div className="mt-4 grid grid-cols-2 gap-4 text-sm text-gray-600 dark:text-gray-400">
+               <div>
+                 <p className="font-medium text-gray-900 dark:text-white">Active Forms</p>
+                 <p className="text-2xl font-semibold text-gray-900 dark:text-white">{formatNumber(metrics.operations.forms.total)}</p>
+               </div>
+               <div>
+                 <p className="font-medium text-gray-900 dark:text-white">New Forms</p>
+                 <p className="text-2xl font-semibold text-gray-900 dark:text-white">{formatNumber(metrics.operations.forms.new_in_period)}</p>
+               </div>
+               <div>
+                 <p className="font-medium text-gray-900 dark:text-white">Responses</p>
+                 <p className="text-2xl font-semibold text-gray-900 dark:text-white">{formatNumber(metrics.operations.forms.responses_total)}</p>
+               </div>
+               <div>
+                 <p className="font-medium text-gray-900 dark:text-white">Responses This Period</p>
+                 <p className="text-2xl font-semibold text-gray-900 dark:text-white">{formatNumber(metrics.operations.forms.responses_in_period)}</p>
+               </div>
+             </div>
+           </Card>
+         </div>
+
+         <Card className="p-6">
+           <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Communication Volume</h3>
+           <div className="mt-4 grid gap-6 md:grid-cols-3 text-sm text-gray-600 dark:text-gray-400">
+             <div>
+               <p className="font-medium text-gray-900 dark:text-white">Notifications Sent</p>
+               <p className="text-2xl font-semibold text-gray-900 dark:text-white">{formatNumber(metrics.operations.communications.notifications_sent)}</p>
+               <p className="text-xs text-gray-500 dark:text-gray-400">
+                 +{formatNumber(metrics.operations.communications.notifications_in_period)} this timeframe
+               </p>
+             </div>
+             <div>
+               <p className="font-medium text-gray-900 dark:text-white">Email Logs</p>
+               <p className="text-2xl font-semibold text-gray-900 dark:text-white">{formatNumber(metrics.operations.communications.email_logs_total)}</p>
+               <p className="text-xs text-gray-500 dark:text-gray-400">
+                 {formatNumber(metrics.operations.communications.emails_sent_in_period)} successful deliveries
+               </p>
+             </div>
+             <div>
+               <p className="font-medium text-gray-900 dark:text-white">AI Automations</p>
+               <p className="text-2xl font-semibold text-gray-900 dark:text-white">{formatNumber(metrics.operations.communications.ai_events_total)}</p>
+               <p className="text-xs text-gray-500 dark:text-gray-400">
+                 {formatNumber(metrics.operations.communications.ai_events_in_period)} requests this timeframe
+               </p>
+             </div>
+           </div>
+         </Card>
+       </section>
+
+       {/* ── Recent Signups (kept from original overview) ── */}
+       {planners.length > 0 && (
+         <section className="space-y-4">
+           <h2 className="text-xl font-semibold text-gray-900 dark:text-white">Recent Signups</h2>
+           <Card className="p-6">
+             <div className="space-y-3">
+               {planners.slice(0, 5).map((planner) => (
+                 <div key={planner.id} className="flex items-center justify-between">
+                   <div>
+                     <p className="text-sm font-medium text-gray-900 dark:text-gray-100">{planner.companyName}</p>
+                     <p className="text-sm text-gray-500 dark:text-gray-400">{planner.email}</p>
+                   </div>
+                   <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                     planner.is_active
+                       ? 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400'
+                       : 'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-400'
+                   }`}>
+                     {planner.is_active ? 'Active' : 'Inactive'}
+                   </span>
+                 </div>
+               ))}
+             </div>
+           </Card>
+         </section>
+       )}
+
+       {/* ── Product Health (Behavioral Analytics) ── */}
+       {behavioralLoading && (
+         <div className="flex items-center justify-center py-4">
+           <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-indigo-600"></div>
+           <span className="ml-2 text-sm text-gray-500">Loading product metrics...</span>
+         </div>
+       )}
+
+       {safeBehavioralMetrics && (
+         <>
+           {/* North Star + WAU + Stickiness */}
+           <section className="space-y-4">
+             <h2 className="text-xl font-semibold text-gray-900 dark:text-white flex items-center gap-2">
+               <Activity className="h-5 w-5 text-indigo-600" />
+               Product Health
+             </h2>
+             <div className="grid gap-6 md:grid-cols-2 xl:grid-cols-4">
+               <Card className="p-6 border-l-4 border-l-indigo-600">
+                 <p className="text-sm font-medium text-gray-500 dark:text-gray-400">North Star: Active Engaged Weddings</p>
+	                 <p className="mt-2 text-3xl font-bold text-indigo-600">{safeBehavioralMetrics.engagement_signals.north_star_metric}</p>
+                 <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">Weddings with guest activity this week</p>
+               </Card>
+               <Card className="p-6">
+                 <div className="flex items-center justify-between">
+                   <p className="text-sm font-medium text-gray-500 dark:text-gray-400">Weekly Active Users</p>
+	                   {safeBehavioralMetrics.weekly_active_users.change !== 0 && (
+	                     <span className={`flex items-center gap-1 text-xs font-medium ${
+	                       safeBehavioralMetrics.weekly_active_users.change > 0 ? 'text-green-600' : 'text-red-600'
+	                     }`}>
+	                       {safeBehavioralMetrics.weekly_active_users.change > 0 ? <TrendingUp className="h-3 w-3" /> : <TrendingDown className="h-3 w-3" />}
+	                       {safeBehavioralMetrics.weekly_active_users.change > 0 ? '+' : ''}{safeBehavioralMetrics.weekly_active_users.change_percent}%
+	                     </span>
+	                   )}
+	                 </div>
+	                 <p className="mt-2 text-3xl font-bold text-gray-900 dark:text-white">{safeBehavioralMetrics.weekly_active_users.current}</p>
+	                 <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">vs {safeBehavioralMetrics.weekly_active_users.previous_week} last week</p>
+               </Card>
+               <Card className="p-6">
+                 <p className="text-sm font-medium text-gray-500 dark:text-gray-400">MAU</p>
+	                 <p className="mt-2 text-3xl font-bold text-gray-900 dark:text-white">{safeBehavioralMetrics.weekly_active_users.mau}</p>
+                 <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">Monthly active users</p>
+               </Card>
+               <Card className="p-6">
+                 <p className="text-sm font-medium text-gray-500 dark:text-gray-400">Stickiness (WAU/MAU)</p>
+	                 <p className="mt-2 text-3xl font-bold text-gray-900 dark:text-white">{safeBehavioralMetrics.weekly_active_users.stickiness_ratio}%</p>
+                 <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">Higher = more engaged user base</p>
+               </Card>
+             </div>
+           </section>
+
+           {/* Activation Funnel */}
+           <section className="space-y-4">
+             <h2 className="text-xl font-semibold text-gray-900 dark:text-white flex items-center gap-2">
+               <Zap className="h-5 w-5 text-amber-500" />
+               Activation Funnel
+               <span className="text-sm font-normal text-gray-500 dark:text-gray-400">(Last 30 Days)</span>
+             </h2>
+             <Card className="p-6">
+               <div className="space-y-4">
+	                 {safeBehavioralMetrics.activation_funnel.steps.map((step, idx) => (
+                   <div key={step.name}>
+                     <div className="flex items-center justify-between mb-1">
+                       <span className="text-sm font-medium text-gray-700 dark:text-gray-300">{step.name}</span>
+                       <span className="text-sm text-gray-500 dark:text-gray-400">{step.count} ({step.rate}%)</span>
+                     </div>
+                     <div className="w-full bg-gray-200 dark:bg-slate-700 rounded-full h-3">
+                       <div
+                         className={`h-3 rounded-full transition-all duration-500 ${
+                           idx === 0 ? 'bg-indigo-600' :
+                           idx === 1 ? 'bg-indigo-500' :
+                           idx === 2 ? 'bg-blue-500' :
+                           idx === 3 ? 'bg-cyan-500' :
+                           'bg-emerald-500'
+                         }`}
+                         style={{ width: `${Math.max(step.rate, 2)}%` }}
+                       />
+                     </div>
+                   </div>
+                 ))}
+                 <div className="pt-3 border-t border-gray-200 dark:border-slate-700">
+                   <p className="text-sm text-gray-600 dark:text-gray-400">
+	                     Signup → Value conversion: <strong className="text-gray-900 dark:text-white">{safeBehavioralMetrics.activation_funnel.conversion_rate}%</strong>
+                   </p>
+                 </div>
+               </div>
+             </Card>
+           </section>
+
+           {/* Retention Cohorts + MRR Movement side by side */}
+           <section className="space-y-4">
+             <div className="grid gap-6 lg:grid-cols-2">
+               {/* Retention Cohorts */}
+               <Card className="p-6">
+                 <h3 className="text-lg font-semibold text-gray-900 dark:text-white flex items-center gap-2 mb-4">
+                   <Users className="h-5 w-5 text-blue-600" />
+                   Retention Cohorts
+                 </h3>
+                 <div className="overflow-x-auto">
+                   <table className="w-full text-sm">
+                     <thead>
+                       <tr className="text-left text-gray-500 dark:text-gray-400 border-b border-gray-200 dark:border-slate-700">
+                         <th className="pb-2 pr-4 font-medium">Cohort</th>
+                         <th className="pb-2 pr-4 font-medium text-center">Size</th>
+                         <th className="pb-2 pr-4 font-medium text-center">D7</th>
+                         <th className="pb-2 pr-4 font-medium text-center">D30</th>
+                         <th className="pb-2 pr-4 font-medium text-center">D60</th>
+                         <th className="pb-2 font-medium text-center">D90</th>
+                       </tr>
+                     </thead>
+                     <tbody>
+	                       {safeBehavioralMetrics.retention_cohorts.cohorts.map((cohort) => (
+                         <tr key={cohort.month} className="border-b border-gray-100 dark:border-slate-700/50 last:border-0">
+                           <td className="py-2 pr-4 font-medium text-gray-900 dark:text-white">{cohort.month}</td>
+                           <td className="py-2 pr-4 text-center text-gray-600 dark:text-gray-400">{cohort.cohort_size}</td>
+                           {['d7', 'd30', 'd60', 'd90'].map((key) => {
+                             const val = cohort[key as keyof typeof cohort] as number | null;
+                             return (
+                               <td key={key} className="py-2 pr-4 text-center">
+                                 {val === null ? (
+                                   <span className="text-gray-400">—</span>
+                                 ) : (
+                                   <span className={`inline-block px-2 py-0.5 rounded text-xs font-medium ${
+                                     val >= 60 ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' :
+                                     val >= 30 ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400' :
+                                     'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'
+                                   }`}>
+                                     {val}%
+                                   </span>
+                                 )}
+                               </td>
+                             );
+                           })}
+                         </tr>
+                       ))}
+                     </tbody>
+                   </table>
+                 </div>
+               </Card>
+
+               {/* MRR Movement */}
+               <Card className="p-6">
+                 <h3 className="text-lg font-semibold text-gray-900 dark:text-white flex items-center gap-2 mb-4">
+                   <DollarSign className="h-5 w-5 text-green-600" />
+                   MRR Movement
+                   <span className="text-sm font-normal text-gray-500 dark:text-gray-400">(Last 30 Days)</span>
+                 </h3>
+                 <div className="space-y-4">
+                   <div className="flex items-center justify-between">
+                     <span className="text-sm text-gray-600 dark:text-gray-400">Current MRR</span>
+	                     <span className="text-2xl font-bold text-gray-900 dark:text-white">${safeBehavioralMetrics.mrr_movement.current_mrr.toLocaleString()}</span>
+                   </div>
+                   <div className="space-y-2 pt-3 border-t border-gray-200 dark:border-slate-700">
+                     <div className="flex items-center justify-between">
+                       <span className="text-sm text-gray-600 dark:text-gray-400 flex items-center gap-2">
+                         <span className="inline-block w-2 h-2 rounded-full bg-green-500" /> New MRR
+                       </span>
+	                       <span className="text-sm font-medium text-green-600">+${safeBehavioralMetrics.mrr_movement.new_mrr.toLocaleString()}</span>
+                     </div>
+                     <div className="flex items-center justify-between">
+                       <span className="text-sm text-gray-600 dark:text-gray-400 flex items-center gap-2">
+                         <span className="inline-block w-2 h-2 rounded-full bg-red-500" /> Churned MRR
+                       </span>
+	                       <span className="text-sm font-medium text-red-600">-${safeBehavioralMetrics.mrr_movement.churned_mrr.toLocaleString()}</span>
+                     </div>
+                     <div className="flex items-center justify-between pt-2 border-t border-gray-200 dark:border-slate-700">
+                       <span className="text-sm font-medium text-gray-900 dark:text-white">Net Change</span>
+	                       <span className={`text-sm font-bold ${safeBehavioralMetrics.mrr_movement.net_change >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+	                         {safeBehavioralMetrics.mrr_movement.net_change >= 0 ? '+' : ''}${safeBehavioralMetrics.mrr_movement.net_change.toLocaleString()}
+	                         <span className="text-xs ml-1">({safeBehavioralMetrics.mrr_movement.net_change_percent}%)</span>
+	                       </span>
+                     </div>
+                   </div>
+                   <div className="pt-3 border-t border-gray-200 dark:border-slate-700">
+                     <div className="flex items-center justify-between">
+                       <span className="text-sm text-gray-600 dark:text-gray-400">Trial → Paid Conversions</span>
+	                       <span className="text-sm font-medium text-gray-900 dark:text-white">{safeBehavioralMetrics.mrr_movement.trial_conversions}</span>
+                     </div>
+                     <div className="flex items-center justify-between mt-1">
+                       <span className="text-sm text-gray-600 dark:text-gray-400">Conversion Rate</span>
+	                       <span className="text-sm font-medium text-gray-900 dark:text-white">{safeBehavioralMetrics.mrr_movement.trial_conversion_rate}%</span>
+                     </div>
+                   </div>
+                 </div>
+               </Card>
+             </div>
+           </section>
+
+           {/* RSVP Velocity + Platform Response Rate */}
+           <section className="space-y-4">
+             <h2 className="text-xl font-semibold text-gray-900 dark:text-white">Engagement Velocity</h2>
+             <div className="grid gap-6 md:grid-cols-3">
+               <Card className="p-6">
+                 <div className="flex items-center justify-between">
+                   <p className="text-sm font-medium text-gray-500 dark:text-gray-400">RSVPs This Week</p>
+	                   {safeBehavioralMetrics.engagement_signals.rsvp_velocity.trend !== 'flat' && (
+	                     <span className={`flex items-center gap-1 text-xs font-medium ${
+	                       safeBehavioralMetrics.engagement_signals.rsvp_velocity.trend === 'up' ? 'text-green-600' : 'text-red-600'
+	                     }`}>
+	                       {safeBehavioralMetrics.engagement_signals.rsvp_velocity.trend === 'up' ? <TrendingUp className="h-3 w-3" /> : <TrendingDown className="h-3 w-3" />}
+	                       {safeBehavioralMetrics.engagement_signals.rsvp_velocity.change > 0 ? '+' : ''}{safeBehavioralMetrics.engagement_signals.rsvp_velocity.change}
+	                     </span>
+	                   )}
+	                 </div>
+	                 <p className="mt-2 text-3xl font-bold text-gray-900 dark:text-white">{safeBehavioralMetrics.engagement_signals.rsvp_velocity.current_7d}</p>
+	                 <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">vs {safeBehavioralMetrics.engagement_signals.rsvp_velocity.previous_7d} previous week</p>
+               </Card>
+               <Card className="p-6">
+                 <p className="text-sm font-medium text-gray-500 dark:text-gray-400">Platform Response Rate</p>
+	                 <p className="mt-2 text-3xl font-bold text-gray-900 dark:text-white">{safeBehavioralMetrics.engagement_signals.platform_response_rate}%</p>
+                 <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">Of invited guests who responded</p>
+               </Card>
+               <Card className="p-6">
+                 <p className="text-sm font-medium text-gray-500 dark:text-gray-400">Active Engaged Weddings</p>
+	                 <p className="mt-2 text-3xl font-bold text-gray-900 dark:text-white">{safeBehavioralMetrics.engagement_signals.active_engaged_weddings}</p>
+                 <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">With guest activity in last 7 days</p>
+               </Card>
+             </div>
+           </section>
+         </>
+       )}
+     </>
+   )}
  </div>
  )}
 
@@ -1096,655 +1372,12 @@ const SaasAdminDashboard = () => {
  </div>
  )}
 
- {activeTab === 'content' && saasConfig && (
- <div className="space-y-6">
- <div className="flex justify-between items-center">
- <h2 className="text-2xl font-bold text-gray-900 dark:text-gray-100">SAAS Landing Page Content</h2>
- <button
- onClick={handleSaveSaasConfig}
- className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors"
- >
- Save All Changes
- </button>
- </div>
-
- <div className="space-y-6">
- {/* Hero Section Editor */}
- <Card className="p-6">
- <div className="flex justify-between items-center mb-4">
- <h3 className="text-lg font-semibold">Hero Section</h3>
- <button
- onClick={() => handleEditContent('hero')}
- className="text-blue-600 hover:text-blue-700 dark:text-blue-300 text-sm font-medium"
- >
- Edit in Modal
- </button>
- </div>
- <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
- <div>
- <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 dark:text-gray-300 mb-2">Title</label>
- <input
- type="text"
- value={saasConfig.hero_title}
- onChange={(e) => setSaasConfig({...saasConfig, hero_title: e.target.value})}
- className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
- />
- </div>
- <div>
- <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 dark:text-gray-300 mb-2">Subtitle</label>
- <input
- type="text"
- value={saasConfig.hero_subtitle}
- onChange={(e) => setSaasConfig({...saasConfig, hero_subtitle: e.target.value})}
- className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
- />
- </div>
- <div className="lg:col-span-2">
- <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 dark:text-gray-300 mb-2">Description</label>
- <textarea
- value={saasConfig.hero_description}
- onChange={(e) => setSaasConfig({...saasConfig, hero_description: e.target.value})}
- rows={3}
- className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
- />
- </div>
- <div>
- <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 dark:text-gray-300 mb-2">Primary CTA</label>
- <input
- type="text"
- value={saasConfig.hero_cta_primary}
- onChange={(e) => setSaasConfig({...saasConfig, hero_cta_primary: e.target.value})}
- className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
- />
- </div>
- <div>
- <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 dark:text-gray-300 mb-2">Secondary CTA</label>
- <input
- type="text"
- value={saasConfig.hero_cta_secondary}
- onChange={(e) => setSaasConfig({...saasConfig, hero_cta_secondary: e.target.value})}
- className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
- />
- </div>
- </div>
- </Card>
-
- {/* Statistics Section */}
- <Card className="p-6">
- <div className="flex justify-between items-center mb-4">
- <h3 className="text-lg font-semibold">Statistics</h3>
- <div className="flex items-center space-x-4">
- <button
- onClick={() => handleEditContent('statistics')}
- className="text-blue-600 hover:text-blue-700 dark:text-blue-300 text-sm font-medium"
- >
- Edit in Modal
- </button>
- <label className="flex items-center">
- <input
- type="checkbox"
- checked={saasConfig.statistics_enabled}
- onChange={(e) => setSaasConfig({...saasConfig, statistics_enabled: e.target.checked})}
- className="mr-2"
- />
- Enable Section
- </label>
- </div>
- </div>
- <div className="space-y-3">
- {saasConfig.statistics.map((stat, index) => (
- <div key={index} className="flex items-center space-x-3">
- <input
- type="text"
- value={stat.value}
- onChange={(e) => {
- const newStats = [...saasConfig.statistics];
- newStats[index] = {...stat, value: e.target.value};
- setSaasConfig({...saasConfig, statistics: newStats});
- }}
- placeholder="500+"
- className="w-24 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
- />
- <input
- type="text"
- value={stat.label}
- onChange={(e) => {
- const newStats = [...saasConfig.statistics];
- newStats[index] = {...stat, label: e.target.value};
- setSaasConfig({...saasConfig, statistics: newStats});
- }}
- placeholder="Label"
- className="flex-1 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
- />
- <button
- onClick={() => {
- const newStats = saasConfig.statistics.filter((_, i) => i !== index);
- setSaasConfig({...saasConfig, statistics: newStats});
- }}
- className="text-red-600 dark:text-red-300 hover:text-red-800"
- >
- Remove
- </button>
- </div>
- ))}
- <button
- onClick={() => setSaasConfig({
- ...saasConfig,
- statistics: [...saasConfig.statistics, {label: '', value: ''}]
- })}
- className="text-blue-600 hover:text-blue-800 text-sm"
- >
- + Add Statistic
- </button>
- </div>
- </Card>
-
- {/* Trust Indicators */}
- <Card className="p-6">
- <div className="flex justify-between items-center mb-4">
- <h3 className="text-lg font-semibold">Trust Indicators</h3>
- <button
- onClick={() => handleEditContent('trust_indicators')}
- className="text-blue-600 hover:text-blue-700 dark:text-blue-300 text-sm font-medium"
- >
- Edit in Modal
- </button>
- </div>
- <div className="space-y-3">
- {saasConfig.trust_indicators.map((indicator, index) => (
- <div key={index} className="flex items-center space-x-3">
- <input
- type="text"
- value={indicator}
- onChange={(e) => {
- const newIndicators = [...saasConfig.trust_indicators];
- newIndicators[index] = e.target.value;
- setSaasConfig({...saasConfig, trust_indicators: newIndicators});
- }}
- className="flex-1 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
- placeholder="Free 30-day trial"
- />
- <button
- onClick={() => {
- const newIndicators = saasConfig.trust_indicators.filter((_, i) => i !== index);
- setSaasConfig({...saasConfig, trust_indicators: newIndicators});
- }}
- className="text-red-600 dark:text-red-300 hover:text-red-800"
- >
- Remove
- </button>
- </div>
- ))}
- <button
- onClick={() => setSaasConfig({
- ...saasConfig,
- trust_indicators: [...saasConfig.trust_indicators, '']
- })}
- className="text-blue-600 hover:text-blue-800 text-sm"
- >
- + Add Trust Indicator
- </button>
- </div>
- </Card>
-
- {/* Modern Hero Content Editor */}
- <Card className="p-6">
- <div className="flex justify-between items-center mb-4">
- <h3 className="text-lg font-semibold">Modern Hero Content</h3>
- <label className="flex items-center">
- <input
- type="checkbox"
- checked={!saasConfig.show_decorative_logo}
- onChange={(e) => setSaasConfig({...saasConfig, show_decorative_logo: !e.target.checked})}
- className="mr-2"
- />
- Use Modern Design
- </label>
- </div>
- <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
- <div className="lg:col-span-2">
- <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 dark:text-gray-300 mb-2">
- Benefit Headline <span className="text-gray-400">(What does it do?)</span>
- </label>
- <input
- type="text"
- value={saasConfig.hero_headline || ''}
- onChange={(e) => setSaasConfig({...saasConfig, hero_headline: e.target.value})}
- className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
- placeholder="Manage 10+ Weddings Simultaneously"
- />
- </div>
- <div className="lg:col-span-2">
- <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 dark:text-gray-300 mb-2">
- Target Audience <span className="text-gray-400">(Who is it for?)</span>
- </label>
- <input
- type="text"
- value={saasConfig.hero_subheadline || ''}
- onChange={(e) => setSaasConfig({...saasConfig, hero_subheadline: e.target.value})}
- className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
- placeholder="For Professional Wedding Planners"
- />
- </div>
- <div className="lg:col-span-2">
- <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 dark:text-gray-300 mb-2">
- Problem Statement
- </label>
- <input
- type="text"
- value={saasConfig.hero_problem_statement || ''}
- onChange={(e) => setSaasConfig({...saasConfig, hero_problem_statement: e.target.value})}
- className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
- placeholder="Stop juggling spreadsheets, email chains, and vendor chaos"
- />
- </div>
- <div className="lg:col-span-2">
- <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 dark:text-gray-300 mb-2">
- Solution Statement
- </label>
- <input
- type="text"
- value={saasConfig.hero_solution_statement || ''}
- onChange={(e) => setSaasConfig({...saasConfig, hero_solution_statement: e.target.value})}
- className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
- placeholder="One platform to manage guests, vendors, timelines, and budgets—all in sync"
- />
- </div>
- <div>
- <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 dark:text-gray-300 mb-2">
- Primary Screenshot URL
- </label>
- <input
- type="url"
- value={saasConfig.hero_screenshot_primary || ''}
- onChange={(e) => setSaasConfig({...saasConfig, hero_screenshot_primary: e.target.value})}
- className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
- placeholder="https://example.com/screenshot.png"
- />
- </div>
- <div>
- <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 dark:text-gray-300 mb-2">
- Demo Video URL
- </label>
- <input
- type="url"
- value={saasConfig.demo_video_url || ''}
- onChange={(e) => setSaasConfig({...saasConfig, demo_video_url: e.target.value})}
- className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
- placeholder="https://youtube.com/embed/..."
- />
- </div>
- <div className="lg:col-span-2">
- <label className="flex items-center">
- <input
- type="checkbox"
- checked={saasConfig.show_product_demo || false}
- onChange={(e) => setSaasConfig({...saasConfig, show_product_demo: e.target.checked})}
- className="mr-2"
- />
- Show video demo instead of screenshot
- </label>
- </div>
- </div>
- </Card>
-
- {/* Impact Metrics Manager */}
- <Card className="p-6">
- <div className="flex justify-between items-center mb-4">
- <h3 className="text-lg font-semibold">Impact Metrics</h3>
- <label className="flex items-center">
- <input
- type="checkbox"
- checked={saasConfig.show_impact_metrics || false}
- onChange={(e) => setSaasConfig({...saasConfig, show_impact_metrics: e.target.checked})}
- className="mr-2"
- />
- Enable Section
- </label>
- </div>
- <div className="space-y-3">
- {(saasConfig.impact_metrics || []).map((metric, index) => (
- <div key={index} className="grid grid-cols-12 gap-3 items-center">
- <input
- type="text"
- value={metric.metric}
- onChange={(e) => {
- const newMetrics = [...(saasConfig.impact_metrics || [])];
- newMetrics[index] = {...metric, metric: e.target.value};
- setSaasConfig({...saasConfig, impact_metrics: newMetrics});
- }}
- placeholder="15 hours/week"
- className="col-span-3 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
- />
- <input
- type="text"
- value={metric.label}
- onChange={(e) => {
- const newMetrics = [...(saasConfig.impact_metrics || [])];
- newMetrics[index] = {...metric, label: e.target.value};
- setSaasConfig({...saasConfig, impact_metrics: newMetrics});
- }}
- placeholder="Average time saved per planner"
- className="col-span-8 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
- />
- <button
- onClick={() => {
- const newMetrics = (saasConfig.impact_metrics || []).filter((_, i) => i !== index);
- setSaasConfig({...saasConfig, impact_metrics: newMetrics});
- }}
- className="col-span-1 text-red-600 dark:text-red-300 hover:text-red-800"
- >
- ✕
- </button>
- </div>
- ))}
- <button
- onClick={() => setSaasConfig({
- ...saasConfig,
- impact_metrics: [...(saasConfig.impact_metrics || []), {metric: '', label: '', icon: ''}]
- })}
- className="text-blue-600 hover:text-blue-800 text-sm"
- >
- + Add Impact Metric
- </button>
- </div>
- </Card>
-
- {/* Customer Logos Manager */}
- <Card className="p-6">
- <div className="flex justify-between items-center mb-4">
- <h3 className="text-lg font-semibold">Customer Logos</h3>
- <label className="flex items-center">
- <input
- type="checkbox"
- checked={saasConfig.show_customer_logos || false}
- onChange={(e) => setSaasConfig({...saasConfig, show_customer_logos: e.target.checked})}
- className="mr-2"
- />
- Enable Section
- </label>
- </div>
- <div className="space-y-3">
- {(saasConfig.customer_logos || []).map((logo, index) => (
- <div key={index} className="grid grid-cols-12 gap-3 items-center">
- <input
- type="text"
- value={logo.name}
- onChange={(e) => {
- const newLogos = [...(saasConfig.customer_logos || [])];
- newLogos[index] = {...logo, name: e.target.value};
- setSaasConfig({...saasConfig, customer_logos: newLogos});
- }}
- placeholder="Company Name"
- className="col-span-4 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
- />
- <input
- type="url"
- value={logo.logo_url}
- onChange={(e) => {
- const newLogos = [...(saasConfig.customer_logos || [])];
- newLogos[index] = {...logo, logo_url: e.target.value};
- setSaasConfig({...saasConfig, customer_logos: newLogos});
- }}
- placeholder="https://example.com/logo.png"
- className="col-span-7 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
- />
- <button
- onClick={() => {
- const newLogos = (saasConfig.customer_logos || []).filter((_, i) => i !== index);
- setSaasConfig({...saasConfig, customer_logos: newLogos});
- }}
- className="col-span-1 text-red-600 dark:text-red-300 hover:text-red-800"
- >
- ✕
- </button>
- </div>
- ))}
- <button
- onClick={() => setSaasConfig({
- ...saasConfig,
- customer_logos: [...(saasConfig.customer_logos || []), {name: '', logo_url: ''}]
- })}
- className="text-blue-600 hover:text-blue-800 text-sm"
- >
- + Add Customer Logo
- </button>
- </div>
- </Card>
-
- {/* Animation Settings */}
- <Card className="p-6">
- <div className="flex justify-between items-center mb-4">
- <h3 className="text-lg font-semibold">Animation Settings</h3>
- </div>
- <div className="space-y-4">
- <label className="flex items-center">
- <input
- type="checkbox"
- checked={saasConfig.animations_enabled !== false}
- onChange={(e) => setSaasConfig({...saasConfig, animations_enabled: e.target.checked})}
- className="mr-2"
- />
- Enable animations globally
- </label>
- <label className="flex items-center">
- <input
- type="checkbox"
- checked={saasConfig.scroll_animations !== false}
- onChange={(e) => setSaasConfig({...saasConfig, scroll_animations: e.target.checked})}
- className="mr-2"
- />
- Enable scroll-triggered animations
- </label>
- <div>
- <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 dark:text-gray-300 mb-2">
- Animation Speed
- </label>
- <select
- value={saasConfig.animation_speed || 'medium'}
- onChange={(e) => setSaasConfig({...saasConfig, animation_speed: e.target.value})}
- className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
- >
- <option value="fast">Fast (200ms)</option>
- <option value="medium">Medium (400ms)</option>
- <option value="slow">Slow (600ms)</option>
- </select>
- </div>
- </div>
- </Card>
- </div>
- </div>
+ {activeTab === 'reviews' && (
+   <CustomerReviewsTab />
  )}
 
- {activeTab === 'theme' && saasConfig && (
- <div className="space-y-6">
- <div className="flex justify-between items-center">
- <h2 className="text-2xl font-bold text-gray-900 dark:text-gray-100">Theme & Design</h2>
- <button
- onClick={handleSaveSaasConfig}
- className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors"
- >
- Save Changes
- </button>
- </div>
-
- <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
- {/* Theme Colors */}
- <Card className="p-6">
- <h3 className="text-lg font-semibold mb-4">Brand Colors</h3>
- <div className="space-y-4">
- <div>
- <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 dark:text-gray-300 mb-2">
- Primary Color
- </label>
- <div className="flex items-center space-x-3">
- <input
- type="color"
- value={saasConfig.theme.primary_color}
- onChange={(e) => setSaasConfig({
- ...saasConfig,
- theme: { ...saasConfig.theme, primary_color: e.target.value }
- })}
- className="w-12 h-12 rounded border-2 border-gray-300 cursor-pointer"
- />
- <input
- type="text"
- value={saasConfig.theme.primary_color}
- onChange={(e) => setSaasConfig({
- ...saasConfig,
- theme: { ...saasConfig.theme, primary_color: e.target.value }
- })}
- className="flex-1 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
- placeholder="#1e3a5f"
- />
- </div>
- </div>
-
- <div>
- <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 dark:text-gray-300 mb-2">
- Secondary Color
- </label>
- <div className="flex items-center space-x-3">
- <input
- type="color"
- value={saasConfig.theme.secondary_color}
- onChange={(e) => setSaasConfig({
- ...saasConfig,
- theme: { ...saasConfig.theme, secondary_color: e.target.value }
- })}
- className="w-12 h-12 rounded border-2 border-gray-300 cursor-pointer"
- />
- <input
- type="text"
- value={saasConfig.theme.secondary_color}
- onChange={(e) => setSaasConfig({
- ...saasConfig,
- theme: { ...saasConfig.theme, secondary_color: e.target.value }
- })}
- className="flex-1 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
- placeholder="#d4af37"
- />
- </div>
- </div>
-
- {/* Color Preview */}
- <div className="mt-6 p-4 rounded-lg border-2 border-gray-200 dark:border-gray-700">
- <h4 className="text-sm font-medium text-gray-700 dark:text-gray-300 dark:text-gray-300 mb-3">Preview</h4>
- <div className="flex space-x-4">
- <div
- className="w-16 h-16 rounded-lg shadow-md flex items-center justify-center text-white text-xs font-medium"
- style={{ backgroundColor: saasConfig.theme.primary_color }}
- >
- Primary
- </div>
- <div
- className="w-16 h-16 rounded-lg shadow-md flex items-center justify-center text-white text-xs font-medium"
- style={{ backgroundColor: saasConfig.theme.secondary_color }}
- >
- Secondary
- </div>
- <div
- className="w-16 h-16 rounded-lg shadow-md flex items-center justify-center text-white text-xs font-medium"
- style={{
- background: `linear-gradient(135deg, ${saasConfig.theme.primary_color}, ${saasConfig.theme.secondary_color})`
- }}
- >
- Gradient
- </div>
- </div>
- </div>
- </div>
- </Card>
-
- {/* Background Settings */}
- <Card className="p-6">
- <h3 className="text-lg font-semibold mb-4">Background Settings</h3>
- <div className="space-y-4">
- <div>
- <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 dark:text-gray-300 mb-2">
- Custom Background Image URL
- </label>
- <input
- type="url"
- value={saasConfig.theme.background_image || ''}
- onChange={(e) => setSaasConfig({
- ...saasConfig,
- theme: { ...saasConfig.theme, background_image: e.target.value }
- })}
- className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
- placeholder="https://example.com/image.jpg"
- />
- </div>
-
- <div>
- <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 dark:text-gray-300 mb-2">
- Fallback Images
- </label>
- <div className="space-y-2">
- {saasConfig.theme.fallback_images.map((image, index) => (
- <div key={index} className="flex items-center space-x-2">
- <input
- type="text"
- value={image}
- onChange={(e) => {
- const newImages = [...saasConfig.theme.fallback_images];
- newImages[index] = e.target.value;
- setSaasConfig({
- ...saasConfig,
- theme: { ...saasConfig.theme, fallback_images: newImages }
- });
- }}
- className="flex-1 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
- placeholder="/path/to/image.jpg"
- />
- <button
- onClick={() => {
- const newImages = saasConfig.theme.fallback_images.filter((_, i) => i !== index);
- setSaasConfig({
- ...saasConfig,
- theme: { ...saasConfig.theme, fallback_images: newImages }
- });
- }}
- className="text-red-600 dark:text-red-300 hover:text-red-800"
- >
- Remove
- </button>
- </div>
- ))}
- <button
- onClick={() => setSaasConfig({
- ...saasConfig,
- theme: {
- ...saasConfig.theme,
- fallback_images: [...saasConfig.theme.fallback_images, '']
- }
- })}
- className="text-blue-600 hover:text-blue-800 text-sm"
- >
- + Add Fallback Image
- </button>
- </div>
- </div>
- </div>
- </Card>
- </div>
-
- {/* Live Preview Button */}
- <Card className="p-6">
- <div className="flex justify-between items-center">
- <div>
- <h3 className="text-lg font-semibold">Live Preview</h3>
- <p className="text-gray-600 dark:text-gray-400 text-sm">See how your changes look on the landing page</p>
- </div>
- <button
- onClick={() => window.open('/', '_blank')}
- className="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition-colors"
- >
- Open Landing Page
- </button>
- </div>
- </Card>
- </div>
+ {activeTab === 'ad-config' && (
+   <AdPlatformConfigTab />
  )}
 
  </div>
@@ -1761,49 +1394,6 @@ const SaasAdminDashboard = () => {
  }}
  />
  )}
- {/* Content Edit Modal */}
- <ContentEditModal
- isOpen={editModalOpen}
- onClose={() => {
- setEditModalOpen(false);
- setEditingSectionType('');
- setEditingSectionData(null);
- }}
- sectionType={editingSectionType}
- sectionData={editingSectionData}
- onSave={async (updatedData) => {
- if (!saasConfig) return;
-
- try {
- // Update the saasConfig with the new data
- const updatedConfig = { ...saasConfig };
-
- switch (editingSectionType) {
- case 'hero':
- Object.assign(updatedConfig, updatedData);
- break;
- case 'statistics':
- updatedConfig.statistics = updatedData.statistics;
- break;
- case 'trust_indicators':
- updatedConfig.trust_indicators = updatedData.trust_indicators;
- break;
- }
-
- // Save to backend with the updated config
- await handleSaveSaasConfig(updatedConfig);
-
- // Only update state and close modal if save was successful
- setSaasConfig(updatedConfig);
- setEditModalOpen(false);
- setEditingSectionType('');
- setEditingSectionData(null);
- } catch (error) {
- console.error('Error in modal save:', error);
- // Don't close modal if save failed, so user can retry
- }
- }}
- />
  </div>
  );
 };
@@ -1825,6 +1415,7 @@ const PlanModal = ({ isEditing, plan, onSave, onClose }: {
  ai_credits_monthly: plan?.ai_credits_monthly || 10,
  storage_gb: plan?.storage_gb || 1,
  staff_seats: plan?.staff_seats || 0,
+ trial_days: (plan as any)?.trial_days || 0,
  is_featured: plan?.is_featured || false,
  is_active: plan?.is_active !== false,
  display_order: plan?.display_order || 0,
@@ -1859,36 +1450,50 @@ const PlanModal = ({ isEditing, plan, onSave, onClose }: {
  <form onSubmit={handleSubmit} className="space-y-4">
  <div className="grid grid-cols-2 gap-4">
  <div>
- <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 dark:text-gray-300 mb-1">Plan Name</label>
+<label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Plan Name</label>
  <input
  type="text"
  required
  value={formData.name}
  onChange={(e) => setFormData(prev => ({ ...prev, name: e.target.value }))}
- className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
+ className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
  />
  </div>
  <div>
- <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 dark:text-gray-300 mb-1">Monthly Price ($)</label>
+ <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Monthly Price ($)</label>
  <input
  type="number"
  step="0.01"
  min="0"
  value={formData.price_monthly}
  onChange={(e) => setFormData(prev => ({ ...prev, price_monthly: parseFloat(e.target.value) || 0 }))}
- className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
+ className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
  />
  </div>
  </div>
 
  <div>
- <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 dark:text-gray-300 mb-1">Description</label>
+ <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Description</label>
  <textarea
  value={formData.description}
  onChange={(e) => setFormData(prev => ({ ...prev, description: e.target.value }))}
- className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
+ className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
  rows={2}
  />
+ </div>
+
+ <div>
+ <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Free Trial (days)</label>
+ <input
+ type="number"
+ min="0"
+ max="365"
+ value={formData.trial_days}
+ onChange={(e) => setFormData(prev => ({ ...prev, trial_days: parseInt(e.target.value) || 0 }))}
+ className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
+ placeholder="0 = no trial"
+ />
+ <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">Set to 0 to disable free trial for this plan</p>
  </div>
 
  <div className="grid grid-cols-3 gap-4">
@@ -1904,7 +1509,7 @@ const PlanModal = ({ isEditing, plan, onSave, onClose }: {
  />
  </div>
  <div>
- <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 dark:text-gray-300 mb-1">AI Credits/Month</label>
+ <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">AI Credits/Month</label>
  <input
  type="number"
  min="0"
@@ -2035,5 +1640,819 @@ const PlanModal = ({ isEditing, plan, onSave, onClose }: {
  </div>
  );
 };
+
+// =============================================================================
+// Customer Reviews Tab
+// =============================================================================
+
+function CustomerReviewsTab() {
+  const { token } = useAdmin();
+  const [testimonials, setTestimonials] = useState<Testimonial[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [showModal, setShowModal] = useState(false);
+  const [editingTestimonial, setEditingTestimonial] = useState<Testimonial | null>(null);
+  const [saving, setSaving] = useState(false);
+
+  const fetchTestimonials = useCallback(async () => {
+    try {
+      setLoading(true);
+      const res = await fetch(`${getApiBaseUrl()}/saas/testimonials`, {
+        headers: { Authorization: `Bearer ${token}` },
+        credentials: 'include',
+      });
+      if (res.ok) {
+        setTestimonials(await res.json());
+      }
+    } catch (err) {
+      console.error('Failed to fetch testimonials:', err);
+    } finally {
+      setLoading(false);
+    }
+  }, [token]);
+
+  useEffect(() => { fetchTestimonials(); }, [fetchTestimonials]);
+
+  const handleToggle = async (id: string) => {
+    try {
+      const res = await fetch(`${getApiBaseUrl()}/saas/testimonials/${id}/toggle`, {
+        method: 'PUT',
+        headers: { Authorization: `Bearer ${token}` },
+        credentials: 'include',
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setTestimonials(prev =>
+          prev.map(t => t._id === id ? { ...t, is_active: data.is_active } : t)
+        );
+        toast.success(data.message);
+      }
+    } catch (err) {
+      toast.error('Failed to toggle testimonial');
+    }
+  };
+
+  const handleDelete = async (id: string) => {
+    if (!confirm('Delete this testimonial permanently?')) return;
+    try {
+      const res = await fetch(`${getApiBaseUrl()}/saas/testimonials/${id}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${token}` },
+        credentials: 'include',
+      });
+      if (res.ok) {
+        setTestimonials(prev => prev.filter(t => t._id !== id));
+        toast.success('Testimonial deleted');
+      }
+    } catch (err) {
+      toast.error('Failed to delete testimonial');
+    }
+  };
+
+  const handleSave = async (data: Partial<Testimonial>) => {
+    setSaving(true);
+    try {
+      const isEdit = !!editingTestimonial;
+      const url = isEdit
+        ? `${getApiBaseUrl()}/saas/testimonials/${editingTestimonial!._id}`
+        : `${getApiBaseUrl()}/saas/testimonials`;
+      const res = await fetch(url, {
+        method: isEdit ? 'PUT' : 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        credentials: 'include',
+        body: JSON.stringify(data),
+      });
+      if (res.ok) {
+        toast.success(isEdit ? 'Testimonial updated' : 'Testimonial created');
+        setShowModal(false);
+        setEditingTestimonial(null);
+        fetchTestimonials();
+      } else {
+        const err = await res.json();
+        toast.error(err.detail || 'Save failed');
+      }
+    } catch (err) {
+      toast.error('Failed to save testimonial');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-12">
+        <div className="animate-spin h-8 w-8 border-4 border-blue-500 border-t-transparent rounded-full" />
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-6">
+      <div className="flex justify-between items-center">
+        <div>
+          <h2 className="text-2xl font-bold text-gray-900 dark:text-gray-100">Customer Reviews</h2>
+          <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
+            Manage testimonials displayed on the SaaS landing page.
+          </p>
+        </div>
+        <button
+          onClick={() => { setEditingTestimonial(null); setShowModal(true); }}
+          className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors"
+        >
+          Add Testimonial
+        </button>
+      </div>
+
+      {testimonials.length === 0 ? (
+        <div className="text-center py-12 bg-gray-50 dark:bg-slate-700 rounded-lg border-2 border-dashed border-gray-300 dark:border-gray-600">
+          <svg className="mx-auto h-12 w-12 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" />
+          </svg>
+          <h3 className="mt-2 text-sm font-medium text-gray-900 dark:text-gray-100">No testimonials yet</h3>
+          <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">Add your first customer testimonial to display on the landing page.</p>
+          <button
+            onClick={() => { setEditingTestimonial(null); setShowModal(true); }}
+            className="mt-4 inline-flex items-center px-4 py-2 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700"
+          >
+            Add Testimonial
+          </button>
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {testimonials.map((t) => (
+            <Card key={t._id} className="p-5">
+              <div className="flex justify-between items-start mb-3">
+                <div className="flex-1 min-w-0">
+                  <h3 className="text-base font-semibold text-gray-900 dark:text-gray-100 truncate">{t.name}</h3>
+                  <p className="text-xs text-gray-500 dark:text-gray-400">
+                    {t.role}{t.company ? `, ${t.company}` : ''}
+                  </p>
+                </div>
+                <span className={`flex-shrink-0 ml-2 px-2 py-0.5 rounded text-xs font-medium ${
+                  t.is_active
+                    ? 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400'
+                    : 'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-400'
+                }`}>
+                  {t.is_active ? 'Active' : 'Hidden'}
+                </span>
+              </div>
+
+              <blockquote className="text-sm text-gray-700 dark:text-gray-300 italic mb-4 line-clamp-3">
+                &ldquo;{t.quote}&rdquo;
+              </blockquote>
+
+              <div className="flex items-center gap-2 text-xs text-gray-400 mb-3">
+                <span>Order: {t.display_order}</span>
+                {t.updated_at && <span>· Updated {new Date(t.updated_at).toLocaleDateString()}</span>}
+              </div>
+
+              <div className="flex gap-2">
+                <button
+                  onClick={() => { setEditingTestimonial(t); setShowModal(true); }}
+                  className="flex-1 bg-blue-50 text-blue-700 dark:bg-blue-900/20 dark:text-blue-400 py-1.5 px-3 rounded text-sm hover:bg-blue-100 dark:hover:bg-blue-900/30 transition-colors"
+                >
+                  Edit
+                </button>
+                <button
+                  onClick={() => handleToggle(t._id)}
+                  className="flex-1 bg-yellow-50 text-yellow-700 dark:bg-yellow-900/20 dark:text-yellow-400 py-1.5 px-3 rounded text-sm hover:bg-yellow-100 dark:hover:bg-yellow-900/30 transition-colors"
+                >
+                  {t.is_active ? 'Hide' : 'Show'}
+                </button>
+                <button
+                  onClick={() => handleDelete(t._id)}
+                  className="flex-1 bg-red-50 text-red-700 dark:bg-red-900/20 dark:text-red-400 py-1.5 px-3 rounded text-sm hover:bg-red-100 dark:hover:bg-red-900/30 transition-colors"
+                >
+                  Delete
+                </button>
+              </div>
+            </Card>
+          ))}
+        </div>
+      )}
+
+      {/* Create / Edit Testimonial Modal */}
+      {showModal && (
+        <TestimonialModal
+          testimonial={editingTestimonial}
+          saving={saving}
+          onSave={handleSave}
+          onClose={() => { setShowModal(false); setEditingTestimonial(null); }}
+        />
+      )}
+    </div>
+  );
+}
+
+function TestimonialModal({
+  testimonial,
+  saving,
+  onSave,
+  onClose,
+}: {
+  testimonial: Testimonial | null;
+  saving: boolean;
+  onSave: (data: Partial<Testimonial>) => void;
+  onClose: () => void;
+}) {
+  const [form, setForm] = useState({
+    name: testimonial?.name || '',
+    company: testimonial?.company || '',
+    role: testimonial?.role || '',
+    quote: testimonial?.quote || '',
+    display_order: testimonial?.display_order ?? 0,
+    is_active: testimonial?.is_active ?? true,
+  });
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    onSave(form);
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+      <div className="bg-white dark:bg-slate-800 rounded-xl shadow-xl max-w-lg w-full max-h-[90vh] overflow-y-auto">
+        <div className="p-6">
+          <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-4">
+            {testimonial ? 'Edit Testimonial' : 'Add Testimonial'}
+          </h3>
+          <form onSubmit={handleSubmit} className="space-y-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Name *</label>
+              <input
+                type="text"
+                required
+                value={form.name}
+                onChange={e => setForm(f => ({ ...f, name: e.target.value }))}
+                className="w-full border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100"
+                placeholder="Maya Glenn"
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Role</label>
+                <input
+                  type="text"
+                  value={form.role}
+                  onChange={e => setForm(f => ({ ...f, role: e.target.value }))}
+                  className="w-full border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100"
+                  placeholder="Director of Events"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Company</label>
+                <input
+                  type="text"
+                  value={form.company}
+                  onChange={e => setForm(f => ({ ...f, company: e.target.value }))}
+                  className="w-full border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100"
+                  placeholder="Aurora Collective"
+                />
+              </div>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Quote *</label>
+              <textarea
+                required
+                rows={4}
+                value={form.quote}
+                onChange={e => setForm(f => ({ ...f, quote: e.target.value }))}
+                className="w-full border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100"
+                placeholder="The Special Wedding replaced five subscriptions overnight..."
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Display Order</label>
+                <input
+                  type="number"
+                  value={form.display_order}
+                  onChange={e => setForm(f => ({ ...f, display_order: parseInt(e.target.value) || 0 }))}
+                  className="w-full border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100"
+                  min={0}
+                />
+              </div>
+              <div className="flex items-end pb-1">
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={form.is_active}
+                    onChange={e => setForm(f => ({ ...f, is_active: e.target.checked }))}
+                    className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                  />
+                  <span className="text-sm text-gray-700 dark:text-gray-300">Active on landing page</span>
+                </label>
+              </div>
+            </div>
+            <div className="flex justify-end gap-3 pt-2">
+              <button
+                type="button"
+                onClick={onClose}
+                className="px-4 py-2 text-sm text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={saving}
+                className="px-5 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 text-sm font-medium"
+              >
+                {saving ? 'Saving...' : testimonial ? 'Update' : 'Create'}
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// =============================================================================
+// Ad Platform Configuration Tab
+// =============================================================================
+
+type AdConfigSubTab = 'settings' | 'export' | 'pipeline';
+
+const AD_EXPORT_DATASETS = [
+  { value: 'vendor_accounts', label: 'Vendor Accounts (all vendors)' },
+  { value: 'active_campaigns', label: 'Active Campaigns' },
+  { value: 'all_campaigns', label: 'All Campaigns (incl. completed)' },
+  { value: 'campaign_performance', label: 'Campaign Performance Metrics' },
+  { value: 'ad_events', label: 'Ad Events (raw)' },
+  { value: 'ad_leads', label: 'Ad Leads' },
+  { value: 'planner_feedback', label: 'Planner Feedback (hides/suppressions)' },
+  { value: 'campaign_daily_stats', label: 'Campaign Daily Stats (rollups)' },
+  { value: 'placement_daily_stats', label: 'Placement Daily Stats' },
+  { value: 'fraud_signals', label: 'Fraud Signals' },
+];
+
+const AD_EXPORT_DATE_RANGES = [
+  { value: 'last_7_days', label: 'Last 7 days' },
+  { value: 'last_30_days', label: 'Last 30 days' },
+  { value: 'last_90_days', label: 'Last 90 days' },
+  { value: 'all_time', label: 'All time' },
+];
+
+function AdPlatformConfigTab() {
+  const { token } = useAdmin();
+  const [subTab, setSubTab] = useState<AdConfigSubTab>('settings');
+  const [config, setConfig] = useState<PlatformConfig | null>(null);
+  const [pipeline, setPipeline] = useState<PipelineStatus | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [editedConfig, setEditedConfig] = useState<Partial<PlatformConfig>>({});
+  const [exportDataset, setExportDataset] = useState('vendor_accounts');
+  const [exportDateRange, setExportDateRange] = useState('last_30_days');
+  const [exportResult, setExportResult] = useState<Awaited<ReturnType<typeof exportAdminData>> | null>(null);
+  const [exporting, setExporting] = useState(false);
+
+  const loadData = useCallback(async () => {
+    if (!token) {
+      setLoading(false);
+      return;
+    }
+
+    try {
+      setLoading(true);
+      const data = await getAdminConfig(token);
+      setConfig(data);
+      setEditedConfig(data);
+    } catch (err: any) {
+      toast.error(err.message);
+    } finally {
+      setLoading(false);
+    }
+  }, [token]);
+
+  useEffect(() => { loadData(); }, [loadData]);
+
+  const loadPipeline = useCallback(async () => {
+    if (!token) {
+      return;
+    }
+
+    try {
+      const data = await getAdminPipelineStatus(token);
+      setPipeline(data);
+    } catch (err: any) {
+      toast.error(err.message);
+    }
+  }, [token]);
+
+  useEffect(() => {
+    if (subTab === 'pipeline') {
+      loadPipeline();
+    }
+  }, [loadPipeline, subTab]);
+
+  const isDirty = useMemo(() => {
+    if (!config) return false;
+    return JSON.stringify(editedConfig) !== JSON.stringify(config);
+  }, [config, editedConfig]);
+
+  const handleSave = async () => {
+    if (!token) {
+      toast.error('Authentication required');
+      return;
+    }
+
+    try {
+      setSaving(true);
+      const updated = await updateAdminConfig(token, editedConfig);
+      setConfig(updated);
+      setEditedConfig(updated);
+      toast.success('Configuration saved');
+    } catch (err: any) {
+      toast.error(err.message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-24">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
+          <p className="text-gray-600 dark:text-gray-400">Loading ad platform config...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!config) {
+    return (
+      <div className="text-center py-12 bg-gray-50 dark:bg-slate-700 rounded-lg border-2 border-dashed border-gray-300 dark:border-gray-600">
+        <Settings className="mx-auto h-12 w-12 text-gray-400 mb-2" />
+        <h3 className="text-sm font-medium text-gray-900 dark:text-gray-100">No configuration</h3>
+        <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">Ad platform configuration not available.</p>
+      </div>
+    );
+  }
+
+  const toggleField = (key: keyof PlatformConfig) => {
+    setEditedConfig((prev) => ({ ...prev, [key]: !prev[key] }));
+  };
+
+  const setNumberField = (key: keyof PlatformConfig, value: string) => {
+    const num = parseInt(value, 10);
+    if (!isNaN(num)) {
+      setEditedConfig((prev) => ({ ...prev, [key]: num }));
+    }
+  };
+
+  const setStringField = (key: keyof PlatformConfig, value: string) => {
+    setEditedConfig((prev) => ({ ...prev, [key]: value }));
+  };
+
+  const handleExport = async () => {
+    if (!token) {
+      toast.error('Authentication required');
+      return;
+    }
+
+    try {
+      setExporting(true);
+      const result = await exportAdminData(token, exportDataset, exportDateRange, 'json');
+      setExportResult(result);
+      toast.success(`Exported ${result.row_count} rows`);
+    } catch (err: any) {
+      toast.error(err.message);
+    } finally {
+      setExporting(false);
+    }
+  };
+
+  const downloadExport = () => {
+    if (!exportResult) return;
+    const blob = new Blob([JSON.stringify(exportResult.rows, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `${exportResult.dataset}_${exportResult.date_range}.json`;
+    link.click();
+    URL.revokeObjectURL(url);
+  };
+
+  return (
+    <div className="space-y-6">
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+        <div className="scrollbar-thin -mb-px flex min-w-max overflow-x-auto border-b border-gray-200 dark:border-gray-700">
+          {(['settings', 'export', 'pipeline'] as AdConfigSubTab[]).map((tab) => (
+            <button
+              key={tab}
+              onClick={() => setSubTab(tab)}
+              className={`-mb-px shrink-0 whitespace-nowrap border-b-2 px-5 py-2.5 text-sm font-medium ${
+                subTab === tab
+                  ? 'border-wedding-rose text-wedding-rose'
+                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 dark:text-gray-400 dark:hover:text-gray-200'
+              }`}
+            >
+              {tab === 'settings' ? 'Settings' : tab === 'export' ? 'Data Export' : 'Data Pipeline'}
+            </button>
+          ))}
+        </div>
+
+        {subTab === 'settings' && (
+          <button
+            onClick={handleSave}
+            disabled={!isDirty || saving}
+            className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-5 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            <Save className="h-4 w-4" />
+            {saving ? 'Saving...' : 'Save Configuration'}
+          </button>
+        )}
+      </div>
+
+      {subTab === 'settings' && (
+        <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
+          <Card className="p-6">
+            <h3 className="mb-4 text-lg font-medium text-gray-900 dark:text-gray-100">Feature Flags</h3>
+            <div className="space-y-4">
+              {[
+                ['ads_enabled', 'Ads Enabled', 'Master toggle for the advertising platform'],
+                ['show_sponsored_badge', 'Show Sponsored Badge', 'Display “Sponsored” labels on placement cards'],
+                ['enable_event_tracking', 'Enable Event Tracking', 'Track impressions, clicks, and conversions'],
+                ['require_creative_review', 'Require Creative Review', 'Require campaign review before ads go live'],
+                ['auto_approve_returning_vendors', 'Auto-Approve Returning Vendors', 'Skip review for previously approved vendors'],
+              ].map(([field, label, hint]) => (
+                <div key={field} className="flex items-center justify-between gap-4">
+                  <div>
+                    <p className="text-sm font-medium text-gray-700 dark:text-gray-200">{label}</p>
+                    <p className="text-xs text-gray-500 dark:text-gray-400">{hint}</p>
+                  </div>
+                  <button
+                    onClick={() => toggleField(field as keyof PlatformConfig)}
+                    className={`relative h-6 w-11 rounded-full transition-colors ${
+                      editedConfig[field as keyof PlatformConfig] ? 'bg-blue-500' : 'bg-gray-300 dark:bg-gray-600'
+                    }`}
+                  >
+                    <span
+                      className={`absolute left-0.5 top-0.5 h-5 w-5 rounded-full bg-white transition-transform ${
+                        editedConfig[field as keyof PlatformConfig] ? 'translate-x-5' : ''
+                      }`}
+                    />
+                  </button>
+                </div>
+              ))}
+            </div>
+          </Card>
+
+          <Card className="p-6">
+            <h3 className="mb-4 text-lg font-medium text-gray-900 dark:text-gray-100">Serving Limits</h3>
+            <div className="space-y-4">
+              {[
+                ['max_sponsored_per_page', 'Max Sponsored Per Page', 1, 10],
+                ['impressions_per_session', 'Impressions Per Session', 1, 50],
+                ['freq_cap_per_campaign_planner_day', 'Frequency Cap Per Planner / Day', 1, 20],
+                ['review_sla_hours', 'Review SLA (hours)', 1, 168],
+                ['max_campaigns_per_vendor', 'Max Campaigns Per Vendor', 1, 50],
+              ].map(([field, label, min, max]) => (
+                <div key={field} className="flex items-center justify-between gap-4">
+                  <p className="text-sm font-medium text-gray-700 dark:text-gray-200">{label}</p>
+                  <input
+                    type="number"
+                    value={editedConfig[field as keyof PlatformConfig] ?? ''}
+                    onChange={(e) => setNumberField(field as keyof PlatformConfig, e.target.value)}
+                    className="w-24 rounded-lg border border-gray-300 bg-white px-2 py-1.5 text-right text-sm text-gray-900 dark:border-gray-600 dark:bg-slate-700 dark:text-gray-100"
+                    min={min as number}
+                    max={max as number}
+                  />
+                </div>
+              ))}
+            </div>
+          </Card>
+
+          <Card className="p-6">
+            <h3 className="mb-4 text-lg font-medium text-gray-900 dark:text-gray-100">Fraud Detection</h3>
+            <div className="space-y-4">
+              {[
+                ['max_clicks_per_planner_campaign_hour', 'Max Clicks / Planner / Campaign / Hour'],
+                ['hide_rate_auto_pause_threshold', 'Hide Rate Auto-Pause Threshold'],
+                ['click_velocity_window_minutes', 'Click Velocity Window (minutes)'],
+              ].map(([field, label]) => (
+                <div key={field} className="flex items-center justify-between gap-4">
+                  <p className="text-sm font-medium text-gray-700 dark:text-gray-200">{label}</p>
+                  <input
+                    type="number"
+                    value={editedConfig[field as keyof PlatformConfig] ?? ''}
+                    onChange={(e) => setNumberField(field as keyof PlatformConfig, e.target.value)}
+                    className="w-24 rounded-lg border border-gray-300 bg-white px-2 py-1.5 text-right text-sm text-gray-900 dark:border-gray-600 dark:bg-slate-700 dark:text-gray-100"
+                  />
+                </div>
+              ))}
+              <div className="flex items-center justify-between gap-4">
+                <div>
+                  <p className="text-sm font-medium text-gray-700 dark:text-gray-200">Auto-Void Suspicious Clicks</p>
+                  <p className="text-xs text-gray-500 dark:text-gray-400">Automatically void clicks from suspected fraud patterns</p>
+                </div>
+                <button
+                  onClick={() => toggleField('auto_void_suspicious_clicks')}
+                  className={`relative h-6 w-11 rounded-full transition-colors ${
+                    editedConfig.auto_void_suspicious_clicks ? 'bg-blue-500' : 'bg-gray-300 dark:bg-gray-600'
+                  }`}
+                >
+                  <span className={`absolute left-0.5 top-0.5 h-5 w-5 rounded-full bg-white transition-transform ${editedConfig.auto_void_suspicious_clicks ? 'translate-x-5' : ''}`} />
+                </button>
+              </div>
+            </div>
+          </Card>
+
+          <Card className="p-6">
+            <h3 className="mb-4 text-lg font-medium text-gray-900 dark:text-gray-100">Vendor Signup</h3>
+            <div className="space-y-4">
+              <div className="flex items-center justify-between gap-4">
+                <div>
+                  <p className="text-sm font-medium text-gray-700 dark:text-gray-200">Vendor Domain</p>
+                  <p className="text-xs text-gray-500 dark:text-gray-400">Domain used to route approved vendors into the ad portal</p>
+                </div>
+                <input
+                  type="text"
+                  value={editedConfig.vendor_domain ?? ''}
+                  onChange={(e) => setStringField('vendor_domain', e.target.value)}
+                  className="w-64 rounded-lg border border-gray-300 bg-white px-2 py-1.5 text-right text-sm text-gray-900 dark:border-gray-600 dark:bg-slate-700 dark:text-gray-100"
+                />
+              </div>
+              {[
+                ['auto_approve_signups', 'Auto-Approve Signups', 'Approve new advertising vendors without manual review'],
+                ['require_profile_completion', 'Require Profile Completion', 'Block campaign creation until onboarding profile is complete'],
+              ].map(([field, label, hint]) => (
+                <div key={field} className="flex items-center justify-between gap-4">
+                  <div>
+                    <p className="text-sm font-medium text-gray-700 dark:text-gray-200">{label}</p>
+                    <p className="text-xs text-gray-500 dark:text-gray-400">{hint}</p>
+                  </div>
+                  <button
+                    onClick={() => toggleField(field as keyof PlatformConfig)}
+                    className={`relative h-6 w-11 rounded-full transition-colors ${
+                      editedConfig[field as keyof PlatformConfig] ? 'bg-blue-500' : 'bg-gray-300 dark:bg-gray-600'
+                    }`}
+                  >
+                    <span
+                      className={`absolute left-0.5 top-0.5 h-5 w-5 rounded-full bg-white transition-transform ${
+                        editedConfig[field as keyof PlatformConfig] ? 'translate-x-5' : ''
+                      }`}
+                    />
+                  </button>
+                </div>
+              ))}
+              <div className="flex items-center justify-between gap-4">
+                <p className="text-sm font-medium text-gray-700 dark:text-gray-200">Minimum Images Per Campaign</p>
+                <input
+                  type="number"
+                  value={editedConfig.min_images_for_campaign ?? ''}
+                  onChange={(e) => setNumberField('min_images_for_campaign', e.target.value)}
+                  className="w-24 rounded-lg border border-gray-300 bg-white px-2 py-1.5 text-right text-sm text-gray-900 dark:border-gray-600 dark:bg-slate-700 dark:text-gray-100"
+                  min={0}
+                  max={20}
+                />
+              </div>
+            </div>
+          </Card>
+        </div>
+      )}
+
+      {subTab === 'export' && (
+        <div className="space-y-6">
+          <Card className="p-6">
+            <div className="mb-5 flex flex-wrap items-end gap-4">
+              <div>
+                <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                  Data Set
+                </label>
+                <select
+                  value={exportDataset}
+                  onChange={(e) => setExportDataset(e.target.value)}
+                  className="min-w-[240px] rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 dark:border-gray-600 dark:bg-slate-700 dark:text-gray-100"
+                >
+                  {AD_EXPORT_DATASETS.map((item) => (
+                    <option key={item.value} value={item.value}>{item.label}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                  Date Range
+                </label>
+                <select
+                  value={exportDateRange}
+                  onChange={(e) => setExportDateRange(e.target.value)}
+                  className="min-w-[180px] rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 dark:border-gray-600 dark:bg-slate-700 dark:text-gray-100"
+                >
+                  {AD_EXPORT_DATE_RANGES.map((item) => (
+                    <option key={item.value} value={item.value}>{item.label}</option>
+                  ))}
+                </select>
+              </div>
+              <button
+                onClick={handleExport}
+                disabled={exporting}
+                className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-5 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                <Download className="h-4 w-4" />
+                {exporting ? 'Exporting...' : 'Export JSON'}
+              </button>
+            </div>
+
+            {exportResult ? (
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <p className="text-sm text-gray-500 dark:text-gray-400">
+                    {exportResult.row_count} rows exported from {exportResult.dataset} ({exportResult.date_range})
+                  </p>
+                  <button
+                    onClick={downloadExport}
+                    className="text-sm font-medium text-blue-600 hover:underline dark:text-blue-400"
+                  >
+                    Download file
+                  </button>
+                </div>
+                <div className="max-h-80 overflow-auto rounded-lg border border-gray-200 bg-gray-50 dark:border-gray-700 dark:bg-slate-800">
+                  <pre className="p-4 text-xs text-gray-700 dark:text-gray-200">
+                    {JSON.stringify(exportResult.rows.slice(0, 5), null, 2)}
+                    {exportResult.rows.length > 5 ? `\n\n... and ${exportResult.rows.length - 5} more rows` : ''}
+                  </pre>
+                </div>
+              </div>
+            ) : (
+              <p className="text-sm text-gray-500 dark:text-gray-400">
+                Export ad-platform data sets as JSON from this central SaaS configuration tab.
+              </p>
+            )}
+          </Card>
+        </div>
+      )}
+
+      {subTab === 'pipeline' && (
+        <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
+          <Card className="p-6">
+            <div className="mb-4 flex items-center justify-between">
+              <h3 className="text-lg font-medium text-gray-900 dark:text-gray-100">Rollup Pipeline Status</h3>
+              <button
+                onClick={loadPipeline}
+                className="rounded-lg p-2 text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-700 dark:text-gray-400 dark:hover:bg-slate-700 dark:hover:text-gray-200"
+                title="Refresh pipeline status"
+              >
+                <RefreshCw className="h-4 w-4" />
+              </button>
+            </div>
+            {pipeline ? (
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <span className="text-sm text-gray-500 dark:text-gray-400">Health</span>
+                  <span className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${
+                    pipeline.rollup_health === 'healthy'
+                      ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400'
+                      : pipeline.rollup_health === 'stale'
+                        ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400'
+                        : 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'
+                  }`}>
+                    {pipeline.rollup_health}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-sm text-gray-500 dark:text-gray-400">Last Rollup</span>
+                  <span className="text-sm font-medium text-gray-900 dark:text-gray-100">
+                    {pipeline.last_rollup_at ? new Date(pipeline.last_rollup_at).toLocaleString() : 'Never'}
+                  </span>
+                </div>
+                {Object.entries(pipeline.ttl_policies ?? {}).map(([collection, days]) => (
+                  <div key={collection} className="flex items-center justify-between">
+                    <span className="text-sm text-gray-500 dark:text-gray-400">TTL ({collection})</span>
+                    <span className="text-sm font-medium text-gray-900 dark:text-gray-100">{days} days</span>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="text-sm text-gray-500 dark:text-gray-400">Pipeline status not available.</p>
+            )}
+          </Card>
+
+          <Card className="p-6">
+            <div className="mb-4 flex items-center gap-2">
+              <Database className="h-5 w-5 text-gray-500 dark:text-gray-400" />
+              <h3 className="text-lg font-medium text-gray-900 dark:text-gray-100">Collection Stats</h3>
+            </div>
+            {pipeline?.collections ? (
+              <div className="space-y-2">
+                {Object.entries(pipeline.collections).map(([name, stats]) => (
+                  <div key={name} className="flex items-center justify-between">
+                    <span className="font-mono text-sm text-gray-500 dark:text-gray-400">{name}</span>
+                    <span className="text-sm font-medium text-gray-900 dark:text-gray-100">{formatNumber(stats.count)} docs</span>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="text-sm text-gray-500 dark:text-gray-400">Collection stats not available.</p>
+            )}
+          </Card>
+        </div>
+      )}
+    </div>
+  );
+}
 
 export default SaasAdminDashboard;

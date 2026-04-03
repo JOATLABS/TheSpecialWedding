@@ -2,6 +2,8 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { Guest } from '@/types/table';
+import { useAdmin } from '@/contexts/AdminContext';
+import { getApiBaseUrl } from '@/utils/env';
 
 interface UseGuestsOptions {
   autoFetch?: boolean;
@@ -23,12 +25,15 @@ export function useGuests(weddingId: string, options: UseGuestsOptions = {}): Us
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Get token and logout from AdminContext (single source of truth for auth)
+  const { token, logout } = useAdmin();
+
   // Track current request to prevent race conditions
   const abortControllerRef = useRef<AbortController | null>(null);
   const currentWeddingIdRef = useRef<string>(weddingId);
 
   const fetchGuests = useCallback(async (signal?: AbortSignal) => {
-    if (!weddingId) return;
+    if (!weddingId || !token) return;
 
     // Determine the signal to use for this request
     let fetchSignal: AbortSignal;
@@ -51,14 +56,27 @@ export function useGuests(weddingId: string, options: UseGuestsOptions = {}): Us
     setError(null);
 
     try {
-      const token = localStorage.getItem('admin_token');
+      const baseUrl = getApiBaseUrl();
       const res = await fetch(
-        `${process.env.NEXT_PUBLIC_API_BASE_URL}/admin/guests?wedding_id=${weddingId}`,
+        `${baseUrl}/admin/guests?wedding_id=${weddingId}`,
         {
-          headers: { Authorization: `Bearer ${token}` },
+          headers: {
+            Authorization: `Bearer ${token}`,
+            'Content-Type': 'application/json',
+          },
           signal: fetchSignal
         }
       );
+
+      // Handle auth errors consistently with AdminContext
+      if (res.status === 401) {
+        logout();
+        return;
+      }
+      if (res.status === 402) {
+        window.location.href = '/admin/planner/billing';
+        return;
+      }
 
       if (!res.ok) {
         throw new Error(`Failed to fetch guests: ${res.status}`);
@@ -66,27 +84,43 @@ export function useGuests(weddingId: string, options: UseGuestsOptions = {}): Us
 
       const data = await res.json();
 
+      // API returns { guests: [...], total, page, pages, limit }
+      const guestList: any[] = Array.isArray(data) ? data : (data.guests || []);
+
       // Only update state if this is still the current wedding
       if (currentWeddingIdRef.current === weddingId) {
-        setGuests(data.map((g: any) => ({
+        setGuests(guestList.map((g: any) => ({
           id: g.id || g._id,
           wedding_id: g.wedding_id,
           name: g.name,
+          token: g.token,
           email: g.email,
           phone: g.phone,
           group_id: g.group_id,
           table_id: g.table_id || null,
           role: g.role,
-          rsvp_status: g.rsvp_status,
-          dietary_restrictions: g.dietary_restrictions,
-          notes: g.notes,
+          plus_one_allowed: g.plus_one_allowed,
+          number_of_plus_ones_allowed: g.number_of_plus_ones_allowed,
+          plus_one_submitted: g.plus_one_submitted,
+          sms_opt_in: g.sms_opt_in,
+          sms_opt_in_date: g.sms_opt_in_date,
+          sms_opt_out_date: g.sms_opt_out_date,
+          email_opt_in: g.email_opt_in,
+          email_opt_in_date: g.email_opt_in_date,
+          email_opt_out_date: g.email_opt_out_date,
+          phone_status: g.phone_status,
+          phone_status_updated_at: g.phone_status_updated_at,
+          invite_sent: g.invite_sent,
+          invite_sent_date: g.invite_sent_date,
           // Seating constraint fields
           must_sit_with: g.must_sit_with || [],
           must_sit_apart: g.must_sit_apart || [],
           accessibility_needs: g.accessibility_needs,
           seating_preference: g.seating_preference,
           age_group: g.age_group,
-          language_preference: g.language_preference
+          language_preference: g.language_preference,
+          created_at: g.created_at,
+          updated_at: g.updated_at,
         })));
       }
     } catch (e) {
@@ -104,7 +138,7 @@ export function useGuests(weddingId: string, options: UseGuestsOptions = {}): Us
         setLoading(false);
       }
     }
-  }, [weddingId]);
+  }, [weddingId, token, logout]);
 
   // Optimistic update for table assignment
   const updateGuestTable = useCallback((guestId: string, tableId: string | null) => {
@@ -124,7 +158,7 @@ export function useGuests(weddingId: string, options: UseGuestsOptions = {}): Us
     setGuests([]);
     setError(null);
 
-    if (autoFetch && weddingId) {
+    if (autoFetch && weddingId && token) {
       const controller = new AbortController();
       abortControllerRef.current = controller;
       fetchGuests(controller.signal);
@@ -134,7 +168,7 @@ export function useGuests(weddingId: string, options: UseGuestsOptions = {}): Us
         controller.abort();
       };
     }
-  }, [autoFetch, weddingId, fetchGuests]);
+  }, [autoFetch, weddingId, token, fetchGuests]);
 
   return {
     guests,

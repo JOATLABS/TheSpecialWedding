@@ -491,7 +491,7 @@ export default function AccountSettingsModal({ isOpen, onClose }: AccountSetting
 
   // Use portal to render modal at body level, avoiding parent positioning issues
   const modalContent = (
-    <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4">
+    <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4" role="presentation">
       {/* Backdrop */}
       <div
         className="fixed inset-0 bg-black/60 backdrop-blur-sm"
@@ -500,19 +500,25 @@ export default function AccountSettingsModal({ isOpen, onClose }: AccountSetting
       />
 
       {/* Modal */}
-      <div className="relative z-10 bg-white dark:bg-slate-800 rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+      <div
+        className="relative z-10 bg-white dark:bg-slate-800 rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-hidden animate-in fade-in zoom-in-95 duration-200"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="settings-modal-title"
+        aria-describedby="settings-modal-description"
+      >
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-5 border-b border-gray-200 dark:border-slate-700 bg-gradient-to-r from-wedding-rose/10 to-wedding-gold/10 dark:from-slate-700 dark:to-slate-800">
           <div>
-            <h2 className="text-xl font-bold text-gray-900 dark:text-white">Account Settings</h2>
-            <p className="text-sm text-gray-500 dark:text-gray-400 mt-0.5">Manage your profile and preferences</p>
+            <h2 id="settings-modal-title" className="text-xl font-bold text-gray-900 dark:text-white">Account Settings</h2>
+            <p id="settings-modal-description" className="text-sm text-gray-500 dark:text-gray-400 mt-0.5">Manage your profile and preferences</p>
           </div>
           <button
             onClick={onClose}
             className="p-2 rounded-full hover:bg-white/50 dark:hover:bg-slate-600 transition-colors"
-            aria-label="Close modal"
+            aria-label="Close account settings modal"
           >
-            <X size={22} className="text-gray-600 dark:text-gray-300" />
+            <X size={22} className="text-gray-600 dark:text-gray-300" aria-hidden="true" />
           </button>
         </div>
 
@@ -529,7 +535,7 @@ export default function AccountSettingsModal({ isOpen, onClose }: AccountSetting
           ) : (
             <div className="p-6">
               {/* Tab Navigation */}
-              <div className="flex gap-2 mb-6 p-1 bg-gray-100 dark:bg-slate-700/50 rounded-lg">
+              <div className="flex gap-2 mb-6 p-1 bg-gray-100 dark:bg-slate-700/50 rounded-lg" role="tablist">
                 <button
                   onClick={() => setActiveTab('profile')}
                   className={`flex-1 px-4 py-2.5 font-medium text-sm rounded-md transition-all ${
@@ -537,6 +543,10 @@ export default function AccountSettingsModal({ isOpen, onClose }: AccountSetting
                       ? 'bg-white dark:bg-slate-600 text-wedding-rose shadow-sm'
                       : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200'
                   }`}
+                  role="tab"
+                  aria-selected={activeTab === 'profile'}
+                  aria-controls="profile-tab-content"
+                  id="profile-tab"
                 >
                   Profile Info
                 </button>
@@ -547,6 +557,10 @@ export default function AccountSettingsModal({ isOpen, onClose }: AccountSetting
                       ? 'bg-white dark:bg-slate-600 text-wedding-rose shadow-sm'
                       : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200'
                   }`}
+                  role="tab"
+                  aria-selected={activeTab === 'password'}
+                  aria-controls="password-tab-content"
+                  id="password-tab"
                 >
                   Password
                 </button>
@@ -557,6 +571,10 @@ export default function AccountSettingsModal({ isOpen, onClose }: AccountSetting
                       ? 'bg-white dark:bg-slate-600 text-wedding-rose shadow-sm'
                       : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200'
                   }`}
+                  role="tab"
+                  aria-selected={activeTab === 'email'}
+                  aria-controls="email-tab-content"
+                  id="email-tab"
                 >
                   Email
                 </button>
@@ -564,7 +582,7 @@ export default function AccountSettingsModal({ isOpen, onClose }: AccountSetting
 
               {/* Profile Info Tab */}
               {activeTab === 'profile' && (
-                <div className="space-y-6">
+                <div className="space-y-6" id="profile-tab-content" role="tabpanel" aria-labelledby="profile-tab">
                   {/* Profile Image Section */}
                   <div className="flex items-center gap-6 pb-6 border-b border-gray-200 dark:border-slate-700">
                     <div className="relative">
@@ -741,7 +759,7 @@ export default function AccountSettingsModal({ isOpen, onClose }: AccountSetting
 
               {/* Password Tab */}
               {activeTab === 'password' && (
-                <form onSubmit={handlePasswordChange} className="space-y-4">
+                <form onSubmit={handlePasswordChange} className="space-y-4" id="password-tab-content" role="tabpanel" aria-labelledby="password-tab">
                   <div>
                     <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                       Current Password
@@ -814,7 +832,7 @@ export default function AccountSettingsModal({ isOpen, onClose }: AccountSetting
 
               {/* Email Tab */}
               {activeTab === 'email' && (
-                <form onSubmit={handleEmailChange} className="space-y-4">
+                <form onSubmit={handleEmailChange} className="space-y-4" id="email-tab-content" role="tabpanel" aria-labelledby="email-tab">
                   <div>
                     <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                       New Email Address

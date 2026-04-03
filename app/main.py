@@ -7,10 +7,11 @@ from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from contextlib import asynccontextmanager
+import asyncio
 import logging
 import json
 from bson import ObjectId
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 
 # Import settings and core components
 from app.core.settings import settings
@@ -37,7 +38,6 @@ from app.api.reminder import router as reminder_router
 from app.api.reminder_telnyx import router as reminder_telnyx_router
 from app.api.reminder_twilio import router as reminder_twilio_router
 from app.api.email_reminders import router as email_reminder_router
-from app.api.checkin import router as checkin_router
 from app.api.gallery_public import router as gallery_public_router
 from app.api.gallery_admin import router as gallery_admin_router
 from app.api.wedding import router as wedding_router
@@ -46,6 +46,7 @@ from app.api.platform_metrics import router as platform_metrics_router
 from app.api.user_management import router as user_management_router
 from app.api.subscription_management import router as subscription_router
 from app.api.saas_config import router as saas_config_router
+from app.api.testimonials import router as testimonials_router
 from app.api.planner_metrics import router as planner_metrics_router
 from app.api.forms import router as forms_router
 from app.api.guest_verification import router as guest_verification_router
@@ -53,6 +54,7 @@ from app.api.trial_management import router as trial_management_router
 from app.api.vendor_forms import router as vendor_forms_router
 from app.api.vendor_dashboard import router as vendor_dashboard_router
 from app.api.vendor_management import router as vendor_management_router
+from app.api.vendor_import import router as vendor_import_router
 from app.api.budget import router as budget_router
 from app.api.otp import router as otp_router
 from app.api.notification_management import router as notification_router
@@ -80,6 +82,25 @@ from app.api.web_push import router as web_push_router
 from app.api.knowledge_base import router as knowledge_base_router
 from app.api.vendor_contract_public import router as vendor_contract_public_router
 from app.api.notification_stream import router as notification_stream_router
+from app.api.team_management import router as team_management_router
+from app.api.inbound_emails import router as inbound_emails_router
+
+from app.api.vendor_campaigns import router as vendor_campaigns_router
+from app.api.admin_campaigns import router as admin_campaigns_router
+from app.api.planner_ad_interactions import router as planner_ad_interactions_router
+from app.api.admin_platform_config import router as admin_platform_config_router
+from app.api.planner_ad_preferences import router as planner_ad_preferences_router
+from app.api.vendor_public import router as vendor_public_router
+from app.api.vendor_signup import router as vendor_signup_router
+from app.api.blog import router as blog_router
+from app.api.guest_memories import router as guest_memories_router
+from app.api.behavioral_analytics import router as behavioral_analytics_router
+from app.api.behavioral_analytics import couple_router as couple_analytics_router
+
+# Couple Portal routers
+from app.api.couple_auth import router as couple_auth_router
+from app.api.couple_invite import router as couple_invite_router
+from app.api.couple_portal import router as couple_portal_router
 
 # Setup logging
 logging.basicConfig(
@@ -96,12 +117,12 @@ ENCODERS_BY_TYPE[ObjectId] = str
 
 class MongoJSONEncoder(json.JSONEncoder):
     """Custom JSON encoder that handles MongoDB ObjectId and datetime objects."""
-    def default(self, obj):
-        if isinstance(obj, ObjectId):
-            return str(obj)
-        if isinstance(obj, datetime):
-            return obj.isoformat()
-        return super().default(obj)
+    def default(self, o):
+        if isinstance(o, ObjectId):
+            return str(o)
+        if isinstance(o, datetime):
+            return o.isoformat()
+        return super().default(o)
 
 
 class MongoJSONResponse(JSONResponse):
@@ -114,12 +135,248 @@ class MongoJSONResponse(JSONResponse):
         ).encode("utf-8")
 
 
+SCHEDULER_LEASE_NAME = "background_schedulers"
+SCHEDULER_LEASE_TTL_SECONDS = 180
+
+
+def _build_scheduler_holder_id() -> str:
+    """Build a stable per-process identifier for scheduler leadership."""
+    import os
+    import socket
+
+    return f"{socket.gethostname()}:{os.getpid()}"
+
+
+async def _acquire_scheduler_leadership(holder_id: str) -> bool:
+    """Acquire or renew the singleton scheduler lease in MongoDB."""
+    from app.core.database import mongo
+    from pymongo import ReturnDocument
+    from pymongo.errors import DuplicateKeyError
+
+    now = datetime.now(timezone.utc)
+    expires_at = now + timedelta(seconds=SCHEDULER_LEASE_TTL_SECONDS)
+
+    try:
+        lease = await mongo.db["runtime_leases"].find_one_and_update(
+            {
+                "_id": SCHEDULER_LEASE_NAME,
+                "$or": [
+                    {"expires_at": {"$lte": now}},
+                    {"holder_id": holder_id},
+                ],
+            },
+            {
+                "$set": {
+                    "holder_id": holder_id,
+                    "expires_at": expires_at,
+                    "updated_at": now,
+                },
+                "$setOnInsert": {
+                    "created_at": now,
+                },
+            },
+            upsert=True,
+            return_document=ReturnDocument.AFTER,
+        )
+        return bool(lease and lease.get("holder_id") == holder_id)
+    except DuplicateKeyError:
+        return False
+    except Exception as e:
+        logger.warning(f"Failed to acquire scheduler leadership: {e}")
+        return False
+
+
+async def _release_scheduler_leadership(holder_id: str) -> None:
+    """Release the singleton scheduler lease on shutdown."""
+    from app.core.database import mongo
+
+    try:
+        await mongo.db["runtime_leases"].delete_one({
+            "_id": SCHEDULER_LEASE_NAME,
+            "holder_id": holder_id,
+        })
+    except Exception as e:
+        logger.warning(f"Failed to release scheduler leadership: {e}")
+
+
+async def _scheduler_leadership_heartbeat(holder_id: str, tasks: list[asyncio.Task]) -> None:
+    """
+    Renew scheduler leadership and fail closed if this replica loses the lease.
+    """
+    renewal_interval = max(30, SCHEDULER_LEASE_TTL_SECONDS // 3)
+
+    try:
+        while True:
+            await asyncio.sleep(renewal_interval)
+            still_leader = await _acquire_scheduler_leadership(holder_id)
+            if still_leader:
+                continue
+
+            logger.warning("Scheduler leadership lost; cancelling background scheduler tasks")
+            for task in tasks:
+                if task and not task.done():
+                    task.cancel()
+            return
+    except asyncio.CancelledError:
+        raise
+    except Exception as e:
+        logger.error(f"Scheduler leadership heartbeat failed: {e}", exc_info=True)
+        for task in tasks:
+            if task and not task.done():
+                task.cancel()
+
+
+async def _nightly_rollup_scheduler():
+    """
+    Background task that runs the ad stats daily rollup at 2:00 AM UTC.
+
+    Computes yesterday's rollup from raw ad_events into ad_stats_daily.
+    Idempotent and safe to re-run. Runs continuously until cancelled.
+    """
+    from app.core.database import mongo
+
+    while True:
+        try:
+            # Calculate seconds until next 2:00 AM UTC
+            now = datetime.now(timezone.utc)
+            next_run = now.replace(hour=2, minute=0, second=0, microsecond=0)
+            if now >= next_run:
+                next_run += timedelta(days=1)
+            wait_seconds = (next_run - now).total_seconds()
+
+            logger.info(
+                f"Ad rollup scheduler: next run at {next_run.isoformat()} "
+                f"({wait_seconds / 3600:.1f}h from now)"
+            )
+            await asyncio.sleep(wait_seconds)
+
+            # Run the campaign-centric rollup (ad_campaigns -> campaign_day_stats + placement_day_stats)
+            from app.services.campaign_rollup_service import CampaignRollupService
+            campaign_rollup = CampaignRollupService(mongo.db)
+            campaign_result = await campaign_rollup.compute_daily_rollup()
+            logger.info(
+                f"Nightly campaign rollup complete: "
+                f"{campaign_result['campaign_stats']} campaign_day_stats + "
+                f"{campaign_result['placement_stats']} placement_day_stats upserted"
+            )
+
+            # Auto-complete expired campaigns
+            from app.services.vendor_campaign_service import VendorCampaignService
+            vendor_svc = VendorCampaignService(mongo.db)
+            expired_count = await vendor_svc.complete_expired_campaigns()
+            if expired_count > 0:
+                logger.info(f"Auto-completed {expired_count} expired campaigns")
+
+            # Run batch fraud detection
+            try:
+                from app.services.ad_fraud_detection_service import AdFraudDetectionService
+                fraud_svc = AdFraudDetectionService(mongo.db)
+                fraud_result = await fraud_svc.run_batch_detection()
+                if fraud_result.get("signals_created", 0) > 0:
+                    logger.info(f"Fraud detection: {fraud_result['signals_created']} signals created")
+            except Exception as fraud_err:
+                logger.error(f"Batch fraud detection failed: {fraud_err}")
+
+        except asyncio.CancelledError:
+            logger.info("Ad rollup scheduler shutting down")
+            raise
+        except Exception as e:
+            logger.error(f"Ad rollup scheduler error: {e}", exc_info=True)
+            # Wait 1 hour before retrying on error
+            await asyncio.sleep(3600)
+
+
+async def _monthly_billing_scheduler():
+    """
+    Background task that finalizes ad billing invoices on the 1st of each month at 6:00 AM UTC.
+
+    Collects all pending CPL charges from the previous month, creates Stripe invoices
+    for each vendor, and updates billing records. Idempotent and safe to re-run.
+    """
+    from app.core.database import mongo
+
+    while True:
+        try:
+            # Calculate seconds until next 1st of month at 6:00 AM UTC
+            now = datetime.now(timezone.utc)
+            if now.month == 12:
+                next_run = now.replace(year=now.year + 1, month=1, day=1, hour=6, minute=0, second=0, microsecond=0)
+            else:
+                next_run = now.replace(month=now.month + 1, day=1, hour=6, minute=0, second=0, microsecond=0)
+
+            wait_seconds = (next_run - now).total_seconds()
+
+            logger.info(
+                f"Ad billing scheduler: next invoice finalization at {next_run.isoformat()} "
+                f"({wait_seconds / 3600:.1f}h from now)"
+            )
+            await asyncio.sleep(wait_seconds)
+
+            # Run monthly invoice finalization
+            from app.services.ad_billing_service import AdBillingService
+            try:
+                from app.services.stripe_service import StripeService
+                stripe_svc = StripeService(mongo.db)
+            except Exception:
+                stripe_svc = None
+
+            billing_svc = AdBillingService(mongo.db, stripe_service=stripe_svc)
+            result = await billing_svc.finalize_monthly_invoices()
+            logger.info(
+                f"Monthly ad billing finalization complete: "
+                f"{result.get('invoices_created', 0)} invoices created, "
+                f"{len(result.get('errors', []))} errors"
+            )
+
+        except asyncio.CancelledError:
+            logger.info("Ad billing scheduler shutting down")
+            raise
+        except Exception as e:
+            logger.error(f"Ad billing scheduler error: {e}", exc_info=True)
+            # Wait 1 hour before retrying on error
+            await asyncio.sleep(3600)
+
+
+async def _guest_media_maintenance_scheduler():
+    """
+    Background task that drains durable guest media work:
+    - queued / stale video ingest jobs
+    - queued / stale export jobs
+    """
+    from app.services.guest_media_service import guest_media_service
+
+    while True:
+        try:
+            processed_video_jobs = await guest_media_service.process_pending_video_jobs(limit=6)
+            processed_export_jobs = await guest_media_service.process_pending_export_jobs(limit=1)
+
+            if processed_video_jobs or processed_export_jobs:
+                logger.info(
+                    "Guest media scheduler processed %s video job(s) and %s export job(s)",
+                    processed_video_jobs,
+                    processed_export_jobs,
+                )
+
+            await asyncio.sleep(15)
+        except asyncio.CancelledError:
+            logger.info("Guest media scheduler shutting down")
+            raise
+        except Exception as e:
+            logger.error(f"Guest media scheduler error: {e}", exc_info=True)
+            await asyncio.sleep(30)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan management"""
     # Startup
     logger.info(f"Starting {settings.app_name} v{settings.app_version}")
     logger.info(f"Environment: {settings.environment}")
+    rollup_task: asyncio.Task | None = None
+    billing_task: asyncio.Task | None = None
+    guest_media_task: asyncio.Task | None = None
+    scheduler_heartbeat_task: asyncio.Task | None = None
+    scheduler_holder_id: str | None = None
 
     try:
         # Initialize database connection
@@ -173,9 +430,55 @@ async def lifespan(app: FastAPI):
         except Exception as e:
             logger.warning(f"Knowledge Base seeding skipped: {e}")
 
+        # Seed Blog with launch articles (skips if already seeded)
+        try:
+            from app.scripts.seed_blog import seed_blog
+            blog_result = await seed_blog()
+            if blog_result["inserted"] > 0:
+                logger.info(f"Blog seeded: {blog_result['inserted']} articles added")
+            else:
+                logger.info("Blog already seeded, no new articles")
+        except Exception as e:
+            logger.warning(f"Blog seeding skipped: {e}")
+
+        # Start SSE Redis pub/sub listener for cross-worker broadcasting
+        from app.services.sse_manager import sse_manager
+        await sse_manager.start_redis_listener()
+        logger.info("SSE Redis pub/sub listener started")
+
+        # Only one replica should run the long-lived background schedulers.
+        scheduler_holder_id = _build_scheduler_holder_id()
+        if await _acquire_scheduler_leadership(scheduler_holder_id):
+            rollup_task = asyncio.create_task(_nightly_rollup_scheduler())
+            billing_task = asyncio.create_task(_monthly_billing_scheduler())
+            guest_media_task = asyncio.create_task(_guest_media_maintenance_scheduler())
+            scheduler_heartbeat_task = asyncio.create_task(
+                _scheduler_leadership_heartbeat(scheduler_holder_id, [rollup_task, billing_task, guest_media_task])
+            )
+            logger.info(f"Background schedulers started on leader replica {scheduler_holder_id}")
+        else:
+            logger.info("Background schedulers not started on this replica")
+
         logger.info("Application startup complete")
 
         yield  # Application runs here
+
+        # Cancel background tasks on shutdown
+        for task in [scheduler_heartbeat_task, rollup_task, billing_task, guest_media_task]:
+            if task and not task.done():
+                task.cancel()
+        for task in [scheduler_heartbeat_task, rollup_task, billing_task, guest_media_task]:
+            if not task:
+                continue
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
+        if scheduler_holder_id:
+            await _release_scheduler_leadership(scheduler_holder_id)
+
+        # Stop SSE Redis listener
+        await sse_manager.stop_redis_listener()
 
     finally:
         # Shutdown
@@ -192,12 +495,16 @@ async def lifespan(app: FastAPI):
 
 
 # Create FastAPI application
+api_docs_enabled = settings.api_docs_enabled
 app = FastAPI(
     title=settings.app_name,
     version=settings.app_version,
     debug=settings.debug,
     lifespan=lifespan,
     default_response_class=MongoJSONResponse,
+    docs_url="/docs" if api_docs_enabled else None,
+    redoc_url="/redoc" if api_docs_enabled else None,
+    openapi_url="/openapi.json" if api_docs_enabled else None,
     openapi_tags=[
         {"name": "Health", "description": "Health check operations"},
         {"name": "Auth", "description": "Authentication operations"},
@@ -253,7 +560,10 @@ if settings.rate_limit_enabled:
         calls=settings.rate_limit_calls,
         period=settings.rate_limit_period,
         auth_calls=settings.rate_limit_auth_calls,
-        auth_period=settings.rate_limit_auth_period
+        auth_period=settings.rate_limit_auth_period,
+        login_ip_calls=settings.rate_limit_login_ip_calls,
+        login_principal_calls=settings.rate_limit_login_principal_calls,
+        login_period=settings.rate_limit_login_period,
     )
 
 # 7. CORS
@@ -274,8 +584,25 @@ app.add_middleware(
 )
 
 # 8. Compression (innermost)
+# NOTE: GZipMiddleware must NOT compress SSE (text/event-stream) responses.
+# Starlette's GZip skips streaming responses without Content-Length, but we add
+# an explicit guard: a thin middleware that strips Accept-Encoding for SSE
+# requests so the compressor never buffers them.
+from starlette.middleware.base import BaseHTTPMiddleware
+
+class SSEGzipBypassMiddleware(BaseHTTPMiddleware):
+    """Prevent GZip from buffering SSE responses by removing Accept-Encoding."""
+    async def dispatch(self, request: Request, call_next):
+        if request.url.path.endswith("/notifications/stream"):
+            # Mutate scope so downstream middleware sees no Accept-Encoding
+            headers = dict(request.scope["headers"])
+            headers.pop(b"accept-encoding", None)
+            request.scope["headers"] = list(headers.items())
+        return await call_next(request)
+
 if settings.enable_compression:
     app.add_middleware(GZipMiddleware, minimum_size=1000)
+    app.add_middleware(SSEGzipBypassMiddleware)
 
 
 # ==================== VALIDATION ERROR LOGGING ====================
@@ -287,7 +614,8 @@ async def log_validation_errors(request: Request, exc: RequestValidationError):
     try:
         raw_body = await request.body()
         body = raw_body.decode("utf-8")[:2000]  # cap at 2 KB for logging
-    except Exception:
+    except Exception as e:
+        logger.debug(f"Failed to read request body for logging: {e}")
         body = "<could not read body>"
 
     logger.warning(
@@ -321,12 +649,16 @@ app.include_router(wedding_router, tags=["Wedding"])  # Public wedding endpoints
 app.include_router(gallery_public_router, tags=["Gallery"])  # Public gallery endpoints
 app.include_router(subscription_router, tags=["Subscription"])  # Public subscription plans
 app.include_router(saas_config_router, prefix="/saas", tags=["Subscription"])
+app.include_router(testimonials_router, prefix="/saas", tags=["Testimonials"])
 app.include_router(public_contact_router, tags=["Sales"])
 app.include_router(guest_verification_router, tags=["Guest"])
-app.include_router(forms_router, tags=["Forms"])  # Public form submission endpoints
+app.include_router(forms_router, tags=["Forms"])  # Legacy + public form endpoints
+app.include_router(forms_router, prefix="/admin", tags=["Forms"])  # Canonical admin form endpoints used by the frontend
 app.include_router(vendor_forms_router, prefix="/vendor-form", tags=["Vendor Forms"])  # Public vendor forms
 app.include_router(vendor_dashboard_router, prefix="/vendor", tags=["Vendor Dashboard"])
 app.include_router(vendor_management_router, prefix="/admin", tags=["Vendor Contracts"])  # Vendor management endpoints (admin only)
+app.include_router(vendor_import_router, prefix="/admin", tags=["Vendor Import"])  # Vendor scraper import (root admin only)
+app.include_router(behavioral_analytics_router, prefix="/admin", tags=["Behavioral Analytics"])  # Product metrics (WAU, funnels, retention)
 app.include_router(vendor_contract_public_router, prefix="/vendor-contract", tags=["Public Contract Access"])  # Public vendor contract endpoints (no auth required)
 app.include_router(user_management_router, tags=["Auth"])  # Public registration endpoints
 app.include_router(otp_router, tags=["OTP"])  # Public OTP verification endpoints
@@ -339,6 +671,21 @@ app.include_router(contracts_router, tags=["Public Contracts"])  # Public contra
 app.include_router(config_errors_router, tags=["System"])  # Public config error reporting
 app.include_router(scheduler_jobs_router, prefix="/scheduler", tags=["Scheduler"])  # Scheduled task processing
 
+app.include_router(vendor_campaigns_router, tags=["Vendor Campaigns"])  # Vendor campaign portal (has own /portal/ads prefix)
+app.include_router(admin_campaigns_router, tags=["Admin Campaigns"])  # Admin campaign management (has own /admin/ads/campaigns prefix)
+app.include_router(planner_ad_interactions_router, tags=["Planner Ad Interactions"])  # Planner ad interaction flows (has own /planner/ads prefix)
+app.include_router(admin_platform_config_router, tags=["Admin Platform Config"])  # Platform config, pipeline status, data export (has own /admin/ads/config prefix)
+app.include_router(planner_ad_preferences_router, tags=["Planner Ad Preferences"])  # Planner ad preferences (has own /planner/ads/preferences prefix)
+app.include_router(vendor_public_router, tags=["Public Vendors"])  # Public vendor profiles (has own /api/v1/vendors prefix)
+app.include_router(vendor_signup_router, tags=["Vendor Signup"])  # Vendor self-signup + onboarding (has own /api/v1/vendors prefix)
+app.include_router(blog_router, tags=["Blog"])  # Public blog + admin blog endpoints (has own /api/v1/blog and /blog/admin prefixes)
+
+# Couple Portal routes (public - couple auth is handled at route level)
+app.include_router(couple_auth_router, tags=["Couple Auth"])  # Couple login, setup, verify invite
+app.include_router(couple_portal_router, tags=["Couple Portal"])  # Couple dashboard, forms, updates
+app.include_router(couple_analytics_router, prefix="/couple", tags=["Couple Portal Analytics"])  # Couple-auth behavioral analytics
+app.include_router(guest_memories_router, tags=["Guest Memories"])  # Public upload + couple memories endpoints
+
 # Admin routes (authentication required)
 # Note: Routers already registered publicly with route-level auth are excluded to avoid duplicate routes
 admin_routers = [
@@ -349,7 +696,6 @@ admin_routers = [
     (reminder_telnyx_router, "Admin"),
     (reminder_twilio_router, "Admin"),
     (email_reminder_router, "Admin"),
-    (checkin_router, "Admin"),
     (gallery_admin_router, "Gallery"),
     (reminder_utils_router, "Admin"),
     # user_management_router - already registered publicly with route-level auth
@@ -357,10 +703,11 @@ admin_routers = [
     # saas_config_router - already registered publicly with route-level auth
     (budget_router, "Budget"),
     (planner_metrics_router, "Metrics"),
-    # forms_router - already registered publicly with route-level auth
+    # forms_router - mounted above with /admin prefix and public-compatible aliases
     (trial_management_router, "Admin"),
     # vendor_forms_router - already registered publicly with route-level auth
     # vendor_management_router - registered at /admin prefix (line ~300)
+    (notification_stream_router, "Notifications SSE"),  # Must come BEFORE notification_router so /notifications/stream matches before /notifications/{notification_id}
     (notification_router, "Notifications"),
     (support_router, "Support"),
     (admin_platform_metrics_router, "ROOT_ADMIN"),
@@ -378,7 +725,9 @@ admin_routers = [
     (guest_export_router, "Guest Export"),
     (web_push_router, "Web Push"),
     (knowledge_base_router, "Knowledge Base"),
-    (notification_stream_router, "Notifications SSE"),
+    (team_management_router, "Team Management"),
+    (inbound_emails_router, "Inbound Emails"),
+    (couple_invite_router, "Couple Portal"),  # Planner-side couple invitation management
 ]
 
 for router, tag in admin_routers:
@@ -392,15 +741,22 @@ app.include_router(plus_one_router, prefix="/admin/plus-one", tags=["Plus-Ones"]
 
 # ==================== CUSTOM ENDPOINTS ====================
 
+def build_root_response(config) -> dict[str, object]:
+    """Build the root health/info payload with environment-aware docs metadata."""
+    response = {
+        "message": f"Welcome to {config.app_name}",
+        "version": config.app_version,
+        "environment": config.environment,
+    }
+    if config.api_docs_enabled:
+        response["docs_url"] = "/docs"
+    return response
+
+
 @app.get("/", tags=["Health"])
 async def root():
     """Root endpoint"""
-    return {
-        "message": f"Welcome to {settings.app_name}",
-        "version": settings.app_version,
-        "environment": settings.environment,
-        "docs_url": "/docs"
-    }
+    return build_root_response(settings)
 
 
 @app.get("/info", tags=["Health"])
@@ -428,9 +784,30 @@ async def add_cache_headers(request: Request, call_next):
     if settings.enable_cache_headers:
         path = request.url.path
 
-        if any(path.endswith(ext) for ext in ['.css', '.js', '.png', '.jpg', '.jpeg', '.gif', '.ico', '.woff', '.woff2']):
+        # Next.js build chunks (_next/static) contain content-hashed filenames
+        # so they can be cached forever safely — the hash changes on rebuild.
+        # But during development, _next/ paths must NOT be cached or HMR
+        # will serve stale module factories ("module factory is not available").
+        is_nextjs_asset = "/_next/" in path
+
+        if is_nextjs_asset:
+            if settings.is_development():
+                # Dev: never cache JS/CSS chunks — Turbopack HMR needs fresh loads
+                response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+            else:
+                # Prod: _next/static files have content hashes, safe to cache long
+                response.headers["Cache-Control"] = f"public, max-age={settings.static_cache_max_age}, immutable"
+        elif any(path.endswith(ext) for ext in ['.png', '.jpg', '.jpeg', '.gif', '.ico', '.woff', '.woff2', '.svg']):
+            # Truly static binary assets — safe to cache
             response.headers["Cache-Control"] = f"public, max-age={settings.static_cache_max_age}"
-        elif path.startswith("/api/"):
+        elif any(path.endswith(ext) for ext in ['.css', '.js']):
+            # Non-Next.js CSS/JS (custom static files) — moderate cache
+            response.headers["Cache-Control"] = "public, max-age=3600"
+        elif request.method in ("POST", "PUT", "PATCH", "DELETE"):
+            # Mutations must never be cached
+            response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+        elif path.startswith("/api/") or path.startswith("/couple-portal/") or path.startswith("/couple/") or path.startswith("/admin/"):
+            # All dynamic API/portal endpoints — no caching
             response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
         else:
             response.headers["Cache-Control"] = "public, max-age=300"  # 5 minutes for other content

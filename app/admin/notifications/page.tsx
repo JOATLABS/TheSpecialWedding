@@ -54,6 +54,20 @@ interface PlannerNotification {
   source?: 'platform' | 'activity';
 }
 
+const surfaceClass =
+  'rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-700 dark:bg-slate-800/95';
+
+const mutedSurfaceClass =
+  'rounded-xl bg-slate-50 dark:bg-slate-700/50';
+
+const inputClass =
+  'w-full rounded-xl border border-slate-300 bg-white px-4 py-2 text-slate-900 transition-colors focus:border-wedding-rose focus:outline-none focus:ring-2 focus:ring-wedding-rose/20 disabled:cursor-not-allowed disabled:bg-slate-100 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100 dark:disabled:bg-slate-800';
+
+const labelClass = 'mb-2 block text-sm font-medium text-slate-700 dark:text-slate-300';
+
+const secondaryButtonClass =
+  'rounded-lg border border-slate-300 bg-white px-6 py-2 text-slate-700 transition-colors hover:bg-slate-50 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-200 dark:hover:bg-slate-600';
+
 export default function NotificationsPage() {
   const { apiRequest, userProfile } = useAdmin();
   const searchParams = useSearchParams();
@@ -322,15 +336,15 @@ export default function NotificationsPage() {
         </PageHeader>
 
         {/* Notifications List */}
-        <div className="bg-white dark:bg-slate-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700">
+        <div className={surfaceClass}>
           {plannerNotifications.length > 0 ? (
-            <div className="divide-y divide-gray-200 dark:divide-gray-700">
+            <div className="divide-y divide-slate-200 dark:divide-slate-700">
               {plannerNotifications.map((notification) => (
                 <div
                   key={notification._id}
                   onClick={() => !notification.is_read && markNotificationAsRead(notification._id, notification.source)}
-                  className={`p-4 hover:bg-gray-50 dark:hover:bg-slate-700 transition-colors ${
-                    !notification.is_read ? 'bg-blue-50 dark:bg-blue-900/20 cursor-pointer' : ''
+                  className={`p-4 transition-colors hover:bg-slate-50 dark:hover:bg-slate-700 ${
+                    !notification.is_read ? 'cursor-pointer bg-blue-50/80 dark:bg-blue-900/20' : ''
                   }`}
                 >
                   <div className="flex items-start justify-between">
@@ -348,7 +362,7 @@ export default function NotificationsPage() {
                           notification.type === 'support_ticket_response' ? 'bg-teal-500' :
                           'bg-gray-500'
                         }`} />
-                        <h3 className="text-sm font-medium text-gray-900 dark:text-gray-100">
+                        <h3 className="text-sm font-medium text-slate-900 dark:text-slate-100">
                           {notification.title}
                         </h3>
                         {!notification.is_read && (
@@ -357,17 +371,17 @@ export default function NotificationsPage() {
                           </span>
                         )}
                       </div>
-                      <p className="mt-1 text-sm text-gray-600 dark:text-gray-400">
+                      <p className="mt-1 text-sm text-slate-600 dark:text-slate-400">
                         {notification.message}
                       </p>
-                      <div className="mt-2 flex items-center gap-4 text-xs text-gray-500 dark:text-gray-400">
+                      <div className="mt-2 flex items-center gap-4 text-xs text-slate-500 dark:text-slate-400">
                         <span>{formatDate(notification.created_at)}</span>
                         {notification.wedding_name && (
                           <span className="text-indigo-600 dark:text-indigo-400">
                             {notification.wedding_name}
                           </span>
                         )}
-                        <span className="capitalize px-2 py-0.5 bg-gray-100 dark:bg-gray-700 rounded">
+                        <span className="rounded bg-slate-100 px-2 py-0.5 capitalize dark:bg-slate-700">
                           {notification.type.replace('_', ' ')}
                         </span>
                       </div>
@@ -378,9 +392,9 @@ export default function NotificationsPage() {
             </div>
           ) : (
             <div className="p-12 text-center">
-              <div className="text-gray-400 dark:text-gray-500 text-5xl mb-4">🔔</div>
-              <h3 className="text-lg font-medium text-gray-900 dark:text-gray-100 mb-2">No Notifications Yet</h3>
-              <p className="text-gray-600 dark:text-gray-400 max-w-md mx-auto">
+              <div className="mb-4 text-5xl text-slate-400 dark:text-slate-500">🔔</div>
+              <h3 className="mb-2 text-lg font-medium text-slate-900 dark:text-slate-100">No Notifications Yet</h3>
+              <p className="mx-auto max-w-md text-slate-600 dark:text-slate-400">
                 You'll receive notifications here when guests submit forms, update their RSVPs,
                 or when there are important updates for your weddings.
               </p>
@@ -389,8 +403,8 @@ export default function NotificationsPage() {
         </div>
 
         {/* Notification Types Legend */}
-        <div className="bg-white dark:bg-slate-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 p-4">
-          <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100 mb-3">Notification Types</h3>
+        <div className={`${surfaceClass} p-4`}>
+          <h3 className="mb-3 text-sm font-semibold text-slate-900 dark:text-slate-100">Notification Types</h3>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
             <div className="flex items-center gap-2">
               <span className="w-3 h-3 rounded-full bg-green-500" />
@@ -445,7 +459,7 @@ export default function NotificationsPage() {
       />
 
       {/* Tabs */}
-      <div className="border-b border-gray-200 dark:border-gray-700">
+      <div className="border-b border-slate-200 dark:border-slate-700">
         <nav className="flex space-x-8">
           {[
             { key: 'send', label: 'Send Notification' },
@@ -458,7 +472,7 @@ export default function NotificationsPage() {
               className={`py-4 px-1 border-b-2 font-medium text-sm ${
                 activeTab === tab.key
                   ? 'border-wedding-rose text-wedding-rose'
-                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                  : 'border-transparent text-slate-500 hover:border-slate-300 hover:text-slate-700 dark:text-slate-400 dark:hover:border-slate-600 dark:hover:text-slate-200'
               }`}
             >
               {tab.label}
@@ -469,11 +483,11 @@ export default function NotificationsPage() {
 
       {/* Send Notification Tab */}
       {activeTab === 'send' && (
-        <div className="bg-white dark:bg-slate-800 rounded-lg shadow-sm border p-6">
-          <h2 className="text-xl font-semibold text-wedding-navy mb-4">Send New Notification</h2>
+        <div className={`${surfaceClass} p-6`}>
+          <h2 className="mb-4 text-xl font-semibold text-wedding-navy dark:text-white">Send New Notification</h2>
           <div className="space-y-4">
             {/* Template Toggle */}
-            <div className="flex items-center gap-3 p-4 bg-gray-50 dark:bg-slate-700/50 rounded-lg">
+            <div className={`flex items-center gap-3 p-4 ${mutedSurfaceClass}`}>
               <input
                 type="checkbox"
                 id="use-template"
@@ -493,7 +507,7 @@ export default function NotificationsPage() {
                 }}
                 className="h-4 w-4 text-wedding-rose focus:ring-wedding-rose border-gray-300 rounded"
               />
-              <label htmlFor="use-template" className="text-sm font-medium text-gray-700 dark:text-gray-300 dark:text-gray-300 cursor-pointer">
+              <label htmlFor="use-template" className="cursor-pointer text-sm font-medium text-slate-700 dark:text-slate-300">
                 Use a template
               </label>
             </div>
@@ -501,7 +515,7 @@ export default function NotificationsPage() {
             {/* Template Selection */}
             {useTemplate && (
               <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 dark:text-gray-300 mb-2">Select Template *</label>
+                <label className={labelClass}>Select Template *</label>
                 <select
                   value={selectedTemplateId}
                   onChange={(e) => {
@@ -512,7 +526,7 @@ export default function NotificationsPage() {
                       setCustomContent(template.content);
                     }
                   }}
-                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 dark:text-gray-100-lg focus:ring-2 focus:ring-wedding-rose focus:border-transparent"
+                  className={inputClass}
                 >
                   <option value="">-- Select a template --</option>
                   {templates.filter(t => t.is_active !== false).map(template => (
@@ -522,18 +536,18 @@ export default function NotificationsPage() {
                   ))}
                 </select>
                 {templates.length === 0 && (
-                  <p className="mt-2 text-sm text-gray-500 dark:text-gray-400">No templates available. Create one in the Templates tab.</p>
+                  <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">No templates available. Create one in the Templates tab.</p>
                 )}
               </div>
             )}
 
             {/* Recipients */}
             <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 dark:text-gray-300 mb-2">Recipients *</label>
+              <label className={labelClass}>Recipients *</label>
               <select
                 value={recipientFilter}
                 onChange={(e) => setRecipientFilter(e.target.value)}
-                className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 dark:text-gray-100-lg focus:ring-2 focus:ring-wedding-rose focus:border-transparent"
+                className={inputClass}
               >
                 <option value="all">All Users</option>
                 <option value="wedding_planners">Wedding Planners</option>
@@ -543,33 +557,33 @@ export default function NotificationsPage() {
 
             {/* Subject */}
             <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 dark:text-gray-300 mb-2">Subject Line *</label>
+              <label className={labelClass}>Subject Line *</label>
               <input
                 type="text"
                 value={customSubject}
                 onChange={(e) => setCustomSubject(e.target.value)}
                 placeholder="Enter email subject..."
                 disabled={useTemplate && selectedTemplateId !== ''}
-                className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 dark:text-gray-100-lg focus:ring-2 focus:ring-wedding-rose focus:border-transparent disabled:bg-gray-100 dark:bg-slate-700 disabled:cursor-not-allowed"
+                className={inputClass}
               />
               {useTemplate && selectedTemplateId && (
-                <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">Subject is loaded from template (read-only)</p>
+                <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">Subject is loaded from template (read-only)</p>
               )}
             </div>
 
             {/* Content */}
             <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 dark:text-gray-300 mb-2">Message Content *</label>
+              <label className={labelClass}>Message Content *</label>
               <textarea
                 value={customContent}
                 onChange={(e) => setCustomContent(e.target.value)}
                 placeholder="Enter your message content..."
                 rows={8}
                 disabled={useTemplate && selectedTemplateId !== ''}
-                className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 dark:text-gray-100-lg focus:ring-2 focus:ring-wedding-rose focus:border-transparent disabled:bg-gray-100 dark:bg-slate-700 disabled:cursor-not-allowed"
+                className={inputClass}
               />
               {useTemplate && selectedTemplateId && (
-                <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">Content is loaded from template (read-only)</p>
+                <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">Content is loaded from template (read-only)</p>
               )}
             </div>
 
@@ -591,7 +605,7 @@ export default function NotificationsPage() {
       {activeTab === 'templates' && (
         <div className="space-y-6">
           <div className="flex justify-between items-center">
-            <h2 className="text-xl font-semibold text-wedding-navy">Notification Templates</h2>
+            <h2 className="text-xl font-semibold text-wedding-navy dark:text-white">Notification Templates</h2>
             <button
               onClick={() => setShowTemplateModal(true)}
               className="px-4 py-2 bg-wedding-rose text-white rounded-lg hover:bg-wedding-rose/80"
@@ -602,9 +616,9 @@ export default function NotificationsPage() {
           {templates.length > 0 ? (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               {templates.map((template) => (
-                <div key={template._id} className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border dark:border-gray-700 p-6 hover:shadow-md transition-shadow">
+                <div key={template._id} className={`${surfaceClass} rounded-xl p-6 transition-shadow hover:shadow-md`}>
                   <div className="flex justify-between items-start mb-3">
-                    <h3 className="text-lg font-medium text-gray-900 dark:text-gray-100 dark:text-white">{template.name}</h3>
+                    <h3 className="text-lg font-medium text-slate-900 dark:text-white">{template.name}</h3>
                     <div className="flex gap-2">
                       <span className={`px-2 py-1 text-xs font-medium rounded ${
                         template.type === 'email'
@@ -614,18 +628,18 @@ export default function NotificationsPage() {
                         {template.type?.toUpperCase() || 'EMAIL'}
                       </span>
                       {template.category && (
-                        <span className="px-2 py-1 text-xs font-medium rounded bg-gray-100 dark:bg-slate-700 text-gray-700 dark:text-gray-300 dark:bg-gray-700 dark:text-gray-300">
+                        <span className="rounded bg-slate-100 px-2 py-1 text-xs font-medium text-slate-700 dark:bg-slate-700 dark:text-slate-300">
                           {template.category.replace('_', ' ').toUpperCase()}
                         </span>
                       )}
                     </div>
                   </div>
-                  <p className="text-sm text-gray-600 dark:text-gray-400 dark:text-gray-400 mb-3 font-medium">{template.subject}</p>
-                  <p className="text-sm text-gray-500 dark:text-gray-400 dark:text-gray-500 line-clamp-2">{template.content}</p>
-                  <div className="mt-4 pt-4 border-t dark:border-gray-700 flex justify-between items-center text-xs text-gray-500 dark:text-gray-400 dark:text-gray-400">
+                  <p className="mb-3 text-sm font-medium text-slate-600 dark:text-slate-400">{template.subject}</p>
+                  <p className="line-clamp-2 text-sm text-slate-500 dark:text-slate-400">{template.content}</p>
+                  <div className="mt-4 flex items-center justify-between border-t border-slate-200 pt-4 text-xs text-slate-500 dark:border-slate-700 dark:text-slate-400">
                     <span>Created: {formatDate(template.created_at)}</span>
                     {template.is_active !== undefined && (
-                      <span className={template.is_active ? 'text-green-600 dark:text-green-400' : 'text-gray-400'}>
+                      <span className={template.is_active ? 'text-green-600 dark:text-green-400' : 'text-slate-400'}>
                         {template.is_active ? '● Active' : '○ Inactive'}
                       </span>
                     )}
@@ -634,10 +648,10 @@ export default function NotificationsPage() {
               ))}
             </div>
           ) : (
-            <div className="bg-white dark:bg-slate-800 rounded-lg shadow-sm border p-8 text-center">
-              <div className="text-gray-400 text-4xl mb-4">📧</div>
-              <h3 className="text-lg font-medium text-gray-900 dark:text-gray-100 mb-2">No Templates Yet</h3>
-              <p className="text-gray-600 dark:text-gray-400 mb-4">
+            <div className={`${surfaceClass} p-8 text-center`}>
+              <div className="mb-4 text-4xl text-slate-400">📧</div>
+              <h3 className="mb-2 text-lg font-medium text-slate-900 dark:text-slate-100">No Templates Yet</h3>
+              <p className="mb-4 text-slate-600 dark:text-slate-400">
                 Create reusable notification templates for common announcements like maintenance,
                 feature updates, or security notices.
               </p>
@@ -657,27 +671,27 @@ export default function NotificationsPage() {
         <div className="space-y-6">
           <h2 className="text-xl font-semibold text-wedding-navy dark:text-white">Notification History</h2>
           {sentNotifications.length > 0 ? (
-            <div className="bg-white dark:bg-gray-900 rounded-lg shadow-sm border dark:border-gray-700 overflow-hidden">
+            <div className={`${surfaceClass} overflow-hidden`}>
               <table className="w-full">
-                <thead className="bg-gray-50 dark:bg-gray-800">
+                <thead className="bg-slate-50 dark:bg-slate-800">
                   <tr>
-                    <th className="px-6 py-3 text-left text-sm font-medium text-gray-500 dark:text-gray-400 dark:text-gray-400">Subject</th>
-                    <th className="px-6 py-3 text-left text-sm font-medium text-gray-500 dark:text-gray-400 dark:text-gray-400">Recipients</th>
-                    <th className="px-6 py-3 text-left text-sm font-medium text-gray-500 dark:text-gray-400 dark:text-gray-400">Date</th>
-                    <th className="px-6 py-3 text-left text-sm font-medium text-gray-500 dark:text-gray-400 dark:text-gray-400">Status</th>
+                    <th className="px-6 py-3 text-left text-sm font-medium text-slate-500 dark:text-slate-400">Subject</th>
+                    <th className="px-6 py-3 text-left text-sm font-medium text-slate-500 dark:text-slate-400">Recipients</th>
+                    <th className="px-6 py-3 text-left text-sm font-medium text-slate-500 dark:text-slate-400">Date</th>
+                    <th className="px-6 py-3 text-left text-sm font-medium text-slate-500 dark:text-slate-400">Status</th>
                   </tr>
                 </thead>
                 <tbody>
                   {sentNotifications.map((notification) => (
-                    <tr key={notification._id} className="border-t hover:bg-gray-50 dark:hover:bg-gray-800 dark:border-gray-700">
-                      <td className="px-6 py-4 text-sm text-gray-900 dark:text-gray-100 dark:text-gray-100 font-medium">{notification.title}</td>
-                      <td className="px-6 py-4 text-sm text-gray-700 dark:text-gray-300 dark:text-gray-300">
+                    <tr key={notification._id} className="border-t border-slate-200 transition-colors hover:bg-slate-50 dark:border-slate-700 dark:hover:bg-slate-800">
+                      <td className="px-6 py-4 text-sm font-medium text-slate-900 dark:text-slate-100">{notification.title}</td>
+                      <td className="px-6 py-4 text-sm text-slate-700 dark:text-slate-300">
                         {notification.delivery_summary ?
                           `${notification.delivery_summary.sent}/${notification.total_recipients}` :
                           notification.total_recipients
                         }
                       </td>
-                      <td className="px-6 py-4 text-sm text-gray-700 dark:text-gray-300 dark:text-gray-300">
+                      <td className="px-6 py-4 text-sm text-slate-700 dark:text-slate-300">
                         {notification.sent_at ? formatDate(notification.sent_at) : formatDate(notification.created_at)}
                       </td>
                       <td className="px-6 py-4 text-sm">
@@ -697,14 +711,14 @@ export default function NotificationsPage() {
               </table>
             </div>
           ) : (
-            <div className="bg-white dark:bg-gray-900 rounded-lg shadow-sm border dark:border-gray-700 p-8 text-center">
-              <div className="text-gray-400 dark:text-gray-600 dark:text-gray-400 text-4xl mb-4">📊</div>
-              <h3 className="text-lg font-medium text-gray-900 dark:text-gray-100 dark:text-white mb-2">No Notifications Sent Yet</h3>
-              <p className="text-gray-600 dark:text-gray-400 dark:text-gray-400 mb-4">
+            <div className={`${surfaceClass} p-8 text-center`}>
+              <div className="mb-4 text-4xl text-slate-400 dark:text-slate-500">📊</div>
+              <h3 className="mb-2 text-lg font-medium text-slate-900 dark:text-slate-100">No Notifications Sent Yet</h3>
+              <p className="mb-4 text-slate-600 dark:text-slate-400">
                 Once you start sending platform notifications, you'll see delivery statistics,
                 open rates, and performance metrics here.
               </p>
-              <div className="text-sm text-gray-500 dark:text-gray-400 dark:text-gray-400">
+              <div className="text-sm text-slate-500 dark:text-slate-400">
                 <p>• View delivery status and recipient counts</p>
                 <p>• Track open and click rates</p>
                 <p>• Monitor notification performance over time</p>
@@ -716,14 +730,14 @@ export default function NotificationsPage() {
 
       {/* Template Creation Modal */}
       {showTemplateModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white dark:bg-slate-800 rounded-lg shadow-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
-            <div className="p-6 border-b border-gray-200 dark:border-gray-700">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4">
+          <div className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-2xl border border-slate-200 bg-white shadow-xl dark:border-slate-700 dark:bg-slate-800">
+            <div className="border-b border-slate-200 p-6 dark:border-slate-700">
               <div className="flex justify-between items-center">
-                <h2 className="text-2xl font-semibold text-wedding-navy">Create Notification Template</h2>
+                <h2 className="text-2xl font-semibold text-wedding-navy dark:text-white">Create Notification Template</h2>
                 <button
                   onClick={() => setShowTemplateModal(false)}
-                  className="text-gray-400 hover:text-gray-600 dark:text-gray-400 text-2xl"
+                  className="text-2xl text-slate-400 transition-colors hover:text-slate-600 dark:text-slate-400 dark:hover:text-slate-200"
                 >
                   ×
                 </button>
@@ -733,23 +747,23 @@ export default function NotificationsPage() {
             <div className="p-6 space-y-4">
               {/* Template Name */}
               <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 dark:text-gray-300 mb-2">Template Name *</label>
+                <label className={labelClass}>Template Name *</label>
                 <input
                   type="text"
                   value={templateName}
                   onChange={(e) => setTemplateName(e.target.value)}
                   placeholder="e.g., System Maintenance Notice"
-                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 dark:text-gray-100-lg focus:ring-2 focus:ring-wedding-rose focus:border-transparent"
+                  className={inputClass}
                 />
               </div>
 
               {/* Delivery Method */}
               <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 dark:text-gray-300 mb-2">Delivery Method *</label>
+                <label className={labelClass}>Delivery Method *</label>
                 <select
                   value={templateType}
                   onChange={(e) => setTemplateType(e.target.value as any)}
-                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 dark:text-gray-100-lg focus:ring-2 focus:ring-wedding-rose focus:border-transparent"
+                  className={inputClass}
                 >
                   <option value="email">Email</option>
                   <option value="sms">SMS</option>
@@ -758,11 +772,11 @@ export default function NotificationsPage() {
 
               {/* Template Category */}
               <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 dark:text-gray-300 mb-2">Category *</label>
+                <label className={labelClass}>Category *</label>
                 <select
                   value={templateCategory}
                   onChange={(e) => setTemplateCategory(e.target.value as any)}
-                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 dark:text-gray-100-lg focus:ring-2 focus:ring-wedding-rose focus:border-transparent"
+                  className={inputClass}
                 >
                   <option value="system_update">System Update</option>
                   <option value="maintenance">Maintenance</option>
@@ -774,7 +788,7 @@ export default function NotificationsPage() {
 
               {/* Subject */}
               <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 dark:text-gray-300 mb-2">
+                <label className={labelClass}>
                   {templateType === 'email' ? 'Email Subject' : 'SMS Preview Text'} *
                 </label>
                 <input
@@ -782,19 +796,19 @@ export default function NotificationsPage() {
                   value={templateSubject}
                   onChange={(e) => setTemplateSubject(e.target.value)}
                   placeholder={templateType === 'email' ? 'Enter email subject line...' : 'Enter SMS preview text...'}
-                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 dark:text-gray-100-lg focus:ring-2 focus:ring-wedding-rose focus:border-transparent"
+                  className={inputClass}
                 />
               </div>
 
               {/* Content */}
               <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 dark:text-gray-300 mb-2">Message Content *</label>
+                <label className={labelClass}>Message Content *</label>
                 <textarea
                   value={templateContent}
                   onChange={(e) => setTemplateContent(e.target.value)}
                   placeholder="Enter your template message..."
                   rows={8}
-                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 dark:text-gray-100-lg focus:ring-2 focus:ring-wedding-rose focus:border-transparent"
+                  className={inputClass}
                 />
               </div>
 
@@ -802,7 +816,7 @@ export default function NotificationsPage() {
               <div className="flex justify-end gap-3 pt-4">
                 <button
                   onClick={() => setShowTemplateModal(false)}
-                  className="px-6 py-2 border border-gray-300 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-50 dark:bg-slate-700"
+                  className={secondaryButtonClass}
                 >
                   Cancel
                 </button>

@@ -49,6 +49,11 @@ class UserModel(BaseModel):
     plan_id: Optional[str] = Field(None, description="Current subscription plan ID")
     subscription_status: str = Field(default="trial", description="Subscription status: trial, active, cancelled")
     trial_end_date: Optional[datetime] = Field(None, description="Trial expiration date")
+    trial_warning_sent: bool = Field(default=False, description="Whether trial expiration warning email was sent")
+    trial_expired_at: Optional[datetime] = Field(None, description="When the trial was expired by the system")
+
+    # Registration metadata
+    registration_source: Optional[str] = Field(None, description="How the user signed up: public_signup, admin_invite, etc.")
 
     # Billing information
     stripe_customer_id: Optional[str] = Field(None, description="Stripe customer ID")
@@ -65,6 +70,10 @@ class UserModel(BaseModel):
         default=None,
         description="Planner's contract preferences (token_expiry_days, deposit_due_days, etc.)"
     )
+
+    # Team member fields (if role is team_member)
+    parent_planner_id: Optional[str] = Field(None, description="Owner planner's user ID (set when role=team_member)")
+    team_member_id: Optional[str] = Field(None, description="Reference to team_members collection doc ID")
 
     # Vendor specific fields (if role is vendor)
     assigned_wedding_ids: List[str] = Field(default_factory=list, description="Weddings this vendor has access to")
@@ -119,7 +128,7 @@ class AdminUserModel(BaseModel):
     class Config:
         json_schema_extra = {
             "example": {
-                "email": "thedeveloper@thespecialwedding.com",
+                "email": "thedeveloper@thespecialwedding.io",
                 "password_hash": "hashed_password_here",
                 "role": "wedding_planner"
             }

@@ -40,6 +40,7 @@ class TaskCategory(str, Enum):
     LEGAL = "legal"
     BUDGET = "budget"
     GUEST_MANAGEMENT = "guest_management"
+    MEETING = "meeting"
     OTHER = "other"
 
 

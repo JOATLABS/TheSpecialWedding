@@ -1,0 +1,84 @@
+# =============================================================================
+# Staging deployment workflow
+# Automatically deploys to staging after CI succeeds on main, or manually.
+# =============================================================================
+name: Deploy Coolify Staging
+
+on:
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      image-tag:
+        description: "Image tag to deploy to staging (default: current commit SHA)"
+        required: false
+        default: ""
+      service:
+        description: "Which service to deploy"
+        required: false
+        default: "both"
+        type: choice
+        options:
+          - both
+          - backend
+          - frontend
+
+permissions:
+  contents: read
+
+jobs:
+  prepare:
+    name: Prepare staging deploy
+    runs-on: ubuntu-latest
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
+    outputs:
+      image-tag: ${{ steps.tag.outputs.tag }}
+      service: ${{ steps.service.outputs.value }}
+    steps:
+      - name: Determine image tag
+        id: tag
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ -n "${{ github.event.inputs.image-tag }}" ]; then
+            TAG="${{ github.event.inputs.image-tag }}"
+          elif [ "${{ github.event_name }}" = "workflow_run" ]; then
+            TAG="${{ github.event.workflow_run.head_sha }}"
+          else
+            TAG="${{ github.sha }}"
+          fi
+
+          if [ "${#TAG}" -gt 12 ]; then
+            TAG="${TAG:0:7}"
+          fi
+
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+
+      - name: Determine service target
+        id: service
+        run: |
+          SERVICE="${{ github.event.inputs.service || 'both' }}"
+          echo "value=$SERVICE" >> "$GITHUB_OUTPUT"
+
+  deploy:
+    needs: prepare
+    if: needs.prepare.result == 'success'
+    uses: ./.github/workflows/coolify-deploy-shared.yml
+    with:
+      environment_name: staging
+      image_tag: ${{ needs.prepare.outputs.image-tag }}
+      service: ${{ needs.prepare.outputs.service }}
+      frontend_url: https://staging.thespecialwedding.io
+      api_url: https://api.staging.thespecialwedding.io
+      verify_couple: true
+      verify_sse: true
+    secrets:
+      COOLIFY_BASE_URL: ${{ secrets.COOLIFY_BASE_URL }}
+      COOLIFY_API_TOKEN: ${{ secrets.COOLIFY_API_TOKEN }}
+      COOLIFY_BACKEND_UUID: ${{ secrets.COOLIFY_STAGING_BACKEND_UUID }}
+      COOLIFY_FRONTEND_UUID: ${{ secrets.COOLIFY_STAGING_FRONTEND_UUID }}
+      SMOKE_ADMIN_EMAIL: ${{ secrets.STAGING_SMOKE_ADMIN_EMAIL }}
+      SMOKE_ADMIN_PASSWORD: ${{ secrets.STAGING_SMOKE_ADMIN_PASSWORD }}
+      SMOKE_COUPLE_EMAIL: ${{ secrets.STAGING_SMOKE_COUPLE_EMAIL }}
+      SMOKE_COUPLE_PASSWORD: ${{ secrets.STAGING_SMOKE_COUPLE_PASSWORD }}
+      SMOKE_PUBLIC_WEDDING_SLUG: ${{ secrets.STAGING_SMOKE_PUBLIC_WEDDING_SLUG }}

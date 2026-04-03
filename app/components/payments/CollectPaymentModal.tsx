@@ -6,8 +6,10 @@ import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { Label } from '@/components/ui/Label';
 import { Textarea } from '@/components/ui/Textarea';
+import { useAdmin } from '@/contexts/AdminContext';
 import { Loader2, DollarSign } from 'lucide-react';
 import { toast } from 'sonner';
+import { getApiBaseUrl } from '@/utils/env';
 
 interface Wedding {
   _id: string;
@@ -29,6 +31,8 @@ export function CollectPaymentModal({
   weddingTitle,
   onPaymentCreated,
 }: CollectPaymentModalProps) {
+  const { token } = useAdmin();
+  const apiBaseUrl = getApiBaseUrl();
   const [loading, setLoading] = useState(false);
   const [amount, setAmount] = useState('');
   const [description, setDescription] = useState('');
@@ -43,9 +47,10 @@ export function CollectPaymentModal({
       const fetchWeddings = async () => {
         setFetchingWeddings(true);
         try {
-          const token = localStorage.getItem('admin_token') || sessionStorage.getItem('admin_token');
-          const response = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL}/admin/weddings`, {
-             headers: { 'Authorization': `Bearer ${token}` }
+          if (!token) return;
+          const response = await fetch(`${apiBaseUrl}/admin/weddings`, {
+             headers: { 'Authorization': `Bearer ${token}` },
+             credentials: 'include',
           });
           if (response.ok) {
             const data = await response.json();
@@ -59,7 +64,7 @@ export function CollectPaymentModal({
       };
       fetchWeddings();
     }
-  }, [weddingId, open]);
+  }, [apiBaseUrl, token, weddingId, open]);
 
   const handleCreatePayment = async () => {
     if (!amount || parseFloat(amount) <= 0) {
@@ -77,14 +82,13 @@ export function CollectPaymentModal({
     try {
       setLoading(true);
 
-      const token = localStorage.getItem('admin_token') || sessionStorage.getItem('admin_token');
       if (!token) {
         toast.error('Please log in to create payment requests');
         return;
       }
 
       const response = await fetch(
-        `${process.env.NEXT_PUBLIC_API_BASE_URL}/stripe/create-payment-intent`,
+        `${apiBaseUrl}/stripe/create-payment-intent`,
         {
           method: 'POST',
           headers: {

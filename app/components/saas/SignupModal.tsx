@@ -4,6 +4,7 @@ import React, { useState, useEffect } from 'react';
 import { useForm } from 'react-hook-form';
 import { toast } from 'sonner';
 import { ThemeConfig } from '@/types/wedding';
+import { getApiBaseUrl } from '@/utils/env';
 
 interface SubscriptionPlan {
   _id: string;
@@ -38,7 +39,7 @@ const FALLBACK_PLANS: SubscriptionPlan[] = [
     price_yearly: 708,
     max_weddings: 10,
     max_guests_per_wedding: 350,
-    features: ['Seating orchestration', 'QR check-in', 'Automated reminders', 'Vendor collaboration'],
+    features: ['Seating orchestration', 'Guest memories uploads', 'Automated reminders', 'Vendor collaboration'],
     is_featured: true
   }
 ];
@@ -62,6 +63,7 @@ type FormValues = {
 };
 
 export const SignupModal: React.FC<SignupModalProps> = ({ isOpen, onClose, selectedPlanId }) => {
+  const apiBaseUrl = getApiBaseUrl();
   const [plans, setPlans] = useState<SubscriptionPlan[]>(FALLBACK_PLANS);
   const [selectedPlan, setSelectedPlan] = useState<SubscriptionPlan | null>(FALLBACK_PLANS[1]);
   const [billingInterval, setBillingInterval] = useState<'monthly' | 'yearly'>('monthly');
@@ -74,8 +76,35 @@ export const SignupModal: React.FC<SignupModalProps> = ({ isOpen, onClose, selec
     formState: { errors, isSubmitting },
     watch,
     reset,
-    trigger
+    trigger,
+    setValue,
   } = useForm<FormValues>();
+
+  // Chrome autofill workaround: when transitioning to step 2, Chrome may
+  // inject the password into Company / Phone DOM inputs (without triggering
+  // React onChange).  We clear them at the DOM level and sync react-hook-form.
+  useEffect(() => {
+    if (step === 2) {
+      const timer = setTimeout(() => {
+        const form = document.querySelector('form[autocomplete="off"]');
+        if (!form) return;
+        const companyInput = form.querySelector<HTMLInputElement>('input[name="companyName"]');
+        const phoneInput = form.querySelector<HTMLInputElement>('input[name="phone"]');
+        if (companyInput && companyInput.value && !companyInput.value.includes(' ')) {
+          // Heuristic: passwords don't contain spaces; company names usually do
+          // but more importantly, if the value matches the password, clear it
+          companyInput.value = '';
+          setValue('companyName', '');
+        }
+        if (phoneInput && phoneInput.value && !/^[\d\s()+\-.,]*$/.test(phoneInput.value)) {
+          // If phone value contains non-phone chars, it's autofill junk
+          phoneInput.value = '';
+          setValue('phone', '');
+        }
+      }, 100);
+      return () => clearTimeout(timer);
+    }
+  }, [step, setValue]);
 
   // Lock body scroll when modal is open
   useEffect(() => {
@@ -92,7 +121,7 @@ export const SignupModal: React.FC<SignupModalProps> = ({ isOpen, onClose, selec
   useEffect(() => {
     const fetchPlans = async () => {
       try {
-        const response = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL}/public/subscription-plans`);
+        const response = await fetch(`${apiBaseUrl}/public/subscription-plans`);
         if (response.ok) {
           const data = await response.json();
           const activePlans = data.filter((p: SubscriptionPlan) => p).sort((a: SubscriptionPlan, b: SubscriptionPlan) =>
@@ -118,7 +147,7 @@ export const SignupModal: React.FC<SignupModalProps> = ({ isOpen, onClose, selec
       reset();
       setStep(1);
     }
-  }, [isOpen, selectedPlanId, reset]);
+  }, [apiBaseUrl, isOpen, selectedPlanId, reset]);
 
   if (!isOpen) return null;
 
@@ -144,7 +173,7 @@ export const SignupModal: React.FC<SignupModalProps> = ({ isOpen, onClose, selec
     }
 
     try {
-      const registerResponse = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL}/public/register`, {
+      const registerResponse = await fetch(`${apiBaseUrl}/public/register`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -169,7 +198,7 @@ export const SignupModal: React.FC<SignupModalProps> = ({ isOpen, onClose, selec
       const registerData = await registerResponse.json();
       toast.success('Account created! Redirecting to checkout...');
 
-      const checkoutResponse = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL}/stripe/public/create-checkout-session`, {
+      const checkoutResponse = await fetch(`${apiBaseUrl}/stripe/public/create-checkout-session`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -179,7 +208,7 @@ export const SignupModal: React.FC<SignupModalProps> = ({ isOpen, onClose, selec
           billing_interval: billingInterval,
           success_url: `${window.location.origin}/admin/login?payment=success`,
           cancel_url: `${window.location.origin}/?payment=cancelled`,
-          trial_days: 0
+          trial_days: 0,
         })
       });
 
@@ -321,18 +350,25 @@ export const SignupModal: React.FC<SignupModalProps> = ({ isOpen, onClose, selec
               </span>
             </div>
 
-            <form onSubmit={onSubmit} className="space-y-4">
-              {step === 1 ? (
-                <>
+            <form onSubmit={onSubmit} autoComplete="off" className="space-y-4">
+              {/* Hidden honeypot fields to absorb Chrome autofill and prevent
+                  password leaking into company/phone fields on step 2. */}
+              <div aria-hidden="true" className="absolute" style={{ width: 0, height: 0, overflow: 'hidden', opacity: 0 }}>
+                <input type="text" name="fake_username" tabIndex={-1} autoComplete="username" />
+                <input type="password" name="fake_password" tabIndex={-1} autoComplete="current-password" />
+              </div>
+              {/* Step 1 fields — hidden (not unmounted) on step 2 so react-hook-form retains values */}
+              <div className={step === 1 ? '' : 'hidden'}>
                   <div>
                     <h2 className="text-xl font-bold text-white mb-1">Create your account</h2>
                     <p className="text-sm text-slate-400">Enter your email and create a password</p>
                   </div>
 
-                  <div>
+                  <div className="mt-4">
                     <label className="block text-sm font-medium text-slate-300 mb-1">Email</label>
                     <input
                       type="email"
+                      autoComplete="email"
                       {...register('email', { required: 'Email is required' })}
                       className="w-full px-4 py-3 rounded-lg bg-slate-700/50 border border-slate-600 text-white placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
                       placeholder="you@company.com"
@@ -340,10 +376,11 @@ export const SignupModal: React.FC<SignupModalProps> = ({ isOpen, onClose, selec
                     {errors.email && <p className="mt-1 text-xs text-red-400">{errors.email.message}</p>}
                   </div>
 
-                  <div>
+                  <div className="mt-4">
                     <label className="block text-sm font-medium text-slate-300 mb-1">Password</label>
                     <input
                       type="password"
+                      autoComplete="new-password"
                       {...register('password', {
                         required: 'Password is required',
                         minLength: { value: 8, message: 'Min 8 characters' },
@@ -358,10 +395,11 @@ export const SignupModal: React.FC<SignupModalProps> = ({ isOpen, onClose, selec
                     {errors.password && <p className="mt-1 text-xs text-red-400">{errors.password.message}</p>}
                   </div>
 
-                  <div>
+                  <div className="mt-4">
                     <label className="block text-sm font-medium text-slate-300 mb-1">Confirm Password</label>
                     <input
                       type="password"
+                      autoComplete="new-password"
                       {...register('confirmPassword', {
                         required: 'Please confirm password',
                         validate: (value) => value === watch('password') || 'Passwords must match'
@@ -375,12 +413,12 @@ export const SignupModal: React.FC<SignupModalProps> = ({ isOpen, onClose, selec
                   <button
                     type="button"
                     onClick={handleNext}
-                    className="w-full py-3 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-semibold transition-all"
+                    className="w-full mt-4 py-3 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-semibold transition-all"
                   >
                     Continue
                   </button>
-                </>
-              ) : (
+              </div>
+              {step === 2 && (
                 <>
                   <div className="flex items-center gap-2 mb-2">
                     <button
@@ -402,6 +440,7 @@ export const SignupModal: React.FC<SignupModalProps> = ({ isOpen, onClose, selec
                     <div>
                       <label className="block text-sm font-medium text-slate-300 mb-1">First name</label>
                       <input
+                        autoComplete="given-name"
                         {...register('firstName', { required: 'Required' })}
                         className="w-full px-3 py-2.5 rounded-lg bg-slate-700/50 border border-slate-600 text-white placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent text-sm"
                         placeholder="Jane"
@@ -411,6 +450,7 @@ export const SignupModal: React.FC<SignupModalProps> = ({ isOpen, onClose, selec
                     <div>
                       <label className="block text-sm font-medium text-slate-300 mb-1">Last name</label>
                       <input
+                        autoComplete="family-name"
                         {...register('lastName', { required: 'Required' })}
                         className="w-full px-3 py-2.5 rounded-lg bg-slate-700/50 border border-slate-600 text-white placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent text-sm"
                         placeholder="Smith"
@@ -422,6 +462,7 @@ export const SignupModal: React.FC<SignupModalProps> = ({ isOpen, onClose, selec
                   <div>
                     <label className="block text-sm font-medium text-slate-300 mb-1">Company name</label>
                     <input
+                      autoComplete="one-time-code"
                       {...register('companyName', { required: 'Required' })}
                       className="w-full px-3 py-2.5 rounded-lg bg-slate-700/50 border border-slate-600 text-white placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent text-sm"
                       placeholder="Your Planning Co."
@@ -433,6 +474,7 @@ export const SignupModal: React.FC<SignupModalProps> = ({ isOpen, onClose, selec
                     <label className="block text-sm font-medium text-slate-300 mb-1">Phone</label>
                     <input
                       type="tel"
+                      autoComplete="one-time-code"
                       {...register('phone', { required: 'Required' })}
                       className="w-full px-3 py-2.5 rounded-lg bg-slate-700/50 border border-slate-600 text-white placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent text-sm"
                       placeholder="(555) 123-4567"

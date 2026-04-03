@@ -21,6 +21,8 @@ class MongoConnector:
                 serverSelectionTimeoutMS=5000,
                 connectTimeoutMS=10000,
                 socketTimeoutMS=20000,
+                tz_aware=True,          # Return timezone-aware UTC datetimes
+                tzinfo=__import__("datetime").timezone.utc,  # Set timezone to UTC
             )
             self.db = self.client[db_name]
             logger.info(f"Initialized Motor async client for database: {db_name}")

@@ -26,7 +26,7 @@
  * Cost: $0/month (FREE tier)
  */
 
-export default {
+const worker = {
   async scheduled(event, env, ctx) {
     console.log('Saving metrics snapshot...');
 
@@ -80,6 +80,8 @@ export default {
     }
   },
 };
+
+export default worker;
 
 async function writeMetricsToAnalyticsEngine(dataset, metrics, context) {
   if (!dataset || typeof dataset.writeDataPoint !== 'function') {

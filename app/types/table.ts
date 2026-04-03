@@ -13,15 +13,28 @@ export interface Guest {
   id: string;
   wedding_id: string;
   name: string;
+  token?: string;
   email?: string;
   phone?: string;
   group_id?: string;
   table_id?: string | null;
   role?: string;
+  // Plus-one fields
   plus_one_allowed?: boolean;
-  rsvp_status?: string;
-  dietary_restrictions?: string;
-  notes?: string;
+  number_of_plus_ones_allowed?: number;
+  plus_one_submitted?: boolean;
+  // Communication opt-in fields
+  sms_opt_in?: boolean | null;
+  sms_opt_in_date?: string | null;
+  sms_opt_out_date?: string | null;
+  phone_status?: string | null;
+  phone_status_updated_at?: string | null;
+  email_opt_in?: boolean | null;
+  email_opt_in_date?: string | null;
+  email_opt_out_date?: string | null;
+  // Invite tracking
+  invite_sent?: boolean;
+  invite_sent_date?: string | null;
   // Seating constraint fields
   must_sit_with?: string[];
   must_sit_apart?: string[];
@@ -29,6 +42,9 @@ export interface Guest {
   seating_preference?: string;
   age_group?: string;
   language_preference?: string;
+  // Timestamps
+  created_at?: string;
+  updated_at?: string;
 }
 
 export interface SeatingConstraint {

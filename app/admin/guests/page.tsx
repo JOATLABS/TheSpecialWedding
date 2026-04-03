@@ -2,7 +2,12 @@
 
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { useAdmin } from '@/contexts/AdminContext';
+import { useSSE } from '@/hooks/useSSE';
+import { BUILT_IN_WEDDING_EVENT_OPTIONS, getWeddingEventLabel, getWeddingEventOptions } from '@/utils/weddingEvents';
+import { getApiBaseUrl } from '@/utils/env';
 import PageHeader from '../components/PageHeader';
+import { usePagination } from '@/admin/hooks/usePagination';
+import { GlassPagination } from '@/admin/components/ui/glass/GlassPagination';
 
 // ==================== INTERFACES ====================
 
@@ -14,6 +19,7 @@ interface Wedding {
   slug: string;
   events?: Array<{
     type: string;
+    custom_type_label?: string;
     date: string;
   }>;
 }
@@ -60,6 +66,12 @@ interface PlusOne {
   email_opt_in?: boolean | null;
 }
 
+interface GuestImportResult {
+  imported: number;
+  tokens: string[];
+  warnings?: string[];
+}
+
 type SortField = 'name' | 'email' | 'phone' | 'role' | 'group_id' | 'rsvp_status' | 'plus_ones';
 type SortDirection = 'asc' | 'desc';
 type ViewMode = 'table' | 'cards';
@@ -82,16 +94,11 @@ const PRESET_GROUPS = [
 // Wedding party group IDs for sync feature (bridesmaids, groomsmen, maid of honor, best man)
 const WEDDING_PARTY_GROUP_IDS = ['maid_of_honor', 'bridesmaids', 'best_man', 'groomsmen'];
 
-const EVENT_OPTIONS = [
-  { value: 'traditional', label: 'Traditional Ceremony' },
-  { value: 'white_wedding', label: 'White Wedding' },
-  { value: 'reception', label: 'Reception' },
-];
-
 // ==================== MAIN COMPONENT ====================
 
 export default function AdminGuestsPage() {
   const { token } = useAdmin();
+  const apiBaseUrl = getApiBaseUrl();
 
   // Data state
   const [weddings, setWeddings] = useState<Wedding[]>([]);
@@ -104,7 +111,7 @@ export default function AdminGuestsPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string>('');
   const [successMessage, setSuccessMessage] = useState<string>('');
-  const [activeTab, setActiveTab] = useState<'all' | 'rsvp' | 'pending' | 'import'>('all');
+  const [activeTab, setActiveTab] = useState<'all' | 'rsvp' | 'pending' | 'not_invited' | 'import'>('all');
   const [searchTerm, setSearchTerm] = useState('');
   const [viewMode, setViewMode] = useState<ViewMode>('table');
   const [expandedGuest, setExpandedGuest] = useState<string | null>(null);
@@ -120,6 +127,15 @@ export default function AdminGuestsPage() {
   // Selection state for bulk actions
   const [selectedGuests, setSelectedGuests] = useState<Set<string>>(new Set());
   const [selectAll, setSelectAll] = useState(false);
+
+  // Pagination state
+  const pagination = usePagination({ initialItemsPerPage: 50 });
+  const {
+    currentPage,
+    itemsPerPage,
+    setPage: setPaginationPage,
+    setTotalItems: setPaginationTotalItems,
+  } = pagination;
 
   // Modal states
   const [editingGuest, setEditingGuest] = useState<Guest | null>(null);
@@ -154,7 +170,7 @@ export default function AdminGuestsPage() {
   // Import state
   const [importFile, setImportFile] = useState<File | null>(null);
   const [importLoading, setImportLoading] = useState(false);
-  const [importResult, setImportResult] = useState<{ imported: number; tokens: string[] } | null>(null);
+  const [importResult, setImportResult] = useState<GuestImportResult | null>(null);
   const [importError, setImportError] = useState<string>('');
 
   // Bulk action state
@@ -185,7 +201,7 @@ export default function AdminGuestsPage() {
   const fetchWeddings = useCallback(async () => {
     if (!token) return;
     try {
-      const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || '';
+      const baseUrl = apiBaseUrl;
       const response = await fetch(`${baseUrl}/admin/planner/weddings`, {
         headers: {
           'Authorization': `Bearer ${token}`,
@@ -197,60 +213,68 @@ export default function AdminGuestsPage() {
     } catch {
       setError('Failed to load weddings');
     }
-  }, [token]);
+  }, [apiBaseUrl, token]);
 
   const fetchGuestData = useCallback(async () => {
     if (!selectedWedding) return;
 
     setLoading(true);
     try {
-      const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || '';
+      const baseUrl = apiBaseUrl;
 
-      // Fetch guests
+      // Fetch guests with pagination
       const guestsResponse = await fetch(
-        `${baseUrl}/admin/guests?wedding_id=${selectedWedding}`,
+        `${baseUrl}/admin/guests?wedding_id=${selectedWedding}&page=${currentPage}&limit=${itemsPerPage}`,
         { headers: { 'Authorization': `Bearer ${token}` } }
       );
 
       let normalizedGuests: Guest[] = [];
       if (guestsResponse.ok) {
         const guestsData = await guestsResponse.json();
-        normalizedGuests = Array.isArray(guestsData) ? guestsData : [];
+        const guestData = guestsData.guests || guestsData || [];
+        normalizedGuests = Array.isArray(guestData) ? guestData : [];
+        setGuests(normalizedGuests);
+        setPaginationTotalItems(guestsData.total || normalizedGuests.length);
+      } else {
+        setGuests([]);
       }
-      setGuests(normalizedGuests);
 
-      // Fetch RSVPs
-      try {
-        const rsvpsResponse = await fetch(
-          `${baseUrl}/admin/rsvps?wedding_id=${selectedWedding}`,
-          { headers: { 'Authorization': `Bearer ${token}` } }
-        );
-        if (rsvpsResponse.ok) {
-          const rsvpsData = await rsvpsResponse.json();
-          setRsvps(Array.isArray(rsvpsData) ? rsvpsData : []);
-        } else {
-          setRsvps([]);
-        }
-      } catch {
+      const guestIds = normalizedGuests
+        .map((guest) => guest.id || guest._id)
+        .filter((guestId): guestId is string => Boolean(guestId));
+
+      if (guestIds.length === 0) {
+        setRsvps([]);
+        setPlusOnes([]);
+        return;
+      }
+
+      const guestIdsQuery = encodeURIComponent(guestIds.join(','));
+      const [rsvpsResult, plusOnesResult] = await Promise.allSettled([
+        fetch(`${baseUrl}/admin/rsvps?wedding_id=${selectedWedding}&guest_ids=${guestIdsQuery}`, {
+          headers: { 'Authorization': `Bearer ${token}` },
+        }),
+        fetch(`${baseUrl}/admin/plus-one/wedding/${selectedWedding}?guest_ids=${guestIdsQuery}`, {
+          headers: { 'Authorization': `Bearer ${token}` },
+        }),
+      ]);
+
+      if (rsvpsResult.status === 'fulfilled' && rsvpsResult.value.ok) {
+        const rsvpsData = await rsvpsResult.value.json();
+        setRsvps(Array.isArray(rsvpsData) ? rsvpsData : []);
+      } else {
         setRsvps([]);
       }
 
-      // Fetch plus ones for wedding (batch - avoids N+1 queries)
-      // Uses /admin/ prefix to match all other admin API calls
-      try {
-        const response = await fetch(`${baseUrl}/admin/plus-one/wedding/${selectedWedding}`, {
-          headers: { 'Authorization': `Bearer ${token}` },
-        });
-
-        if (response.ok) {
-          const allPlusOnes = await response.json();
-          setPlusOnes(Array.isArray(allPlusOnes) ? allPlusOnes : []);
+      if (plusOnesResult.status === 'fulfilled' && plusOnesResult.value.ok) {
+        const allPlusOnes = await plusOnesResult.value.json();
+        setPlusOnes(Array.isArray(allPlusOnes) ? allPlusOnes : []);
+      } else {
+        if (plusOnesResult.status === 'fulfilled') {
+          console.error('[PlusOnes] Fetch failed:', plusOnesResult.value.status);
         } else {
-          console.error('[PlusOnes] Fetch failed:', response.status);
-          setPlusOnes([]);
+          console.error('[PlusOnes] Fetch error:', plusOnesResult.reason);
         }
-      } catch (err) {
-        console.error('[PlusOnes] Fetch error:', err);
         setPlusOnes([]);
       }
 
@@ -259,7 +283,7 @@ export default function AdminGuestsPage() {
     } finally {
       setLoading(false);
     }
-  }, [selectedWedding, token]);
+  }, [apiBaseUrl, selectedWedding, token, currentPage, itemsPerPage, setPaginationTotalItems]);
 
   useEffect(() => {
     fetchWeddings();
@@ -274,16 +298,15 @@ export default function AdminGuestsPage() {
     }
   }, [fetchGuestData, selectedWedding]);
 
-  // Auto-refresh data when planner switches back to this tab
-  useEffect(() => {
-    const handleVisibility = () => {
-      if (document.visibilityState === 'visible' && selectedWedding) {
-        fetchGuestData();
-      }
-    };
-    document.addEventListener('visibilitychange', handleVisibility);
-    return () => document.removeEventListener('visibilitychange', handleVisibility);
-  }, [fetchGuestData, selectedWedding]);
+  // Real-time updates via SSE — refetch guest data when the server
+  // signals a change to guests, RSVPs, plus-ones, or invites for
+  // the currently selected wedding.
+  useSSE({
+    resources: ['guest', 'rsvp', 'plus_one', 'invite'],
+    weddingId: selectedWedding,
+    onDataChange: fetchGuestData,
+    enabled: !!selectedWedding,
+  });
 
   // Fetch QR code with authentication when modal opens
   useEffect(() => {
@@ -296,7 +319,7 @@ export default function AdminGuestsPage() {
       setQrImageLoading(true);
       try {
         const guestId = qrModalGuest.id || qrModalGuest._id;
-        const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || '';
+        const baseUrl = apiBaseUrl;
         const response = await fetch(
           `${baseUrl}/admin/guests/${guestId}/qr?wedding_id=${selectedWedding}`,
           {
@@ -330,14 +353,14 @@ export default function AdminGuestsPage() {
       }
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [qrModalGuest, selectedWedding, token]);
+  }, [apiBaseUrl, qrModalGuest, selectedWedding, token]);
 
   // Fetch guest activity when a guest is expanded
   const fetchGuestActivity = useCallback(async (guestId: string) => {
     if (!token || !guestId || guestActivity[guestId]) return;
     setActivityLoading(guestId);
     try {
-      const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || '';
+      const baseUrl = apiBaseUrl;
       const response = await fetch(`${baseUrl}/admin/guests/${guestId}/activity`, {
         headers: {
           'Authorization': `Bearer ${token}`,
@@ -353,7 +376,7 @@ export default function AdminGuestsPage() {
     } finally {
       setActivityLoading(null);
     }
-  }, [token, guestActivity]);
+  }, [apiBaseUrl, token, guestActivity]);
 
   // Trigger activity fetch when guest is expanded
   useEffect(() => {
@@ -366,15 +389,37 @@ export default function AdminGuestsPage() {
 
   const normalizeId = (id: string | undefined) => id?.toString() || '';
 
+  const rsvpByGuestId = useMemo(() => {
+    const lookup = new Map<string, RSVP>();
+    for (const rsvp of rsvps) {
+      lookup.set(normalizeId(rsvp.guest_id), rsvp);
+    }
+    return lookup;
+  }, [rsvps]);
+
+  const rsvpGuestIds = useMemo(() => new Set(rsvpByGuestId.keys()), [rsvpByGuestId]);
+
+  const plusOnesByGuestId = useMemo(() => {
+    const lookup = new Map<string, PlusOne[]>();
+    for (const plusOne of plusOnes) {
+      const guestId = normalizeId(plusOne.guest_id);
+      const existing = lookup.get(guestId);
+      if (existing) {
+        existing.push(plusOne);
+      } else {
+        lookup.set(guestId, [plusOne]);
+      }
+    }
+    return lookup;
+  }, [plusOnes]);
+
   const getRSVPForGuest = (guestId: string) => {
-    const normalizedGuestId = normalizeId(guestId);
-    return rsvps.find(r => normalizeId(r.guest_id) === normalizedGuestId);
+    return rsvpByGuestId.get(normalizeId(guestId));
   };
 
   const getPlusOnesForGuest = useCallback((guestId: string) => {
-    const normalizedGuestId = normalizeId(guestId);
-    return plusOnes.filter(p => normalizeId(p.guest_id) === normalizedGuestId);
-  }, [plusOnes]);
+    return plusOnesByGuestId.get(normalizeId(guestId)) ?? [];
+  }, [plusOnesByGuestId]);
 
   const getGroupLabel = (groupId: string | undefined) => {
     if (!groupId) return '-';
@@ -436,6 +481,11 @@ export default function AdminGuestsPage() {
 
   // ==================== FILTERING & SORTING ====================
 
+  // Reset pagination to page 1 when filters change
+  useEffect(() => {
+    setPaginationPage(1);
+  }, [searchTerm, activeTab, filterGroup, filterRole, setPaginationPage]);
+
   const filteredAndSortedGuests = useMemo(() => {
     let result = guests.filter(guest => {
       // Search filter
@@ -448,10 +498,11 @@ export default function AdminGuestsPage() {
 
       // Tab filter
       const guestId = normalizeId(guest.id || guest._id);
-      const hasRSVP = rsvps.some(r => normalizeId(r.guest_id) === guestId);
+      const hasRSVP = rsvpGuestIds.has(guestId);
 
       if (activeTab === 'rsvp' && !hasRSVP) return false;
-      if (activeTab === 'pending' && hasRSVP) return false;
+      if (activeTab === 'pending' && (!guest.invite_sent || hasRSVP)) return false;
+      if (activeTab === 'not_invited' && (guest.invite_sent || hasRSVP)) return false;
 
       // Group filter
       if (filterGroup && guest.group_id !== filterGroup) return false;
@@ -490,14 +541,14 @@ export default function AdminGuestsPage() {
           break;
         case 'rsvp_status':
           // RSVP status priority: 0 = Not Invited, 1 = Pending (invited), 2 = RSVP'd
-          const aHasRSVP = rsvps.some(r => normalizeId(r.guest_id) === normalizeId(a.id || a._id));
-          const bHasRSVP = rsvps.some(r => normalizeId(r.guest_id) === normalizeId(b.id || b._id));
+          const aHasRSVP = rsvpGuestIds.has(normalizeId(a.id || a._id));
+          const bHasRSVP = rsvpGuestIds.has(normalizeId(b.id || b._id));
           aValue = aHasRSVP ? 2 : (a.invite_sent ? 1 : 0);
           bValue = bHasRSVP ? 2 : (b.invite_sent ? 1 : 0);
           break;
         case 'plus_ones':
-          aValue = getPlusOnesForGuest(a.id || a._id || '').length;
-          bValue = getPlusOnesForGuest(b.id || b._id || '').length;
+          aValue = (plusOnesByGuestId.get(normalizeId(a.id || a._id || '')) ?? []).length;
+          bValue = (plusOnesByGuestId.get(normalizeId(b.id || b._id || '')) ?? []).length;
           break;
       }
 
@@ -507,7 +558,7 @@ export default function AdminGuestsPage() {
     });
 
     return result;
-  }, [guests, searchTerm, activeTab, filterGroup, filterRole, sortField, sortDirection, rsvps, plusOnes, getPlusOnesForGuest]);
+  }, [guests, searchTerm, activeTab, filterGroup, filterRole, sortField, sortDirection, rsvpGuestIds, plusOnesByGuestId]);
 
   // ==================== SELECTION HANDLERS ====================
 
@@ -561,7 +612,7 @@ export default function AdminGuestsPage() {
     }
 
     try {
-      const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || '';
+      const baseUrl = apiBaseUrl;
       const response = await fetch(`${baseUrl}/admin/guests?wedding_id=${selectedWedding}`, {
         method: 'POST',
         headers: {
@@ -623,7 +674,7 @@ export default function AdminGuestsPage() {
     const guestId = editingGuest.id || editingGuest._id;
 
     try {
-      const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || '';
+      const baseUrl = apiBaseUrl;
 
       // Update guest info
       const guestResponse = await fetch(`${baseUrl}/admin/guests/${guestId}`, {
@@ -679,7 +730,7 @@ export default function AdminGuestsPage() {
     if (!confirm('Are you sure you want to delete this guest? This will also delete their RSVP and plus-ones.')) return;
 
     try {
-      const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || '';
+      const baseUrl = apiBaseUrl;
       const response = await fetch(`${baseUrl}/admin/guests/${guestId}`, {
         method: 'DELETE',
         headers: { 'Authorization': `Bearer ${token}` },
@@ -731,7 +782,7 @@ export default function AdminGuestsPage() {
 
     setSendingReminder(true);
     try {
-      const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || '';
+      const baseUrl = apiBaseUrl;
       let smsSent = 0;
       let emailSent = 0;
       let smsError = '';
@@ -827,7 +878,7 @@ export default function AdminGuestsPage() {
     setExportLoading(true);
     setExportMenuOpen(false);
     try {
-      const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || '';
+      const baseUrl = apiBaseUrl;
       const response = await fetch(
         `${baseUrl}/admin/guests/export/pdf?wedding_id=${selectedWedding}`,
         { headers: { 'Authorization': `Bearer ${token}` } }
@@ -890,7 +941,7 @@ export default function AdminGuestsPage() {
     setExportLoading(true);
     setExportMenuOpen(false);
     try {
-      const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || '';
+      const baseUrl = apiBaseUrl;
       const response = await fetch(`${baseUrl}/admin/guests/export/qr-zip`, {
         method: 'POST',
         headers: {
@@ -927,7 +978,7 @@ export default function AdminGuestsPage() {
 
     setExportLoading(true);
     try {
-      const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || '';
+      const baseUrl = apiBaseUrl;
       const response = await fetch(`${baseUrl}/admin/guests/export/qr-zip`, {
         method: 'POST',
         headers: {
@@ -964,7 +1015,7 @@ export default function AdminGuestsPage() {
     if (!selectedWedding || !guestId) return;
 
     try {
-      const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || '';
+      const baseUrl = apiBaseUrl;
       const response = await fetch(
         `${baseUrl}/admin/guests/${guestId}/qr/download?wedding_id=${selectedWedding}`,
         { headers: { 'Authorization': `Bearer ${token}` } }
@@ -995,7 +1046,7 @@ export default function AdminGuestsPage() {
     }
 
     try {
-      const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || '';
+      const baseUrl = apiBaseUrl;
       const promises = Array.from(selectedGuests).map(guestId =>
         fetch(`${baseUrl}/admin/guests/${guestId}`, {
           method: 'PUT',
@@ -1029,7 +1080,7 @@ export default function AdminGuestsPage() {
       const selectedGuestsList = guests.filter(g => selectedGuests.has(g.id || g._id || ''));
       const tokens = selectedGuestsList.map(g => g.token);
 
-      const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || '';
+      const baseUrl = apiBaseUrl;
       const response = await fetch(`${baseUrl}/admin/reminders/send-to-guests`, {
         method: 'POST',
         headers: {
@@ -1091,7 +1142,7 @@ export default function AdminGuestsPage() {
       const formData = new FormData();
       formData.append('file', importFile);
 
-      const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || '';
+      const baseUrl = apiBaseUrl;
       const response = await fetch(
         `${baseUrl}/admin/guests/import?wedding_id=${selectedWedding}`,
         {
@@ -1137,6 +1188,20 @@ export default function AdminGuestsPage() {
   // ==================== COMPUTED VALUES ====================
 
   const selectedWeddingData = weddings.find(w => (w.id || w._id) === selectedWedding);
+  const selectedWeddingEventOptions = useMemo(() => {
+    if (selectedWeddingData?.events?.length) {
+      return getWeddingEventOptions(selectedWeddingData.events);
+    }
+    return BUILT_IN_WEDDING_EVENT_OPTIONS.map((option) => ({ value: option.value, label: option.label }));
+  }, [selectedWeddingData]);
+  const getSelectedWeddingEventLabel = useCallback(
+    (eventType: string) =>
+      getWeddingEventLabel(
+        eventType,
+        selectedWeddingData?.events?.find((event) => event.type === eventType)?.custom_type_label
+      ),
+    [selectedWeddingData]
+  );
   const uniqueGroups = Array.from(new Set(guests.map(g => g.group_id).filter((g): g is string => Boolean(g))));
   const uniqueRoles = Array.from(new Set(guests.map(g => g.role).filter((r): r is string => Boolean(r))));
 
@@ -1202,7 +1267,6 @@ export default function AdminGuestsPage() {
 
   return (
     <div className="space-y-6">
-      <div className="max-w-7xl mx-auto">
         <PageHeader
           title="Guest Management"
           description="View and manage all wedding guests, RSVPs, and plus-ones"
@@ -1210,35 +1274,37 @@ export default function AdminGuestsPage() {
 
         {/* Success/Error Messages */}
         {successMessage && (
-          <div className="mb-4 p-4 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg">
+          <div className="p-4 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg">
             <p className="text-green-700 dark:text-green-300">{successMessage}</p>
           </div>
         )}
         {error && (
-          <div className="mb-4 p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg">
+          <div className="p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg">
             <p className="text-red-700 dark:text-red-300">{error}</p>
             <button onClick={() => setError('')} className="text-sm text-red-500 hover:text-red-700 mt-1">Dismiss</button>
           </div>
         )}
 
         {/* Wedding Selection */}
-        <div className="bg-white dark:bg-slate-800 rounded-xl shadow-lg p-6 mb-6">
-          <label htmlFor="wedding" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-            Select Wedding
-          </label>
-          <select
-            id="wedding"
-            value={selectedWedding}
-            onChange={(e) => setSelectedWedding(e.target.value)}
-            className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-wedding-rose focus:border-transparent"
-          >
-            <option value="">Choose a wedding...</option>
-            {weddings.map((wedding) => (
-              <option key={wedding.id || wedding._id} value={wedding.id || wedding._id}>
-                {wedding.couple_names} - {wedding.date}
-              </option>
-            ))}
-          </select>
+        <div className="bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-4">
+          <div className="flex flex-col sm:flex-row gap-4 items-center">
+            <label htmlFor="wedding" className="font-medium text-slate-700 dark:text-gray-200 whitespace-nowrap">
+              Select Wedding:
+            </label>
+            <select
+              id="wedding"
+              value={selectedWedding}
+              onChange={(e) => setSelectedWedding(e.target.value)}
+              className="flex-1 px-4 py-2.5 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-wedding-rose focus:border-transparent"
+            >
+              <option value="">Choose a wedding...</option>
+              {weddings.map((wedding) => (
+                <option key={wedding.id || wedding._id} value={wedding.id || wedding._id}>
+                  {wedding.couple_names} - {wedding.date}
+                </option>
+              ))}
+            </select>
+          </div>
         </div>
 
         {selectedWedding && (() => {
@@ -1263,7 +1329,7 @@ export default function AdminGuestsPage() {
             {/* Stats Overview */}
             <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-8">
                   {/* Total Guests */}
-                  <div className="bg-white dark:bg-slate-800 rounded-xl shadow-lg p-6">
+                  <div onClick={() => setActiveTab('all')} className={`bg-white dark:bg-slate-800 rounded-xl shadow-lg p-6 cursor-pointer transition-all hover:ring-2 hover:ring-wedding-navy/30 ${activeTab === 'all' ? 'ring-2 ring-wedding-navy' : ''}`}>
                     <div className="flex flex-col items-center text-center">
                       <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-1">Total Guests</h3>
                       <div className="flex items-baseline gap-2 justify-center">
@@ -1281,7 +1347,7 @@ export default function AdminGuestsPage() {
                     </div>
                   </div>
                   {/* RSVPs Received */}
-                  <div className="bg-white dark:bg-slate-800 rounded-xl shadow-lg p-6">
+                  <div onClick={() => setActiveTab('rsvp')} className={`bg-white dark:bg-slate-800 rounded-xl shadow-lg p-6 cursor-pointer transition-all hover:ring-2 hover:ring-green-500/30 ${activeTab === 'rsvp' ? 'ring-2 ring-green-500' : ''}`}>
                     <div className="flex flex-col items-center text-center">
                       <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-1">RSVPs Confirmed</h3>
                       <div className="flex items-baseline gap-2 justify-center">
@@ -1299,7 +1365,7 @@ export default function AdminGuestsPage() {
                     </div>
                   </div>
                   {/* Awaiting Response */}
-                  <div className="bg-white dark:bg-slate-800 rounded-xl shadow-lg p-6">
+                  <div onClick={() => setActiveTab('pending')} className={`bg-white dark:bg-slate-800 rounded-xl shadow-lg p-6 cursor-pointer transition-all hover:ring-2 hover:ring-yellow-500/30 ${activeTab === 'pending' ? 'ring-2 ring-yellow-500' : ''}`}>
                     <div className="flex flex-col items-center text-center">
                       <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-1">Awaiting Response</h3>
                       <div className="flex items-baseline gap-2 justify-center">
@@ -1317,7 +1383,7 @@ export default function AdminGuestsPage() {
                     </div>
                   </div>
                   {/* Not Invited */}
-                  <div className="bg-white dark:bg-slate-800 rounded-xl shadow-lg p-6">
+                  <div onClick={() => setActiveTab('not_invited')} className={`bg-white dark:bg-slate-800 rounded-xl shadow-lg p-6 cursor-pointer transition-all hover:ring-2 hover:ring-gray-400/30 ${activeTab === 'not_invited' ? 'ring-2 ring-gray-400' : ''}`}>
                     <div className="flex flex-col items-center text-center">
                       <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-1">Not Invited</h3>
                       <p className="text-3xl font-bold text-gray-500 mt-1">{notInvited}</p>
@@ -1363,11 +1429,21 @@ export default function AdminGuestsPage() {
                       onClick={() => setActiveTab('pending')}
                       className={`px-4 py-2 rounded-lg font-medium transition-colors ${
                         activeTab === 'pending'
-                          ? 'bg-wedding-navy text-white'
+                          ? 'bg-yellow-500 text-white'
                           : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
                       }`}
                     >
-                      Awaiting RSVP ({invitedNoRsvp})
+                      Pending ({invitedNoRsvp})
+                    </button>
+                    <button
+                      onClick={() => setActiveTab('not_invited')}
+                      className={`px-4 py-2 rounded-lg font-medium transition-colors ${
+                        activeTab === 'not_invited'
+                          ? 'bg-gray-500 text-white'
+                          : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                      }`}
+                    >
+                      Not Invited ({notInvited})
                     </button>
                     <button
                       onClick={() => setActiveTab('import')}
@@ -1588,6 +1664,18 @@ export default function AdminGuestsPage() {
                         <p className="text-green-700 dark:text-green-300 font-semibold">
                           Successfully imported {importResult.imported} guests!
                         </p>
+                        {importResult.warnings && importResult.warnings.length > 0 && (
+                          <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 p-3 dark:border-amber-700 dark:bg-amber-900/20">
+                            <p className="text-sm font-medium text-amber-800 dark:text-amber-200">
+                              {importResult.warnings.length} row{importResult.warnings.length === 1 ? '' : 's'} skipped during import.
+                            </p>
+                            <ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-amber-700 dark:text-amber-300">
+                              {importResult.warnings.map((warning, index) => (
+                                <li key={`${warning}-${index}`}>{warning}</li>
+                              ))}
+                            </ul>
+                          </div>
+                        )}
                       </div>
                     )}
 
@@ -1623,7 +1711,17 @@ export default function AdminGuestsPage() {
                   </div>
                 ) : viewMode === 'table' ? (
                   /* TABLE VIEW */
-                  <div className="overflow-x-auto">
+                  <div className="space-y-4">
+                    <GlassPagination
+                      currentPage={pagination.currentPage}
+                      totalPages={pagination.totalPages}
+                      totalItems={pagination.totalItems}
+                      itemsPerPage={pagination.itemsPerPage}
+                      onPageChange={pagination.setPage}
+                      variant="compact"
+                      itemLabel="guests"
+                    />
+                    <div className="overflow-x-auto">
                     <table className="w-full">
                       <thead className="bg-gray-50 dark:bg-slate-700">
                         <tr>
@@ -1821,7 +1919,7 @@ export default function AdminGuestsPage() {
                                           <div>
                                             <h4 className="font-semibold text-gray-900 dark:text-gray-100 mb-2">RSVP Details</h4>
                                             <dl className="space-y-1 text-sm">
-                                              <div><dt className="inline font-medium text-gray-700 dark:text-gray-300">Attending:</dt> <dd className="inline ml-2 text-gray-600 dark:text-gray-400">{rsvp.attending.join(', ') || 'None'}</dd></div>
+                                              <div><dt className="inline font-medium text-gray-700 dark:text-gray-300">Attending:</dt> <dd className="inline ml-2 text-gray-600 dark:text-gray-400">{rsvp.attending.map(getSelectedWeddingEventLabel).join(', ') || 'None'}</dd></div>
                                               <div><dt className="inline font-medium text-gray-700 dark:text-gray-300">Dietary:</dt> <dd className="inline ml-2 text-gray-600 dark:text-gray-400">{rsvp.dietary || 'None'}</dd></div>
                                               {rsvp.confirmed_by_admin && <div className="text-xs text-blue-500">(Confirmed by admin)</div>}
                                             </dl>
@@ -1871,6 +1969,16 @@ export default function AdminGuestsPage() {
                         })}
                       </tbody>
                     </table>
+                    </div>
+                    <GlassPagination
+                      currentPage={pagination.currentPage}
+                      totalPages={pagination.totalPages}
+                      totalItems={pagination.totalItems}
+                      itemsPerPage={pagination.itemsPerPage}
+                      onPageChange={pagination.setPage}
+                      onItemsPerPageChange={pagination.setItemsPerPage}
+                      itemLabel="guests"
+                    />
                   </div>
                 ) : (
                   /* CARD VIEW */
@@ -1958,7 +2066,7 @@ export default function AdminGuestsPage() {
                                 <div className="flex gap-6 text-sm">
                                   <div>
                                     <span className="font-medium text-gray-700 dark:text-gray-300">Attending:</span>
-                                    <span className="ml-2">{rsvp.attending.join(', ') || 'None'}</span>
+                                    <span className="ml-2">{rsvp.attending.map(getSelectedWeddingEventLabel).join(', ') || 'None'}</span>
                                   </div>
                                   {rsvp.dietary && (
                                     <div>
@@ -2017,7 +2125,7 @@ export default function AdminGuestsPage() {
                                               <div className="text-gray-600 dark:text-gray-400">
                                                 {plusOne.phone && <span>Phone: {plusOne.phone} | </span>}
                                                 {plusOne.email && <span>Email: {plusOne.email} | </span>}
-                                                Attending: {plusOne.attending?.join(', ') || 'None'}
+                                                Attending: {plusOne.attending?.map(getSelectedWeddingEventLabel).join(', ') || 'None'}
                                                 {plusOne.dietary && ` | Dietary: ${plusOne.dietary}`}
                                               </div>
                                               <div className="flex gap-2 mt-1">
@@ -2052,7 +2160,7 @@ export default function AdminGuestsPage() {
                                                 : 'bg-gray-100 text-gray-600'
                                             }`}
                                           >
-                                            {event.type.replace('_', ' ')} - {event.date}
+                                            {getWeddingEventLabel(event.type, event.custom_type_label)} - {event.date}
                                           </span>
                                         ))}
                                       </div>
@@ -2308,7 +2416,7 @@ export default function AdminGuestsPage() {
                     <div>
                       <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Attending Events</label>
                       <div className="space-y-2">
-                        {EVENT_OPTIONS.map(event => (
+                        {selectedWeddingEventOptions.map(event => (
                           <label key={event.value} className="flex items-center space-x-2">
                             <input
                               type="checkbox"
@@ -2658,7 +2766,6 @@ export default function AdminGuestsPage() {
             </div>
           </div>
         )}
-      </div>
     </div>
   );
 }

@@ -39,7 +39,7 @@ async function fetchWithTimeout(url, options = {}, timeoutMs = 10000) {
   }
 }
 
-export default {
+const worker = {
   async scheduled(event, env, ctx) {
     console.log('Uptime check triggered');
 
@@ -116,6 +116,8 @@ export default {
     }
   }
 };
+
+export default worker;
 
 /**
  * Check backend health

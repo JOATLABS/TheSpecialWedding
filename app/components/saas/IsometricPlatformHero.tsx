@@ -5,6 +5,14 @@ import React, { useEffect, useState } from 'react';
 export default function IsometricPlatformHero() {
   const [mouseX, setMouseX] = useState(0);
   const [mouseY, setMouseY] = useState(0);
+  const [particles] = useState(() => (
+    Array.from({ length: 8 }, () => ({
+      left: `${Math.random() * 100}%`,
+      top: `${Math.random() * 100}%`,
+      animation: `particle ${3 + Math.random() * 2}s ease-in-out infinite ${Math.random() * 2}s`,
+      transform: `translateZ(${Math.random() * 100}px)`,
+    }))
+  ));
 
   useEffect(() => {
     const handleMouseMove = (e: MouseEvent) => {
@@ -159,16 +167,11 @@ export default function IsometricPlatformHero() {
             </svg>
 
             {/* Floating Data Particles */}
-            {[...Array(8)].map((_, i) => (
+            {particles.map((particle, i) => (
               <div
                 key={i}
                 className="absolute w-2 h-2 bg-blue-400/60 rounded-full blur-sm"
-                style={{
-                  left: `${Math.random() * 100}%`,
-                  top: `${Math.random() * 100}%`,
-                  animation: `particle ${3 + Math.random() * 2}s ease-in-out infinite ${Math.random() * 2}s`,
-                  transform: `translateZ(${Math.random() * 100}px)`,
-                }}
+                style={particle}
               />
             ))}
           </div>

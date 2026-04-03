@@ -4,11 +4,15 @@ import React, { useEffect, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
+import { useAdmin } from '@/contexts/AdminContext';
 import { CheckCircle2, Loader2, ArrowRight } from 'lucide-react';
+import { getApiBaseUrl } from '@/utils/env';
 
 export default function BillingSuccessPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const { token } = useAdmin();
+  const apiBaseUrl = getApiBaseUrl();
   const [loading, setLoading] = useState(true);
   const [session, setSession] = useState<any>(null);
   const [error, setError] = useState<string | null>(null);
@@ -25,13 +29,12 @@ export default function BillingSuccessPage() {
     // Verify the checkout session
     const verifySession = async () => {
       try {
-        const token = localStorage.getItem('admin_token') || sessionStorage.getItem('admin_token');
         if (!token) {
           throw new Error('Not authenticated');
         }
 
         const response = await fetch(
-          `${process.env.NEXT_PUBLIC_API_BASE_URL}/stripe/checkout-session/${sessionId}`,
+          `${apiBaseUrl}/stripe/checkout-session/${sessionId}`,
           {
             headers: {
               'Authorization': `Bearer ${token}`,
@@ -56,7 +59,7 @@ export default function BillingSuccessPage() {
     };
 
     verifySession();
-  }, [searchParams]);
+  }, [apiBaseUrl, searchParams, token]);
 
   if (loading) {
     return (

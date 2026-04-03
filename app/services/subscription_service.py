@@ -5,6 +5,7 @@ from app.services.stripe_service import stripe_service
 from typing import List, Optional
 from datetime import datetime, timedelta, timezone
 from bson import ObjectId
+from app.utils.id_utils import to_object_id, to_str_id
 
 logger = logging.getLogger(__name__)
 
@@ -51,7 +52,9 @@ class SubscriptionService:
         """List all subscription plans"""
         try:
             query = {} if include_inactive else {"is_active": True}
-            plans = await self.plans_collection.find(query).to_list(length=None)
+            # Safety cap: platforms typically have <500 subscription plans
+            MAX_PLANS = 500
+            plans = await self.plans_collection.find(query).to_list(length=MAX_PLANS)
             # Sort by sort_order or display_order (plans may use either field)
             plans.sort(key=lambda p: p.get("sort_order", p.get("display_order", 999)))
             return plans
@@ -155,7 +158,7 @@ class SubscriptionService:
         """Assign subscription plan to user"""
         try:
             # Verify user exists
-            user = await self.users_collection.find_one({"_id": ObjectId(user_id)})
+            user = await self.users_collection.find_one({"_id": to_object_id(user_id, "user_id")})
             if not user:
                 raise HTTPException(status_code=404, detail="User not found")
 
@@ -304,7 +307,7 @@ class SubscriptionService:
                 user_updates["trial_warning_sent"] = False
 
             await self.users_collection.update_one(
-                {"_id": ObjectId(user_id)},
+                {"_id": to_object_id(user_id, "user_id")},
                 {"$set": user_updates}
             )
             return {
@@ -366,7 +369,7 @@ class SubscriptionService:
 
             # Update user status
             await self.users_collection.update_one(
-                {"_id": ObjectId(user_id)},
+                {"_id": to_object_id(user_id, "user_id")},
                 {"$set": {
                     "subscription_status": "cancelled",
                     "updated_at": now
@@ -604,12 +607,15 @@ class SubscriptionService:
                 {"$sort": {"count": -1}}
             ]
             plan_counts_cursor = self.subscriptions_collection.aggregate(plan_pipeline)
-            plan_counts = await plan_counts_cursor.to_list(length=None)
+            # Plan aggregation should have one doc per plan, cap at 500
+            plan_counts = await plan_counts_cursor.to_list(length=500)
             # Monthly recurring revenue (MRR) calculation - includes both monthly AND yearly
             # For yearly subscriptions, we calculate the monthly equivalent (price_yearly / 12)
+            # Safety cap: process active subscriptions in batches to avoid memory overload
+            MAX_ACTIVE_SUBS = 100000
             active_subs = await self.subscriptions_collection.find({
                 "status": "active"
-            }).to_list(length=None)
+            }).to_list(length=MAX_ACTIVE_SUBS)
 
             mrr = 0
             mrr_from_monthly = 0
@@ -666,14 +672,18 @@ class SubscriptionService:
                 else:
                     query["status"] = status_filter
 
-            # Fetch all subscriptions
-            subscriptions = await self.subscriptions_collection.find(query).to_list(length=None)
+            # Fetch all subscriptions (safety cap: admin view limited to 50k subscriptions)
+            MAX_LIST_SUBSCRIPTIONS = 50000
+            subscriptions = await self.subscriptions_collection.find(query).to_list(length=MAX_LIST_SUBSCRIPTIONS)
 
             # Build lookup maps for plans and users
-            plans = await self.plans_collection.find({}).to_list(length=None)
+            # Safety cap: typically <500 plans and <10k users
+            MAX_PLANS = 500
+            MAX_USERS = 10000
+            plans = await self.plans_collection.find({}).to_list(length=MAX_PLANS)
             plans_map = {str(plan.get("_id", "")): plan for plan in plans}
 
-            users = await self.users_collection.find({}).to_list(length=None)
+            users = await self.users_collection.find({}).to_list(length=MAX_USERS)
             users_map = {str(user.get("_id", "")): user for user in users}
 
             formatted_subscriptions = []

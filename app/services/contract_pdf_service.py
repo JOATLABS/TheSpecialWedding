@@ -10,6 +10,7 @@ import logging
 import io
 from app.core.settings import settings
 from app.core.database import mongo
+from app.utils.payment_schedule import build_effective_payment_schedule
 
 logger = logging.getLogger(__name__)
 
@@ -25,6 +26,14 @@ class ContractPDFService:
     def __init__(self):
         self.contracts = mongo.db["contracts"]
         self._s3_client = None
+
+    @staticmethod
+    def _resolve_couple_display(couple: Dict[str, Any]) -> str:
+        primary = (couple.get("partner1_name") or couple.get("name") or "").strip()
+        secondary = (couple.get("partner2_name") or couple.get("partner_name") or "").strip()
+        if secondary:
+            return f"{primary} & {secondary}"
+        return primary or "N/A"
 
     def _get_s3_client(self):
         """Get or create S3 client for R2 uploads."""
@@ -60,7 +69,8 @@ class ContractPDFService:
             if isinstance(date_val, str):
                 try:
                     date_val = datetime.fromisoformat(date_val.replace("Z", "+00:00"))
-                except:
+                except Exception as e:
+                    logger.warning(f"Failed to parse date string: {date_val}, error: {e}")
                     return date_val
             return date_val.strftime("%B %d, %Y")
 
@@ -83,7 +93,7 @@ class ContractPDFService:
 
         # Build payment schedule
         schedule_html = ""
-        for i, payment in enumerate(package.get("payment_schedule", []), 1):
+        for i, payment in enumerate(build_effective_payment_schedule(package), 1):
             amount = payment.get("amount") or (total * payment.get("percentage", 0) / 100)
             trigger = payment.get("trigger", "")
             trigger_label = {
@@ -283,7 +293,7 @@ class ContractPDFService:
                 <div class="info-grid">
                     <div class="info-row">
                         <div class="info-label">Client</div>
-                        <div class="info-value">{couple.get('name', 'N/A')}{f" & {couple.get('partner_name')}" if couple.get('partner_name') else ""}</div>
+                        <div class="info-value">{self._resolve_couple_display(couple)}</div>
                     </div>
                     <div class="info-row">
                         <div class="info-label">Email</div>

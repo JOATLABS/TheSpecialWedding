@@ -11,7 +11,7 @@ This module contains all models for the comprehensive vendor management system:
 
 from pydantic import BaseModel, Field, ConfigDict, field_serializer, EmailStr
 from typing import List, Dict, Optional, Any
-from datetime import datetime
+from datetime import datetime, timezone
 from enum import Enum
 from bson import ObjectId
 from app.utils.pydantic_objectid import PyObjectId, generate_object_id
@@ -21,6 +21,13 @@ from app.utils.pydantic_objectid import PyObjectId, generate_object_id
 # ENUMS
 # =============================================================================
 
+class VendorSource(str, Enum):
+    """How the vendor was added to the directory"""
+    MANUAL = "manual"        # Added by a planner
+    SCRAPED = "scraped"      # Auto-discovered by scraper job
+    CLAIMED = "claimed"      # Scraped vendor claimed by the business owner
+
+
 class VendorCategory(str, Enum):
     """Standard vendor service categories"""
     PHOTOGRAPHER = "photographer"
@@ -29,6 +36,7 @@ class VendorCategory(str, Enum):
     CATERER = "caterer"
     VENUE = "venue"
     DJ = "dj"
+    MC = "mc"
     BAND = "band"
     OFFICIANT = "officiant"
     PLANNER = "planner"
@@ -58,7 +66,35 @@ class ContractStatus(str, Enum):
 
 
 class PaymentMilestoneStatus(str, Enum):
-    """Payment milestone status"""
+    """
+    Payment milestone lifecycle status.
+
+    State machine:
+        PENDING → DUE → PAID
+                    ↘ OVERDUE → PAID
+                    ↘ PARTIAL → PAID
+        Any state → WAIVED (forgiven by planner)
+
+    Transitions:
+        - PENDING → DUE:     Triggered when current date >= due_date
+                              (should be auto-calculated by a cron job)
+        - DUE → OVERDUE:     Triggered when current date > due_date + grace_period
+                              (auto-calculated, typically 3–7 days grace)
+        - DUE → PAID:        Full payment received (paid_amount >= amount)
+        - DUE → PARTIAL:     Partial payment received (0 < paid_amount < amount)
+        - OVERDUE → PAID:    Late full payment received
+        - OVERDUE → PARTIAL: Late partial payment received
+        - PARTIAL → PAID:    Remaining balance paid (paid_amount >= amount)
+        - Any → WAIVED:      Planner forgives the payment (manual action)
+
+    Notes:
+        - Status transitions should be validated server-side via
+          update_milestone_status() to prevent illegal jumps (e.g. PAID → PENDING)
+        - PENDING → DUE and DUE → OVERDUE should be automated via a
+          scheduled job (e.g. daily cron calling calculate_milestone_statuses())
+        - Reminder emails are sent at DUE and OVERDUE stages
+          (tracked by reminder_sent_at and reminder_count on the milestone)
+    """
     PENDING = "pending"
     DUE = "due"
     OVERDUE = "overdue"
@@ -84,6 +120,30 @@ class ContractType(str, Enum):
     TEMPLATE = "template"
     UPLOADED_PDF = "uploaded_pdf"
     CUSTOM = "custom"
+
+
+class VendorAssignmentStatus(str, Enum):
+    """
+    Vendor assignment lifecycle status.
+
+    State transitions:
+        inquiry → quoted → contracted → confirmed → completed
+                                                  ↘ cancelled
+        Any state → cancelled (vendor dropped at any point)
+
+    - inquiry: Initial vendor consideration/outreach
+    - quoted: Quote received from vendor
+    - contracted: Contract signed with vendor
+    - confirmed: Vendor confirmed for the wedding date
+    - completed: Services delivered successfully
+    - cancelled: Assignment cancelled at any stage
+    """
+    INQUIRY = "inquiry"
+    QUOTED = "quoted"
+    CONTRACTED = "contracted"
+    CONFIRMED = "confirmed"
+    COMPLETED = "completed"
+    CANCELLED = "cancelled"
 
 
 class PaymentLinkStatus(str, Enum):
@@ -138,6 +198,11 @@ class VendorProfile(BaseModel):
 
     # Categorization
     service_category: VendorCategory = Field(..., description="Primary service category")
+    custom_service_category: Optional[str] = Field(
+        None,
+        max_length=100,
+        description="Custom service category label when service_category is 'other'"
+    )
     service_subcategories: List[str] = Field(default_factory=list, description="Specific services offered")
     service_description: Optional[str] = Field(None, max_length=2000, description="Description of services")
 
@@ -173,10 +238,16 @@ class VendorProfile(BaseModel):
     total_revenue: float = Field(0.0, description="Total paid to this vendor")
     last_used_at: Optional[datetime] = Field(None, description="Last wedding assignment")
 
+    # Source / Scraper Metadata
+    source: str = Field("manual", description="How vendor was added: manual, scraped, claimed")
+    google_place_id: Optional[str] = Field(None, description="Google Places ID for dedup")
+    scraped_at: Optional[datetime] = Field(None, description="When vendor was last scraped/refreshed")
+    scraped_from_state: Optional[str] = Field(None, description="Which state search discovered this vendor")
+
     # System
     is_active: bool = Field(True, description="Whether vendor is active")
-    created_at: datetime = Field(default_factory=datetime.utcnow)
-    updated_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
     model_config = ConfigDict(
         populate_by_name=True,
@@ -250,8 +321,8 @@ class ContractTemplate(BaseModel):
     # System
     is_active: bool = Field(True)
     usage_count: int = Field(0, description="How many times used")
-    created_at: datetime = Field(default_factory=datetime.utcnow)
-    updated_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
     model_config = ConfigDict(
         populate_by_name=True,
@@ -288,6 +359,11 @@ class VendorContract(BaseModel):
     vendor_phone: Optional[str] = Field(None, description="Vendor phone")
     vendor_address: Optional[str] = Field(None, description="Vendor address")
     service_category: VendorCategory = Field(..., description="Service category")
+    custom_service_category: Optional[str] = Field(
+        None,
+        max_length=100,
+        description="Custom service category label when service_category is 'other'"
+    )
 
     # Contract Details
     contract_title: str = Field(..., min_length=1, max_length=300, description="Contract title")
@@ -352,8 +428,8 @@ class VendorContract(BaseModel):
     vendor_notes: Optional[str] = Field(None, description="Notes from vendor")
 
     # System
-    created_at: datetime = Field(default_factory=datetime.utcnow)
-    updated_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
     model_config = ConfigDict(
         populate_by_name=True,
@@ -424,8 +500,8 @@ class VendorPaymentMilestone(BaseModel):
 
     # System
     created_by: str = Field(..., description="Planner email")
-    created_at: datetime = Field(default_factory=datetime.utcnow)
-    updated_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
     model_config = ConfigDict(
         populate_by_name=True,
@@ -455,12 +531,20 @@ class VendorAssignment(BaseModel):
     budget_category_id: Optional[str] = Field(None, description="Linked budget category")
 
     # Status
-    status: str = Field("inquiry", description="inquiry, quoted, contracted, confirmed, completed, cancelled")
+    status: VendorAssignmentStatus = Field(
+        default=VendorAssignmentStatus.INQUIRY,
+        description="Assignment lifecycle status"
+    )
 
     # Quick Reference (denormalized)
     vendor_name: str = Field(..., description="Vendor name")
     vendor_email: str = Field(..., description="Vendor email")
     service_category: VendorCategory = Field(..., description="Service type")
+    custom_service_category: Optional[str] = Field(
+        None,
+        max_length=100,
+        description="Custom service category label when service_category is 'other'"
+    )
 
     # Linked Records
     quote_ids: List[str] = Field(default_factory=list, description="Associated quote IDs")
@@ -481,8 +565,8 @@ class VendorAssignment(BaseModel):
 
     # System
     created_by: str = Field(..., description="Planner email")
-    created_at: datetime = Field(default_factory=datetime.utcnow)
-    updated_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
     model_config = ConfigDict(
         populate_by_name=True,
@@ -556,8 +640,8 @@ class PaymentLink(BaseModel):
 
     # System
     created_by: str = Field(..., description="Planner email who created this")
-    created_at: datetime = Field(default_factory=datetime.utcnow)
-    updated_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
     model_config = ConfigDict(
         populate_by_name=True,
@@ -602,7 +686,7 @@ class VendorCommunication(BaseModel):
 
     # System
     created_by: str = Field(..., description="User who logged this")
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
     model_config = ConfigDict(
         populate_by_name=True,
@@ -632,6 +716,7 @@ class CreateVendorProfileRequest(BaseModel):
     country: Optional[str] = None
     postal_code: Optional[str] = None
     service_category: VendorCategory
+    custom_service_category: Optional[str] = Field(default=None, max_length=100)
     service_subcategories: List[str] = []
     service_description: Optional[str] = None
     internal_notes: Optional[str] = None
@@ -642,6 +727,9 @@ class CreateVendorProfileRequest(BaseModel):
     typical_price_min: Optional[float] = None
     typical_price_max: Optional[float] = None
     currency: str = "USD"
+    # Scraper fields (optional, only used by scraper job)
+    source: str = "manual"
+    google_place_id: Optional[str] = None
 
 
 class UpdateVendorProfileRequest(BaseModel):
@@ -657,6 +745,7 @@ class UpdateVendorProfileRequest(BaseModel):
     country: Optional[str] = None
     postal_code: Optional[str] = None
     service_category: Optional[VendorCategory] = None
+    custom_service_category: Optional[str] = Field(default=None, max_length=100)
     service_subcategories: Optional[List[str]] = None
     service_description: Optional[str] = None
     internal_notes: Optional[str] = None

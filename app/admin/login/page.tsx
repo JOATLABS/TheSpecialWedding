@@ -2,7 +2,6 @@
 
 import Link from 'next/link';
 import { FormEvent, useEffect, useMemo, useState } from 'react';
-import { useSearchParams } from 'next/navigation';
 
 import { Button } from '@/components/ui/Button';
 import { GlassCard } from '@/components/ui/GlassCard';
@@ -76,25 +75,33 @@ function WelcomeShowcase() {
 
 export default function AdminLoginPage() {
   const { login } = useAdmin();
-  const searchParams = useSearchParams();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [rememberMe, setRememberMe] = useState(true);
   const [showPassword, setShowPassword] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  const [querySuccessMessage, setQuerySuccessMessage] = useState<string | null>(null);
+  const [dismissedQuerySuccess, setDismissedQuerySuccess] = useState(false);
 
-  // Read success message from URL query params (e.g., after account setup)
   useEffect(() => {
-    const message = searchParams.get('message');
-    if (message) {
-      setSuccessMessage(message);
-      // Auto-hide success message after 10 seconds
-      const timer = setTimeout(() => setSuccessMessage(null), 10000);
-      return () => clearTimeout(timer);
-    }
-  }, [searchParams]);
+    const params = new URLSearchParams(window.location.search);
+    const message = params.get('message');
+    const paymentState = params.get('payment');
+    const derivedMessage = message
+      ?? (paymentState === 'success'
+        ? 'Payment received. Check your inbox and verify your email before signing in.'
+        : null);
+
+    setQuerySuccessMessage(derivedMessage);
+    setDismissedQuerySuccess(false);
+  }, []);
+
+  useEffect(() => {
+    if (!querySuccessMessage) return;
+    const timer = setTimeout(() => setDismissedQuerySuccess(true), 10000);
+    return () => clearTimeout(timer);
+  }, [querySuccessMessage]);
 
   const disableSubmit = useMemo(() => {
     if (!emailPattern.test(email)) {
@@ -103,11 +110,13 @@ export default function AdminLoginPage() {
     return password.length === 0 || submitting;
   }, [email, password.length, submitting]);
 
+  const visibleSuccessMessage = !dismissedQuerySuccess ? querySuccessMessage : null;
+
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
 
     if (disableSubmit) {
-      setError('Enter a valid email address and password to continue.');
+      setError('Please enter your email and password to sign in.');
       return;
     }
 
@@ -117,7 +126,7 @@ export default function AdminLoginPage() {
     try {
       await login(email.trim(), password, rememberMe);
     } catch (err) {
-      setError('We could not sign you in. Double-check your credentials or try another method.');
+      setError(err instanceof Error ? err.message : 'Sign-in failed. Please try again.');
     } finally {
       setSubmitting(false);
     }
@@ -188,7 +197,7 @@ export default function AdminLoginPage() {
                         className="w-full rounded-xl border border-white/40 bg-white/60 px-4 py-3 text-base text-wedding-navy shadow-inner placeholder:text-wedding-navy/40 focus:border-wedding-rose focus:outline-none focus:ring-2 focus:ring-wedding-rose/50"
                       />
                       <p id="email-guidance" className="text-xs text-wedding-navy/60">
-                        We use your email to match your planner workspace. Use the address registered with your organisation.
+                        The email you used when creating your account.
                       </p>
                     </div>
 
@@ -239,22 +248,22 @@ export default function AdminLoginPage() {
                           href="/"
                           className="text-sm font-medium text-wedding-navy/60 transition hover:text-wedding-navy focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-wedding-rose/60"
                         >
-                          Return to SaaS home
+                          Back to homepage
                         </Link>
                       </div>
                     </div>
 
-                    {successMessage && (
+                    {visibleSuccessMessage && (
                       <div role="status" className="rounded-lg border border-emerald-400/40 bg-emerald-50 px-4 py-3 flex items-start gap-3">
                         <svg className="w-5 h-5 text-emerald-600 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
                         </svg>
                         <div className="flex-1">
-                          <p className="text-sm font-medium text-emerald-800">{successMessage}</p>
+                          <p className="text-sm font-medium text-emerald-800">{visibleSuccessMessage}</p>
                         </div>
                         <button
                           type="button"
-                          onClick={() => setSuccessMessage(null)}
+                          onClick={() => setDismissedQuerySuccess(true)}
                           className="text-emerald-600 hover:text-emerald-800"
                         >
                           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -276,7 +285,7 @@ export default function AdminLoginPage() {
                       className="w-full justify-center rounded-xl py-3 text-base shadow-lg transition disabled:cursor-not-allowed disabled:opacity-60"
                       aria-busy={submitting}
                     >
-                      {submitting ? 'Signing you in…' : 'Log in to planner portal'}
+                      {submitting ? 'Signing you in…' : 'Sign in'}
                     </Button>
                   </form>
                 </div>

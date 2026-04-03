@@ -1,0 +1,1637 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Root Admin — Advertising Analytics Dashboard</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<style>
+  :root {
+    --navy: #1e2a4a;
+    --navy-light: #2a3a5c;
+    --gold: #c9a84c;
+    --gold-light: #e8d48b;
+    --rose: #e8507e;
+    --rose-light: #f5a3bc;
+    --ivory: #faf8f5;
+    --green: #22c55e;
+    --green-light: #dcfce7;
+    --red: #ef4444;
+    --red-light: #fecaca;
+    --orange: #f97316;
+    --orange-light: #ffedd5;
+    --blue: #3b82f6;
+    --blue-light: #dbeafe;
+    --gray-50: #f9fafb;
+    --gray-100: #f3f4f6;
+    --gray-200: #e5e7eb;
+    --gray-300: #d1d5db;
+    --gray-400: #9ca3af;
+    --gray-500: #6b7280;
+    --gray-600: #4b5563;
+    --gray-700: #374151;
+    --gray-800: #1f2937;
+    --gray-900: #111827;
+    --shadow: 0 1px 3px rgba(0,0,0,0.1), 0 1px 2px rgba(0,0,0,0.06);
+    --shadow-md: 0 4px 6px -1px rgba(0,0,0,0.1), 0 2px 4px -1px rgba(0,0,0,0.06);
+    --shadow-lg: 0 10px 15px -3px rgba(0,0,0,0.1), 0 4px 6px -2px rgba(0,0,0,0.05);
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    background: linear-gradient(135deg, var(--ivory) 0%, #fde8ef 100%);
+    color: var(--gray-800);
+    min-height: 100vh;
+  }
+
+  .top-bar {
+    background: linear-gradient(90deg, var(--navy), var(--navy-light));
+    color: white;
+    padding: 14px 32px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    box-shadow: var(--shadow-md);
+  }
+
+  .top-bar h1 {
+    font-size: 18px;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .top-bar h1 span {
+    color: var(--gold);
+  }
+
+  .top-bar .user-info {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    font-size: 13px;
+    opacity: 0.8;
+  }
+
+  .top-bar .badge {
+    background: var(--gold);
+    color: var(--navy);
+    padding: 2px 8px;
+    border-radius: 10px;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.5px;
+  }
+
+  .container {
+    max-width: 1440px;
+    margin: 0 auto;
+    padding: 24px 32px;
+  }
+
+  /* Page header */
+  .page-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: 24px;
+  }
+
+  .page-header h2 {
+    font-size: 26px;
+    font-weight: 700;
+    color: var(--navy);
+  }
+
+  .page-header p {
+    font-size: 14px;
+    color: var(--gray-500);
+    margin-top: 4px;
+  }
+
+  .header-controls {
+    display: flex;
+    gap: 12px;
+    align-items: center;
+  }
+
+  .date-range-picker {
+    display: flex;
+    background: white;
+    border: 1px solid var(--gray-200);
+    border-radius: 8px;
+    overflow: hidden;
+    box-shadow: var(--shadow);
+  }
+
+  .date-range-picker button {
+    padding: 8px 16px;
+    border: none;
+    background: white;
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--gray-600);
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+
+  .date-range-picker button:hover {
+    background: var(--gray-50);
+  }
+
+  .date-range-picker button.active {
+    background: var(--navy);
+    color: white;
+  }
+
+  .export-btn {
+    padding: 8px 20px;
+    background: white;
+    border: 1px solid var(--gray-200);
+    border-radius: 8px;
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--gray-700);
+    cursor: pointer;
+    box-shadow: var(--shadow);
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .export-btn:hover {
+    background: var(--gray-50);
+  }
+
+  /* Tabs */
+  .tabs {
+    display: flex;
+    gap: 4px;
+    margin-bottom: 24px;
+    background: white;
+    padding: 4px;
+    border-radius: 12px;
+    box-shadow: var(--shadow);
+    width: fit-content;
+  }
+
+  .tab {
+    padding: 10px 24px;
+    border: none;
+    background: transparent;
+    font-size: 14px;
+    font-weight: 500;
+    color: var(--gray-500);
+    cursor: pointer;
+    border-radius: 8px;
+    transition: all 0.2s;
+  }
+
+  .tab:hover {
+    color: var(--gray-700);
+    background: var(--gray-50);
+  }
+
+  .tab.active {
+    background: var(--navy);
+    color: white;
+  }
+
+  /* KPI Row */
+  .kpi-row {
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    gap: 16px;
+    margin-bottom: 24px;
+  }
+
+  .kpi-card {
+    background: white;
+    border-radius: 12px;
+    padding: 20px;
+    box-shadow: var(--shadow);
+    position: relative;
+    overflow: hidden;
+  }
+
+  .kpi-card::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 3px;
+  }
+
+  .kpi-card.blue::before { background: var(--blue); }
+  .kpi-card.green::before { background: var(--green); }
+  .kpi-card.gold::before { background: var(--gold); }
+  .kpi-card.rose::before { background: var(--rose); }
+  .kpi-card.orange::before { background: var(--orange); }
+
+  .kpi-label {
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: var(--gray-500);
+    font-weight: 600;
+    margin-bottom: 8px;
+  }
+
+  .kpi-value {
+    font-size: 28px;
+    font-weight: 700;
+    color: var(--gray-900);
+  }
+
+  .kpi-trend {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 12px;
+    font-weight: 600;
+    margin-top: 8px;
+    padding: 2px 8px;
+    border-radius: 10px;
+  }
+
+  .kpi-trend.up {
+    color: #15803d;
+    background: var(--green-light);
+  }
+
+  .kpi-trend.down {
+    color: #dc2626;
+    background: var(--red-light);
+  }
+
+  .kpi-trend.neutral {
+    color: var(--gray-600);
+    background: var(--gray-100);
+  }
+
+  .kpi-subtitle {
+    font-size: 11px;
+    color: var(--gray-400);
+    margin-top: 4px;
+  }
+
+  /* Charts Section */
+  .charts-grid {
+    display: grid;
+    grid-template-columns: 2fr 1fr;
+    gap: 16px;
+    margin-bottom: 24px;
+  }
+
+  .chart-card {
+    background: white;
+    border-radius: 12px;
+    padding: 24px;
+    box-shadow: var(--shadow);
+  }
+
+  .chart-card h3 {
+    font-size: 15px;
+    font-weight: 600;
+    color: var(--gray-800);
+    margin-bottom: 4px;
+  }
+
+  .chart-card .subtitle {
+    font-size: 12px;
+    color: var(--gray-400);
+    margin-bottom: 16px;
+  }
+
+  .chart-container {
+    position: relative;
+    height: 280px;
+  }
+
+  /* Funnel */
+  .funnel-container {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 8px 0;
+  }
+
+  .funnel-step {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+
+  .funnel-bar-wrap {
+    flex: 1;
+    position: relative;
+  }
+
+  .funnel-bar {
+    height: 40px;
+    border-radius: 6px;
+    display: flex;
+    align-items: center;
+    padding: 0 12px;
+    font-size: 13px;
+    font-weight: 600;
+    color: white;
+    transition: width 0.6s ease;
+  }
+
+  .funnel-label {
+    width: 140px;
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--gray-600);
+    text-align: right;
+  }
+
+  .funnel-value {
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--gray-800);
+    width: 70px;
+    text-align: right;
+  }
+
+  .funnel-rate {
+    font-size: 11px;
+    color: var(--gray-400);
+    width: 50px;
+    text-align: right;
+  }
+
+  /* Tables */
+  .table-card {
+    background: white;
+    border-radius: 12px;
+    box-shadow: var(--shadow);
+    overflow: hidden;
+    margin-bottom: 24px;
+  }
+
+  .table-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 20px 24px 16px;
+    border-bottom: 1px solid var(--gray-100);
+  }
+
+  .table-header h3 {
+    font-size: 15px;
+    font-weight: 600;
+    color: var(--gray-800);
+  }
+
+  .table-header .subtitle {
+    font-size: 12px;
+    color: var(--gray-400);
+    margin-top: 2px;
+  }
+
+  .table-actions {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+  }
+
+  .search-input {
+    padding: 6px 12px;
+    border: 1px solid var(--gray-200);
+    border-radius: 6px;
+    font-size: 13px;
+    width: 200px;
+    outline: none;
+  }
+
+  .search-input:focus {
+    border-color: var(--navy);
+    box-shadow: 0 0 0 2px rgba(30,42,74,0.1);
+  }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+  }
+
+  th {
+    text-align: left;
+    padding: 12px 16px;
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: var(--gray-500);
+    background: var(--gray-50);
+    border-bottom: 1px solid var(--gray-200);
+    cursor: pointer;
+    user-select: none;
+  }
+
+  th:hover {
+    color: var(--gray-700);
+  }
+
+  th .sort-arrow {
+    font-size: 10px;
+    margin-left: 4px;
+  }
+
+  td {
+    padding: 14px 16px;
+    font-size: 13px;
+    border-bottom: 1px solid var(--gray-100);
+  }
+
+  tr:hover td {
+    background: var(--gray-50);
+  }
+
+  .vendor-cell {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .vendor-avatar {
+    width: 32px;
+    height: 32px;
+    border-radius: 8px;
+    background: linear-gradient(135deg, var(--rose-light), var(--gold-light));
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--navy);
+  }
+
+  .vendor-name {
+    font-weight: 600;
+    color: var(--gray-800);
+  }
+
+  .vendor-category {
+    font-size: 11px;
+    color: var(--gray-400);
+  }
+
+  .status-badge {
+    display: inline-flex;
+    padding: 3px 10px;
+    border-radius: 10px;
+    font-size: 11px;
+    font-weight: 600;
+  }
+
+  .status-badge.active {
+    background: var(--green-light);
+    color: #15803d;
+  }
+
+  .status-badge.paused {
+    background: var(--orange-light);
+    color: #c2410c;
+  }
+
+  .status-badge.ended {
+    background: var(--gray-100);
+    color: var(--gray-500);
+  }
+
+  .sparkline {
+    width: 80px;
+    height: 24px;
+  }
+
+  .metric-cell {
+    font-weight: 600;
+    color: var(--gray-800);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .metric-secondary {
+    font-size: 11px;
+    color: var(--gray-400);
+    font-weight: 400;
+  }
+
+  .ctr-cell {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .ctr-bar {
+    width: 60px;
+    height: 6px;
+    background: var(--gray-100);
+    border-radius: 3px;
+    overflow: hidden;
+  }
+
+  .ctr-fill {
+    height: 100%;
+    border-radius: 3px;
+  }
+
+  /* Bottom Grid */
+  .bottom-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+    margin-bottom: 24px;
+  }
+
+  /* Placement Performance */
+  .placement-list {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .placement-item {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px;
+    background: var(--gray-50);
+    border-radius: 8px;
+  }
+
+  .placement-icon {
+    width: 36px;
+    height: 36px;
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 16px;
+  }
+
+  .placement-info { flex: 1; }
+
+  .placement-name {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--gray-800);
+  }
+
+  .placement-stats {
+    font-size: 11px;
+    color: var(--gray-400);
+    margin-top: 2px;
+  }
+
+  .placement-ctr {
+    font-size: 15px;
+    font-weight: 700;
+    color: var(--navy);
+  }
+
+  /* Lead Funnel Details */
+  .lead-status-grid {
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    gap: 8px;
+  }
+
+  .lead-status-card {
+    text-align: center;
+    padding: 12px 8px;
+    background: var(--gray-50);
+    border-radius: 8px;
+  }
+
+  .lead-status-count {
+    font-size: 22px;
+    font-weight: 700;
+    color: var(--gray-800);
+  }
+
+  .lead-status-label {
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: var(--gray-400);
+    font-weight: 600;
+    margin-top: 4px;
+  }
+
+  /* Hidden sections */
+  .tab-content { display: none; }
+  .tab-content.active { display: block; }
+
+  /* Responsive */
+  @media (max-width: 1200px) {
+    .kpi-row { grid-template-columns: repeat(3, 1fr); }
+    .charts-grid { grid-template-columns: 1fr; }
+    .bottom-grid { grid-template-columns: 1fr; }
+  }
+
+  /* Add vendor button */
+  .add-btn {
+    padding: 8px 20px;
+    background: var(--navy);
+    color: white;
+    border: none;
+    border-radius: 8px;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .add-btn:hover {
+    background: var(--navy-light);
+  }
+
+  /* Heatmap */
+  .heatmap-grid {
+    display: grid;
+    grid-template-columns: 80px repeat(7, 1fr);
+    gap: 4px;
+    font-size: 11px;
+  }
+
+  .heatmap-label {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    padding-right: 8px;
+    color: var(--gray-400);
+    font-weight: 500;
+  }
+
+  .heatmap-cell {
+    aspect-ratio: 2/1;
+    border-radius: 4px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 600;
+    font-size: 10px;
+    min-height: 28px;
+  }
+
+  .heatmap-header {
+    font-weight: 600;
+    color: var(--gray-500);
+    text-align: center;
+    padding-bottom: 4px;
+  }
+
+  /* Monetization Readiness */
+  .readiness-card {
+    background: linear-gradient(135deg, var(--navy), var(--navy-light));
+    border-radius: 12px;
+    padding: 24px;
+    color: white;
+    margin-bottom: 24px;
+    box-shadow: var(--shadow-lg);
+  }
+
+  .readiness-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 16px;
+  }
+
+  .readiness-header h3 {
+    font-size: 16px;
+    font-weight: 600;
+  }
+
+  .readiness-score {
+    font-size: 32px;
+    font-weight: 800;
+    color: var(--gold);
+  }
+
+  .readiness-metrics {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 16px;
+    margin-top: 16px;
+  }
+
+  .readiness-metric {
+    background: rgba(255,255,255,0.08);
+    border-radius: 8px;
+    padding: 12px;
+  }
+
+  .readiness-metric-label {
+    font-size: 11px;
+    opacity: 0.6;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    font-weight: 600;
+  }
+
+  .readiness-metric-value {
+    font-size: 20px;
+    font-weight: 700;
+    margin-top: 4px;
+  }
+
+  .readiness-metric-target {
+    font-size: 11px;
+    opacity: 0.5;
+    margin-top: 2px;
+  }
+
+  .progress-bar {
+    width: 100%;
+    height: 6px;
+    background: rgba(255,255,255,0.15);
+    border-radius: 3px;
+    margin-top: 8px;
+    overflow: hidden;
+  }
+
+  .progress-fill {
+    height: 100%;
+    border-radius: 3px;
+    transition: width 0.6s ease;
+  }
+
+  /* Quick Actions Row */
+  .quick-actions {
+    display: flex;
+    gap: 12px;
+    margin-bottom: 24px;
+  }
+
+  .quick-action-btn {
+    padding: 10px 20px;
+    border-radius: 8px;
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+    border: 1px solid var(--gray-200);
+    background: white;
+    color: var(--gray-700);
+    box-shadow: var(--shadow);
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .quick-action-btn:hover {
+    background: var(--gray-50);
+    border-color: var(--gray-300);
+  }
+</style>
+</head>
+<body>
+
+<!-- Top Bar -->
+<div class="top-bar">
+  <h1>
+    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18"/><path d="M9 21V9"/></svg>
+    WeddingPlanr <span>Admin</span>
+  </h1>
+  <div class="user-info">
+    <span class="badge">ROOT ADMIN</span>
+    <span>Etastic</span>
+  </div>
+</div>
+
+<div class="container">
+
+  <!-- Page Header -->
+  <div class="page-header">
+    <div>
+      <h2>Advertising Analytics</h2>
+      <p>Track ad performance, conversion funnels, and monetization readiness</p>
+    </div>
+    <div class="header-controls">
+      <div class="date-range-picker">
+        <button onclick="setDateRange(this, 7)">7d</button>
+        <button onclick="setDateRange(this, 14)">14d</button>
+        <button class="active" onclick="setDateRange(this, 30)">30d</button>
+        <button onclick="setDateRange(this, 90)">90d</button>
+      </div>
+      <button class="export-btn" onclick="alert('Export CSV coming in implementation')">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+        Export CSV
+      </button>
+    </div>
+  </div>
+
+  <!-- Tabs -->
+  <div class="tabs">
+    <button class="tab active" onclick="switchTab('overview', this)">Overview</button>
+    <button class="tab" onclick="switchTab('vendors', this)">Vendor Performance</button>
+    <button class="tab" onclick="switchTab('leads', this)">Lead Funnel</button>
+    <button class="tab" onclick="switchTab('engagement', this)">Engagement Heatmap</button>
+  </div>
+
+  <!-- ===== OVERVIEW TAB ===== -->
+  <div id="tab-overview" class="tab-content active">
+
+    <!-- Monetization Readiness Scorecard -->
+    <div class="readiness-card">
+      <div class="readiness-header">
+        <div>
+          <h3>Monetization Readiness</h3>
+          <div style="font-size:12px;opacity:0.6;margin-top:4px;">When all metrics hit targets, you have the data to confidently introduce paid tiers</div>
+        </div>
+        <div style="text-align:right;">
+          <div class="readiness-score">62%</div>
+          <div style="font-size:11px;opacity:0.5;">Overall Score</div>
+        </div>
+      </div>
+      <div class="readiness-metrics">
+        <div class="readiness-metric">
+          <div class="readiness-metric-label">Weekly Active Planners</div>
+          <div class="readiness-metric-value">47</div>
+          <div class="readiness-metric-target">Target: 100</div>
+          <div class="progress-bar"><div class="progress-fill" style="width:47%;background:var(--gold);"></div></div>
+        </div>
+        <div class="readiness-metric">
+          <div class="readiness-metric-label">Avg Leads / Vendor / Week</div>
+          <div class="readiness-metric-value">3.2</div>
+          <div class="readiness-metric-target">Target: 5</div>
+          <div class="progress-bar"><div class="progress-fill" style="width:64%;background:var(--gold);"></div></div>
+        </div>
+        <div class="readiness-metric">
+          <div class="readiness-metric-label">Lead → Conversion Rate</div>
+          <div class="readiness-metric-value">18%</div>
+          <div class="readiness-metric-target">Target: 15% ✓</div>
+          <div class="progress-bar"><div class="progress-fill" style="width:100%;background:var(--green);"></div></div>
+        </div>
+        <div class="readiness-metric">
+          <div class="readiness-metric-label">Active Sponsored Vendors</div>
+          <div class="readiness-metric-value">12</div>
+          <div class="readiness-metric-target">Target: 25</div>
+          <div class="progress-bar"><div class="progress-fill" style="width:48%;background:var(--gold);"></div></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- KPI Row -->
+    <div class="kpi-row">
+      <div class="kpi-card blue">
+        <div class="kpi-label">Total Impressions</div>
+        <div class="kpi-value">24,831</div>
+        <div class="kpi-trend up">&#9650; 12.4%</div>
+        <div class="kpi-subtitle">vs previous 30 days</div>
+      </div>
+      <div class="kpi-card green">
+        <div class="kpi-label">Viewable Impressions</div>
+        <div class="kpi-value">19,247</div>
+        <div class="kpi-trend up">&#9650; 8.7%</div>
+        <div class="kpi-subtitle">77.4% viewability rate</div>
+      </div>
+      <div class="kpi-card gold">
+        <div class="kpi-label">Total Clicks</div>
+        <div class="kpi-value">1,842</div>
+        <div class="kpi-trend up">&#9650; 15.2%</div>
+        <div class="kpi-subtitle">7.41% CTR</div>
+      </div>
+      <div class="kpi-card rose">
+        <div class="kpi-label">Leads Generated</div>
+        <div class="kpi-value">284</div>
+        <div class="kpi-trend up">&#9650; 22.1%</div>
+        <div class="kpi-subtitle">15.4% click-to-lead</div>
+      </div>
+      <div class="kpi-card orange">
+        <div class="kpi-label">Conversions</div>
+        <div class="kpi-value">51</div>
+        <div class="kpi-trend up">&#9650; 34.2%</div>
+        <div class="kpi-subtitle">17.9% lead-to-conversion</div>
+      </div>
+    </div>
+
+    <!-- Charts Row -->
+    <div class="charts-grid">
+      <div class="chart-card">
+        <h3>Daily Performance Trend</h3>
+        <div class="subtitle">Impressions, clicks, and leads over time</div>
+        <div class="chart-container">
+          <canvas id="performanceChart"></canvas>
+        </div>
+      </div>
+      <div class="chart-card">
+        <h3>Conversion Funnel</h3>
+        <div class="subtitle">From impression to booking</div>
+        <div class="funnel-container">
+          <div class="funnel-step">
+            <div class="funnel-label">Impressions</div>
+            <div class="funnel-bar-wrap">
+              <div class="funnel-bar" style="width:100%;background:var(--blue);">24,831</div>
+            </div>
+            <div class="funnel-rate"></div>
+          </div>
+          <div class="funnel-step">
+            <div class="funnel-label">Viewable</div>
+            <div class="funnel-bar-wrap">
+              <div class="funnel-bar" style="width:77%;background:#5b9cf6;">19,247</div>
+            </div>
+            <div class="funnel-rate">77.4%</div>
+          </div>
+          <div class="funnel-step">
+            <div class="funnel-label">Clicks</div>
+            <div class="funnel-bar-wrap">
+              <div class="funnel-bar" style="width:24%;background:var(--gold);">1,842</div>
+            </div>
+            <div class="funnel-rate">9.6%</div>
+          </div>
+          <div class="funnel-step">
+            <div class="funnel-label">Profile Views</div>
+            <div class="funnel-bar-wrap">
+              <div class="funnel-bar" style="width:16%;background:#e8a030;">1,204</div>
+            </div>
+            <div class="funnel-rate">65.4%</div>
+          </div>
+          <div class="funnel-step">
+            <div class="funnel-label">Leads</div>
+            <div class="funnel-bar-wrap">
+              <div class="funnel-bar" style="width:4.6%;background:var(--rose);">284</div>
+            </div>
+            <div class="funnel-rate">23.6%</div>
+          </div>
+          <div class="funnel-step">
+            <div class="funnel-label">Conversions</div>
+            <div class="funnel-bar-wrap">
+              <div class="funnel-bar" style="width:2%;background:#c2185b;">51</div>
+            </div>
+            <div class="funnel-rate">17.9%</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Bottom Row: Placement + Lead Status -->
+    <div class="bottom-grid">
+      <div class="chart-card">
+        <h3>Performance by Placement</h3>
+        <div class="subtitle">CTR and engagement across ad positions</div>
+        <div class="placement-list" style="margin-top:16px;">
+          <div class="placement-item">
+            <div class="placement-icon" style="background:var(--blue-light);color:var(--blue);">&#9776;</div>
+            <div class="placement-info">
+              <div class="placement-name">Dashboard Rail</div>
+              <div class="placement-stats">14,221 impressions &middot; 1,182 clicks &middot; 198 leads</div>
+            </div>
+            <div class="placement-ctr">8.3%</div>
+          </div>
+          <div class="placement-item">
+            <div class="placement-icon" style="background:var(--green-light);color:var(--green);">&#128197;</div>
+            <div class="placement-info">
+              <div class="placement-name">Milestone Module</div>
+              <div class="placement-stats">6,847 impressions &middot; 445 clicks &middot; 62 leads</div>
+            </div>
+            <div class="placement-ctr">6.5%</div>
+          </div>
+          <div class="placement-item">
+            <div class="placement-icon" style="background:var(--orange-light);color:var(--orange);">&#128269;</div>
+            <div class="placement-info">
+              <div class="placement-name">Directory Boost</div>
+              <div class="placement-stats">2,418 impressions &middot; 143 clicks &middot; 18 leads</div>
+            </div>
+            <div class="placement-ctr">5.9%</div>
+          </div>
+          <div class="placement-item">
+            <div class="placement-icon" style="background:var(--rose-light);color:var(--rose);">&#128196;</div>
+            <div class="placement-info">
+              <div class="placement-name">Vendor Detail</div>
+              <div class="placement-stats">1,345 impressions &middot; 72 clicks &middot; 6 leads</div>
+            </div>
+            <div class="placement-ctr">5.4%</div>
+          </div>
+        </div>
+      </div>
+      <div class="chart-card">
+        <h3>Lead Status Breakdown</h3>
+        <div class="subtitle">Current state of all 284 leads</div>
+        <div class="lead-status-grid" style="margin-top:16px;">
+          <div class="lead-status-card">
+            <div class="lead-status-count" style="color:var(--blue);">89</div>
+            <div class="lead-status-label">Pending</div>
+          </div>
+          <div class="lead-status-card">
+            <div class="lead-status-count" style="color:var(--orange);">72</div>
+            <div class="lead-status-label">Contacted</div>
+          </div>
+          <div class="lead-status-card">
+            <div class="lead-status-count" style="color:var(--gold);">48</div>
+            <div class="lead-status-label">Responded</div>
+          </div>
+          <div class="lead-status-card">
+            <div class="lead-status-count" style="color:var(--green);">51</div>
+            <div class="lead-status-label">Converted</div>
+          </div>
+          <div class="lead-status-card">
+            <div class="lead-status-count" style="color:var(--gray-400);">24</div>
+            <div class="lead-status-label">Closed</div>
+          </div>
+        </div>
+        <div style="margin-top:20px;">
+          <h3 style="font-size:14px;margin-bottom:12px;">Lead Types</h3>
+          <div class="chart-container" style="height:200px;">
+            <canvas id="leadTypesChart"></canvas>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== VENDOR PERFORMANCE TAB ===== -->
+  <div id="tab-vendors" class="tab-content">
+    <div class="quick-actions">
+      <button class="add-btn" onclick="alert('Add Sponsored Vendor modal')">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+        Add Sponsored Vendor
+      </button>
+      <button class="quick-action-btn">Bulk Activate</button>
+      <button class="quick-action-btn">Bulk Pause</button>
+    </div>
+
+    <div class="table-card">
+      <div class="table-header">
+        <div>
+          <h3>Sponsored Vendor Performance</h3>
+          <div class="subtitle">Ranked by total engagement score (impressions + 10&times;clicks + 50&times;leads)</div>
+        </div>
+        <div class="table-actions">
+          <input type="text" class="search-input" placeholder="Search vendors...">
+        </div>
+      </div>
+      <table>
+        <thead>
+          <tr>
+            <th>Vendor <span class="sort-arrow">&#9660;</span></th>
+            <th>Status</th>
+            <th>Placement</th>
+            <th>Impressions <span class="sort-arrow">&#9660;</span></th>
+            <th>Clicks</th>
+            <th>CTR</th>
+            <th>Profile Views</th>
+            <th>Leads</th>
+            <th>Conversions</th>
+            <th>Trend (7d)</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>
+              <div class="vendor-cell">
+                <div class="vendor-avatar">EB</div>
+                <div>
+                  <div class="vendor-name">Elegant Blooms</div>
+                  <div class="vendor-category">Florist</div>
+                </div>
+              </div>
+            </td>
+            <td><span class="status-badge active">Active</span></td>
+            <td>Dashboard Rail</td>
+            <td class="metric-cell">4,218 <div class="metric-secondary">2,987 viewable</div></td>
+            <td class="metric-cell">412</td>
+            <td>
+              <div class="ctr-cell">
+                <span class="metric-cell">9.8%</span>
+                <div class="ctr-bar"><div class="ctr-fill" style="width:98%;background:var(--green);"></div></div>
+              </div>
+            </td>
+            <td class="metric-cell">287</td>
+            <td class="metric-cell" style="color:var(--rose);">48</td>
+            <td class="metric-cell" style="color:var(--green);">9</td>
+            <td><canvas class="sparkline" id="spark1"></canvas></td>
+          </tr>
+          <tr>
+            <td>
+              <div class="vendor-cell">
+                <div class="vendor-avatar">CS</div>
+                <div>
+                  <div class="vendor-name">Capture Studio</div>
+                  <div class="vendor-category">Photography</div>
+                </div>
+              </div>
+            </td>
+            <td><span class="status-badge active">Active</span></td>
+            <td>Dashboard Rail</td>
+            <td class="metric-cell">3,842 <div class="metric-secondary">3,104 viewable</div></td>
+            <td class="metric-cell">356</td>
+            <td>
+              <div class="ctr-cell">
+                <span class="metric-cell">9.3%</span>
+                <div class="ctr-bar"><div class="ctr-fill" style="width:93%;background:var(--green);"></div></div>
+              </div>
+            </td>
+            <td class="metric-cell">241</td>
+            <td class="metric-cell" style="color:var(--rose);">42</td>
+            <td class="metric-cell" style="color:var(--green);">8</td>
+            <td><canvas class="sparkline" id="spark2"></canvas></td>
+          </tr>
+          <tr>
+            <td>
+              <div class="vendor-cell">
+                <div class="vendor-avatar">GV</div>
+                <div>
+                  <div class="vendor-name">Grand Venue Hall</div>
+                  <div class="vendor-category">Venue</div>
+                </div>
+              </div>
+            </td>
+            <td><span class="status-badge active">Active</span></td>
+            <td>Milestone Module</td>
+            <td class="metric-cell">3,491 <div class="metric-secondary">2,612 viewable</div></td>
+            <td class="metric-cell">298</td>
+            <td>
+              <div class="ctr-cell">
+                <span class="metric-cell">8.5%</span>
+                <div class="ctr-bar"><div class="ctr-fill" style="width:85%;background:var(--green);"></div></div>
+              </div>
+            </td>
+            <td class="metric-cell">198</td>
+            <td class="metric-cell" style="color:var(--rose);">35</td>
+            <td class="metric-cell" style="color:var(--green);">7</td>
+            <td><canvas class="sparkline" id="spark3"></canvas></td>
+          </tr>
+          <tr>
+            <td>
+              <div class="vendor-cell">
+                <div class="vendor-avatar">DC</div>
+                <div>
+                  <div class="vendor-name">Divine Catering Co</div>
+                  <div class="vendor-category">Catering</div>
+                </div>
+              </div>
+            </td>
+            <td><span class="status-badge active">Active</span></td>
+            <td>Dashboard Rail</td>
+            <td class="metric-cell">2,965 <div class="metric-secondary">2,341 viewable</div></td>
+            <td class="metric-cell">187</td>
+            <td>
+              <div class="ctr-cell">
+                <span class="metric-cell">6.3%</span>
+                <div class="ctr-bar"><div class="ctr-fill" style="width:63%;background:var(--gold);"></div></div>
+              </div>
+            </td>
+            <td class="metric-cell">112</td>
+            <td class="metric-cell" style="color:var(--rose);">24</td>
+            <td class="metric-cell" style="color:var(--green);">4</td>
+            <td><canvas class="sparkline" id="spark4"></canvas></td>
+          </tr>
+          <tr>
+            <td>
+              <div class="vendor-cell">
+                <div class="vendor-avatar">HM</div>
+                <div>
+                  <div class="vendor-name">Harmony Music</div>
+                  <div class="vendor-category">DJ / Band</div>
+                </div>
+              </div>
+            </td>
+            <td><span class="status-badge paused">Paused</span></td>
+            <td>Directory Boost</td>
+            <td class="metric-cell">1,203 <div class="metric-secondary">891 viewable</div></td>
+            <td class="metric-cell">67</td>
+            <td>
+              <div class="ctr-cell">
+                <span class="metric-cell">5.6%</span>
+                <div class="ctr-bar"><div class="ctr-fill" style="width:56%;background:var(--orange);"></div></div>
+              </div>
+            </td>
+            <td class="metric-cell">38</td>
+            <td class="metric-cell" style="color:var(--rose);">8</td>
+            <td class="metric-cell" style="color:var(--green);">1</td>
+            <td><canvas class="sparkline" id="spark5"></canvas></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- ===== LEAD FUNNEL TAB ===== -->
+  <div id="tab-leads" class="tab-content">
+    <div class="charts-grid">
+      <div class="chart-card">
+        <h3>Lead Funnel Over Time</h3>
+        <div class="subtitle">Weekly lead creation and conversion trend</div>
+        <div class="chart-container">
+          <canvas id="leadFunnelChart"></canvas>
+        </div>
+      </div>
+      <div class="chart-card">
+        <h3>Avg Response Time</h3>
+        <div class="subtitle">Time from lead creation to vendor response</div>
+        <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:260px;">
+          <div style="font-size:56px;font-weight:800;color:var(--navy);">4.2h</div>
+          <div style="font-size:14px;color:var(--gray-400);margin-top:8px;">median response time</div>
+          <div class="kpi-trend up" style="margin-top:12px;">&#9650; 18% faster than last month</div>
+          <div style="margin-top:24px;width:100%;max-width:280px;">
+            <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--gray-400);margin-bottom:6px;">
+              <span>&lt; 1h</span><span>1-4h</span><span>4-12h</span><span>12-24h</span><span>&gt; 24h</span>
+            </div>
+            <div style="display:flex;gap:3px;height:28px;">
+              <div style="flex:22;background:var(--green);border-radius:4px;"></div>
+              <div style="flex:38;background:var(--green);border-radius:4px;opacity:0.7;"></div>
+              <div style="flex:24;background:var(--gold);border-radius:4px;"></div>
+              <div style="flex:11;background:var(--orange);border-radius:4px;"></div>
+              <div style="flex:5;background:var(--red);border-radius:4px;"></div>
+            </div>
+            <div style="display:flex;gap:3px;margin-top:4px;">
+              <div style="flex:22;text-align:center;font-size:11px;font-weight:600;color:var(--gray-600);">22%</div>
+              <div style="flex:38;text-align:center;font-size:11px;font-weight:600;color:var(--gray-600);">38%</div>
+              <div style="flex:24;text-align:center;font-size:11px;font-weight:600;color:var(--gray-600);">24%</div>
+              <div style="flex:11;text-align:center;font-size:11px;font-weight:600;color:var(--gray-600);">11%</div>
+              <div style="flex:5;text-align:center;font-size:11px;font-weight:600;color:var(--gray-600);">5%</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Lead Table -->
+    <div class="table-card">
+      <div class="table-header">
+        <div>
+          <h3>Recent Leads</h3>
+          <div class="subtitle">Latest planner-to-vendor interactions from sponsored placements</div>
+        </div>
+        <div class="table-actions">
+          <select style="padding:6px 12px;border:1px solid var(--gray-200);border-radius:6px;font-size:13px;">
+            <option>All Statuses</option>
+            <option>Pending</option>
+            <option>Contacted</option>
+            <option>Responded</option>
+            <option>Converted</option>
+            <option>Closed</option>
+          </select>
+          <select style="padding:6px 12px;border:1px solid var(--gray-200);border-radius:6px;font-size:13px;">
+            <option>All Types</option>
+            <option>Quote Request</option>
+            <option>Message</option>
+            <option>Add to Wedding</option>
+            <option>Vendor Invite</option>
+          </select>
+        </div>
+      </div>
+      <table>
+        <thead>
+          <tr>
+            <th>Lead ID</th>
+            <th>Planner</th>
+            <th>Vendor</th>
+            <th>Type</th>
+            <th>Status</th>
+            <th>Placement</th>
+            <th>Created</th>
+            <th>Response Time</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td style="font-family:monospace;font-size:12px;color:var(--gray-400);">lead_a8f2</td>
+            <td>Sarah M.</td>
+            <td>Elegant Blooms</td>
+            <td><span style="background:var(--blue-light);color:var(--blue);padding:2px 8px;border-radius:8px;font-size:11px;font-weight:600;">Quote Request</span></td>
+            <td><span class="status-badge active">Converted</span></td>
+            <td>Dashboard Rail</td>
+            <td>2h ago</td>
+            <td style="color:var(--green);font-weight:600;">47min</td>
+          </tr>
+          <tr>
+            <td style="font-family:monospace;font-size:12px;color:var(--gray-400);">lead_c4d1</td>
+            <td>Jessica P.</td>
+            <td>Capture Studio</td>
+            <td><span style="background:var(--green-light);color:#15803d;padding:2px 8px;border-radius:8px;font-size:11px;font-weight:600;">Add to Wedding</span></td>
+            <td><span class="status-badge" style="background:var(--orange-light);color:#c2410c;">Contacted</span></td>
+            <td>Milestone Module</td>
+            <td>5h ago</td>
+            <td style="color:var(--gold);font-weight:600;">2.1h</td>
+          </tr>
+          <tr>
+            <td style="font-family:monospace;font-size:12px;color:var(--gray-400);">lead_e7b3</td>
+            <td>Amanda K.</td>
+            <td>Grand Venue Hall</td>
+            <td><span style="background:var(--rose-light);color:var(--rose);padding:2px 8px;border-radius:8px;font-size:11px;font-weight:600;">Message</span></td>
+            <td><span class="status-badge" style="background:var(--blue-light);color:var(--blue);">Pending</span></td>
+            <td>Dashboard Rail</td>
+            <td>8h ago</td>
+            <td style="color:var(--gray-400);">Awaiting...</td>
+          </tr>
+          <tr>
+            <td style="font-family:monospace;font-size:12px;color:var(--gray-400);">lead_f1a9</td>
+            <td>Rachel T.</td>
+            <td>Divine Catering Co</td>
+            <td><span style="background:var(--blue-light);color:var(--blue);padding:2px 8px;border-radius:8px;font-size:11px;font-weight:600;">Quote Request</span></td>
+            <td><span class="status-badge" style="background:var(--gold-light);color:#92400e;">Responded</span></td>
+            <td>Dashboard Rail</td>
+            <td>1d ago</td>
+            <td style="color:var(--green);font-weight:600;">1.3h</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- ===== ENGAGEMENT HEATMAP TAB ===== -->
+  <div id="tab-engagement" class="tab-content">
+    <div class="charts-grid" style="grid-template-columns: 1fr 1fr;">
+      <div class="chart-card">
+        <h3>Click Activity by Day &times; Hour</h3>
+        <div class="subtitle">When planners engage most with sponsored content</div>
+        <div id="heatmap" style="margin-top:16px;"></div>
+      </div>
+      <div class="chart-card">
+        <h3>Engagement by Category</h3>
+        <div class="subtitle">Which vendor categories drive the most interaction</div>
+        <div class="chart-container" style="height:300px;">
+          <canvas id="categoryChart"></canvas>
+        </div>
+      </div>
+    </div>
+
+    <div class="chart-card" style="margin-top:16px;">
+      <h3>Event Type Distribution</h3>
+      <div class="subtitle">All 12 event types tracked in the last 30 days</div>
+      <div class="chart-container" style="height:300px;margin-top:16px;">
+        <canvas id="eventTypeChart"></canvas>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<script>
+  // Tab switching
+  function switchTab(tabId, btn) {
+    document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
+    document.querySelectorAll('.tab').forEach(el => el.classList.remove('active'));
+    document.getElementById('tab-' + tabId).classList.add('active');
+    btn.classList.add('active');
+  }
+
+  // Date range switching
+  function setDateRange(btn, days) {
+    document.querySelectorAll('.date-range-picker button').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+  }
+
+  // Performance Chart
+  const perfCtx = document.getElementById('performanceChart').getContext('2d');
+  const days = Array.from({length: 30}, (_, i) => {
+    const d = new Date(); d.setDate(d.getDate() - 29 + i);
+    return d.toLocaleDateString('en-US', {month:'short', day:'numeric'});
+  });
+
+  const impressionData = [620,580,710,680,750,820,890,780,850,920,880,930,870,960,1010,850,780,920,1080,1020,1100,950,870,1050,1120,980,890,1010,1140,1060];
+  const clickData = impressionData.map(v => Math.round(v * (0.06 + Math.random() * 0.04)));
+  const leadData = clickData.map(v => Math.round(v * (0.12 + Math.random() * 0.08)));
+
+  new Chart(perfCtx, {
+    type: 'line',
+    data: {
+      labels: days,
+      datasets: [
+        {
+          label: 'Impressions',
+          data: impressionData,
+          borderColor: '#3b82f6',
+          backgroundColor: 'rgba(59,130,246,0.08)',
+          fill: true,
+          tension: 0.4,
+          borderWidth: 2,
+          pointRadius: 0,
+          pointHoverRadius: 5,
+          yAxisID: 'y'
+        },
+        {
+          label: 'Clicks',
+          data: clickData,
+          borderColor: '#c9a84c',
+          backgroundColor: 'rgba(201,168,76,0.08)',
+          fill: true,
+          tension: 0.4,
+          borderWidth: 2,
+          pointRadius: 0,
+          pointHoverRadius: 5,
+          yAxisID: 'y1'
+        },
+        {
+          label: 'Leads',
+          data: leadData,
+          borderColor: '#e8507e',
+          backgroundColor: 'rgba(232,80,126,0.08)',
+          fill: true,
+          tension: 0.4,
+          borderWidth: 2,
+          pointRadius: 0,
+          pointHoverRadius: 5,
+          yAxisID: 'y1'
+        }
+      ]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      interaction: { mode: 'index', intersect: false },
+      plugins: {
+        legend: { position: 'top', labels: { usePointStyle: true, padding: 16, font: { size: 12 } } },
+        tooltip: { backgroundColor: '#1e2a4a', titleFont: { size: 12 }, bodyFont: { size: 12 }, padding: 10, cornerRadius: 8 }
+      },
+      scales: {
+        x: { grid: { display: false }, ticks: { font: { size: 10 }, maxRotation: 0, autoSkip: true, maxTicksLimit: 10 } },
+        y: { position: 'left', grid: { color: '#f3f4f6' }, ticks: { font: { size: 10 } }, title: { display: true, text: 'Impressions', font: { size: 11 } } },
+        y1: { position: 'right', grid: { display: false }, ticks: { font: { size: 10 } }, title: { display: true, text: 'Clicks / Leads', font: { size: 11 } } }
+      }
+    }
+  });
+
+  // Lead Types Donut
+  const leadTypesCtx = document.getElementById('leadTypesChart').getContext('2d');
+  new Chart(leadTypesCtx, {
+    type: 'doughnut',
+    data: {
+      labels: ['Quote Request', 'Add to Wedding', 'Message', 'Vendor Invite'],
+      datasets: [{
+        data: [112, 86, 54, 32],
+        backgroundColor: ['#3b82f6', '#22c55e', '#e8507e', '#c9a84c'],
+        borderWidth: 0,
+        hoverOffset: 8
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      cutout: '60%',
+      plugins: {
+        legend: { position: 'bottom', labels: { usePointStyle: true, padding: 12, font: { size: 11 } } }
+      }
+    }
+  });
+
+  // Lead Funnel Over Time
+  const leadFunnelCtx = document.getElementById('leadFunnelChart').getContext('2d');
+  const weeks = ['W1', 'W2', 'W3', 'W4'];
+  new Chart(leadFunnelCtx, {
+    type: 'bar',
+    data: {
+      labels: weeks,
+      datasets: [
+        { label: 'Pending', data: [28, 22, 19, 20], backgroundColor: '#3b82f6', borderRadius: 4 },
+        { label: 'Contacted', data: [18, 20, 16, 18], backgroundColor: '#f97316', borderRadius: 4 },
+        { label: 'Responded', data: [10, 12, 14, 12], backgroundColor: '#c9a84c', borderRadius: 4 },
+        { label: 'Converted', data: [8, 10, 14, 19], backgroundColor: '#22c55e', borderRadius: 4 },
+        { label: 'Closed', data: [4, 6, 7, 7], backgroundColor: '#9ca3af', borderRadius: 4 },
+      ]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { position: 'top', labels: { usePointStyle: true, padding: 12, font: { size: 11 } } }
+      },
+      scales: {
+        x: { stacked: true, grid: { display: false } },
+        y: { stacked: true, grid: { color: '#f3f4f6' }, title: { display: true, text: 'Leads', font: { size: 11 } } }
+      }
+    }
+  });
+
+  // Heatmap
+  function buildHeatmap() {
+    const container = document.getElementById('heatmap');
+    const daysOfWeek = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+    const hours = ['6am','8am','10am','12pm','2pm','4pm','6pm','8pm','10pm'];
+
+    const data = [
+      [2,5,8,12,15,18,14,10,4],
+      [3,6,10,14,16,20,16,12,5],
+      [2,7,11,16,18,22,18,14,6],
+      [4,8,13,17,19,24,20,15,7],
+      [5,9,14,18,20,21,17,13,6],
+      [8,14,20,22,18,16,14,18,12],
+      [6,12,18,20,16,14,12,16,10],
+    ];
+
+    const maxVal = 24;
+    let html = '<div class="heatmap-grid">';
+    html += '<div></div>';
+    hours.forEach(h => { html += `<div class="heatmap-header">${h}</div>`; });
+
+    daysOfWeek.forEach((day, di) => {
+      html += `<div class="heatmap-label">${day}</div>`;
+      data[di].forEach(val => {
+        const intensity = val / maxVal;
+        const r = Math.round(30 + (232 - 30) * intensity);
+        const g = Math.round(42 + (80 - 42) * intensity);
+        const b = Math.round(74 + (126 - 74) * intensity);
+        const textColor = intensity > 0.4 ? 'white' : 'var(--gray-500)';
+        html += `<div class="heatmap-cell" style="background:rgba(${r},${g},${b},${0.15 + intensity * 0.85});color:${textColor};">${val}</div>`;
+      });
+    });
+    html += '</div>';
+    container.innerHTML = html;
+  }
+  buildHeatmap();
+
+  // Category Chart
+  const catCtx = document.getElementById('categoryChart').getContext('2d');
+  new Chart(catCtx, {
+    type: 'bar',
+    data: {
+      labels: ['Photography', 'Florist', 'Venue', 'Catering', 'DJ/Band', 'Planner', 'Cake', 'Decor'],
+      datasets: [
+        { label: 'Impressions', data: [5200, 4800, 4100, 3600, 2400, 2100, 1400, 1231], backgroundColor: 'rgba(59,130,246,0.7)', borderRadius: 4 },
+        { label: 'Clicks', data: [490, 420, 340, 220, 140, 105, 72, 55], backgroundColor: 'rgba(201,168,76,0.7)', borderRadius: 4 },
+      ]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      indexAxis: 'y',
+      plugins: {
+        legend: { position: 'top', labels: { usePointStyle: true, padding: 12, font: { size: 11 } } }
+      },
+      scales: {
+        x: { grid: { color: '#f3f4f6' } },
+        y: { grid: { display: false }, ticks: { font: { size: 11 } } }
+      }
+    }
+  });
+
+  // Event Type Chart
+  const evtCtx = document.getElementById('eventTypeChart').getContext('2d');
+  new Chart(evtCtx, {
+    type: 'bar',
+    data: {
+      labels: [
+        'impression_served', 'impression_viewable', 'click', 'vendor_profile_view',
+        'vendor_added_to_wedding', 'lead_created', 'vendor_invited', 'lead_accepted',
+        'vendor_responded', 'dismiss', 'hover', 'contact_click'
+      ],
+      datasets: [{
+        label: 'Event Count',
+        data: [24831, 19247, 1842, 1204, 312, 284, 178, 124, 98, 456, 3287, 892],
+        backgroundColor: [
+          '#3b82f6','#5b9cf6','#c9a84c','#e8a030',
+          '#22c55e','#e8507e','#a855f7','#14b8a6',
+          '#06b6d4','#9ca3af','#6366f1','#f97316'
+        ],
+        borderRadius: 6,
+        borderSkipped: false
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { display: false },
+        tooltip: { backgroundColor: '#1e2a4a', cornerRadius: 8 }
+      },
+      scales: {
+        x: { grid: { display: false }, ticks: { font: { size: 9 }, maxRotation: 45 } },
+        y: { grid: { color: '#f3f4f6' }, ticks: { font: { size: 10 } } }
+      }
+    }
+  });
+
+  // Sparklines
+  function drawSparkline(canvasId, data, color) {
+    const canvas = document.getElementById(canvasId);
+    if (!canvas) return;
+    new Chart(canvas, {
+      type: 'line',
+      data: {
+        labels: data.map((_, i) => i),
+        datasets: [{
+          data: data,
+          borderColor: color,
+          borderWidth: 1.5,
+          fill: false,
+          tension: 0.4,
+          pointRadius: 0
+        }]
+      },
+      options: {
+        responsive: false,
+        plugins: { legend: { display: false }, tooltip: { enabled: false } },
+        scales: { x: { display: false }, y: { display: false } },
+        animation: false
+      }
+    });
+  }
+
+  drawSparkline('spark1', [32,38,35,42,48,45,51], '#22c55e');
+  drawSparkline('spark2', [28,30,34,32,38,35,42], '#22c55e');
+  drawSparkline('spark3', [24,28,26,30,34,32,38], '#22c55e');
+  drawSparkline('spark4', [18,16,20,22,24,22,26], '#c9a84c');
+  drawSparkline('spark5', [12,10,8,6,8,7,5], '#ef4444');
+</script>
+</body>
+</html>

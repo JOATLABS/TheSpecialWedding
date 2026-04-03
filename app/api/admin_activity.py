@@ -9,6 +9,13 @@ from typing import Optional, Dict, Any
 from datetime import datetime, timedelta, timezone
 from app.dependencies.auth_extended import require_root_admin, ExtendedAuthUser
 from app.services.admin_activity_service import admin_activity_service
+from app.utils.response import dict_response
+from app.utils.query_validation import (
+    validated_page,
+    validated_limit_extended,
+    validated_string_filter,
+    validated_enum_filter
+)
 import logging
 
 logger = logging.getLogger(__name__)
@@ -18,10 +25,10 @@ router = APIRouter(tags=["ROOT_ADMIN"])
 
 @router.get("/activity-log")
 async def get_activity_log(
-    page: int = Query(1, ge=1),
-    limit: int = Query(50, ge=1, le=100),
-    action_type: Optional[str] = None,
-    entity_type: Optional[str] = None,
+    page: int = Query(1, ge=1, le=10000, description="Page number"),
+    limit: int = Query(50, ge=1, le=100, description="Items per page"),
+    action_type: Optional[str] = Query(None, description="Filter by action type (invitation_sent, planner_suspended, etc.)"),
+    entity_type: Optional[str] = Query(None, description="Filter by entity type (invitation, planner, subscription)"),
     current_user: ExtendedAuthUser = Depends(require_root_admin)
 ):
     """
@@ -34,6 +41,10 @@ async def get_activity_log(
         entity_type: Filter by entity type (invitation, planner, subscription)
     """
     try:
+        # Validate filter parameters
+        action_type = validated_string_filter(action_type, max_length=50)
+        entity_type = validated_string_filter(entity_type, max_length=50)
+
         return await admin_activity_service.get_activity_log(
             page=page,
             limit=limit,
@@ -44,13 +55,15 @@ async def get_activity_log(
         raise
     except Exception as e:
         logger.error(f"Failed to get activity log: {str(e)}", exc_info=True)
-        return {
-            "activities": [],
-            "total": 0,
-            "page": page,
-            "pages": 0,
-            "error": "Failed to load activity log"
-        }
+        return dict_response(
+            data={"activities": []},
+            meta={
+                "total": 0,
+                "page": page,
+                "pages": 0
+            },
+            message="Failed to load activity log"
+        )
 
 
 @router.get("/activity-log/recent")
@@ -66,10 +79,10 @@ async def get_recent_activities(
     """
     try:
         activities = await admin_activity_service.get_recent_activities(limit=limit)
-        return {"activities": activities}
+        return dict_response(data={"activities": activities})
     except Exception as e:
         logger.error(f"Failed to get recent activities: {str(e)}", exc_info=True)
-        return {"activities": [], "error": "Failed to load recent activities"}
+        return dict_response(data={"activities": []}, message="Failed to load recent activities")
 
 
 @router.delete("/activity-log/cleanup")
@@ -98,12 +111,14 @@ async def cleanup_old_activities(
             f"deleted {result.deleted_count} entries older than {days} days"
         )
 
-        return {
-            "status": "success",
-            "deleted_count": result.deleted_count,
-            "cutoff_date": cutoff_date.isoformat() + "Z",
-            "days": days
-        }
+        return dict_response(
+            data={
+                "deleted_count": result.deleted_count,
+                "cutoff_date": cutoff_date.isoformat() + "Z",
+            },
+            meta={"days": days},
+            message="Activity log cleanup completed"
+        )
     except Exception as e:
         logger.error(f"Failed to cleanup activity log: {str(e)}", exc_info=True)
         raise HTTPException(
@@ -130,6 +145,13 @@ async def export_activity_log(
         days: Export activities from the last N days (default 90)
     """
     try:
+        # Validate format parameter
+        format = validated_enum_filter(format, ["json", "csv"]) or "json"
+
+        # Validate filter parameters
+        action_type = validated_string_filter(action_type, max_length=50)
+        entity_type = validated_string_filter(entity_type, max_length=50)
+
         cutoff_date = datetime.now(timezone.utc) - timedelta(days=days)
 
         query: Dict[str, Any] = {"created_at": {"$gte": cutoff_date}}

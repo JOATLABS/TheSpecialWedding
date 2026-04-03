@@ -5,6 +5,9 @@ import { getApiBaseUrl } from '@/utils/env';
 import { useRouter } from 'next/navigation';
 import { useAdmin } from '@/contexts/AdminContext';
 import { formatDateTime } from '@/utils/dateFormat';
+import PageHeader from '../../components/PageHeader';
+import { usePagination } from '../../hooks/usePagination';
+import { GlassPagination } from '../../components/ui/glass/GlassPagination';
 
 type ActivityItem = {
   id: string;
@@ -21,7 +24,7 @@ export default function PlannerActivityLogPage() {
   const [activities, setActivities] = useState<ActivityItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [limit] = useState<number>(100);
+  const pagination = usePagination({ initialItemsPerPage: 50 });
 
   const fetchActivities = useCallback(async () => {
     if (!token) return;
@@ -30,7 +33,7 @@ export default function PlannerActivityLogPage() {
       setLoading(true);
       setError(null);
       const baseUrl = getApiBaseUrl();
-      const response = await fetch(`${baseUrl}/admin/planner/activity-log?limit=${limit}`, {
+      const response = await fetch(`${baseUrl}/admin/planner/activity-log?page=${pagination.currentPage}&limit=${pagination.itemsPerPage}`, {
         headers: {
           Authorization: `Bearer ${token}`,
           'Content-Type': 'application/json',
@@ -46,12 +49,14 @@ export default function PlannerActivityLogPage() {
 
       const data = await response.json();
       setActivities(data.activities || []);
+      pagination.setTotalItems(data.total || 0);
     } catch (err: any) {
       setError(err.message || 'Failed to fetch activity log');
     } finally {
       setLoading(false);
     }
-  }, [limit, token]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pagination.currentPage, pagination.itemsPerPage, token]);
 
   useEffect(() => {
     if (!token) {
@@ -101,18 +106,17 @@ export default function PlannerActivityLogPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl sm:text-3xl font-semibold leading-tight text-slate-900 dark:text-white">Planner Activity Log</h1>
-          <p className="text-gray-600 dark:text-gray-400">Detailed activity across weddings you manage.</p>
-        </div>
+      <PageHeader
+        title="Planner Activity Log"
+        description="Detailed activity across weddings you manage."
+      >
         <button
           onClick={fetchActivities}
           className="inline-flex items-center px-4 py-2 text-sm font-medium text-white bg-indigo-600 rounded-md hover:bg-indigo-700 transition-colors"
         >
           Refresh
         </button>
-      </div>
+      </PageHeader>
 
       {loading ? (
         <div className="bg-white dark:bg-slate-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 p-6 text-center text-gray-600 dark:text-gray-400">
@@ -128,42 +132,62 @@ export default function PlannerActivityLogPage() {
           No activity recorded yet.
         </div>
       ) : (
-        <div className="bg-white dark:bg-slate-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700">
-          <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between">
-            <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">Latest activity</h2>
-            <span className="text-sm text-gray-500 dark:text-gray-400">{activities.length} items</span>
-          </div>
-          <ul className="divide-y divide-gray-200 dark:divide-gray-700">
-            {activities.map((activity) => (
-              <li key={activity.id} className="px-6 py-4 flex items-start space-x-3">
-                <div className="mt-1">{renderStatusDot(activity.type)}</div>
-                <div className="flex-1">
-                  <p className="text-sm text-gray-900 dark:text-gray-100">{activity.message || 'Activity'}</p>
-                  <div className="mt-1 text-xs text-gray-500 dark:text-gray-400 flex flex-wrap gap-2">
-                    <span>
-                      {formatDateTime(activity.timestamp, {
-                        month: 'short',
-                        day: 'numeric',
-                        year: 'numeric',
-                        hour: 'numeric',
-                        minute: '2-digit',
-                      })}
-                    </span>
-                    {activity.wedding_id && (
-                      <span className="inline-flex items-center px-2 py-0.5 rounded-full bg-gray-100 dark:bg-slate-700 text-gray-600 dark:text-gray-400">
-                        Wedding: {activity.wedding_id}
+        <div className="space-y-4">
+          <GlassPagination
+            currentPage={pagination.currentPage}
+            totalPages={pagination.totalPages}
+            totalItems={pagination.totalItems}
+            itemsPerPage={pagination.itemsPerPage}
+            onPageChange={pagination.setPage}
+            variant="compact"
+            itemLabel="activities"
+          />
+          <div className="bg-white dark:bg-slate-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700">
+            <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between">
+              <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">Latest activity</h2>
+              <span className="text-sm text-gray-500 dark:text-gray-400">{activities.length} items</span>
+            </div>
+            <ul className="divide-y divide-gray-200 dark:divide-gray-700">
+              {activities.map((activity) => (
+                <li key={activity.id} className="px-6 py-4 flex items-start space-x-3">
+                  <div className="mt-1">{renderStatusDot(activity.type)}</div>
+                  <div className="flex-1">
+                    <p className="text-sm text-gray-900 dark:text-gray-100">{activity.message || 'Activity'}</p>
+                    <div className="mt-1 text-xs text-gray-500 dark:text-gray-400 flex flex-wrap gap-2">
+                      <span>
+                        {formatDateTime(activity.timestamp, {
+                          month: 'short',
+                          day: 'numeric',
+                          year: 'numeric',
+                          hour: 'numeric',
+                          minute: '2-digit',
+                        })}
                       </span>
-                    )}
-                    {activity.type && (
-                      <span className="inline-flex items-center px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-700">
-                        Type: {activity.type}
-                      </span>
-                    )}
+                      {activity.wedding_id && (
+                        <span className="inline-flex items-center px-2 py-0.5 rounded-full bg-gray-100 dark:bg-slate-700 text-gray-600 dark:text-gray-400">
+                          Wedding: {activity.wedding_id}
+                        </span>
+                      )}
+                      {activity.type && (
+                        <span className="inline-flex items-center px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-700">
+                          Type: {activity.type}
+                        </span>
+                      )}
+                    </div>
                   </div>
-                </div>
-              </li>
-            ))}
-          </ul>
+                </li>
+              ))}
+            </ul>
+          </div>
+          <GlassPagination
+            currentPage={pagination.currentPage}
+            totalPages={pagination.totalPages}
+            totalItems={pagination.totalItems}
+            itemsPerPage={pagination.itemsPerPage}
+            onPageChange={pagination.setPage}
+            onItemsPerPageChange={pagination.setItemsPerPage}
+            itemLabel="activities"
+          />
         </div>
       )}
     </div>

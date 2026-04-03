@@ -37,7 +37,7 @@ async function fetchWithTimeout(url, options = {}, timeoutMs = 10000) {
   }
 }
 
-export default {
+const worker = {
   async scheduled(event, env, ctx) {
     const cronTime = event.cron;
     console.log(`Autopilot cron triggered: ${cronTime}`);
@@ -127,6 +127,8 @@ export default {
     }
   }
 };
+
+export default worker;
 
 /**
  * Process all scheduled payments that are due

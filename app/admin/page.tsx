@@ -37,6 +37,13 @@ const HISTORY_OPTIONS = [
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null;
 
+const getResponseData = (payload: unknown): Record<string, unknown> => {
+  if (isRecord(payload) && isRecord(payload.data)) {
+    return payload.data;
+  }
+  return isRecord(payload) ? payload : {};
+};
+
 const getValueFromPaths = (
   source: Record<string, unknown>,
   paths: Array<Array<string>>,
@@ -155,7 +162,8 @@ export default function AdminMetricsDashboard() {
       if (!response.ok) return;
 
       const payload = await response.json();
-      setRecentActivities(payload.activities || []);
+      const data = getResponseData(payload);
+      setRecentActivities(Array.isArray(data.activities) ? (data.activities as AdminActivity[]) : []);
     } catch (err) {
       console.error('Error loading recent activities', err);
       setRecentActivities([]);
@@ -177,8 +185,14 @@ export default function AdminMetricsDashboard() {
     }
 
     // Only ROOT_ADMIN can access Platform Health Overview
-    if (userProfile && userProfile.is_wedding_planner) {
-      router.push('/admin/planner');
+    // Redirect planners and team members to the planner dashboard (or billing if unpaid/expired)
+    if (userProfile && (userProfile.is_wedding_planner || userProfile.role === 'team_member' || userProfile.is_team_member)) {
+      const subStatus = userProfile.user_data?.subscription_status || userProfile.subscription_status;
+      if (subStatus && ['expired', 'cancelled', 'suspended', 'pending_payment', 'pending', 'inactive'].includes(subStatus)) {
+        router.replace('/admin/planner/billing');
+      } else {
+        router.push('/admin/planner');
+      }
       return;
     }
   }, [token, userProfile, fetchUserProfile, router]);
@@ -273,7 +287,7 @@ export default function AdminMetricsDashboard() {
   // This prevents wedding planners from seeing admin dashboard content during redirects
   if (!userProfile || userProfile.is_wedding_planner) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-light-bg dark:bg-dark-bg">
+      <div className="flex items-center justify-center py-24">
         <div className="text-center">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary-500 mx-auto"></div>
           <p className="mt-4 text-slate-600 dark:text-slate-400">Loading...</p>

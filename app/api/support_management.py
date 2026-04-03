@@ -5,6 +5,12 @@ from datetime import datetime, timezone
 from app.dependencies.auth_extended import require_root_admin, require_admin_or_planner, ExtendedAuthUser
 from app.services.support_service import SupportService
 from app.utils.serializers import serialize_mongo_doc
+from app.utils.query_validation import (
+    validated_page,
+    validated_limit,
+    validated_string_filter,
+    validated_status_filter
+)
 import logging
 
 logger = logging.getLogger(__name__)
@@ -82,7 +88,7 @@ async def create_ticket(ticket_data: TicketCreateModel, current_user: ExtendedAu
 
 @router.get("/tickets", tags=["Support"])
 async def get_tickets(
-    page: int = Query(1, ge=1, description="Page number"),
+    page: int = Query(1, ge=1, le=10000, description="Page number"),
     limit: int = Query(20, ge=1, le=100, description="Items per page"),
     status: Optional[str] = Query(None, description="Filter by status"),
     priority: Optional[str] = Query(None, description="Filter by priority"),
@@ -93,6 +99,14 @@ async def get_tickets(
     current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
 ):
     """Get support tickets with filtering - Authenticated users can see their own tickets, ROOT_ADMIN sees all"""
+    # Validate filter parameters
+    status = validated_status_filter(status, ['open', 'in_progress', 'resolved', 'closed'])
+    priority = validated_status_filter(priority, ['low', 'medium', 'high', 'urgent'])
+    category = validated_status_filter(category, ['technical', 'billing', 'feature_request', 'bug_report', 'general'])
+    assigned_to = validated_string_filter(assigned_to, max_length=100)
+    created_by = validated_string_filter(created_by, max_length=100)
+    wedding_id = validated_string_filter(wedding_id, max_length=100)
+
     filters = {}
     if status:
         filters['status'] = status
@@ -340,17 +354,21 @@ async def get_sms_ticket(
     from app.core.database import mongo
     from bson import ObjectId
     try:
-        ticket = await mongo.db["support_tickets"].find_one({"_id": ObjectId(ticket_id)})
-    except Exception:
+        obj_id = ObjectId(ticket_id)
+    except Exception as e:
+        logger.error(f"Invalid ObjectId provided for ticket: {ticket_id}, error: {e}")
         raise HTTPException(status_code=400, detail="Invalid ticket ID format")
+
+    # Multi-tenant security: combine access check into query for non-root-admin users
+    if current_user.is_root_admin:
+        query = {"_id": obj_id}
+    else:
+        query = {"_id": obj_id, "assigned_to": current_user.email}
+
+    ticket = await mongo.db["support_tickets"].find_one(query)
 
     if not ticket:
         raise HTTPException(status_code=404, detail="Ticket not found")
-
-    # Security: Check if user has access to this ticket
-    if not current_user.is_root_admin:
-        if ticket.get("assigned_to") != current_user.email:
-            raise HTTPException(status_code=403, detail="Access denied to this ticket")
 
     # Convert ObjectId to string
     ticket["_id"] = str(ticket["_id"])
@@ -380,17 +398,21 @@ async def respond_to_sms_ticket(
     from app.services.sms_service import SMSService
     # Get ticket
     try:
-        ticket = await mongo.db["support_tickets"].find_one({"_id": ObjectId(ticket_id)})
-    except Exception:
+        obj_id = ObjectId(ticket_id)
+    except Exception as e:
+        logger.error(f"Invalid ObjectId provided for ticket: {ticket_id}, error: {e}")
         raise HTTPException(status_code=400, detail="Invalid ticket ID format")
+
+    # Multi-tenant security: combine access check into query for non-root-admin users
+    if current_user.is_root_admin:
+        query = {"_id": obj_id}
+    else:
+        query = {"_id": obj_id, "assigned_to": current_user.email}
+
+    ticket = await mongo.db["support_tickets"].find_one(query)
 
     if not ticket:
         raise HTTPException(status_code=404, detail="Ticket not found")
-
-    # Security: Check if user has access to this ticket
-    if not current_user.is_root_admin:
-        if ticket.get("assigned_to") != current_user.email:
-            raise HTTPException(status_code=403, detail="Access denied to this ticket")
 
     # Validate ticket has phone number
     if not ticket.get("phone"):
@@ -477,17 +499,21 @@ async def update_sms_ticket_status(
 
     # Get ticket
     try:
-        ticket = await mongo.db["support_tickets"].find_one({"_id": ObjectId(ticket_id)})
-    except Exception:
+        obj_id = ObjectId(ticket_id)
+    except Exception as e:
+        logger.error(f"Invalid ObjectId provided for ticket: {ticket_id}, error: {e}")
         raise HTTPException(status_code=400, detail="Invalid ticket ID format")
+
+    # Multi-tenant security: combine access check into query for non-root-admin users
+    if current_user.is_root_admin:
+        query = {"_id": obj_id}
+    else:
+        query = {"_id": obj_id, "assigned_to": current_user.email}
+
+    ticket = await mongo.db["support_tickets"].find_one(query)
 
     if not ticket:
         raise HTTPException(status_code=404, detail="Ticket not found")
-
-    # Security check
-    if not current_user.is_root_admin:
-        if ticket.get("assigned_to") != current_user.email:
-            raise HTTPException(status_code=403, detail="Access denied to this ticket")
 
     # Update status
     update = {

@@ -1,0 +1,1629 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Vendor Advertising Platform — Full Architecture Mockup</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Playfair+Display:wght@400;600;700&display=swap" rel="stylesheet">
+<style>
+:root {
+  --navy: #1D3557; --navy-dark: #0F172A; --sage: #457B9D; --sage-light: #5B96B8;
+  --rose: #D4A5A5; --blush: #F8E8E8; --gold: #E9C46A; --gold-dark: #D4A843;
+  --ivory: #F8FAFC; --green: #16a34a; --green-bg: #f0fdf4;
+  --red: #dc2626; --red-bg: #fef2f2; --orange: #f59e0b; --orange-bg: #fffbeb;
+  --blue: #3b82f6; --blue-bg: #eff6ff; --purple: #7c3aed; --purple-bg: #f5f3ff;
+  --g50:#f9fafb; --g100:#f3f4f6; --g200:#e5e7eb; --g300:#d1d5db;
+  --g400:#9ca3af; --g500:#6b7280; --g600:#4b5563; --g700:#374151; --g800:#1f2937;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:'Inter',sans-serif;background:var(--ivory);color:var(--g800);line-height:1.5}
+
+/* Top nav for switching between the 3 portals */
+.portal-nav{position:fixed;top:0;left:0;right:0;z-index:9999;background:var(--navy-dark);display:flex;align-items:center;height:52px;padding:0 20px;gap:0;box-shadow:0 2px 12px rgba(0,0,0,.25)}
+.portal-nav .brand{font-family:'Playfair Display',serif;color:#fff;font-size:14px;font-weight:700;margin-right:32px;white-space:nowrap}
+.portal-nav .brand span{color:var(--rose)}
+.portal-nav .divider{width:1px;height:28px;background:rgba(255,255,255,.15);margin:0 8px}
+.portal-nav button{background:none;border:none;color:rgba(255,255,255,.5);font-size:12px;font-weight:600;padding:14px 18px;cursor:pointer;border-bottom:2px solid transparent;transition:all .2s;white-space:nowrap}
+.portal-nav button:hover{color:#fff}
+.portal-nav button.active{color:#fff;border-bottom-color:var(--gold)}
+.portal-nav .portal-label{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1.5px;padding:4px 10px;border-radius:4px;margin-left:auto}
+.portal-nav .portal-label.root{background:rgba(220,38,38,.2);color:#fca5a5}
+.portal-nav .portal-label.planner{background:rgba(69,123,157,.2);color:#93c5fd}
+.portal-nav .portal-label.vendor{background:rgba(233,196,106,.2);color:var(--gold)}
+
+/* Portal sections */
+.portal{display:none;padding-top:52px;min-height:100vh}
+.portal.active{display:block}
+
+/* Shared layout */
+.layout{display:flex;min-height:calc(100vh - 52px)}
+.sidebar{width:220px;background:var(--navy-dark);flex-shrink:0;position:sticky;top:52px;height:calc(100vh - 52px);overflow-y:auto;padding:16px 0}
+.sidebar .section-label{padding:8px 16px 4px;font-size:10px;font-weight:700;color:rgba(255,255,255,.3);text-transform:uppercase;letter-spacing:1.2px}
+.sidebar a{display:flex;align-items:center;gap:10px;padding:9px 16px;color:rgba(255,255,255,.5);font-size:13px;font-weight:500;text-decoration:none;border-left:3px solid transparent;transition:all .15s}
+.sidebar a:hover{color:#fff;background:rgba(255,255,255,.04)}
+.sidebar a.active{color:#fff;background:rgba(69,123,157,.15);border-left-color:var(--sage)}
+.sidebar a .icon{width:18px;text-align:center;font-size:14px}
+.sidebar a .badge{margin-left:auto;background:var(--sage);color:#fff;font-size:10px;font-weight:700;padding:1px 6px;border-radius:8px}
+.sidebar a .new-badge{margin-left:auto;background:var(--gold);color:var(--navy-dark);font-size:9px;font-weight:800;padding:2px 6px;border-radius:8px}
+
+.main{flex:1;min-width:0}
+.page-header{background:#fff;border-bottom:1px solid var(--g200);padding:14px 24px;display:flex;align-items:center;gap:16px;position:sticky;top:52px;z-index:100}
+.page-header h1{font-size:17px;font-weight:700;color:var(--navy)}
+.page-header .subtitle{font-size:12px;color:var(--g500);margin-left:4px}
+.page-header .spacer{flex:1}
+.page-header .btn{padding:7px 16px;border-radius:8px;font-size:12px;font-weight:600;cursor:pointer;border:1px solid var(--g200);background:#fff;color:var(--g700);transition:all .15s}
+.page-header .btn:hover{border-color:var(--sage);color:var(--sage)}
+.page-header .btn-primary{background:var(--sage);color:#fff;border-color:var(--sage)}
+.page-header .btn-primary:hover{background:var(--sage-light)}
+
+.content{padding:24px}
+
+/* Stat cards */
+.stats{display:grid;gap:16px;margin-bottom:24px}
+.stats-4{grid-template-columns:repeat(4,1fr)}
+.stats-5{grid-template-columns:repeat(5,1fr)}
+.stat{background:#fff;border:1px solid var(--g200);border-radius:12px;padding:16px}
+.stat .label{font-size:11px;font-weight:600;color:var(--g400);text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px}
+.stat .value{font-size:26px;font-weight:800;color:var(--navy)}
+.stat .trend{font-size:11px;font-weight:600;margin-top:4px}
+.stat .trend.up{color:var(--green)}
+.stat .trend.down{color:var(--red)}
+.stat .trend.flat{color:var(--g400)}
+
+/* Cards */
+.card{background:#fff;border:1px solid var(--g200);border-radius:12px;padding:20px;margin-bottom:16px}
+.card h3{font-size:15px;font-weight:700;color:var(--navy);margin-bottom:12px}
+.card-grid{display:grid;gap:16px}
+.card-grid-2{grid-template-columns:1fr 1fr}
+.card-grid-3{grid-template-columns:1fr 1fr 1fr}
+
+/* Tables */
+table{width:100%;border-collapse:collapse;font-size:13px}
+th{text-align:left;padding:10px 12px;background:var(--g50);color:var(--g500);font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;border-bottom:2px solid var(--g200)}
+td{padding:10px 12px;border-bottom:1px solid var(--g100);vertical-align:middle}
+tr:hover td{background:var(--g50)}
+
+/* Status badges */
+.badge-pill{display:inline-block;padding:2px 10px;border-radius:20px;font-size:11px;font-weight:600}
+.badge-green{background:var(--green-bg);color:var(--green)}
+.badge-red{background:var(--red-bg);color:var(--red)}
+.badge-orange{background:var(--orange-bg);color:var(--orange)}
+.badge-blue{background:var(--blue-bg);color:var(--blue)}
+.badge-purple{background:var(--purple-bg);color:var(--purple)}
+.badge-gray{background:var(--g100);color:var(--g500)}
+
+/* Sponsored card (planner view) */
+.sponsored-card{background:#fff;border:1px solid var(--g200);border-radius:12px;padding:14px;margin-bottom:10px;position:relative}
+.sponsored-card .sponsored-badge{position:absolute;top:8px;right:8px;font-size:10px;font-weight:700;color:var(--sage);background:rgba(69,123,157,.08);padding:2px 8px;border-radius:4px}
+.sponsored-card .vendor-img{width:48px;height:48px;border-radius:10px;background:linear-gradient(135deg,var(--blush),var(--rose));display:flex;align-items:center;justify-content:center;font-size:20px;float:left;margin-right:12px}
+.sponsored-card .vendor-name{font-size:14px;font-weight:700;color:var(--navy)}
+.sponsored-card .vendor-cat{font-size:11px;color:var(--sage);margin-bottom:4px}
+.sponsored-card .vendor-desc{font-size:12px;color:var(--g600);margin-bottom:8px;clear:both}
+.sponsored-card .why-tag{font-size:10px;color:var(--g400);margin-bottom:8px}
+.sponsored-card .cta-row{display:flex;gap:6px}
+.sponsored-card .cta{padding:6px 12px;border-radius:6px;font-size:11px;font-weight:600;cursor:pointer;border:none}
+.sponsored-card .cta-primary{background:var(--sage);color:#fff}
+.sponsored-card .cta-secondary{background:var(--g100);color:var(--g700);border:1px solid var(--g200)}
+
+/* Right rail */
+.rail{width:300px;border-left:1px solid var(--g200);background:rgba(248,250,252,.8);padding:16px;flex-shrink:0;overflow-y:auto}
+.rail h3{font-size:13px;font-weight:700;color:var(--navy);margin-bottom:4px}
+.rail .rail-context{font-size:11px;color:var(--sage);margin-bottom:12px;display:flex;align-items:center;gap:6px}
+.rail .rail-context .dot{width:6px;height:6px;background:var(--sage);border-radius:50%}
+
+/* Review card (root admin) */
+.review-card{background:#fff;border:1px solid var(--g200);border-radius:12px;padding:16px;margin-bottom:12px;display:flex;gap:16px}
+.review-card .preview{width:120px;height:80px;border-radius:8px;background:linear-gradient(135deg,#f0f4f8,#e2e8f0);flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:24px}
+.review-card .details{flex:1}
+.review-card .vendor{font-size:14px;font-weight:700;color:var(--navy)}
+.review-card .campaign{font-size:11px;color:var(--sage);margin-bottom:4px}
+.review-card .creative-text{font-size:12px;color:var(--g600);margin-bottom:8px;line-height:1.5}
+.review-card .actions{display:flex;gap:8px}
+.review-card .act-btn{padding:6px 14px;border-radius:6px;font-size:11px;font-weight:600;cursor:pointer;border:none}
+.review-card .approve{background:var(--green);color:#fff}
+.review-card .reject{background:var(--red);color:#fff}
+.review-card .changes{background:var(--g100);color:var(--g600);border:1px solid var(--g200)}
+
+/* Wizard steps */
+.wizard-steps{display:flex;gap:0;margin-bottom:24px;background:#fff;border:1px solid var(--g200);border-radius:12px;padding:16px 20px}
+.wizard-step{flex:1;text-align:center;position:relative}
+.wizard-step .step-num{width:32px;height:32px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;margin-bottom:4px}
+.wizard-step .step-num.active{background:var(--sage);color:#fff}
+.wizard-step .step-num.done{background:var(--green);color:#fff}
+.wizard-step .step-num.pending{background:var(--g200);color:var(--g500)}
+.wizard-step .step-label{font-size:11px;font-weight:600;color:var(--g500)}
+.wizard-step .step-label.active{color:var(--navy)}
+.wizard-step::after{content:'';position:absolute;top:16px;left:60%;right:-40%;height:2px;background:var(--g200)}
+.wizard-step:last-child::after{display:none}
+
+/* Content with rail layout */
+.content-rail{display:flex;flex:1;overflow:hidden}
+.content-main{flex:1;padding:24px;overflow-y:auto;min-width:0}
+
+/* Chart placeholder */
+.chart-placeholder{background:var(--g50);border:1px dashed var(--g300);border-radius:8px;height:200px;display:flex;align-items:center;justify-content:center;color:var(--g400);font-size:13px;font-weight:500}
+
+/* Callout */
+.callout{padding:12px 16px;border-radius:8px;font-size:12px;margin-bottom:16px;display:flex;align-items:flex-start;gap:8px}
+.callout-info{background:var(--blue-bg);border:1px solid #bfdbfe;color:#1e40af}
+.callout-warn{background:var(--orange-bg);border:1px solid #fde68a;color:#92400e}
+.callout-green{background:var(--green-bg);border:1px solid #bbf7d0;color:#166534}
+
+/* Vendor portal specific */
+.vendor-hero{background:linear-gradient(135deg,var(--navy) 0%,var(--sage) 100%);color:#fff;padding:32px;border-radius:16px;margin-bottom:24px}
+.vendor-hero h2{font-size:22px;font-weight:800;margin-bottom:8px}
+.vendor-hero p{font-size:14px;opacity:.8;max-width:500px}
+
+/* Funnel */
+.funnel{display:flex;flex-direction:column;gap:4px}
+.funnel-step{display:flex;align-items:center;gap:12px}
+.funnel-bar{height:28px;border-radius:6px;display:flex;align-items:center;padding:0 12px;font-size:11px;font-weight:600;color:#fff;min-width:60px}
+.funnel-label{font-size:12px;color:var(--g600);min-width:100px}
+.funnel-rate{font-size:11px;color:var(--g400);margin-left:8px}
+
+/* Flip cards (vendor accounts) */
+.flip-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:20px}
+.flip-card{perspective:800px;height:280px}
+.flip-card-inner{position:relative;width:100%;height:100%;transition:transform 0.5s;transform-style:preserve-3d}
+.flip-card.flipped .flip-card-inner{transform:rotateY(180deg)}
+.flip-card-front,.flip-card-back{position:absolute;width:100%;height:100%;backface-visibility:hidden;border-radius:12px;border:1px solid var(--g200);overflow:hidden}
+.flip-card-front{background:#fff}
+.flip-card-back{background:#fff;transform:rotateY(180deg);padding:16px;display:flex;flex-direction:column}
+.flip-card .vendor-header{background:linear-gradient(135deg,var(--navy-dark),var(--sage));padding:20px;color:#fff;text-align:center;position:relative}
+.flip-card .vendor-header .vendor-avatar{width:56px;height:56px;border-radius:14px;background:rgba(255,255,255,.15);display:inline-flex;align-items:center;justify-content:center;font-size:24px;margin-bottom:8px;border:2px solid rgba(255,255,255,.25)}
+.flip-card .vendor-header h4{font-size:15px;font-weight:700;margin-bottom:2px}
+.flip-card .vendor-header .vendor-meta{font-size:11px;opacity:.7}
+.flip-card .vendor-body{padding:14px 16px;flex:1}
+.flip-card .vendor-body .info-row{display:flex;justify-content:space-between;font-size:12px;padding:4px 0;border-bottom:1px solid var(--g100)}
+.flip-card .vendor-body .info-row:last-child{border-bottom:none}
+.flip-card .vendor-body .info-label{color:var(--g500)}
+.flip-card .vendor-body .info-value{font-weight:600;color:var(--navy)}
+.flip-card .flip-btn{position:absolute;top:8px;right:8px;background:rgba(255,255,255,.2);border:none;color:#fff;width:28px;height:28px;border-radius:50%;cursor:pointer;font-size:14px;display:flex;align-items:center;justify-content:center;transition:background .2s}
+.flip-card .flip-btn:hover{background:rgba(255,255,255,.35)}
+.flip-card .flip-btn-back{position:absolute;top:8px;right:8px;background:var(--g100);border:none;color:var(--g600);width:28px;height:28px;border-radius:50%;cursor:pointer;font-size:14px;display:flex;align-items:center;justify-content:center}
+.flip-card .vendor-actions{padding:0 16px 14px;display:flex;gap:6px}
+.flip-card .vendor-actions button{flex:1}
+
+@media(max-width:1200px){
+  .stats-4,.stats-5{grid-template-columns:repeat(2,1fr)}
+  .card-grid-2,.card-grid-3{grid-template-columns:1fr}
+  .flip-grid{grid-template-columns:repeat(2,1fr)}
+  .rail{display:none}
+}
+</style>
+</head>
+<body>
+
+<!-- ===== TOP NAVIGATION — 3 PORTALS ===== -->
+<div class="portal-nav">
+  <div class="brand">Special<span>Wedding</span></div>
+  <div class="divider"></div>
+  <button class="active" onclick="showPortal('root')">Root Admin</button>
+  <button onclick="showPortal('planner')">Planner View</button>
+  <button onclick="showPortal('vendor')">Vendor Portal</button>
+  <button onclick="showPortal('flows')" style="margin-left:8px;border-left:1px solid rgba(255,255,255,.15);padding-left:18px">User Flows</button>
+  <span class="portal-label root" id="portal-label">ROOT ADMIN</span>
+</div>
+
+<!-- ================================================================
+     PORTAL 1: ROOT ADMIN (you — the platform owner)
+     PRD Section 6.8: Admin Moderation Console
+     Routes: /admin/ads/review, /admin/ads/campaigns, /admin/ads/config,
+             /admin/ads/revenue, /admin/ads/feedback
+     ================================================================ -->
+<div class="portal active" id="portal-root">
+  <div class="layout">
+
+    <!-- Root Admin Sidebar -->
+    <div class="sidebar">
+      <div class="section-label">Platform</div>
+      <a href="#"><span class="icon">&#9776;</span> Dashboard</a>
+      <a href="#"><span class="icon">&#128200;</span> Business Analytics</a>
+      <a href="#"><span class="icon">&#9881;</span> Platform</a>
+      <a href="#"><span class="icon">&#128101;</span> Planners</a>
+      <div class="section-label" style="margin-top:12px">Advertising</div>
+      <a class="active" href="#" onclick="showAdminTab('review')"><span class="icon">&#128220;</span> Creative Review <span class="badge">5</span></a>
+      <a href="#" onclick="showAdminTab('campaigns')"><span class="icon">&#128226;</span> Campaign Monitor</a>
+      <a href="#" onclick="showAdminTab('revenue')"><span class="icon">&#128176;</span> Revenue Dashboard</a>
+      <a href="#" onclick="showAdminTab('feedback')"><span class="icon">&#128172;</span> Planner Feedback</a>
+      <a href="#" onclick="showAdminTab('vendors')"><span class="icon">&#128101;</span> Vendor Accounts</a>
+      <a href="#" onclick="showAdminTab('config')"><span class="icon">&#9881;</span> Platform Config</a>
+      <div class="section-label" style="margin-top:12px">Shortcuts</div>
+      <a href="#" style="color:var(--gold)"><span class="icon">&#10133;</span> Create Vendor <span class="new-badge">shortcut</span></a>
+      <a href="#" style="color:var(--gold)"><span class="icon">&#8599;</span> Vendor Portal <span class="new-badge">shortcut</span></a>
+      <div class="section-label" style="margin-top:12px">System</div>
+      <a href="#"><span class="icon">&#128276;</span> Notifications</a>
+      <a href="#"><span class="icon">&#10067;</span> Support</a>
+    </div>
+
+    <div class="main">
+      <!-- ===== TAB: Creative Review ===== -->
+      <div id="admin-review" class="admin-tab">
+        <div class="page-header">
+          <h1>Creative Review Queue</h1>
+          <span class="subtitle">PRD Section 6.8 — /admin/ads/review</span>
+          <div class="spacer"></div>
+          <button class="btn">Filter</button>
+        </div>
+        <div class="content">
+          <!-- Review stats -->
+          <div class="stats stats-4">
+            <div class="stat"><div class="label">Pending Review</div><div class="value" style="color:var(--orange)">5</div></div>
+            <div class="stat"><div class="label">Approved (7d)</div><div class="value" style="color:var(--green)">12</div></div>
+            <div class="stat"><div class="label">Rejected (7d)</div><div class="value" style="color:var(--red)">2</div></div>
+            <div class="stat"><div class="label">Changes Requested</div><div class="value" style="color:var(--purple)">3</div></div>
+          </div>
+
+          <div class="callout callout-info">Review SLA: 24 hours. Average review time: 4.2 hours.</div>
+
+          <!-- Review cards -->
+          <div class="review-card">
+            <div class="preview">&#128247;</div>
+            <div class="details">
+              <div class="vendor">Bloom & Petal Florals <span class="badge-pill badge-orange">Pending</span></div>
+              <div class="campaign">Campaign: "Spring Wedding Collection" &middot; Goal: Quote Requests &middot; Budget: $50/day</div>
+              <div class="creative-text"><strong>"Elegant Spring Arrangements"</strong> — Hand-tied bouquets starting at $150. Free consultation for weddings over 100 guests.</div>
+              <div class="actions">
+                <button class="act-btn approve">Approve</button>
+                <button class="act-btn reject">Reject</button>
+                <button class="act-btn changes">Request Changes</button>
+              </div>
+            </div>
+          </div>
+
+          <div class="review-card">
+            <div class="preview">&#127909;</div>
+            <div class="details">
+              <div class="vendor">Moment Films <span class="badge-pill badge-orange">Pending</span></div>
+              <div class="campaign">Campaign: "Austin Videography" &middot; Goal: Profile Visits &middot; Budget: $30/day</div>
+              <div class="creative-text"><strong>"Cinematic Wedding Films"</strong> — Award-winning videography. Same-day edits available. 10% off bookings in March.</div>
+              <div class="actions">
+                <button class="act-btn approve">Approve</button>
+                <button class="act-btn reject">Reject</button>
+                <button class="act-btn changes">Request Changes</button>
+              </div>
+            </div>
+          </div>
+
+          <div class="review-card">
+            <div class="preview">&#127880;</div>
+            <div class="details">
+              <div class="vendor">DreamScape Events <span class="badge-pill badge-orange">Pending</span></div>
+              <div class="campaign">Campaign: "Full Service Planning" &middot; Goal: Bookings &middot; Budget: $75/day</div>
+              <div class="creative-text"><strong>"Your Dream Wedding, Our Expertise"</strong> — Full-service planning from $3,500. 200+ weddings planned in Dallas-Fort Worth.</div>
+              <div class="actions">
+                <button class="act-btn approve">Approve</button>
+                <button class="act-btn reject">Reject</button>
+                <button class="act-btn changes">Request Changes</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ===== TAB: Campaign Monitor ===== -->
+      <div id="admin-campaigns" class="admin-tab" style="display:none">
+        <div class="page-header">
+          <h1>Campaign Monitor</h1>
+          <span class="subtitle">PRD Section 6.8 — /admin/ads/campaigns</span>
+          <div class="spacer"></div>
+          <button class="btn">Export</button>
+        </div>
+        <div class="content">
+          <div class="stats stats-5">
+            <div class="stat"><div class="label">Active Campaigns</div><div class="value">18</div></div>
+            <div class="stat"><div class="label">Total Impressions (30d)</div><div class="value">24,350</div><div class="trend up">+18% vs prev</div></div>
+            <div class="stat"><div class="label">Total Clicks (30d)</div><div class="value">892</div><div class="trend up">+12%</div></div>
+            <div class="stat"><div class="label">Platform CTR</div><div class="value">3.66%</div><div class="trend up">+0.4pp</div></div>
+            <div class="stat"><div class="label">Total Leads</div><div class="value">127</div><div class="trend up">+22%</div></div>
+          </div>
+
+          <div class="card">
+            <h3>All Campaigns</h3>
+            <table>
+              <thead><tr><th>Vendor</th><th>Campaign</th><th>Status</th><th>Goal</th><th>Budget</th><th>Impressions</th><th>Clicks</th><th>CTR</th><th>Leads</th><th>Actions</th></tr></thead>
+              <tbody>
+                <tr><td><strong>Bloom & Petal</strong></td><td>Spring Collection</td><td><span class="badge-pill badge-green">Active</span></td><td>Quotes</td><td>$50/d</td><td>4,231</td><td>189</td><td>4.47%</td><td>28</td><td><button class="btn" style="padding:3px 8px;font-size:11px">Pause</button></td></tr>
+                <tr><td><strong>Moment Films</strong></td><td>Austin Video</td><td><span class="badge-pill badge-green">Active</span></td><td>Visits</td><td>$30/d</td><td>3,812</td><td>142</td><td>3.72%</td><td>15</td><td><button class="btn" style="padding:3px 8px;font-size:11px">Pause</button></td></tr>
+                <tr><td><strong>DreamScape</strong></td><td>Full Service</td><td><span class="badge-pill badge-orange">Pending</span></td><td>Bookings</td><td>$75/d</td><td>—</td><td>—</td><td>—</td><td>—</td><td><button class="btn" style="padding:3px 8px;font-size:11px">Review</button></td></tr>
+                <tr><td><strong>Luxe Catering</strong></td><td>Summer Menu</td><td><span class="badge-pill badge-green">Active</span></td><td>Quotes</td><td>$40/d</td><td>2,980</td><td>98</td><td>3.29%</td><td>12</td><td><button class="btn" style="padding:3px 8px;font-size:11px">Pause</button></td></tr>
+                <tr><td><strong>Harmony DJs</strong></td><td>Dallas Dance</td><td><span class="badge-pill badge-gray">Paused</span></td><td>Visits</td><td>$25/d</td><td>1,450</td><td>52</td><td>3.59%</td><td>6</td><td><button class="btn" style="padding:3px 8px;font-size:11px">Resume</button></td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- ===== TAB: Revenue Dashboard ===== -->
+      <div id="admin-revenue" class="admin-tab" style="display:none">
+        <div class="page-header">
+          <h1>Revenue Dashboard</h1>
+          <span class="subtitle">PRD Section 6.8 — /admin/ads/revenue</span>
+          <div class="spacer"></div>
+          <button class="btn">30 Days</button>
+          <button class="btn" style="margin-left:8px">Export</button>
+        </div>
+        <div class="content">
+          <div class="callout callout-warn">Revenue is $0 during free tier. Data tracking is active — these metrics will drive pricing decisions.</div>
+          <div class="stats stats-5">
+            <div class="stat"><div class="label">Ad Revenue</div><div class="value">$0</div><div class="trend flat">Free tier</div></div>
+            <div class="stat"><div class="label">Active Vendors</div><div class="value">8</div></div>
+            <div class="stat"><div class="label">Total Campaigns</div><div class="value">18</div></div>
+            <div class="stat"><div class="label">Avg CTR</div><div class="value">3.66%</div></div>
+            <div class="stat"><div class="label">Lead-to-Conversion</div><div class="value">14.2%</div></div>
+          </div>
+
+          <div class="card-grid card-grid-2">
+            <div class="card">
+              <h3>Monetization Readiness</h3>
+              <div style="margin-bottom:8px"><span style="font-size:12px;color:var(--g500)">Weekly Active Planners</span><div style="background:var(--g100);border-radius:4px;height:8px;margin-top:4px"><div style="background:var(--sage);height:100%;border-radius:4px;width:62%"></div></div><span style="font-size:11px;color:var(--g400)">31 / 50 target</span></div>
+              <div style="margin-bottom:8px"><span style="font-size:12px;color:var(--g500)">Avg Leads/Vendor/Week</span><div style="background:var(--g100);border-radius:4px;height:8px;margin-top:4px"><div style="background:var(--green);height:100%;border-radius:4px;width:80%"></div></div><span style="font-size:11px;color:var(--g400)">4.0 / 5.0 target</span></div>
+              <div style="margin-bottom:8px"><span style="font-size:12px;color:var(--g500)">Lead-to-Conversion Rate</span><div style="background:var(--g100);border-radius:4px;height:8px;margin-top:4px"><div style="background:var(--gold);height:100%;border-radius:4px;width:71%"></div></div><span style="font-size:11px;color:var(--g400)">14.2% / 20% target</span></div>
+              <div><span style="font-size:12px;color:var(--g500)">Active Sponsored Vendors</span><div style="background:var(--g100);border-radius:4px;height:8px;margin-top:4px"><div style="background:var(--sage);height:100%;border-radius:4px;width:40%"></div></div><span style="font-size:11px;color:var(--g400)">8 / 20 target</span></div>
+            </div>
+            <div class="card">
+              <h3>Revenue Forecast (when billing enabled)</h3>
+              <table style="font-size:12px">
+                <tr><td>CPC Model ($0.50 avg)</td><td style="text-align:right"><strong>$446/mo</strong></td></tr>
+                <tr><td>CPL Model ($2.00 avg)</td><td style="text-align:right"><strong>$254/mo</strong></td></tr>
+                <tr><td>Fixed Slots ($25/wk)</td><td style="text-align:right"><strong>$800/mo</strong></td></tr>
+                <tr><td style="border-top:2px solid var(--g200);font-weight:700">Projected Total</td><td style="text-align:right;border-top:2px solid var(--g200)"><strong style="color:var(--green)">$1,500/mo</strong></td></tr>
+              </table>
+            </div>
+          </div>
+
+          <div class="card">
+            <h3>Top Vendors by Engagement</h3>
+            <table>
+              <thead><tr><th>#</th><th>Vendor</th><th>Category</th><th>Impressions</th><th>Clicks</th><th>CTR</th><th>Leads</th><th>Conversions</th></tr></thead>
+              <tbody>
+                <tr><td>1</td><td><strong>Bloom & Petal</strong></td><td>Florist</td><td>4,231</td><td>189</td><td>4.47%</td><td>28</td><td>4</td></tr>
+                <tr><td>2</td><td><strong>Moment Films</strong></td><td>Videographer</td><td>3,812</td><td>142</td><td>3.72%</td><td>15</td><td>2</td></tr>
+                <tr><td>3</td><td><strong>Luxe Catering</strong></td><td>Caterer</td><td>2,980</td><td>98</td><td>3.29%</td><td>12</td><td>2</td></tr>
+                <tr><td>4</td><td><strong>The Grand Estate</strong></td><td>Venue</td><td>2,654</td><td>121</td><td>4.56%</td><td>18</td><td>3</td></tr>
+                <tr><td>5</td><td><strong>Harmony DJs</strong></td><td>DJ</td><td>1,450</td><td>52</td><td>3.59%</td><td>6</td><td>1</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- ===== TAB: Platform Config (was System Config, now with sub-tabs + export) ===== -->
+      <div id="admin-config" class="admin-tab" style="display:none">
+        <div class="page-header">
+          <h1>Platform Config</h1>
+          <span class="subtitle">Advertising system settings, data export, and pipeline controls</span>
+          <div class="spacer"></div>
+          <button class="btn btn-primary">Save Changes</button>
+        </div>
+        <div class="content">
+          <!-- Sub-tabs within Platform Config -->
+          <div style="display:flex;gap:0;border-bottom:2px solid var(--g200);margin-bottom:20px">
+            <button onclick="showConfigSubtab('settings')" class="config-subtab active" style="padding:10px 20px;border:none;background:none;font-size:13px;font-weight:600;color:var(--navy);cursor:pointer;border-bottom:2px solid var(--sage);margin-bottom:-2px">Settings</button>
+            <button onclick="showConfigSubtab('export')" class="config-subtab" style="padding:10px 20px;border:none;background:none;font-size:13px;font-weight:600;color:var(--g400);cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-2px">Data Export</button>
+            <button onclick="showConfigSubtab('pipeline')" class="config-subtab" style="padding:10px 20px;border:none;background:none;font-size:13px;font-weight:600;color:var(--g400);cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-2px">Data Pipeline</button>
+          </div>
+
+          <!-- Sub-tab: Settings -->
+          <div id="config-settings" class="config-panel">
+            <div class="card-grid card-grid-2">
+              <div class="card">
+                <h3>Feature Flags</h3>
+                <table style="font-size:12px">
+                  <tr><td>Ads Enabled</td><td style="text-align:right"><span class="badge-pill badge-green">ON</span></td></tr>
+                  <tr><td>Show Sponsored Badge</td><td style="text-align:right"><span class="badge-pill badge-green">ON</span></td></tr>
+                  <tr><td>Enable Event Tracking</td><td style="text-align:right"><span class="badge-pill badge-green">ON</span></td></tr>
+                  <tr><td>Require Creative Review</td><td style="text-align:right"><span class="badge-pill badge-green">ON</span></td></tr>
+                  <tr><td>Auto-approve Returning Vendors</td><td style="text-align:right"><span class="badge-pill badge-red">OFF</span></td></tr>
+                </table>
+              </div>
+              <div class="card">
+                <h3>Serving Limits</h3>
+                <table style="font-size:12px">
+                  <tr><td>Max Sponsored Per Page</td><td style="text-align:right"><strong>3</strong></td></tr>
+                  <tr><td>Impressions Per Session</td><td style="text-align:right"><strong>5</strong></td></tr>
+                  <tr><td>Freq Cap (per campaign/planner/day)</td><td style="text-align:right"><strong>3</strong></td></tr>
+                  <tr><td>Review SLA (hours)</td><td style="text-align:right"><strong>48</strong></td></tr>
+                  <tr><td>Max Campaigns Per Vendor</td><td style="text-align:right"><strong>5</strong></td></tr>
+                </table>
+              </div>
+              <div class="card">
+                <h3>Fraud Detection</h3>
+                <table style="font-size:12px">
+                  <tr><td>Max Clicks/Planner/Campaign/Hour</td><td style="text-align:right"><strong>5</strong></td></tr>
+                  <tr><td>Hide Rate Auto-Pause</td><td style="text-align:right"><strong>3 unique/7d</strong></td></tr>
+                  <tr><td>Click Velocity Window</td><td style="text-align:right"><strong>5 min</strong></td></tr>
+                  <tr><td>Auto-Void Suspicious Clicks</td><td style="text-align:right"><span class="badge-pill badge-green">ON</span></td></tr>
+                </table>
+              </div>
+              <div class="card">
+                <h3>Vendor Signup</h3>
+                <table style="font-size:12px">
+                  <tr><td>Vendor Domain</td><td style="text-align:right"><strong>vendor.thespecialwedding.io</strong></td></tr>
+                  <tr><td>Auto-approve Signups</td><td style="text-align:right"><span class="badge-pill badge-red">OFF</span></td></tr>
+                  <tr><td>Require Profile Completion</td><td style="text-align:right"><span class="badge-pill badge-green">ON</span></td></tr>
+                  <tr><td>Min Images for Campaign</td><td style="text-align:right"><strong>1</strong></td></tr>
+                </table>
+              </div>
+            </div>
+          </div>
+
+          <!-- Sub-tab: Data Export -->
+          <div id="config-export" class="config-panel" style="display:none">
+            <div class="callout callout-info">Export data as CSV tables. Select the data set and date range, then click Export.</div>
+
+            <div class="card">
+              <h3>Export Data</h3>
+              <div style="display:flex;gap:12px;align-items:flex-end;margin-bottom:20px;flex-wrap:wrap">
+                <div>
+                  <label style="font-size:11px;font-weight:600;color:var(--g500);display:block;margin-bottom:4px">Data Set</label>
+                  <select style="padding:8px 12px;border:1px solid var(--g200);border-radius:8px;font-size:13px;min-width:220px">
+                    <option>Vendor Accounts (all vendors)</option>
+                    <option>Active Campaigns</option>
+                    <option>All Campaigns (incl. completed)</option>
+                    <option>Campaign Performance Metrics</option>
+                    <option>Ad Events (raw)</option>
+                    <option>Ad Leads</option>
+                    <option>Planner Feedback (hides/suppressions)</option>
+                    <option>Campaign Daily Stats (rollups)</option>
+                    <option>Placement Daily Stats</option>
+                    <option>Fraud Signals</option>
+                  </select>
+                </div>
+                <div>
+                  <label style="font-size:11px;font-weight:600;color:var(--g500);display:block;margin-bottom:4px">Date Range</label>
+                  <select style="padding:8px 12px;border:1px solid var(--g200);border-radius:8px;font-size:13px;min-width:150px">
+                    <option>Last 7 days</option>
+                    <option>Last 30 days</option>
+                    <option>Last 90 days</option>
+                    <option>All time</option>
+                    <option>Custom range...</option>
+                  </select>
+                </div>
+                <div>
+                  <label style="font-size:11px;font-weight:600;color:var(--g500);display:block;margin-bottom:4px">Format</label>
+                  <select style="padding:8px 12px;border:1px solid var(--g200);border-radius:8px;font-size:13px;min-width:100px">
+                    <option>CSV</option>
+                    <option>JSON</option>
+                  </select>
+                </div>
+                <button class="btn btn-primary" style="padding:8px 20px">Export</button>
+              </div>
+
+              <div style="font-size:12px;color:var(--g500);margin-bottom:16px">Preview of selected data set:</div>
+              <table>
+                <thead><tr><th>Vendor</th><th>Category</th><th>Location</th><th>Status</th><th>Campaigns</th><th>Impressions (30d)</th><th>Clicks (30d)</th><th>CTR</th><th>Leads (30d)</th><th>Conversions</th></tr></thead>
+                <tbody>
+                  <tr><td>Bloom & Petal</td><td>Florist</td><td>Austin, TX</td><td>Active</td><td>2</td><td>4,231</td><td>189</td><td>4.47%</td><td>28</td><td>4</td></tr>
+                  <tr><td>Moment Films</td><td>Videographer</td><td>Austin, TX</td><td>Active</td><td>1</td><td>3,812</td><td>142</td><td>3.72%</td><td>15</td><td>2</td></tr>
+                  <tr><td>Luxe Catering</td><td>Caterer</td><td>Austin, TX</td><td>Active</td><td>1</td><td>2,980</td><td>98</td><td>3.29%</td><td>12</td><td>2</td></tr>
+                  <tr><td>Harmony DJs</td><td>DJ</td><td>Dallas, TX</td><td>Paused</td><td>1</td><td>1,450</td><td>52</td><td>3.59%</td><td>6</td><td>1</td></tr>
+                </tbody>
+              </table>
+              <div style="font-size:11px;color:var(--g400);margin-top:8px">Showing 4 of 8 records. Full export will include all records.</div>
+            </div>
+
+            <div class="card">
+              <h3>Quick Exports</h3>
+              <div style="display:flex;gap:8px;flex-wrap:wrap">
+                <button class="btn" style="padding:6px 14px;font-size:12px">Vendor List (CSV)</button>
+                <button class="btn" style="padding:6px 14px;font-size:12px">Campaign Metrics (CSV)</button>
+                <button class="btn" style="padding:6px 14px;font-size:12px">Lead Report (CSV)</button>
+                <button class="btn" style="padding:6px 14px;font-size:12px">Full Platform Snapshot (JSON)</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Sub-tab: Data Pipeline -->
+          <div id="config-pipeline" class="config-panel" style="display:none">
+            <div class="card-grid card-grid-2">
+              <div class="card">
+                <h3>Rollup Pipeline Status</h3>
+                <table style="font-size:12px">
+                  <tr><td>Status</td><td style="text-align:right"><span class="badge-pill badge-green">Healthy</span></td></tr>
+                  <tr><td>Last Rollup</td><td style="text-align:right">2026-03-17 00:05 UTC</td></tr>
+                  <tr><td>Events Processed (24h)</td><td style="text-align:right"><strong>1,247</strong></td></tr>
+                  <tr><td>Rollup Docs Created (24h)</td><td style="text-align:right"><strong>18</strong></td></tr>
+                  <tr><td>TTL (ad_events)</td><td style="text-align:right"><strong>90 days</strong></td></tr>
+                  <tr><td>TTL (fraud_signals)</td><td style="text-align:right"><strong>7 days</strong></td></tr>
+                </table>
+                <div style="margin-top:12px;display:flex;gap:8px">
+                  <button class="btn" style="padding:4px 10px;font-size:11px">Run Rollup Now</button>
+                  <button class="btn" style="padding:4px 10px;font-size:11px">Backfill 90d</button>
+                </div>
+              </div>
+              <div class="card">
+                <h3>Collection Stats</h3>
+                <table style="font-size:12px">
+                  <tr><td>ad_campaigns</td><td style="text-align:right"><strong>18 docs</strong></td></tr>
+                  <tr><td>ad_creatives</td><td style="text-align:right"><strong>24 docs</strong></td></tr>
+                  <tr><td>ad_events</td><td style="text-align:right"><strong>~45K docs</strong></td></tr>
+                  <tr><td>ad_leads</td><td style="text-align:right"><strong>127 docs</strong></td></tr>
+                  <tr><td>campaign_day_stats</td><td style="text-align:right"><strong>540 docs</strong></td></tr>
+                  <tr><td>placement_day_stats</td><td style="text-align:right"><strong>120 docs</strong></td></tr>
+                  <tr><td>ad_fraud_signals</td><td style="text-align:right"><strong>3 docs</strong></td></tr>
+                  <tr><td>Indexes (total)</td><td style="text-align:right"><strong>38</strong></td></tr>
+                </table>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ===== TAB: Vendor Accounts ===== -->
+      <div id="admin-vendors" class="admin-tab" style="display:none">
+        <div class="page-header">
+          <h1>Vendor Accounts</h1>
+          <span class="subtitle">Manage advertiser vendor accounts</span>
+          <div class="spacer"></div>
+          <button class="btn" style="margin-right:8px">Export CSV</button>
+          <button class="btn btn-primary" style="background:var(--gold);border-color:var(--gold);color:var(--navy-dark)">+ Create Vendor Account</button>
+        </div>
+        <div class="content">
+          <div class="stats stats-4">
+            <div class="stat"><div class="label">Total Vendors</div><div class="value">8</div></div>
+            <div class="stat"><div class="label">Pending Approval</div><div class="value" style="color:var(--orange)">2</div></div>
+            <div class="stat"><div class="label">Active (Campaigning)</div><div class="value" style="color:var(--green)">5</div></div>
+            <div class="stat"><div class="label">Inactive</div><div class="value">1</div></div>
+          </div>
+
+          <div class="callout callout-info">Click the flip icon on any card to see campaign data and actions. "Log in as vendor" opens their portal as if you were them.</div>
+
+          <div class="flip-grid">
+            <!-- Card 1: Active vendor -->
+            <div class="flip-card" id="vc1">
+              <div class="flip-card-inner">
+                <div class="flip-card-front">
+                  <div class="vendor-header">
+                    <button class="flip-btn" onclick="document.getElementById('vc1').classList.toggle('flipped')" title="Flip card">&#8634;</button>
+                    <div class="vendor-avatar">&#127801;</div>
+                    <h4>Bloom & Petal Florals</h4>
+                    <div class="vendor-meta">Florist &middot; Austin, TX</div>
+                  </div>
+                  <div class="vendor-body">
+                    <div class="info-row"><span class="info-label">Status</span><span class="badge-pill badge-green">Active</span></div>
+                    <div class="info-row"><span class="info-label">Email</span><span class="info-value">bloom@petals.com</span></div>
+                    <div class="info-row"><span class="info-label">Location</span><span class="info-value">Austin, TX</span></div>
+                    <div class="info-row"><span class="info-label">Joined</span><span class="info-value">Feb 12, 2026</span></div>
+                  </div>
+                </div>
+                <div class="flip-card-back">
+                  <button class="flip-btn-back" onclick="document.getElementById('vc1').classList.toggle('flipped')" title="Flip back">&#8634;</button>
+                  <div style="font-size:14px;font-weight:700;color:var(--navy);margin-bottom:8px">Campaign Data</div>
+                  <div class="vendor-body" style="padding:0">
+                    <div class="info-row"><span class="info-label">Campaigns</span><span class="info-value">2 active</span></div>
+                    <div class="info-row"><span class="info-label">Impressions (30d)</span><span class="info-value">4,231</span></div>
+                    <div class="info-row"><span class="info-label">Clicks (30d)</span><span class="info-value">189</span></div>
+                    <div class="info-row"><span class="info-label">CTR</span><span class="info-value" style="color:var(--green)">4.47%</span></div>
+                    <div class="info-row"><span class="info-label">Leads (30d)</span><span class="info-value">28</span></div>
+                    <div class="info-row"><span class="info-label">Conversions</span><span class="info-value">4</span></div>
+                  </div>
+                  <div class="vendor-actions" style="margin-top:auto;padding:12px 0 0">
+                    <button class="btn btn-primary" style="padding:8px 0;font-size:12px;background:var(--sage);border-color:var(--sage);color:#fff">Log in as vendor</button>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Card 2: Active vendor -->
+            <div class="flip-card" id="vc2">
+              <div class="flip-card-inner">
+                <div class="flip-card-front">
+                  <div class="vendor-header">
+                    <button class="flip-btn" onclick="document.getElementById('vc2').classList.toggle('flipped')" title="Flip card">&#8634;</button>
+                    <div class="vendor-avatar">&#127909;</div>
+                    <h4>Moment Films</h4>
+                    <div class="vendor-meta">Videographer &middot; Austin, TX</div>
+                  </div>
+                  <div class="vendor-body">
+                    <div class="info-row"><span class="info-label">Status</span><span class="badge-pill badge-green">Active</span></div>
+                    <div class="info-row"><span class="info-label">Email</span><span class="info-value">hello@momentfilms.co</span></div>
+                    <div class="info-row"><span class="info-label">Location</span><span class="info-value">Austin, TX</span></div>
+                    <div class="info-row"><span class="info-label">Joined</span><span class="info-value">Mar 1, 2026</span></div>
+                  </div>
+                </div>
+                <div class="flip-card-back">
+                  <button class="flip-btn-back" onclick="document.getElementById('vc2').classList.toggle('flipped')" title="Flip back">&#8634;</button>
+                  <div style="font-size:14px;font-weight:700;color:var(--navy);margin-bottom:8px">Campaign Data</div>
+                  <div class="vendor-body" style="padding:0">
+                    <div class="info-row"><span class="info-label">Campaigns</span><span class="info-value">1 active</span></div>
+                    <div class="info-row"><span class="info-label">Impressions (30d)</span><span class="info-value">3,812</span></div>
+                    <div class="info-row"><span class="info-label">Clicks (30d)</span><span class="info-value">142</span></div>
+                    <div class="info-row"><span class="info-label">CTR</span><span class="info-value" style="color:var(--green)">3.72%</span></div>
+                    <div class="info-row"><span class="info-label">Leads (30d)</span><span class="info-value">15</span></div>
+                    <div class="info-row"><span class="info-label">Conversions</span><span class="info-value">2</span></div>
+                  </div>
+                  <div class="vendor-actions" style="margin-top:auto;padding:12px 0 0">
+                    <button class="btn btn-primary" style="padding:8px 0;font-size:12px;background:var(--sage);border-color:var(--sage);color:#fff">Log in as vendor</button>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Card 3: Pending approval -->
+            <div class="flip-card" id="vc3">
+              <div class="flip-card-inner">
+                <div class="flip-card-front">
+                  <div class="vendor-header" style="background:linear-gradient(135deg,var(--g700),var(--g600))">
+                    <button class="flip-btn" onclick="document.getElementById('vc3').classList.toggle('flipped')" title="Flip card">&#8634;</button>
+                    <div class="vendor-avatar">&#127860;</div>
+                    <h4>Hill Country Catering</h4>
+                    <div class="vendor-meta">Caterer &middot; San Antonio, TX</div>
+                  </div>
+                  <div class="vendor-body">
+                    <div class="info-row"><span class="info-label">Status</span><span class="badge-pill badge-orange">Pending Approval</span></div>
+                    <div class="info-row"><span class="info-label">Email</span><span class="info-value">events@hillcountry.com</span></div>
+                    <div class="info-row"><span class="info-label">Location</span><span class="info-value">San Antonio, TX</span></div>
+                    <div class="info-row"><span class="info-label">Applied</span><span class="info-value">Mar 17, 2026</span></div>
+                  </div>
+                </div>
+                <div class="flip-card-back">
+                  <button class="flip-btn-back" onclick="document.getElementById('vc3').classList.toggle('flipped')" title="Flip back">&#8634;</button>
+                  <div style="font-size:14px;font-weight:700;color:var(--navy);margin-bottom:8px">Pending Review</div>
+                  <div class="vendor-body" style="padding:0">
+                    <div class="info-row"><span class="info-label">Campaigns</span><span class="info-value" style="color:var(--g400)">None yet</span></div>
+                    <div class="info-row"><span class="info-label">Profile Complete</span><span class="info-value" style="color:var(--green)">Yes</span></div>
+                    <div class="info-row"><span class="info-label">Images</span><span class="info-value">3 uploaded</span></div>
+                    <div class="info-row"><span class="info-label">Website</span><span class="info-value">hillcountrycatering.com</span></div>
+                  </div>
+                  <div class="vendor-actions" style="margin-top:auto;padding:12px 0 0;gap:8px">
+                    <button class="btn btn-primary" style="padding:8px 0;font-size:12px;background:var(--green);border-color:var(--green);color:#fff">Approve</button>
+                    <button class="btn" style="padding:8px 0;font-size:12px">Reject</button>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Card 4: Another active vendor -->
+            <div class="flip-card" id="vc4">
+              <div class="flip-card-inner">
+                <div class="flip-card-front">
+                  <div class="vendor-header">
+                    <button class="flip-btn" onclick="document.getElementById('vc4').classList.toggle('flipped')" title="Flip card">&#8634;</button>
+                    <div class="vendor-avatar">&#127928;</div>
+                    <h4>Harmony DJs</h4>
+                    <div class="vendor-meta">DJ &middot; Dallas-Fort Worth</div>
+                  </div>
+                  <div class="vendor-body">
+                    <div class="info-row"><span class="info-label">Status</span><span class="badge-pill badge-green">Active</span></div>
+                    <div class="info-row"><span class="info-label">Email</span><span class="info-value">book@harmonydjs.com</span></div>
+                    <div class="info-row"><span class="info-label">Location</span><span class="info-value">Dallas, TX</span></div>
+                    <div class="info-row"><span class="info-label">Joined</span><span class="info-value">Feb 20, 2026</span></div>
+                  </div>
+                </div>
+                <div class="flip-card-back">
+                  <button class="flip-btn-back" onclick="document.getElementById('vc4').classList.toggle('flipped')" title="Flip back">&#8634;</button>
+                  <div style="font-size:14px;font-weight:700;color:var(--navy);margin-bottom:8px">Campaign Data</div>
+                  <div class="vendor-body" style="padding:0">
+                    <div class="info-row"><span class="info-label">Campaigns</span><span class="info-value">1 paused</span></div>
+                    <div class="info-row"><span class="info-label">Impressions (30d)</span><span class="info-value">1,450</span></div>
+                    <div class="info-row"><span class="info-label">Clicks (30d)</span><span class="info-value">52</span></div>
+                    <div class="info-row"><span class="info-label">CTR</span><span class="info-value">3.59%</span></div>
+                    <div class="info-row"><span class="info-label">Leads (30d)</span><span class="info-value">6</span></div>
+                    <div class="info-row"><span class="info-label">Conversions</span><span class="info-value">1</span></div>
+                  </div>
+                  <div class="vendor-actions" style="margin-top:auto;padding:12px 0 0">
+                    <button class="btn btn-primary" style="padding:8px 0;font-size:12px;background:var(--sage);border-color:var(--sage);color:#fff">Log in as vendor</button>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Card 5: Pending vendor -->
+            <div class="flip-card" id="vc5">
+              <div class="flip-card-inner">
+                <div class="flip-card-front">
+                  <div class="vendor-header" style="background:linear-gradient(135deg,var(--g700),var(--g600))">
+                    <button class="flip-btn" onclick="document.getElementById('vc5').classList.toggle('flipped')" title="Flip card">&#8634;</button>
+                    <div class="vendor-avatar">&#128248;</div>
+                    <h4>Luna Photography</h4>
+                    <div class="vendor-meta">Photographer &middot; Houston, TX</div>
+                  </div>
+                  <div class="vendor-body">
+                    <div class="info-row"><span class="info-label">Status</span><span class="badge-pill badge-orange">Pending Approval</span></div>
+                    <div class="info-row"><span class="info-label">Email</span><span class="info-value">luna@lunaphoto.com</span></div>
+                    <div class="info-row"><span class="info-label">Location</span><span class="info-value">Houston, TX</span></div>
+                    <div class="info-row"><span class="info-label">Applied</span><span class="info-value">Mar 18, 2026</span></div>
+                  </div>
+                </div>
+                <div class="flip-card-back">
+                  <button class="flip-btn-back" onclick="document.getElementById('vc5').classList.toggle('flipped')" title="Flip back">&#8634;</button>
+                  <div style="font-size:14px;font-weight:700;color:var(--navy);margin-bottom:8px">Pending Review</div>
+                  <div class="vendor-body" style="padding:0">
+                    <div class="info-row"><span class="info-label">Campaigns</span><span class="info-value" style="color:var(--g400)">None yet</span></div>
+                    <div class="info-row"><span class="info-label">Profile Complete</span><span class="info-value" style="color:var(--orange)">Partial</span></div>
+                    <div class="info-row"><span class="info-label">Images</span><span class="info-value">1 uploaded</span></div>
+                    <div class="info-row"><span class="info-label">Website</span><span class="info-value" style="color:var(--g400)">Not provided</span></div>
+                  </div>
+                  <div class="vendor-actions" style="margin-top:auto;padding:12px 0 0;gap:8px">
+                    <button class="btn btn-primary" style="padding:8px 0;font-size:12px;background:var(--green);border-color:var(--green);color:#fff">Approve</button>
+                    <button class="btn" style="padding:8px 0;font-size:12px">Reject</button>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Card 6: Inactive vendor -->
+            <div class="flip-card" id="vc6">
+              <div class="flip-card-inner">
+                <div class="flip-card-front">
+                  <div class="vendor-header" style="background:linear-gradient(135deg,#4a4a5a,#6a6a7a)">
+                    <button class="flip-btn" onclick="document.getElementById('vc6').classList.toggle('flipped')" title="Flip card">&#8634;</button>
+                    <div class="vendor-avatar">&#127880;</div>
+                    <h4>Silver Lining Events</h4>
+                    <div class="vendor-meta">Decorator &middot; Austin, TX</div>
+                  </div>
+                  <div class="vendor-body">
+                    <div class="info-row"><span class="info-label">Status</span><span class="badge-pill badge-gray">Inactive</span></div>
+                    <div class="info-row"><span class="info-label">Email</span><span class="info-value">info@silverlining.co</span></div>
+                    <div class="info-row"><span class="info-label">Location</span><span class="info-value">Austin, TX</span></div>
+                    <div class="info-row"><span class="info-label">Last Active</span><span class="info-value">Feb 28, 2026</span></div>
+                  </div>
+                </div>
+                <div class="flip-card-back">
+                  <button class="flip-btn-back" onclick="document.getElementById('vc6').classList.toggle('flipped')" title="Flip back">&#8634;</button>
+                  <div style="font-size:14px;font-weight:700;color:var(--navy);margin-bottom:8px">Campaign Data</div>
+                  <div class="vendor-body" style="padding:0">
+                    <div class="info-row"><span class="info-label">Campaigns</span><span class="info-value" style="color:var(--g400)">1 completed</span></div>
+                    <div class="info-row"><span class="info-label">Lifetime Impressions</span><span class="info-value">820</span></div>
+                    <div class="info-row"><span class="info-label">Lifetime Clicks</span><span class="info-value">31</span></div>
+                    <div class="info-row"><span class="info-label">CTR</span><span class="info-value">3.78%</span></div>
+                    <div class="info-row"><span class="info-label">Total Leads</span><span class="info-value">4</span></div>
+                    <div class="info-row"><span class="info-label">Conversions</span><span class="info-value">0</span></div>
+                  </div>
+                  <div class="vendor-actions" style="margin-top:auto;padding:12px 0 0">
+                    <button class="btn btn-primary" style="padding:8px 0;font-size:12px;background:var(--sage);border-color:var(--sage);color:#fff">Log in as vendor</button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ===== TAB: Planner Feedback ===== -->
+      <div id="admin-feedback" class="admin-tab" style="display:none">
+        <div class="page-header">
+          <h1>Planner Feedback Monitor</h1>
+          <span class="subtitle">PRD Section 6.8 — /admin/ads/feedback</span>
+          <div class="spacer"></div>
+        </div>
+        <div class="content">
+          <div class="stats stats-4">
+            <div class="stat"><div class="label">Hide Rate (7d)</div><div class="value" style="color:var(--green)">2.1%</div><div class="trend up">Below 5% threshold</div></div>
+            <div class="stat"><div class="label">Reduced Frequency Users</div><div class="value">4</div></div>
+            <div class="stat"><div class="label">Category Suppressions</div><div class="value">7</div></div>
+            <div class="stat"><div class="label">Auto-Paused Campaigns</div><div class="value" style="color:var(--green)">0</div></div>
+          </div>
+
+          <div class="card">
+            <h3>Recent Planner Feedback Actions</h3>
+            <table>
+              <thead><tr><th>Date</th><th>Planner</th><th>Action</th><th>Vendor/Category</th><th>Context</th></tr></thead>
+              <tbody>
+                <tr><td>Mar 17</td><td>sarah@events.co</td><td><span class="badge-pill badge-orange">Hid Vendor</span></td><td>Harmony DJs</td><td>Johnson-Lee Wedding (DJ already booked)</td></tr>
+                <tr><td>Mar 16</td><td>mike@wedplan.com</td><td><span class="badge-pill badge-blue">Hid Category</span></td><td>Photographer</td><td>Anderson Wedding (category booked)</td></tr>
+                <tr><td>Mar 15</td><td>sarah@events.co</td><td><span class="badge-pill badge-gray">Reduced Frequency</span></td><td>—</td><td>Global preference toggle</td></tr>
+                <tr><td>Mar 14</td><td>jen@bridal.io</td><td><span class="badge-pill badge-orange">Hid Vendor</span></td><td>Bloom & Petal</td><td>Garcia Wedding (had bad experience)</td></tr>
+              </tbody>
+            </table>
+          </div>
+
+          <div class="card">
+            <h3>Most Hidden Vendors</h3>
+            <table>
+              <thead><tr><th>Vendor</th><th>Hides (30d)</th><th>Impression-to-Hide Rate</th><th>Status</th></tr></thead>
+              <tbody>
+                <tr><td>Harmony DJs</td><td>2</td><td>0.14%</td><td><span class="badge-pill badge-green">OK</span></td></tr>
+                <tr><td>Bloom & Petal</td><td>1</td><td>0.02%</td><td><span class="badge-pill badge-green">OK</span></td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+
+<!-- ================================================================
+     PORTAL 2: PLANNER VIEW (wedding planners — NOT admins)
+     PRD Section 6.2: Planner Ad Surface Layer
+     ONE ad surface only: vertical right rail on homepage, vendor page, budget page
+     Horizontal scroll on mobile (< 1024px)
+     ================================================================ -->
+<div class="portal" id="portal-planner">
+  <div class="layout">
+
+    <div class="sidebar">
+      <div class="section-label">Planning</div>
+      <a class="active" href="#"><span class="icon">&#127968;</span> Dashboard</a>
+      <a href="#"><span class="icon">&#128197;</span> Calendar</a>
+      <a href="#"><span class="icon">&#128152;</span> Weddings</a>
+      <a href="#"><span class="icon">&#128101;</span> Guests</a>
+      <a href="#"><span class="icon">&#128172;</span> Inbox</a>
+      <a href="#"><span class="icon">&#127912;</span> Gallery</a>
+      <a href="#"><span class="icon">&#128176;</span> Budget</a>
+      <a href="#"><span class="icon">&#128188;</span> Vendors</a>
+      <a href="#"><span class="icon">&#128230;</span> Packages</a>
+    </div>
+
+    <div class="main">
+      <div class="page-header">
+        <h1>Planner Dashboard</h1>
+        <span class="subtitle">— Johnson-Lee Wedding</span>
+        <div class="spacer"></div>
+        <select style="padding:6px 12px;border:1px solid var(--g200);border-radius:8px;font-size:12px;color:var(--g600)">
+          <option>Johnson-Lee Wedding (Jun 15)</option>
+          <option>Anderson Wedding (Sep 22)</option>
+          <option>Garcia Wedding (Nov 8)</option>
+        </select>
+      </div>
+
+      <div class="content-rail">
+        <div class="content-main">
+          <!-- Planner main content (simplified) -->
+          <div class="stats stats-4">
+            <div class="stat"><div class="label">Days Until Wedding</div><div class="value">89</div></div>
+            <div class="stat"><div class="label">Guests Confirmed</div><div class="value">82/150</div></div>
+            <div class="stat"><div class="label">Budget Used</div><div class="value">64%</div></div>
+            <div class="stat"><div class="label">Vendors Booked</div><div class="value">6/9</div></div>
+          </div>
+
+          <div class="card">
+            <h3>Upcoming Milestones</h3>
+            <table>
+              <tr><td><span class="badge-pill badge-green">Done</span></td><td>Venue — The Grand Estate</td><td>Booked Feb 12</td></tr>
+              <tr><td><span class="badge-pill badge-green">Done</span></td><td>Photographer — Maria Chen</td><td>Booked Feb 28</td></tr>
+              <tr><td><span class="badge-pill badge-orange">In Progress</span></td><td>Florist — Comparing options</td><td>Due Apr 1</td></tr>
+              <tr><td><span class="badge-pill badge-gray">Not Started</span></td><td>DJ / Band</td><td>Due Apr 15</td></tr>
+              <tr><td><span class="badge-pill badge-gray">Not Started</span></td><td>Catering — Menu tasting</td><td>Due Apr 20</td></tr>
+            </table>
+          </div>
+
+          <!-- No inline ad banners in the content area.
+               The ONLY ad surface for planners is the vertical right rail.
+               Same rail appears on: homepage, vendor page, budget page.
+               Horizontal scroll on mobile. -->
+        </div>
+
+        <!-- Right rail — the ONLY ad surface planners see.
+             Appears on: /planner (homepage), /vendors, /budget
+             Vertical on desktop (lg+), horizontal scroll on mobile -->
+        <div class="rail">
+          <div style="font-size:9px;color:var(--g400);text-transform:uppercase;letter-spacing:1px;margin-bottom:8px;padding:4px 8px;background:var(--g100);border-radius:4px;text-align:center">This rail appears on: Homepage, Vendors, Budget</div>
+          <h3>Sponsored Vendors</h3>
+          <div class="rail-context"><span class="dot"></span> Austin, TX area</div>
+
+          <!-- Card 1: Normal state -->
+          <div class="sponsored-card">
+            <span class="sponsored-badge">Sponsored</span>
+            <div class="vendor-img">&#127801;</div>
+            <div class="vendor-name">Bloom & Petal Florals</div>
+            <div class="vendor-cat">Florist &middot; Austin, TX</div>
+            <div class="vendor-desc">Elegant spring arrangements. Free consultation for 100+ guests.</div>
+            <div class="why-tag">Based on your Austin wedding needing a florist</div>
+            <div class="cta-row">
+              <button class="cta cta-primary" onclick="document.getElementById('quote-compose').style.display='block'">Request Quote</button>
+              <button class="cta cta-secondary">Add to Directory</button>
+            </div>
+          </div>
+
+          <!-- Card 2: Already added state -->
+          <div class="sponsored-card">
+            <span class="sponsored-badge">Sponsored</span>
+            <div class="vendor-img">&#127909;</div>
+            <div class="vendor-name">Moment Films</div>
+            <div class="vendor-cat">Videographer &middot; Austin, TX</div>
+            <div class="vendor-desc">Cinematic wedding films. Same-day edits. 10% off March bookings.</div>
+            <div class="why-tag">Offers videography services in your area</div>
+            <div class="cta-row">
+              <button class="cta cta-primary">Request Quote</button>
+              <button class="cta" style="background:var(--green-bg);color:var(--green);border:1px solid #bbf7d0;cursor:default">&#10003; In Directory</button>
+            </div>
+          </div>
+
+          <!-- Card 3 -->
+          <div class="sponsored-card">
+            <span class="sponsored-badge">Sponsored</span>
+            <div class="vendor-img">&#127928;</div>
+            <div class="vendor-name">Harmony DJs</div>
+            <div class="vendor-cat">DJ &middot; Dallas-Fort Worth</div>
+            <div class="vendor-desc">Custom playlists. MC services included. $800 packages.</div>
+            <div class="why-tag">Your wedding needs a DJ/Band</div>
+            <div class="cta-row">
+              <button class="cta cta-primary">Request Quote</button>
+              <button class="cta cta-secondary">Add to Directory</button>
+            </div>
+          </div>
+
+          <div style="text-align:center;padding:12px">
+            <a href="#" style="font-size:11px;color:var(--sage);text-decoration:none">See more vendors &#8250;</a>
+            <span style="display:block;font-size:10px;color:var(--g400);margin-top:4px">You can hide any vendor you're not interested in</span>
+            <a href="#" style="display:block;font-size:10px;color:var(--g400);margin-top:8px;text-decoration:underline">Show fewer sponsored vendors</a>
+          </div>
+          <!-- Note: When rail is empty (no matching campaigns), it collapses entirely.
+               Main content area expands to full width. No empty state message shown. -->
+        </div>
+
+        <!-- ===== QUOTE COMPOSE MODAL (opens when "Request Quote" clicked) ===== -->
+        <div id="quote-compose" style="display:none;position:fixed;top:0;left:0;right:0;bottom:0;z-index:300">
+          <!-- Backdrop -->
+          <div onclick="document.getElementById('quote-compose').style.display='none'" style="position:absolute;inset:0;background:rgba(15,23,42,.5);backdrop-filter:blur(2px)"></div>
+          <!-- Modal -->
+          <div style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:560px;max-height:calc(100vh - 80px);background:#fff;border-radius:16px;box-shadow:0 20px 60px rgba(0,0,0,.2);overflow-y:auto">
+            <!-- Header -->
+            <div style="padding:20px 24px 16px;border-bottom:1px solid var(--g200);display:flex;align-items:center;justify-content:space-between">
+              <div>
+                <div style="font-size:17px;font-weight:700;color:var(--navy)">Request Quote</div>
+                <div style="font-size:13px;color:var(--sage);margin-top:2px">Bloom & Petal Florals &middot; Florist &middot; Austin, TX</div>
+              </div>
+              <button onclick="document.getElementById('quote-compose').style.display='none'" style="background:var(--g100);border:none;width:32px;height:32px;border-radius:8px;font-size:18px;color:var(--g500);cursor:pointer;display:flex;align-items:center;justify-content:center">&times;</button>
+            </div>
+
+            <!-- Optional wedding selector (if planner has weddings) -->
+            <div style="padding:12px 24px;background:var(--g50);border-bottom:1px solid var(--g100)">
+              <label style="font-size:11px;font-weight:600;color:var(--g500);text-transform:uppercase;letter-spacing:.5px;display:block;margin-bottom:4px">Link to a wedding? (optional)</label>
+              <select style="width:100%;padding:8px 12px;border:1px solid var(--g200);border-radius:8px;font-size:13px;color:var(--navy);font-weight:600;background:#fff">
+                <option value="">General inquiry (no specific wedding)</option>
+                <option>Johnson-Lee Wedding &middot; Jun 15, 2026 &middot; Austin, TX &middot; 150 guests</option>
+                <option>Anderson Wedding &middot; Sep 22, 2026 &middot; Dallas, TX &middot; 200 guests</option>
+              </select>
+              <span style="font-size:10px;color:var(--g400);margin-top:4px;display:block">If selected, AI will use wedding details to draft a more specific quote request</span>
+            </div>
+
+            <!-- AI-generated draft -->
+            <div style="padding:20px 24px">
+              <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px">
+                <span style="font-size:12px;font-weight:600;color:var(--sage)">AI-suggested draft</span>
+                <span style="font-size:11px;color:var(--g400)">&middot; Edit freely or write your own</span>
+              </div>
+
+              <div style="margin-bottom:14px">
+                <label style="font-size:11px;font-weight:600;color:var(--g500);display:block;margin-bottom:4px">Subject</label>
+                <input type="text" value="Quote Request — Floral Arrangements for Johnson-Lee Wedding (Jun 15)" style="width:100%;padding:10px 14px;border:1px solid var(--g200);border-radius:8px;font-size:13px;color:var(--g800)">
+              </div>
+
+              <div style="margin-bottom:14px">
+                <label style="font-size:11px;font-weight:600;color:var(--g500);display:block;margin-bottom:4px">Message</label>
+                <textarea rows="10" style="width:100%;padding:12px 14px;border:1px solid var(--g200);border-radius:8px;font-size:13px;color:var(--g800);line-height:1.6;resize:vertical;font-family:inherit">Hi Bloom & Petal,
+
+I'm planning the Johnson-Lee wedding on June 15, 2026 in Austin, TX (approximately 150 guests) and I'm interested in learning more about your floral arrangements.
+
+Could you provide a quote for:
+- Bridal bouquet and bridesmaid bouquets (4)
+- Ceremony floral arrangements
+- Reception centerpieces (15 tables)
+
+Our overall floral budget is flexible — we'd love to see options at different price points.
+
+Looking forward to hearing from you!
+
+Best,
+Sarah Chen
+Sarah Events Co.</textarea>
+              </div>
+
+              <!-- Action buttons -->
+              <div style="display:flex;gap:8px;justify-content:flex-end;padding-top:4px">
+                <button class="cta cta-secondary" style="padding:10px 20px" onclick="document.getElementById('quote-compose').style.display='none'">Cancel</button>
+                <button class="cta cta-primary" style="padding:10px 24px;font-size:13px" onclick="document.getElementById('quote-compose').style.display='none'">Send Quote Request</button>
+              </div>
+            </div>
+
+            <!-- Flow documentation (dev reference) -->
+            <div style="padding:0 24px 20px">
+              <div style="padding:12px;background:var(--g50);border-radius:8px;border:1px solid var(--g200)">
+                <div style="font-size:10px;font-weight:700;color:var(--g400);text-transform:uppercase;letter-spacing:1px;margin-bottom:6px">Dev reference: what happens when sent</div>
+                <div style="font-size:11px;color:var(--g600);line-height:1.7">
+                  1. Email sent to vendor's registered email<br>
+                  2. <code>ad_lead</code> created (type: quote_request, click_id, wedding_id)<br>
+                  3. Lead appears in vendor's portal inbox (/portal/ads/leads)<br>
+                  4. <code>ad_event</code> recorded (type: lead_created)<br>
+                  5. Vendor notified to respond<br>
+                  6. Vendor also auto-added to planner's directory if not already there
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ===== USER FLOW DOCUMENTATION (visible in mockup for development reference) ===== -->
+<div class="portal" id="portal-flows">
+  <div style="max-width:900px;margin:0 auto;padding:32px 24px">
+    <h2 style="font-size:22px;font-weight:800;color:var(--navy);margin-bottom:24px">Planner Interaction Flows</h2>
+
+    <div class="card" style="border-left:3px solid var(--sage)">
+      <h3>Rail Targeting Logic</h3>
+      <div style="font-size:13px;color:var(--g600);line-height:1.8">
+        <strong>What determines which vendors show in the rail?</strong><br><br>
+        <strong>Now (Phase 1):</strong> Location-based. The rail shows sponsored vendors whose service area matches the planner's location. The vendor's location is displayed on each card.<br><br>
+        <strong>Later (AI-enhanced):</strong> The AI recommendation engine uses additional signals — the planner's existing weddings, vendors already in their directory, booking history, category gaps, budget tiers, wedding timeline — to rank and filter which sponsored vendors appear. But the foundation is always location.<br><br>
+        <strong>Where the rail appears:</strong> Homepage (/planner), Vendor page (/vendors), Budget page (/budget). Same component, same data. Vertical on desktop (lg+), horizontal scroll on mobile.<br><br>
+        <strong>The rail is NOT wedding-specific.</strong> It shows vendors in the planner's area. The wedding context only enters the picture when the planner takes an action (Request Quote opens a modal where they pick the wedding).
+      </div>
+    </div>
+
+    <div class="card">
+      <h3>Flow 1: "Add to Directory"</h3>
+      <div style="font-size:13px;color:var(--g600);line-height:1.8">
+        <strong>Trigger:</strong> Planner clicks "Add to Directory" on a sponsored vendor card in the rail<br><br>
+        <strong>Steps:</strong><br>
+        1. Vendor info (name, category, email, service area, image) is copied into the planner's personal <code>vendor_profiles</code> collection as a new entry<br>
+        2. New VendorProfile is tagged with <code>source: "sponsored_ad"</code> and <code>campaign_id</code> for attribution<br>
+        3. Button changes to "In Directory" (green, disabled) — cannot add twice<br>
+        4. An <code>ad_lead</code> record is created with <code>lead_type: "add_to_directory"</code><br>
+        5. An <code>ad_event</code> is recorded with <code>event_type: "vendor_added_to_directory"</code><br><br>
+        <strong>What the planner does next:</strong> Goes to their Vendors page, sees the new vendor in their directory, and can assign them to any wedding from there using the existing vendor assignment flow.<br><br>
+        <strong>Why not "Add to Wedding" directly?</strong> The planner may manage multiple weddings. The vendor goes into their directory (a shared resource across all weddings) first. Assignment to a specific wedding is a separate, intentional decision.
+      </div>
+    </div>
+
+    <div class="card">
+      <h3>Flow 2: "Request Quote"</h3>
+      <div style="font-size:13px;color:var(--g600);line-height:1.8">
+        <strong>Trigger:</strong> Planner clicks "Request Quote" on a sponsored vendor card<br><br>
+        <strong>Steps:</strong><br>
+        1. A centered modal popup opens (does NOT navigate away, no layout shift)<br>
+        2. Planner selects which wedding this quote is for (dropdown of their active weddings)<br>
+        3. AI pre-drafts a quote request email using: selected wedding context (date, location, guest count, budget), vendor category, and planner's name/business<br>
+        4. Planner can edit the AI draft freely, or delete it and write their own message<br>
+        5. Planner clicks "Send Quote Request"<br>
+        6. Email is sent to the vendor's registered email address<br>
+        7. Vendor is auto-added to planner's directory if not already there (tagged <code>source: "sponsored_ad"</code>)<br>
+        8. An <code>ad_lead</code> is created with <code>lead_type: "quote_request"</code>, the message content, <code>click_id</code>, and <code>wedding_id</code><br>
+        9. An <code>ad_event</code> is recorded with <code>event_type: "lead_created"</code><br>
+        10. The lead appears in the vendor's portal inbox (/portal/ads/leads)<br>
+        11. Vendor receives a notification to respond<br><br>
+        <strong>Why a modal?</strong> Eliminates layout shift issues. The planner stays exactly where they were. Clicking outside or pressing Escape closes it.<br><br>
+        <strong>AI draft is a suggestion, not mandatory.</strong> The planner always has full control over what gets sent. The AI just saves them time by starting with context they'd otherwise have to type.<br><br>
+        <strong>Why wedding selector in the modal?</strong> The rail is location-based (not wedding-specific). When the planner wants to request a quote, THAT is when they specify which wedding it's for. This is also when the AI uses that wedding's data to draft the email.
+      </div>
+    </div>
+
+    <div class="card">
+      <h3>Flow 3: "Hide Vendor" (via card dismiss)</h3>
+      <div style="font-size:13px;color:var(--g600);line-height:1.8">
+        <strong>Trigger:</strong> Planner clicks X / dismiss on a sponsored card, or uses the drawer's hide option<br><br>
+        <strong>Steps:</strong><br>
+        1. Vendor ID added to planner's <code>planner_ad_preferences.hidden_vendor_ids</code><br>
+        2. Card disappears from rail immediately<br>
+        3. <code>ad_event</code> recorded with <code>event_type: "dismiss"</code><br>
+        4. Vendor never shown to this planner again (across all weddings)<br>
+        5. If 3+ unique planners hide the same campaign in 7 days, campaign auto-paused for root admin review
+      </div>
+    </div>
+
+    <h2 style="font-size:22px;font-weight:800;color:var(--navy);margin:32px 0 24px">Resolved Design Gaps (23 items)</h2>
+
+    <!-- VENDOR PORTAL GAPS -->
+    <div class="card" style="border-left:3px solid var(--gold)">
+      <h3>VENDOR PORTAL</h3>
+    </div>
+
+    <div class="card">
+      <h3>V1. Vendor Signup/Onboarding Flow</h3>
+      <div style="font-size:13px;color:var(--g600);line-height:1.8">
+        <strong>Decision:</strong> Vendor arrives at vendor.thespecialwedding.io signup page. After submitting basic info (name, email, category, location), they see a "Thank you, your account is pending approval" screen. No email verification yet.<br><br>
+        <strong>Root admin gets in-app notification</strong> (bell icon) of the new signup. Admin reviews and approves. On approval, an email with a temporary password is sent to the vendor. Vendor signs in, changes password, completes their profile.<br><br>
+        <strong>Free-tier shortcut:</strong> Root admin has a "Create Vendor" button on their advertising dashboard that links directly to the vendor campaign creation page. Admin can also click on any vendor card in the vendor list to "Log in as vendor" and see/operate their portal as they do.<br><br>
+        <strong>Profile completeness gate:</strong> Vendor must complete: business_name, email, service_category, location, and at least one image before they can create a campaign.
+      </div>
+    </div>
+
+    <div class="card">
+      <h3>V2. Vendor Profile / Settings</h3>
+      <div style="font-size:13px;color:var(--g600);line-height:1.8">
+        <strong>Decision:</strong> Settings modal accessible from the vendor portal sidebar. Contains: business name, email, phone, website URL, service category, service area/location, logo/image, business description. This is the info that shows on planner-facing sponsored cards.<br><br>
+        <strong>Profile vs creative split:</strong> Profile fields (name, email, location, category) update live across all campaigns. Creative fields (headline, description, offer, CTA, ad image) are frozen per campaign and require re-review if changed on a live campaign.
+      </div>
+    </div>
+
+    <div class="card">
+      <h3>V3. Campaign Resubmission After Rejection</h3>
+      <div style="font-size:13px;color:var(--g600);line-height:1.8">
+        <strong>Decision:</strong> In-app notification banner (same bell/banner pattern as planner and root admin dashboards). When admin requests changes, vendor sees a banner on their campaign page: "Changes requested: [admin notes]". Campaign returns to draft status so vendor can edit and resubmit.
+      </div>
+    </div>
+
+    <div class="card">
+      <h3>V4. Creative Preview in Context</h3>
+      <div style="font-size:13px;color:var(--g600);line-height:1.8">
+        <strong>Decision:</strong> Show a live preview of the sponsored card in the right side panel of the campaign creation form. As the vendor fills in headline, description, offer, CTA, and uploads an image, the preview updates in real-time showing exactly how their ad will look in the planner's rail.<br><br>
+        <strong>Pros:</strong> Vendor sees result as they type. Reduces back-and-forth with admin. Sets quality expectations.<br>
+        <strong>Cons:</strong> Requires responsive layout on the wizard page (form left, preview right). On mobile, preview collapses below the form. Worth it.
+      </div>
+    </div>
+
+    <div class="card">
+      <h3>V5. Vendor Notification System</h3>
+      <div style="font-size:13px;color:var(--g600);line-height:1.8">
+        <strong>Decision:</strong> In-portal/app notifications using the existing notification module. Bell icon in vendor portal header with unread count badge. Notifications for: campaign approved, campaign rejected, changes requested, new lead from planner, campaign ended/completed. Email also sent for critical events (approval, rejection, new lead) using existing email service (Resend).
+      </div>
+    </div>
+
+    <div class="card">
+      <h3>V6. Vendor Responds to Quote Request</h3>
+      <div style="font-size:13px;color:var(--g600);line-height:1.8">
+        <strong>Decision:</strong> Vendor replies via their own email provider. The quote request email they receive has a Reply-To set to the planner's email. No in-portal reply UI needed. Lead status transitions: when vendor sends a reply email, they manually mark it as "Responded" in their leads page (or it stays pending until they do). Keeps the system simple and avoids building a full messaging layer.
+      </div>
+    </div>
+
+    <!-- PLANNER GAPS -->
+    <div class="card" style="border-left:3px solid var(--sage)">
+      <h3>PLANNER</h3>
+    </div>
+
+    <div class="card">
+      <h3>P7. Empty Rail State</h3>
+      <div style="font-size:13px;color:var(--g600);line-height:1.8">
+        <strong>Decision:</strong> Rail collapses/hides entirely when there are no matching campaigns. No "No vendors in your area" message, no empty box. The main content area expands to fill the full width. Rail only appears when there are 1+ active campaigns matching the planner's location. This also means the grid layout dynamically adjusts: <code>lg:grid-cols-4</code> (with rail) vs <code>lg:grid-cols-1</code> (without rail).
+      </div>
+    </div>
+
+    <div class="card">
+      <h3>P8. "Why am I seeing this?" (FTC Compliance)</h3>
+      <div style="font-size:13px;color:var(--g600);line-height:1.8">
+        <strong>Decision:</strong> Needs further FTC research before implementation. Current: small text tag on each card showing targeting rationale ("Based on your location"). Future: clickable tooltip/popover with full disclosure per FTC native advertising guidelines. Marked as a research item to be resolved before public launch.
+      </div>
+    </div>
+
+    <div class="card">
+      <h3>P9. Planner Has No Active Weddings</h3>
+      <div style="font-size:13px;color:var(--g600);line-height:1.8">
+        <strong>Decision:</strong> Remove the wedding selector dropdown from the quote modal. Planner can still request a quote or add vendor to directory without having a wedding. Quote email is drafted without wedding-specific context (just planner name + general inquiry). When planner later creates a wedding, the vendor is already in their directory ready to be assigned. The wedding_id on the ad_lead is optional (null when no wedding selected).
+      </div>
+    </div>
+
+    <div class="card">
+      <h3>P10. "Show Fewer Sponsored Vendors" Toggle</h3>
+      <div style="font-size:13px;color:var(--g600);line-height:1.8">
+        <strong>Decision:</strong> "Show fewer" link at the bottom of the rail. Clicking it sets <code>planner_ad_preferences.reduced_frequency = true</code>. When enabled, the rail shows max 1 card instead of 3. Reversible — a "Show more" link appears to toggle back.
+      </div>
+    </div>
+
+    <div class="card">
+      <h3>P11. Confirmation After "Send Quote Request"</h3>
+      <div style="font-size:13px;color:var(--g600);line-height:1.8">
+        <strong>Decision:</strong> Toast notification using existing Sonner toast module: "Quote request sent to [vendor name]". Modal closes. Toast appears at top of screen for 4 seconds.
+      </div>
+    </div>
+
+    <div class="card">
+      <h3>P12. Confirmation After "Add to Directory"</h3>
+      <div style="font-size:13px;color:var(--g600);line-height:1.8">
+        <strong>Decision:</strong> Button changes to green "In Directory" state (already in mockup). Plus toast notification: "[vendor name] added to your vendor directory". No link to vendor page — planner knows where their vendor page is.
+      </div>
+    </div>
+
+    <!-- ROOT ADMIN GAPS -->
+    <div class="card" style="border-left:3px solid var(--red, #dc2626)">
+      <h3>ROOT ADMIN</h3>
+    </div>
+
+    <div class="card">
+      <h3>A13. Campaign Detail View</h3>
+      <div style="font-size:13px;color:var(--g600);line-height:1.8">
+        <strong>Decision:</strong> Detail modal that opens when admin clicks a campaign row. Shows: full campaign settings, all creatives (with images), performance chart, lead list, vendor profile info. Click outside or X to close and return to campaign table. Button at top of modal: "Open in new tab" to see it as a full page.
+      </div>
+    </div>
+
+    <div class="card">
+      <h3>A14. Vendor Profile View from Admin</h3>
+      <div style="font-size:13px;color:var(--g600);line-height:1.8">
+        <strong>Decision:</strong> Review card has a flip animation — front shows creative preview, back shows vendor business info (name, images, location, category, stats). A "View as vendor" button logs the admin into the vendor's portal so they see exactly what the vendor sees. This is also how the admin operates campaigns during the free tier.
+      </div>
+    </div>
+
+    <div class="card">
+      <h3>A15. Admin Creates Campaign on Behalf of Vendor</h3>
+      <div style="font-size:13px;color:var(--g600);line-height:1.8">
+        <strong>Decision:</strong> Shortcut button on the root admin advertising dashboard: "Go to Vendor Portal" that links to the campaign portal. Admin can also use the "Log in as vendor" button from any vendor card. During free tier, the admin creates vendors and campaigns this way. No separate admin campaign creation form.
+      </div>
+    </div>
+
+    <div class="card">
+      <h3>A16. Admin Notification for New Submissions</h3>
+      <div style="font-size:13px;color:var(--g600);line-height:1.8">
+        <strong>Decision:</strong> If admin is logged in: in-app bell notification with badge count on "Creative Review" sidebar link (already in mockup showing "5"). If admin is not logged in: email notification using existing email service. Both triggered when a vendor submits a campaign for review.
+      </div>
+    </div>
+
+    <!-- CROSS-PORTAL GAPS -->
+    <div class="card" style="border-left:3px solid var(--purple)">
+      <h3>CROSS-PORTAL (Research-Based)</h3>
+    </div>
+
+    <div class="card">
+      <h3>C17. click_id Generation and Persistence</h3>
+      <div style="font-size:13px;color:var(--g600);line-height:1.8">
+        <strong>Research:</strong> Google (GCLID) and Meta (fbclid) both generate unique IDs at the moment of click, store server-side and in cookies, carry through the full conversion funnel. Both use deterministic matching (click_id links click to conversion with certainty).<br><br>
+        <strong>Decision:</strong> Generate UUIDv4 in the frontend <code>SponsoredVendorCard</code> component's onClick handler (not on render). Pass to every subsequent API call: ad_event (click), quote request modal (ad_lead), add-to-directory (ad_lead). Store on: ad_event.click_id, ad_lead.click_id, vendor_profile.attribution_click_id. Since everything happens within our platform (no cross-site), we don't need cookies or URL params — just pass the UUID through component props and API payloads.
+      </div>
+    </div>
+
+    <div class="card">
+      <h3>C18. Impression Tracking</h3>
+      <div style="font-size:13px;color:var(--g600);line-height:1.8">
+        <strong>Research:</strong> IAB/MRC standard: 50% of pixels visible for 1+ continuous second = viewable impression. Both Google and Meta follow this. Standard web tool: IntersectionObserver API.<br><br>
+        <strong>Decision:</strong> Fire <code>impression_served</code> on component mount (card rendered in DOM). Fire <code>impression_viewable</code> when IntersectionObserver reports &ge;50% visibility for 1+ second. Only <code>impression_viewable</code> counts toward CTR. Both events include <code>campaign_id</code> and <code>creative_id</code>. Existing SponsoredVendorsRail already has IntersectionObserver — rewire to pass campaign_id.
+      </div>
+    </div>
+
+    <div class="card">
+      <h3>C19. Campaign End/Expiration</h3>
+      <div style="font-size:13px;color:var(--g600);line-height:1.8">
+        <strong>Research:</strong> Google stops serving at end_date immediately via query filter, then changes status async. Meta does the same — immediate stop, async cleanup.<br><br>
+        <strong>Decision:</strong> Two-layer approach. Layer 1 (real-time): the ad serving query filters <code>end_date &ge; now</code>, so expired campaigns stop showing instantly. Layer 2 (async): nightly cron scans for <code>status: active AND end_date &lt; now</code>, sets status to "completed", sends vendor notification email with final campaign results.
+      </div>
+    </div>
+
+    <div class="card">
+      <h3>C20. Frequency Capping</h3>
+      <div style="font-size:13px;color:var(--g600);line-height:1.8">
+        <strong>Research:</strong> 55% of users are discouraged from purchasing when bombarded with the same ad. CTR drops 30-50% after repeated exposure. Industry standard: 3 impressions per campaign per user per day for direct response.<br><br>
+        <strong>Why it matters:</strong> Without capping, the same 3 vendors show to the same planner every page load, all day. Planner gets annoyed, hides everything, perception of your platform drops. Capping rotates vendors so planners see variety and all vendors get fair exposure.<br><br>
+        <strong>Decision:</strong> Max 3 viewable impressions per campaign per planner per day. Enforced via Redis counter: key = <code>freq:{planner_id}:{campaign_id}:{YYYY-MM-DD}</code>, increment on viewable impression, check before serving. When cap hit, that campaign is excluded and next-ranked campaign fills the slot. Also: max 1 card per vendor per rail view (deduplicate by vendor_id).
+      </div>
+    </div>
+
+    <!-- EDGE CASES -->
+    <div class="card" style="border-left:3px solid var(--g400)">
+      <h3>EDGE CASES</h3>
+    </div>
+
+    <div class="card">
+      <h3>E21. Vendor Edits Profile After Campaign Is Live</h3>
+      <div style="font-size:13px;color:var(--g600);line-height:1.8">
+        <strong>Research:</strong> Google requires re-review (3 business days) for creative changes on live campaigns. Meta restarts learning phase. Industry consensus: split profile from creative.<br><br>
+        <strong>Decision:</strong> Two zones. <strong>Profile fields</strong> (business name, email, phone, website, location, category) update live across all campaigns — these are identity/contact fields. <strong>Creative fields</strong> (headline, description, offer, image, CTA) are frozen per campaign at submission. To change creative on a live campaign: vendor edits creative, it goes to <code>review_status: pending</code>, campaign keeps serving the previous approved creative until the new one is approved.
+      </div>
+    </div>
+
+    <div class="card">
+      <h3>E22. Planner Already Has Vendor in Directory</h3>
+      <div style="font-size:13px;color:var(--g600);line-height:1.8">
+        <strong>Decision:</strong> Duplicate check before add. On page load, check planner's directory against displayed campaign vendor IDs. If vendor already exists in directory (regardless of source — organic or ad), show "Already in Directory" button (green, disabled) instead of "Add to Directory". Skip the add, no duplicate created.
+      </div>
+    </div>
+
+    <div class="card">
+      <h3>E23. Multiple Campaigns from Same Vendor</h3>
+      <div style="font-size:13px;color:var(--g600);line-height:1.8">
+        <strong>Research:</strong> Google 2025 policy: one ad per advertiser per location. Universal best practice: deduplicate by advertiser in the same ad slot.<br><br>
+        <strong>Decision:</strong> Deduplicate by <code>vendor_id</code> in ad serving. When <code>get_servable_campaigns()</code> returns results, group by vendor_id and pick only the highest-quality-score campaign per vendor. If Bloom & Petal has 3 active campaigns, only the best one shows in the rail. Others get rotated in on subsequent page loads once the first one hits its frequency cap for the day.
+      </div>
+    </div>
+  </div>
+</div>
+
+
+<!-- ================================================================
+     PORTAL 3: VENDOR PORTAL (independent vendor accounts)
+     PRD Section 6.4: Vendor Campaign Manager
+     Routes: /portal/ads/, /portal/ads/campaigns, /portal/ads/campaigns/new,
+             /portal/ads/creatives, /portal/ads/leads, /portal/ads/billing
+     THIS IS COMPLETELY INDEPENDENT FROM THE PLANNER VENDOR DIRECTORY
+     ================================================================ -->
+<div class="portal" id="portal-vendor">
+  <div class="layout">
+
+    <div class="sidebar">
+      <div class="section-label">Vendor Portal</div>
+      <a class="active" href="#" onclick="showVendorTab('overview')"><span class="icon">&#128200;</span> Overview</a>
+      <a href="#" onclick="showVendorTab('campaigns')"><span class="icon">&#128226;</span> Campaigns</a>
+      <a href="#" onclick="showVendorTab('wizard')"><span class="icon">&#10133;</span> New Campaign</a>
+      <a href="#" onclick="showVendorTab('creatives')"><span class="icon">&#127912;</span> Creatives</a>
+      <a href="#" onclick="showVendorTab('leads')"><span class="icon">&#128172;</span> Leads <span class="badge">3</span></a>
+      <a href="#" onclick="showVendorTab('billing')"><span class="icon">&#128176;</span> Billing</a>
+      <div class="section-label" style="margin-top:24px">Account</div>
+      <a href="#"><span class="icon">&#9881;</span> Settings</a>
+      <a href="#"><span class="icon">&#128274;</span> Sign Out</a>
+    </div>
+
+    <div class="main">
+
+      <!-- ===== Vendor: Overview ===== -->
+      <div id="vendor-overview" class="vendor-tab">
+        <div class="page-header">
+          <h1>Bloom & Petal Florals</h1>
+          <span class="subtitle">Advertising Dashboard</span>
+          <div class="spacer"></div>
+          <button class="btn btn-primary" onclick="showVendorTab('wizard')">+ New Campaign</button>
+        </div>
+        <div class="content">
+          <div class="vendor-hero">
+            <h2>Welcome back, Bloom & Petal!</h2>
+            <p>Your ads were seen 4,231 times this month and generated 28 leads from wedding planners in the Austin area.</p>
+          </div>
+
+          <div class="stats stats-5">
+            <div class="stat"><div class="label">Impressions (30d)</div><div class="value">4,231</div><div class="trend up">+18% vs prev</div></div>
+            <div class="stat"><div class="label">Clicks</div><div class="value">189</div><div class="trend up">+12%</div></div>
+            <div class="stat"><div class="label">Click Rate</div><div class="value">4.47%</div><div class="trend up">+0.3pp</div></div>
+            <div class="stat"><div class="label">Leads</div><div class="value">28</div><div class="trend up">+22%</div></div>
+            <div class="stat"><div class="label">Cost/Lead</div><div class="value">$0.00</div><div class="trend flat">Free Tier</div></div>
+          </div>
+
+          <div class="card-grid card-grid-2">
+            <div class="card">
+              <h3>Performance by Week</h3>
+              <div class="chart-placeholder">Bar chart: weekly impressions (sage) + clicks (gold)</div>
+            </div>
+            <div class="card">
+              <h3>Conversion Funnel</h3>
+              <div class="funnel">
+                <div class="funnel-step"><div class="funnel-label">Impressions</div><div class="funnel-bar" style="width:100%;background:var(--sage)">4,231</div></div>
+                <div class="funnel-step"><div class="funnel-label">Clicks</div><div class="funnel-bar" style="width:45%;background:var(--sage-light)">189</div><span class="funnel-rate">4.47% CTR</span></div>
+                <div class="funnel-step"><div class="funnel-label">Leads</div><div class="funnel-bar" style="width:15%;background:var(--gold)">28</div><span class="funnel-rate">14.8% click-to-lead</span></div>
+                <div class="funnel-step"><div class="funnel-label">Added to Wedding</div><div class="funnel-bar" style="width:8%;background:var(--gold-dark)">12</div><span class="funnel-rate">6.3% click-to-add</span></div>
+                <div class="funnel-step"><div class="funnel-label">Bookings</div><div class="funnel-bar" style="width:4%;background:var(--green);min-width:50px">4</div><span class="funnel-rate">2.1% click-to-book</span></div>
+              </div>
+            </div>
+          </div>
+
+          <div class="card">
+            <h3>Active Campaigns</h3>
+            <table>
+              <thead><tr><th>Campaign</th><th>Status</th><th>Placement</th><th>Impressions</th><th>Clicks</th><th>Leads</th><th>CTR</th></tr></thead>
+              <tbody>
+                <tr><td><strong>Spring Wedding Collection</strong></td><td><span class="badge-pill badge-green">Active</span></td><td>Dashboard Rail</td><td>2,890</td><td>134</td><td>20</td><td>4.64%</td></tr>
+                <tr><td><strong>Directory Boost — Austin</strong></td><td><span class="badge-pill badge-green">Active</span></td><td>Vendor Directory</td><td>1,341</td><td>55</td><td>8</td><td>4.10%</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- ===== Vendor: Campaigns List ===== -->
+      <div id="vendor-campaigns" class="vendor-tab" style="display:none">
+        <div class="page-header">
+          <h1>My Campaigns</h1>
+          <div class="spacer"></div>
+          <button class="btn btn-primary" onclick="showVendorTab('wizard')">+ New Campaign</button>
+        </div>
+        <div class="content">
+          <div class="card">
+            <table>
+              <thead><tr><th>Campaign</th><th>Status</th><th>Goal</th><th>Budget</th><th>Start</th><th>End</th><th>Impressions</th><th>Clicks</th><th>Leads</th><th>Actions</th></tr></thead>
+              <tbody>
+                <tr><td><strong>Spring Wedding Collection</strong></td><td><span class="badge-pill badge-green">Active</span></td><td>Quotes</td><td>$50/d</td><td>Mar 1</td><td>Apr 30</td><td>2,890</td><td>134</td><td>20</td><td><button class="btn" style="padding:3px 8px;font-size:11px">View</button> <button class="btn" style="padding:3px 8px;font-size:11px">Pause</button></td></tr>
+                <tr><td><strong>Directory Boost — Austin</strong></td><td><span class="badge-pill badge-green">Active</span></td><td>Visits</td><td>$25/d</td><td>Mar 5</td><td>Jun 1</td><td>1,341</td><td>55</td><td>8</td><td><button class="btn" style="padding:3px 8px;font-size:11px">View</button> <button class="btn" style="padding:3px 8px;font-size:11px">Pause</button></td></tr>
+                <tr><td><strong>Summer Bouquet Promo</strong></td><td><span class="badge-pill badge-purple">Draft</span></td><td>Quotes</td><td>$40/d</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td><button class="btn" style="padding:3px 8px;font-size:11px">Edit</button> <button class="btn btn-primary" style="padding:3px 8px;font-size:11px">Submit</button></td></tr>
+                <tr><td><strong>Valentine's Special</strong></td><td><span class="badge-pill badge-gray">Completed</span></td><td>Bookings</td><td>$60/d</td><td>Jan 15</td><td>Feb 14</td><td>3,420</td><td>178</td><td>22</td><td><button class="btn" style="padding:3px 8px;font-size:11px">View</button></td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- ===== Vendor: Campaign Wizard ===== -->
+      <div id="vendor-wizard" class="vendor-tab" style="display:none">
+        <div class="page-header">
+          <h1>Create New Campaign</h1>
+          <span class="subtitle">6-step wizard — PRD Section 6.4.2</span>
+          <div class="spacer"></div>
+        </div>
+        <div class="content">
+          <div class="wizard-steps">
+            <div class="wizard-step"><span class="step-num done">&#10003;</span><div class="step-label">Goal</div></div>
+            <div class="wizard-step"><span class="step-num done">&#10003;</span><div class="step-label">Targeting</div></div>
+            <div class="wizard-step"><span class="step-num active">3</span><div class="step-label active">Budget & Schedule</div></div>
+            <div class="wizard-step"><span class="step-num pending">4</span><div class="step-label">Pricing</div></div>
+            <div class="wizard-step"><span class="step-num pending">5</span><div class="step-label">Creative</div></div>
+            <div class="wizard-step"><span class="step-num pending">6</span><div class="step-label">Review</div></div>
+          </div>
+
+          <div class="card">
+            <h3>Step 3: Budget & Schedule</h3>
+            <div class="card-grid card-grid-2" style="margin-top:16px">
+              <div>
+                <label style="font-size:12px;font-weight:600;color:var(--g600);display:block;margin-bottom:4px">Budget Type</label>
+                <div style="display:flex;gap:8px;margin-bottom:16px">
+                  <div style="flex:1;padding:12px;border:2px solid var(--sage);border-radius:8px;text-align:center;cursor:pointer;background:rgba(69,123,157,.05)">
+                    <div style="font-size:14px;font-weight:700;color:var(--navy)">Daily Budget</div>
+                    <div style="font-size:11px;color:var(--g500)">Spend up to X per day</div>
+                  </div>
+                  <div style="flex:1;padding:12px;border:1px solid var(--g200);border-radius:8px;text-align:center;cursor:pointer">
+                    <div style="font-size:14px;font-weight:700;color:var(--g600)">Lifetime Budget</div>
+                    <div style="font-size:11px;color:var(--g400)">Total for campaign duration</div>
+                  </div>
+                </div>
+
+                <label style="font-size:12px;font-weight:600;color:var(--g600);display:block;margin-bottom:4px">Daily Budget</label>
+                <div style="display:flex;align-items:center;gap:4px;margin-bottom:16px">
+                  <span style="font-size:20px;font-weight:800;color:var(--navy)">$</span>
+                  <input type="text" value="50" style="font-size:28px;font-weight:800;color:var(--navy);border:none;width:100px;outline:none;background:transparent">
+                  <span style="font-size:13px;color:var(--g400)">/day</span>
+                </div>
+
+                <label style="font-size:12px;font-weight:600;color:var(--g600);display:block;margin-bottom:4px">Campaign Dates</label>
+                <div style="display:flex;gap:8px;margin-bottom:16px">
+                  <input type="date" value="2026-04-01" style="padding:8px;border:1px solid var(--g200);border-radius:6px;font-size:13px">
+                  <span style="padding:8px;color:var(--g400)">to</span>
+                  <input type="date" value="2026-05-31" style="padding:8px;border:1px solid var(--g200);border-radius:6px;font-size:13px">
+                </div>
+              </div>
+
+              <div style="background:var(--g50);border-radius:12px;padding:16px">
+                <h3 style="font-size:13px;font-weight:700;margin-bottom:12px">Estimated Performance</h3>
+                <table style="font-size:12px">
+                  <tr><td>Est. Daily Impressions</td><td style="text-align:right"><strong>150-250</strong></td></tr>
+                  <tr><td>Est. Daily Clicks</td><td style="text-align:right"><strong>5-10</strong></td></tr>
+                  <tr><td>Campaign Duration</td><td style="text-align:right"><strong>61 days</strong></td></tr>
+                  <tr><td>Total Budget</td><td style="text-align:right"><strong>$3,050</strong></td></tr>
+                  <tr><td>Est. Total Leads</td><td style="text-align:right"><strong>45-90</strong></td></tr>
+                </table>
+                <div class="callout callout-green" style="margin-top:12px;margin-bottom:0">Suggested: $40-60/day for florists in Austin based on current competition.</div>
+              </div>
+            </div>
+
+            <!-- Live preview panel (shown on creative step) -->
+            <div style="margin-top:20px;padding:16px;background:var(--g50);border:1px dashed var(--sage);border-radius:12px">
+              <div style="font-size:11px;font-weight:700;color:var(--sage);text-transform:uppercase;letter-spacing:1px;margin-bottom:8px">Live Preview (visible on Steps 4-6)</div>
+              <div style="font-size:12px;color:var(--g500);margin-bottom:12px">As vendor fills in headline, description, offer, CTA, and uploads image, this preview updates in real-time showing how the ad will look in the planner's rail.</div>
+              <div class="sponsored-card" style="max-width:280px;margin:0 auto">
+                <span class="sponsored-badge">Sponsored</span>
+                <div class="vendor-img">&#127801;</div>
+                <div class="vendor-name">Bloom & Petal Florals</div>
+                <div class="vendor-cat">Florist &middot; Austin, TX</div>
+                <div class="vendor-desc" style="font-style:italic;color:var(--g400)">[Your headline and description will appear here as you type]</div>
+                <div class="cta-row">
+                  <button class="cta cta-primary" style="font-size:10px">Request Quote</button>
+                  <button class="cta cta-secondary" style="font-size:10px">Add to Directory</button>
+                </div>
+              </div>
+            </div>
+
+            <div style="display:flex;justify-content:space-between;margin-top:20px">
+              <button class="btn">&#8592; Back to Targeting</button>
+              <button class="btn btn-primary">Continue to Pricing &#8594;</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ===== Vendor: Creatives ===== -->
+      <div id="vendor-creatives" class="vendor-tab" style="display:none">
+        <div class="page-header">
+          <h1>Creative Library</h1>
+          <div class="spacer"></div>
+          <button class="btn btn-primary">+ Upload Creative</button>
+        </div>
+        <div class="content">
+          <div class="card-grid card-grid-3">
+            <div class="card" style="text-align:center">
+              <div style="height:120px;background:linear-gradient(135deg,var(--blush),var(--rose));border-radius:8px;margin-bottom:12px;display:flex;align-items:center;justify-content:center;font-size:32px">&#127801;</div>
+              <div style="font-size:13px;font-weight:700;color:var(--navy)">Spring Bouquet</div>
+              <div style="font-size:11px;color:var(--g500);margin-bottom:8px">"Elegant Spring Arrangements"</div>
+              <span class="badge-pill badge-green">Approved</span>
+            </div>
+            <div class="card" style="text-align:center">
+              <div style="height:120px;background:linear-gradient(135deg,#fde8e8,#f5c6c6);border-radius:8px;margin-bottom:12px;display:flex;align-items:center;justify-content:center;font-size:32px">&#127803;</div>
+              <div style="font-size:13px;font-weight:700;color:var(--navy)">Garden Party</div>
+              <div style="font-size:11px;color:var(--g500);margin-bottom:8px">"Natural Garden Florals"</div>
+              <span class="badge-pill badge-orange">Pending Review</span>
+            </div>
+            <div class="card" style="text-align:center">
+              <div style="height:120px;background:linear-gradient(135deg,#e8f4e8,#c6e8c6);border-radius:8px;margin-bottom:12px;display:flex;align-items:center;justify-content:center;font-size:32px">&#127810;</div>
+              <div style="font-size:13px;font-weight:700;color:var(--navy)">Sustainable Line</div>
+              <div style="font-size:11px;color:var(--g500);margin-bottom:8px">"Eco-Friendly Arrangements"</div>
+              <span class="badge-pill badge-purple">Draft</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ===== Vendor: Leads ===== -->
+      <div id="vendor-leads" class="vendor-tab" style="display:none">
+        <div class="page-header">
+          <h1>Leads from Ads</h1>
+          <span class="subtitle">PRD Section 6.4 — /portal/ads/leads</span>
+          <div class="spacer"></div>
+          <button class="btn">Export CSV</button>
+        </div>
+        <div class="content">
+          <div class="callout callout-info">Leads from planners who interacted with your sponsored ads. These also appear in your regular vendor inbox.</div>
+          <div class="card">
+            <table>
+              <thead><tr><th>Date</th><th>Planner</th><th>Wedding</th><th>Type</th><th>Status</th><th>Message</th><th>Actions</th></tr></thead>
+              <tbody>
+                <tr><td>Mar 17</td><td>Sarah Events Co.</td><td>Johnson-Lee (Jun 15)</td><td><span class="badge-pill badge-blue">Quote Request</span></td><td><span class="badge-pill badge-orange">Pending</span></td><td>"Looking for spring bouquets for 150 guests..."</td><td><button class="btn" style="padding:3px 8px;font-size:11px">Respond</button></td></tr>
+                <tr><td>Mar 16</td><td>Mike's Wedding Plan</td><td>Anderson (Sep 22)</td><td><span class="badge-pill badge-green">Added to Wedding</span></td><td><span class="badge-pill badge-green">Contacted</span></td><td>—</td><td><button class="btn" style="padding:3px 8px;font-size:11px">View</button></td></tr>
+                <tr><td>Mar 15</td><td>Jen Bridal</td><td>Garcia (Nov 8)</td><td><span class="badge-pill badge-blue">Quote Request</span></td><td><span class="badge-pill badge-green">Responded</span></td><td>"Need centerpieces for 20 tables, budget $2k..."</td><td><button class="btn" style="padding:3px 8px;font-size:11px">View</button></td></tr>
+                <tr><td>Mar 14</td><td>Sarah Events Co.</td><td>Johnson-Lee (Jun 15)</td><td><span class="badge-pill badge-purple">Message</span></td><td><span class="badge-pill badge-green">Converted</span></td><td>"Can we schedule a consultation?"</td><td><button class="btn" style="padding:3px 8px;font-size:11px">View</button></td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- ===== Vendor: Billing ===== -->
+      <div id="vendor-billing" class="vendor-tab" style="display:none">
+        <div class="page-header">
+          <h1>Billing & Spend</h1>
+          <span class="subtitle">PRD Section 6.7 — /portal/ads/billing</span>
+          <div class="spacer"></div>
+        </div>
+        <div class="content">
+          <div class="callout callout-green">You're on the <strong>Free Tier</strong>. All advertising features are free during the platform launch period. We're tracking engagement data to build fair pricing for when paid plans launch.</div>
+
+          <div class="stats stats-4">
+            <div class="stat"><div class="label">Current Spend</div><div class="value">$0</div><div class="trend flat">Free Tier</div></div>
+            <div class="stat"><div class="label">Impressions Used</div><div class="value">4,231</div></div>
+            <div class="stat"><div class="label">Clicks Used</div><div class="value">189</div></div>
+            <div class="stat"><div class="label">Leads Generated</div><div class="value">28</div></div>
+          </div>
+
+          <div class="card">
+            <h3>What We're Tracking (for future pricing)</h3>
+            <table style="font-size:12px">
+              <thead><tr><th>Metric</th><th>Your Value</th><th>Platform Average</th><th>What It Means</th></tr></thead>
+              <tbody>
+                <tr><td>Click-Through Rate</td><td><strong>4.47%</strong></td><td>3.66%</td><td>Above average — your ads resonate with planners</td></tr>
+                <tr><td>Lead Conversion Rate</td><td><strong>14.8%</strong></td><td>12.1%</td><td>Strong — planners who click your ads take action</td></tr>
+                <tr><td>Hide Rate</td><td><strong>0.02%</strong></td><td>2.1%</td><td>Excellent — planners find your ads relevant</td></tr>
+                <tr><td>Avg Response Time</td><td><strong>2.4 hrs</strong></td><td>8.6 hrs</td><td>Fast responses improve your quality score</td></tr>
+              </tbody>
+            </table>
+          </div>
+
+          <div class="card">
+            <h3>Invoices</h3>
+            <div style="text-align:center;padding:32px;color:var(--g400)">No invoices yet. Billing will be available when paid plans launch.</div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<script>
+function showPortal(id) {
+  document.querySelectorAll('.portal').forEach(p => p.classList.remove('active'));
+  document.getElementById('portal-' + id).classList.add('active');
+  document.querySelectorAll('.portal-nav button').forEach(b => b.classList.remove('active'));
+  event.target.classList.add('active');
+  const label = document.getElementById('portal-label');
+  if (id === 'root') { label.className = 'portal-label root'; label.textContent = 'ROOT ADMIN'; }
+  else if (id === 'planner') { label.className = 'portal-label planner'; label.textContent = 'PLANNER'; }
+  else if (id === 'flows') { label.className = 'portal-label planner'; label.textContent = 'DEV REFERENCE'; }
+  else { label.className = 'portal-label vendor'; label.textContent = 'VENDOR'; }
+}
+
+function showAdminTab(tab) {
+  document.querySelectorAll('.admin-tab').forEach(t => t.style.display = 'none');
+  document.getElementById('admin-' + tab).style.display = 'block';
+  // Update sidebar active state
+  document.querySelectorAll('#portal-root .sidebar a').forEach(a => a.classList.remove('active'));
+  event.target.closest('a').classList.add('active');
+}
+
+function showVendorTab(tab) {
+  document.querySelectorAll('.vendor-tab').forEach(t => t.style.display = 'none');
+  document.getElementById('vendor-' + tab).style.display = 'block';
+  document.querySelectorAll('#portal-vendor .sidebar a').forEach(a => a.classList.remove('active'));
+  event.target.closest('a').classList.add('active');
+}
+
+function showConfigSubtab(tab) {
+  document.querySelectorAll('.config-panel').forEach(p => p.style.display = 'none');
+  document.getElementById('config-' + tab).style.display = 'block';
+  document.querySelectorAll('.config-subtab').forEach(b => {
+    b.style.color = 'var(--g400)';
+    b.style.borderBottomColor = 'transparent';
+  });
+  event.target.style.color = 'var(--navy)';
+  event.target.style.borderBottomColor = 'var(--sage)';
+}
+</script>
+
+</body>
+</html>

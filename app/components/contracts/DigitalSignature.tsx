@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { CheckCircle, X, AlertCircle } from 'lucide-react';
 import { Button } from '../ui/Button';
 
@@ -23,23 +23,16 @@ export default function DigitalSignature({
 }: DigitalSignatureProps) {
   const [signatureName, setSignatureName] = useState('');
   const [acceptedTerms, setAcceptedTerms] = useState(false);
-  const [showPreview, setShowPreview] = useState(false);
   const [error, setError] = useState('');
 
   // Validate signature matches couple name (loosely)
   const isSignatureValid = signatureName.trim().length >= 2;
   const canSign = isSignatureValid && acceptedTerms && !disabled;
-
-  useEffect(() => {
-    if (signatureName.length > 0) {
-      setShowPreview(true);
-    }
-  }, [signatureName]);
+  const showPreview = signatureName.length > 0;
 
   const handleClear = () => {
     setSignatureName('');
     setAcceptedTerms(false);
-    setShowPreview(false);
     setError('');
   };
 

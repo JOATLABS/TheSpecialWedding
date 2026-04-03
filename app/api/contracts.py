@@ -12,11 +12,27 @@ from app.services.contract_service import contract_service
 from app.dependencies.auth_extended import (
     ExtendedAuthUser,
     require_admin_or_planner,
+    require_team_or_planner,
+    enforce_team_permission,
+)
+from app.utils.query_validation import (
+    validated_status_filter,
+    validated_string_filter,
+    validated_skip
 )
 import logging
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
+
+
+def _resolve_couple_display_name(couple: Optional[dict]) -> str:
+    couple = couple or {}
+    partner1 = (couple.get("partner1_name") or couple.get("name") or "").strip()
+    partner2 = (couple.get("partner2_name") or couple.get("partner_name") or "").strip()
+    if partner1 and partner2:
+        return f"{partner1} & {partner2}"
+    return partner1 or partner2 or "A couple"
 
 
 # ============================================================================
@@ -63,11 +79,11 @@ class RefundPaymentRequest(BaseModel):
 async def list_contracts(
     status: Optional[str] = Query(
         None,
-        pattern="^(draft|sent|viewed|signed|active|completed|cancelled)$"
+        description="Filter by contract status"
     ),
-    limit: int = Query(50, ge=1, le=100),
-    skip: int = Query(0, ge=0),
-    current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
+    limit: int = Query(50, ge=1, le=100, description="Items per page"),
+    skip: int = Query(0, ge=0, description="Items to skip"),
+    current_user: ExtendedAuthUser = Depends(require_team_or_planner)
 ):
     """
     List all contracts for the authenticated planner.
@@ -75,6 +91,9 @@ async def list_contracts(
     - **status**: Filter by contract status
     """
     try:
+        # Validate query parameters
+        status = validated_status_filter(status, ['draft', 'sent', 'viewed', 'signed', 'active', 'completed', 'cancelled'])
+
         planner_id = str((current_user.user_data or {}).get("_id") or current_user.email)
 
         contracts = await contract_service.list_contracts(
@@ -94,6 +113,59 @@ async def list_contracts(
         raise HTTPException(status_code=500, detail="Failed to retrieve contracts")
 
 
+@router.get("/contracts/payments/overview", tags=["Contracts"])
+async def get_contract_payments_overview(
+    contract_statuses: Optional[str] = Query(
+        "signed,active",
+        description="Comma-separated list of contract statuses to include",
+    ),
+    current_user: ExtendedAuthUser = Depends(require_admin_or_planner),
+):
+    """
+    Get scheduled payments across the planner's contracts in one response.
+
+    Used by the admin money dashboard to avoid per-contract payment fan-out.
+    """
+    try:
+        allowed_statuses = {
+            "draft",
+            "sent",
+            "viewed",
+            "signed",
+            "active",
+            "completed",
+            "cancelled",
+        }
+        parsed_statuses = [
+            value.strip()
+            for value in (contract_statuses or "").split(",")
+            if value.strip()
+        ]
+        invalid_statuses = sorted(set(parsed_statuses) - allowed_statuses)
+        if invalid_statuses:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Invalid contract status filter: {', '.join(invalid_statuses)}",
+            )
+
+        planner_id = str((current_user.user_data or {}).get("_id") or current_user.email)
+        payments = await contract_service.get_planner_payment_overview(
+            planner_id=planner_id,
+            contract_statuses=parsed_statuses or None,
+        )
+
+        return {
+            "payments": payments,
+            "count": len(payments),
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to get contract payment overview: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to retrieve payment overview")
+
+
 @router.post("/contracts", tags=["Contracts"])
 async def create_contract(
     request: Request,
@@ -104,13 +176,14 @@ async def create_contract(
     deposit_percentage: float = Query(50.0, ge=0, le=100, description="Deposit percentage"),
     service_date: Optional[str] = Query(None, description="Service date (ISO format)"),
     service_location: Optional[str] = Query(None, description="Service location"),
-    current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
+    current_user: ExtendedAuthUser = Depends(require_team_or_planner)
 ):
     """
     Create a new vendor contract (C3).
 
     Custom sections can be sent as a JSON array in the request body.
     """
+    enforce_team_permission(current_user, "manage_contracts")
     try:
         planner_id = str((current_user.user_data or {}).get("_id") or current_user.email)
 
@@ -120,7 +193,8 @@ async def create_contract(
             body = await request.json()
             if isinstance(body, list):
                 custom_sections = body
-        except Exception:
+        except Exception as e:
+            logger.debug(f"No body or invalid JSON in request: {e}")
             pass  # No body or not JSON — that's fine
 
         contract = await contract_service.create_contract(
@@ -148,11 +222,12 @@ async def create_contract(
 async def update_contract(
     contract_id: str,
     request: Request,
-    current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
+    current_user: ExtendedAuthUser = Depends(require_team_or_planner)
 ):
     """
     Update a contract. Only allowed for draft/pending_review contracts.
     """
+    enforce_team_permission(current_user, "manage_contracts")
     try:
         planner_id = str((current_user.user_data or {}).get("_id") or current_user.email)
         body = await request.json()
@@ -181,11 +256,12 @@ async def update_contract(
 async def update_contract_sections(
     contract_id: str,
     request: Request,
-    current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
+    current_user: ExtendedAuthUser = Depends(require_team_or_planner)
 ):
     """
     Update contract sections (C4).
     """
+    enforce_team_permission(current_user, "manage_contracts")
     try:
         planner_id = str((current_user.user_data or {}).get("_id") or current_user.email)
         body = await request.json()
@@ -217,11 +293,12 @@ async def update_contract_sections(
 async def send_contract(
     contract_id: str,
     message: Optional[str] = Query(None, description="Personal message to include"),
-    current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
+    current_user: ExtendedAuthUser = Depends(require_team_or_planner)
 ):
     """
     Send a contract to the vendor for review/signing.
     """
+    enforce_team_permission(current_user, "manage_contracts")
     try:
         planner_id = str((current_user.user_data or {}).get("_id") or current_user.email)
 
@@ -244,11 +321,12 @@ async def send_contract(
 async def create_milestones(
     contract_id: str,
     request: Request,
-    current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
+    current_user: ExtendedAuthUser = Depends(require_team_or_planner)
 ):
     """
     Create payment milestones for a contract.
     """
+    enforce_team_permission(current_user, "manage_contracts")
     try:
         planner_id = str((current_user.user_data or {}).get("_id") or current_user.email)
         body = await request.json()
@@ -276,7 +354,7 @@ async def create_milestones(
 @router.get("/contracts/{contract_id}/form-data", tags=["Contracts"])
 async def get_contract_form_data(
     contract_id: str,
-    current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
+    current_user: ExtendedAuthUser = Depends(require_team_or_planner)
 ):
     """
     Get vendor form data submissions for a contract.
@@ -302,11 +380,12 @@ async def get_contract_form_data(
 async def apply_form_data_to_contract(
     contract_id: str,
     request: Request,
-    current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
+    current_user: ExtendedAuthUser = Depends(require_team_or_planner)
 ):
     """
     Apply vendor form data to a contract's placeholders.
     """
+    enforce_team_permission(current_user, "manage_contracts")
     try:
         planner_id = str((current_user.user_data or {}).get("_id") or current_user.email)
         body = await request.json()
@@ -380,11 +459,12 @@ async def record_milestone_payment(
     payment_method: str = Query("manual"),
     payment_date: Optional[str] = Query(None),
     notes: Optional[str] = Query(None),
-    current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
+    current_user: ExtendedAuthUser = Depends(require_team_or_planner)
 ):
     """
     Record a payment against a milestone (C2).
     """
+    enforce_team_permission(current_user, "manage_contracts")
     try:
         planner_id = str((current_user.user_data or {}).get("_id") or current_user.email)
 
@@ -468,11 +548,12 @@ class UpdateDraftRequest(BaseModel):
 async def update_followup_draft(
     draft_id: str,
     update_data: UpdateDraftRequest,
-    current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
+    current_user: ExtendedAuthUser = Depends(require_team_or_planner)
 ):
     """
     Update a follow-up draft (edit content or dismiss).
     """
+    enforce_team_permission(current_user, "manage_contracts")
     try:
         from app.services.contract_followup_service import contract_followup_service
 
@@ -503,11 +584,12 @@ async def update_followup_draft(
 @router.post("/contracts/followup-drafts/{draft_id}/send", tags=["Contracts"])
 async def send_followup_draft(
     draft_id: str,
-    current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
+    current_user: ExtendedAuthUser = Depends(require_team_or_planner)
 ):
     """
     Send a follow-up draft as an actual email to the couple.
     """
+    enforce_team_permission(current_user, "manage_contracts")
     try:
         from app.services.contract_followup_service import contract_followup_service
 
@@ -566,13 +648,14 @@ async def get_contract(
 async def update_wedding_date(
     contract_id: str,
     update_data: UpdateWeddingDateRequest,
-    current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
+    current_user: ExtendedAuthUser = Depends(require_team_or_planner)
 ):
     """
     Update the wedding date for a contract.
 
     This will recalculate payment due dates for days_before_wedding triggers.
     """
+    enforce_team_permission(current_user, "manage_contracts")
     try:
         from datetime import date
         planner_id = str((current_user.user_data or {}).get("_id") or current_user.email)
@@ -601,13 +684,14 @@ async def update_wedding_date(
 async def cancel_contract(
     contract_id: str,
     cancel_data: CancelContractRequest,
-    current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
+    current_user: ExtendedAuthUser = Depends(require_team_or_planner)
 ):
     """
     Cancel a contract.
 
     This will also cancel all pending scheduled payments.
     """
+    enforce_team_permission(current_user, "manage_contracts")
     try:
         planner_id = str((current_user.user_data or {}).get("_id") or current_user.email)
 
@@ -668,7 +752,7 @@ async def get_contract_payments(
 async def mark_payment_paid_externally(
     payment_id: str,
     request_data: MarkPaidExternallyRequest,
-    current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
+    current_user: ExtendedAuthUser = Depends(require_team_or_planner)
 ):
     """
     Mark a scheduled payment as paid externally.
@@ -676,6 +760,7 @@ async def mark_payment_paid_externally(
     Use this when a couple pays via cash, check, bank transfer, or other
     method outside of the automated Stripe payment flow.
     """
+    enforce_team_permission(current_user, "manage_contracts")
     try:
         planner_id = str((current_user.user_data or {}).get("_id") or current_user.email)
 
@@ -702,7 +787,7 @@ async def mark_payment_paid_externally(
 async def refund_payment(
     payment_id: str,
     request_data: RefundPaymentRequest,
-    current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
+    current_user: ExtendedAuthUser = Depends(require_team_or_planner)
 ):
     """
     Process a refund for a succeeded payment.
@@ -712,6 +797,7 @@ async def refund_payment(
 
     Only succeeded payments can be refunded.
     """
+    enforce_team_permission(current_user, "manage_contracts")
     try:
         planner_id = str((current_user.user_data or {}).get("_id") or current_user.email)
 
@@ -738,7 +824,7 @@ async def refund_payment(
 @router.post("/payments/{payment_id}/retry", tags=["Contracts"])
 async def retry_payment(
     payment_id: str,
-    current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
+    current_user: ExtendedAuthUser = Depends(require_team_or_planner)
 ):
     """
     Retry a failed scheduled payment.
@@ -748,6 +834,7 @@ async def retry_payment(
 
     Only failed payments can be retried.
     """
+    enforce_team_permission(current_user, "manage_contracts")
     try:
         planner_id = str((current_user.user_data or {}).get("_id") or current_user.email)
 
@@ -779,7 +866,7 @@ class CancelPaymentRequest(BaseModel):
 async def cancel_payment(
     payment_id: str,
     request_data: Optional[CancelPaymentRequest] = None,
-    current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
+    current_user: ExtendedAuthUser = Depends(require_team_or_planner)
 ):
     """
     Cancel a scheduled payment.
@@ -787,6 +874,7 @@ async def cancel_payment(
     Only scheduled or failed payments can be cancelled.
     Succeeded payments cannot be cancelled (use refund instead).
     """
+    enforce_team_permission(current_user, "manage_contracts")
     try:
         planner_id = str((current_user.user_data or {}).get("_id") or current_user.email)
 
@@ -838,7 +926,7 @@ async def get_public_contract(
         # Refresh contract to get updated status (skip expiry check for refresh)
         updated = await contract_service.contracts.find_one({"token": token})
         if updated:
-            contract = contract_service._serialize_contract(updated)
+            contract = await contract_service._serialize_contract_response(updated)
 
         if contract is None:
             raise HTTPException(status_code=404, detail="Contract not found")
@@ -864,6 +952,10 @@ async def get_public_contract(
             "sent_at": contract.get("sent_at"),
             "viewed_at": contract.get("viewed_at"),
             "signed_at": contract.get("signed_at"),
+            "planner_name": contract.get("planner_name"),
+            "planner_email": contract.get("planner_email"),
+            "planner_phone": contract.get("planner_phone"),
+            "planner_logo": contract.get("planner_logo"),
             "payment_method_last4": contract.get("payment_method_last4"),
             "payment_method_brand": contract.get("payment_method_brand")
         }
@@ -1063,7 +1155,7 @@ async def create_contract_setup_intent(token: str):
 
         # Get or create Stripe customer
         couple_email = contract.get("couple", {}).get("email")
-        couple_name = contract.get("couple", {}).get("name")
+        couple_name = _resolve_couple_display_name(contract.get("couple"))
 
         contract_id = contract.get("id")
         if not contract_id:
@@ -1098,7 +1190,7 @@ async def create_contract_setup_intent(token: str):
         # Create SetupIntent
         setup_intent = stripe.SetupIntent.create(
             customer=customer_id,
-            payment_method_types=["card"],
+            automatic_payment_methods={"enabled": True},
             metadata={
                 "contract_id": contract_id_str,
                 "contract_token": token
@@ -1137,6 +1229,7 @@ async def get_payment_method_details(payment_method_id: str):
 
         return {
             "id": pm.id,
+            "customer": pm.customer,
             "type": pm.type,
             "card": {
                 "brand": pm.card.brand if pm.card else None,
@@ -1293,7 +1386,7 @@ async def update_portal_payment_method(
         # Create SetupIntent for updating payment method
         setup_intent = stripe.SetupIntent.create(
             customer=customer_id,
-            payment_method_types=["card"],
+            automatic_payment_methods={"enabled": True},
             metadata={
                 "contract_id": contract_id_str,
                 "action": "update_payment_method"
@@ -1383,7 +1476,7 @@ async def confirm_payment_method_update(
             resend.api_key = settings.resend_api_key
 
             planner_email = contract.get("planner_email")
-            couple_name = contract.get("couple", {}).get("name", "A couple")
+            couple_name = _resolve_couple_display_name(contract.get("couple"))
 
             if planner_email:
                 resend.Emails.send({

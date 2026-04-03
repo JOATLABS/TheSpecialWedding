@@ -7,6 +7,7 @@ from datetime import datetime, timezone
 from typing import List, Dict, Optional, Any, cast
 import logging
 from app.core.database import mongo
+from app.utils.contact_sanitizer import sanitize_email, validate_email_format
 import time
 
 logger = logging.getLogger(__name__)
@@ -29,6 +30,21 @@ class ResendEmailService:
         self.email_log_collection = mongo.db["email_logs"]
         self.wedding_collection = mongo.db["weddings"]
 
+    def _generate_reply_to_address(self, wedding_slug: str, guest_id: Optional[str] = None) -> str:
+        """
+        Generate a routable reply-to address that encodes thread context.
+
+        Format: reply+{wedding_slug}@thespecialwedding.io
+        With guest: reply+{wedding_slug}--{guest_id}@thespecialwedding.io
+
+        When a recipient replies, Resend's inbound webhook delivers the reply
+        and we decode this address to link it back to the correct wedding/guest.
+        """
+        inbound_domain = os.getenv("RESEND_INBOUND_DOMAIN", "thespecialwedding.io")
+        if guest_id:
+            return f"reply+{wedding_slug}--{guest_id}@{inbound_domain}"
+        return f"reply+{wedding_slug}@{inbound_domain}"
+
     async def send_email(
         self,
         to_email: str,
@@ -39,12 +55,20 @@ class ResendEmailService:
         attachments: Optional[List[Dict[str, Any]]] = None,
         reply_to: Optional[str] = None,
         wedding_id: Optional[str] = None,
-        email_type: Optional[str] = None
+        email_type: Optional[str] = None,
+        wedding_slug: Optional[str] = None,
+        guest_id: Optional[str] = None
     ) -> Dict[str, Any]:
 
         """Send a single email using Resend"""
         if not self.configured:
             return {"success": False, "error": "Email service not configured"}
+
+        # Sanitize email address — strip whitespace, lowercase
+        original_email = to_email
+        to_email = sanitize_email(to_email)
+        if not to_email or not validate_email_format(to_email):
+            return {"success": False, "error": f"Invalid recipient email: {original_email!r}"}
 
         try:
             # Use provided from_email or default
@@ -65,6 +89,10 @@ class ResendEmailService:
                 "html": html_content
             }
 
+            # Auto-generate reply-to address for inbound email support
+            if not reply_to and wedding_slug:
+                reply_to = self._generate_reply_to_address(wedding_slug, guest_id)
+
             # Add optional parameters
             if reply_to:
                 params["reply_to"] = reply_to
@@ -75,6 +103,9 @@ class ResendEmailService:
             # Send email
             email_response = resend.Emails.send(cast(Any, params))
 
+            # Generate thread_id for linking inbound replies
+            thread_id = f"wedding-{wedding_slug}" if wedding_slug else None
+
             # Log the email
             log_entry = {
                 "to": to_email,
@@ -82,6 +113,10 @@ class ResendEmailService:
                 "from_email": from_email,
                 "from_name": from_name,
                 "wedding_id": wedding_id,
+                "wedding_slug": wedding_slug,
+                "guest_id": guest_id,
+                "thread_id": thread_id,
+                "reply_to": reply_to,
                 "email_type": email_type,
                 "sent_at": datetime.now(timezone.utc),
                 "status": "success",
@@ -191,7 +226,7 @@ class ResendEmailService:
                     rsvp_url=rsvp_url,
                     plus_ones=guest.get("plus_ones", [])
                 )
-            # Send email
+            # Send email (with reply-to encoding for inbound support)
             result = await self.send_email(
                 to_email=email,
                 subject=custom_subject,
@@ -200,7 +235,9 @@ class ResendEmailService:
                 from_name=from_name,
                 attachments=attachments,
                 wedding_id=str(wedding["_id"]),
-                email_type="rsvp_invitation"
+                email_type="rsvp_invitation",
+                wedding_slug=wedding_slug,
+                guest_id=str(guest["_id"])
             )
 
             if result["success"]:
@@ -301,7 +338,7 @@ class ResendEmailService:
                         couple_names=from_name,
                         plus_ones=guest.get("plus_ones", [])
                     )
-                # Send email
+                # Send email (with reply-to encoding for inbound support)
                 result = await self.send_email(
                     to_email=email,
                     subject=custom_subject,
@@ -309,7 +346,9 @@ class ResendEmailService:
                     from_email=from_email,
                     from_name=from_name,
                     wedding_id=str(wedding["_id"]),
-                    email_type="reminder"
+                    email_type="reminder",
+                    wedding_slug=wedding_slug,
+                    guest_id=str(guest["_id"])
                 )
 
                 if result["success"]:

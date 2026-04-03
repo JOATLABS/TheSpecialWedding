@@ -11,6 +11,8 @@ import logging
 from bson import ObjectId
 from app.core.database import mongo
 from app.models.autopilot import Contract, ContractSignature, ScheduledPayment
+from app.utils.mongo_dates import to_mongo_datetime
+from app.utils.payment_schedule import build_effective_payment_schedule
 
 logger = logging.getLogger(__name__)
 
@@ -53,6 +55,137 @@ class ContractService:
         self.contracts = mongo.db["contracts"]
         self.scheduled_payments = mongo.db["scheduled_payments"]
         self.packages = mongo.db["packages"]
+        self.users = mongo.db["users"]
+        self.weddings = mongo.db["weddings"]
+        self.max_money_overview_contracts = 5000
+        self.max_money_overview_payments = 20000
+
+    @staticmethod
+    def _normalize_couple(couple: Any) -> Dict[str, Any]:
+        if not isinstance(couple, dict):
+            return {}
+
+        partner1 = (couple.get("partner1_name") or couple.get("name") or "").strip()
+        partner2 = (couple.get("partner2_name") or couple.get("partner_name") or "").strip()
+        display_name = f"{partner1} & {partner2}" if partner2 else partner1
+
+        return {
+            **couple,
+            "partner1_name": partner1,
+            "partner2_name": partner2 or None,
+            "name": partner1,
+            "partner_name": partner2 or None,
+            "display_name": display_name,
+        }
+
+    @staticmethod
+    def _build_planner_snapshot(planner: Optional[Dict[str, Any]]) -> Dict[str, Optional[str]]:
+        planner = planner or {}
+        planner_name = (
+            planner.get("company_name")
+            or planner.get("business_name")
+            or planner.get("name")
+            or " ".join(
+                part for part in [planner.get("first_name"), planner.get("last_name")] if part
+            ).strip()
+            or planner.get("email")
+            or "Your Wedding Planner"
+        )
+        return {
+            "planner_name": planner_name,
+            "planner_email": planner.get("email"),
+            "planner_phone": planner.get("phone") or planner.get("support_phone"),
+            "planner_logo": planner.get("logo_url")
+            or planner.get("profile_image_url")
+            or planner.get("profile_image")
+            or planner.get("avatar_url"),
+        }
+
+    async def _get_planner_record(self, planner_id: Optional[str]) -> Optional[Dict[str, Any]]:
+        if not planner_id:
+            return None
+
+        try:
+            if ObjectId.is_valid(str(planner_id)):
+                planner = await self.users.find_one({"_id": ObjectId(str(planner_id))})
+                if planner:
+                    return planner
+        except Exception:
+            pass
+
+        return await self.users.find_one({"email": planner_id})
+
+    async def _get_wedding_record(self, wedding_id: Optional[str]) -> Optional[Dict[str, Any]]:
+        if not wedding_id:
+            return None
+
+        wedding = await self.weddings.find_one({"_id": wedding_id})
+        if wedding:
+            return wedding
+
+        if ObjectId.is_valid(str(wedding_id)):
+            return await self.weddings.find_one({"_id": ObjectId(str(wedding_id))})
+
+        return None
+
+    async def _serialize_contract_response(self, contract: Optional[Dict]) -> Optional[Dict]:
+        if not contract:
+            return None
+
+        hydrated = {**contract}
+        updates: Dict[str, Any] = {}
+        package_snapshot = dict(hydrated.get("package_snapshot") or {})
+        effective_schedule = build_effective_payment_schedule(package_snapshot)
+        if package_snapshot.get("payment_schedule") != effective_schedule:
+            package_snapshot["payment_schedule"] = effective_schedule
+            updates["package_snapshot"] = package_snapshot
+            hydrated["package_snapshot"] = package_snapshot
+
+        couple = self._normalize_couple(hydrated.get("couple"))
+        if couple:
+            hydrated["couple"] = couple
+
+        wedding = None
+        if not hydrated.get("venue") or not hydrated.get("wedding_date"):
+            wedding = await self._get_wedding_record(hydrated.get("wedding_id"))
+            if wedding:
+                venue = wedding.get("venue") or wedding.get("location")
+                if venue and not hydrated.get("venue"):
+                    updates["venue"] = venue
+
+                wedding_date = wedding.get("date")
+                if wedding_date and not hydrated.get("wedding_date"):
+                    updates["wedding_date"] = to_mongo_datetime(
+                        date.fromisoformat(wedding_date) if isinstance(wedding_date, str) else wedding_date
+                    )
+
+        planner_fields = ["planner_name", "planner_email", "planner_phone", "planner_logo"]
+        if any(not hydrated.get(field) for field in planner_fields):
+            planner = await self._get_planner_record(hydrated.get("planner_id"))
+            if planner:
+                planner_snapshot = self._build_planner_snapshot(planner)
+                for field, value in planner_snapshot.items():
+                    if value and not hydrated.get(field):
+                        updates[field] = value
+
+        if "late_payment_policy" not in package_snapshot and hydrated.get("package_id"):
+            package = None
+            try:
+                if ObjectId.is_valid(str(hydrated.get("package_id"))):
+                    package = await self.packages.find_one({"_id": ObjectId(str(hydrated.get("package_id")))})
+            except Exception:
+                package = None
+
+            if package and package.get("late_payment_policy") is not None:
+                package_snapshot["late_payment_policy"] = package.get("late_payment_policy")
+                updates["package_snapshot"] = package_snapshot
+                hydrated["package_snapshot"] = package_snapshot
+
+        if updates and hydrated.get("_id"):
+            await self.contracts.update_one({"_id": hydrated["_id"]}, {"$set": updates})
+            hydrated.update(updates)
+
+        return self._serialize_contract(hydrated)
 
     async def get_contract(
         self,
@@ -75,7 +208,7 @@ class ContractService:
                 query["planner_id"] = planner_id
 
             contract = await self.contracts.find_one(query)
-            return self._serialize_contract(contract) if contract else None
+            return await self._serialize_contract_response(contract)
 
         except Exception as e:
             logger.error(f"Failed to get contract: {str(e)}")
@@ -117,7 +250,7 @@ class ContractService:
                         "This contract link has expired. Please contact the planner for a new link."
                     )
 
-            return self._serialize_contract(contract)
+            return await self._serialize_contract_response(contract)
 
         except ValueError:
             raise
@@ -154,7 +287,7 @@ class ContractService:
 
             serialized_contracts: List[Dict] = []
             for c in contracts:
-                serialized = self._serialize_contract(c)
+                serialized = await self._serialize_contract_response(c)
                 if serialized is not None:
                     serialized_contracts.append(serialized)
 
@@ -196,7 +329,7 @@ class ContractService:
                 logger.info(f"Contract {contract['_id']} marked as viewed")
 
             updated = await self.contracts.find_one({"token": token})
-            serialized = self._serialize_contract(updated)
+            serialized = await self._serialize_contract_response(updated)
             if serialized is None:
                 raise ValueError("Failed to serialize updated contract")
             return serialized
@@ -290,7 +423,7 @@ class ContractService:
             updated = await self.contracts.find_one({"token": token})
             payments = await self.get_contract_payments(str(contract["_id"]))
 
-            result = self._serialize_contract(updated)
+            result = await self._serialize_contract_response(updated)
             if result is None:
                 raise ValueError("Failed to serialize updated contract")
             result["scheduled_payments"] = payments
@@ -344,7 +477,7 @@ class ContractService:
         """
         try:
             package_snapshot = contract.get("package_snapshot", {})
-            payment_schedule = package_snapshot.get("payment_schedule", [])
+            payment_schedule = build_effective_payment_schedule(package_snapshot)
             total_amount = Decimal(str(package_snapshot.get("total_amount", 0)))
             currency = package_snapshot.get("currency", "usd")
 
@@ -389,6 +522,7 @@ class ContractService:
                 )
 
                 payment_dict = payment.model_dump(by_alias=True)
+                payment_dict["due_date"] = to_mongo_datetime(payment.due_date)
                 result = await self.scheduled_payments.insert_one(payment_dict)
                 payment_dict["_id"] = result.inserted_id
 
@@ -515,6 +649,7 @@ class ContractService:
                 "metadata": {
                     "contract_id": contract_id,
                     "payment_id": str(payment["_id"]),
+                    "scheduled_payment_id": str(payment["_id"]),
                     "payment_type": "deposit"
                 },
                 "idempotency_key": idempotency_key
@@ -529,17 +664,16 @@ class ContractService:
             payment_intent = stripe.PaymentIntent.create(**payment_intent_params)
 
             if payment_intent.status == "succeeded":
-                # Update scheduled payment status
-                await self.scheduled_payments.update_one(
-                    {"_id": payment["_id"]},
-                    {
-                        "$set": {
-                            "status": "succeeded",
-                            "paid_at": datetime.now(timezone.utc),
-                            "stripe_payment_intent_id": payment_intent.id,
-                            "updated_at": datetime.now(timezone.utc)
-                        }
-                    }
+                from app.services.autopilot_service import autopilot_service
+
+                receipt_url = None
+                if payment_intent.charges and payment_intent.charges.data:
+                    receipt_url = payment_intent.charges.data[0].receipt_url
+
+                await autopilot_service.record_payment_success(
+                    payment_id=str(payment["_id"]),
+                    payment_intent_id=payment_intent.id,
+                    receipt_url=receipt_url,
                 )
 
                 logger.info(f"Deposit processed for contract {contract_id}: {payment_intent.id}")
@@ -610,6 +744,76 @@ class ContractService:
             logger.error(f"Failed to get contract payments: {str(e)}")
             raise
 
+    async def get_planner_payment_overview(
+        self,
+        planner_id: str,
+        contract_statuses: Optional[List[str]] = None,
+    ) -> List[Dict]:
+        """
+        Get scheduled payments across a planner's contracts in one query set.
+
+        Used by the admin money dashboard to avoid N+1 contract payment fetches.
+        """
+        try:
+            contract_query: Dict[str, Any] = {"planner_id": planner_id}
+            if contract_statuses:
+                contract_query["status"] = {"$in": contract_statuses}
+
+            contract_cursor = self.contracts.find(
+                contract_query,
+                {
+                    "couple": 1,
+                    "package_snapshot": 1,
+                    "contract_title": 1,
+                    "status": 1,
+                },
+            )
+            contracts = await contract_cursor.to_list(length=self.max_money_overview_contracts)
+            if not contracts:
+                return []
+
+            contract_lookup: Dict[str, Dict[str, Any]] = {}
+            contract_ids: List[str] = []
+            for contract in contracts:
+                contract_id = str(contract["_id"])
+                couple = self._normalize_couple(contract.get("couple"))
+                contract_lookup[contract_id] = {
+                    "couple_name": couple.get("display_name") or "A couple",
+                    "wedding_title": (
+                        (contract.get("package_snapshot") or {}).get("name")
+                        or contract.get("contract_title")
+                        or "Wedding"
+                    ),
+                    "contract_status": contract.get("status"),
+                }
+                contract_ids.append(contract_id)
+
+            payments_cursor = self.scheduled_payments.find(
+                {"contract_id": {"$in": contract_ids}}
+            ).sort("due_date", 1)
+            payments = await payments_cursor.to_list(length=self.max_money_overview_payments)
+
+            overview: List[Dict[str, Any]] = []
+            for payment in payments:
+                serialized = self._serialize_payment(payment)
+                if serialized is None:
+                    continue
+
+                contract_meta = contract_lookup.get(str(serialized.get("contract_id")), {})
+                overview.append({
+                    **serialized,
+                    "name": serialized.get("name") or serialized.get("description") or "Scheduled payment",
+                    "couple_name": contract_meta.get("couple_name", "A couple"),
+                    "wedding_title": contract_meta.get("wedding_title", "Wedding"),
+                    "contract_status": contract_meta.get("contract_status"),
+                })
+
+            return overview
+
+        except Exception as e:
+            logger.error(f"Failed to get planner payment overview: {str(e)}")
+            raise
+
     async def update_wedding_date(
         self,
         contract_id: str,
@@ -642,7 +846,7 @@ class ContractService:
 
             # If the date didn't change, avoid unnecessary writes/recalculation
             if old_date == new_wedding_date:
-                serialized = self._serialize_contract(contract)
+                serialized = await self._serialize_contract_response(contract)
                 if serialized is None:
                     raise ValueError("Failed to serialize contract")
                 return serialized
@@ -652,7 +856,7 @@ class ContractService:
                 {"_id": ObjectId(contract_id)},
                 {
                     "$set": {
-                        "wedding_date": new_wedding_date,
+                        "wedding_date": to_mongo_datetime(new_wedding_date),
                         "updated_at": datetime.now(timezone.utc)
                     }
                 }
@@ -661,7 +865,7 @@ class ContractService:
             # Recalculate days_before_wedding payments
             await self._recalculate_payment_dates(contract, new_wedding_date)
             updated = await self.contracts.find_one({"_id": ObjectId(contract_id)})
-            serialized = self._serialize_contract(updated)
+            serialized = await self._serialize_contract_response(updated)
             if serialized is None:
                 raise ValueError("Failed to serialize updated contract")
             return serialized
@@ -674,7 +878,7 @@ class ContractService:
         """Recalculate due dates for payments with days_before_wedding trigger."""
         try:
             package_snapshot = contract.get("package_snapshot", {})
-            payment_schedule = package_snapshot.get("payment_schedule", [])
+            payment_schedule = build_effective_payment_schedule(package_snapshot)
 
             # Find payments that need recalculation
             for schedule_item in payment_schedule:
@@ -689,7 +893,12 @@ class ContractService:
                             "name": schedule_item.get("name"),
                             "status": "scheduled"
                         },
-                        {"$set": {"due_date": new_due_date, "updated_at": datetime.now(timezone.utc)}}
+                        {
+                            "$set": {
+                                "due_date": to_mongo_datetime(new_due_date),
+                                "updated_at": datetime.now(timezone.utc),
+                            }
+                        }
                     )
 
         except Exception as e:
@@ -755,7 +964,7 @@ class ContractService:
             )
 
             updated = await self.contracts.find_one({"_id": ObjectId(contract_id)})
-            serialized = self._serialize_contract(updated)
+            serialized = await self._serialize_contract_response(updated)
             if serialized is None:
                 raise ValueError("Failed to serialize updated contract")
             return serialized
@@ -1208,7 +1417,7 @@ class ContractService:
 
             result = await self.contracts.insert_one(doc)
             doc["_id"] = result.inserted_id
-            return self._serialize_contract(doc)
+            return await self._serialize_contract_response(doc)
 
         except Exception as e:
             logger.error(f"Failed to create contract: {str(e)}")
@@ -1269,7 +1478,7 @@ class ContractService:
             )
 
             updated = await self.contracts.find_one({"_id": ObjectId(contract_id)})
-            return self._serialize_contract(updated)
+            return await self._serialize_contract_response(updated)
 
         except Exception as e:
             logger.error(f"Failed to update contract: {str(e)}")
@@ -1327,7 +1536,7 @@ class ContractService:
             )
 
             updated = await self.contracts.find_one({"_id": ObjectId(contract_id)})
-            return self._serialize_contract(updated)
+            return await self._serialize_contract_response(updated)
 
         except Exception as e:
             logger.error(f"Failed to update contract sections: {str(e)}")
@@ -1636,6 +1845,9 @@ class ContractService:
         if "_id" in serialized:
             serialized["id"] = str(serialized["_id"])
             serialized["_id"] = str(serialized["_id"])
+
+        if "couple" in serialized:
+            serialized["couple"] = self._normalize_couple(serialized.get("couple"))
 
         # Convert dates to ISO format
         for date_field in ["wedding_date", "sent_at", "viewed_at", "signed_at",

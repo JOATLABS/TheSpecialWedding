@@ -1,7 +1,8 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useAdmin } from '@/contexts/AdminContext';
+import { getApiBaseUrl } from '@/utils/env';
 import { KBArticle } from './KnowledgeBase';
 import { Card } from '@/components/ui/Card';
 import ReactMarkdown from 'react-markdown';
@@ -12,7 +13,9 @@ import {
   Edit3,
   X,
   Loader2,
-  FileText
+  FileText,
+  Upload,
+  Image as ImageIcon,
 } from 'lucide-react';
 
 interface ArticleEditorProps {
@@ -38,8 +41,11 @@ const KB_CATEGORIES = [
   { value: 'general', label: 'General' }
 ];
 
+const ALLOWED_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
+const MAX_IMAGE_SIZE = 5 * 1024 * 1024; // 5 MB
+
 export default function ArticleEditor({ article, onSuccess, onCancel }: ArticleEditorProps) {
-  const { apiRequest } = useAdmin();
+  const { apiRequest, token } = useAdmin();
   const isEditing = !!article;
 
   const [title, setTitle] = useState(article?.title || '');
@@ -47,18 +53,25 @@ export default function ArticleEditor({ article, onSuccess, onCancel }: ArticleE
   const [excerpt, setExcerpt] = useState(article?.excerpt || '');
   const [category, setCategory] = useState(article?.category || 'general');
   const [tags, setTags] = useState(article?.tags?.join(', ') || '');
-  const [status, setStatus] = useState<'draft' | 'published'>(
-    (article?.status as 'draft' | 'published') || 'published'
+  const [status, setStatus] = useState<'draft' | 'published' | 'archived'>(
+    (article?.status as 'draft' | 'published' | 'archived') || 'published'
   );
+  const [cardImage, setCardImage] = useState(article?.card_image || '');
+  const [ogImage, setOgImage] = useState(article?.og_image || '');
 
   const [previewMode, setPreviewMode] = useState(false);
   const [saving, setSaving] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
+  const [uploadingCard, setUploadingCard] = useState(false);
+  const [uploadingOg, setUploadingOg] = useState(false);
+  const [uploadError, setUploadError] = useState('');
+
+  const cardFileRef = useRef<HTMLInputElement>(null);
+  const ogFileRef = useRef<HTMLInputElement>(null);
 
   // Auto-generate excerpt from content if not provided
   useEffect(() => {
     if (!excerpt && content) {
-      // Get first 150 characters of content, strip markdown
       const plainText = content
         .replace(/[#*_`\[\]()]/g, '')
         .replace(/\n+/g, ' ')
@@ -68,6 +81,70 @@ export default function ArticleEditor({ article, onSuccess, onCancel }: ArticleE
       }
     }
   }, [content, excerpt]);
+
+  // ── Image Upload (reuses blog R2 bucket) ──
+  const uploadImage = async (file: File, folder: string): Promise<string> => {
+    if (!ALLOWED_IMAGE_TYPES.includes(file.type)) {
+      throw new Error('Only JPEG, PNG, and WebP images are allowed.');
+    }
+    if (file.size > MAX_IMAGE_SIZE) {
+      throw new Error('Image must be under 5 MB.');
+    }
+
+    const baseUrl = getApiBaseUrl();
+    const params = new URLSearchParams({
+      filename: file.name,
+      content_type: file.type,
+      folder,
+    });
+
+    // Uses the shared blog upload endpoint (same R2 bucket)
+    const res = await fetch(`${baseUrl}/admin/blog/upload-url?${params}`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!res.ok) {
+      const detail = await res.text();
+      throw new Error(detail || 'Failed to get upload URL');
+    }
+    const { upload_url, cdn_url } = await res.json();
+
+    const uploadRes = await fetch(upload_url, {
+      method: 'PUT',
+      headers: { 'Content-Type': file.type },
+      body: file,
+    });
+    if (!uploadRes.ok) {
+      throw new Error(`Upload failed: ${uploadRes.status}`);
+    }
+
+    return cdn_url;
+  };
+
+  const handleCardImageUpload = async (file: File) => {
+    setUploadingCard(true);
+    setUploadError('');
+    try {
+      const url = await uploadImage(file, 'kb/cards');
+      setCardImage(url);
+    } catch (err) {
+      setUploadError(err instanceof Error ? err.message : 'Card image upload failed');
+    } finally {
+      setUploadingCard(false);
+    }
+  };
+
+  const handleOgImageUpload = async (file: File) => {
+    setUploadingOg(true);
+    setUploadError('');
+    try {
+      const url = await uploadImage(file, 'kb/og');
+      setOgImage(url);
+    } catch (err) {
+      setUploadError(err instanceof Error ? err.message : 'OG image upload failed');
+    } finally {
+      setUploadingOg(false);
+    }
+  };
 
   const validate = (): boolean => {
     const newErrors: Record<string, string> = {};
@@ -107,14 +184,18 @@ export default function ArticleEditor({ article, onSuccess, onCancel }: ArticleE
         .map(tag => tag.trim().toLowerCase())
         .filter(tag => tag.length > 0);
 
-      const articleData = {
+      const articleData: Record<string, unknown> = {
         title,
         content,
         excerpt,
         category,
         tags: tagsArray,
-        status
+        status,
       };
+
+      // Include images if set
+      if (cardImage) articleData.card_image = cardImage;
+      if (ogImage) articleData.og_image = ogImage;
 
       if (isEditing) {
         await apiRequest(`/admin/kb/articles/${article.id}`, 'PUT', articleData);
@@ -166,6 +247,11 @@ export default function ArticleEditor({ article, onSuccess, onCancel }: ArticleE
           {previewMode ? (
             /* Preview Mode */
             <div className="space-y-6">
+              {cardImage && (
+                <div className="relative h-48 rounded-lg overflow-hidden">
+                  <img src={cardImage} alt="Card preview" className="w-full h-full object-cover" />
+                </div>
+              )}
               <div className="px-3 py-1 inline-block text-sm font-medium rounded-full bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300">
                 {KB_CATEGORIES.find(c => c.value === category)?.label || category}
               </div>
@@ -240,12 +326,130 @@ export default function ArticleEditor({ article, onSuccess, onCancel }: ArticleE
                   </label>
                   <select
                     value={status}
-                    onChange={(e) => setStatus(e.target.value as 'draft' | 'published')}
+                    onChange={(e) => setStatus(e.target.value as 'draft' | 'published' | 'archived')}
                     className="w-full px-4 py-3 border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                   >
                     <option value="published">Published</option>
                     <option value="draft">Draft</option>
+                    <option value="archived">Archived</option>
                   </select>
+                </div>
+              </div>
+
+              {/* ── Image Upload Section ── */}
+              <div className="p-4 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50 space-y-4">
+                <div className="flex items-center gap-2 mb-1">
+                  <ImageIcon className="w-4 h-4 text-blue-500" />
+                  <h3 className="text-sm font-semibold text-gray-800 dark:text-gray-200">Article Images</h3>
+                </div>
+
+                {uploadError && (
+                  <p className="text-sm text-red-500 bg-red-50 dark:bg-red-900/20 px-3 py-2 rounded-lg">{uploadError}</p>
+                )}
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {/* Card Image */}
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-2">
+                      Card / Thumbnail Image
+                    </label>
+                    {cardImage ? (
+                      <div className="relative group rounded-lg overflow-hidden border border-slate-200 dark:border-slate-600">
+                        <img src={cardImage} alt="Card" className="w-full h-32 object-cover" />
+                        <button
+                          onClick={() => setCardImage('')}
+                          className="absolute top-2 right-2 p-1 bg-red-500 text-white rounded-full opacity-0 group-hover:opacity-100 transition"
+                        >
+                          <X className="w-3 h-3" />
+                        </button>
+                      </div>
+                    ) : (
+                      <button
+                        onClick={() => cardFileRef.current?.click()}
+                        disabled={uploadingCard}
+                        className="w-full h-32 flex flex-col items-center justify-center rounded-lg border-2 border-dashed border-slate-300 dark:border-slate-600 hover:border-blue-400 dark:hover:border-blue-500 transition text-slate-400 hover:text-blue-500"
+                      >
+                        {uploadingCard ? (
+                          <Loader2 className="w-6 h-6 animate-spin" />
+                        ) : (
+                          <>
+                            <Upload className="w-5 h-5 mb-1" />
+                            <span className="text-xs">Upload card image</span>
+                          </>
+                        )}
+                      </button>
+                    )}
+                    <input
+                      ref={cardFileRef}
+                      type="file"
+                      accept="image/jpeg,image/png,image/webp"
+                      className="hidden"
+                      onChange={(e) => {
+                        const f = e.target.files?.[0];
+                        if (f) handleCardImageUpload(f);
+                        e.target.value = '';
+                      }}
+                    />
+                    {/* Manual URL input */}
+                    <input
+                      type="text"
+                      value={cardImage}
+                      onChange={(e) => setCardImage(e.target.value)}
+                      placeholder="Or paste CDN URL"
+                      className="mt-2 w-full px-3 py-1.5 text-xs border border-slate-200 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-gray-700 dark:text-gray-300"
+                    />
+                  </div>
+
+                  {/* OG / Social Image */}
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-2">
+                      OG / Social Share Image
+                    </label>
+                    {ogImage ? (
+                      <div className="relative group rounded-lg overflow-hidden border border-slate-200 dark:border-slate-600">
+                        <img src={ogImage} alt="OG" className="w-full h-32 object-cover" />
+                        <button
+                          onClick={() => setOgImage('')}
+                          className="absolute top-2 right-2 p-1 bg-red-500 text-white rounded-full opacity-0 group-hover:opacity-100 transition"
+                        >
+                          <X className="w-3 h-3" />
+                        </button>
+                      </div>
+                    ) : (
+                      <button
+                        onClick={() => ogFileRef.current?.click()}
+                        disabled={uploadingOg}
+                        className="w-full h-32 flex flex-col items-center justify-center rounded-lg border-2 border-dashed border-slate-300 dark:border-slate-600 hover:border-blue-400 dark:hover:border-blue-500 transition text-slate-400 hover:text-blue-500"
+                      >
+                        {uploadingOg ? (
+                          <Loader2 className="w-6 h-6 animate-spin" />
+                        ) : (
+                          <>
+                            <Upload className="w-5 h-5 mb-1" />
+                            <span className="text-xs">Upload OG image</span>
+                          </>
+                        )}
+                      </button>
+                    )}
+                    <input
+                      ref={ogFileRef}
+                      type="file"
+                      accept="image/jpeg,image/png,image/webp"
+                      className="hidden"
+                      onChange={(e) => {
+                        const f = e.target.files?.[0];
+                        if (f) handleOgImageUpload(f);
+                        e.target.value = '';
+                      }}
+                    />
+                    <input
+                      type="text"
+                      value={ogImage}
+                      onChange={(e) => setOgImage(e.target.value)}
+                      placeholder="Or paste CDN URL"
+                      className="mt-2 w-full px-3 py-1.5 text-xs border border-slate-200 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-gray-700 dark:text-gray-300"
+                    />
+                  </div>
                 </div>
               </div>
 

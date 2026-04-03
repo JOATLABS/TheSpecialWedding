@@ -1,10 +1,11 @@
 "use client";
 
 import React, { useState, useEffect, useCallback } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { useAdmin } from '@/contexts/AdminContext';
 import { getApiBaseUrl } from '@/utils/env';
 import { formatAdminDate, DEFAULT_TIMEZONE } from '@/utils/dateFormat';
+import PageHeader from '../../components/PageHeader';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Badge } from '@/components/ui/Badge';
@@ -30,6 +31,8 @@ import {
 import { toast } from 'sonner';
 import StripeConnectCard from './connect';
 import { CollectPaymentModal } from '@/components/payments/CollectPaymentModal';
+import { usePagination } from '@/admin/hooks/usePagination';
+import { GlassPagination } from '@/admin/components/ui/glass/GlassPagination';
 
 interface SubscriptionPlan {
   _id: string;
@@ -101,7 +104,8 @@ interface PaymentRequest {
 
 export default function PlannerBillingPage() {
   const router = useRouter();
-  const { userProfile } = useAdmin();
+  const searchParams = useSearchParams();
+  const { userProfile, apiRequest, token } = useAdmin();
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<'subscription' | 'client_payments'>('subscription');
   const [plans, setPlans] = useState<SubscriptionPlan[]>([]);
@@ -115,10 +119,25 @@ export default function PlannerBillingPage() {
     ai_credits_remaining: 100
   });
   const [invoices, setInvoices] = useState<Invoice[]>([]);
+  const [allInvoices, setAllInvoices] = useState<Invoice[]>([]);
   const [paymentRequests, setPaymentRequests] = useState<PaymentRequest[]>([]);
   const [billingAlerts, setBillingAlerts] = useState<BillingAlert[]>([]);
-  const [showAllInvoices, setShowAllInvoices] = useState(false);
   const [showCreatePaymentModal, setShowCreatePaymentModal] = useState(false);
+  const paginationInvoices = usePagination({ initialItemsPerPage: 50 });
+  const requestedPlanId = searchParams.get('plan');
+  const requestedInterval = searchParams.get('interval') === 'yearly' ? 'yearly' : 'monthly';
+  const blockedSubscriptionStatuses = new Set([
+    'expired',
+    'cancelled',
+    'suspended',
+    'pending',
+    'pending_payment',
+    'pending_checkout',
+    'inactive',
+    'incomplete',
+    'incomplete_expired',
+    'unpaid',
+  ]);
 
   // Access control - only for wedding planners
   useEffect(() => {
@@ -131,7 +150,6 @@ export default function PlannerBillingPage() {
     try {
       setLoading(true);
       const baseUrl = getApiBaseUrl();
-      const token = localStorage.getItem('admin_token') || sessionStorage.getItem('admin_token');
 
       if (!token || !userProfile) return;
 
@@ -178,7 +196,7 @@ export default function PlannerBillingPage() {
       // Fallback to legacy endpoints if Stripe endpoint failed
       if (!subscriptionLoaded) {
         // Use user_id (MongoDB _id mapped to .id), not email — backend authorization checks _id match
-        const userId = userProfile.id || (userProfile as any)._id || '';
+        const userId = userProfile.id || (userProfile as any)._id || (userProfile as any).user_data?._id || '';
         if (userId) {
           const subResponse = await fetch(
             `${baseUrl}/users/${encodeURIComponent(userId)}/subscription`,
@@ -198,7 +216,30 @@ export default function PlannerBillingPage() {
               const planDetail = fetchedPlans.find((p: SubscriptionPlan) => p._id === subData.plan_id);
               setCurrentPlan(planDetail || null);
               generateBillingAlerts(subData, planDetail);
+              subscriptionLoaded = true;
             }
+          }
+        }
+      }
+
+      // Last-resort fallback: if no subscription endpoints returned data but
+      // the user profile indicates an active/trial subscription (set by webhook
+      // updating the users collection), construct a minimal subscription object
+      // so the billing page shows the management view instead of "Choose Your Plan".
+      if (!subscriptionLoaded && userProfile.subscription_status && ['active', 'trial'].includes(userProfile.subscription_status)) {
+        const profilePlanId = (userProfile as any).user_data?.plan_id || '';
+        if (profilePlanId) {
+          const minimalSub: any = {
+            plan_id: profilePlanId,
+            status: userProfile.subscription_status,
+            billing_interval: 'monthly',
+            payment_status: 'paid',
+          };
+          setCurrentSubscription(minimalSub);
+          const planDetail = fetchedPlans.find((p: SubscriptionPlan) => p._id === profilePlanId);
+          setCurrentPlan(planDetail || null);
+          if (planDetail) {
+            generateBillingAlerts(minimalSub, planDetail);
           }
         }
       }
@@ -283,7 +324,8 @@ export default function PlannerBillingPage() {
             ...inv,
             date: new Date(inv.date * 1000).toISOString()
           }));
-          setInvoices(formattedInvoices);
+          setAllInvoices(formattedInvoices);
+          paginationInvoices.setTotalItems(formattedInvoices.length);
         }
       } catch (error) {
         console.warn('Invoices not available:', error);
@@ -316,7 +358,8 @@ export default function PlannerBillingPage() {
     } finally {
       setLoading(false);
     }
-  }, [userProfile]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [token, userProfile, paginationInvoices.currentPage, paginationInvoices.itemsPerPage]);
 
   const generateBillingAlerts = (subscription: UserSubscription, plan: SubscriptionPlan | null | undefined) => {
     const alerts: BillingAlert[] = [];
@@ -384,10 +427,9 @@ export default function PlannerBillingPage() {
     }
   }, [userProfile, loadData]);
 
-  const openBillingPortal = async (flowType?: 'payment_method_update' | 'subscription_update', loadingMessage?: string) => {
+  const openBillingPortal = async (flowType?: 'payment_method_update' | 'subscription_update' | 'subscription_cancel', loadingMessage?: string) => {
     try {
       const baseUrl = getApiBaseUrl();
-      const token = localStorage.getItem('admin_token') || sessionStorage.getItem('admin_token');
 
       if (!token) {
         toast.error('Please log in to manage billing');
@@ -444,7 +486,8 @@ export default function PlannerBillingPage() {
 
   const handleChangePlan = () => openBillingPortal('subscription_update', 'Opening plan options...');
   const handleUpdatePayment = () => openBillingPortal('payment_method_update', 'Opening payment settings...');
-  const handleManageBilling = () => openBillingPortal();
+  const handleCancelSubscription = () => openBillingPortal('subscription_cancel', 'Opening cancellation page...');
+  const handleManageBilling = () => openBillingPortal(undefined, 'Opening billing portal...');
 
   const handlePaymentCreated = (newPayment: any) => {
     // Refresh list
@@ -454,7 +497,6 @@ export default function PlannerBillingPage() {
   const handleSubscribe = async (planId: string, interval: 'monthly' | 'yearly' = 'monthly') => {
     try {
       const baseUrl = getApiBaseUrl();
-      const token = localStorage.getItem('admin_token') || sessionStorage.getItem('admin_token');
 
       if (!token) {
         toast.error('Please log in to subscribe');
@@ -475,6 +517,7 @@ export default function PlannerBillingPage() {
             billing_interval: interval,
             success_url: `${window.location.origin}/admin/planner/billing?success=true`,
             cancel_url: `${window.location.origin}/admin/planner/billing`,
+            trial_days: 0,
           })
         }
       );
@@ -523,9 +566,32 @@ export default function PlannerBillingPage() {
         bgColor: 'bg-yellow-100 dark:bg-yellow-900/30',
         icon: <AlertCircle className="w-4 h-4" />,
         label: 'Past Due'
+      },
+      pending_checkout: {
+        color: 'text-amber-700 dark:text-amber-300',
+        bgColor: 'bg-amber-100 dark:bg-amber-900/30',
+        icon: <Clock className="w-4 h-4" />,
+        label: 'Checkout Pending'
+      },
+      pending_payment: {
+        color: 'text-amber-700 dark:text-amber-300',
+        bgColor: 'bg-amber-100 dark:bg-amber-900/30',
+        icon: <AlertTriangle className="w-4 h-4" />,
+        label: 'Payment Required'
+      },
+      inactive: {
+        color: 'text-slate-700 dark:text-slate-300',
+        bgColor: 'bg-slate-100 dark:bg-slate-800',
+        icon: <XCircle className="w-4 h-4" />,
+        label: 'Inactive'
       }
     };
-    return config[status] || config.active;
+    return config[status] || {
+      color: 'text-slate-700 dark:text-slate-300',
+      bgColor: 'bg-slate-100 dark:bg-slate-800',
+      icon: <AlertCircle className="w-4 h-4" />,
+      label: status ? status.replace(/_/g, ' ') : 'Unknown',
+    };
   };
 
   const getUsagePercentage = (used: number, total: number) => {
@@ -571,76 +637,123 @@ export default function PlannerBillingPage() {
     );
   }
 
-  // No subscription - show simple onboarding
-  if (!currentSubscription || !currentPlan) {
+  // No subscription OR unpaid/expired/cancelled — show plan selection with fresh checkout
+  const subStatus = currentSubscription?.status;
+  const needsNewSubscription = !currentSubscription || !currentPlan
+    || (subStatus ? blockedSubscriptionStatuses.has(subStatus) : false);
+  if (needsNewSubscription) {
+    const requestedPlan = requestedPlanId
+      ? plans.find((plan) => plan._id === requestedPlanId) ?? null
+      : null;
+    const heading = subStatus === 'expired'
+      ? 'Reactivate Your Account'
+      : subStatus === 'cancelled'
+        ? 'Resubscribe'
+        : subStatus === 'pending_checkout'
+          ? 'Complete Your Subscription'
+          : 'Choose Your Plan';
+    const description = subStatus === 'expired'
+      ? 'Your trial has ended. Choose a plan to continue — all your data is safe and will be restored instantly.'
+      : subStatus === 'cancelled'
+        ? 'Welcome back! Pick a plan to reactivate your account.'
+        : subStatus === 'pending_checkout'
+          ? 'Your last checkout was not completed. Choose a plan to resume with a fresh Stripe Checkout session.'
+          : 'Select a subscription plan to unlock all features and start managing your weddings.';
+
     return (
-      <div className="space-y-6 max-w-4xl mx-auto">
+      <div className="space-y-6">
         <div className="text-center py-12">
           <div className="w-16 h-16 bg-blue-100 dark:bg-blue-900/30 rounded-full flex items-center justify-center mx-auto mb-4">
             <CreditCard className="w-8 h-8 text-blue-600 dark:text-blue-400" />
           </div>
           <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100 mb-2">
-            Choose Your Plan
+            {heading}
           </h1>
           <p className="text-gray-600 dark:text-gray-400 max-w-md mx-auto">
-            Select a subscription plan to unlock all features and start managing your weddings.
+            {description}
           </p>
         </div>
 
-        <div className="grid md:grid-cols-3 gap-6">
-          {plans.map((plan) => (
-            <Card
-              key={plan._id}
-              className={`relative bg-white dark:bg-gray-800 transition-all hover:shadow-lg ${
-                plan.is_featured
-                  ? 'border-2 border-blue-500 dark:border-blue-400'
-                  : 'border border-gray-200 dark:border-gray-700'
-              }`}
-            >
-              {plan.is_featured && (
-                <div className="absolute -top-3 left-1/2 -translate-x-1/2">
-                  <Badge className="bg-blue-500 text-white px-3">Recommended</Badge>
-                </div>
-              )}
-              <CardHeader className="text-center pb-2">
-                <CardTitle className="text-lg text-gray-900 dark:text-gray-100">
-                  {plan.name}
-                </CardTitle>
-                <div className="mt-3">
-                  <span className="text-3xl font-bold text-gray-900 dark:text-white">
-                    ${plan.price_monthly}
-                  </span>
-                  <span className="text-gray-500 dark:text-gray-400">/mo</span>
-                </div>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <ul className="space-y-2 text-sm">
-                  <li className="flex items-center gap-2 text-gray-700 dark:text-gray-300">
-                    <CheckCircle2 className="w-4 h-4 text-green-500 flex-shrink-0" />
-                    {plan.max_weddings === -1 ? 'Unlimited' : plan.max_weddings} weddings
-                  </li>
-                  <li className="flex items-center gap-2 text-gray-700 dark:text-gray-300">
-                    <CheckCircle2 className="w-4 h-4 text-green-500 flex-shrink-0" />
-                    {plan.max_guests_per_wedding} guests per wedding
-                  </li>
-                  <li className="flex items-center gap-2 text-gray-700 dark:text-gray-300">
-                    <CheckCircle2 className="w-4 h-4 text-green-500 flex-shrink-0" />
-                    {plan.storage_gb} GB storage
-                  </li>
-                </ul>
-                <Button
-                  onClick={() => handleSubscribe(plan._id)}
-                  className={`w-full ${
-                    plan.is_featured
-                      ? 'bg-blue-600 hover:bg-blue-700 text-white'
-                      : 'bg-gray-900 dark:bg-gray-100 hover:bg-gray-800 dark:hover:bg-gray-200 text-white dark:text-gray-900'
-                  }`}
-                >
-                  Get Started
-                </Button>
-              </CardContent>
-            </Card>
-          ))}
+        {requestedPlan && (
+          <div className="mx-auto max-w-3xl rounded-2xl border border-blue-200 bg-blue-50 px-6 py-4 text-sm text-blue-900 dark:border-blue-900/60 dark:bg-blue-950/40 dark:text-blue-100">
+            Continuing with <span className="font-semibold">{requestedPlan.name}</span> on{' '}
+            <span className="font-semibold">{requestedInterval}</span> billing. Review the details below to start checkout.
+          </div>
+        )}
+
+        <div className="grid md:grid-cols-3 gap-8 max-w-5xl mx-auto">
+          {plans.map((plan) => {
+            const isRequestedPlan = requestedPlanId === plan._id;
+            const displayInterval = isRequestedPlan ? requestedInterval : 'monthly';
+            const displayPrice = displayInterval === 'yearly' && plan.price_yearly > 0
+              ? plan.price_yearly
+              : plan.price_monthly;
+            const displayCadence = displayInterval === 'yearly' ? 'yr' : 'mo';
+
+            return (
+              <Card
+                key={plan._id}
+                className={`relative flex flex-col bg-white dark:bg-gray-800 transition-all hover:shadow-lg ${
+                  isRequestedPlan
+                    ? 'border-2 border-blue-600 dark:border-blue-300 shadow-lg ring-2 ring-blue-200/70 dark:ring-blue-500/40'
+                    : plan.is_featured
+                    ? 'border-2 border-blue-500 dark:border-blue-400 shadow-md'
+                    : 'border border-gray-200 dark:border-gray-700'
+                }`}
+              >
+                {(plan.is_featured || isRequestedPlan) && (
+                  <div className="absolute -top-3 left-1/2 -translate-x-1/2">
+                    <Badge className="bg-blue-500 text-white px-3 py-1">
+                      {isRequestedPlan ? 'Selected' : 'Recommended'}
+                    </Badge>
+                  </div>
+                )}
+                <CardHeader className="text-center pb-4 pt-8">
+                  <CardTitle className="text-xl font-semibold text-gray-900 dark:text-gray-100">
+                    {plan.name}
+                  </CardTitle>
+                  <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">{plan.description}</p>
+                  <div className="mt-4">
+                    <span className="text-4xl font-bold text-gray-900 dark:text-white">
+                      ${displayPrice}
+                    </span>
+                    <span className="text-gray-500 dark:text-gray-400">/{displayCadence}</span>
+                    {plan.price_yearly > 0 && (
+                      <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">
+                        or ${plan.price_yearly}/yr (save ${plan.price_monthly * 12 - plan.price_yearly})
+                      </p>
+                    )}
+                  </div>
+                </CardHeader>
+                <CardContent className="flex-1 flex flex-col space-y-6 px-6 pb-8">
+                  <ul className="space-y-3 text-sm flex-1">
+                    {(plan.features_list && plan.features_list.length > 0 ? plan.features_list : [
+                      `${plan.max_weddings === -1 ? 'Unlimited' : plan.max_weddings} weddings`,
+                      `${plan.max_guests_per_wedding === -1 ? 'Unlimited' : plan.max_guests_per_wedding} guests per wedding`,
+                      `${plan.storage_gb} GB storage`,
+                      `${plan.staff_seats} staff seat${plan.staff_seats !== 1 ? 's' : ''}`,
+                      `${plan.ai_credits_monthly} AI credits/month`,
+                    ]).map((feature, idx) => (
+                      <li key={idx} className="flex items-start gap-2.5 text-gray-700 dark:text-gray-300">
+                        <CheckCircle2 className="w-4 h-4 text-green-500 flex-shrink-0 mt-0.5" />
+                        <span>{feature}</span>
+                      </li>
+                    ))}
+                  </ul>
+                  <Button
+                    onClick={() => handleSubscribe(plan._id, displayInterval)}
+                    className={`w-full py-3 text-base font-medium ${
+                      isRequestedPlan || plan.is_featured
+                        ? 'bg-blue-600 hover:bg-blue-700 text-white'
+                        : 'bg-gray-900 dark:bg-gray-100 hover:bg-gray-800 dark:hover:bg-gray-200 text-white dark:text-gray-900'
+                    }`}
+                  >
+                    {isRequestedPlan ? `Continue with ${displayInterval}` : 'Get Started'}
+                  </Button>
+                </CardContent>
+              </Card>
+            );
+          })}
         </div>
       </div>
     );
@@ -649,17 +762,18 @@ export default function PlannerBillingPage() {
   // Has subscription - show billing dashboard
   const statusConfig = getStatusConfig(currentSubscription.status);
   const daysUntilRenewal = getDaysUntilRenewal();
-  const displayedInvoices = showAllInvoices ? invoices : invoices.slice(0, 3);
+  // Compute displayed invoices from all invoices using pagination
+  const displayedInvoices = allInvoices.slice(
+    (paginationInvoices.currentPage - 1) * paginationInvoices.itemsPerPage,
+    paginationInvoices.currentPage * paginationInvoices.itemsPerPage
+  );
 
   return (
-    <div className="space-y-6 max-w-5xl mx-auto">
-      {/* Page Header */}
-      <div>
-        <h1 className="text-2xl sm:text-3xl font-semibold leading-tight text-slate-900 dark:text-white">Billing</h1>
-        <p className="text-slate-600 dark:text-slate-400 mt-1">
-          Manage your subscription, payment methods, and billing history
-        </p>
-      </div>
+    <div className="space-y-6">
+      <PageHeader
+        title="Billing"
+        description="Manage your subscription, payment methods, and billing history"
+      />
 
       {/* Tabs */}
       <div className="flex border-b border-gray-200 dark:border-gray-700 mb-6">
@@ -745,14 +859,14 @@ export default function PlannerBillingPage() {
       )}
 
       {/* Main Grid */}
-      <div className="grid lg:grid-cols-3 gap-6">
+      <div className="grid lg:grid-cols-3 gap-6 overflow-hidden">
         {/* Left Column - Subscription & Payment */}
-        <div className="lg:col-span-2 space-y-6">
+        <div className="lg:col-span-2 space-y-6 min-w-0">
 
           {activeTab === 'subscription' ? (
             <>
           {/* Current Subscription */}
-          <Card className="bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700">
+          <Card className="bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700 p-6">
             <CardHeader className="pb-4">
               <div className="flex items-center justify-between">
                 <CardTitle className="text-gray-900 dark:text-gray-100">Your Subscription</CardTitle>
@@ -818,9 +932,9 @@ export default function PlannerBillingPage() {
                   Change Plan
                 </Button>
                 <Button
-                  onClick={handleManageBilling}
+                  onClick={handleCancelSubscription}
                   variant="outline"
-                  className="border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300"
+                  className="border-red-300 dark:border-red-600 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20"
                 >
                   <XCircle className="w-4 h-4 mr-2" />
                   Cancel Subscription
@@ -830,7 +944,7 @@ export default function PlannerBillingPage() {
           </Card>
 
           {/* Payment Method */}
-          <Card className="bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700">
+          <Card className="bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700 p-6">
             <CardHeader className="pb-4">
               <CardTitle className="text-gray-900 dark:text-gray-100">Payment Method</CardTitle>
             </CardHeader>
@@ -872,64 +986,76 @@ export default function PlannerBillingPage() {
           </Card>
 
           {/* Billing History */}
-          <Card className="bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700">
+          <Card className="bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700 p-6">
             <CardHeader className="pb-4">
-              <div className="flex items-center justify-between">
-                <CardTitle className="text-gray-900 dark:text-gray-100">Billing History</CardTitle>
-                {invoices.length > 3 && (
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => setShowAllInvoices(!showAllInvoices)}
-                    className="text-blue-600 dark:text-blue-400 hover:text-blue-700"
-                  >
-                    {showAllInvoices ? 'Show Less' : `View All (${invoices.length})`}
-                  </Button>
-                )}
-              </div>
+              <CardTitle className="text-gray-900 dark:text-gray-100">Billing History</CardTitle>
             </CardHeader>
             <CardContent>
-              {invoices.length > 0 ? (
-                <div className="divide-y divide-gray-200 dark:divide-gray-700">
-                  {displayedInvoices.map((invoice) => (
-                    <div
-                      key={invoice.id}
-                      className="flex items-center justify-between py-3 first:pt-0 last:pb-0"
-                    >
-                      <div className="flex items-center gap-3">
-                        <Receipt className="w-5 h-5 text-gray-400" />
-                        <div>
-                          <p className="font-medium text-gray-900 dark:text-gray-100 text-sm">
-                            {invoice.description || 'Invoice'}
-                          </p>
-                          <p className="text-xs text-gray-500 dark:text-gray-400">
-                            {formatDate(invoice.date)}
-                          </p>
+              {allInvoices.length > 0 ? (
+                <>
+                  <div className="mb-4">
+                    <GlassPagination
+                      currentPage={paginationInvoices.currentPage}
+                      totalPages={paginationInvoices.totalPages}
+                      totalItems={paginationInvoices.totalItems}
+                      itemsPerPage={paginationInvoices.itemsPerPage}
+                      onPageChange={paginationInvoices.setPage}
+                      variant="compact"
+                      itemLabel="invoices"
+                    />
+                  </div>
+                  <div className="divide-y divide-gray-200 dark:divide-gray-700">
+                    {displayedInvoices.map((invoice) => (
+                      <div
+                        key={invoice.id}
+                        className="flex items-center justify-between py-3 first:pt-0 last:pb-0"
+                      >
+                        <div className="flex items-center gap-3">
+                          <Receipt className="w-5 h-5 text-gray-400" />
+                          <div>
+                            <p className="font-medium text-gray-900 dark:text-gray-100 text-sm">
+                              {invoice.description || 'Invoice'}
+                            </p>
+                            <p className="text-xs text-gray-500 dark:text-gray-400">
+                              {formatDate(invoice.date)}
+                            </p>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-3">
+                          <span className="font-medium text-gray-900 dark:text-gray-100">
+                            ${(invoice.amount / 100).toFixed(2)}
+                          </span>
+                          {invoice.status === 'paid' && (
+                            <Badge className="bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300 text-xs">
+                              Paid
+                            </Badge>
+                          )}
+                          {invoice.invoice_pdf && (
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              className="text-gray-500 hover:text-gray-700 p-1 h-auto"
+                              onClick={() => window.open(invoice.invoice_pdf, '_blank')}
+                            >
+                              <Download className="w-4 h-4" />
+                            </Button>
+                          )}
                         </div>
                       </div>
-                      <div className="flex items-center gap-3">
-                        <span className="font-medium text-gray-900 dark:text-gray-100">
-                          ${(invoice.amount / 100).toFixed(2)}
-                        </span>
-                        {invoice.status === 'paid' && (
-                          <Badge className="bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300 text-xs">
-                            Paid
-                          </Badge>
-                        )}
-                        {invoice.invoice_pdf && (
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            className="text-gray-500 hover:text-gray-700 p-1 h-auto"
-                            onClick={() => window.open(invoice.invoice_pdf, '_blank')}
-                          >
-                            <Download className="w-4 h-4" />
-                          </Button>
-                        )}
-                      </div>
-                    </div>
-                  ))}
-                </div>
+                    ))}
+                  </div>
+                  <div className="mt-4 pt-4 border-t border-gray-200 dark:border-gray-700">
+                    <GlassPagination
+                      currentPage={paginationInvoices.currentPage}
+                      totalPages={paginationInvoices.totalPages}
+                      totalItems={paginationInvoices.totalItems}
+                      itemsPerPage={paginationInvoices.itemsPerPage}
+                      onPageChange={paginationInvoices.setPage}
+                      onItemsPerPageChange={paginationInvoices.setItemsPerPage}
+                      itemLabel="invoices"
+                    />
+                  </div>
+                </>
               ) : (
                 <div className="text-center py-6 text-gray-500 dark:text-gray-400">
                   <Receipt className="w-10 h-10 mx-auto mb-2 opacity-50" />
@@ -945,7 +1071,7 @@ export default function PlannerBillingPage() {
               {/* Hide Connect card for root admin - they don't collect client payments */}
               {!userProfile?.is_root_admin && <StripeConnectCard />}
 
-              <Card className="bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700">
+              <Card className="bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700 p-6">
                 <CardHeader className="pb-4 flex flex-row items-center justify-between">
                   <CardTitle className="text-gray-900 dark:text-gray-100">Payment Requests</CardTitle>
                   <Button onClick={() => setShowCreatePaymentModal(true)}>
@@ -994,11 +1120,11 @@ export default function PlannerBillingPage() {
         </div>
 
         {/* Right Column - Usage & Quick Actions */}
-        <div className="space-y-6">
+        <div className="space-y-6 min-w-0 overflow-hidden">
           {activeTab === 'subscription' && (
             <>
           {/* Usage This Period */}
-          <Card className="bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700">
+          <Card className="bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700 p-6">
             <CardHeader className="pb-4">
               <CardTitle className="text-gray-900 dark:text-gray-100 text-base">Usage This Period</CardTitle>
             </CardHeader>
@@ -1082,7 +1208,7 @@ export default function PlannerBillingPage() {
           </Card>
 
           {/* Plan Features */}
-          <Card className="bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700">
+          <Card className="bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700 p-6">
             <CardHeader className="pb-4">
               <CardTitle className="text-gray-900 dark:text-gray-100 text-base">Plan Features</CardTitle>
             </CardHeader>
@@ -1104,8 +1230,8 @@ export default function PlannerBillingPage() {
           </Card>
 
           {/* Need Help */}
-          <Card className="bg-gray-50 dark:bg-gray-900/50 border-gray-200 dark:border-gray-700">
-            <CardContent className="pt-6">
+          <Card className="bg-gray-50 dark:bg-gray-900/50 border-gray-200 dark:border-gray-700 p-6">
+            <CardContent>
               <div className="flex items-start gap-3">
                 <Shield className="w-5 h-5 text-gray-500 flex-shrink-0 mt-0.5" />
                 <div>

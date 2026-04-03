@@ -1,14 +1,18 @@
 'use client';
 
-import { Fragment, useEffect, useMemo, useState } from 'react';
+import { Fragment, useCallback, useEffect, useMemo, useState } from 'react';
 import type { ReactNode, ReactElement } from 'react';
 import { Dialog, Transition } from '@headlessui/react';
 import { SparklesIcon, SquaresPlusIcon, DocumentDuplicateIcon } from '@heroicons/react/24/outline';
 import { useRouter } from 'next/navigation';
 import { useAdmin } from '@/contexts/AdminContext';
 import { Button } from '@/components/ui/Button';
+import { useConfirmDialog } from '@/components/ui/ConfirmDialog';
 import { formsApi, type DuplicateFormPayload, type BlankFormPayload } from '@/services/formsApi';
 import { formatDate as formatUtcDate } from '@/utils/dateFormat';
+import PageHeader from '../components/PageHeader';
+import { Copy, FileText, Trash2, Loader2 } from 'lucide-react';
+import { toast } from 'sonner';
 
 type CreationMode = 'template' | 'blank' | 'duplicate';
 
@@ -72,8 +76,8 @@ function CreationOptionCard({
   onSelect: () => void;
 }): ReactElement {
   const stateClass = isActive
-    ? 'border-wedding-rose/80 bg-white/80 dark:bg-slate-700/80 shadow-xl'
-    : 'border-white/40 dark:border-slate-600 bg-white/40 dark:bg-slate-800/60 hover:border-white/70 dark:hover:border-slate-500 hover:bg-white/60 dark:hover:bg-slate-700/60';
+    ? 'border-wedding-rose/70 bg-white shadow-lg ring-1 ring-wedding-rose/15 dark:border-wedding-rose/80 dark:bg-slate-700/80 dark:ring-0 dark:shadow-xl'
+    : 'border-slate-200 bg-white shadow-sm hover:border-slate-300 hover:bg-slate-50 dark:border-slate-600 dark:bg-slate-800/60 dark:shadow-lg dark:hover:border-slate-500 dark:hover:bg-slate-700/60';
 
   return (
     <label
@@ -89,7 +93,7 @@ function CreationOptionCard({
         aria-label={option.title}
       />
       <div className="flex items-center justify-between gap-3 text-wedding-navy dark:text-white">
-        <div className={`rounded-2xl p-3 ${isActive ? 'bg-wedding-rose/10 text-wedding-rose' : 'bg-white/50 dark:bg-slate-600/50 text-wedding-navy/70 dark:text-white/70'}`}>
+        <div className={`rounded-2xl p-3 ${isActive ? 'bg-wedding-rose/10 text-wedding-rose' : 'bg-slate-100 text-wedding-navy/70 dark:bg-slate-600/50 dark:text-white/70'}`}>
           {option.icon}
         </div>
         {isActive && <span className="rounded-full bg-wedding-rose/80 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-white">Selected</span>}
@@ -122,7 +126,7 @@ function FormBadge({
   children: ReactNode;
 }) {
   const toneStyles: Record<BadgeTone, string> = {
-    neutral: 'bg-white/70 dark:bg-slate-700 text-wedding-navy dark:text-white border-white/40 dark:border-slate-600',
+    neutral: 'border-slate-200 bg-slate-50 text-wedding-navy dark:border-slate-600 dark:bg-slate-700 dark:text-white',
     accent: 'bg-wedding-rose/90 text-white border-wedding-rose/40 shadow-sm',
     success: 'bg-emerald-500/90 text-white border-emerald-400/60 shadow-sm',
   };
@@ -137,6 +141,7 @@ function FormBadge({
 export default function FormsManagementPage(): ReactElement {
   const router = useRouter();
   const { token, userProfile } = useAdmin();
+  const { confirm } = useConfirmDialog();
 
   const [forms, setForms] = useState<FormSummary[]>([]);
   const [templates, setTemplates] = useState<FormTemplate[]>([]);
@@ -153,6 +158,72 @@ export default function FormsManagementPage(): ReactElement {
   const [collectEmail, setCollectEmail] = useState(true);
   const [creating, setCreating] = useState(false);
   const [creationError, setCreationError] = useState<string | null>(null);
+
+  // Custom Templates state
+  const [customTemplates, setCustomTemplates] = useState<Array<{
+    id: string; name: string; description?: string; category?: string;
+    field_count: number; created_at?: string;
+  }>>([]);
+  const [customTplLoading, setCustomTplLoading] = useState(true);
+  const [creatingFromTpl, setCreatingFromTpl] = useState<string | null>(null);
+  const [newTplFormName, setNewTplFormName] = useState('');
+
+  const fetchCustomTemplates = useCallback(async () => {
+    if (!token) return;
+    try {
+      const res = await fetch(`${formsApi.resolveBaseUrl()}/couple-portal/form-templates`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setCustomTemplates(data.templates || []);
+      }
+    } catch {
+      // silently fail
+    } finally {
+      setCustomTplLoading(false);
+    }
+  }, [token]);
+
+  const handleCreateFromCustomTemplate = async (templateId: string) => {
+    if (!newTplFormName.trim()) { toast.error('Please enter a form name'); return; }
+    try {
+      const res = await fetch(`${formsApi.resolveBaseUrl()}/couple-portal/form-templates/create-form`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ template_id: templateId, form_name: newTplFormName.trim() }),
+      });
+      if (res.ok) {
+        toast.success(`Form "${newTplFormName.trim()}" created`);
+        setCreatingFromTpl(null);
+        setNewTplFormName('');
+        await refreshForms();
+      } else {
+        const err = await res.json();
+        toast.error(err.detail || 'Failed to create form');
+      }
+    } catch { toast.error('Failed to connect'); }
+  };
+
+  const handleDeleteCustomTemplate = async (templateId: string, templateName: string) => {
+    const confirmed = await confirm({
+      title: 'Delete template?',
+      message: `Delete template "${templateName}"? This cannot be undone.`,
+      confirmText: 'Delete template',
+      variant: 'danger',
+    });
+    if (!confirmed) return;
+    try {
+      const res = await fetch(`${formsApi.resolveBaseUrl()}/couple-portal/form-templates/${templateId}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (res.ok) {
+        toast.success('Template deleted');
+        setCustomTemplates(prev => prev.filter(t => t.id !== templateId));
+      } else { toast.error('Failed to delete template'); }
+    } catch { toast.error('Failed to connect'); }
+  };
 
   useEffect(() => {
     if (!token) {
@@ -187,7 +258,8 @@ export default function FormsManagementPage(): ReactElement {
     };
 
     initialise();
-  }, [token, userProfile, router]);
+    fetchCustomTemplates();
+  }, [token, userProfile, router, fetchCustomTemplates]);
 
   const resetCreateModalState = () => {
     setFormName('');
@@ -283,7 +355,13 @@ export default function FormsManagementPage(): ReactElement {
       return;
     }
 
-    const confirmation = window.confirm('Are you sure you want to delete this form? This action cannot be undone.');
+    const confirmation = await confirm({
+      title: 'Delete Form',
+      message: 'Are you sure you want to delete this form? This action cannot be undone.',
+      variant: 'danger',
+      confirmText: 'Delete',
+      cancelText: 'Cancel',
+    });
     if (!confirmation) {
       return;
     }
@@ -318,10 +396,10 @@ export default function FormsManagementPage(): ReactElement {
 
   if (loading) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-slate-900/5 via-white to-wedding-rose/20 dark:from-slate-900 dark:via-slate-800 dark:to-slate-900">
-        <div className="rounded-3xl border border-white/60 dark:border-slate-700 bg-white/70 dark:bg-slate-800/90 px-8 py-10 text-center shadow-xl backdrop-blur">
+      <div className="flex items-center justify-center py-24">
+        <div className="text-center">
           <div className="mx-auto mb-4 h-12 w-12 animate-spin rounded-full border-b-2 border-wedding-rose"></div>
-          <p className="text-sm font-medium text-wedding-navy dark:text-white">Loading your glass workspace…</p>
+          <p className="text-sm font-medium text-slate-600 dark:text-slate-400">Loading forms...</p>
         </div>
       </div>
     );
@@ -329,24 +407,10 @@ export default function FormsManagementPage(): ReactElement {
 
   return (
     <div className="space-y-6 pb-12">
-      {/* Header */}
-      <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-        <div>
-          <h1 className="text-2xl sm:text-3xl font-semibold leading-tight text-slate-900 dark:text-white">Forms</h1>
-          <p className="text-slate-600 dark:text-slate-400 mt-1">
-            Create and manage questionnaires, vendor workflows, and feedback forms
-          </p>
-          {forms.length > 0 && (
-            <div className="flex flex-wrap gap-2 mt-3">
-              {Object.entries(formCounts).map(([key, count]) => (
-                <FormBadge key={key} tone="neutral">
-                  {key.replace(/_/g, ' ')} · {count}
-                </FormBadge>
-              ))}
-            </div>
-          )}
-        </div>
-
+      <PageHeader
+        title="Forms"
+        description="Create and manage questionnaires, vendor workflows, and feedback forms"
+      >
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
             <Button
               id="create-form-button"
@@ -365,7 +429,17 @@ export default function FormsManagementPage(): ReactElement {
               Refresh workspace
             </Button>
           </div>
+      </PageHeader>
+
+      {forms.length > 0 && (
+        <div className="flex flex-wrap gap-2">
+          {Object.entries(formCounts).map(([key, count]) => (
+            <FormBadge key={key} tone="neutral">
+              {key.replace(/_/g, ' ')} · {count}
+            </FormBadge>
+          ))}
         </div>
+      )}
 
       {error && (
         <div className="rounded-3xl border border-red-200/70 bg-red-50/70 px-6 py-4 text-red-700 dark:text-red-300 shadow-sm backdrop-blur">
@@ -386,7 +460,7 @@ export default function FormsManagementPage(): ReactElement {
 
         {forms.length === 0 ? (
           <div className="px-8 py-20 text-center">
-            <div className="mx-auto max-w-md space-y-3">
+            <div className="mx-auto max-w-md space-y-3 flex flex-col items-center">
               <h3 className="text-lg font-semibold text-wedding-navy dark:text-white">Design your first form</h3>
               <p className="text-sm text-gray-600 dark:text-gray-300">
                 Start from the curated template gallery or open a blank canvas to craft a bespoke workflow.
@@ -484,6 +558,80 @@ export default function FormsManagementPage(): ReactElement {
         )}
       </section>
 
+      {/* Custom Templates Section */}
+      <section className="rounded-[36px] border border-white/40 dark:border-slate-700 bg-white/70 dark:bg-slate-800/90 shadow-xl backdrop-blur">
+        <header className="flex flex-col gap-4 border-b border-white/40 dark:border-slate-700 px-8 py-6 md:flex-row md:items-center md:justify-between">
+          <div>
+            <h2 className="text-xl font-semibold text-wedding-navy dark:text-white">Custom Templates</h2>
+            <p className="text-sm text-gray-600 dark:text-gray-300">
+              Save forms as reusable templates to quickly create new forms for any wedding.
+            </p>
+          </div>
+          <FormBadge tone="neutral">{customTemplates.length} saved</FormBadge>
+        </header>
+
+        {customTplLoading ? (
+          <div className="flex items-center justify-center py-12">
+            <Loader2 className="w-6 h-6 animate-spin text-wedding-rose" />
+          </div>
+        ) : customTemplates.length === 0 ? (
+          <div className="px-8 py-12 text-center">
+            <Copy className="w-10 h-10 text-gray-300 dark:text-gray-600 mx-auto mb-3" />
+            <p className="text-sm text-gray-500 dark:text-gray-400">No custom templates yet</p>
+            <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">Save any form as a template to reuse it across weddings.</p>
+          </div>
+        ) : (
+          <div className="grid gap-4 p-6 sm:grid-cols-2 xl:grid-cols-3">
+            {customTemplates.map((tpl) => (
+              <div key={tpl.id} className="rounded-3xl border border-white/50 dark:border-slate-700 bg-gradient-to-br from-white/70 via-white/40 to-indigo-50/30 dark:from-slate-800 dark:via-slate-800/80 dark:to-slate-900 p-5 shadow-lg backdrop-blur">
+                <div className="space-y-2">
+                  <h3 className="text-base font-semibold text-wedding-navy dark:text-white">{tpl.name}</h3>
+                  {tpl.description && <p className="text-sm text-gray-600 dark:text-gray-300">{tpl.description}</p>}
+                  <div className="flex items-center gap-3 text-xs text-gray-500 dark:text-gray-400">
+                    <span>{tpl.field_count} fields</span>
+                    {tpl.category && <span className="bg-gray-100 dark:bg-slate-700 px-2 py-0.5 rounded-full">{tpl.category}</span>}
+                    {tpl.created_at && <span>{new Date(tpl.created_at).toLocaleDateString()}</span>}
+                  </div>
+                </div>
+
+                {creatingFromTpl === tpl.id ? (
+                  <div className="mt-4 pt-3 border-t border-gray-200 dark:border-gray-700 flex gap-2">
+                    <input
+                      type="text"
+                      value={newTplFormName}
+                      onChange={(e) => setNewTplFormName(e.target.value)}
+                      placeholder="New form name..."
+                      className="flex-1 px-3 py-2 border border-gray-200 dark:border-gray-600 rounded-xl text-sm bg-white dark:bg-slate-700 text-wedding-navy dark:text-white focus:ring-2 focus:ring-wedding-rose/50 focus:border-wedding-rose"
+                      onKeyDown={(e) => { if (e.key === 'Enter') handleCreateFromCustomTemplate(tpl.id); }}
+                      autoFocus
+                    />
+                    <Button onClick={() => handleCreateFromCustomTemplate(tpl.id)}>Create</Button>
+                    <Button variant="secondary" onClick={() => setCreatingFromTpl(null)}>Cancel</Button>
+                  </div>
+                ) : (
+                  <div className="mt-4 flex gap-2">
+                    <Button
+                      variant="secondary"
+                      className="flex-1"
+                      onClick={() => { setCreatingFromTpl(tpl.id); setNewTplFormName(''); }}
+                    >
+                      <FileText className="w-3.5 h-3.5 mr-1.5" />
+                      Use Template
+                    </Button>
+                    <Button
+                      variant="danger"
+                      onClick={() => handleDeleteCustomTemplate(tpl.id, tpl.name)}
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </Button>
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+      </section>
+
       <Transition show={showCreateModal} as={Fragment}>
         <Dialog onClose={closeCreateModal} className="relative z-50">
           <Transition.Child
@@ -509,31 +657,31 @@ export default function FormsManagementPage(): ReactElement {
                 leaveFrom="opacity-100 translate-y-0"
                 leaveTo="opacity-0 translate-y-6"
               >
-                <Dialog.Panel className="w-full max-w-5xl overflow-hidden rounded-[36px] border border-white/50 dark:border-slate-700 bg-white/80 dark:bg-slate-800/95 shadow-2xl backdrop-blur-xl">
+                <Dialog.Panel className="w-full max-w-5xl overflow-hidden rounded-[36px] border border-slate-200/80 bg-white/90 shadow-2xl backdrop-blur-xl dark:border-slate-700 dark:bg-slate-800/95">
                   <div className="grid gap-0 lg:grid-cols-[320px,minmax(0,1fr)]">
-                    <aside className="relative hidden overflow-hidden border-b border-white/30 bg-gradient-to-br from-wedding-rose/30 via-wedding-rose/10 to-slate-100/40 p-8 text-white lg:block lg:border-r">
-                      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top,_rgba(255,255,255,0.35),_transparent_60%)]" />
+                    <aside className="relative hidden overflow-hidden border-b border-slate-200 bg-gradient-to-br from-rose-100 via-rose-50 to-slate-100 p-8 text-slate-900 lg:block lg:border-r dark:border-white/30 dark:from-wedding-rose/30 dark:via-wedding-rose/10 dark:to-slate-100/40 dark:text-white">
+                      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top,_rgba(255,255,255,0.65),_transparent_60%)] dark:bg-[radial-gradient(circle_at_top,_rgba(255,255,255,0.35),_transparent_60%)]" />
                       <div className="relative space-y-6">
-                        <p className="text-xs font-semibold uppercase tracking-[0.4em] text-white/80">Creation studio</p>
-                        <h2 className="text-2xl font-semibold leading-snug text-white">
+                        <p className="text-xs font-semibold uppercase tracking-[0.4em] text-slate-500 dark:text-white/80">Creation studio</p>
+                        <h2 className="text-2xl font-semibold leading-snug text-wedding-navy dark:text-white">
                           Choose the launch path that fits this moment
                         </h2>
-                        <ul className="space-y-4 text-sm text-white/80">
+                        <ul className="space-y-4 text-sm text-slate-600 dark:text-white/80">
                           <li className="flex items-start gap-2">
-                            <span className="mt-1 h-2.5 w-2.5 rounded-full bg-white/70" aria-hidden="true" />
+                            <span className="mt-1 h-2.5 w-2.5 rounded-full bg-wedding-rose/60 dark:bg-white/70" aria-hidden="true" />
                             <span>Template flows include 2025 compliance copy, section logic, and Apple Glass elevation tokens.</span>
                           </li>
                           <li className="flex items-start gap-2">
-                            <span className="mt-1 h-2.5 w-2.5 rounded-full bg-white/70" aria-hidden="true" />
+                            <span className="mt-1 h-2.5 w-2.5 rounded-full bg-wedding-rose/60 dark:bg-white/70" aria-hidden="true" />
                             <span>Blank canvases auto-enable accessibility guardrails, grid alignment, and vendor field presets.</span>
                           </li>
                           <li className="flex items-start gap-2">
-                            <span className="mt-1 h-2.5 w-2.5 rounded-full bg-white/70" aria-hidden="true" />
+                            <span className="mt-1 h-2.5 w-2.5 rounded-full bg-wedding-rose/60 dark:bg-white/70" aria-hidden="true" />
                             <span>Duplications preserve analytics integrity, unread badges, and audit history for the original form.</span>
                           </li>
                         </ul>
-                        <div className="rounded-3xl border border-white/40 bg-white/20 p-4 text-xs text-white/80 backdrop-blur">
-                          <p className="font-semibold uppercase tracking-wide text-white">Best practice insight</p>
+                        <div className="rounded-3xl border border-rose-200 bg-white/70 p-4 text-xs text-slate-600 backdrop-blur dark:border-white/40 dark:bg-white/20 dark:text-white/80">
+                          <p className="font-semibold uppercase tracking-wide text-wedding-navy dark:text-white">Best practice insight</p>
                           <p className="mt-2">
                             Align each workflow with a single outcome. Use analytics tagging post-launch to track drop-off and iterate.
                           </p>

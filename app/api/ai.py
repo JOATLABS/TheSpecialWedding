@@ -784,6 +784,8 @@ async def get_dashboard_insights(
             AIContentBlockedError, AIServiceUnavailableError, AIQuotaExceededError,
             AITimeoutError, AIInvalidResponseError) as e:
         handle_ai_error(e)
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Error generating dashboard insights: {str(e)}")
         raise HTTPException(status_code=500, detail="Failed to generate insights")
@@ -1258,10 +1260,11 @@ async def generate_contract_section(
         # A8: Pre-check AI credits before expensive contract generation
         try:
             credit_check = await ai_service.check_credits(user_id, "contract_section")
-            if not credit_check.get("has_credits", True):
+            if not credit_check.get("allowed", True):
                 raise InsufficientCreditsError(
-                    required=credit_check.get("required", 1),
-                    available=credit_check.get("available", 0)
+                    message=credit_check.get("message", "Insufficient AI credits"),
+                    required=credit_check.get("credits_needed", 1),
+                    available=credit_check.get("credits_remaining", 0)
                 )
         except InsufficientCreditsError:
             raise
@@ -1427,13 +1430,22 @@ async def get_vendor_recommendations(
                 prompt += f" The budget is up to ${request.budget_range['max']:,.0f}."
 
         # Generate recommendations
+        # Use wedding_id as tenant for caching — if no wedding context,
+        # use a unique key to prevent cache pollution across weddings
+        if request.wedding_id:
+            rec_tenant_id = request.wedding_id
+            rec_force_refresh = False
+        else:
+            rec_tenant_id = f"user_{user_id}_no_wedding"
+            rec_force_refresh = True  # No caching without wedding context
+
         result = await ai_service.generate(
             user_id=user_id,
-            tenant_id=request.wedding_id or user_id,
+            tenant_id=rec_tenant_id,
             feature="vendor_recommendations",
             prompt=prompt,
             context=context,
-            force_refresh=False
+            force_refresh=rec_force_refresh
         )
 
         response = result["response"]

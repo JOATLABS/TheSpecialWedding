@@ -11,7 +11,8 @@ import type {
   BudgetAlert,
   PaymentRecord,
   RecordPaymentRequest,
-  CreateBudgetTemplatePayload
+  CreateBudgetTemplatePayload,
+  ApplyBudgetTemplateResult
 } from '../types/budget';
 
 const BASE_URL = getApiBaseUrl();
@@ -200,7 +201,12 @@ class BudgetApiService {
     return this.normaliseTemplate(templateData);
   }
 
-  async applyBudgetTemplate(token: string, weddingId: string, templateId: string, totalBudget: number): Promise<BudgetCategory[]> {
+  async applyBudgetTemplate(
+    token: string,
+    weddingId: string,
+    templateId: string,
+    totalBudget: number
+  ): Promise<ApplyBudgetTemplateResult> {
     const response = await fetch(
       `${BASE_URL}/admin/weddings/${weddingId}/budget/apply-template`,
       {
@@ -210,7 +216,8 @@ class BudgetApiService {
       }
     );
     if (!response.ok) throw new Error('Failed to apply budget template');
-    return response.json();
+    const payload = await response.json();
+    return payload?.result ?? payload;
   }
 
   // Cost Estimation

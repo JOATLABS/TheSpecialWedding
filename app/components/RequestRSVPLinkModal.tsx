@@ -3,6 +3,7 @@
 import { Fragment, useState } from 'react';
 import { Dialog, Transition } from '@headlessui/react';
 import { XMarkIcon, EnvelopeIcon, PhoneIcon, CheckCircleIcon } from '@heroicons/react/24/outline';
+import { getApiBaseUrl } from '@/utils/env';
 
 interface RequestRSVPLinkModalProps {
   isOpen: boolean;
@@ -23,6 +24,7 @@ export default function RequestRSVPLinkModal({
   coupleName,
   themeConfig
 }: RequestRSVPLinkModalProps) {
+  const apiBaseUrl = getApiBaseUrl();
   const [contact, setContact] = useState('');
   const [contactType, setContactType] = useState<'phone' | 'email'>('phone');
   const [loading, setLoading] = useState(false);
@@ -66,7 +68,6 @@ export default function RequestRSVPLinkModal({
     }
 
     try {
-      const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || '';
       const response = await fetch(`${apiBaseUrl}/guests/request-rsvp-link`, {
         method: 'POST',
         headers: {

@@ -7,6 +7,8 @@ from pydantic import Field, field_validator
 from typing import List, Optional, Dict, Any
 from functools import lru_cache
 from enum import Enum
+import json
+from urllib.parse import urlparse
 
 
 class Environment(str, Enum):
@@ -43,6 +45,7 @@ class Settings(BaseSettings):
     jwt_algorithm: str = Field(default="HS256", alias="JWT_ALGORITHM")
     access_token_expire_minutes: int = Field(default=60, alias="ACCESS_TOKEN_EXPIRE_MINUTES")
     refresh_token_expire_days: int = Field(default=7, alias="REFRESH_TOKEN_EXPIRE_DAYS")
+    guest_access_session_minutes: int = Field(default=180, alias="GUEST_ACCESS_SESSION_MINUTES")
     # CORS
     cors_origins: List[str] = Field(default=[], alias="CORS_ORIGINS")  # Required - validated below
 
@@ -64,13 +67,14 @@ class Settings(BaseSettings):
         return v
     cors_credentials: bool = Field(default=True, alias="CORS_CREDENTIALS")
     cors_methods: List[str] = Field(
-        default=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+        default=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
         alias="CORS_METHODS"
     )
     cors_headers: List[str] = Field(
         default=["Authorization", "Content-Type", "Accept", "X-Requested-With", "Cache-Control", "Pragma"],
         alias="CORS_HEADERS"
     )
+    allowed_hosts: List[str] = Field(default=[], alias="ALLOWED_HOSTS")
     # Database
     mongo_uri: str = Field(default="mongodb://localhost:27017", alias="MONGO_URI")
     mongo_db: str = Field(default="wedding", alias="MONGO_DB")
@@ -89,9 +93,13 @@ class Settings(BaseSettings):
     rate_limit_period: int = Field(default=60, alias="RATE_LIMIT_PERIOD")
     rate_limit_auth_calls: int = Field(default=10, alias="RATE_LIMIT_AUTH_CALLS")
     rate_limit_auth_period: int = Field(default=60, alias="RATE_LIMIT_AUTH_PERIOD")
+    rate_limit_login_ip_calls: int = Field(default=30, alias="RATE_LIMIT_LOGIN_IP_CALLS")
+    rate_limit_login_principal_calls: int = Field(default=5, alias="RATE_LIMIT_LOGIN_PRINCIPAL_CALLS")
+    rate_limit_login_period: int = Field(default=60, alias="RATE_LIMIT_LOGIN_PERIOD")
     # Email Service (Resend)
     resend_api_key: Optional[str] = Field(default=None, alias="RESEND_API_KEY")
     resend_from_email: str = Field(default="noreply@thespecialwedding.com", alias="RESEND_FROM_EMAIL")
+    resend_billing_email: Optional[str] = Field(default=None, alias="RESEND_BILLING_EMAIL")
     resend_from_name: str = Field(default="The Special Wedding", alias="RESEND_FROM_NAME")
     # SMS Services
     twilio_enabled: bool = Field(default=False, alias="TWILIO_ENABLED")
@@ -126,6 +134,8 @@ class Settings(BaseSettings):
     audit_log_to_db: bool = Field(default=True, alias="AUDIT_LOG_TO_DB")
     audit_log_to_file: bool = Field(default=True, alias="AUDIT_LOG_TO_FILE")
     audit_log_file: str = Field(default="audit.log", alias="AUDIT_LOG_FILE")
+    security_log_to_file: bool = Field(default=True, alias="SECURITY_LOG_TO_FILE")
+    security_log_file: str = Field(default="logs/security_audit.log", alias="SECURITY_LOG_FILE")
     # Performance
     enable_compression: bool = Field(default=True, alias="ENABLE_COMPRESSION")
     enable_cache_headers: bool = Field(default=True, alias="ENABLE_CACHE_HEADERS")
@@ -134,6 +144,7 @@ class Settings(BaseSettings):
     # Monitoring
     enable_metrics: bool = Field(default=False, alias="ENABLE_METRICS")
     metrics_endpoint: str = Field(default="/metrics", alias="METRICS_ENDPOINT")
+    enable_api_docs: Optional[bool] = Field(default=None, alias="ENABLE_API_DOCS")
 
     # Feature Flags
     feature_ai_tools: bool = Field(default=True, alias="FEATURE_AI_TOOLS")
@@ -178,7 +189,33 @@ class Settings(BaseSettings):
     def parse_cors_origins(cls, v):
         """Parse CORS origins from comma-separated string"""
         if isinstance(v, str):
+            stripped = v.strip()
+            if stripped.startswith("["):
+                try:
+                    parsed = json.loads(stripped)
+                    if isinstance(parsed, list):
+                        return [str(origin).strip() for origin in parsed if str(origin).strip()]
+                except json.JSONDecodeError:
+                    pass
             return [origin.strip() for origin in v.split(",") if origin.strip()]
+        return v
+
+    @field_validator("allowed_hosts", mode="before")
+    @classmethod
+    def parse_allowed_hosts(cls, v):
+        """Parse explicit host allowlist from JSON or comma-separated values."""
+        if v in (None, ""):
+            return []
+        if isinstance(v, str):
+            stripped = v.strip()
+            if stripped.startswith("["):
+                try:
+                    parsed = json.loads(stripped)
+                    if isinstance(parsed, list):
+                        return [str(host).strip() for host in parsed if str(host).strip()]
+                except json.JSONDecodeError:
+                    pass
+            return [host.strip() for host in stripped.split(",") if host.strip()]
         return v
 
     @field_validator("environment", mode="before")
@@ -235,6 +272,58 @@ class Settings(BaseSettings):
     def is_testing(self) -> bool:
         """Check if running in testing mode"""
         return self.testing or self.environment == Environment.TESTING
+
+    @property
+    def api_docs_enabled(self) -> bool:
+        """Check if interactive API docs and schema should be exposed."""
+        if self.enable_api_docs is not None:
+            return self.enable_api_docs
+        return not self.is_production()
+
+    @property
+    def trusted_hosts(self) -> List[str]:
+        """
+        Return the Host-header allowlist for TrustedHostMiddleware.
+
+        Explicit ALLOWED_HOSTS entries win, but we also derive safe defaults
+        from the configured frontend/API URLs and CORS origins so production
+        deployments gain host validation without requiring duplicate config.
+        """
+        hosts: list[str] = []
+
+        def add_host(candidate: Optional[str]) -> None:
+            if not candidate:
+                return
+
+            value = str(candidate).strip()
+            if not value:
+                return
+
+            normalized: Optional[str]
+            if "://" in value:
+                normalized = urlparse(value).hostname
+            elif value.startswith("*.") or value == "*":
+                normalized = value
+            else:
+                normalized = value.split("/")[0].split(":")[0].strip()
+
+            if normalized and normalized not in hosts:
+                hosts.append(normalized)
+
+        for host in self.allowed_hosts:
+            add_host(host)
+
+        if hosts:
+            return hosts
+
+        for url in [self.frontend_url, self.api_base_url, *self.cors_origins]:
+            add_host(url)
+
+        if self.is_development() or self.is_testing():
+            for dev_host in ("localhost", "127.0.0.1", "testserver"):
+                add_host(dev_host)
+
+        return hosts
 
     def get_feature_flags(self) -> Dict[str, bool]:
         """Get all feature flags"""

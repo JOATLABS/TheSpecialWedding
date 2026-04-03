@@ -1,12 +1,13 @@
 from datetime import timedelta
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Response
 from fastapi.responses import JSONResponse
 from app.models.admin_user import AdminLoginModel
 from app.services.auth_service import AuthService
 from app.dependencies.auth_extended import get_current_user_extended, ExtendedAuthUser
-from app.utils.auth_utils import create_access_token
+from app.utils.auth_utils import create_access_token, set_auth_cookie, clear_auth_cookie
 from app.utils.serializers import serialize_mongo_doc
+from app.utils.response import dict_response
 
 router = APIRouter()
 auth_service = AuthService()
@@ -15,16 +16,21 @@ auth_service = AuthService()
 @router.options("/token", tags=["Auth"])
 def login_options():
     """Handle CORS preflight for login endpoint"""
-    return {"message": "OK"}
+    return dict_response(message="OK")
 
 
 @router.post("/token", tags=["Auth"])
-async def login_for_access_token(credentials: AdminLoginModel):
-    return await auth_service.login_and_get_token(credentials.email, credentials.password)
+async def login_for_access_token(credentials: AdminLoginModel, response: Response):
+    payload = await auth_service.login_and_get_token(credentials.email, credentials.password)
+    set_auth_cookie(response, "admin_token", payload["access_token"])
+    return payload
 
 
 @router.post("/token/refresh", tags=["Auth"])
-async def refresh_access_token(current_user: ExtendedAuthUser = Depends(get_current_user_extended)):
+async def refresh_access_token(
+    response: Response,
+    current_user: ExtendedAuthUser = Depends(get_current_user_extended),
+):
     """Issue a fresh JWT for an already-authenticated user.
 
     The caller must present a valid (non-expired) Bearer token. A new token is
@@ -35,7 +41,14 @@ async def refresh_access_token(current_user: ExtendedAuthUser = Depends(get_curr
     token_data = {"sub": current_user.email, "role": current_user.role}
     access_token_expires = timedelta(minutes=60)
     new_token = create_access_token(data=token_data, expires_delta=access_token_expires)
+    set_auth_cookie(response, "admin_token", new_token)
     return {"access_token": new_token, "token_type": "bearer"}
+
+
+@router.post("/logout", tags=["Auth"])
+async def logout_admin(response: Response):
+    clear_auth_cookie(response, "admin_token")
+    return {"success": True}
 
 
 @router.get("/profile", tags=["Auth"])
@@ -44,11 +57,13 @@ async def get_current_user_profile(current_user: ExtendedAuthUser = Depends(get_
     # Serialize user_data first to handle all datetime and ObjectId fields recursively
     serialized_user_data = serialize_mongo_doc(current_user.user_data) or {}
     profile_data = {
+        "id": serialized_user_data.get("_id", ""),
         "email": current_user.email,
         "role": current_user.role,
         "is_root_admin": current_user.is_root_admin,
         "is_wedding_planner": current_user.is_wedding_planner,
         "is_vendor": current_user.is_vendor,
+        "is_team_member": current_user.is_team_member,
         # Expose profile fields at top level for easier frontend access
         "first_name": serialized_user_data.get("first_name"),
         "last_name": serialized_user_data.get("last_name"),
@@ -59,8 +74,18 @@ async def get_current_user_profile(current_user: ExtendedAuthUser = Depends(get_
         "onboarding_completed": serialized_user_data.get("onboarding_completed", False),
         "onboarding_completed_at": serialized_user_data.get("onboarding_completed_at"),
         "onboarding_steps_completed": serialized_user_data.get("onboarding_steps_completed", []),
+        # Subscription fields for billing and access control
+        "subscription_status": serialized_user_data.get("subscription_status"),
+        "trial_end_date": serialized_user_data.get("trial_end_date"),
+        "_subscription_blocked": serialized_user_data.get("_subscription_blocked", False),
         "user_data": serialized_user_data
     }
+    # Add team member context if applicable
+    if current_user.is_team_member:
+        profile_data["team_permissions"] = current_user.team_permissions or {}
+        profile_data["team_wedding_access"] = current_user.team_wedding_access
+        profile_data["team_assigned_wedding_ids"] = current_user.team_assigned_wedding_ids
+        profile_data["parent_planner_id"] = current_user.parent_planner_id
     # Add cache-busting headers to prevent browser caching of user profile data
     headers = {
         "Cache-Control": "no-cache, no-store, must-revalidate, private",

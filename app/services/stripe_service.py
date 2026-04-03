@@ -4,10 +4,11 @@ import stripe
 from stripe import StripeError, InvalidRequestError, SignatureVerificationError
 from fastapi import HTTPException
 from typing import Optional, Dict, Any
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from app.core.settings import settings
 from app.core.database import mongo
 from bson import ObjectId
+from pymongo.errors import DuplicateKeyError
 import logging
 
 from app.models.subscription import SubscriptionStatus
@@ -52,6 +53,13 @@ class StripeService:
                 detail="Stripe configuration error: Missing secret key"
             )
 
+    def _get_billing_sender(self) -> Dict[str, Optional[str]]:
+        """Use the dedicated billing sender when configured, otherwise fall back to the default mail sender."""
+        return {
+            "from_email": settings.resend_billing_email or settings.resend_from_email,
+            "from_name": settings.resend_from_name,
+        }
+
     # ==================== CUSTOMER MANAGEMENT ====================
 
     async def get_or_create_customer(self, user_id: str, email: str, name: Optional[str] = None) -> str:
@@ -88,20 +96,36 @@ class StripeService:
                 metadata={"user_id": user_id}
             )
 
-            # Save customer ID to database
-            await self.stripe_customers_collection.update_one(
-                {"user_id": user_id},
-                {
-                    "$set": {
-                        "user_id": user_id,
-                        "stripe_customer_id": customer.id,
-                        "email": email,
-                        "created_at": datetime.now(timezone.utc),
-                        "updated_at": datetime.now(timezone.utc)
-                    }
-                },
-                upsert=True
-            )
+            # Save customer ID to database — rollback Stripe customer on failure
+            try:
+                await self.stripe_customers_collection.update_one(
+                    {"user_id": user_id},
+                    {
+                        "$set": {
+                            "user_id": user_id,
+                            "stripe_customer_id": customer.id,
+                            "email": email,
+                            "created_at": datetime.now(timezone.utc),
+                            "updated_at": datetime.now(timezone.utc)
+                        }
+                    },
+                    upsert=True
+                )
+            except Exception as db_err:
+                # MongoDB write failed — delete the orphaned Stripe customer
+                logger.error(f"MongoDB save failed after Stripe customer creation, rolling back: {db_err}")
+                try:
+                    stripe.Customer.delete(customer.id)
+                    logger.info(f"Rolled back orphaned Stripe customer {customer.id}")
+                except Exception as rollback_err:
+                    logger.critical(
+                        f"ORPHANED Stripe customer {customer.id} for user {user_id} — "
+                        f"manual cleanup required. Rollback error: {rollback_err}"
+                    )
+                raise HTTPException(
+                    status_code=500,
+                    detail="Failed to save payment profile. Please try again."
+                )
 
             logger.info(f"Created Stripe customer {customer.id} for user {user_id}")
             return customer.id
@@ -109,6 +133,8 @@ class StripeService:
         except StripeError as e:
             logger.error(f"Stripe error creating customer: {str(e)}")
             raise HTTPException(status_code=500, detail=f"Payment service error: {str(e)}")
+        except HTTPException:
+            raise  # Re-raise HTTPExceptions from the MongoDB rollback block
         except Exception as e:
             logger.error(f"Error creating Stripe customer: {str(e)}")
             raise HTTPException(status_code=500, detail=f"Error creating customer: {str(e)}")
@@ -358,7 +384,7 @@ class StripeService:
         billing_interval: str = "monthly",
         success_url: Optional[str] = None,
         cancel_url: Optional[str] = None,
-        trial_days: int = 0
+        trial_days: Optional[int] = None
     ) -> Dict[str, Any]:
         """
         Create a Stripe Checkout Session for subscription signup
@@ -395,9 +421,13 @@ class StripeService:
 
             # Respect plan-level trial configuration when available
             plan_trial_days = plan.get("trial_days")
-            if isinstance(plan_trial_days, int) and plan_trial_days >= 0:
-                trial_days = plan_trial_days
-            trial_days = max(trial_days, 0)
+            if trial_days is None:
+                if isinstance(plan_trial_days, int) and plan_trial_days >= 0:
+                    trial_days = plan_trial_days
+                else:
+                    trial_days = 0
+            else:
+                trial_days = max(trial_days, 0)
 
             # Get or create Stripe customer
             customer_id = await self.get_or_create_customer(
@@ -469,6 +499,11 @@ class StripeService:
                 success_url=success_url,
                 cancel_url=cancel_url,
                 subscription_data=subscription_data,  # type: ignore
+                metadata={
+                    "user_id": user_id,
+                    "plan_id": plan_id,
+                    "billing_interval": billing_interval,
+                },
                 allow_promotion_codes=True,
                 billing_address_collection="auto",
                 payment_method_collection="always",
@@ -478,20 +513,57 @@ class StripeService:
                 }
             )
 
-            # Save session reference with billing interval and customer for consistency
-            await self.subscriptions_collection.update_one(
-                {"user_id": user_id},
+            # Save session reference — guard against concurrent checkouts.
+            # Only overwrite if no unexpired checkout session exists (Stripe
+            # sessions expire after 24 h, so we use a 30-min active window to
+            # prevent rapid duplicate creation while still allowing retries).
+            active_window = datetime.now(timezone.utc) - timedelta(minutes=30)
+
+            result = await self.subscriptions_collection.find_one_and_update(
+                {
+                    "user_id": user_id,
+                    "$or": [
+                        {"stripe_checkout_session_id": {"$exists": False}},
+                        {"stripe_checkout_created_at": {"$exists": False}},
+                        {"stripe_checkout_created_at": {"$lt": active_window}},
+                    ]
+                },
                 {
                     "$set": {
+                        "user_id": user_id,
                         "stripe_checkout_session_id": checkout_session.id,
                         "stripe_checkout_created_at": datetime.now(timezone.utc),
                         "stripe_customer_id": customer_id,
                         "billing_interval": billing_interval,
                         "plan_id": plan_id,
+                        "status": "pending_checkout",
+                    },
+                    "$setOnInsert": {
+                        "created_at": datetime.now(timezone.utc),
+                        "user_email": user["email"],
+                        "start_date": datetime.now(timezone.utc),
+                        "created_by": "system:public_signup",
                     }
                 },
-                upsert=True
+                upsert=True,
+                return_document=True,
             )
+
+            # If the stored session_id differs, a concurrent request won the race
+            if result and result.get("stripe_checkout_session_id") != checkout_session.id:
+                logger.warning(
+                    f"Concurrent checkout detected for user {user_id}. "
+                    f"Active session: {result.get('stripe_checkout_session_id')}"
+                )
+                # Expire the just-created Stripe session to avoid dangling sessions
+                try:
+                    stripe.checkout.Session.expire(checkout_session.id)
+                except Exception:
+                    pass  # best-effort cleanup
+                raise HTTPException(
+                    status_code=409,
+                    detail="A checkout session is already in progress. Please complete or wait for it to expire before trying again."
+                )
 
             logger.info(f"Created checkout session {checkout_session.id} for user {user_id}")
 
@@ -557,8 +629,51 @@ class StripeService:
         if not plan_id:
             plan_id = subscription.get("metadata", {}).get("plan_id")
 
+        # When a plan is changed via Stripe Customer Portal, the metadata
+        # still holds the original plan_id. Resolve the ACTUAL plan from
+        # the current Stripe price on the subscription items.
+        try:
+            items_data = subscription.get("items", {})
+            items_list = items_data.get("data", []) if isinstance(items_data, dict) else (items_data.data if hasattr(items_data, "data") else [])
+            if items_list:
+                first_item = items_list[0] if isinstance(items_list[0], dict) else (items_list[0].to_dict() if hasattr(items_list[0], "to_dict") else {})
+                current_price_id = first_item.get("price", {}).get("id") if isinstance(first_item.get("price"), dict) else first_item.get("price")
+                if current_price_id:
+                    # Look up which platform plan owns this Stripe price
+                    matched_plan = await self.plans_collection.find_one({
+                        "$or": [
+                            {"stripe_price_id_monthly": current_price_id},
+                            {"stripe_price_id_yearly": current_price_id},
+                        ]
+                    })
+                    if matched_plan:
+                        resolved_plan_id = matched_plan["_id"]
+                        if resolved_plan_id != plan_id:
+                            logger.info(f"Plan change detected via Stripe price: {plan_id} → {resolved_plan_id} (price: {current_price_id})")
+                            plan_id = resolved_plan_id
+        except Exception as e:
+            logger.warning(f"Could not resolve plan from Stripe price: {e}")
+
         if not user_id:
             user_id = subscription.get("metadata", {}).get("user_id")
+
+        # Fallback: if user_id still missing (e.g. Portal-initiated changes
+        # where metadata may be empty), look it up from existing subscription
+        # or stripe_customers collection so the users collection stays in sync.
+        if not user_id and stripe_subscription_id:
+            existing_sub = await self.subscriptions_collection.find_one(
+                {"stripe_subscription_id": stripe_subscription_id}, {"user_id": 1}
+            )
+            if existing_sub and existing_sub.get("user_id"):
+                user_id = existing_sub["user_id"]
+                logger.info(f"Resolved user_id from existing subscription: {user_id}")
+        if not user_id and customer_id:
+            cust_record = await mongo.db["stripe_customers"].find_one(
+                {"stripe_customer_id": customer_id}, {"user_id": 1}
+            )
+            if cust_record and cust_record.get("user_id"):
+                user_id = cust_record["user_id"]
+                logger.info(f"Resolved user_id from stripe_customers: {user_id}")
 
         stripe_subscription_id = subscription.get("id")
         stripe_status = subscription.get("status")
@@ -566,8 +681,31 @@ class StripeService:
 
         trial_end = self._parse_timestamp(subscription.get("trial_end"))
         trial_start = self._parse_timestamp(subscription.get("trial_start"))
-        current_period_start = self._parse_timestamp(subscription.get("current_period_start")) or now
-        current_period_end = self._parse_timestamp(subscription.get("current_period_end")) or now
+
+        # Stripe API v13+: current_period_start/end moved to subscription items.
+        # Try top-level first (legacy/older API), then fall back to first item.
+        current_period_start = self._parse_timestamp(subscription.get("current_period_start"))
+        current_period_end = self._parse_timestamp(subscription.get("current_period_end"))
+
+        if not current_period_start or not current_period_end:
+            items_data = subscription.get("items", {})
+            if isinstance(items_data, dict):
+                items_list = items_data.get("data", [])
+            elif hasattr(items_data, "data"):
+                items_list = items_data.data or []
+            else:
+                items_list = []
+
+            if items_list:
+                first_item = items_list[0] if isinstance(items_list[0], dict) else items_list[0].to_dict() if hasattr(items_list[0], 'to_dict') else {}
+                current_period_start = current_period_start or self._parse_timestamp(first_item.get("current_period_start"))
+                current_period_end = current_period_end or self._parse_timestamp(first_item.get("current_period_end"))
+
+        # Final fallback: use start_date or now
+        if not current_period_start:
+            current_period_start = self._parse_timestamp(subscription.get("start_date")) or now
+        if not current_period_end:
+            current_period_end = now
 
         subscription_updates: Dict[str, Any] = {
             "stripe_subscription_id": stripe_subscription_id,
@@ -587,31 +725,69 @@ class StripeService:
         if extra_updates:
             subscription_updates.update(extra_updates)
 
+        # Build query to find the existing subscription record.
+        # Priority: match by stripe_subscription_id first (authoritative).
+        # If no stripe_subscription_id, or no matching record exists yet,
+        # fall back to user_id so we update the record created at checkout
+        # initiation (which won't have a stripe_subscription_id yet).
         query: Dict[str, Any] = {}
-        if stripe_subscription_id:
+        if stripe_subscription_id and user_id:
+            # Try stripe_subscription_id first; if no doc exists, fall back to user_id
+            existing = await self.subscriptions_collection.find_one(
+                {"stripe_subscription_id": stripe_subscription_id}
+            )
+            if existing:
+                query["stripe_subscription_id"] = stripe_subscription_id
+            else:
+                # Fall back: find by user_id (pre-existing record from checkout init)
+                query["user_id"] = user_id
+        elif stripe_subscription_id:
             query["stripe_subscription_id"] = stripe_subscription_id
-        if user_id:
-            query.setdefault("user_id", user_id)
+        elif user_id:
+            query["user_id"] = user_id
 
         if not query:
             raise HTTPException(status_code=500, detail="Unable to associate Stripe subscription with local record")
 
         update_document: Dict[str, Any] = {"$set": subscription_updates}
+
+        # $setOnInsert must NOT overlap with $set — MongoDB rejects duplicate
+        # field paths across update operators.  Only include fields that are
+        # absent from subscription_updates.
         set_on_insert: Dict[str, Any] = {}
 
-        if user_id:
+        if user_id and "user_id" not in subscription_updates:
             set_on_insert["user_id"] = user_id
-        if plan_id:
+        if plan_id and "plan_id" not in subscription_updates:
             set_on_insert["plan_id"] = plan_id
-        if stripe_subscription_id:
+        if stripe_subscription_id and "stripe_subscription_id" not in subscription_updates:
             set_on_insert["stripe_subscription_id"] = stripe_subscription_id
+
+        # Ensure required schema fields are populated on first insert
+        if user_id and "user_email" not in subscription_updates:
+            user_doc = await self.users_collection.find_one(
+                {"_id": ObjectId(user_id)}, {"email": 1}
+            )
+            if user_doc:
+                set_on_insert["user_email"] = user_doc["email"]
+        if "start_date" not in subscription_updates:
+            set_on_insert["start_date"] = now
+        if "created_by" not in subscription_updates:
+            set_on_insert["created_by"] = "system:stripe_webhook"
 
         if set_on_insert:
             update_document["$setOnInsert"] = set_on_insert
 
-        await self.subscriptions_collection.update_one(query, update_document, upsert=True)
-
+        # Build user update (if applicable) before starting the transaction
+        user_update_doc = None
         if user_id:
+            user_doc = await self.users_collection.find_one(
+                {"_id": ObjectId(user_id)},
+                {"registration_source": 1, "email_verified": 1}
+            )
+            is_public_signup = user_doc.get("registration_source") == "public_signup" if user_doc else False
+            is_email_verified = bool(user_doc.get("email_verified")) if user_doc else False
+
             user_updates: Dict[str, Any] = {
                 "subscription_status": internal_status,
                 "updated_at": now,
@@ -634,22 +810,62 @@ class StripeService:
 
             unset_fields: Dict[str, Any] = {}
 
-            # Auto-activate and verify when a paid/trial subscription is established
+            # Stripe can establish billing state, but it should not act as email
+            # verification for public signups. Keep those accounts blocked until
+            # the verification link is used, while still removing the pending
+            # signup TTL so a paid account is not reaped.
             if internal_status in (SubscriptionStatus.ACTIVE.value, SubscriptionStatus.TRIAL.value):
-                user_updates["is_active"] = True
-                user_updates["email_verified"] = True
-                unset_fields["email_verification_token"] = ""
-                unset_fields["verification_token_expires"] = ""
+                if not is_public_signup or is_email_verified:
+                    user_updates["is_active"] = True
                 unset_fields["pending_expires_at"] = ""
 
-            update_doc: Dict[str, Any] = {"$set": user_updates}
+            user_update_doc = {"$set": user_updates}
             if unset_fields:
-                update_doc["$unset"] = unset_fields
+                user_update_doc["$unset"] = unset_fields
 
-            await self.users_collection.update_one(
-                {"_id": ObjectId(user_id)},
-                update_doc
-            )
+        # Execute both writes in a single transaction so subscriptions and
+        # users collections stay consistent.  Falls back to sequential writes
+        # if the MongoDB deployment doesn't support transactions (standalone).
+        try:
+            async with await mongo.client.start_session() as session:
+                async with session.start_transaction():
+                    await self.subscriptions_collection.update_one(
+                        query, update_document, upsert=True, session=session
+                    )
+                    if user_id and user_update_doc:
+                        await self.users_collection.update_one(
+                            {"_id": ObjectId(user_id)},
+                            user_update_doc,
+                            session=session,
+                        )
+        except Exception as txn_err:
+            # Standalone MongoDB (no replica set) doesn't support transactions.
+            # Fall back to sequential writes with a warning.
+            if "transaction" in str(txn_err).lower() or "replica" in str(txn_err).lower() or "topology" in str(txn_err).lower():
+                logger.warning(
+                    "MongoDB transactions not supported (standalone mode). "
+                    "Falling back to sequential writes for subscription sync."
+                )
+                sub_result = await self.subscriptions_collection.update_one(
+                    query, update_document, upsert=True
+                )
+                logger.info(
+                    f"Subscription upsert (fallback): query={query}, "
+                    f"matched={sub_result.matched_count}, modified={sub_result.modified_count}, "
+                    f"upserted_id={sub_result.upserted_id}"
+                )
+                if user_id and user_update_doc:
+                    user_result = await self.users_collection.update_one(
+                        {"_id": ObjectId(user_id)},
+                        user_update_doc,
+                    )
+                    logger.info(
+                        f"User update (fallback): user_id={user_id}, "
+                        f"matched={user_result.matched_count}, modified={user_result.modified_count}"
+                    )
+            else:
+                logger.error(f"Unexpected error in subscription sync transaction: {str(txn_err)}")
+                raise
 
         return {
             "status": internal_status,
@@ -840,6 +1056,16 @@ class StripeService:
                             "subscription": subscription["stripe_subscription_id"]
                         }
                     }
+            elif flow_type == "subscription_cancel":
+                # Direct to subscription cancellation flow
+                subscription = await self.subscriptions_collection.find_one({"user_id": user_id})
+                if subscription and subscription.get("stripe_subscription_id"):
+                    portal_params["flow_data"] = {
+                        "type": "subscription_cancel",
+                        "subscription_cancel": {
+                            "subscription": subscription["stripe_subscription_id"]
+                        }
+                    }
 
             # Create portal session
             portal_session = stripe.billing_portal.Session.create(**portal_params)
@@ -887,58 +1113,127 @@ class StripeService:
             event_id = event.get("id", "")
             data = event["data"]["object"]
 
-            # Idempotency check: skip already-processed events (S7)
+            # ── Idempotency check with status tracking ──────────────────
+            # Best practice: track event processing lifecycle so failed events
+            # can be debugged and retried.  Only skip events already marked
+            # "processed"; events stuck in "processing" (previous crash) are
+            # allowed to re-enter so Stripe retries succeed.
+            # Ref: https://dev.to/aniefon_umanah_ac5f21311c/building-reliable-stripe-subscriptions-in-nestjs-webhook-idempotency-and-optimistic-locking-3o91
             if event_id:
                 existing = await mongo.db["stripe_webhook_events"].find_one({"event_id": event_id})
-                if existing:
+                if existing and existing.get("status") == "processed":
                     logger.info(f"Skipping duplicate webhook event: {event_id} ({event_type})")
                     return {"status": "already_processed", "event_id": event_id, "event_type": event_type}
 
-                # Record event as being processed
-                await mongo.db["stripe_webhook_events"].insert_one({
-                    "event_id": event_id,
-                    "event_type": event_type,
-                    "processed_at": datetime.now(timezone.utc)
-                })
+                # Legacy events (pre-status-tracking) have no "status" field.
+                # Treat them as already processed to maintain backward compat.
+                if existing and "status" not in existing:
+                    logger.info(f"Skipping legacy webhook event (no status field): {event_id} ({event_type})")
+                    return {"status": "already_processed", "event_id": event_id, "event_type": event_type}
+
+                if not existing:
+                    # Record event as being processed (with status lifecycle).
+                    # Use try/except for DuplicateKeyError to handle the race
+                    # condition where two identical webhooks arrive simultaneously
+                    # and both pass the find_one check above.
+                    try:
+                        await mongo.db["stripe_webhook_events"].insert_one({
+                            "event_id": event_id,
+                            "event_type": event_type,
+                            "status": "processing",
+                            "error_message": None,
+                            "created_at": datetime.now(timezone.utc),
+                            "processed_at": None,
+                        })
+                    except DuplicateKeyError:
+                        # Another concurrent request already claimed this event
+                        logger.info(f"Concurrent duplicate insert for event {event_id}, skipping")
+                        return {"status": "already_processed", "event_id": event_id, "event_type": event_type}
+                else:
+                    # Re-processing a previously failed/stuck event
+                    await mongo.db["stripe_webhook_events"].update_one(
+                        {"event_id": event_id},
+                        {"$set": {"status": "processing", "error_message": None}},
+                    )
 
             logger.info(f"Processing webhook event: {event_type}")
 
-            # Handle different event types
-            if event_type == "checkout.session.completed":
-                return await self._handle_checkout_completed(data)
-            elif event_type == "checkout.session.expired":
-                return await self._handle_checkout_expired(data)
-            elif event_type == "customer.subscription.created":
-                return await self._handle_subscription_created(data)
-            elif event_type == "customer.subscription.updated":
-                return await self._handle_subscription_updated(data)
-            elif event_type == "customer.subscription.deleted":
-                return await self._handle_subscription_deleted(data)
-            elif event_type == "customer.subscription.trial_will_end":
-                return await self._handle_subscription_trial_will_end(data)
-            elif event_type == "customer.updated":
-                return await self._handle_customer_updated(data)
-            elif event_type == "invoice.paid":
-                return await self._handle_invoice_paid(data)
-            elif event_type == "invoice.payment_failed":
-                return await self._handle_invoice_payment_failed(data)
-            elif event_type == "payment_intent.succeeded":
-                return await self._handle_payment_intent_succeeded(data)
-            elif event_type == "payment_intent.payment_failed":
-                return await self._handle_payment_intent_failed(data)
-            elif event_type == "account.updated":
-                return await self._handle_account_updated(data)
-            elif event_type in ("product.updated", "product.created"):
-                return await self._handle_product_updated(data)
-            elif event_type in ("price.created", "price.updated"):
-                return await self._handle_price_changed(data)
-            elif event_type in ("plan.created", "plan.updated"):
-                # Legacy Stripe plan events map to price/product - acknowledge them
-                logger.info(f"Acknowledged legacy plan event: {event_type} for {data.get('id')}")
-                return {"status": "acknowledged", "event_type": event_type}
-            else:
-                logger.info(f"Unhandled event type: {event_type}")
-                return {"status": "ignored", "event_type": event_type}
+            # ── Dispatch to handler with status lifecycle tracking ────
+            # On success → mark "processed"; on failure → mark "failed"
+            # with error message for debugging / manual retry.
+            result = None
+            try:
+                # Handle different event types
+                if event_type == "checkout.session.completed":
+                    result = await self._handle_checkout_completed(data)
+                elif event_type == "checkout.session.expired":
+                    result = await self._handle_checkout_expired(data)
+                elif event_type == "customer.subscription.created":
+                    result = await self._handle_subscription_created(data)
+                elif event_type == "customer.subscription.updated":
+                    result = await self._handle_subscription_updated(data)
+                elif event_type == "customer.subscription.deleted":
+                    result = await self._handle_subscription_deleted(data)
+                elif event_type == "customer.subscription.trial_will_end":
+                    result = await self._handle_subscription_trial_will_end(data)
+                elif event_type == "customer.updated":
+                    result = await self._handle_customer_updated(data)
+                elif event_type == "invoice.paid":
+                    result = await self._handle_invoice_paid(data)
+                elif event_type == "invoice.payment_failed":
+                    result = await self._handle_invoice_payment_failed(data)
+                elif event_type == "invoice.finalized":
+                    result = await self._handle_invoice_finalized(data)
+                elif event_type == "payment_intent.succeeded":
+                    result = await self._handle_payment_intent_succeeded(data)
+                elif event_type == "payment_intent.payment_failed":
+                    result = await self._handle_payment_intent_failed(data)
+                elif event_type == "account.updated":
+                    result = await self._handle_account_updated(data)
+                elif event_type in ("product.updated", "product.created"):
+                    result = await self._handle_product_updated(data)
+                elif event_type in ("price.created", "price.updated"):
+                    result = await self._handle_price_changed(data)
+                elif event_type in ("plan.created", "plan.updated"):
+                    # Legacy Stripe plan events map to price/product - acknowledge them
+                    logger.info(f"Acknowledged legacy plan event: {event_type} for {data.get('id')}")
+                    result = {"status": "acknowledged", "event_type": event_type}
+                else:
+                    logger.info(f"Unhandled event type: {event_type}")
+                    result = {"status": "ignored", "event_type": event_type}
+
+            except Exception as handler_err:
+                # ── Mark event as failed with error detail ────────────
+                if event_id:
+                    try:
+                        await mongo.db["stripe_webhook_events"].update_one(
+                            {"event_id": event_id},
+                            {"$set": {
+                                "status": "failed",
+                                "error_message": str(handler_err)[:2000],
+                            }},
+                        )
+                    except Exception as update_err:
+                        logger.error(f"Failed to mark event {event_id} as failed: {update_err}")
+                raise
+
+            # ── Mark event as successfully processed ──────────────
+            # Placed OUTSIDE the handler try/except so a failure here
+            # does not get conflated with a handler failure.
+            if event_id:
+                try:
+                    await mongo.db["stripe_webhook_events"].update_one(
+                        {"event_id": event_id},
+                        {"$set": {
+                            "status": "processed",
+                            "processed_at": datetime.now(timezone.utc),
+                        }},
+                    )
+                except Exception as update_err:
+                    # Handler succeeded — don't crash on status bookkeeping failure
+                    logger.error(f"Failed to mark event {event_id} as processed: {update_err}")
+
+            return result
 
         except SignatureVerificationError as e:
             logger.error(f"Invalid webhook signature: {str(e)}")
@@ -955,9 +1250,31 @@ class StripeService:
         plan_id = session.get("metadata", {}).get("plan_id")
         subscription_id = session.get("subscription")
 
+        # Fallback: if checkout session metadata is empty, retrieve from
+        # the Stripe subscription metadata (which is always populated).
+        if (not user_id or not plan_id) and subscription_id:
+            try:
+                sub_obj = stripe.Subscription.retrieve(subscription_id)
+                sub_meta = sub_obj.get("metadata", {}) if isinstance(sub_obj, dict) else dict(getattr(sub_obj, "metadata", {}))
+                user_id = user_id or sub_meta.get("user_id")
+                plan_id = plan_id or sub_meta.get("plan_id")
+                logger.info(f"Retrieved metadata from subscription: user_id={user_id}, plan_id={plan_id}")
+            except Exception as e:
+                logger.error(f"Failed to retrieve subscription metadata fallback: {str(e)}")
+
         if not user_id or not plan_id:
-            logger.error("Missing metadata in checkout session")
+            logger.error("Missing metadata in checkout session and subscription")
             return {"status": "error", "message": "Missing user_id or plan_id metadata in checkout session"}
+
+        # Verify user still exists before syncing subscription
+        try:
+            user_exists = await self.users_collection.find_one({"_id": ObjectId(user_id)}, {"_id": 1})
+            if not user_exists:
+                logger.error(f"User {user_id} not found during checkout completion — may have been deleted")
+                return {"status": "error", "message": f"User {user_id} not found"}
+        except Exception as e:
+            logger.error(f"Error verifying user {user_id}: {str(e)}")
+            return {"status": "error", "message": f"Error verifying user: {str(e)}"}
 
         subscription: Optional[Dict[str, Any]] = None
 
@@ -1019,6 +1336,16 @@ class StripeService:
                 logger.info(f"Initialized usage tracking for user {user_id}")
         except Exception as e:
             logger.error(f"Failed to initialize usage tracking for user {user_id}: {str(e)}")
+
+        try:
+            await self._send_checkout_completion_notification(
+                user_id=user_id,
+                plan_id=plan_id,
+                session=session,
+                subscription=subscription,
+            )
+        except Exception as e:
+            logger.error(f"Failed to send checkout completion notification for user {user_id}: {str(e)}")
 
         logger.info(
             "Checkout completed for user %s, subscription %s (status: %s)",
@@ -1240,6 +1567,11 @@ class StripeService:
 
     async def _handle_invoice_paid(self, invoice: Dict[str, Any]) -> Dict[str, Any]:
         """Handle successful invoice payment"""
+        # Check if this is an ad billing invoice
+        metadata = invoice.get("metadata", {})
+        if metadata.get("platform") == "thespecialwedding_ads":
+            return await self._handle_ad_invoice_paid(invoice)
+
         subscription_id = invoice.get("subscription")
         if not subscription_id:
             return {"status": "ignored", "reason": "no subscription on invoice"}
@@ -1272,6 +1604,14 @@ class StripeService:
 
         logger.info(f"Invoice paid for subscription {subscription_id}")
 
+        billing_reason = invoice.get("billing_reason")
+        if billing_reason == "subscription_create":
+            logger.info(
+                "Skipping invoice.paid payment notification for initial subscription invoice %s; checkout.session.completed owns the activation message",
+                invoice.get("id"),
+            )
+            return {"status": "success", "subscription_id": subscription_id, "notification_skipped": True}
+
         # Send payment success notification (best-effort, don't fail webhook)
         try:
             await self._send_payment_notification(
@@ -1284,8 +1624,59 @@ class StripeService:
 
         return {"status": "success", "subscription_id": subscription_id}
 
+    async def _handle_ad_invoice_paid(self, invoice: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Handle successful payment of an ad billing invoice.
+
+        Updates vendor_ad_billing record to 'paid' and marks all associated
+        ad_lead_charges as 'paid'. Called when Stripe collects payment for
+        monthly CPL charges.
+        """
+        invoice_id = invoice.get("id", "")
+        metadata = invoice.get("metadata", {})
+        vendor_id = metadata.get("vendor_id", "")
+        campaign_id = metadata.get("campaign_id", "")
+        now = datetime.now(timezone.utc)
+
+        # Update the billing period record
+        update_result = await mongo.db["vendor_ad_billing"].update_many(
+            {"stripe_invoice_id": invoice_id},
+            {"$set": {
+                "payment_status": "paid",
+                "paid_at": now,
+                "updated_at": now,
+            }}
+        )
+
+        # Also update all lead charges associated with this invoice's line items
+        # Mark pending charges for this vendor/campaign in the billing period as paid
+        if vendor_id:
+            await mongo.db["ad_lead_charges"].update_many(
+                {
+                    "vendor_id": vendor_id,
+                    "charge_status": "charged",
+                    "stripe_invoice_item_id": {"$ne": None},
+                },
+                {"$set": {
+                    "charge_status": "paid",
+                    "updated_at": now,
+                }}
+            )
+
+        logger.info(
+            f"Ad invoice paid: {invoice_id} for vendor {vendor_id} "
+            f"campaign {campaign_id} — {update_result.modified_count} billing records updated"
+        )
+
+        return {"status": "success", "invoice_id": invoice_id, "platform": "ads"}
+
     async def _handle_invoice_payment_failed(self, invoice: Dict[str, Any]) -> Dict[str, Any]:
         """Handle failed invoice payment"""
+        # Check if this is an ad billing invoice
+        metadata = invoice.get("metadata", {})
+        if metadata.get("platform") == "thespecialwedding_ads":
+            return await self._handle_ad_invoice_payment_failed(invoice)
+
         subscription_id = invoice.get("subscription")
         if not subscription_id:
             return {"status": "ignored", "reason": "no subscription on invoice"}
@@ -1330,6 +1721,89 @@ class StripeService:
 
         return {"status": "success", "subscription_id": subscription_id}
 
+    async def _handle_ad_invoice_payment_failed(self, invoice: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Handle failed payment of an ad billing invoice.
+
+        Updates vendor_ad_billing record to 'payment_failed'. Campaigns remain
+        active (Stripe will retry) but we flag the billing record. After 3 failed
+        attempts Stripe will mark the invoice as uncollectible automatically.
+        """
+        invoice_id = invoice.get("id", "")
+        metadata = invoice.get("metadata", {})
+        vendor_id = metadata.get("vendor_id", "")
+        campaign_id = metadata.get("campaign_id", "")
+        now = datetime.now(timezone.utc)
+
+        # Update billing period record
+        update_result = await mongo.db["vendor_ad_billing"].update_many(
+            {"stripe_invoice_id": invoice_id},
+            {"$set": {
+                "payment_status": "payment_failed",
+                "last_payment_attempt": now,
+                "updated_at": now,
+            }}
+        )
+
+        logger.warning(
+            f"Ad invoice payment failed: {invoice_id} for vendor {vendor_id} "
+            f"campaign {campaign_id} — {update_result.modified_count} billing records updated"
+        )
+
+        # Create admin notification for failed ad payment
+        try:
+            from app.services.config_validator import _create_root_admin_notification
+            await _create_root_admin_notification(
+                title="Ad Billing Payment Failed",
+                message=(
+                    f"Stripe invoice {invoice_id} payment failed for vendor {vendor_id}. "
+                    f"Campaign: {campaign_id}. Stripe will retry automatically."
+                ),
+                priority="high"
+            )
+        except Exception as e:
+            logger.error(f"Failed to notify admin of ad payment failure: {e}")
+
+        return {"status": "success", "invoice_id": invoice_id, "platform": "ads"}
+
+    async def _handle_invoice_finalized(self, invoice: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Handle invoice.finalized event.
+
+        For ad billing invoices: updates vendor_ad_billing with the Stripe invoice ID
+        and sets status to 'invoiced'. For subscription invoices: acknowledged only.
+        """
+        metadata = invoice.get("metadata", {})
+        invoice_id = invoice.get("id", "")
+
+        if metadata.get("platform") == "thespecialwedding_ads":
+            vendor_id = metadata.get("vendor_id", "")
+            campaign_id = metadata.get("campaign_id", "")
+            now = datetime.now(timezone.utc)
+
+            # Update billing records that match this vendor/campaign and are still pending
+            update_result = await mongo.db["vendor_ad_billing"].update_many(
+                {
+                    "stripe_invoice_id": invoice_id,
+                    "payment_status": {"$in": ["pending", "invoiced"]},
+                },
+                {"$set": {
+                    "payment_status": "invoiced",
+                    "stripe_invoice_id": invoice_id,
+                    "updated_at": now,
+                }}
+            )
+
+            logger.info(
+                f"Ad invoice finalized: {invoice_id} for vendor {vendor_id} "
+                f"— {update_result.modified_count} billing records updated"
+            )
+            return {"status": "success", "invoice_id": invoice_id, "platform": "ads"}
+
+        # Non-ad invoices: acknowledge
+        logger.info(f"Invoice finalized: {invoice_id}")
+        return {"status": "acknowledged", "event_type": "invoice.finalized"}
+
     async def _handle_payment_intent_succeeded(self, payment_intent: Dict[str, Any]) -> Dict[str, Any]:
         """
         Handle successful payment intent - updates payment_requests collection
@@ -1344,16 +1818,17 @@ class StripeService:
         if payment_intent.get("charges", {}).get("data"):
             receipt_url = payment_intent["charges"]["data"][0].get("receipt_url")
 
-        # Check if this is an autopilot scheduled payment
+        # Check if this is a contract/autopilot payment
         metadata = payment_intent.get("metadata", {})
-        if metadata.get("payment_type") == "scheduled":
+        payment_type = metadata.get("payment_type")
+        if payment_type in {"scheduled", "deposit"} or metadata.get("scheduled_payment_id") or metadata.get("payment_id"):
             from app.services.autopilot_service import autopilot_service
             await autopilot_service.handle_payment_succeeded(
                 payment_intent_id=payment_intent_id,
                 receipt_url=receipt_url
             )
-            logger.info(f"Autopilot scheduled payment {payment_intent_id} succeeded")
-            return {"status": "success", "payment_intent_id": payment_intent_id, "type": "scheduled"}
+            logger.info("Contract payment %s succeeded (type=%s)", payment_intent_id, payment_type or "unknown")
+            return {"status": "success", "payment_intent_id": payment_intent_id, "type": payment_type or "contract"}
 
         # Update payment request status in our collection
         payment_requests_collection = mongo.db["payment_requests"]
@@ -1403,17 +1878,23 @@ class StripeService:
         error_code = last_error.get("code", "unknown")
         error_message = last_error.get("message", "Payment failed")
 
-        # Check if this is an autopilot scheduled payment
+        # Check if this is a contract/autopilot payment
         metadata = payment_intent.get("metadata", {})
-        if metadata.get("payment_type") == "scheduled":
+        payment_type = metadata.get("payment_type")
+        if payment_type in {"scheduled", "deposit"} or metadata.get("scheduled_payment_id") or metadata.get("payment_id"):
             from app.services.autopilot_service import autopilot_service
             await autopilot_service.handle_payment_failed(
                 payment_intent_id=payment_intent_id,
                 error_code=error_code,
                 error_message=error_message
             )
-            logger.info(f"Autopilot scheduled payment {payment_intent_id} failed: {error_message}")
-            return {"status": "handled", "payment_intent_id": payment_intent_id, "type": "scheduled"}
+            logger.info(
+                "Contract payment %s failed (type=%s): %s",
+                payment_intent_id,
+                payment_type or "unknown",
+                error_message,
+            )
+            return {"status": "handled", "payment_intent_id": payment_intent_id, "type": payment_type or "contract"}
 
         # Update payment request status for non-autopilot payments
         payment_requests_collection = mongo.db["payment_requests"]
@@ -1580,7 +2061,8 @@ class StripeService:
                 to_email=user_email,
                 subject=subject,
                 html_content=html_content,
-                email_type="billing_notification"
+                email_type="billing_notification",
+                **self._get_billing_sender(),
             )
 
             if result.get("success"):
@@ -1588,9 +2070,136 @@ class StripeService:
             else:
                 logger.error(f"Failed to send payment notification: {result.get('error')}")
 
+            # Send push notification (non-blocking, separate from email)
+            try:
+                from app.services.planner_notification_service import PlannerNotificationService
+                pns = PlannerNotificationService()
+                if notification_type == "payment_failed":
+                    await pns._send_push_notification(
+                        planner_id=user_email,
+                        notification_type="payment_failed",
+                        title="Payment Failed",
+                        message=f"Payment of {currency} {amount:.2f} for {plan_name} failed. Please update your payment method.",
+                        action_url="/planner/billing",
+                    )
+                # payment_success push is already wired via notify_payment_received
+            except Exception as push_err:
+                logger.warning(f"Push notification for {notification_type} failed: {push_err}")
+
         except Exception as e:
             # Don't fail the webhook if notification fails
             logger.error(f"Error sending payment notification: {str(e)}")
+
+    async def _send_checkout_completion_notification(
+        self,
+        user_id: str,
+        plan_id: str,
+        session: Dict[str, Any],
+        subscription: Optional[Dict[str, Any]] = None,
+    ) -> None:
+        """Send the first successful checkout confirmation after local sync completes."""
+
+        resolved_subscription = subscription or {}
+        stripe_status = resolved_subscription.get("status")
+        trial_end = self._parse_timestamp(resolved_subscription.get("trial_end"))
+
+        user = await self.users_collection.find_one({"_id": ObjectId(user_id)})
+        if not user or not user.get("email"):
+            logger.warning(f"Skipping checkout completion notification; user {user_id} not found")
+            return
+
+        plan = None
+        try:
+            plan = await self.plans_collection.find_one({"_id": plan_id})
+        except Exception:
+            plan = None
+
+        plan_name = plan.get("name", "Subscription") if plan else "Subscription"
+        user_email = user["email"]
+        user_name = user.get("first_name") or user.get("company_name") or user_email.split("@")[0]
+        amount = (session.get("amount_total") or 0) / 100
+        currency = (session.get("currency") or "usd").upper()
+        billing_url = f"{settings.frontend_url}/admin/planner/billing"
+        invoice_date = datetime.now(timezone.utc).strftime("%B %d, %Y")
+
+        if stripe_status == "trialing" and trial_end:
+            trial_end_label = trial_end.strftime("%B %d, %Y")
+            subject = f"{plan_name} Trial Activated"
+            html_content = f"""
+            <div style="font-family: Arial, sans-serif; max-width: 640px; margin: 0 auto; padding: 24px; color: #0f172a;">
+              <h1 style="margin-bottom: 12px;">Your {plan_name} trial is active</h1>
+              <p>Hi {user_name},</p>
+              <p>Your subscription checkout is complete and your <strong>{plan_name}</strong> trial is now active.</p>
+              <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 12px; padding: 18px; margin: 20px 0;">
+                <p style="margin: 0 0 8px;"><strong>Trial end date:</strong> {trial_end_label}</p>
+                <p style="margin: 0;"><strong>Billing begins after:</strong> {trial_end_label}</p>
+              </div>
+              <p>Your saved payment method will be used automatically when the trial ends unless you change or cancel the subscription first.</p>
+              <p><a href="{billing_url}" style="display: inline-block; background: #111827; color: #ffffff; text-decoration: none; padding: 12px 18px; border-radius: 999px;">Manage billing</a></p>
+            </div>
+            """
+            notification_title = "Free Trial Active"
+            notification_message = f"Your {plan_name} trial is active through {trial_end_label}."
+        else:
+            subject = f"{plan_name} Subscription Activated"
+            html_content = f"""
+            <div style="font-family: Arial, sans-serif; max-width: 640px; margin: 0 auto; padding: 24px; color: #0f172a;">
+              <h1 style="margin-bottom: 12px;">Your {plan_name} subscription is active</h1>
+              <p>Hi {user_name},</p>
+              <p>Your checkout completed successfully and your subscription is ready to use.</p>
+              <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 12px; padding: 18px; margin: 20px 0;">
+                <p style="margin: 0 0 8px;"><strong>Amount received:</strong> ${amount:.2f} {currency}</p>
+                <p style="margin: 0;"><strong>Processed on:</strong> {invoice_date}</p>
+              </div>
+              <p>You can manage your payment method, billing history, and plan from your billing page any time.</p>
+              <p><a href="{billing_url}" style="display: inline-block; background: #111827; color: #ffffff; text-decoration: none; padding: 12px 18px; border-radius: 999px;">Open billing</a></p>
+            </div>
+            """
+            notification_title = "Subscription Active"
+            notification_message = f"Your {plan_name} subscription is active and ready to use."
+
+        await mongo.db["notifications"].insert_one({
+            "_id": ObjectId(),
+            "title": notification_title,
+            "message": notification_message,
+            "type": "billing",
+            "target_audience": "specific_user",
+            "user_id": user_id,
+            "user_email": user_email,
+            "created_by": "system",
+            "created_at": datetime.now(timezone.utc),
+            "updated_at": datetime.now(timezone.utc),
+            "expiry_date": None,
+            "is_dismissible": True,
+            "priority": "low",
+            "status": "active",
+            "read_by": [],
+            "dismissed_by": [],
+            "metadata": {
+                "notification_type": "subscription_activation",
+                "plan_name": plan_name,
+                "amount": amount,
+                "currency": currency,
+                "stripe_subscription_id": session.get("subscription"),
+            },
+        })
+
+        if not getattr(self.email_service, "configured", False):
+            logger.warning("Email service not configured, skipping checkout completion email notification")
+            return
+
+        result = await self.email_service.send_email(
+            to_email=user_email,
+            subject=subject,
+            html_content=html_content,
+            email_type="subscription_activation",
+            **self._get_billing_sender(),
+        )
+
+        if result.get("success"):
+            logger.info(f"Checkout completion email sent to {user_email}")
+        else:
+            logger.error(f"Failed to send checkout completion email to {user_email}: {result.get('error')}")
 
     async def _create_in_app_notification(
         self,

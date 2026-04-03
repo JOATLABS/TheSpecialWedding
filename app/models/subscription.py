@@ -5,10 +5,17 @@ from enum import Enum
 
 
 class SubscriptionStatus(str, Enum):
-    """Subscription status enumeration"""
+    """Subscription status enumeration.
+
+    Note: PAST_DUE and TRIAL_EXPIRING added to support the explicit state
+    machine (P0-12).  The state machine validates transitions — see
+    docs/P0_ARCHITECTURAL_REFACTORS.md for the full transition graph.
+    """
     PENDING_PAYMENT = "pending_payment"
     TRIAL = "trial"
+    TRIAL_EXPIRING = "trial_expiring"
     ACTIVE = "active"
+    PAST_DUE = "past_due"
     CANCELLED = "cancelled"
     EXPIRED = "expired"
     SUSPENDED = "suspended"
@@ -87,7 +94,7 @@ class SubscriptionPlanModel(BaseModel):
                 "is_active": True,
                 "is_featured": False,
                 "sort_order": 1,
-                "created_by": "thedeveloper@thespecialwedding.com"
+                "created_by": "thedeveloper@thespecialwedding.io"
             }
         }
 
@@ -136,11 +143,24 @@ class UserSubscriptionModel(BaseModel):
     expired_reason: Optional[str] = Field(None, description="Reason for expiration (e.g., checkout_session_expired)")
     trial_will_end_notified_at: Optional[datetime] = Field(None, description="When trial ending notification was sent")
 
+    # ── Optimistic locking & state history (P0-11 / P0-12) ────────
+    # Per "Building Reliable Stripe Subscriptions" (DEV Community, 2025):
+    # include `version` in update filters to prevent race conditions when
+    # concurrent webhooks target the same subscription.
+    # Ref: https://dev.to/aniefon_umanah_ac5f21311c/building-reliable-stripe-subscriptions-in-nestjs-webhook-idempotency-and-optimistic-locking-3o91
+    version: int = Field(default=1, description="Optimistic lock version — increment on every write, include in update filter")
+    state_history: List[Dict[str, Any]] = Field(
+        default_factory=list,
+        description="Append-only log of state transitions [{from, to, trigger, at, metadata}]. "
+                    "IMPORTANT: When appending via $push, use $slice: -100 to cap at 100 entries "
+                    "and prevent unbounded document growth.",
+    )
+
     # System fields
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)
     created_by: str = Field(..., description="ROOT_ADMIN email who created this subscription")
-    
+
     class Config:
         populate_by_name = True
         json_schema_extra = {
@@ -151,13 +171,17 @@ class UserSubscriptionModel(BaseModel):
                 "plan_id": "plan_professional",
                 "status": "active",
                 "billing_interval": "monthly",
+                "version": 3,
+                "state_history": [
+                    {"from": "trial", "to": "active", "trigger": "checkout.session.completed", "at": "2025-08-15T10:30:00Z"}
+                ],
                 "usage": {
                     "weddings_count": 2,
                     "ai_credits_used_month": 45,
                     "storage_used_gb": 2.3,
                     "staff_seats_used": 1
                 },
-                "created_by": "thedeveloper@thespecialwedding.com"
+                "created_by": "thedeveloper@thespecialwedding.io"
             }
         }
 
@@ -212,6 +236,7 @@ class CreateSubscriptionPlanRequest(BaseModel):
     features: Dict[str, bool] = Field(default_factory=dict)
     is_featured: bool = False
     sort_order: int = 0
+    trial_days: int = Field(default=0, ge=0, description="Trial days (0 = no trial)")
 
 
 class UpdateSubscriptionPlanRequest(BaseModel):
@@ -232,6 +257,7 @@ class UpdateSubscriptionPlanRequest(BaseModel):
     is_active: Optional[bool] = None
     is_featured: Optional[bool] = None
     sort_order: Optional[int] = None
+    trial_days: Optional[int] = Field(default=None, ge=0, description="Trial days (0 = no trial)")
 
 
 class AssignSubscriptionRequest(BaseModel):

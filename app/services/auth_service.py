@@ -66,4 +66,13 @@ class AuthService:
         token_data = {"sub": user["email"], "role": user.get("role")}
         access_token_expires = timedelta(minutes=60)
         token = create_access_token(data=token_data, expires_delta=access_token_expires)
-        return {"access_token": token, "token_type": "bearer"}
+
+        response = {"access_token": token, "token_type": "bearer"}
+
+        # Include onboarding flags for advertising vendors
+        if user.get("role") == "advertising_vendor":
+            response["must_change_password"] = user.get("must_change_password", False)
+            response["name"] = user.get("business_name", user["email"])
+            response["user_id"] = str(user["_id"])
+
+        return response

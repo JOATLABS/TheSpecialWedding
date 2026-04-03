@@ -1,0 +1,42 @@
+# =============================================================================
+# Ingress (SSE) - Dedicated ingress for Server-Sent Events endpoint
+#
+# Separated from the main ingress because SSE needs:
+#   - Very long proxy timeouts (1 hour) for persistent connections
+#   - Buffering disabled so events stream immediately
+#   - No rate limiting (one persistent connection per user)
+# =============================================================================
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: wedding-app-sse
+  namespace: wedding-app
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+    # Long timeouts for SSE persistent connections (heartbeats every 30s)
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
+    # Disable buffering so SSE events stream immediately
+    nginx.ingress.kubernetes.io/proxy-buffering: "off"
+    # No rate limiting for SSE (one persistent connection per user)
+    nginx.ingress.kubernetes.io/configuration-snippet: |
+      proxy_set_header Connection '';
+      chunked_transfer_encoding off;
+      proxy_cache off;
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts:
+        - api.thespecialwedding.io
+      secretName: wedding-app-tls
+  rules:
+    - host: api.thespecialwedding.io
+      http:
+        paths:
+          - path: /admin/notifications/stream
+            pathType: Exact
+            backend:
+              service:
+                name: backend
+                port:
+                  number: 8000

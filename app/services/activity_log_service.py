@@ -56,6 +56,14 @@ class ActivityTypes:
     WEDDING_CREATED = "wedding_created"
     WEDDING_UPDATED = "wedding_updated"
 
+    # Team management events
+    TEAM_MEMBER_INVITED = "team_member_invited"
+    TEAM_MEMBER_ACCEPTED = "team_member_accepted"
+    TEAM_MEMBER_UPDATED = "team_member_updated"
+    TEAM_MEMBER_DEACTIVATED = "team_member_deactivated"
+    TEAM_MEMBER_REACTIVATED = "team_member_reactivated"
+    TEAM_MEMBER_REMOVED = "team_member_removed"
+
 
 class ActivityLogService:
     """
@@ -79,6 +87,8 @@ class ActivityLogService:
         wedding_id: Optional[str] = None,
         planner_email: Optional[str] = None,
         actor_email: Optional[str] = None,
+        actor_name: Optional[str] = None,
+        actor_role: Optional[str] = None,
         metadata: Optional[Dict[str, Any]] = None
     ) -> Dict[str, Any]:
         """
@@ -90,6 +100,8 @@ class ActivityLogService:
             wedding_id: ID of the wedding this activity relates to
             planner_email: Email of the planner who owns the wedding
             actor_email: Email of who performed the action (may be guest, planner, or system)
+            actor_name: Display name of the actor (e.g. "John Smith")
+            actor_role: Role of the actor (e.g. "Editor", "Admin", "Planner")
             metadata: Additional context data
         """
         try:
@@ -102,13 +114,15 @@ class ActivityLogService:
                 "wedding_id": wedding_id,
                 "planner_email": planner_email,
                 "actor_email": actor_email or planner_email,
+                "actor_name": actor_name,
+                "actor_role": actor_role,
                 "metadata": metadata or {}
             }
 
             result = await self.collection.insert_one(doc)
 
             if not result.inserted_id:
-                logger.warning(f"Failed to log activity: {activity_type}")
+                logger.warning("[ActivityLog] Failed to insert activity log: %s", activity_type)
                 return {"id": None, "success": False}
 
             logger.debug(f"Logged planner activity: {activity_type} for wedding {wedding_id}")
@@ -120,7 +134,7 @@ class ActivityLogService:
 
         except Exception as e:
             # Activity logging should not block main operations
-            logger.error(f"Error logging activity: {str(e)}")
+            logger.error("[ActivityLog] Error logging activity: %s", str(e))
             return {"id": None, "success": False, "error": str(e)}
 
     # ==================== RSVP CONVENIENCE METHODS ====================
@@ -168,22 +182,26 @@ class ActivityLogService:
         old_response: str,
         new_response: str,
         planner_email: Optional[str] = None,
-        guest_email: Optional[str] = None
+        guest_email: Optional[str] = None,
+        guest_id: Optional[str] = None
     ) -> Dict[str, Any]:
         """Log when an RSVP is updated"""
         message = f"{guest_name} changed RSVP from {old_response} to {new_response}"
 
+        meta: Dict[str, Any] = {
+            "guest_name": guest_name,
+            "old_response": old_response,
+            "new_response": new_response
+        }
+        if guest_id:
+            meta["guest_id"] = guest_id
         return await self.log_activity(
             activity_type=ActivityTypes.RSVP_UPDATED,
             message=message,
             wedding_id=wedding_id,
             planner_email=planner_email,
             actor_email=guest_email or "guest",
-            metadata={
-                "guest_name": guest_name,
-                "old_response": old_response,
-                "new_response": new_response
-            }
+            metadata=meta
         )
 
     # ==================== GUEST CONVENIENCE METHODS ====================
@@ -193,20 +211,24 @@ class ActivityLogService:
         wedding_id: str,
         guest_name: str,
         planner_email: str,
+        guest_id: Optional[str] = None,
         guest_email: Optional[str] = None,
         added_by: Optional[str] = None
     ) -> Dict[str, Any]:
         """Log when a guest is added to the guest list"""
+        meta: Dict[str, Any] = {
+            "guest_name": guest_name,
+            "guest_email": guest_email
+        }
+        if guest_id:
+            meta["guest_id"] = guest_id
         return await self.log_activity(
             activity_type=ActivityTypes.GUEST_ADDED,
             message=f"Added guest: {guest_name}",
             wedding_id=wedding_id,
             planner_email=planner_email,
             actor_email=added_by or planner_email,
-            metadata={
-                "guest_name": guest_name,
-                "guest_email": guest_email
-            }
+            metadata=meta
         )
 
     async def log_guest_updated(
@@ -214,20 +236,24 @@ class ActivityLogService:
         wedding_id: str,
         guest_name: str,
         planner_email: str,
+        guest_id: Optional[str] = None,
         changes: Optional[Dict[str, Any]] = None,
         updated_by: Optional[str] = None
     ) -> Dict[str, Any]:
         """Log when a guest's information is updated"""
+        meta: Dict[str, Any] = {
+            "guest_name": guest_name,
+            "changes": changes or {}
+        }
+        if guest_id:
+            meta["guest_id"] = guest_id
         return await self.log_activity(
             activity_type=ActivityTypes.GUEST_UPDATED,
             message=f"Updated guest: {guest_name}",
             wedding_id=wedding_id,
             planner_email=planner_email,
             actor_email=updated_by or planner_email,
-            metadata={
-                "guest_name": guest_name,
-                "changes": changes or {}
-            }
+            metadata=meta
         )
 
     async def log_guest_deleted(
@@ -235,18 +261,22 @@ class ActivityLogService:
         wedding_id: str,
         guest_name: str,
         planner_email: str,
+        guest_id: Optional[str] = None,
         deleted_by: Optional[str] = None
     ) -> Dict[str, Any]:
         """Log when a guest is removed from the guest list"""
+        meta: Dict[str, Any] = {
+            "guest_name": guest_name
+        }
+        if guest_id:
+            meta["guest_id"] = guest_id
         return await self.log_activity(
             activity_type=ActivityTypes.GUEST_DELETED,
             message=f"Removed guest: {guest_name}",
             wedding_id=wedding_id,
             planner_email=planner_email,
             actor_email=deleted_by or planner_email,
-            metadata={
-                "guest_name": guest_name
-            }
+            metadata=meta
         )
 
     async def log_guests_imported(
@@ -279,25 +309,29 @@ class ActivityLogService:
         message_type: str,
         planner_email: str,
         status: str = "sent",
+        guest_id: Optional[str] = None,
         metadata: Optional[Dict[str, Any]] = None
     ) -> Dict[str, Any]:
         """Log when an SMS is sent"""
         status_text = "sent" if status == "sent" else f"failed ({status})"
         message = f"SMS {status_text} to {recipient_name}: {message_type}"
 
+        meta: Dict[str, Any] = {
+            "recipient_name": recipient_name,
+            "recipient_phone": recipient_phone[-4:] if recipient_phone else None,  # Last 4 digits only
+            "message_type": message_type,
+            "status": status,
+            **(metadata or {})
+        }
+        if guest_id:
+            meta["guest_id"] = guest_id
         return await self.log_activity(
             activity_type=ActivityTypes.SMS_SENT,
             message=message,
             wedding_id=wedding_id,
             planner_email=planner_email,
             actor_email="system",
-            metadata={
-                "recipient_name": recipient_name,
-                "recipient_phone": recipient_phone[-4:] if recipient_phone else None,  # Last 4 digits only
-                "message_type": message_type,
-                "status": status,
-                **(metadata or {})
-            }
+            metadata=meta
         )
 
     async def log_reminder_sent(
@@ -331,24 +365,119 @@ class ActivityLogService:
         email_type: str,
         planner_email: str,
         recipient_email: Optional[str] = None,
+        guest_id: Optional[str] = None,
         status: str = "sent"
     ) -> Dict[str, Any]:
         """Log when an email is sent"""
         status_text = "sent" if status == "sent" else f"failed ({status})"
         message = f"Email {status_text} to {recipient_name}: {email_type}"
 
+        meta: Dict[str, Any] = {
+            "recipient_name": recipient_name,
+            "recipient_email": recipient_email,
+            "email_type": email_type,
+            "status": status
+        }
+        if guest_id:
+            meta["guest_id"] = guest_id
         return await self.log_activity(
             activity_type=ActivityTypes.EMAIL_SENT,
             message=message,
             wedding_id=wedding_id,
             planner_email=planner_email,
             actor_email="system",
-            metadata={
-                "recipient_name": recipient_name,
-                "recipient_email": recipient_email,
-                "email_type": email_type,
-                "status": status
-            }
+            metadata=meta
+        )
+
+
+    # ── Team management activity helpers ─────────────────────────────────
+
+    async def log_team_member_invited(
+        self, planner_email: str, member_email: str, role: str,
+        invited_by: str, member_name: Optional[str] = None
+    ):
+        display = member_name or member_email
+        return await self.log_activity(
+            activity_type=ActivityTypes.TEAM_MEMBER_INVITED,
+            message=f"Invited {display} as {role}",
+            planner_email=planner_email,
+            actor_email=invited_by,
+            actor_role="Planner",
+            metadata={"member_email": member_email, "member_name": member_name, "role": role}
+        )
+
+    async def log_team_member_accepted(
+        self, planner_email: str, member_email: str, member_name: str,
+        role: Optional[str] = None
+    ):
+        role_label = f" ({role})" if role else ""
+        return await self.log_activity(
+            activity_type=ActivityTypes.TEAM_MEMBER_ACCEPTED,
+            message=f"{member_name}{role_label} accepted their team invitation",
+            planner_email=planner_email,
+            actor_email=member_email,
+            actor_name=member_name,
+            actor_role=role,
+            metadata={"member_email": member_email, "member_name": member_name, "role": role}
+        )
+
+    async def log_team_member_updated(
+        self, planner_email: str, member_email: str, changes: dict,
+        updated_by: str, member_name: Optional[str] = None,
+        member_role: Optional[str] = None
+    ):
+        display = member_name or member_email
+        role_label = f" ({member_role})" if member_role else ""
+        return await self.log_activity(
+            activity_type=ActivityTypes.TEAM_MEMBER_UPDATED,
+            message=f"Updated team member {display}{role_label}",
+            planner_email=planner_email,
+            actor_email=updated_by,
+            actor_name=member_name,
+            actor_role=member_role,
+            metadata={"member_email": member_email, "member_name": member_name, "role": member_role, "changes": changes}
+        )
+
+    async def log_team_member_deactivated(
+        self, planner_email: str, member_email: str, deactivated_by: str,
+        member_name: Optional[str] = None, member_role: Optional[str] = None
+    ):
+        display = member_name or member_email
+        role_label = f" ({member_role})" if member_role else ""
+        return await self.log_activity(
+            activity_type=ActivityTypes.TEAM_MEMBER_DEACTIVATED,
+            message=f"Deactivated {display}{role_label}",
+            planner_email=planner_email,
+            actor_email=deactivated_by,
+            metadata={"member_email": member_email, "member_name": member_name, "role": member_role}
+        )
+
+    async def log_team_member_reactivated(
+        self, planner_email: str, member_email: str, reactivated_by: str,
+        member_name: Optional[str] = None, member_role: Optional[str] = None
+    ):
+        display = member_name or member_email
+        role_label = f" ({member_role})" if member_role else ""
+        return await self.log_activity(
+            activity_type=ActivityTypes.TEAM_MEMBER_REACTIVATED,
+            message=f"Reactivated {display}{role_label}",
+            planner_email=planner_email,
+            actor_email=reactivated_by,
+            metadata={"member_email": member_email, "member_name": member_name, "role": member_role}
+        )
+
+    async def log_team_member_removed(
+        self, planner_email: str, member_email: str, removed_by: str,
+        member_name: Optional[str] = None, member_role: Optional[str] = None
+    ):
+        display = member_name or member_email
+        role_label = f" ({member_role})" if member_role else ""
+        return await self.log_activity(
+            activity_type=ActivityTypes.TEAM_MEMBER_REMOVED,
+            message=f"Removed {display}{role_label}",
+            planner_email=planner_email,
+            actor_email=removed_by,
+            metadata={"member_email": member_email, "member_name": member_name, "role": member_role}
         )
 
 

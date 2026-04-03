@@ -1,8 +1,9 @@
 # app/api/otp.py
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request, Response
 from pydantic import BaseModel
 from app.services.otp_service import OTPService
+from app.dependencies.guest_access import get_guest_access_session, set_guest_access_session
 import logging
 
 logger = logging.getLogger(__name__)
@@ -25,55 +26,74 @@ class OTPVerify(BaseModel):
     otp: str
 
 
-@router.post("/otp/request", tags=["OTP"])
-async def request_otp(payload: OTPRequest):
-    """Request an OTP for a guest by guest_id."""
-    result = await otp_service.send_otp(payload.guest_id)
-    if not result.get("success"):
-        error = result.get("error", "Failed to send OTP")
-        error_code = result.get("error_code", "unknown")
+class OTPVerifySession(BaseModel):
+    otp: str
 
-        # Map error codes to appropriate HTTP status codes
-        status_map = {
-            "rate_limited": 429,
-            "invalid_input": 400,
-            "guest_not_found": 404,
-            "no_contact": 400,
-            "invalid_number": 400,
-            "number_blocked": 400,
-            "daily_limit": 429,
-            "not_configured": 503,
-            "service_unavailable": 503,
-            "network_error": 503,
-            "auth_error": 503,
-            "all_channels_failed": 503,
-            "generation_failed": 500,
-            "send_failed": 500,
-        }
-        status_code = status_map.get(error_code, 500)
 
-        # Include retry_after in response if available
-        detail = {
-            "message": error,
-            "error_code": error_code,
-        }
-        if result.get("retry_after"):
-            detail["retry_after"] = result["retry_after"]
+def _raise_otp_http_error(result: dict) -> None:
+    error = result.get("error", "Failed to send OTP")
+    error_code = result.get("error_code", "unknown")
 
-        raise HTTPException(status_code=status_code, detail=detail)
+    status_map = {
+        "rate_limited": 429,
+        "invalid_input": 400,
+        "guest_not_found": 404,
+        "no_contact": 400,
+        "invalid_number": 400,
+        "number_blocked": 400,
+        "daily_limit": 429,
+        "not_configured": 503,
+        "service_unavailable": 503,
+        "network_error": 503,
+        "auth_error": 503,
+        "all_channels_failed": 503,
+        "generation_failed": 500,
+        "send_failed": 500,
+    }
+    status_code = status_map.get(error_code, 500)
 
-    # Build success response
+    detail = {
+        "message": error,
+        "error_code": error_code,
+    }
+    if result.get("retry_after"):
+        detail["retry_after"] = result["retry_after"]
+
+    raise HTTPException(status_code=status_code, detail=detail)
+
+
+def _build_otp_success_response(result: dict) -> dict:
     response = {
         "message": "OTP sent successfully",
         "contact_type": result.get("contact_type", "phone"),
     }
 
-    # Tell the frontend if email fallback was used (so it can show the right message)
     if result.get("fallback_used"):
         response["fallback_used"] = True
         response["message"] = "We couldn't text you, so we sent your code by email instead."
 
     return response
+
+
+@router.post("/otp/request", tags=["OTP"])
+async def request_otp(payload: OTPRequest):
+    """Request an OTP for a guest by guest_id."""
+    result = await otp_service.send_otp(payload.guest_id)
+    if not result.get("success"):
+        _raise_otp_http_error(result)
+
+    return _build_otp_success_response(result)
+
+
+@router.post("/otp/request/session", tags=["OTP"])
+async def request_otp_for_guest_session(request: Request):
+    """Request an OTP using the current guest access session cookie."""
+    session = get_guest_access_session(request, require_guest=True)
+    result = await otp_service.send_otp(session.guest_id)
+    if not result.get("success"):
+        _raise_otp_http_error(result)
+
+    return _build_otp_success_response(result)
 
 
 @router.post("/otp/send-by-contact", tags=["OTP"])
@@ -113,4 +133,30 @@ async def verify_otp_endpoint(payload: OTPVerify):
         "message": "OTP verified successfully",
         "guest": result.get("guest"),
         "auth_method": result.get("auth_method", "phone_otp")
+    }
+
+
+@router.post("/otp/verify/session", tags=["OTP"])
+async def verify_otp_for_guest_session(payload: OTPVerifySession, request: Request, response: Response):
+    """Verify an OTP using the current guest access session cookie."""
+    session = get_guest_access_session(request, require_guest=True)
+    result = await otp_service.verify_otp_by_guest_id(session.guest_id, payload.otp)
+    if not result.get("success"):
+        error = result.get("error", "Invalid or expired OTP")
+        raise HTTPException(status_code=400, detail=error)
+
+    auth_method = result.get("auth_method", session.auth_method)
+    set_guest_access_session(
+        response,
+        wedding_slug=session.wedding_slug,
+        wedding_id=session.wedding_id,
+        guest_id=session.guest_id,
+        auth_method=auth_method,
+        otp_verified=True,
+    )
+
+    return {
+        "message": "OTP verified successfully",
+        "guest": result.get("guest"),
+        "auth_method": auth_method,
     }

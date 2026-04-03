@@ -9,10 +9,32 @@ export interface EventDetails {
   timezone?: string;
 }
 
+export interface EventNote {
+  id: string;
+  author_role: 'planner' | 'couple';
+  author_name?: string;
+  text: string;
+  status: 'pending' | 'seen' | 'addressed';
+  created_at?: string;
+}
+
+export interface OrderOfEventsItem {
+  id: string;
+  title: string;
+  description?: string;
+  time?: string;
+  duration_minutes?: number;
+  order: number;
+  notes: EventNote[];
+}
+
 export interface WeddingEvent {
-  type: 'traditional' | 'white_wedding' | 'reception' | 'engagement' | 'rehearsal';
+  type: string;
+  custom_type_label?: string;
   date: string;
   details?: EventDetails;
+  order_of_events?: OrderOfEventsItem[];
+  event_notes?: EventNote[];
 }
 
 export interface RegistryItem {
@@ -46,6 +68,18 @@ export interface OurStory {
   text: string;
   image_url?: string;
   image_shape?: 'circle' | 'heart' | 'square' | 'hexagon';
+}
+
+export interface VerificationRequirements {
+  otp_enabled: boolean;
+  supports_phone: boolean;
+  supports_email: boolean;
+}
+
+export interface WeddingVenue {
+  name?: string;
+  address?: string;
+  [key: string]: any;
 }
 
 export interface PrivacySettings {
@@ -88,8 +122,14 @@ export interface Wedding {
   theme_config?: ThemeConfig;
   featured_image?: string;
   our_story?: OurStory;
+  venue?: string | WeddingVenue;
   wedding_party?: WeddingPartyMember[];
   wedding_party_sync?: WeddingPartySyncSettings;
+  privacy_mode?: 'private' | 'password' | 'public';
+  requires_authentication?: boolean;
+  requires_password?: boolean;
+  requires_guest_verification?: boolean;
+  verification_requirements?: VerificationRequirements;
   created_at?: string;
   [key: string]: any; // for flexibility (additional fields)
 }

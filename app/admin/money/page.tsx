@@ -221,189 +221,77 @@ export default function MoneyDashboard() {
         'Content-Type': 'application/json'
       };
 
-      // Fetch all money data in parallel
-      const [summaryRes, incomingRes, contractsRes] = await Promise.all([
-        fetch(`${baseUrl}/admin/autopilot/status`, { headers }),
-        fetch(`${baseUrl}/contracts?status=signed`, { headers }),
-        fetch(`${baseUrl}/contracts?status=active`, { headers })
+      const [incomingOverviewRes, outgoingOverviewRes, subRes] = await Promise.all([
+        fetch(`${baseUrl}/contracts/payments/overview`, { headers }),
+        fetch(`${baseUrl}/admin/budget/payments/overview`, { headers }),
+        fetch(`${baseUrl}/stripe/subscription`, { headers })
       ]);
 
-      // Process incoming payments from contracts
-      if (incomingRes.ok || contractsRes.ok) {
-        const signedData = incomingRes.ok ? await incomingRes.json() : { contracts: [] };
-        const activeData = contractsRes.ok ? await contractsRes.json() : { contracts: [] };
-        const allContracts = [...(signedData.contracts || []), ...(activeData.contracts || [])];
+      const incomingData = incomingOverviewRes.ok
+        ? await incomingOverviewRes.json()
+        : { payments: [] as ScheduledPayment[] };
+      const outgoingData = outgoingOverviewRes.ok
+        ? await outgoingOverviewRes.json()
+        : {
+            payments: [] as VendorPayment[],
+            weddings: [] as Array<{ id: string; title: string }>,
+            weddings_total: 0
+          };
 
-        // Fetch scheduled payments for each contract
-        const paymentsPromises = allContracts.map(async (contract: { id: string; couple?: { name?: string }; package_snapshot?: { name?: string } }) => {
-          try {
-            const paymentsRes = await fetch(`${baseUrl}/contracts/${contract.id}/payments`, { headers });
-            if (paymentsRes.ok) {
-              const paymentsData = await paymentsRes.json();
-              return (paymentsData.payments || []).map((p: ScheduledPayment) => ({
-                ...p,
-                couple_name: contract.couple?.name || 'Unknown',
-                wedding_title: contract.package_snapshot?.name || 'Wedding'
-              }));
-            }
-          } catch {
-            return [];
-          }
-          return [];
-        });
+      const allIncomingPayments = (incomingData.payments || []) as ScheduledPayment[];
+      const allOutgoingPayments = (outgoingData.payments || []) as VendorPayment[];
+      const availableWeddings = (outgoingData.weddings || []) as Array<{ id: string; title: string }>;
+      const weddingsTotal = outgoingData.weddings_total ?? availableWeddings.length;
 
-        const allPayments = (await Promise.all(paymentsPromises)).flat();
-        setIncomingPayments(allPayments);
+      setIncomingPayments(allIncomingPayments);
+      setOutgoingPayments(allOutgoingPayments);
+      setWeddingsList(availableWeddings);
 
-        // Calculate summary
-        const totalIncoming = allPayments
-          .filter((p: ScheduledPayment) => p.status === 'succeeded')
-          .reduce((sum: number, p: ScheduledPayment) => sum + (p.amount || 0), 0);
+      const totalIncoming = allIncomingPayments
+        .filter((payment) => payment.status === 'succeeded')
+        .reduce((sum, payment) => sum + (payment.amount || 0), 0);
 
-        const pendingIncoming = allPayments
-          .filter((p: ScheduledPayment) => p.status === 'scheduled')
-          .reduce((sum: number, p: ScheduledPayment) => sum + (p.amount || 0), 0);
+      const pendingIncoming = allIncomingPayments
+        .filter((payment) => payment.status === 'scheduled')
+        .reduce((sum, payment) => sum + (payment.amount || 0), 0);
 
-        setSummary({
-          total_incoming: totalIncoming,
-          total_outgoing: 0, // Will be updated when vendor payments are fetched
-          net_cash_flow: totalIncoming,
-          pending_incoming: pendingIncoming,
-          pending_outgoing: 0
-        });
-      }
+      const totalOutgoing = allOutgoingPayments
+        .filter((payment) => payment.status === 'paid')
+        .reduce((sum, payment) => sum + (payment.amount || 0), 0);
 
-      // Fetch vendor payments from budgets (outgoing)
-      try {
-        const weddingsRes = await fetch(`${baseUrl}/weddings`, { headers });
-        if (weddingsRes.ok) {
-          const weddingsData = await weddingsRes.json();
-          const weddings = weddingsData.weddings || weddingsData || [];
+      const pendingOutgoing = allOutgoingPayments
+        .filter((payment) => payment.status === 'pending' || payment.status === 'partial')
+        .reduce((sum, payment) => sum + (payment.amount || 0), 0);
 
-          // Populate weddings list for AI forecast
-          setWeddingsList(weddings.map((w: { _id?: string; id?: string; title?: string; couple_names?: string }) => ({
-            id: w._id || w.id,
-            title: w.title || w.couple_names || 'Wedding'
-          })));
+      setSummary({
+        total_incoming: totalIncoming,
+        total_outgoing: totalOutgoing,
+        net_cash_flow: totalIncoming - totalOutgoing,
+        pending_incoming: pendingIncoming,
+        pending_outgoing: pendingOutgoing
+      });
 
-          // Fetch budget data for each wedding to get vendor payments
-          const vendorPaymentsPromises = weddings.map(async (wedding: { _id?: string; id?: string; title?: string }) => {
-            const weddingId = wedding._id || wedding.id;
-            if (!weddingId) return [];
-            try {
-              const budgetRes = await fetch(`${baseUrl}/weddings/${weddingId}/budget`, { headers });
-              if (budgetRes.ok) {
-                const budgetData = await budgetRes.json();
-                const categories = budgetData.categories || [];
-                // Extract vendor payment info from categories
-                return categories
-                  .filter((cat: { vendor_name?: string; actual_spent?: number }) => cat.vendor_name && cat.actual_spent)
-                  .map((cat: {
-                    _id?: string;
-                    id?: string;
-                    vendor_name?: string;
-                    vendor_email?: string;
-                    name?: string;
-                    actual_spent?: number;
-                    budgeted_amount?: number;
-                    payment_status?: string;
-                    payments?: Array<{ payment_date?: string }>;
-                  }) => ({
-                    id: cat._id || cat.id || `${weddingId}-${cat.vendor_name}`,
-                    vendor_name: cat.vendor_name || 'Unknown Vendor',
-                    vendor_email: cat.vendor_email,
-                    category: cat.name || 'Service',
-                    wedding_title: wedding.title || 'Wedding',
-                    wedding_id: weddingId,
-                    amount: cat.actual_spent || 0,
-                    budgeted: cat.budgeted_amount || 0,
-                    status: cat.payment_status || 'pending',
-                    due_date: null, // Budget categories don't have due dates by default
-                    paid_at: cat.payments?.length ? cat.payments[cat.payments.length - 1]?.payment_date : null
-                  }));
-              }
-            } catch {
-              return [];
-            }
-            return [];
+      if (subRes.ok) {
+        const subData = await subRes.json();
+        if (subData && subData.plan_id) {
+          setSubscription({
+            plan_name: subData.plan_name || 'Unknown Plan',
+            status: subData.status,
+            billing_interval: subData.billing_interval,
+            price: subData.price || 0,
+            current_period_end: subData.current_period_end,
+            card_last_four: subData.card_last_four,
+            card_brand: subData.card_brand,
+            ai_credits_used: 0, // TODO: Get from AI usage endpoint
+            ai_credits_total: subData.ai_credits_total || 100,
+            weddings_used: weddingsTotal,
+            weddings_total: subData.weddings_total || 3
           });
-
-          const allVendorPayments = (await Promise.all(vendorPaymentsPromises)).flat();
-          setOutgoingPayments(allVendorPayments);
-
-          // Update summary with outgoing
-          const totalOutgoing = allVendorPayments
-            .filter((p: VendorPayment) => p.status === 'paid')
-            .reduce((sum: number, p: VendorPayment) => sum + (p.amount || 0), 0);
-
-          const pendingOutgoing = allVendorPayments
-            .filter((p: VendorPayment) => p.status === 'pending' || p.status === 'partial')
-            .reduce((sum: number, p: VendorPayment) => sum + (p.amount || 0), 0);
-
-          setSummary(prev => prev ? {
-            ...prev,
-            total_outgoing: totalOutgoing,
-            pending_outgoing: pendingOutgoing,
-            net_cash_flow: prev.total_incoming - totalOutgoing
-          } : null);
+        } else {
+          setSubscription(null);
         }
-      } catch (vendorError) {
-        console.error('Error fetching vendor payments:', vendorError);
-        // Non-fatal, continue without vendor data
-      }
-
-      // Fetch subscription summary
-      try {
-        const subRes = await fetch(`${baseUrl}/stripe/subscription`, { headers });
-        if (subRes.ok) {
-          const subData = await subRes.json();
-          if (subData && subData.plan_id) {
-            // Fetch plan details and usage
-            const [plansRes, weddingsRes] = await Promise.all([
-              fetch(`${baseUrl}/public/subscription-plans`),
-              fetch(`${baseUrl}/admin/weddings`, { headers })
-            ]);
-
-            let planName = 'Unknown Plan';
-            let aiCreditsTotal = 100;
-            let weddingsTotal = 3;
-            let price = 0;
-
-            if (plansRes.ok) {
-              const plans = await plansRes.json();
-              const plan = plans.find((p: { _id: string; name: string; ai_credits_monthly: number; max_weddings: number; price_monthly: number; price_yearly: number }) => p._id === subData.plan_id);
-              if (plan) {
-                planName = plan.name;
-                aiCreditsTotal = plan.ai_credits_monthly;
-                weddingsTotal = plan.max_weddings;
-                price = subData.billing_interval === 'yearly' ? plan.price_yearly : plan.price_monthly;
-              }
-            }
-
-            let weddingsUsed = 0;
-            if (weddingsRes.ok) {
-              const weddingsData = await weddingsRes.json();
-              weddingsUsed = (weddingsData.weddings || weddingsData || []).length;
-            }
-
-            setSubscription({
-              plan_name: planName,
-              status: subData.status,
-              billing_interval: subData.billing_interval,
-              price,
-              current_period_end: subData.current_period_end,
-              card_last_four: subData.card_last_four,
-              card_brand: subData.card_brand,
-              ai_credits_used: 0, // TODO: Get from AI usage endpoint
-              ai_credits_total: aiCreditsTotal,
-              weddings_used: weddingsUsed,
-              weddings_total: weddingsTotal
-            });
-          }
-        }
-      } catch (subError) {
-        console.error('Error fetching subscription:', subError);
-        // Non-fatal
+      } else {
+        setSubscription(null);
       }
 
     } catch (error) {

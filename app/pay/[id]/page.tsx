@@ -1,28 +1,11 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { loadStripe, type Stripe } from '@stripe/stripe-js';
+import type { Stripe } from '@stripe/stripe-js';
 import { Elements, PaymentElement, useStripe, useElements } from '@stripe/react-stripe-js';
-import { useRouter } from 'next/navigation';
 import { Loader2 } from 'lucide-react';
-import { toast } from 'sonner';
-
-// Helper to get Stripe promise (only initialize once)
-let stripePromise: Promise<Stripe | null> | null = null;
-const getStripePromise = (): Promise<Stripe | null> | null => {
-  if (!stripePromise) {
-    const init = async (): Promise<Stripe | null> => {
-      const res = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL}/stripe/config`);
-      if (res.ok) {
-        const { publishable_key } = await res.json();
-        return loadStripe(publishable_key);
-      }
-      return null;
-    };
-    stripePromise = init();
-  }
-  return stripePromise;
-};
+import { getApiBaseUrl } from '@/utils/env';
+import { getStripeClient, preloadStripeClient } from '@/utils/stripeClient';
 
 // Checkout Form Component
 function CheckoutForm({ clientSecret, amount, currency }: { clientSecret: string; amount: number; currency: string }) {
@@ -30,7 +13,6 @@ function CheckoutForm({ clientSecret, amount, currency }: { clientSecret: string
   const elements = useElements();
   const [loading, setLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const router = useRouter();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -105,38 +87,16 @@ export default function PaymentPage({ params }: { params: Promise<{ id: string }
   const [stripePromiseState, setStripePromiseState] = useState<Promise<Stripe | null> | null>(null);
 
   useEffect(() => {
-    // 1. Initialize Stripe - store the promise directly (not awaited)
-    const promise = getStripePromise();
-    if (promise) {
-      setStripePromiseState(promise);
-    }
-
-    // 2. Fetch Payment Intent Details (via public endpoint or just assume ID is valid and retrieve via Stripe SDK if possible,
-    //    but usually we need client_secret from backend. The ID in URL is payment_intent_id, but we need client_secret to render Elements)
-    //
-    //    Wait, the modal generated a link with payment_intent_id. We need an endpoint to retrieve the client_secret
-    //    given the ID (if we don't store it in the URL).
-    //    Stripe Payment Intents are secure; we can retrieve it if we have a backend endpoint.
-
-    //    Let's check if we have an endpoint to get PI details by ID.
-    //    Currently, the backend creates it and returns client_secret. The frontend modal generates the link.
-    //    We need a way to re-fetch the client_secret or pass it in the URL. passing secret in URL is okay but long.
-    //    Better to have an endpoint: GET /api/payments/{id} -> returns client_secret
-
-    //    I will assume for now I need to create such endpoint or use an existing one.
-    //    I see `get_checkout_session` but not `get_payment_intent`.
-
-    //    I will create a temporary fetch logic assuming I need to add an endpoint.
-
     const fetchPaymentDetails = async () => {
       if (!id) return;
       try {
-        // We need a public endpoint to retrieve payment intent details (amount, currency, client_secret)
-        // without authentication, because the couple pays without logging in.
-        const res = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL}/stripe/payment-intent/${id}`);
+        const stripe = getStripeClient();
+        setStripePromiseState(stripe);
+        preloadStripeClient().catch(() => undefined);
+
+        const res = await fetch(`${getApiBaseUrl()}/stripe/payment-intent/${id}`);
 
         if (!res.ok) {
-           // Fallback: Check if we can use a server action or different endpoint
            throw new Error("Payment link invalid or expired");
         }
 

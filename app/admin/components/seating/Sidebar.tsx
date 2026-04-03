@@ -28,15 +28,15 @@ export function Sidebar({ guests }: SidebarProps) {
   });
 
   return (
-    <div className="w-80 h-full flex flex-col z-20 border-r border-white/30 dark:border-slate-700/30 bg-white/50 dark:bg-slate-900/40 backdrop-blur-md print:hidden">
+    <div className="w-80 h-full flex flex-col z-20 border-r border-white/30 dark:border-slate-700/30 bg-white/50 dark:bg-slate-900/40 backdrop-blur-md print:hidden" role="region" aria-label="Unseated guests sidebar">
       {/* Header */}
       <div className="p-5 border-b border-white/20 dark:border-slate-700/20">
         <div className="flex items-center justify-between mb-3">
           <h2 className="font-semibold text-slate-800 dark:text-gray-100 flex items-center gap-2">
-            <Users className="w-4 h-4 text-slate-500 dark:text-slate-400" />
+            <Users className="w-4 h-4 text-slate-500 dark:text-slate-400" aria-hidden="true" />
             Guest List
           </h2>
-          <span className="text-xs font-medium px-2.5 py-1 bg-amber-50/80 dark:bg-amber-900/20 text-amber-700 dark:text-amber-400 rounded-full border border-amber-200/50 dark:border-amber-800/30">
+          <span className="text-xs font-medium px-2.5 py-1 bg-amber-50/80 dark:bg-amber-900/20 text-amber-700 dark:text-amber-400 rounded-full border border-amber-200/50 dark:border-amber-800/30" aria-label={`${unassignedGuests.length} guests unseated`}>
             {unassignedGuests.length} unseated
           </span>
         </div>
@@ -51,8 +51,9 @@ export function Sidebar({ guests }: SidebarProps) {
                      focus:outline-none focus:ring-2 focus:ring-primary-400/40 focus:border-primary-300/50 dark:focus:ring-primary-600/30 dark:focus:border-primary-700/30
                      transition-all backdrop-blur-md
                      placeholder:text-slate-400 dark:placeholder:text-slate-500 text-slate-700 dark:text-gray-100"
+            aria-label="Search guests by name or group"
           />
-          <Search className="w-4 h-4 absolute left-3 top-3 text-slate-400 dark:text-slate-500" />
+          <Search className="w-4 h-4 absolute left-3 top-3 text-slate-400 dark:text-slate-500" aria-hidden="true" />
         </div>
       </div>
 
@@ -81,7 +82,7 @@ export function Sidebar({ guests }: SidebarProps) {
         {filteredGuests.length === 0 && (
           <div className="flex flex-col items-center justify-center text-slate-400 dark:text-slate-500 mt-16 gap-2">
             <div className="w-14 h-14 rounded-full bg-white/50 dark:bg-slate-800/50 border border-white/30 dark:border-slate-700/30 flex items-center justify-center">
-              <Search className="w-6 h-6 text-slate-300 dark:text-slate-600" />
+              <Search className="w-6 h-6 text-slate-300 dark:text-slate-600" aria-hidden="true" />
             </div>
             <p className="text-sm font-medium">
               {filter ? 'No matches found' : 'All guests are seated'}
@@ -90,6 +91,7 @@ export function Sidebar({ guests }: SidebarProps) {
               <button
                 onClick={() => setFilter('')}
                 className="text-xs text-primary-500 dark:text-primary-400 hover:underline"
+                aria-label="Clear search filter"
               >
                 Clear search
               </button>

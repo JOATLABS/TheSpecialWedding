@@ -15,6 +15,7 @@ from app.models.knowledge_base import (
     KB_CATEGORIES,
     CATEGORY_DISPLAY_NAMES,
     generate_slug,
+    KB_STATUSES,
     KnowledgeBaseArticleCreateModel,
     KnowledgeBaseArticleUpdateModel,
 )
@@ -73,6 +74,8 @@ class KnowledgeBaseService:
                 "feedback": [],
                 "order": 0,
                 "estimated_read_minutes": estimated_read_minutes,
+                "card_image": article_data.card_image,
+                "og_image": article_data.og_image,
                 "created_at": datetime.now(timezone.utc),
                 "updated_at": datetime.now(timezone.utc),
             }
@@ -122,14 +125,20 @@ class KnowledgeBaseService:
         limit: int = 20,
         category: Optional[str] = None,
         search: Optional[str] = None,
-        status: str = "published",
+        status: Optional[str] = "published",
         featured_only: bool = False,
         official_only: bool = False
     ) -> dict:
         """Get articles with filtering and pagination"""
         try:
             # Build query
-            query: Dict[str, Any] = {"status": status}
+            query: Dict[str, Any] = {}
+
+            if status is not None:
+                if status not in KB_STATUSES:
+                    allowed_statuses = ", ".join(KB_STATUSES)
+                    raise HTTPException(status_code=400, detail=f"Status must be one of: {allowed_statuses}")
+                query["status"] = status
 
             if category and category != "all":
                 query["category"] = category
@@ -158,7 +167,10 @@ class KnowledgeBaseService:
             pages = max(1, (total + limit - 1) // limit)
 
             # Get articles sorted by featured first, then by order, then by date
-            cursor = self.articles_collection.find(query).sort([
+            cursor = self.articles_collection.find(
+                query,
+                {"content": 0, "feedback": 0}
+            ).sort([
                 ("featured", -1),
                 ("is_official", -1),
                 ("order", 1),
@@ -169,10 +181,6 @@ class KnowledgeBaseService:
             async for article in cursor:
                 article["id"] = str(article["_id"])
                 article["_id"] = str(article["_id"])
-
-                # Remove content for list view (too large)
-                article.pop("content", None)
-                article.pop("feedback", None)
 
                 articles.append(article)
 
@@ -631,7 +639,6 @@ class KnowledgeBaseService:
         except Exception as e:
             logger.error(f"Error getting related articles: {str(e)}")
             return []
-
 
 # Singleton instance
 knowledge_base_service = KnowledgeBaseService()

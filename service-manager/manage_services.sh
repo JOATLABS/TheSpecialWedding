@@ -7,6 +7,7 @@ PROJECT_ROOT="${DEFAULT_PROJECT_ROOT}"
 MENU_WINDOW="menu"
 FRONTEND_WINDOW="frontend"
 ALL_LOG_WINDOW="all-logs"
+SCRAPER_WINDOW="vendor-scraper"
 
 if [[ -z "${BASH_VERSINFO:-}" ]]; then
   echo "This script must be run with Bash." >&2
@@ -596,6 +597,168 @@ setup_all_logs_window() {
   tmux switch-client -t "$SESSION_NAME:$ALL_LOG_WINDOW"
 }
 
+# =============================================================================
+# VENDOR SCRAPER
+# =============================================================================
+
+SCRAPER_LOG_FILE="$LOG_DIR/scraper.log"
+SCRAPER_EXPORT_DIR="$LOG_ROOT/exports"
+
+run_vendor_scraper() {
+  local dry_run="${1:-false}"
+
+  if window_exists "$SCRAPER_WINDOW"; then
+    warn "Scraper is already running. View logs (option 13) or wait for it to finish."
+    return
+  fi
+
+  # ── State selection (loaded from states.json) ──
+  local states_file="$PROJECT_ROOT/app/jobs/vendor_scraper/states.json"
+  if [[ ! -f "$states_file" ]]; then
+    err "states.json not found at $states_file"
+    warn "Create it with: [{\"state\": \"OK\", \"state_full\": \"Oklahoma\", \"country\": \"US\"}]"
+    return
+  fi
+
+  # Parse state abbreviations and full names from JSON
+  # Sanitize: only allow alphanumeric, spaces, hyphens, periods in state values
+  local state_abbrevs=()
+  local state_fulls=()
+  while IFS='|' read -r abbrev full; do
+    # Strip anything that isn't alphanumeric or space (prevent shell injection)
+    abbrev="$(printf '%s' "$abbrev" | tr -cd 'a-zA-Z0-9')"
+    full="$(printf '%s' "$full" | tr -cd 'a-zA-Z0-9 .-')"
+    if [[ -n "$abbrev" && -n "$full" ]]; then
+      state_abbrevs+=("$abbrev")
+      state_fulls+=("$full")
+    fi
+  done < <(python3 -c "
+import json, sys
+with open(sys.argv[1]) as f:
+    for s in json.load(f):
+        print(f\"{s['state']}|{s['state_full']}\")
+" "$states_file")
+
+  local state_count=${#state_abbrevs[@]}
+  if [[ "$state_count" -eq 0 ]]; then
+    err "No states found in states.json"
+    return
+  fi
+
+  printf '\n\033[1;35mVendor Directory Scraper\033[0m\n'
+  printf '\033[90m─────────────────────────────────────────\033[0m\n'
+  printf '\nAvailable states (from states.json):\n'
+  for i in $(seq 0 $((state_count - 1))); do
+    printf '  %d) %s (%s)' "$((i + 1))" "${state_fulls[$i]}" "${state_abbrevs[$i]}"
+    # 3 states per line
+    if (( (i + 1) % 3 == 0 )); then
+      printf '\n'
+    else
+      printf '    '
+    fi
+  done
+  printf '\n  a) All states\n'
+  printf '\nSelect states (comma-separated, or "a" for all): '
+  read -r state_input
+
+  local state_args=""
+  if [[ "$state_input" != "a" && -n "$state_input" ]]; then
+    IFS=',' read -r -a selections <<< "$state_input"
+    for sel in "${selections[@]}"; do
+      sel="$(trim "$sel")"
+      if [[ "$sel" =~ ^[0-9]+$ ]] && (( sel >= 1 && sel <= state_count )); then
+        local idx=$((sel - 1))
+        state_args="$state_args --state ${state_abbrevs[$idx]}"
+      fi
+    done
+  fi
+
+  # ── Category selection ──
+  printf '\nAvailable categories:\n'
+  printf '  photographer, videographer, florist, caterer, venue, dj, mc,\n'
+  printf '  band, officiant, planner, decorator, cake, hair_makeup,\n'
+  printf '  transportation, stationery, rentals, lighting, photo_booth,\n'
+  printf '  jewelry, attire\n'
+  printf '\nCategories (comma-separated, or Enter for all): '
+  read -r cat_input
+
+  local cat_args=""
+  if [[ -n "$cat_input" ]]; then
+    # Sanitize: only allow alphanumeric, commas, underscores (valid category chars)
+    local sanitized_cats
+    sanitized_cats="$(printf '%s' "$cat_input" | tr -cd 'a-zA-Z0-9,_')"
+    if [[ -n "$sanitized_cats" ]]; then
+      cat_args="--categories $sanitized_cats"
+    fi
+  fi
+
+  local dry_flag=""
+  if [[ "$dry_run" == "true" ]]; then
+    dry_flag="--dry-run"
+  fi
+
+  local cmd="cd '$PROJECT_ROOT' && python -m app.jobs.vendor_scraper.run $state_args $cat_args $dry_flag 2>&1 | tee '$SCRAPER_LOG_FILE'"
+
+  local mode="LIVE"
+  [[ "$dry_run" == "true" ]] && mode="DRY RUN (no DB writes)"
+
+  printf '\n\033[90m─────────────────────────────────────────\033[0m\n'
+  printf '\033[33m▶ Starting scraper...\033[0m\n'
+  printf "  Mode: %s\n" "$mode"
+  [[ -n "$state_args" ]] && printf "  States: %s\n" "$state_args" || printf "  States: All\n"
+  [[ -n "$cat_args" ]] && printf "  Categories: %s\n" "$cat_input" || printf "  Categories: All\n"
+  printf '\n'
+
+  info "Launching scraper in a new tmux pane..."
+  tmux new-window -d -t "$SESSION_NAME" -n "$SCRAPER_WINDOW" \
+    "bash -c '$cmd; printf \"\n\033[32m✓ Scraper finished. Press Enter to close.\033[0m\n\"; read -r'"
+  sleep 1
+  tmux pipe-pane -t "$SESSION_NAME:$SCRAPER_WINDOW.0" "cat >> '$SCRAPER_LOG_FILE'"
+  tmux switch-client -t "$SESSION_NAME:$SCRAPER_WINDOW"
+}
+
+view_scraper_logs() {
+  if window_exists "$SCRAPER_WINDOW"; then
+    tmux switch-client -t "$SESSION_NAME:$SCRAPER_WINDOW"
+    return
+  fi
+
+  if [[ -f "$SCRAPER_LOG_FILE" ]]; then
+    info "No active scraper session. Showing last log file..."
+    tmux new-window -d -t "$SESSION_NAME" -n "$SCRAPER_WINDOW" \
+      "less +G '$SCRAPER_LOG_FILE'"
+    tmux switch-client -t "$SESSION_NAME:$SCRAPER_WINDOW"
+  else
+    warn "No scraper logs found. Run the scraper first."
+  fi
+}
+
+export_scraper_json() {
+  mkdir -p "$SCRAPER_EXPORT_DIR"
+  local timestamp
+  timestamp="$(date +%Y-%m-%d-%H%M)"
+  local outfile="$SCRAPER_EXPORT_DIR/vendors-${timestamp}.json"
+
+  info "Exporting scraped vendors to JSON..."
+  cd "$PROJECT_ROOT" && python -m app.jobs.vendor_scraper.export_json "$outfile"
+  local exit_code=$?
+
+  if [[ $exit_code -eq 0 && -f "$outfile" ]]; then
+    local count
+    count="$(python3 -c "import json; print(len(json.load(open('$outfile'))))" 2>/dev/null || echo '?')"
+    local size
+    size="$(du -h "$outfile" | cut -f1)"
+
+    printf '\n\033[32m✓ Exported %s vendors\033[0m\n' "$count"
+    printf '  File: %s\n' "$outfile"
+    printf '  Size: %s\n' "$size"
+    printf '\n\033[37mYou can now import this file via the admin panel:\033[0m\n'
+    printf '  \033[36mAdmin → Vendor Management → Import Vendors\033[0m\n'
+  else
+    error "Export failed. Make sure the database is running."
+  fi
+}
+
 print_menu() {
   clear
   cat <<MENU
@@ -613,8 +776,15 @@ Managing: $PROJECT_ROOT
 8) View Docker service logs
 9) View all logs (split panes)
 10) Close log windows
-11) Detach from tmux session
-12) Quit manager (kills tmux session)
+
+── Vendor Scraper ────────────────────────
+11) Run vendor scraper (prompts for args)
+12) Run vendor scraper (dry run)
+13) View scraper logs
+14) Export last run → JSON (for admin import)
+
+15) Detach from tmux session
+16) Quit manager (kills tmux session)
 MENU
 }
 
@@ -630,8 +800,12 @@ handle_choice() {
     8) view_service_logs ;;
     9) setup_all_logs_window ;;
     10) close_service_log_windows ;;
-    11) tmux detach-client ;;
-    12) tmux kill-session -t "$SESSION_NAME" ; exit 0 ;;
+    11) run_vendor_scraper "false" ;;
+    12) run_vendor_scraper "true" ;;
+    13) view_scraper_logs ;;
+    14) export_scraper_json ;;
+    15) tmux detach-client ;;
+    16) tmux kill-session -t "$SESSION_NAME" ; exit 0 ;;
     *) warn "Unknown option: $1" ;;
   esac
   printf '\nPress Enter to continue...'

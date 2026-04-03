@@ -155,14 +155,16 @@ async def mark_notification_read(notification_id: str, current_user: ExtendedAut
     """Mark notification as read by current user"""
     return await notification_service.mark_notification_read(
         notification_id,
-        user_id=current_user.email
+        user_id=current_user.email,
+        user_role=current_user.role,
     )
 
 @router.put("/user/notifications/read-all", tags=["User Notifications"])
 async def mark_all_notifications_read(current_user: ExtendedAuthUser = Depends(require_admin_or_planner)):
     """Mark all notifications as read for current user"""
     return await notification_service.mark_all_notifications_read(
-        user_id=current_user.email
+        user_id=current_user.email,
+        user_role=current_user.role,
     )
 
 @router.put("/user/notifications/{notification_id}/dismiss", tags=["User Notifications"])

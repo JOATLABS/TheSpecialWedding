@@ -11,7 +11,7 @@ export interface LandingLayoutProps {
   wedding: Wedding;
   images: GalleryImage[];
   guest?: unknown;
-  rsvpToken?: string | null;
+  openGuestRsvpOnLoad?: boolean;
 }
 
 export type SectionId = 'rsvp' | 'gallery' | 'registry' | 'faq';

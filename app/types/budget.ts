@@ -9,7 +9,6 @@ export interface BudgetSubcategory {
 
 export interface BudgetCategory {
   id: string;
-  _id: string;
   wedding_id: string;
   name: string;
   description?: string;
@@ -27,7 +26,6 @@ export interface BudgetCategory {
 
 export interface VendorQuote {
   id: string;
-  _id: string;
   wedding_id: string;
   vendor_id?: string;
   vendor_name: string;
@@ -49,7 +47,7 @@ export interface VendorQuote {
 
 export interface BudgetTemplate {
   id: string;
-  _id: string;
+  _id?: string;
   name: string;
   description?: string;
   wedding_type: string;
@@ -139,6 +137,13 @@ export interface BudgetAlert {
   is_resolved: boolean;
   created_at: string;
   resolved_at?: string;
+}
+
+export interface ApplyBudgetTemplateResult {
+  wedding_id: string;
+  template_id: string;
+  categories_created: number;
+  categories: BudgetCategory[];
 }
 
 // Form interfaces for creating/updating

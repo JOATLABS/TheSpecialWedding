@@ -1,16 +1,21 @@
 import type { Metadata } from 'next';
 
 export const metadata: Metadata = {
-  title: 'Special Wedding - Professional Wedding Planning Platform',
-  description: 'The ultimate wedding planning platform for professional wedding planners. Manage multiple weddings, coordinate with vendors, and create beautiful wedding websites with AI-powered tools.',
-  keywords: 'wedding planning, wedding planner software, wedding management, wedding website builder, AI wedding tools',
+  title: 'The Special Wedding — Software for Professional Wedding Planners',
+  description: 'Manage multiple weddings, coordinate vendors, track budgets, and run your planning business — all from one AI-powered platform built for professional planners.',
+  keywords: 'wedding planner software, wedding planning business software, wedding vendor management, wedding planner CRM, AI wedding tools, HoneyBook alternative',
+  metadataBase: new URL('https://thespecialwedding.io'),
+  alternates: {
+    canonical: '/saas',
+  },
   openGraph: {
-    title: 'Special Wedding - Professional Wedding Planning Platform',
-    description: 'Transform your wedding planning business with our comprehensive platform featuring AI-powered tools, vendor collaboration, and beautiful wedding websites.',
+    title: 'The Special Wedding — Software for Professional Wedding Planners',
+    description: 'Manage multiple weddings, coordinate vendors, track budgets, and run your planning business from one AI-powered platform.',
     type: 'website',
+    url: 'https://thespecialwedding.io/saas',
     images: [
       {
-        url: '/images/saas-og-image.jpg',
+        url: '/og-image.png',
         width: 1200,
         height: 630,
         alt: 'Special Wedding Platform',
@@ -19,9 +24,9 @@ export const metadata: Metadata = {
   },
   twitter: {
     card: 'summary_large_image',
-    title: 'Special Wedding - Professional Wedding Planning Platform',
-    description: 'Transform your wedding planning business with our comprehensive platform featuring AI-powered tools, vendor collaboration, and beautiful wedding websites.',
-    images: ['/images/saas-og-image.jpg'],
+    title: 'The Special Wedding — Software for Professional Wedding Planners',
+    description: 'Manage multiple weddings, coordinate vendors, track budgets, and run your planning business from one AI-powered platform.',
+    images: ['/og-image.png'],
   },
 };
 

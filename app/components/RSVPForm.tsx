@@ -7,6 +7,8 @@ import { useState } from 'react';
 import { Loader2 } from 'lucide-react';
 import { useWedding } from '@/hooks/useWedding';
 import { formatDate } from '@/utils/dateFormat';
+import { BUILT_IN_WEDDING_EVENT_OPTIONS, getWeddingEventLabel } from '@/utils/weddingEvents';
+import { submitGuestSessionRsvp } from '@/utils/guestAccess';
 
 interface ExistingRsvpData {
   has_rsvp?: boolean;
@@ -18,7 +20,7 @@ interface ExistingRsvpData {
 
 interface RSVPFormProps {
   guest: any;
-  token: string;
+  slug: string;
   existingRsvp?: ExistingRsvpData | null;
   onSuccess?: () => void;
   onViewWeddingPage?: () => void;
@@ -33,14 +35,6 @@ interface PlusOneData {
   sms_opt_in?: boolean;
   email_opt_in?: boolean;
 }
-
-const EVENT_TYPE_LABELS: Record<string, string> = {
-  traditional: 'Traditional Ceremony',
-  white_wedding: 'White Wedding',
-  reception: 'Reception',
-  engagement: 'Engagement Party',
-  rehearsal: 'Rehearsal Dinner',
-};
 
 /* ─── color helpers ─── */
 function hexToRgb(hex: string): { r: number; g: number; b: number } {
@@ -80,7 +74,7 @@ function FormCard({ title, children, className = '' }: {
   );
 }
 
-export default function RSVPForm({ guest, token, existingRsvp, onSuccess, onViewWeddingPage }: RSVPFormProps) {
+export default function RSVPForm({ guest, slug, existingRsvp, onSuccess, onViewWeddingPage }: RSVPFormProps) {
   const wedding = useWedding();
   const { register, handleSubmit, formState: { errors, isSubmitting } } = useForm({
     defaultValues: {
@@ -135,16 +129,12 @@ export default function RSVPForm({ guest, token, existingRsvp, onSuccess, onView
   const eventOptions = wedding.events && wedding.events.length > 0
     ? wedding.events.map((e: any) => ({
         value: e.type,
-        label: EVENT_TYPE_LABELS[e.type] || e.type.replace('_', ' '),
+        label: getWeddingEventLabel(e.type, e.custom_type_label),
         date: e.date,
         time: e.details?.time,
         venue: e.details?.venue_name,
       }))
-    : [
-        { value: 'traditional', label: 'Traditional Ceremony' },
-        { value: 'white_wedding', label: 'White Wedding' },
-        { value: 'reception', label: 'Reception' },
-      ];
+    : BUILT_IN_WEDDING_EVENT_OPTIONS.map((option) => ({ value: option.value, label: option.label }));
 
   const addPlusOne = () => {
     if (plusOnes.length < guest.number_of_plus_ones_allowed) {
@@ -203,7 +193,9 @@ export default function RSVPForm({ guest, token, existingRsvp, onSuccess, onView
         return `${year}${pad(month)}${pad(day)}T${pad(hour)}${pad(min)}00`;
       };
 
-      const timestamp = Date.now();
+      const uidBase = `${guest.id || guest.name || 'guest'}-${wedding.id || wedding.slug || 'wedding'}`
+        .replace(/\s+/g, '-')
+        .toLowerCase();
       const vevents = events.map((event, index) => {
         const eventDate = event.date || wedding.date;
         if (!eventDate) return '';
@@ -224,7 +216,7 @@ export default function RSVPForm({ guest, token, existingRsvp, onSuccess, onView
 
         const eventTimezone = event.details?.timezone || weddingTimezone;
 
-        const eventLabel = EVENT_TYPE_LABELS[event.type] || event.type.replace('_', ' ');
+        const eventLabel = getWeddingEventLabel(event.type, event.custom_type_label);
         const summary = `${eventLabel} - ${wedding.couple_names || 'Wedding'}`;
         const location = event.details?.venue_name || event.details?.location || 'Wedding Venue';
         const attire = event.details?.attire ? `Attire: ${event.details.attire}` : '';
@@ -239,7 +231,7 @@ export default function RSVPForm({ guest, token, existingRsvp, onSuccess, onView
           `SUMMARY:${summary}`,
           `LOCATION:${location}`,
           `DESCRIPTION:${description}`,
-          `UID:${timestamp}-${index}@wedding-rsvp`,
+          `UID:${uidBase}-${event.type}-${eventDate}-${index}@wedding-rsvp`,
           'END:VEVENT'
         ].join('\r\n');
       }).filter(Boolean);
@@ -297,9 +289,6 @@ export default function RSVPForm({ guest, token, existingRsvp, onSuccess, onView
     }
 
     try {
-      const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || '';
-      const apiUrl = baseUrl.replace('/admin', '');
-
       const attendingRaw = data.attending;
       const attendingList: string[] = Array.isArray(attendingRaw)
         ? attendingRaw
@@ -327,45 +316,7 @@ export default function RSVPForm({ guest, token, existingRsvp, onSuccess, onView
       };
 
       console.log('[RSVP] submissionData:', JSON.stringify(submissionData, null, 2));
-
-      const res = await fetch(`${apiUrl}/rsvp/invite/${token}/rsvp`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(submissionData)
-      });
-
-      if (!res.ok) {
-        let errorMessage = 'Failed to submit RSVP. Please check all required fields and try again.';
-        try {
-          const errorData = await res.json();
-          if (errorData.detail) {
-            if (typeof errorData.detail === 'string') {
-              errorMessage = errorData.detail;
-            } else if (Array.isArray(errorData.detail)) {
-              const fieldLabels: Record<string, string> = {
-                phone: 'Phone number',
-                attending: 'Events',
-                dietary: 'Dietary restrictions',
-                name: 'Name',
-                email: 'Email',
-                plus_ones: 'Additional guests',
-              };
-              errorMessage = errorData.detail
-                .map((err: any) => {
-                  const field = err.loc?.slice(-1)[0] || 'Unknown field';
-                  const label = fieldLabels[field] || field;
-                  return `${label}: ${err.msg}`;
-                })
-                .join('. ');
-            }
-          }
-        } catch {
-          // JSON parse failed, use default message
-        }
-        throw new Error(errorMessage);
-      }
-
-      localStorage.setItem(`rsvp-${token}`, 'true');
+      await submitGuestSessionRsvp(slug, submissionData);
       setSubmitted(true);
       generateICS();
       onSuccess?.();

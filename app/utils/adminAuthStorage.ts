@@ -1,3 +1,45 @@
+import { getApiBaseUrl } from '@/utils/env';
+
+declare global {
+  interface Window {
+    __TSW_ADMIN_AUTH_TOKEN__?: string;
+    __TSW_ADMIN_REMEMBER_ME__?: boolean;
+  }
+}
+
+let bootstrapPromise: Promise<string | null> | null = null;
+let refreshPromise: Promise<{ status: 'success'; token: string } | { status: 'unauthenticated' | 'error' }> | null = null;
+
+function clearLegacyAdminStorage(): void {
+  if (typeof window === 'undefined') {
+    return;
+  }
+
+  try {
+    localStorage.removeItem('admin_token');
+  } catch (error) {
+    console.warn('Unable to clear legacy admin token from localStorage', error);
+  }
+
+  try {
+    sessionStorage.removeItem('admin_token');
+  } catch (error) {
+    console.warn('Unable to clear legacy admin token from sessionStorage', error);
+  }
+}
+
+function setInMemoryAdminToken(token: string | null): void {
+  if (typeof window === 'undefined') {
+    return;
+  }
+
+  if (token) {
+    window.__TSW_ADMIN_AUTH_TOKEN__ = token;
+  } else {
+    delete window.__TSW_ADMIN_AUTH_TOKEN__;
+  }
+}
+
 /**
  * Decode a JWT payload without verifying the signature.
  * JWTs are base64url-encoded and the payload (second segment) contains
@@ -7,7 +49,6 @@ export function decodeJwtPayload(token: string): Record<string, unknown> | null 
   try {
     const parts = token.split('.');
     if (parts.length !== 3) return null;
-    // base64url → base64 → decode
     const base64 = parts[1].replace(/-/g, '+').replace(/_/g, '/');
     const json = atob(base64);
     return JSON.parse(json);
@@ -36,28 +77,9 @@ export function clearAdminAuthStorage(): void {
     return;
   }
 
-  try {
-    localStorage.removeItem('admin_token');
-  } catch (error) {
-    console.warn('Unable to clear admin token from localStorage', error);
-  }
-
-  try {
-    sessionStorage.removeItem('admin_token');
-  } catch (error) {
-    console.warn('Unable to clear admin token from sessionStorage', error);
-  }
-
-  try {
-    // Only clear the admin_token cookie — not all cookies on the domain.
-    // Clearing every cookie would destroy analytics, consent, CSRF tokens, etc.
-    const cookieName = 'admin_token';
-    document.cookie = `${cookieName}=;expires=Thu, 01 Jan 1970 00:00:00 GMT;path=/;`;
-    document.cookie = `${cookieName}=;expires=Thu, 01 Jan 1970 00:00:00 GMT;path=/;domain=${window.location.hostname}`;
-    document.cookie = `${cookieName}=;expires=Thu, 01 Jan 1970 00:00:00 GMT;path=/;domain=.${window.location.hostname}`;
-  } catch (error) {
-    console.warn('Unable to clear admin cookies', error);
-  }
+  clearLegacyAdminStorage();
+  setInMemoryAdminToken(null);
+  delete window.__TSW_ADMIN_REMEMBER_ME__;
 }
 
 export function persistAdminAuthToken(token: string, rememberMe: boolean): void {
@@ -65,17 +87,55 @@ export function persistAdminAuthToken(token: string, rememberMe: boolean): void 
     return;
   }
 
-  const storage = rememberMe ? window.localStorage : window.sessionStorage;
+  clearLegacyAdminStorage();
+  setInMemoryAdminToken(token);
+  window.__TSW_ADMIN_REMEMBER_ME__ = rememberMe;
+}
 
-  try {
-    storage.setItem('admin_token', token);
-  } catch (error) {
-    console.warn('Unable to persist admin token to storage', error);
+export function getAdminAuthToken(): string | null {
+  if (typeof window === 'undefined') {
+    return null;
   }
 
-  const secureAttribute = window.location.protocol === 'https:' ? 'Secure;' : '';
-  const maxAge = rememberMe ? 'max-age=604800;' : 'max-age=3600;';
-  document.cookie = `admin_token=${token}; path=/; SameSite=Strict; ${maxAge} ${secureAttribute}`;
+  return window.__TSW_ADMIN_AUTH_TOKEN__ ?? null;
+}
+
+export function wasAdminSessionRemembered(): boolean {
+  if (typeof window === 'undefined') {
+    return true;
+  }
+
+  return window.__TSW_ADMIN_REMEMBER_ME__ ?? true;
+}
+
+export async function bootstrapAdminAuthToken(): Promise<string | null> {
+  const existingToken = getAdminAuthToken();
+  if (existingToken && !isTokenExpired(existingToken)) {
+    return existingToken;
+  }
+
+  if (bootstrapPromise) {
+    return bootstrapPromise;
+  }
+
+  const remembered = wasAdminSessionRemembered();
+
+  bootstrapPromise = (async () => {
+    try {
+      const result = await refreshAdminAuthToken(existingToken);
+      if (result.status !== 'success') {
+        return null;
+      }
+      persistAdminAuthToken(result.token, remembered);
+      return result.token;
+    } catch {
+      return null;
+    } finally {
+      bootstrapPromise = null;
+    }
+  })();
+
+  return bootstrapPromise;
 }
 
 /**
@@ -88,4 +148,50 @@ export function getTokenExpiresInMs(token: string | null): number {
   if (!payload || typeof payload.exp !== 'number') return 0;
   const msUntilExpiry = payload.exp * 1000 - Date.now();
   return Math.max(0, msUntilExpiry);
+}
+
+export async function refreshAdminAuthToken(
+  _currentToken?: string | null,
+): Promise<{ status: 'success'; token: string } | { status: 'unauthenticated' | 'error' }> {
+  if (refreshPromise) {
+    return refreshPromise;
+  }
+
+  refreshPromise = (async () => {
+    try {
+      const response = await fetch(`${getApiBaseUrl()}/admin/token/refresh`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      });
+
+      if (response.status === 401 || response.status === 403) {
+        return { status: 'unauthenticated' as const };
+      }
+
+      if (!response.ok) {
+        return { status: 'error' as const };
+      }
+
+      const payload = await response.json();
+      const freshToken = payload?.access_token;
+
+      if (typeof freshToken !== 'string' || isTokenExpired(freshToken)) {
+        return { status: 'unauthenticated' as const };
+      }
+
+      return {
+        status: 'success' as const,
+        token: freshToken,
+      };
+    } catch {
+      return { status: 'error' as const };
+    } finally {
+      refreshPromise = null;
+    }
+  })();
+
+  return refreshPromise;
 }

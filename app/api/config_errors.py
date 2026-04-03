@@ -30,7 +30,7 @@ _web_push_service = None
 _web_push_checked = False
 
 # Root admin email for push alerts
-ROOT_ADMIN_EMAIL = "thedeveloper@thespecialwedding.com"
+ROOT_ADMIN_EMAIL = "thedeveloper@thespecialwedding.io"
 
 
 def _get_web_push_service():

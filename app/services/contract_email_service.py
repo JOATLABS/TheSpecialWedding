@@ -1,14 +1,15 @@
 """
 Contract Email Service
 
-Sends confirmation emails when contracts are signed.
-Uses Resend for email delivery.
+Sends contract lifecycle emails using Resend.
 """
-from typing import Dict, Any, Optional
-from datetime import datetime
+from typing import Dict, Any, Optional, List
+from datetime import date, datetime
 import logging
+from bson import ObjectId
 from app.core.settings import settings
 from app.core.database import mongo
+from app.utils.payment_schedule import build_effective_payment_schedule
 
 logger = logging.getLogger(__name__)
 
@@ -38,6 +39,101 @@ class ContractEmailService:
                 logger.error(f"Failed to initialize Resend: {str(e)}")
                 raise
         return self._resend
+
+    @staticmethod
+    def _format_calendar_date(value: Any) -> str:
+        if not value:
+            return "TBD"
+
+        if isinstance(value, datetime):
+            return value.strftime("%B %d, %Y")
+
+        if isinstance(value, date):
+            return value.strftime("%B %d, %Y")
+
+        if isinstance(value, str):
+            normalized = value.strip()
+            if not normalized:
+                return "TBD"
+            try:
+                return datetime.fromisoformat(normalized.replace("Z", "+00:00")).strftime("%B %d, %Y")
+            except ValueError:
+                try:
+                    return date.fromisoformat(normalized).strftime("%B %d, %Y")
+                except ValueError:
+                    return normalized
+
+        return str(value)
+
+    @staticmethod
+    def _resolve_couple_names(couple: Dict[str, Any]) -> tuple[str, Optional[str], str]:
+        primary = (couple.get("partner1_name") or couple.get("name") or "").strip()
+        secondary = (couple.get("partner2_name") or couple.get("partner_name") or "").strip() or None
+        display = f"{primary} & {secondary}" if secondary else primary
+        return primary, secondary, display
+
+    @staticmethod
+    def _format_currency(amount: float, currency: Optional[str] = "USD") -> str:
+        normalized = (currency or "USD").upper()
+        return f"${amount:,.2f} {normalized}"
+
+    @staticmethod
+    def _is_completed_payment(status: Optional[str]) -> bool:
+        return status in {"succeeded", "paid_externally"}
+
+    @staticmethod
+    def _payment_status_label(status: Optional[str]) -> str:
+        labels = {
+            "scheduled": "Scheduled",
+            "processing": "Processing",
+            "succeeded": "Paid",
+            "paid_externally": "Paid",
+            "failed": "Failed",
+            "cancelled": "Cancelled",
+        }
+        return labels.get(status or "", status or "Unknown")
+
+    @staticmethod
+    def _payment_id(payment: Dict[str, Any]) -> Optional[str]:
+        value = payment.get("id") or payment.get("_id")
+        return str(value) if value is not None else None
+
+    async def _load_contract_payment_schedule(self, contract_id: str) -> List[Dict[str, Any]]:
+        if not contract_id:
+            return []
+
+        payments = await mongo.db["scheduled_payments"].find(
+            {"contract_id": contract_id}
+        ).sort("due_date", 1).to_list(length=None)
+
+        serialized: List[Dict[str, Any]] = []
+        for payment in payments:
+            amount = float(payment.get("amount", 0) or 0)
+            serialized.append({
+                "id": self._payment_id(payment),
+                "name": payment.get("name") or "Scheduled Payment",
+                "amount": amount,
+                "currency": payment.get("currency", "usd"),
+                "status": payment.get("status", "scheduled"),
+                "due_date": payment.get("due_date"),
+                "paid_at": payment.get("paid_at"),
+                "receipt_url": payment.get("receipt_url"),
+            })
+
+        return serialized
+
+    def _render_payment_schedule_rows(self, payments: List[Dict[str, Any]]) -> str:
+        rows = ""
+        for payment in payments:
+            rows += f"""
+                <tr>
+                    <td style="padding: 12px; border-bottom: 1px solid #e2e8f0;">{payment.get('name', 'Payment')}</td>
+                    <td style="padding: 12px; border-bottom: 1px solid #e2e8f0;">{self._format_calendar_date(payment.get('due_date'))}</td>
+                    <td style="padding: 12px; border-bottom: 1px solid #e2e8f0;">{self._payment_status_label(payment.get('status'))}</td>
+                    <td style="padding: 12px; border-bottom: 1px solid #e2e8f0; text-align: right;">{self._format_currency(float(payment.get('amount', 0) or 0), payment.get('currency', 'usd'))}</td>
+                </tr>
+            """
+        return rows
 
     async def send_contract_email(
         self,
@@ -112,6 +208,372 @@ class ContractEmailService:
             logger.error(f"Failed to send contract email to {vendor_email}: {str(e)}")
             raise
 
+    async def send_package_contract_email(self, contract: Dict[str, Any]) -> bool:
+        """
+        Send a package contract invitation to the couple for review/signing.
+
+        This uses the shared ResendEmailService so the send is recorded in
+        email_logs for operational verification.
+        """
+        try:
+            from app.services.email_service_resend import ResendEmailService
+
+            couple = contract.get("couple", {}) or {}
+            package = contract.get("package_snapshot", {}) or {}
+            planner_id = contract.get("planner_id")
+            wedding_id = contract.get("wedding_id")
+
+            couple_email = couple.get("email")
+            if not couple_email:
+                logger.error("Package contract email skipped: couple email missing")
+                return False
+
+            planner = None
+            if planner_id:
+                planner = await mongo.db["users"].find_one({"_id": planner_id}) or await mongo.db["users"].find_one({"_id": str(planner_id)})
+
+            wedding = None
+            if wedding_id:
+                wedding = await mongo.db["weddings"].find_one({"_id": wedding_id})
+
+            partner1 = couple.get("partner1_name", "").strip()
+            partner2 = (couple.get("partner2_name") or "").strip()
+            couple_display = f"{partner1} & {partner2}" if partner2 else partner1 or "there"
+
+            planner_company = (
+                (planner or {}).get("company_name")
+                or (planner or {}).get("business_name")
+                or (planner or {}).get("name")
+                or settings.resend_from_name
+            )
+            planner_email = (planner or {}).get("email")
+            wedding_date = self._format_calendar_date(contract.get("wedding_date") or (wedding or {}).get("date"))
+            venue = (wedding or {}).get("venue") or contract.get("venue") or "TBD"
+
+            total = float(package.get("total_amount", 0) or 0)
+            currency = str(package.get("currency", "usd")).upper()
+            contract_url = f"{settings.frontend_url or 'https://thespecialwedding.io'}/contracts/{contract.get('token', '')}"
+
+            services_html = ""
+            for service in package.get("services", []):
+                if service.get("included"):
+                    services_html += f"<li style=\"margin-bottom: 8px;\">{service.get('name', 'Service')}</li>"
+
+            html_content = f"""
+            <!DOCTYPE html>
+            <html>
+            <head>
+                <meta charset="UTF-8">
+            </head>
+            <body style="font-family: 'Helvetica Neue', Arial, sans-serif; line-height: 1.6; color: #1e293b; max-width: 600px; margin: 0 auto; padding: 20px;">
+                <div style="text-align: center; padding: 30px 0; border-bottom: 2px solid #6366f1;">
+                    <h1 style="color: #6366f1; margin: 0 0 10px 0;">Your wedding planning proposal is ready</h1>
+                    <p style="color: #64748b; margin: 0;">Review the package and sign online to get started</p>
+                </div>
+
+                <div style="padding: 30px 0;">
+                    <p>Hi {couple_display},</p>
+                    <p>{planner_company} shared a wedding planning package with you. You can review the details and sign your agreement online using the secure link below.</p>
+
+                    <div style="background: #f8fafc; border-radius: 12px; padding: 20px; margin: 20px 0;">
+                        <h2 style="color: #334155; margin: 0 0 15px 0; font-size: 16px;">Package Summary</h2>
+                        <p style="margin: 0;"><strong>Package:</strong> {package.get('name', 'Wedding Package')}</p>
+                        <p style="margin: 10px 0 0 0;"><strong>Investment:</strong> ${total:,.2f} {currency}</p>
+                        <p style="margin: 10px 0 0 0;"><strong>Wedding date:</strong> {wedding_date}</p>
+                        <p style="margin: 10px 0 0 0;"><strong>Venue:</strong> {venue}</p>
+                    </div>
+
+                    {f'''
+                    <h3 style="color: #334155; margin: 25px 0 15px 0;">Included Services</h3>
+                    <ul style="margin: 0; padding-left: 20px; color: #475569;">
+                        {services_html}
+                    </ul>
+                    ''' if services_html else ''}
+
+                    <div style="text-align: center; margin: 32px 0;">
+                        <a href="{contract_url}" style="display: inline-block; background: #6366f1; color: white; padding: 14px 28px; text-decoration: none; border-radius: 8px; font-weight: 600;">
+                            Review & Sign Contract
+                        </a>
+                    </div>
+
+                    <p style="color: #64748b;">If you have questions before signing, reply to this email or contact {planner_company}{f' at {planner_email}' if planner_email else ''}.</p>
+                    <p style="margin-top: 20px;">Warmly,<br>{planner_company}</p>
+                </div>
+            </body>
+            </html>
+            """
+
+            email_service = ResendEmailService()
+            result = await email_service.send_email(
+                to_email=couple_email,
+                subject=f"Review Your Wedding Planning Package - {package.get('name', 'Wedding Package')}",
+                html_content=html_content,
+                from_email=settings.resend_from_email,
+                from_name=planner_company,
+                wedding_id=str(wedding_id) if wedding_id else None,
+                email_type="package_contract_invitation",
+                wedding_slug=(wedding or {}).get("slug"),
+            )
+            if result.get("success"):
+                logger.info(
+                    "Package contract email sent to %s for contract %s",
+                    couple_email,
+                    contract.get("id") or contract.get("_id"),
+                )
+                return True
+
+            logger.error(
+                "Package contract email failed for %s: %s",
+                couple_email,
+                result.get("error", "unknown error"),
+            )
+            return False
+
+        except Exception as e:
+            logger.error(f"Failed to send package contract email: {str(e)}")
+            return False
+
+    async def send_contract_payment_receipt(
+        self,
+        contract: Dict[str, Any],
+        payment: Dict[str, Any],
+        receipt_url: Optional[str] = None,
+    ) -> bool:
+        """Send a payment receipt with remaining balance/schedule details to the couple."""
+        try:
+            from app.services.email_service_resend import ResendEmailService
+
+            couple = contract.get("couple", {}) or {}
+            couple_email = couple.get("email")
+            if not couple_email:
+                logger.error("Contract payment receipt skipped: couple email missing")
+                return False
+
+            contract_id = str(contract.get("_id") or contract.get("id") or "")
+            schedule = await self._load_contract_payment_schedule(contract_id)
+            current_payment_id = self._payment_id(payment)
+            current_payment = next((item for item in schedule if item.get("id") == current_payment_id), None) or {
+                "id": current_payment_id,
+                "name": payment.get("name") or "Scheduled Payment",
+                "amount": float(payment.get("amount", 0) or 0),
+                "currency": payment.get("currency", "usd"),
+                "status": payment.get("status", "succeeded"),
+                "due_date": payment.get("due_date"),
+                "paid_at": payment.get("paid_at"),
+                "receipt_url": receipt_url or payment.get("receipt_url"),
+            }
+
+            total_amount = float(contract.get("package_snapshot", {}).get("total_amount", 0) or 0)
+            if total_amount <= 0:
+                total_amount = sum(float(item.get("amount", 0) or 0) for item in schedule)
+
+            paid_amount = sum(
+                float(item.get("amount", 0) or 0)
+                for item in schedule
+                if self._is_completed_payment(item.get("status"))
+            )
+            remaining_amount = max(total_amount - paid_amount, 0)
+            remaining_payments = [
+                item for item in schedule
+                if item.get("status") not in {"succeeded", "paid_externally", "cancelled"}
+            ]
+
+            _, _, couple_display = self._resolve_couple_names(couple)
+            couple_display = couple_display or "there"
+            planner_name = contract.get("planner_name") or settings.resend_from_name
+            planner_email = contract.get("planner_email")
+            wedding_id = contract.get("wedding_id")
+            wedding = None
+            if wedding_id:
+                wedding = await mongo.db["weddings"].find_one({"_id": wedding_id}) or await mongo.db["weddings"].find_one({"_id": str(wedding_id)})
+            wedding_slug = (wedding or {}).get("slug")
+            portal_url = f"{settings.frontend_url or 'https://thespecialwedding.io'}/portal/{contract.get('token', '')}"
+            schedule_rows = self._render_payment_schedule_rows(remaining_payments)
+            receipt_link = receipt_url or current_payment.get("receipt_url")
+
+            paid_in_full_html = ""
+            remaining_schedule_html = ""
+            if remaining_payments:
+                remaining_schedule_html = f"""
+                    <h3 style="color: #334155; margin: 25px 0 15px 0;">Remaining Payment Schedule</h3>
+                    <table style="width: 100%; border-collapse: collapse; background: #f8fafc; border-radius: 8px; overflow: hidden;">
+                        <thead>
+                            <tr style="background: #e2e8f0;">
+                                <th style="padding: 12px; text-align: left; font-weight: 600;">Payment</th>
+                                <th style="padding: 12px; text-align: left; font-weight: 600;">Due</th>
+                                <th style="padding: 12px; text-align: left; font-weight: 600;">Status</th>
+                                <th style="padding: 12px; text-align: right; font-weight: 600;">Amount</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {schedule_rows}
+                        </tbody>
+                    </table>
+                """
+            else:
+                paid_in_full_html = """
+                    <div style="background: #ecfdf5; border: 1px solid #86efac; border-radius: 12px; padding: 20px; margin-top: 24px;">
+                        <p style="margin: 0; color: #166534; font-weight: 600;">Your package is now paid in full.</p>
+                    </div>
+                """
+
+            html_content = f"""
+            <!DOCTYPE html>
+            <html>
+            <head>
+                <meta charset="UTF-8">
+            </head>
+            <body style="font-family: 'Helvetica Neue', Arial, sans-serif; line-height: 1.6; color: #1e293b; max-width: 600px; margin: 0 auto; padding: 20px;">
+                <div style="text-align: center; padding: 30px 0; border-bottom: 2px solid #16a34a;">
+                    <h1 style="color: #166534; margin: 0 0 10px 0;">Payment Received</h1>
+                    <p style="color: #64748b; margin: 0;">Here&apos;s your updated payment summary</p>
+                </div>
+
+                <div style="padding: 30px 0;">
+                    <p>Hi {couple_display},</p>
+                    <p>We successfully processed <strong>{current_payment.get('name', 'your payment')}</strong> for your wedding planning package.</p>
+
+                    <div style="background: #f8fafc; border-radius: 12px; padding: 20px; margin: 20px 0;">
+                        <h2 style="color: #334155; margin: 0 0 15px 0; font-size: 16px;">Payment Receipt</h2>
+                        <p style="margin: 0;"><strong>Package:</strong> {contract.get('package_snapshot', {}).get('name', 'Wedding Package')}</p>
+                        <p style="margin: 10px 0 0 0;"><strong>Payment:</strong> {current_payment.get('name', 'Scheduled Payment')}</p>
+                        <p style="margin: 10px 0 0 0;"><strong>Paid:</strong> {self._format_currency(float(current_payment.get('amount', 0) or 0), current_payment.get('currency', 'usd'))}</p>
+                        <p style="margin: 10px 0 0 0;"><strong>Processed on:</strong> {self._format_calendar_date(current_payment.get('paid_at') or datetime.now())}</p>
+                        <p style="margin: 10px 0 0 0;"><strong>Total paid to date:</strong> {self._format_currency(paid_amount, contract.get('package_snapshot', {}).get('currency', 'usd'))}</p>
+                        <p style="margin: 10px 0 0 0;"><strong>Remaining balance:</strong> {self._format_currency(remaining_amount, contract.get('package_snapshot', {}).get('currency', 'usd'))}</p>
+                    </div>
+
+                    {remaining_schedule_html}
+                    {paid_in_full_html}
+
+                    <div style="text-align: center; margin: 30px 0;">
+                        <a href="{portal_url}" style="display: inline-block; background: #6366f1; color: white; padding: 12px 24px; text-decoration: none; border-radius: 8px; font-weight: 500; margin-right: 12px;">
+                            View Payment Portal
+                        </a>
+                        {f'<a href="{receipt_link}" style="display: inline-block; background: #0f172a; color: white; padding: 12px 24px; text-decoration: none; border-radius: 8px; font-weight: 500;">View Stripe Receipt</a>' if receipt_link else ''}
+                    </div>
+
+                    <p style="color: #64748b;">Questions about your plan or payment schedule? Contact {planner_name}{f' at {planner_email}' if planner_email else ''}.</p>
+                </div>
+            </body>
+            </html>
+            """
+
+            email_service = ResendEmailService()
+            result = await email_service.send_email(
+                to_email=couple_email,
+                subject=f"Payment Received - {contract.get('package_snapshot', {}).get('name', 'Wedding Package')}",
+                html_content=html_content,
+                from_email=settings.resend_from_email,
+                from_name=planner_name,
+                wedding_id=str(wedding_id) if wedding_id else None,
+                wedding_slug=wedding_slug,
+                email_type="contract_payment_receipt",
+            )
+
+            if result.get("success"):
+                logger.info("Contract payment receipt sent to %s for contract %s", couple_email, contract_id)
+                return True
+
+            logger.error("Contract payment receipt failed for %s: %s", couple_email, result.get("error", "unknown error"))
+            return False
+        except Exception as e:
+            logger.error(f"Failed to send contract payment receipt: {str(e)}")
+            return False
+
+    async def send_planner_payment_notification(
+        self,
+        contract: Dict[str, Any],
+        payment: Dict[str, Any],
+    ) -> bool:
+        """Send a payment-received notification email to the planner."""
+        try:
+            from app.services.email_service_resend import ResendEmailService
+
+            planner_email = contract.get("planner_email")
+            if not planner_email:
+                logger.warning("Planner payment notification skipped: planner email missing")
+                return False
+
+            contract_id = str(contract.get("_id") or contract.get("id") or "")
+            schedule = await self._load_contract_payment_schedule(contract_id)
+            total_amount = float(contract.get("package_snapshot", {}).get("total_amount", 0) or 0)
+            if total_amount <= 0:
+                total_amount = sum(float(item.get("amount", 0) or 0) for item in schedule)
+
+            paid_amount = sum(
+                float(item.get("amount", 0) or 0)
+                for item in schedule
+                if self._is_completed_payment(item.get("status"))
+            )
+            remaining_amount = max(total_amount - paid_amount, 0)
+
+            couple = contract.get("couple", {}) or {}
+            _, _, couple_display = self._resolve_couple_names(couple)
+            couple_display = couple_display or "Your couple"
+            planner_name = contract.get("planner_name") or settings.resend_from_name
+            payment_amount = float(payment.get("amount", 0) or 0)
+            payment_currency = payment.get("currency", contract.get("package_snapshot", {}).get("currency", "usd"))
+            wedding_id = contract.get("wedding_id")
+            contract_url = f"{settings.frontend_url or 'https://thespecialwedding.io'}/admin/weddings/{wedding_id}" if wedding_id else f"{settings.frontend_url or 'https://thespecialwedding.io'}/admin/money"
+
+            html_content = f"""
+            <!DOCTYPE html>
+            <html>
+            <head>
+                <meta charset="UTF-8">
+            </head>
+            <body style="font-family: 'Helvetica Neue', Arial, sans-serif; line-height: 1.6; color: #1e293b; max-width: 600px; margin: 0 auto; padding: 20px;">
+                <div style="text-align: center; padding: 24px 0; border-bottom: 2px solid #16a34a;">
+                    <h1 style="color: #166534; margin: 0 0 10px 0;">Contract Payment Received</h1>
+                    <p style="color: #64748b; margin: 0;">A couple payment was processed successfully</p>
+                </div>
+
+                <div style="padding: 30px 0;">
+                    <p>Hi {planner_name},</p>
+                    <p>{couple_display} completed <strong>{payment.get('name', 'a scheduled payment')}</strong>.</p>
+
+                    <div style="background: #f8fafc; border-radius: 12px; padding: 20px; margin: 20px 0;">
+                        <h2 style="color: #334155; margin: 0 0 15px 0; font-size: 16px;">Payment Summary</h2>
+                        <p style="margin: 0;"><strong>Package:</strong> {contract.get('package_snapshot', {}).get('name', 'Wedding Package')}</p>
+                        <p style="margin: 10px 0 0 0;"><strong>Couple:</strong> {couple_display}</p>
+                        <p style="margin: 10px 0 0 0;"><strong>Payment:</strong> {payment.get('name', 'Scheduled Payment')}</p>
+                        <p style="margin: 10px 0 0 0;"><strong>Amount received:</strong> {self._format_currency(payment_amount, payment_currency)}</p>
+                        <p style="margin: 10px 0 0 0;"><strong>Total paid to date:</strong> {self._format_currency(paid_amount, payment_currency)}</p>
+                        <p style="margin: 10px 0 0 0;"><strong>Remaining balance:</strong> {self._format_currency(remaining_amount, payment_currency)}</p>
+                    </div>
+
+                    <div style="text-align: center; margin: 30px 0;">
+                        <a href="{contract_url}" style="display: inline-block; background: #6366f1; color: white; padding: 12px 24px; text-decoration: none; border-radius: 8px; font-weight: 500;">
+                            Open Planner Dashboard
+                        </a>
+                    </div>
+                </div>
+            </body>
+            </html>
+            """
+
+            email_service = ResendEmailService()
+            result = await email_service.send_email(
+                to_email=planner_email,
+                subject=f"Payment Received - {couple_display}",
+                html_content=html_content,
+                from_email=settings.resend_from_email,
+                from_name=settings.resend_from_name,
+                wedding_id=str(wedding_id) if wedding_id else None,
+                email_type="planner_payment_received",
+            )
+
+            if result.get("success"):
+                logger.info("Planner payment notification sent to %s for contract %s", planner_email, contract_id)
+                return True
+
+            logger.error("Planner payment notification failed for %s: %s", planner_email, result.get("error", "unknown error"))
+            return False
+        except Exception as e:
+            logger.error(f"Failed to send planner payment notification: {str(e)}")
+            return False
+
     async def send_signed_confirmation(
         self,
         contract: Dict,
@@ -144,13 +606,12 @@ class ContractEmailService:
                 logger.error("No recipient email found for contract confirmation")
                 return False
 
-            couple_name = couple.get("name", "")
-            partner_name = couple.get("partner_name")
+            couple_name, partner_name, display_name = self._resolve_couple_names(couple)
             # For vendor contracts, use vendor_name if couple name is missing
             if not couple_name and contract.get("vendor_name"):
                 greeting_name = contract.get("vendor_name", "")
             else:
-                greeting_name = f"{couple_name} & {partner_name}" if partner_name else couple_name
+                greeting_name = display_name
 
             # Format currency
             total = package.get("total_amount", 0)
@@ -158,7 +619,7 @@ class ContractEmailService:
 
             # Format payment schedule
             schedule_rows = ""
-            for i, payment in enumerate(package.get("payment_schedule", []), 1):
+            for i, payment in enumerate(build_effective_payment_schedule(package), 1):
                 amount = payment.get("amount") or (total * payment.get("percentage", 0) / 100)
                 trigger = payment.get("trigger", "")
                 trigger_label = {
@@ -292,9 +753,7 @@ class ContractEmailService:
             couple = contract.get("couple", {})
             package = contract.get("package_snapshot", {})
 
-            couple_name = couple.get("name", "")
-            partner_name = couple.get("partner_name")
-            full_name = f"{couple_name} & {partner_name}" if partner_name else couple_name
+            _, _, full_name = self._resolve_couple_names(couple)
 
             total = package.get("total_amount", 0)
 
@@ -317,10 +776,10 @@ class ContractEmailService:
                     <p style="margin: 10px 0 0 0;"><strong>Email:</strong> {couple.get('email', 'N/A')}</p>
                     <p style="margin: 10px 0 0 0;"><strong>Package:</strong> {package.get('name', 'Wedding Package')}</p>
                     <p style="margin: 10px 0 0 0;"><strong>Total:</strong> ${total:,.2f}</p>
-                    <p style="margin: 10px 0 0 0;"><strong>Wedding Date:</strong> {contract.get('wedding_date', 'TBD')}</p>
+                    <p style="margin: 10px 0 0 0;"><strong>Wedding Date:</strong> {self._format_calendar_date(contract.get('wedding_date'))}</p>
                 </div>
 
-                <p>The first payment (deposit) has been processed. Login to your dashboard to view the full contract details.</p>
+                <p>{'The first payment has been processed successfully.' if contract.get('deposit_processed') else 'The contract is signed and the payment method is now saved for the upcoming schedule.'} Login to your dashboard to view the full contract details.</p>
 
                 <div style="text-align: center; margin: 30px 0;">
                     <a href="{settings.frontend_url}/admin/contracts" style="display: inline-block; background: #6366f1; color: white; padding: 12px 24px; text-decoration: none; border-radius: 8px; font-weight: 500;">

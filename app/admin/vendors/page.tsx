@@ -22,9 +22,13 @@ import {
   type VendorCategory,
 } from '@/services/vendorManagementApi';
 import { toast } from 'sonner';
+import VendorImportModal from '@/components/vendor/VendorImportModal';
 import { VendorPaymentModal } from './components/VendorPaymentModal';
 import { PaymentMilestones } from './components/PaymentMilestones';
 import { getApiBaseUrl } from '@/utils/env';
+import { CampaignSponsoredRail } from './components/CampaignSponsoredRail';
+import { usePagination } from '@/admin/hooks/usePagination';
+import { GlassPagination } from '@/admin/components/ui/glass/GlassPagination';
 
 // AI Recommendation types
 interface VendorRecommendation {
@@ -74,8 +78,10 @@ export default function VendorManagementPage() {
   const [categoryFilter, setCategoryFilter] = useState<string>('');
   const [preferredOnly, setPreferredOnly] = useState(false);
 
+
   // Modal state
   const [showAddVendor, setShowAddVendor] = useState(false);
+  const [showImportModal, setShowImportModal] = useState(false);
   const [newVendor, setNewVendor] = useState({
     business_name: '',
     contact_name: '',
@@ -83,6 +89,7 @@ export default function VendorManagementPage() {
     phone: '',
     website: '',
     service_category: 'photographer' as VendorCategory,
+    custom_service_category: '',
     service_description: '',
     internal_notes: '',
     is_preferred: false,
@@ -111,6 +118,16 @@ export default function VendorManagementPage() {
   const [priceVendorType, setPriceVendorType] = useState<VendorCategory>('photographer');
   const [priceQuotedAmount, setPriceQuotedAmount] = useState<string>('');
   const [priceDescription, setPriceDescription] = useState<string>('');
+  const [showAdRail, setShowAdRail] = useState(false);
+
+  // Pagination
+  const pagination = usePagination({ initialItemsPerPage: 50 });
+  const {
+    skip: vendorSkip,
+    itemsPerPage: vendorItemsPerPage,
+    setPage: setVendorPage,
+    setTotalItems: setVendorTotalItems,
+  } = pagination;
 
   // AI Functions
   const fetchAiRecommendations = async () => {
@@ -197,33 +214,45 @@ export default function VendorManagementPage() {
 
     setLoading(true);
     try {
-      const [dashboardData, vendorsData, contractsData, milestonesData] = await Promise.all([
+      const results = await Promise.allSettled([
         getVendorDashboard(token),
         getVendorDirectory(token, {
           search: searchQuery || undefined,
           category: categoryFilter || undefined,
           is_preferred: preferredOnly ? true : undefined,
+          skip: vendorSkip,
+          limit: vendorItemsPerPage,
         }),
         getContracts(token),
         getPaymentMilestones(token),
       ]);
 
-      setDashboard(dashboardData);
-      setVendors(vendorsData);
-      setContracts(contractsData);
-      setMilestones(milestonesData);
+      const [dashboardResult, vendorsResult, contractsResult, milestonesResult] = results;
+
+      // Check if any failure indicates a plan restriction
+      const planError = results.find(
+        (r) => r.status === 'rejected' && r.reason?.message?.includes('not included in your plan')
+      );
+      if (planError) {
+        setFeatureEnabled(false);
+        return;
+      }
+
+      if (dashboardResult.status === 'fulfilled') setDashboard(dashboardResult.value);
+      if (vendorsResult.status === 'fulfilled') {
+        const vendorList = vendorsResult.value || [];
+        setVendors(vendorList);
+        setVendorTotalItems(vendorList.length);
+      }
+      if (contractsResult.status === 'fulfilled') setContracts(contractsResult.value);
+      if (milestonesResult.status === 'fulfilled') setMilestones(milestonesResult.value);
       setFeatureEnabled(true);
     } catch (error: unknown) {
-      const err = error as { message?: string };
-      if (err.message?.includes('not included in your plan')) {
-        setFeatureEnabled(false);
-      } else {
-        console.error('Error fetching vendor data:', error);
-      }
+      console.error('Error fetching vendor data:', error);
     } finally {
       setLoading(false);
     }
-  }, [token, searchQuery, categoryFilter, preferredOnly]);
+  }, [token, searchQuery, categoryFilter, preferredOnly, vendorSkip, vendorItemsPerPage, setVendorTotalItems]);
 
   useEffect(() => {
     if (!userProfile) {
@@ -235,13 +264,37 @@ export default function VendorManagementPage() {
     }
   }, [fetchData, fetchUserProfile, router, userProfile]);
 
+  // Reset to page 1 when filters change
+  useEffect(() => {
+    setVendorPage(1);
+  }, [searchQuery, categoryFilter, preferredOnly, setVendorPage]);
+
+
   // Handle add vendor
   const handleAddVendor = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!token) return;
 
+    // Auto-prepend https:// if user entered a bare domain
+    const vendorData = { ...newVendor };
+    if (vendorData.service_category === 'other') {
+      vendorData.custom_service_category = vendorData.custom_service_category.trim();
+      if (!vendorData.custom_service_category) {
+        toast.error('Please enter a custom vendor category');
+        return;
+      }
+    } else {
+      vendorData.custom_service_category = '';
+    }
+    if (vendorData.website && vendorData.website.trim()) {
+      const w = vendorData.website.trim();
+      if (!/^https?:\/\//i.test(w)) {
+        vendorData.website = `https://${w}`;
+      }
+    }
+
     try {
-      await createVendorProfile(token, newVendor);
+      await createVendorProfile(token, vendorData);
       toast.success('Vendor added to directory');
       setShowAddVendor(false);
       setNewVendor({
@@ -251,6 +304,7 @@ export default function VendorManagementPage() {
         phone: '',
         website: '',
         service_category: 'photographer',
+        custom_service_category: '',
         service_description: '',
         internal_notes: '',
         is_preferred: false,
@@ -277,7 +331,7 @@ export default function VendorManagementPage() {
   // Feature not enabled view
   if (!featureEnabled) {
     return (
-      <div className="min-h-screen flex items-center justify-center p-4">
+      <div className="flex items-center justify-center py-24 p-4">
         <div className="max-w-md text-center">
           <div className="w-16 h-16 bg-gradient-to-br from-wedding-rose to-wedding-gold rounded-2xl flex items-center justify-center mx-auto mb-6">
             <svg className="w-8 h-8 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -304,7 +358,7 @@ export default function VendorManagementPage() {
   // Loading state
   if (loading && !dashboard) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
+      <div className="flex items-center justify-center py-24">
         <div className="text-center">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-wedding-rose mx-auto mb-4" />
           <p className="text-gray-600 dark:text-gray-400">Loading vendor management...</p>
@@ -361,6 +415,10 @@ export default function VendorManagementPage() {
         title="Vendor Management"
         description="Your complete vendor CRM - directory, contracts, and payments in one place"
       />
+
+      <div className={`grid grid-cols-1 ${showAdRail ? 'lg:grid-cols-4' : ''} gap-6`}>
+      {/* Main Content — expands to full width when ad rail hidden */}
+      <div className={showAdRail ? 'lg:col-span-3' : ''}>
 
       <div className="bg-white dark:bg-slate-800/95 rounded-2xl shadow-lg border border-slate-200 dark:border-slate-700 overflow-hidden">
 
@@ -606,6 +664,15 @@ export default function VendorManagementPage() {
                 />
                 <span className="text-sm text-gray-700 dark:text-gray-300">Preferred only</span>
               </label>
+              {userProfile?.is_root_admin && (
+                <button
+                  onClick={() => setShowImportModal(true)}
+                  className="flex items-center gap-2 px-4 py-2 border-2 border-dashed border-rose-300 text-rose-500 rounded-lg text-sm font-semibold hover:bg-rose-50 transition-colors dark:border-rose-700 dark:text-rose-400 dark:hover:bg-rose-900/20"
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4" /><polyline points="17 8 12 3 7 8" /><line x1="12" y1="3" x2="12" y2="15" /></svg>
+                  Import Vendors
+                </button>
+              )}
               <button
                 onClick={() => setShowAddVendor(true)}
                 className="px-4 py-2 bg-wedding-rose text-white rounded-lg font-medium hover:bg-wedding-rose/90 transition-colors"
@@ -634,7 +701,18 @@ export default function VendorManagementPage() {
                 </button>
               </div>
             ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              <div className="space-y-4">
+                <GlassPagination
+                  currentPage={pagination.currentPage}
+                  totalPages={pagination.totalPages}
+                  totalItems={pagination.totalItems}
+                  itemsPerPage={pagination.itemsPerPage}
+                  onPageChange={pagination.setPage}
+                  variant="compact"
+                  itemLabel="vendors"
+                />
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {/* Vendors */}
                 {vendors.map((vendor) => (
                   <div
                     key={vendor._id}
@@ -655,7 +733,7 @@ export default function VendorManagementPage() {
                             )}
                           </div>
                           <div className="text-sm text-gray-500 dark:text-gray-400">
-                            {getCategoryLabel(vendor.service_category)}
+                            {getCategoryLabel(vendor.service_category, vendor.custom_service_category)}
                           </div>
                         </div>
                       </div>
@@ -725,6 +803,16 @@ export default function VendorManagementPage() {
                   </div>
                 ))}
               </div>
+              <GlassPagination
+                currentPage={pagination.currentPage}
+                totalPages={pagination.totalPages}
+                totalItems={pagination.totalItems}
+                itemsPerPage={pagination.itemsPerPage}
+                onPageChange={pagination.setPage}
+                onItemsPerPageChange={pagination.setItemsPerPage}
+                itemLabel="vendors"
+              />
+              </div>
             )}
           </div>
         )}
@@ -773,7 +861,7 @@ export default function VendorManagementPage() {
                       <div>
                         <div className="font-semibold text-gray-900 dark:text-gray-100">{contract.contract_title}</div>
                         <div className="text-sm text-gray-500 dark:text-gray-400">
-                          {contract.vendor_name} - {getCategoryLabel(contract.service_category)}
+                          {contract.vendor_name} - {getCategoryLabel(contract.service_category, contract.custom_service_category)}
                         </div>
                       </div>
                       <div className="flex items-center gap-4">
@@ -856,7 +944,11 @@ export default function VendorManagementPage() {
                   <select
                     required
                     value={newVendor.service_category}
-                    onChange={(e) => setNewVendor({ ...newVendor, service_category: e.target.value as VendorCategory })}
+                    onChange={(e) => setNewVendor({
+                      ...newVendor,
+                      service_category: e.target.value as VendorCategory,
+                      custom_service_category: e.target.value === 'other' ? newVendor.custom_service_category : '',
+                    })}
                     className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100"
                   >
                     {VENDOR_CATEGORIES.map((cat) => (
@@ -867,6 +959,21 @@ export default function VendorManagementPage() {
                   </select>
                 </div>
               </div>
+              {newVendor.service_category === 'other' && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                    Custom Category *
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={newVendor.custom_service_category}
+                    onChange={(e) => setNewVendor({ ...newVendor, custom_service_category: e.target.value })}
+                    placeholder="e.g., MC / Host"
+                    className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100"
+                  />
+                </div>
+              )}
               <div>
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Email *</label>
                 <input
@@ -890,9 +997,10 @@ export default function VendorManagementPage() {
                 <div>
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Website</label>
                   <input
-                    type="url"
+                    type="text"
                     value={newVendor.website}
                     onChange={(e) => setNewVendor({ ...newVendor, website: e.target.value })}
+                    placeholder="e.g. joatlabs.dev"
                     className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100"
                   />
                 </div>
@@ -1344,6 +1452,34 @@ export default function VendorManagementPage() {
             </div>
           </div>
         </div>
+      )}
+
+      </div>
+
+      {/* Right Sidebar — Sponsored Vendors Rail (hidden when ads disabled) */}
+      <div className={showAdRail ? 'lg:col-span-1' : 'hidden'}>
+        <div className="sticky top-6">
+          <CampaignSponsoredRail onVisibilityChange={setShowAdRail} />
+        </div>
+      </div>
+
+      </div>
+
+      {/* Vendor Import Modal (Root Admin only) */}
+      {token && (
+        <VendorImportModal
+          isOpen={showImportModal}
+          onClose={() => setShowImportModal(false)}
+          token={token}
+          onImportComplete={(result) => {
+            toast.success(
+              `Import complete: ${result.inserted} inserted, ${result.updated} updated` +
+              (result.errors > 0 ? `, ${result.errors} errors` : '')
+            );
+            // Refresh vendor list
+            fetchData();
+          }}
+        />
       )}
     </div>
   );

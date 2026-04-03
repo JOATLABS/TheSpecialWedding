@@ -1,12 +1,39 @@
 # app/services/reminder_service_twilio.py
 
 import os
+import asyncio
 from typing import Optional
 from twilio.rest import Client  # type: ignore
 from fastapi import HTTPException
 from datetime import datetime, timezone
 from app.core.database import mongo
+from app.utils.contact_sanitizer import normalize_phone_e164
+from app.utils.wedding_event_types import normalize_event_type
 import logging
+
+# ---------------------------------------------------------------------------
+# Throttling configuration
+# ---------------------------------------------------------------------------
+# Twilio enforces MPS (messages-per-second) limits that depend on your sender
+# type.  Limits for US destinations:
+#   - Toll-free:        3 MPS (default) – upgradeable to 25+ MPS via Sales
+#   - 10DLC long code:  1 MPS (default) – up to ~75 MPS at highest trust
+#   - Short code:     100 MPS
+#
+# Even though Twilio queues messages internally, firing API requests in a
+# tight loop risks 429 rate-limit errors and may cause carriers to flag the
+# traffic pattern.  The delay below is applied between each Twilio API call
+# in bulk send loops.  Override via the SMS_THROTTLE_DELAY_MS env var.
+#
+# Default 350 ms ≈ ~2.8 req/s – safely under the toll-free 3 MPS limit
+# with headroom for Twilio's internal queue processing.  At this rate,
+# 7,500 messages would take ~44 minutes to enqueue.
+#
+# To increase (e.g. after upgrading to high-throughput toll-free):
+#   SMS_THROTTLE_DELAY_MS=100  →  10 req/s  (for 25+ MPS toll-free)
+#   SMS_THROTTLE_DELAY_MS=50   →  20 req/s  (for short codes)
+# ---------------------------------------------------------------------------
+SMS_THROTTLE_DELAY_S = float(os.getenv("SMS_THROTTLE_DELAY_MS", "350")) / 1000.0
 
 logger = logging.getLogger(__name__)
 
@@ -48,8 +75,10 @@ class TwilioReminderService:
         self.log_collection = mongo.db["reminders_sent"]
 
     async def send_reminders(self, event_type: str, message: str, target_group: str):
-        if event_type not in {"traditional", "white_wedding", "reception"}:
-            raise HTTPException(status_code=400, detail="Invalid event type")
+        try:
+            event_type = normalize_event_type(event_type)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
         if target_group not in {"guests", "plus-ones", "all"}:
             raise HTTPException(status_code=400, detail="Invalid target group")
 
@@ -86,6 +115,9 @@ class TwilioReminderService:
                         status,
                         now,
                     ))
+                    # Throttle to stay within Twilio MPS / API rate limits
+                    if SMS_THROTTLE_DELAY_S > 0:
+                        await asyncio.sleep(SMS_THROTTLE_DELAY_S)
 
         # Plus-ones
         if target_group in {"plus-ones", "all"}:
@@ -109,6 +141,9 @@ class TwilioReminderService:
                         status,
                         now,
                     ))
+                    # Throttle to stay within Twilio MPS / API rate limits
+                    if SMS_THROTTLE_DELAY_S > 0:
+                        await asyncio.sleep(SMS_THROTTLE_DELAY_S)
 
         if logs:
             await self.log_collection.insert_many(logs)
@@ -141,10 +176,17 @@ class TwilioReminderService:
                 "retryable": False
             }
 
-        # Ensure phone number is in E.164 format
-        if not to.startswith('+'):
-            to = f"+1{to}"  # Assume US number if no country code
-
+        # Sanitize and normalize phone to E.164 format
+        normalized = normalize_phone_e164(to)
+        if not normalized:
+            return {
+                "status": f"failed: Invalid phone number: {to!r}",
+                "message_sid": None,
+                "initial_status": None,
+                "error_code": "invalid_number",
+                "retryable": False
+            }
+        to = normalized
         status_callback_url = os.getenv("TWILIO_STATUS_CALLBACK_URL")
         last_error = None
 
@@ -372,8 +414,12 @@ class TwilioRSVPReminderHelper:
             else:
                 message = f"You're invited! RSVP here: {url}"
 
-            if not phone.startswith('+'):
-                phone = f"+1{phone}"
+            # Sanitize and normalize phone to E.164 format
+            phone = normalize_phone_e164(phone)
+            if not phone:
+                skipped_no_phone += 1
+                logger.warning(f"Skipping {guest.get('name')} - phone sanitized to empty")
+                continue
 
             # Delivery tracking fields
             message_sid = None
@@ -440,6 +486,10 @@ class TwilioRSVPReminderHelper:
                 log_record["delivery_events"] = []
 
             logs.append(log_record)
+
+            # Throttle to stay within Twilio MPS / API rate limits
+            if SMS_THROTTLE_DELAY_S > 0:
+                await asyncio.sleep(SMS_THROTTLE_DELAY_S)
 
         if logs:
             await self.log_collection.insert_many(logs)

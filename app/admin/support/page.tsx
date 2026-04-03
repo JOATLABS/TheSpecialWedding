@@ -5,6 +5,8 @@ import { useAdmin } from '@/contexts/AdminContext';
 import { formatDate } from '@/utils/dateFormat';
 import { Card } from '@/components/ui/Card';
 import PageHeader from '../components/PageHeader';
+import { usePagination } from '@/admin/hooks/usePagination';
+import { GlassPagination } from '@/admin/components/ui/glass/GlassPagination';
 import {
   MessageSquare,
   Clock,
@@ -21,6 +23,7 @@ import {
   Loader2
 } from 'lucide-react';
 import KnowledgeBase from '../components/kb/KnowledgeBase';
+import BlogManager from '../components/blog/BlogManager';
 
 interface SupportTicket {
   _id: string;
@@ -51,14 +54,13 @@ interface SupportMetrics {
   open_tickets: number;
   in_progress_tickets?: number;
   resolved_today: number;
-  avg_response_time: number;
-  satisfaction_score: number;
+  avg_resolution_time_hours: number;
   urgent_tickets?: number;
 }
 
 export default function SupportPage() {
   const { apiRequest, userProfile } = useAdmin();
-  const [activeTab, setActiveTab] = useState<'tickets' | 'metrics' | 'knowledge_base'>('tickets');
+  const [activeTab, setActiveTab] = useState<'tickets' | 'metrics' | 'knowledge_base' | 'blog'>('tickets');
   const [tickets, setTickets] = useState<SupportTicket[]>([]);
   const [metrics, setMetrics] = useState<SupportMetrics | null>(null);
   const [loading, setLoading] = useState(true);
@@ -76,21 +78,33 @@ export default function SupportPage() {
     priority: 'medium' as const
   });
 
+  const pagination = usePagination({ initialItemsPerPage: 50 });
+  const {
+    currentPage,
+    itemsPerPage,
+    setTotalItems: setPaginationTotalItems,
+  } = pagination;
+
   const isRootAdmin = userProfile?.is_root_admin;
 
   const fetchData = useCallback(async () => {
     try {
       setLoading(true);
       let fetchedTickets: SupportTicket[] = [];
+      let fetchedTicketTotal = 0;
 
       // Fetch support tickets
       try {
-        const ticketsResponse = await apiRequest<{ tickets: SupportTicket[] }>(
-          isRootAdmin ? '/admin/tickets' : '/admin/my-tickets',
+        const endpoint = isRootAdmin ? '/admin/tickets' : '/admin/my-tickets';
+        const url = `${endpoint}?page=${currentPage}&limit=${itemsPerPage}`;
+        const ticketsResponse = await apiRequest<{ tickets: SupportTicket[], total?: number, page?: number }>(
+          url,
           'GET'
         );
         fetchedTickets = ticketsResponse?.tickets ?? [];
+        fetchedTicketTotal = ticketsResponse?.total || fetchedTickets.length;
         setTickets(fetchedTickets);
+        setPaginationTotalItems(fetchedTicketTotal);
       } catch (error) {
         console.warn('Support tickets endpoint not available');
         setTickets([]);
@@ -99,22 +113,36 @@ export default function SupportPage() {
       // Fetch metrics (ROOT_ADMIN only)
       if (isRootAdmin) {
         try {
-          const metricsResponse = await apiRequest<SupportMetrics>('/admin/metrics/dashboard', 'GET');
-          setMetrics(metricsResponse ?? {
-            total_tickets: 0,
-            open_tickets: 0,
-            resolved_today: 0,
-            avg_response_time: 0,
-            satisfaction_score: 0
+          const [metricsResponse, analyticsResponse] = await Promise.all([
+            apiRequest<{
+              open_tickets?: number;
+              in_progress_tickets?: number;
+              resolved_today?: number;
+              urgent_tickets?: number;
+            }>('/admin/metrics/dashboard', 'GET'),
+            apiRequest<{
+              total_tickets?: number;
+              avg_resolution_time_hours?: number;
+            }>('/admin/analytics?period=30d', 'GET'),
+          ]);
+
+          setMetrics({
+            total_tickets: analyticsResponse?.total_tickets ?? fetchedTicketTotal,
+            open_tickets: metricsResponse?.open_tickets ?? fetchedTickets.filter(t => t.status === 'open').length,
+            in_progress_tickets: metricsResponse?.in_progress_tickets ?? fetchedTickets.filter(t => t.status === 'in_progress').length,
+            resolved_today: metricsResponse?.resolved_today ?? 0,
+            avg_resolution_time_hours: analyticsResponse?.avg_resolution_time_hours ?? 0,
+            urgent_tickets: metricsResponse?.urgent_tickets ?? 0,
           });
         } catch (error) {
           console.warn('Support metrics endpoint not available');
           setMetrics({
-            total_tickets: fetchedTickets.length,
+            total_tickets: fetchedTicketTotal,
             open_tickets: fetchedTickets.filter(t => t.status === 'open').length,
+            in_progress_tickets: fetchedTickets.filter(t => t.status === 'in_progress').length,
             resolved_today: 0,
-            avg_response_time: 0,
-            satisfaction_score: 0
+            avg_resolution_time_hours: 0,
+            urgent_tickets: fetchedTickets.filter(t => t.priority === 'urgent' && ['open', 'in_progress'].includes(t.status)).length,
           });
         }
       }
@@ -125,7 +153,7 @@ export default function SupportPage() {
     } finally {
       setLoading(false);
     }
-  }, [apiRequest, isRootAdmin]);
+  }, [apiRequest, isRootAdmin, currentPage, itemsPerPage, setPaginationTotalItems]);
 
   useEffect(() => {
     fetchData();
@@ -294,7 +322,8 @@ export default function SupportPage() {
           {[
             { key: 'tickets', label: 'Support Tickets' },
             ...(isRootAdmin ? [{ key: 'metrics', label: 'Support Metrics' }] : []),
-            { key: 'knowledge_base', label: 'Knowledge Base' }
+            { key: 'knowledge_base', label: 'Knowledge Base' },
+            ...(isRootAdmin ? [{ key: 'blog', label: 'Blog' }] : []),
           ].map((tab) => (
             <button
               key={tab.key}
@@ -324,7 +353,10 @@ export default function SupportPage() {
                   type="text"
                   placeholder="Search tickets..."
                   value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
+                  onChange={(e) => {
+                    setSearchQuery(e.target.value);
+                    pagination.setPage(1);
+                  }}
                   className="w-full pl-10 pr-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 />
               </div>
@@ -332,7 +364,10 @@ export default function SupportPage() {
               {/* Status Filter */}
               <select
                 value={statusFilter}
-                onChange={(e) => setStatusFilter(e.target.value)}
+                onChange={(e) => {
+                  setStatusFilter(e.target.value);
+                  pagination.setPage(1);
+                }}
                 className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
               >
                 <option value="all">All Statuses</option>
@@ -345,7 +380,10 @@ export default function SupportPage() {
               {/* Priority Filter */}
               <select
                 value={priorityFilter}
-                onChange={(e) => setPriorityFilter(e.target.value)}
+                onChange={(e) => {
+                  setPriorityFilter(e.target.value);
+                  pagination.setPage(1);
+                }}
                 className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
               >
                 <option value="all">All Priorities</option>
@@ -356,6 +394,17 @@ export default function SupportPage() {
               </select>
             </div>
           </Card>
+
+          {/* Compact Pagination */}
+          <GlassPagination
+            currentPage={pagination.currentPage}
+            totalPages={pagination.totalPages}
+            totalItems={pagination.totalItems}
+            itemsPerPage={pagination.itemsPerPage}
+            onPageChange={pagination.setPage}
+            variant="compact"
+            itemLabel="tickets"
+          />
 
           {/* Tickets Table */}
           <Card className="overflow-hidden">
@@ -454,6 +503,16 @@ export default function SupportPage() {
             </div>
           </Card>
 
+          <GlassPagination
+            currentPage={pagination.currentPage}
+            totalPages={pagination.totalPages}
+            totalItems={pagination.totalItems}
+            itemsPerPage={pagination.itemsPerPage}
+            onPageChange={pagination.setPage}
+            onItemsPerPageChange={pagination.setItemsPerPage}
+            itemLabel="tickets"
+          />
+
           {filteredTickets.length === 0 && (
             <div className="text-center py-12">
               <MessageSquare className="w-12 h-12 text-gray-400 mx-auto mb-4" />
@@ -512,8 +571,8 @@ export default function SupportPage() {
             <Card className="p-6">
               <div className="flex items-center justify-between">
                 <div>
-                  <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400">Avg Response</h3>
-                  <p className="text-3xl font-bold text-yellow-600 dark:text-yellow-400 mt-1">{metrics.avg_response_time}h</p>
+                  <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400">In Progress</h3>
+                  <p className="text-3xl font-bold text-yellow-600 dark:text-yellow-400 mt-1">{metrics.in_progress_tickets || 0}</p>
                 </div>
                 <div className="p-3 bg-yellow-100 dark:bg-yellow-900/30 rounded-lg">
                   <Clock className="w-6 h-6 text-yellow-600 dark:text-yellow-400" />
@@ -524,8 +583,8 @@ export default function SupportPage() {
             <Card className="p-6">
               <div className="flex items-center justify-between">
                 <div>
-                  <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400">Satisfaction</h3>
-                  <p className="text-3xl font-bold text-purple-600 dark:text-purple-400 mt-1">{metrics.satisfaction_score}/5</p>
+                  <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400">Avg Resolution</h3>
+                  <p className="text-3xl font-bold text-purple-600 dark:text-purple-400 mt-1">{metrics.avg_resolution_time_hours.toFixed(1)}h</p>
                 </div>
                 <div className="p-3 bg-purple-100 dark:bg-purple-900/30 rounded-lg">
                   <TrendingUp className="w-6 h-6 text-purple-600 dark:text-purple-400" />
@@ -539,6 +598,11 @@ export default function SupportPage() {
       {/* Knowledge Base Tab */}
       {activeTab === 'knowledge_base' && (
         <KnowledgeBase isRootAdmin={isRootAdmin || false} />
+      )}
+
+      {/* Blog Tab */}
+      {activeTab === 'blog' && isRootAdmin && (
+        <BlogManager />
       )}
 
       {/* Response Modal */}

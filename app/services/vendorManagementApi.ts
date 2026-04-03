@@ -8,6 +8,24 @@ import { getApiBaseUrl } from '@/utils/env';
 
 const API_BASE = getApiBaseUrl();
 
+/**
+ * Extract a human-readable error message from FastAPI error responses.
+ * Handles three response shapes:
+ * - string detail: "Some error"
+ * - structured dict: {error, message, feature}  (feature gates)
+ * - Pydantic validation array: [{type, msg, loc}] (422 errors)
+ */
+function extractErrorMessage(errBody: any, fallback: string): string {
+  const detail = errBody?.detail;
+  if (!detail) return fallback;
+  if (typeof detail === 'string') return detail;
+  if (typeof detail === 'object' && !Array.isArray(detail) && detail.message) return detail.message;
+  if (Array.isArray(detail) && detail.length > 0 && detail[0].msg) {
+    return detail.map((d: any) => d.msg).join('; ');
+  }
+  return fallback;
+}
+
 // =============================================================================
 // TYPES
 // =============================================================================
@@ -19,6 +37,7 @@ export type VendorCategory =
   | 'caterer'
   | 'venue'
   | 'dj'
+  | 'mc'
   | 'band'
   | 'officiant'
   | 'planner'
@@ -41,10 +60,12 @@ export interface VendorProfile {
   email: string;
   phone?: string;
   website?: string;
+  logo_url?: string;
   address?: string;
   city?: string;
   state?: string;
   service_category: VendorCategory;
+  custom_service_category?: string;
   service_subcategories: string[];
   service_description?: string;
   internal_notes?: string;
@@ -58,6 +79,9 @@ export interface VendorProfile {
   weddings_count: number;
   total_revenue: number;
   is_active: boolean;
+  service_radius?: number;
+  country?: string;
+  postal_code?: string;
   created_at: string;
   updated_at: string;
 }
@@ -107,6 +131,7 @@ export interface VendorContract {
   vendor_email: string;
   vendor_phone?: string;
   service_category: VendorCategory;
+  custom_service_category?: string;
   contract_title: string;
   contract_number?: string;
   sections: ContractSection[];
@@ -163,6 +188,7 @@ export interface VendorAssignment {
   vendor_name: string;
   vendor_email: string;
   service_category: VendorCategory;
+  custom_service_category?: string;
   quoted_amount?: number;
   contracted_amount?: number;
   paid_amount: number;
@@ -212,13 +238,18 @@ export async function getVendorDirectory(
   if (params?.limit) queryParams.append('limit', String(params.limit));
 
   const url = `${API_BASE}/admin/directory?${queryParams.toString()}`;
-  const response = await fetch(url, {
-    headers: { Authorization: `Bearer ${token}` },
-  });
+  let response: Response;
+  try {
+    response = await fetch(url, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+  } catch {
+    throw new Error('Vendor directory is not available. The backend endpoint may not be set up yet.');
+  }
 
   if (!response.ok) {
     const error = await response.json().catch(() => ({}));
-    throw new Error(error.detail?.message || error.detail || 'Failed to fetch vendors');
+    throw new Error(extractErrorMessage(error, 'Failed to fetch vendors'));
   }
 
   return response.json();
@@ -239,7 +270,7 @@ export async function createVendorProfile(
 
   if (!response.ok) {
     const error = await response.json().catch(() => ({}));
-    throw new Error(error.detail?.message || error.detail || 'Failed to create vendor');
+    throw new Error(extractErrorMessage(error, 'Failed to create vendor'));
   }
 
   return response.json();
@@ -261,7 +292,7 @@ export async function updateVendorProfile(
 
   if (!response.ok) {
     const error = await response.json().catch(() => ({}));
-    throw new Error(error.detail?.message || error.detail || 'Failed to update vendor');
+    throw new Error(extractErrorMessage(error, 'Failed to update vendor'));
   }
 
   return response.json();
@@ -275,7 +306,7 @@ export async function deleteVendorProfile(token: string, vendorId: string): Prom
 
   if (!response.ok) {
     const error = await response.json().catch(() => ({}));
-    throw new Error(error.detail?.message || error.detail || 'Failed to delete vendor');
+    throw new Error(extractErrorMessage(error, 'Failed to delete vendor'));
   }
 }
 
@@ -287,7 +318,7 @@ export async function getVendorCategories(token: string): Promise<string[]> {
   if (!response.ok) {
     const err = await response.json().catch(() => ({}));
     console.error('Failed to fetch vendor categories:', err);
-    throw new Error(err.detail || 'Failed to fetch vendor categories');
+    throw new Error(extractErrorMessage(err, 'Failed to fetch vendor categories'));
   }
   const data = await response.json();
   return data.categories || [];
@@ -317,7 +348,7 @@ export async function assignVendorToWedding(
 
   if (!response.ok) {
     const error = await response.json().catch(() => ({}));
-    throw new Error(error.detail?.message || error.detail || 'Failed to assign vendor');
+    throw new Error(extractErrorMessage(error, 'Failed to assign vendor'));
   }
 
   return response.json();
@@ -331,7 +362,7 @@ export async function getWeddingVendors(token: string, weddingId: string): Promi
   if (!response.ok) {
     const err = await response.json().catch(() => ({}));
     console.error('Failed to fetch wedding vendors:', err);
-    throw new Error(err.detail || 'Failed to fetch wedding vendors');
+    throw new Error(extractErrorMessage(err, 'Failed to fetch wedding vendors'));
   }
   return response.json();
 }
@@ -355,7 +386,7 @@ export async function getContractTemplates(
   if (!response.ok) {
     const err = await response.json().catch(() => ({}));
     console.error('Failed to fetch contract templates:', err);
-    throw new Error(err.detail || 'Failed to fetch contract templates');
+    throw new Error(extractErrorMessage(err, 'Failed to fetch contract templates'));
   }
   return response.json();
 }
@@ -411,7 +442,7 @@ export async function createContract(
 
   if (!response.ok) {
     const error = await response.json().catch(() => ({}));
-    throw new Error(error.detail?.message || error.detail || 'Failed to create contract');
+    throw new Error(extractErrorMessage(error, 'Failed to create contract'));
   }
 
   return response.json();
@@ -430,13 +461,18 @@ export async function getContracts(
   if (params?.vendor_profile_id) queryParams.append('vendor_profile_id', params.vendor_profile_id);
   if (params?.status) queryParams.append('status', params.status);
 
-  const response = await fetch(`${API_BASE}/admin/contracts?${queryParams.toString()}`, {
-    headers: { Authorization: `Bearer ${token}` },
-  });
+  let response: Response;
+  try {
+    response = await fetch(`${API_BASE}/admin/contracts?${queryParams.toString()}`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+  } catch {
+    throw new Error('Contracts endpoint is not available. The backend endpoint may not be set up yet.');
+  }
 
   if (!response.ok) {
     const err = await response.json().catch(() => ({}));
-    throw new Error(err.detail || 'Failed to fetch contracts');
+    throw new Error(extractErrorMessage(err, 'Failed to fetch contracts'));
   }
   return response.json();
 }
@@ -469,7 +505,7 @@ export async function updateContract(
 
   if (!response.ok) {
     const error = await response.json().catch(() => ({}));
-    throw new Error(error.detail?.message || error.detail || 'Failed to update contract');
+    throw new Error(extractErrorMessage(error, 'Failed to update contract'));
   }
 
   return response.json();
@@ -490,7 +526,7 @@ export async function sendContract(
 
   if (!response.ok) {
     const error = await response.json().catch(() => ({}));
-    throw new Error(error.detail?.message || error.detail || 'Failed to send contract');
+    throw new Error(extractErrorMessage(error, 'Failed to send contract'));
   }
 
   return response.json();
@@ -540,7 +576,7 @@ export async function createPaymentMilestones(
 
   if (!response.ok) {
     const error = await response.json().catch(() => ({}));
-    throw new Error(error.detail?.message || error.detail || 'Failed to create milestones');
+    throw new Error(extractErrorMessage(error, 'Failed to create milestones'));
   }
 
   return response.json();
@@ -559,13 +595,18 @@ export async function getPaymentMilestones(
   if (params?.wedding_id) queryParams.append('wedding_id', params.wedding_id);
   if (params?.status) queryParams.append('status', params.status);
 
-  const response = await fetch(`${API_BASE}/admin/milestones?${queryParams.toString()}`, {
-    headers: { Authorization: `Bearer ${token}` },
-  });
+  let response: Response;
+  try {
+    response = await fetch(`${API_BASE}/admin/milestones?${queryParams.toString()}`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+  } catch {
+    throw new Error('Payment milestones endpoint is not available. The backend endpoint may not be set up yet.');
+  }
 
   if (!response.ok) {
     const err = await response.json().catch(() => ({}));
-    throw new Error(err.detail || 'Failed to fetch payment milestones');
+    throw new Error(extractErrorMessage(err, 'Failed to fetch payment milestones'));
   }
   return response.json();
 }
@@ -593,7 +634,7 @@ export async function recordPayment(
 
   if (!response.ok) {
     const error = await response.json().catch(() => ({}));
-    throw new Error(error.detail?.message || error.detail || 'Failed to record payment');
+    throw new Error(extractErrorMessage(error, 'Failed to record payment'));
   }
 
   return response.json();
@@ -611,14 +652,22 @@ export async function getVendorDashboard(
     ? `${API_BASE}/admin/dashboard?wedding_id=${weddingId}`
     : `${API_BASE}/admin/dashboard`;
 
-  const response = await fetch(url, {
-    headers: { Authorization: `Bearer ${token}` },
-  });
+  let response: Response;
+  try {
+    response = await fetch(url, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+  } catch {
+    throw new Error('Vendor dashboard is not available. The backend endpoint may not be set up yet.');
+  }
 
   if (!response.ok) {
     const err = await response.json().catch(() => ({}));
-    console.error('Failed to fetch vendor dashboard:', err);
-    throw new Error(err.detail || 'Failed to fetch vendor dashboard');
+    const detail = err.detail;
+    const message = typeof detail === 'string'
+      ? detail
+      : detail?.message || 'Failed to fetch vendor dashboard';
+    throw new Error(message);
   }
 
   return response.json();
@@ -635,6 +684,7 @@ export const VENDOR_CATEGORIES: { value: VendorCategory; label: string }[] = [
   { value: 'caterer', label: 'Caterer' },
   { value: 'venue', label: 'Venue' },
   { value: 'dj', label: 'DJ' },
+  { value: 'mc', label: 'MC / Host' },
   { value: 'band', label: 'Band/Musicians' },
   { value: 'officiant', label: 'Officiant' },
   { value: 'planner', label: 'Wedding Planner' },
@@ -651,7 +701,11 @@ export const VENDOR_CATEGORIES: { value: VendorCategory; label: string }[] = [
   { value: 'other', label: 'Other' },
 ];
 
-export function getCategoryLabel(category: VendorCategory): string {
+export function getCategoryLabel(category: VendorCategory, customServiceCategory?: string): string {
+  if (category === 'other' && customServiceCategory?.trim()) {
+    return customServiceCategory.trim();
+  }
+
   return VENDOR_CATEGORIES.find((c) => c.value === category)?.label || category;
 }
 
@@ -748,7 +802,7 @@ export async function createPaymentLink(
 
   if (!response.ok) {
     const error = await response.json().catch(() => ({}));
-    throw new Error(error.detail?.message || error.detail || 'Failed to create payment link');
+    throw new Error(extractErrorMessage(error, 'Failed to create payment link'));
   }
 
   return response.json();
@@ -772,7 +826,7 @@ export async function sendPaymentLink(
 
   if (!response.ok) {
     const error = await response.json().catch(() => ({}));
-    throw new Error(error.detail?.message || error.detail || 'Failed to send payment link');
+    throw new Error(extractErrorMessage(error, 'Failed to send payment link'));
   }
 
   return response.json();
@@ -799,7 +853,7 @@ export async function getPaymentLinks(
 
   if (!response.ok) {
     const err = await response.json().catch(() => ({}));
-    throw new Error(err.detail || 'Failed to fetch payment links');
+    throw new Error(extractErrorMessage(err, 'Failed to fetch payment links'));
   }
   return response.json();
 }
@@ -843,7 +897,7 @@ export async function uploadContractPdf(
 
   if (!response.ok) {
     const error = await response.json().catch(() => ({}));
-    throw new Error(error.detail?.message || error.detail || 'Failed to upload contract PDF');
+    throw new Error(extractErrorMessage(error, 'Failed to upload contract PDF'));
   }
 
   return response.json();
@@ -903,7 +957,7 @@ export async function applyFormDataToContract(
 
   if (!response.ok) {
     const error = await response.json().catch(() => ({}));
-    throw new Error(error.detail?.message || error.detail || 'Failed to apply form data');
+    throw new Error(extractErrorMessage(error, 'Failed to apply form data'));
   }
 
   return response.json();
@@ -934,7 +988,7 @@ export async function updateContractSections(
 
   if (!response.ok) {
     const error = await response.json().catch(() => ({}));
-    throw new Error(error.detail?.message || error.detail || 'Failed to update contract sections');
+    throw new Error(extractErrorMessage(error, 'Failed to update contract sections'));
   }
 
   return response.json();
@@ -992,7 +1046,7 @@ export async function getPublicContract(
   accessToken: string
 ): Promise<PublicContract> {
   const response = await fetch(
-    `${API_BASE}/vendor-contract/public/contracts/${contractId}?token=${accessToken}`
+    `${API_BASE}/vendor-contract/public/contracts/${contractId}/${encodeURIComponent(accessToken)}`
   );
 
   if (!response.ok) {
@@ -1014,13 +1068,22 @@ export async function signPublicContract(
   signerEmail: string
 ): Promise<{ message: string; signed_at: string }> {
   const response = await fetch(
-    `${API_BASE}/vendor-contract/public/contracts/${contractId}/sign?token=${accessToken}&signer_name=${encodeURIComponent(signerName)}&signer_email=${encodeURIComponent(signerEmail)}`,
-    { method: 'POST' }
+    `${API_BASE}/vendor-contract/public/contracts/${contractId}/${encodeURIComponent(accessToken)}/sign`,
+    {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        signer_name: signerName,
+        signer_email: signerEmail,
+      }),
+    }
   );
 
   if (!response.ok) {
     const error = await response.json().catch(() => ({}));
-    throw new Error(error.detail?.message || error.detail || 'Failed to sign contract');
+    throw new Error(extractErrorMessage(error, 'Failed to sign contract'));
   }
 
   return response.json();
@@ -1057,7 +1120,7 @@ export async function createContractTemplate(
 
   if (!response.ok) {
     const error = await response.json().catch(() => ({}));
-    throw new Error(error.detail?.message || error.detail || 'Failed to create template');
+    throw new Error(extractErrorMessage(error, 'Failed to create template'));
   }
 
   return response.json();
@@ -1082,4 +1145,65 @@ export async function saveContractAsTemplate(
     cancellation_policy: contract.cancellation_policy,
     is_public: false,
   });
+}
+
+
+// =============================================================================
+// VENDOR IMPORT (Root Admin Only)
+// =============================================================================
+
+export interface VendorImportItem {
+  google_place_id?: string;
+  business_name: string;
+  email?: string;
+  phone?: string;
+  website?: string;
+  address?: string;
+  city?: string;
+  state?: string;
+  country?: string;
+  postal_code?: string;
+  service_category: string;
+  service_description?: string;
+  logo_url?: string;
+  typical_price_min?: number;
+  typical_price_max?: number;
+  currency?: string;
+  tags?: string[];
+  scraped_from_state?: string;
+}
+
+export interface VendorImportResponse {
+  inserted: number;
+  updated: number;
+  skipped: number;
+  errors: number;
+  error_details: Array<{ index: number; business_name: string; error: string }>;
+  total: number;
+}
+
+/**
+ * Import scraped vendors via JSON.
+ * ROOT_ADMIN only — used with the vendor scraper CLI export.
+ */
+export async function importVendors(
+  token: string,
+  vendors: VendorImportItem[],
+): Promise<VendorImportResponse> {
+  const res = await fetch(`${API_BASE}/admin/vendors/import`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${token}`,
+    },
+    credentials: 'include',
+    body: JSON.stringify({ vendors }),
+  });
+
+  if (!res.ok) {
+    const errBody = await res.json().catch(() => ({}));
+    throw new Error(extractErrorMessage(errBody, 'Failed to import vendors'));
+  }
+
+  return res.json();
 }

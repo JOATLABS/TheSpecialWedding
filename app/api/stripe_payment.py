@@ -23,7 +23,7 @@ class CreateCheckoutSessionRequest(BaseModel):
     billing_interval: str = Field(default="monthly", description="Billing interval: monthly or yearly")
     success_url: Optional[str] = Field(None, description="Success redirect URL")
     cancel_url: Optional[str] = Field(None, description="Cancel redirect URL")
-    trial_days: int = Field(default=0, ge=0, description="Number of trial days")
+    trial_days: Optional[int] = Field(default=None, ge=0, description="Number of trial days")
 
 
 class PublicCreateCheckoutSessionRequest(CreateCheckoutSessionRequest):
@@ -34,7 +34,7 @@ class PublicCreateCheckoutSessionRequest(CreateCheckoutSessionRequest):
 class CreatePortalSessionRequest(BaseModel):
     """Request model for creating a Customer Portal Session"""
     return_url: Optional[str] = Field(None, description="Return URL after portal session")
-    flow_type: Optional[str] = Field(None, description="Portal flow type: 'payment_method_update' or 'subscription_update'")
+    flow_type: Optional[str] = Field(None, description="Portal flow type: 'payment_method_update', 'subscription_update', or 'subscription_cancel'")
 
 
 class CreatePaymentIntentRequest(BaseModel):
@@ -110,11 +110,12 @@ async def create_public_checkout_session(
     try:
         pending_user = await stripe_service.users_collection.find_one({"email": request.email})
 
+        # Use a generic error message for all failure cases to prevent email enumeration
         if not pending_user:
-            raise HTTPException(status_code=404, detail="Pending user not found")
+            raise HTTPException(status_code=400, detail="Unable to create checkout session. Please check your email and try again.")
 
         if pending_user.get("subscription_status") not in ["pending_payment", "trial", "active"]:
-            raise HTTPException(status_code=400, detail="User is not eligible for checkout")
+            raise HTTPException(status_code=400, detail="Unable to create checkout session. Please check your email and try again.")
 
         session = await stripe_service.create_checkout_session(
             user_id=str(pending_user["_id"]),
@@ -124,6 +125,13 @@ async def create_public_checkout_session(
             cancel_url=request.cancel_url or "",
             trial_days=request.trial_days
         )
+
+        # Keep the users collection plan_id in sync with the checkout selection
+        if request.plan_id and pending_user.get("plan_id") != request.plan_id:
+            await stripe_service.users_collection.update_one(
+                {"_id": pending_user["_id"]},
+                {"$set": {"plan_id": request.plan_id}}
+            )
 
         return {
             "status": "success",
@@ -223,7 +231,7 @@ async def create_portal_session(
         portal_session = await stripe_service.create_portal_session(
             user_id=user_id,
             return_url=request.return_url or "",
-            flow_type=request.flow_type or "payment_method_update"
+            flow_type=request.flow_type or None
         )
 
         return {
@@ -271,6 +279,7 @@ async def stripe_webhook(
     - customer.updated
     - invoice.paid
     - invoice.payment_failed
+    - invoice.finalized
     - payment_intent.succeeded
     - payment_intent.payment_failed
     - product.updated
@@ -288,13 +297,23 @@ async def stripe_webhook(
         # Process webhook
         result = await stripe_service.handle_webhook_event(payload, stripe_signature)
 
-        # Check if the handler reported an internal failure.
-        # Return 500 so Stripe retries instead of silently losing the event.
+        # Distinguish retriable errors from permanent failures.
+        # Missing metadata or deleted users will never succeed — return 200 so Stripe stops retrying.
+        # Transient errors (DB timeout, network) should return 500 so Stripe retries.
         if isinstance(result, dict) and result.get("status") == "error":
-            logger.error(f"Webhook handler returned error: {result.get('message', 'unknown')}")
+            error_msg = result.get("message", "unknown")
+            logger.error(f"Webhook handler returned error: {error_msg}")
+
+            # Permanent failures: acknowledge receipt, log for manual investigation
+            permanent_keywords = ["not found", "Missing user_id", "Missing plan_id", "metadata"]
+            if any(kw.lower() in error_msg.lower() for kw in permanent_keywords):
+                logger.warning(f"Permanent webhook failure (will not retry): {error_msg}")
+                return {"status": "error_acknowledged", "message": error_msg}
+
+            # Transient failures: return 500 so Stripe retries
             raise HTTPException(
                 status_code=500,
-                detail=f"Webhook handler error: {result.get('message', 'unknown')}"
+                detail=f"Webhook handler error: {error_msg}"
             )
 
         return {"status": "success", "result": result}
@@ -464,7 +483,13 @@ async def create_payment_intent(
         # Ensure planner is authorized for the wedding if wedding_id provided
         if request.wedding_id and not current_user.is_root_admin:
             from app.core.database import mongo
-            wedding = await mongo.db["weddings"].find_one({"_id": ObjectId(request.wedding_id)})
+            # Try string ID first (wedding IDs are stored as strings like "wedding_XXXXX")
+            wedding = await mongo.db["weddings"].find_one({"_id": request.wedding_id})
+            if not wedding:
+                try:
+                    wedding = await mongo.db["weddings"].find_one({"_id": ObjectId(request.wedding_id)})
+                except Exception:
+                    pass
             if not wedding:
                 raise HTTPException(status_code=404, detail="Wedding not found")
 
@@ -553,24 +578,37 @@ async def get_payment_requests(
         cursor = mongo.db["payment_requests"].find({"user_id": user_id}).sort("created_at", -1)
         requests = await cursor.to_list(length=100)
 
-        # Collect wedding IDs to fetch titles
-        wedding_ids = set()
+        # Collect wedding IDs to fetch titles (support both string and ObjectId formats)
+        string_wedding_ids = set()
+        objectid_wedding_ids = set()
         for req in requests:
             if req.get("wedding_id"):
+                string_wedding_ids.add(req["wedding_id"])
                 try:
-                    wedding_ids.add(ObjectId(req["wedding_id"]))
+                    objectid_wedding_ids.add(ObjectId(req["wedding_id"]))
                 except Exception:
-                    pass  # Invalid ObjectId, skip
+                    pass
 
-        # Fetch wedding titles in bulk
+        # Fetch wedding titles in bulk (try both ID formats)
         wedding_titles = {}
-        if wedding_ids:
+        if string_wedding_ids:
+            # Try string IDs first
             weddings_cursor = mongo.db["weddings"].find(
-                {"_id": {"$in": list(wedding_ids)}},
+                {"_id": {"$in": list(string_wedding_ids)}},
                 {"_id": 1, "title": 1}
             )
-            weddings = await weddings_cursor.to_list(length=len(wedding_ids))
+            weddings = await weddings_cursor.to_list(length=len(string_wedding_ids))
             wedding_titles = {str(w["_id"]): w.get("title", "Untitled Wedding") for w in weddings}
+
+            # Fallback: try ObjectId format for any not found
+            if objectid_wedding_ids and len(wedding_titles) < len(string_wedding_ids):
+                weddings_cursor = mongo.db["weddings"].find(
+                    {"_id": {"$in": list(objectid_wedding_ids)}},
+                    {"_id": 1, "title": 1}
+                )
+                weddings = await weddings_cursor.to_list(length=len(objectid_wedding_ids))
+                for w in weddings:
+                    wedding_titles[str(w["_id"])] = w.get("title", "Untitled Wedding")
 
         # Enrich requests with wedding_title and convert ObjectId to str
         for req in requests:
@@ -747,8 +785,36 @@ async def get_subscription_details(
 
         # Get local subscription record
         subscription_record = await mongo.db["user_subscriptions"].find_one({"user_id": user_id})
+
+        # Fallback: if user_subscriptions record is missing (e.g. standalone MongoDB
+        # transaction failed during webhook), reconstruct from the users collection
+        # which is also updated by _sync_subscription_state.
         if not subscription_record:
-            raise HTTPException(status_code=404, detail="No subscription found")
+            from bson import ObjectId as _ObjId
+            user_doc = await mongo.db["users"].find_one(
+                {"_id": _ObjId(user_id)},
+                {
+                    "subscription_status": 1, "plan_id": 1,
+                    "stripe_subscription_id": 1, "stripe_customer_id": 1,
+                    "trial_end_date": 1, "created_at": 1,
+                }
+            )
+            if user_doc and user_doc.get("subscription_status") in ("active", "trial"):
+                # Construct a minimal subscription record from users collection
+                subscription_record = {
+                    "user_id": user_id,
+                    "plan_id": user_doc.get("plan_id"),
+                    "status": user_doc.get("subscription_status"),
+                    "stripe_subscription_id": user_doc.get("stripe_subscription_id"),
+                    "stripe_customer_id": user_doc.get("stripe_customer_id"),
+                    "billing_interval": "monthly",
+                    "current_period_start": user_doc.get("created_at"),
+                    "trial_end_date": user_doc.get("trial_end_date"),
+                    "payment_status": "paid",
+                }
+                logger.info(f"Reconstructed subscription from users collection for user {user_id}")
+            else:
+                raise HTTPException(status_code=404, detail="No subscription found")
 
         plan_id = subscription_record.get("plan_id")
         plan = None
@@ -814,6 +880,14 @@ async def get_subscription_details(
         if plan:
             response["plan_name"] = plan.get("name")
             response["plan_description"] = plan.get("description")
+            response["ai_credits_total"] = plan.get("ai_credits_monthly")
+            response["weddings_total"] = plan.get("max_weddings")
+            billing_interval = subscription_record.get("billing_interval", "monthly")
+            response["price"] = (
+                plan.get("price_yearly")
+                if billing_interval == "yearly"
+                else plan.get("price_monthly")
+            )
 
         return response
 

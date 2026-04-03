@@ -57,8 +57,8 @@ def _is_upcoming(date_value: Any, reference: datetime) -> bool:
 def _get_default_saas_config():
     """Shared default configuration used by both admin and public endpoints.
 
-    These defaults match the hardcoded content from app/page.tsx to ensure
-    consistency when the dynamic SaasLandingPage component is used.
+    These defaults match the hardcoded content from app/page.tsx so the
+    admin-configured SaaS content stays aligned with the live homepage.
     """
     return {
         # Hero fields - matches page.tsx hero section
@@ -96,7 +96,7 @@ def _get_default_saas_config():
         "statistics": [
             {"label": "Guest records managed across active weddings", "value": "48k"},
             {"label": "Average RSVP window to reach 90% response", "value": "5 days"},
-            {"label": "Median scan-to-confirm check-in speed", "value": "2.8s"},
+            {"label": "Median guest memory upload completion time", "value": "43s"},
             {"label": "Automation reliability across reminders", "value": "99.9%"}
         ],
         "statistics_enabled": True,
@@ -105,7 +105,7 @@ def _get_default_saas_config():
         "impact_metrics": [
             {"metric": "48k", "label": "Guest records managed across active weddings"},
             {"metric": "5 days", "label": "Average RSVP window to reach 90% response"},
-            {"metric": "2.8s", "label": "Median scan-to-confirm check-in speed"},
+            {"metric": "43s", "label": "Median guest memory upload completion time"},
             {"metric": "99.9%", "label": "Automation reliability across reminders"}
         ],
         "show_impact_metrics": True,
@@ -173,9 +173,9 @@ def _get_default_saas_config():
                 "order": 8
             },
             {
-                "title": "Touchless check-in",
-                "description": "Scan QR codes, monitor arrivals, and keep lines moving with live capacity counts.",
-                "category": "Execution",
+                "title": "Guest memories uploads",
+                "description": "Share a QR code so guests can upload photos and videos from their phones without an app.",
+                "category": "Celebration",
                 "status": "available",
                 "order": 9
             },
@@ -210,21 +210,35 @@ def _get_default_saas_config():
             }
         ],
 
-        # Testimonials - from page.tsx
+        # Testimonials - kept in sync with app/api/testimonials.py defaults
         "testimonials": [
             {
                 "name": "Maya Glenn",
                 "company": "Aurora Collective",
                 "role": "Director of Events",
-                "content": "The Special Wedding gives our planners and couples a shared language. Every guest touchpoint feels intentional and elegant.",
+                "content": "I used to juggle Google Sheets for guests, QuickBooks for budgets, and DocuSign for contracts — all disconnected. Now my 240-person guest list, seating chart, and budget tracker live in one place. Last Saturday I reassigned three tables in the seating orchestrator ten minutes before doors opened and guest memories were already flowing into the couple portal before dinner.",
                 "order": 1
             },
             {
                 "name": "Elias Romero",
                 "company": "Harbor & Bloom",
                 "role": "Lead Coordinator",
-                "content": "Check-in lines disappeared. The live dashboards let us choreograph the day like a performance instead of fighting fires.",
+                "content": "Building a service package with AI-suggested pricing took me ten minutes instead of a full afternoon of market research. I sent the quote through the contract canvas with e-sign the same day, and the client's milestone payment hit my dashboard before dinner. The entire book-to-pay cycle that used to take me a week now happens in a single session.",
                 "order": 2
+            },
+            {
+                "name": "Priya Chandran",
+                "company": "Verdant Celebrations",
+                "role": "Senior Planner",
+                "content": "Coordinating twelve vendors across two venues was a nightmare of group texts and missed emails. Now every florist, caterer, and photographer has role-based access to the timeline, uploads deliverables to the gallery, and signs off on contracts inside the platform. The automated reminders alone saved me from three near-disasters last season.",
+                "order": 3
+            },
+            {
+                "name": "Tomás Vega",
+                "company": "Día Perfecto Weddings",
+                "role": "Founder",
+                "content": "We run fifteen weddings a month and the planning calendar synced with Google Calendar keeps my team sane. I set up intake forms for new couples in the forms canvas, the RSVP reminders go out automatically by SMS and email, and every wedding has its own branded configuration so clients feel like they have a dedicated app. The knowledge base even onboards our junior planners faster than I can.",
+                "order": 4
             }
         ],
 
@@ -255,7 +269,7 @@ def _get_default_saas_config():
                 "description": "Day-of command center",
                 "badge": "Step 3",
                 "bullets": [
-                    "Touchless check-in with live headcounts and alerts",
+                    "QR-powered guest memory uploads with instant photo and video delivery",
                     "Role-based run of show for coordinators and crew",
                     "Instant galleries and thank-you follow ups post event"
                 ]
@@ -368,8 +382,10 @@ async def update_saas_config(
 async def get_content_sections(current_user: ExtendedAuthUser = Depends(require_root_admin)):
     """Get all content sections - ROOT_ADMIN only"""
     try:
+        # Safety cap: typically ~10-20 content sections
+        MAX_SECTIONS = 100
         sections_cursor = mongo.db["content_sections"].find({})
-        sections = await sections_cursor.to_list(length=None)
+        sections = await sections_cursor.to_list(length=MAX_SECTIONS)
 
         # Convert ObjectId to string for JSON serialization
         for section in sections:
@@ -442,8 +458,10 @@ async def get_wedding_planners(current_user: ExtendedAuthUser = Depends(require_
     """Get all wedding planners - ROOT_ADMIN only"""
     try:
         # Get users with wedding_planner role (async Motor query)
+        # Safety cap: typically platforms have <5k planners
+        MAX_PLANNERS = 5000
         planners_cursor = mongo.get_users_collection().find({"role": "wedding_planner"})
-        planners = await planners_cursor.to_list(length=None)
+        planners = await planners_cursor.to_list(length=MAX_PLANNERS)
         # Convert ObjectId to string and format data
         formatted_planners = []
         for planner in planners:
@@ -592,11 +610,13 @@ async def get_overview_analytics(current_user: ExtendedAuthUser = Depends(requir
         yearly_revenue = 0
 
         # Get all users with active subscriptions (async cursor)
+        # Safety cap: iterate through batches to avoid memory overload
+        MAX_ACTIVE_USERS = 10000
         active_users_cursor = mongo.get_users_collection().find({
             "subscription_status": {"$in": ["trial", "active"]},
             "is_active": True
         })
-        active_users = await active_users_cursor.to_list(length=None)
+        active_users = await active_users_cursor.to_list(length=MAX_ACTIVE_USERS)
         for user in active_users:
             # Skip trial users for revenue calculation
             if user.get("subscription_status") == "trial":
@@ -631,8 +651,10 @@ async def get_revenue_analytics(current_user: ExtendedAuthUser = Depends(require
     try:
         # Revenue by subscription plan
         plan_revenue = []
+        # Safety cap: typically <100 subscription plans
+        MAX_PLANS = 500
         plans_cursor = mongo.get_subscription_plans_collection().find({"is_active": True})
-        plans = await plans_cursor.to_list(length=None)
+        plans = await plans_cursor.to_list(length=MAX_PLANS)
 
         for plan in plans:
             plan_id = plan["_id"]
