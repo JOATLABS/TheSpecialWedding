@@ -1,0 +1,316 @@
+# =============================================================================
+# Shared Coolify deployment workflow
+# Used by staging auto-deploy and production manual promotion.
+# =============================================================================
+name: Coolify Deploy Shared
+
+on:
+  workflow_call:
+    inputs:
+      environment_name:
+        required: true
+        type: string
+      image_tag:
+        required: true
+        type: string
+      service:
+        required: false
+        default: both
+        type: string
+      frontend_url:
+        required: true
+        type: string
+      api_url:
+        required: true
+        type: string
+      verify_couple:
+        required: false
+        default: false
+        type: boolean
+      verify_sse:
+        required: false
+        default: true
+        type: boolean
+    secrets:
+      COOLIFY_BASE_URL:
+        required: true
+      COOLIFY_API_TOKEN:
+        required: true
+      COOLIFY_BACKEND_UUID:
+        required: true
+      COOLIFY_FRONTEND_UUID:
+        required: true
+      SMOKE_ADMIN_EMAIL:
+        required: true
+      SMOKE_ADMIN_PASSWORD:
+        required: true
+      SMOKE_COUPLE_EMAIL:
+        required: false
+      SMOKE_COUPLE_PASSWORD:
+        required: false
+      SMOKE_PUBLIC_WEDDING_SLUG:
+        required: false
+
+concurrency:
+  group: deploy-${{ inputs.environment_name }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  prepare:
+    name: Prepare ${{ inputs.environment_name }} deploy
+    runs-on: ubuntu-latest
+    outputs:
+      image-tag: ${{ steps.tag.outputs.tag }}
+      deploy-backend: ${{ steps.target.outputs.backend }}
+      deploy-frontend: ${{ steps.target.outputs.frontend }}
+    steps:
+      - name: Normalize image tag
+        id: tag
+        run: |
+          TAG="${{ inputs.image_tag }}"
+          if [ -z "$TAG" ]; then
+            echo "image_tag input is required"
+            exit 1
+          fi
+          if [ "${#TAG}" -gt 12 ]; then
+            TAG="${TAG:0:7}"
+          fi
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+
+      - name: Determine deploy targets
+        id: target
+        run: |
+          SERVICE="${{ inputs.service }}"
+          case "$SERVICE" in
+            both)
+              echo "backend=true" >> "$GITHUB_OUTPUT"
+              echo "frontend=true" >> "$GITHUB_OUTPUT"
+              ;;
+            backend)
+              echo "backend=true" >> "$GITHUB_OUTPUT"
+              echo "frontend=false" >> "$GITHUB_OUTPUT"
+              ;;
+            frontend)
+              echo "backend=false" >> "$GITHUB_OUTPUT"
+              echo "frontend=true" >> "$GITHUB_OUTPUT"
+              ;;
+            *)
+              echo "Unsupported service target: $SERVICE"
+              exit 1
+              ;;
+          esac
+
+      - name: Summary
+        run: |
+          echo "## Coolify Deploy Plan" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **Environment**: ${{ inputs.environment_name }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **Image tag**: \`${{ steps.tag.outputs.tag }}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **Backend**: ${{ steps.target.outputs.backend }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **Frontend**: ${{ steps.target.outputs.frontend }}" >> "$GITHUB_STEP_SUMMARY"
+
+  deploy-backend:
+    name: Deploy backend (${{ inputs.environment_name }})
+    runs-on: ubuntu-latest
+    needs: prepare
+    if: needs.prepare.outputs.deploy-backend == 'true'
+    outputs:
+      previous-tag: ${{ steps.current-tag.outputs.tag }}
+    environment:
+      name: ${{ inputs.environment_name }}
+      url: ${{ inputs.api_url }}
+    steps:
+      - name: Read current backend image tag
+        id: current-tag
+        run: |
+          RESPONSE=$(curl -sf \
+            "${{ secrets.COOLIFY_BASE_URL }}/api/v1/applications/${{ secrets.COOLIFY_BACKEND_UUID }}" \
+            -H "Authorization: Bearer ${{ secrets.COOLIFY_API_TOKEN }}")
+
+          TAG=$(printf '%s' "$RESPONSE" | python3 -c "import json,sys; print((json.load(sys.stdin).get('docker_registry_image_tag') or '').strip())")
+          if [ -z "$TAG" ]; then
+            echo "Current backend image tag is empty; refusing to continue without an immutable rollback target."
+            exit 1
+          fi
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+
+      - name: Update backend image tag
+        run: |
+          TAG="${{ needs.prepare.outputs.image-tag }}"
+          curl -sf -X PATCH \
+            "${{ secrets.COOLIFY_BASE_URL }}/api/v1/applications/${{ secrets.COOLIFY_BACKEND_UUID }}" \
+            -H "Authorization: Bearer ${{ secrets.COOLIFY_API_TOKEN }}" \
+            -H "Content-Type: application/json" \
+            -d "{\"docker_registry_image_tag\": \"${TAG}\"}"
+
+      - name: Restart backend
+        run: |
+          curl -sf -X POST \
+            "${{ secrets.COOLIFY_BASE_URL }}/api/v1/applications/${{ secrets.COOLIFY_BACKEND_UUID }}/restart" \
+            -H "Authorization: Bearer ${{ secrets.COOLIFY_API_TOKEN }}" \
+            -H "Content-Type: application/json"
+
+  deploy-frontend:
+    name: Deploy frontend (${{ inputs.environment_name }})
+    runs-on: ubuntu-latest
+    needs: prepare
+    if: needs.prepare.outputs.deploy-frontend == 'true'
+    outputs:
+      previous-tag: ${{ steps.current-tag.outputs.tag }}
+    environment:
+      name: ${{ inputs.environment_name }}
+      url: ${{ inputs.frontend_url }}
+    steps:
+      - name: Read current frontend image tag
+        id: current-tag
+        run: |
+          RESPONSE=$(curl -sf \
+            "${{ secrets.COOLIFY_BASE_URL }}/api/v1/applications/${{ secrets.COOLIFY_FRONTEND_UUID }}" \
+            -H "Authorization: Bearer ${{ secrets.COOLIFY_API_TOKEN }}")
+
+          TAG=$(printf '%s' "$RESPONSE" | python3 -c "import json,sys; print((json.load(sys.stdin).get('docker_registry_image_tag') or '').strip())")
+          if [ -z "$TAG" ]; then
+            echo "Current frontend image tag is empty; refusing to continue without an immutable rollback target."
+            exit 1
+          fi
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+
+      - name: Update frontend image tag
+        run: |
+          TAG="${{ needs.prepare.outputs.image-tag }}"
+          curl -sf -X PATCH \
+            "${{ secrets.COOLIFY_BASE_URL }}/api/v1/applications/${{ secrets.COOLIFY_FRONTEND_UUID }}" \
+            -H "Authorization: Bearer ${{ secrets.COOLIFY_API_TOKEN }}" \
+            -H "Content-Type: application/json" \
+            -d "{\"docker_registry_image_tag\": \"${TAG}\"}"
+
+      - name: Restart frontend
+        run: |
+          curl -sf -X POST \
+            "${{ secrets.COOLIFY_BASE_URL }}/api/v1/applications/${{ secrets.COOLIFY_FRONTEND_UUID }}/restart" \
+            -H "Authorization: Bearer ${{ secrets.COOLIFY_API_TOKEN }}" \
+            -H "Content-Type: application/json"
+
+  verify:
+    name: Verify ${{ inputs.environment_name }}
+    runs-on: ubuntu-latest
+    needs: [prepare, deploy-backend, deploy-frontend]
+    if: >-
+      ${{
+        always() &&
+        needs.prepare.result == 'success' &&
+        needs.deploy-backend.result != 'failure' &&
+        needs.deploy-backend.result != 'cancelled' &&
+        needs.deploy-frontend.result != 'failure' &&
+        needs.deploy-frontend.result != 'cancelled'
+      }}
+    environment:
+      name: ${{ inputs.environment_name }}
+      url: ${{ inputs.frontend_url }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Install verification dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install requests
+
+      - name: Run smoke verification
+        env:
+          FRONTEND_URL: ${{ inputs.frontend_url }}
+          API_URL: ${{ inputs.api_url }}
+          SMOKE_ADMIN_EMAIL: ${{ secrets.SMOKE_ADMIN_EMAIL }}
+          SMOKE_ADMIN_PASSWORD: ${{ secrets.SMOKE_ADMIN_PASSWORD }}
+          SMOKE_COUPLE_EMAIL: ${{ secrets.SMOKE_COUPLE_EMAIL }}
+          SMOKE_COUPLE_PASSWORD: ${{ secrets.SMOKE_COUPLE_PASSWORD }}
+          SMOKE_PUBLIC_WEDDING_SLUG: ${{ secrets.SMOKE_PUBLIC_WEDDING_SLUG }}
+        run: |
+          set -euo pipefail
+          ARGS=(
+            --frontend-base "$FRONTEND_URL"
+            --api-base "$API_URL"
+            --admin-email "$SMOKE_ADMIN_EMAIL"
+            --admin-password "$SMOKE_ADMIN_PASSWORD"
+          )
+
+          if [ -n "${SMOKE_PUBLIC_WEDDING_SLUG:-}" ]; then
+            ARGS+=(--public-slug "$SMOKE_PUBLIC_WEDDING_SLUG")
+          fi
+
+          if [ "${{ inputs.verify_sse }}" != "true" ]; then
+            ARGS+=(--skip-sse)
+          fi
+
+          if [ "${{ inputs.verify_couple }}" = "true" ]; then
+            if [ -z "${SMOKE_COUPLE_EMAIL:-}" ] || [ -z "${SMOKE_COUPLE_PASSWORD:-}" ]; then
+              echo "Couple verification was requested but the staging couple smoke credentials are missing."
+              exit 1
+            fi
+            ARGS+=(--couple-email "$SMOKE_COUPLE_EMAIL" --couple-password "$SMOKE_COUPLE_PASSWORD")
+          fi
+
+          python scripts/deploy/verify_environment.py "${ARGS[@]}"
+
+  rollback:
+    name: Roll back ${{ inputs.environment_name }}
+    runs-on: ubuntu-latest
+    needs: [prepare, deploy-backend, deploy-frontend, verify]
+    if: failure()
+    environment:
+      name: ${{ inputs.environment_name }}
+      url: ${{ inputs.frontend_url }}
+    steps:
+      - name: Roll back backend
+        if: >-
+          ${{
+            needs.prepare.outputs.deploy-backend == 'true' &&
+            (needs.deploy-backend.result == 'failure' || needs.verify.result == 'failure')
+          }}
+        run: |
+          TAG="${{ needs.deploy-backend.outputs.previous-tag }}"
+          if [ -z "$TAG" ]; then
+            echo "Missing recorded backend rollback tag."
+            exit 1
+          fi
+
+          curl -sf -X PATCH \
+            "${{ secrets.COOLIFY_BASE_URL }}/api/v1/applications/${{ secrets.COOLIFY_BACKEND_UUID }}" \
+            -H "Authorization: Bearer ${{ secrets.COOLIFY_API_TOKEN }}" \
+            -H "Content-Type: application/json" \
+            -d "{\"docker_registry_image_tag\": \"${TAG}\"}"
+
+          curl -sf -X POST \
+            "${{ secrets.COOLIFY_BASE_URL }}/api/v1/applications/${{ secrets.COOLIFY_BACKEND_UUID }}/restart" \
+            -H "Authorization: Bearer ${{ secrets.COOLIFY_API_TOKEN }}" \
+            -H "Content-Type: application/json"
+
+      - name: Roll back frontend
+        if: >-
+          ${{
+            needs.prepare.outputs.deploy-frontend == 'true' &&
+            (needs.deploy-frontend.result == 'failure' || needs.verify.result == 'failure')
+          }}
+        run: |
+          TAG="${{ needs.deploy-frontend.outputs.previous-tag }}"
+          if [ -z "$TAG" ]; then
+            echo "Missing recorded frontend rollback tag."
+            exit 1
+          fi
+
+          curl -sf -X PATCH \
+            "${{ secrets.COOLIFY_BASE_URL }}/api/v1/applications/${{ secrets.COOLIFY_FRONTEND_UUID }}" \
+            -H "Authorization: Bearer ${{ secrets.COOLIFY_API_TOKEN }}" \
+            -H "Content-Type: application/json" \
+            -d "{\"docker_registry_image_tag\": \"${TAG}\"}"
+
+          curl -sf -X POST \
+            "${{ secrets.COOLIFY_BASE_URL }}/api/v1/applications/${{ secrets.COOLIFY_FRONTEND_UUID }}/restart" \
+            -H "Authorization: Bearer ${{ secrets.COOLIFY_API_TOKEN }}" \
+            -H "Content-Type: application/json"

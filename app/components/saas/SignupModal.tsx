@@ -4,6 +4,7 @@ import React, { useState, useEffect } from 'react';
 import { useForm } from 'react-hook-form';
 import { toast } from 'sonner';
 import { ThemeConfig } from '@/types/wedding';
+import { getApiBaseUrl } from '@/utils/env';
 
 interface SubscriptionPlan {
   _id: string;
@@ -62,6 +63,7 @@ type FormValues = {
 };
 
 export const SignupModal: React.FC<SignupModalProps> = ({ isOpen, onClose, selectedPlanId }) => {
+  const apiBaseUrl = getApiBaseUrl();
   const [plans, setPlans] = useState<SubscriptionPlan[]>(FALLBACK_PLANS);
   const [selectedPlan, setSelectedPlan] = useState<SubscriptionPlan | null>(FALLBACK_PLANS[1]);
   const [billingInterval, setBillingInterval] = useState<'monthly' | 'yearly'>('monthly');
@@ -119,7 +121,7 @@ export const SignupModal: React.FC<SignupModalProps> = ({ isOpen, onClose, selec
   useEffect(() => {
     const fetchPlans = async () => {
       try {
-        const response = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL}/public/subscription-plans`);
+        const response = await fetch(`${apiBaseUrl}/public/subscription-plans`);
         if (response.ok) {
           const data = await response.json();
           const activePlans = data.filter((p: SubscriptionPlan) => p).sort((a: SubscriptionPlan, b: SubscriptionPlan) =>
@@ -145,7 +147,7 @@ export const SignupModal: React.FC<SignupModalProps> = ({ isOpen, onClose, selec
       reset();
       setStep(1);
     }
-  }, [isOpen, selectedPlanId, reset]);
+  }, [apiBaseUrl, isOpen, selectedPlanId, reset]);
 
   if (!isOpen) return null;
 
@@ -171,7 +173,7 @@ export const SignupModal: React.FC<SignupModalProps> = ({ isOpen, onClose, selec
     }
 
     try {
-      const registerResponse = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL}/public/register`, {
+      const registerResponse = await fetch(`${apiBaseUrl}/public/register`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -196,7 +198,7 @@ export const SignupModal: React.FC<SignupModalProps> = ({ isOpen, onClose, selec
       const registerData = await registerResponse.json();
       toast.success('Account created! Redirecting to checkout...');
 
-      const checkoutResponse = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL}/stripe/public/create-checkout-session`, {
+      const checkoutResponse = await fetch(`${apiBaseUrl}/stripe/public/create-checkout-session`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

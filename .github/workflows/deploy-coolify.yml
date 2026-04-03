@@ -1,8 +1,8 @@
 # =============================================================================
-# CD Pipeline - Deploy to Coolify (Split Services)
-# Triggers after CI completes on main, or via manual dispatch
+# Staging deployment workflow
+# Automatically deploys to staging after CI succeeds on main, or manually.
 # =============================================================================
-name: Deploy to Coolify
+name: Deploy Coolify Staging
 
 on:
   workflow_run:
@@ -12,7 +12,7 @@ on:
   workflow_dispatch:
     inputs:
       image-tag:
-        description: "Image tag to deploy (default: latest SHA from main)"
+        description: "Image tag to deploy to staging (default: current commit SHA)"
         required: false
         default: ""
       service:
@@ -25,303 +25,60 @@ on:
           - backend
           - frontend
 
-concurrency:
-  group: deploy-production
-  cancel-in-progress: false
-
-env:
-  BACKEND_IMAGE: ghcr.io/${{ github.repository_owner }}/wedding-app-backend
-  FRONTEND_IMAGE: ghcr.io/${{ github.repository_owner }}/wedding-app-frontend
+permissions:
+  contents: read
 
 jobs:
-  # ── Determine what to deploy ───────────────────────────────────────────────
   prepare:
-    name: Prepare Deploy
+    name: Prepare staging deploy
     runs-on: ubuntu-latest
-    # Only deploy if CI succeeded (or manual trigger)
-    if: ${{ github.event.workflow_run.conclusion == 'success' || github.event_name == 'workflow_dispatch' }}
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
     outputs:
       image-tag: ${{ steps.tag.outputs.tag }}
-      deploy-backend: ${{ steps.target.outputs.backend }}
-      deploy-frontend: ${{ steps.target.outputs.frontend }}
+      service: ${{ steps.service.outputs.value }}
     steps:
       - name: Determine image tag
         id: tag
         run: |
           if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ -n "${{ github.event.inputs.image-tag }}" ]; then
-            echo "tag=${{ github.event.inputs.image-tag }}" >> $GITHUB_OUTPUT
+            TAG="${{ github.event.inputs.image-tag }}"
           elif [ "${{ github.event_name }}" = "workflow_run" ]; then
-            SHA="${{ github.event.workflow_run.head_sha }}"
-            echo "tag=${SHA::7}" >> $GITHUB_OUTPUT
+            TAG="${{ github.event.workflow_run.head_sha }}"
           else
-            SHA="${{ github.sha }}"
-            echo "tag=${SHA::7}" >> $GITHUB_OUTPUT
+            TAG="${{ github.sha }}"
           fi
 
-      - name: Determine deploy targets
-        id: target
+          if [ "${#TAG}" -gt 12 ]; then
+            TAG="${TAG:0:7}"
+          fi
+
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+
+      - name: Determine service target
+        id: service
         run: |
           SERVICE="${{ github.event.inputs.service || 'both' }}"
-          if [ "$SERVICE" = "both" ] || [ "$SERVICE" = "backend" ]; then
-            echo "backend=true" >> $GITHUB_OUTPUT
-          else
-            echo "backend=false" >> $GITHUB_OUTPUT
-          fi
-          if [ "$SERVICE" = "both" ] || [ "$SERVICE" = "frontend" ]; then
-            echo "frontend=true" >> $GITHUB_OUTPUT
-          else
-            echo "frontend=false" >> $GITHUB_OUTPUT
-          fi
+          echo "value=$SERVICE" >> "$GITHUB_OUTPUT"
 
-      - name: Summary
-        run: |
-          echo "## Deploy Plan" >> $GITHUB_STEP_SUMMARY
-          echo "- **Image tag**: ${{ steps.tag.outputs.tag }}" >> $GITHUB_STEP_SUMMARY
-          echo "- **Backend**: ${{ steps.target.outputs.backend }}" >> $GITHUB_STEP_SUMMARY
-          echo "- **Frontend**: ${{ steps.target.outputs.frontend }}" >> $GITHUB_STEP_SUMMARY
-
-  # ── Deploy Backend ─────────────────────────────────────────────────────────
-  deploy-backend:
-    name: Deploy Backend
-    runs-on: ubuntu-latest
+  deploy:
     needs: prepare
-    if: needs.prepare.outputs.deploy-backend == 'true'
-    outputs:
-      previous-tag: ${{ steps.current-tag.outputs.tag }}
-    environment:
-      name: production
-      url: https://api.thespecialwedding.io
-    steps:
-      - name: Read current backend image tag
-        id: current-tag
-        run: |
-          RESPONSE=$(curl -sf \
-            "${{ secrets.COOLIFY_BASE_URL }}/api/v1/applications/${{ secrets.COOLIFY_BACKEND_UUID }}" \
-            -H "Authorization: Bearer ${{ secrets.COOLIFY_API_TOKEN }}")
-
-          TAG=$(printf '%s' "$RESPONSE" | python3 -c "import json,sys; print((json.load(sys.stdin).get('docker_registry_image_tag') or 'latest').strip())")
-          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
-          echo "Current backend tag: $TAG"
-
-      - name: Update Coolify backend image tag
-        run: |
-          TAG="${{ needs.prepare.outputs.image-tag }}"
-          echo "Deploying backend with tag: $TAG"
-
-          # Update the image tag via Coolify API
-          curl -sf -X PATCH \
-            "${{ secrets.COOLIFY_BASE_URL }}/api/v1/applications/${{ secrets.COOLIFY_BACKEND_UUID }}" \
-            -H "Authorization: Bearer ${{ secrets.COOLIFY_API_TOKEN }}" \
-            -H "Content-Type: application/json" \
-            -d "{\"docker_registry_image_tag\": \"${TAG}\"}" \
-            || { echo "Failed to update backend image tag"; exit 1; }
-
-      - name: Trigger Coolify backend deploy
-        id: deploy
-        run: |
-          echo "Triggering Coolify backend deploy..."
-          RESPONSE=$(curl -sf -X POST \
-            "${{ secrets.COOLIFY_BASE_URL }}/api/v1/applications/${{ secrets.COOLIFY_BACKEND_UUID }}/restart" \
-            -H "Authorization: Bearer ${{ secrets.COOLIFY_API_TOKEN }}" \
-            -H "Content-Type: application/json")
-
-          echo "Coolify response: $RESPONSE"
-          echo "Backend deploy triggered"
-
-      - name: Wait for backend to be healthy
-        run: |
-          echo "Waiting for backend to become healthy..."
-          MAX_ATTEMPTS=20
-          DELAY=15
-
-          for i in $(seq 1 $MAX_ATTEMPTS); do
-            echo "Health check attempt $i/$MAX_ATTEMPTS..."
-
-            STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
-              --max-time 10 \
-              "https://api.thespecialwedding.io/health/readyz" || echo "000")
-
-            if [ "$STATUS" -eq 200 ]; then
-              echo "Backend is healthy (HTTP 200)"
-              exit 0
-            fi
-
-            echo "Got HTTP $STATUS, waiting ${DELAY}s..."
-            sleep $DELAY
-          done
-
-          echo "Backend health check failed after $MAX_ATTEMPTS attempts"
-          exit 1
-
-  # ── Deploy Frontend ────────────────────────────────────────────────────────
-  deploy-frontend:
-    name: Deploy Frontend
-    runs-on: ubuntu-latest
-    needs: prepare
-    if: needs.prepare.outputs.deploy-frontend == 'true'
-    outputs:
-      previous-tag: ${{ steps.current-tag.outputs.tag }}
-    environment:
-      name: production
-      url: https://thespecialwedding.io
-    steps:
-      - name: Read current frontend image tag
-        id: current-tag
-        run: |
-          RESPONSE=$(curl -sf \
-            "${{ secrets.COOLIFY_BASE_URL }}/api/v1/applications/${{ secrets.COOLIFY_FRONTEND_UUID }}" \
-            -H "Authorization: Bearer ${{ secrets.COOLIFY_API_TOKEN }}")
-
-          TAG=$(printf '%s' "$RESPONSE" | python3 -c "import json,sys; print((json.load(sys.stdin).get('docker_registry_image_tag') or 'latest').strip())")
-          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
-          echo "Current frontend tag: $TAG"
-
-      - name: Update Coolify frontend image tag
-        run: |
-          TAG="${{ needs.prepare.outputs.image-tag }}"
-          echo "Deploying frontend with tag: $TAG"
-
-          curl -sf -X PATCH \
-            "${{ secrets.COOLIFY_BASE_URL }}/api/v1/applications/${{ secrets.COOLIFY_FRONTEND_UUID }}" \
-            -H "Authorization: Bearer ${{ secrets.COOLIFY_API_TOKEN }}" \
-            -H "Content-Type: application/json" \
-            -d "{\"docker_registry_image_tag\": \"${TAG}\"}" \
-            || { echo "Failed to update frontend image tag"; exit 1; }
-
-      - name: Trigger Coolify frontend deploy
-        id: deploy
-        run: |
-          echo "Triggering Coolify frontend deploy..."
-          RESPONSE=$(curl -sf -X POST \
-            "${{ secrets.COOLIFY_BASE_URL }}/api/v1/applications/${{ secrets.COOLIFY_FRONTEND_UUID }}/restart" \
-            -H "Authorization: Bearer ${{ secrets.COOLIFY_API_TOKEN }}" \
-            -H "Content-Type: application/json")
-
-          echo "Coolify response: $RESPONSE"
-          echo "Frontend deploy triggered"
-
-      - name: Wait for frontend to be healthy
-        run: |
-          echo "Waiting for frontend to become healthy..."
-          MAX_ATTEMPTS=15
-          DELAY=15
-
-          for i in $(seq 1 $MAX_ATTEMPTS); do
-            echo "Health check attempt $i/$MAX_ATTEMPTS..."
-
-            STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
-              --max-time 10 \
-              "https://thespecialwedding.io" || echo "000")
-
-            if [ "$STATUS" -eq 200 ]; then
-              echo "Frontend is healthy (HTTP 200)"
-              exit 0
-            fi
-
-            echo "Got HTTP $STATUS, waiting ${DELAY}s..."
-            sleep $DELAY
-          done
-
-          echo "Frontend health check failed after $MAX_ATTEMPTS attempts"
-          exit 1
-
-  # ── Auto-Rollback on Deploy Failure ────────────────────────────────────────
-  rollback:
-    name: Auto-Rollback
-    runs-on: ubuntu-latest
-    needs: [prepare, deploy-backend, deploy-frontend]
-    if: failure()
-    steps:
-      - name: Rollback backend
-        if: needs.deploy-backend.result == 'failure'
-        run: |
-          TAG="${{ needs.deploy-backend.outputs.previous-tag }}"
-          if [ -z "$TAG" ]; then
-            TAG="latest"
-          fi
-          echo "Backend deploy failed — rolling back to tag: $TAG"
-
-          curl -sf -X PATCH \
-            "${{ secrets.COOLIFY_BASE_URL }}/api/v1/applications/${{ secrets.COOLIFY_BACKEND_UUID }}" \
-            -H "Authorization: Bearer ${{ secrets.COOLIFY_API_TOKEN }}" \
-            -H "Content-Type: application/json" \
-            -d "{\"docker_registry_image_tag\": \"${TAG}\"}"
-
-          curl -sf -X POST \
-            "${{ secrets.COOLIFY_BASE_URL }}/api/v1/applications/${{ secrets.COOLIFY_BACKEND_UUID }}/restart" \
-            -H "Authorization: Bearer ${{ secrets.COOLIFY_API_TOKEN }}" \
-            -H "Content-Type: application/json"
-
-          echo "Backend rollback triggered"
-
-      - name: Rollback frontend
-        if: needs.deploy-frontend.result == 'failure'
-        run: |
-          TAG="${{ needs.deploy-frontend.outputs.previous-tag }}"
-          if [ -z "$TAG" ]; then
-            TAG="latest"
-          fi
-          echo "Frontend deploy failed — rolling back to tag: $TAG"
-
-          curl -sf -X PATCH \
-            "${{ secrets.COOLIFY_BASE_URL }}/api/v1/applications/${{ secrets.COOLIFY_FRONTEND_UUID }}" \
-            -H "Authorization: Bearer ${{ secrets.COOLIFY_API_TOKEN }}" \
-            -H "Content-Type: application/json" \
-            -d "{\"docker_registry_image_tag\": \"${TAG}\"}"
-
-          curl -sf -X POST \
-            "${{ secrets.COOLIFY_BASE_URL }}/api/v1/applications/${{ secrets.COOLIFY_FRONTEND_UUID }}/restart" \
-            -H "Authorization: Bearer ${{ secrets.COOLIFY_API_TOKEN }}" \
-            -H "Content-Type: application/json"
-
-          echo "Frontend rollback triggered"
-
-      - name: Create failure issue
-        uses: actions/github-script@v7
-        with:
-          script: |
-            const sha = '${{ needs.prepare.outputs.image-tag }}';
-            const backendFailed = '${{ needs.deploy-backend.result }}' === 'failure';
-            const frontendFailed = '${{ needs.deploy-frontend.result }}' === 'failure';
-
-            const failedServices = [];
-            if (backendFailed) failedServices.push('backend');
-            if (frontendFailed) failedServices.push('frontend');
-
-            await github.rest.issues.create({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              title: `Deploy failed & auto-rolled back: ${sha}`,
-              body: `## Deploy Failure (Auto-Rolled Back)\n\n` +
-                    `- **Image tag:** ${sha}\n` +
-                    `- **Failed services:** ${failedServices.join(', ')}\n` +
-                    `- **Run:** ${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}\n` +
-                    `- **Action taken:** Automatic rollback to previous version\n\n` +
-                    `The production site has been rolled back. Please investigate before re-deploying.`,
-              labels: ['bug', 'deploy-failure', 'rollback']
-            });
-
-  # ── Deploy Summary ─────────────────────────────────────────────────────────
-  summary:
-    name: Deploy Summary
-    runs-on: ubuntu-latest
-    needs: [prepare, deploy-backend, deploy-frontend]
-    if: always() && (needs.deploy-backend.result == 'success' || needs.deploy-frontend.result == 'success')
-    steps:
-      - name: Post summary
-        run: |
-          TAG="${{ needs.prepare.outputs.image-tag }}"
-          echo "## Deploy Complete" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "| Service | Image | Status |" >> $GITHUB_STEP_SUMMARY
-          echo "|---------|-------|--------|" >> $GITHUB_STEP_SUMMARY
-
-          BACKEND_STATUS="${{ needs.deploy-backend.result }}"
-          FRONTEND_STATUS="${{ needs.deploy-frontend.result }}"
-
-          if [ "${{ needs.prepare.outputs.deploy-backend }}" = "true" ]; then
-            echo "| Backend | \`${{ env.BACKEND_IMAGE }}:${TAG}\` | ${BACKEND_STATUS} |" >> $GITHUB_STEP_SUMMARY
-          fi
-          if [ "${{ needs.prepare.outputs.deploy-frontend }}" = "true" ]; then
-            echo "| Frontend | \`${{ env.FRONTEND_IMAGE }}:${TAG}\` | ${FRONTEND_STATUS} |" >> $GITHUB_STEP_SUMMARY
-          fi
+    if: needs.prepare.result == 'success'
+    uses: ./.github/workflows/coolify-deploy-shared.yml
+    with:
+      environment_name: staging
+      image_tag: ${{ needs.prepare.outputs.image-tag }}
+      service: ${{ needs.prepare.outputs.service }}
+      frontend_url: https://staging.thespecialwedding.io
+      api_url: https://api.staging.thespecialwedding.io
+      verify_couple: true
+      verify_sse: true
+    secrets:
+      COOLIFY_BASE_URL: ${{ secrets.COOLIFY_BASE_URL }}
+      COOLIFY_API_TOKEN: ${{ secrets.COOLIFY_API_TOKEN }}
+      COOLIFY_BACKEND_UUID: ${{ secrets.COOLIFY_STAGING_BACKEND_UUID }}
+      COOLIFY_FRONTEND_UUID: ${{ secrets.COOLIFY_STAGING_FRONTEND_UUID }}
+      SMOKE_ADMIN_EMAIL: ${{ secrets.STAGING_SMOKE_ADMIN_EMAIL }}
+      SMOKE_ADMIN_PASSWORD: ${{ secrets.STAGING_SMOKE_ADMIN_PASSWORD }}
+      SMOKE_COUPLE_EMAIL: ${{ secrets.STAGING_SMOKE_COUPLE_EMAIL }}
+      SMOKE_COUPLE_PASSWORD: ${{ secrets.STAGING_SMOKE_COUPLE_PASSWORD }}
+      SMOKE_PUBLIC_WEDDING_SLUG: ${{ secrets.STAGING_SMOKE_PUBLIC_WEDDING_SLUG }}
