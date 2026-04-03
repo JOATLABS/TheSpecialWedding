@@ -1609,33 +1609,35 @@ export default function AdminUsersPage() {
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
-              className="fixed inset-0 z-50 overflow-y-auto bg-black/60 backdrop-blur-sm"
+              className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/60 p-4 backdrop-blur-sm sm:items-center sm:p-6"
               onClick={() => setShowInviteModal(false)}
             >
-              <div className="flex min-h-full items-start justify-center p-4 sm:items-center sm:p-6">
               <motion.div
                 initial={{ opacity: 0, scale: 0.95, y: 20 }}
                 animate={{ opacity: 1, scale: 1, y: 0 }}
                 exit={{ opacity: 0, scale: 0.95, y: 20 }}
-                className="my-4 flex w-full max-w-[560px] max-h-[90vh] flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl dark:border-slate-700 dark:bg-slate-900"
+                className="w-full max-w-[640px] max-h-[90vh] overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl dark:border-slate-700 dark:bg-slate-900"
                 onClick={(e) => e.stopPropagation()}
               >
                 {/* Modal Header */}
-                <div className="relative shrink-0 overflow-hidden px-6 pt-6 pb-4">
-                  <div className="absolute top-0 right-0 w-40 h-40 bg-gradient-to-br from-primary-500/20 to-secondary-500/20 rounded-full blur-2xl" />
-                  <div className="relative flex items-center gap-4">
-                    <div className="w-14 h-14 rounded-xl bg-gradient-to-br from-primary-500 to-secondary-500 flex items-center justify-center shadow-lg shadow-primary-500/30">
-                      <UserPlus className="w-7 h-7 text-white" />
+                <div className="relative overflow-hidden px-5 pt-5 pb-3 sm:px-6">
+                  <div className="absolute top-0 right-0 h-32 w-32 rounded-full bg-gradient-to-br from-primary-500/20 to-secondary-500/20 blur-2xl" />
+                  <div className="relative flex items-center gap-3">
+                    <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-gradient-to-br from-primary-500 to-secondary-500 shadow-lg shadow-primary-500/25">
+                      <UserPlus className="h-6 w-6 text-white" />
                     </div>
                     <div>
-                      <h2 className="text-2xl font-bold text-slate-900 dark:text-white">Invite Planner</h2>
-                      <p className="text-sm text-slate-500 dark:text-slate-400">Send an invitation to join your platform</p>
+                      <h2 className="text-xl font-bold text-slate-900 dark:text-white sm:text-2xl">Invite Planner</h2>
+                      <p className="text-sm text-slate-500 dark:text-slate-400">Send a trial or pay-now invitation to a planner account.</p>
                     </div>
                   </div>
                 </div>
 
                 {/* Modal Body */}
-                <form onSubmit={handleInvitePlanner} className="flex-1 space-y-4 overflow-y-auto p-6 pt-2 pr-4 scrollbar-thin sm:pr-6">
+                <form
+                  onSubmit={handleInvitePlanner}
+                  className="space-y-3 overflow-y-auto p-5 pt-1 pr-3 scrollbar-thin max-h-[calc(90vh-7rem)] sm:p-6 sm:pt-1 sm:pr-5"
+                >
                   {/* Basic Info Section */}
                   <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                     <div className="sm:col-span-2">
@@ -1680,63 +1682,72 @@ export default function AdminUsersPage() {
                   </div>
 
                   {/* Trial Configuration Section */}
-                  <div className="border-t border-slate-200 pt-4 dark:border-slate-700">
-                    <div className="flex items-center gap-2 mb-4">
+                  <div className="border-t border-slate-200 pt-3 dark:border-slate-700">
+                    <div className="mb-3 flex items-center gap-2">
                       <Gift className="w-5 h-5 text-primary-400" />
                       <h3 className="text-lg font-semibold text-slate-900 dark:text-white">Trial Configuration</h3>
                     </div>
 
-                    <div className="space-y-4">
+                    <div className="space-y-3">
                       {/* Plan Selection */}
-                      <div>
-                        <label className="mb-2 block text-sm font-medium text-slate-700 dark:text-slate-300">
-                          <CreditCard className="w-4 h-4 inline mr-1" />
-                          Subscription Plan <span className="text-red-400">*</span>
-                        </label>
-                        <select
-                          value={inviteForm.plan_id}
-                          onChange={(e) => setInviteForm({ ...inviteForm, plan_id: e.target.value })}
-                          className={dashboardInputClass}
-                          required
-                        >
-                          <option value="" className="bg-white text-slate-900 dark:bg-slate-800 dark:text-white">Select a plan...</option>
-                          {availablePlans.map((plan) => (
-                            <option key={plan._id} value={plan._id} className="bg-white text-slate-900 dark:bg-slate-800 dark:text-white">
-                              {plan.name} - ${plan.price_monthly}/mo
-                            </option>
-                          ))}
-                        </select>
-                      </div>
+                      <div className="grid grid-cols-1 gap-3 lg:grid-cols-[minmax(0,1fr)_220px]">
+                        <div>
+                          <label className="mb-2 block text-sm font-medium text-slate-700 dark:text-slate-300">
+                            <CreditCard className="mr-1 inline h-4 w-4" />
+                            Subscription Plan <span className="text-red-400">*</span>
+                          </label>
+                          <select
+                            value={inviteForm.plan_id}
+                            onChange={(e) => setInviteForm({ ...inviteForm, plan_id: e.target.value })}
+                            className={dashboardInputClass}
+                            required
+                          >
+                            <option value="" className="bg-white text-slate-900 dark:bg-slate-800 dark:text-white">Select a plan...</option>
+                            {availablePlans.map((plan) => (
+                              <option key={plan._id} value={plan._id} className="bg-white text-slate-900 dark:bg-slate-800 dark:text-white">
+                                {plan.name} - ${plan.price_monthly}/mo
+                              </option>
+                            ))}
+                          </select>
+                        </div>
 
-                      {/* Trial Days */}
-                      <div>
-                        <label className="mb-2 block text-sm font-medium text-slate-700 dark:text-slate-300">
-                          <Clock className="w-4 h-4 inline mr-1" />
-                          Trial Duration (days)
-                        </label>
-                        <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-                          <input
-                            type="range"
-                            min="0"
-                            max="180"
-                            step="7"
-                            value={inviteForm.trial_days}
-                            onChange={(e) => setInviteForm({ ...inviteForm, trial_days: parseInt(e.target.value) })}
-                            className="h-2 flex-1 cursor-pointer appearance-none rounded-lg bg-slate-200 accent-primary-500 dark:bg-slate-700"
-                          />
+                        <div>
+                          <label className="mb-2 block text-sm font-medium text-slate-700 dark:text-slate-300">
+                            <Clock className="mr-1 inline h-4 w-4" />
+                            Trial Days
+                          </label>
                           <input
                             type="number"
                             min="0"
                             max="730"
                             value={inviteForm.trial_days}
                             onChange={(e) => setInviteForm({ ...inviteForm, trial_days: parseInt(e.target.value) || 0 })}
-                            className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-center text-slate-900 shadow-sm focus:outline-none focus:ring-2 focus:ring-primary-500/50 dark:border-slate-600 dark:bg-slate-700 dark:text-white dark:shadow-none sm:w-20"
+                            className={`${dashboardInputClass} text-center`}
                           />
                         </div>
-                        <p className="text-xs text-slate-500 mt-1">
-                          {inviteForm.trial_days === 0 ? 'No trial - user must pay immediately' :
-                           inviteForm.trial_days === 1 ? '1 day trial' :
-                           `${inviteForm.trial_days} days trial (${Math.round(inviteForm.trial_days / 30)} months)`}
+                      </div>
+
+                      <div className={dashboardPanelSubtleClass + ' space-y-2 p-3'}>
+                        <div className="flex items-center gap-3">
+                          <input
+                            type="range"
+                            min="0"
+                            max="180"
+                            step="7"
+                            value={Math.min(inviteForm.trial_days, 180)}
+                            onChange={(e) => setInviteForm({ ...inviteForm, trial_days: parseInt(e.target.value) })}
+                            className="h-2 flex-1 cursor-pointer appearance-none rounded-lg bg-slate-200 accent-primary-500 dark:bg-slate-700"
+                          />
+                          <span className="min-w-[88px] text-right text-sm font-medium text-slate-700 dark:text-slate-200">
+                            {inviteForm.trial_days === 0 ? 'Pay now' : `${inviteForm.trial_days} days`}
+                          </span>
+                        </div>
+                        <p className="text-xs text-slate-500">
+                          {inviteForm.trial_days === 0
+                            ? 'No trial. The planner will go straight to billing after setup.'
+                            : inviteForm.trial_days === 1
+                              ? '1 day trial'
+                              : `${inviteForm.trial_days} days trial (${Math.round(inviteForm.trial_days / 30)} months)`}
                         </p>
                       </div>
 
@@ -1746,30 +1757,30 @@ export default function AdminUsersPage() {
                           <label className="mb-2 block text-sm font-medium text-slate-700 dark:text-slate-300">
                             When Trial Ends Without Payment
                           </label>
-                          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                          <div className="grid grid-cols-2 gap-2">
                             <button
                               type="button"
                               onClick={() => setInviteForm({ ...inviteForm, trial_end_behavior: 'pause' })}
-                              className={`p-3 rounded-xl border transition-all ${
+                              className={`rounded-xl border px-3 py-2.5 text-left transition-all ${
                                 inviteForm.trial_end_behavior === 'pause'
                                   ? 'border-blue-500 bg-blue-50 text-blue-700 dark:bg-primary-500/20 dark:text-white'
                                   : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-300 dark:hover:bg-slate-600'
                               }`}
                             >
-                              <div className="font-medium">Pause</div>
-                              <div className="text-xs opacity-70">User can resume later</div>
+                              <div className="text-sm font-medium">Pause</div>
+                              <div className="text-[11px] opacity-70">Resume later</div>
                             </button>
                             <button
                               type="button"
                               onClick={() => setInviteForm({ ...inviteForm, trial_end_behavior: 'cancel' })}
-                              className={`p-3 rounded-xl border transition-all ${
+                              className={`rounded-xl border px-3 py-2.5 text-left transition-all ${
                                 inviteForm.trial_end_behavior === 'cancel'
                                   ? 'border-amber-500 bg-amber-50 text-amber-700 dark:bg-amber-500/20 dark:text-white'
                                   : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-300 dark:hover:bg-slate-600'
                               }`}
                             >
-                              <div className="font-medium">Cancel</div>
-                              <div className="text-xs opacity-70">Subscription ends</div>
+                              <div className="text-sm font-medium">Cancel</div>
+                              <div className="text-[11px] opacity-70">Subscription ends</div>
                             </button>
                           </div>
                         </div>
@@ -1794,22 +1805,17 @@ export default function AdminUsersPage() {
 
                   {/* Summary */}
                   {inviteForm.plan_id && inviteForm.trial_days > 0 && (
-                    <div className="rounded-xl border border-blue-200 bg-blue-50 p-4 dark:border-primary-500/20 dark:bg-primary-500/10">
-                      <div className="flex items-start gap-3">
-                        <Gift className="w-5 h-5 text-primary-400 mt-0.5" />
-                        <div className="text-sm">
-                          <p className="font-medium text-slate-900 dark:text-white">Trial Summary</p>
-                          <p className="text-slate-600 dark:text-slate-400">
-                            User will receive a <span className="text-primary-400">{inviteForm.trial_days}-day</span> free trial
-                            on the <span className="text-primary-400">{availablePlans.find(p => p._id === inviteForm.plan_id)?.name}</span> plan.
-                            After trial ends, subscription will <span className="text-primary-400">{inviteForm.trial_end_behavior}</span> if no payment method is added.
-                          </p>
-                        </div>
-                      </div>
+                    <div className="rounded-xl border border-blue-200 bg-blue-50 px-3 py-2.5 text-sm text-slate-600 dark:border-primary-500/20 dark:bg-primary-500/10 dark:text-slate-300">
+                      <span className="font-medium text-slate-900 dark:text-white">Trial summary:</span>{' '}
+                      {inviteForm.trial_days}-day trial on{' '}
+                      <span className="font-medium text-primary-500">
+                        {availablePlans.find(p => p._id === inviteForm.plan_id)?.name}
+                      </span>{' '}
+                      then <span className="font-medium text-primary-500">{inviteForm.trial_end_behavior}</span> if unpaid.
                     </div>
                   )}
 
-                  <div className="flex flex-col-reverse gap-3 pt-4 sm:flex-row">
+                  <div className="flex flex-col-reverse gap-3 border-t border-slate-200 pt-3 dark:border-slate-700 sm:flex-row">
                     <button
                       type="button"
                       onClick={() => {
@@ -1840,7 +1846,6 @@ export default function AdminUsersPage() {
                   </div>
                 </form>
               </motion.div>
-              </div>
             </motion.div>
           )}
         </AnimatePresence>

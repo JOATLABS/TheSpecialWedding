@@ -476,3 +476,15 @@ class CacheKeys:
     @staticmethod
     def session(session_id: str) -> str:
         return f"session:{session_id}"
+
+    @staticmethod
+    def couple_portal_dashboard(wedding_id: str, couple_email: str) -> str:
+        return f"couple_portal_dashboard:{wedding_id}:{couple_email}"
+
+    @staticmethod
+    def planner_weddings(scope: str, include_cancelled: bool) -> str:
+        return f"planner_weddings:{scope}:include_cancelled:{int(include_cancelled)}"
+
+    @staticmethod
+    def wedding_privacy_info(slug: str) -> str:
+        return f"wedding_privacy_info:{slug}"

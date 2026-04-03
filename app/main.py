@@ -560,7 +560,10 @@ if settings.rate_limit_enabled:
         calls=settings.rate_limit_calls,
         period=settings.rate_limit_period,
         auth_calls=settings.rate_limit_auth_calls,
-        auth_period=settings.rate_limit_auth_period
+        auth_period=settings.rate_limit_auth_period,
+        login_ip_calls=settings.rate_limit_login_ip_calls,
+        login_principal_calls=settings.rate_limit_login_principal_calls,
+        login_period=settings.rate_limit_login_period,
     )
 
 # 7. CORS

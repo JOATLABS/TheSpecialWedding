@@ -621,17 +621,23 @@ run_vendor_scraper() {
   fi
 
   # Parse state abbreviations and full names from JSON
+  # Sanitize: only allow alphanumeric, spaces, hyphens, periods in state values
   local state_abbrevs=()
   local state_fulls=()
   while IFS='|' read -r abbrev full; do
-    state_abbrevs+=("$abbrev")
-    state_fulls+=("$full")
+    # Strip anything that isn't alphanumeric or space (prevent shell injection)
+    abbrev="$(printf '%s' "$abbrev" | tr -cd 'a-zA-Z0-9')"
+    full="$(printf '%s' "$full" | tr -cd 'a-zA-Z0-9 .-')"
+    if [[ -n "$abbrev" && -n "$full" ]]; then
+      state_abbrevs+=("$abbrev")
+      state_fulls+=("$full")
+    fi
   done < <(python3 -c "
 import json, sys
-with open('$states_file') as f:
+with open(sys.argv[1]) as f:
     for s in json.load(f):
         print(f\"{s['state']}|{s['state_full']}\")
-")
+" "$states_file")
 
   local state_count=${#state_abbrevs[@]}
   if [[ "$state_count" -eq 0 ]]; then
@@ -662,7 +668,7 @@ with open('$states_file') as f:
       sel="$(trim "$sel")"
       if [[ "$sel" =~ ^[0-9]+$ ]] && (( sel >= 1 && sel <= state_count )); then
         local idx=$((sel - 1))
-        state_args="$state_args --state \"${state_abbrevs[$idx]}\""
+        state_args="$state_args --state ${state_abbrevs[$idx]}"
       fi
     done
   fi

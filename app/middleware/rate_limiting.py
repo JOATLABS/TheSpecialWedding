@@ -3,8 +3,10 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import JSONResponse, Response
 import time
 from collections import defaultdict, deque
-from typing import Dict, Deque
+from typing import Dict, Deque, Optional
 import asyncio
+import json
+from urllib.parse import parse_qs
 from app.core.cache import cache, CacheKeys
 import logging
 
@@ -20,13 +22,19 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         calls: int = 100,  # Number of calls
         period: int = 60,  # Time period in seconds
         auth_calls: int = 10,  # Stricter limit for auth endpoints
-        auth_period: int = 60
+        auth_period: int = 60,
+        login_ip_calls: int = 30,
+        login_principal_calls: int = 5,
+        login_period: int = 60,
     ):
         super().__init__(app)
         self.calls = calls
         self.period = period
         self.auth_calls = auth_calls
         self.auth_period = auth_period
+        self.login_ip_calls = login_ip_calls
+        self.login_principal_calls = login_principal_calls
+        self.login_period = login_period
 
         # Store request timestamps for each IP/bucket (Fallback)
         self.request_windows: Dict[str, Deque[float]] = defaultdict(lambda: deque())
@@ -62,9 +70,9 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
 
         exact_auth_limits = {
             "/admin/token/refresh": ("admin_token_refresh", max(self.auth_calls * 2, 20), 60),
-            "/admin/token": ("admin_login", 5, 60),
-            "/admin/login": ("admin_login", 5, 60),
-            "/couple/login": ("couple_login", 5, 60),
+            "/admin/token": ("admin_login_identity", self.login_principal_calls, self.login_period),
+            "/admin/login": ("admin_login_page", self.login_ip_calls, self.login_period),
+            "/couple/login": ("couple_login_identity", self.login_principal_calls, self.login_period),
             "/couple/setup-password": ("couple_setup_password", 5, 60),
             "/public/register": ("public_register", 3, 60),
             "/api/v1/vendors/signup": ("vendor_signup", 3, 60),
@@ -105,18 +113,75 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
 
         return "api", self.calls, self.period, False
 
+    def _get_additional_rate_limit_configs(self, path: str) -> list[tuple[str, int, int, bool]]:
+        normalized_path = self._normalize_path(path)
+        login_ip_limits = {
+            "/admin/token": [("admin_login_ip", self.login_ip_calls, self.login_period, True)],
+            "/couple/login": [("couple_login_ip", self.login_ip_calls, self.login_period, True)],
+        }
+        return login_ip_limits.get(normalized_path, [])
+
+    def _uses_login_identity(self, bucket: str) -> bool:
+        return bucket in {"admin_login_identity", "couple_login_identity"}
+
+    async def _extract_login_identifier(self, request: Request) -> Optional[str]:
+        try:
+            raw_body = await request.body()
+        except Exception:
+            return None
+
+        if not raw_body:
+            return None
+
+        content_type = request.headers.get("content-type", "").lower()
+        email: Optional[str] = None
+
+        if "application/json" in content_type:
+            try:
+                payload = json.loads(raw_body.decode("utf-8"))
+            except (UnicodeDecodeError, json.JSONDecodeError):
+                payload = None
+            if isinstance(payload, dict):
+                candidate = payload.get("email") or payload.get("username")
+                if isinstance(candidate, str):
+                    email = candidate
+        elif "application/x-www-form-urlencoded" in content_type:
+            try:
+                form_data = parse_qs(raw_body.decode("utf-8"))
+            except UnicodeDecodeError:
+                form_data = {}
+            values = form_data.get("email") or form_data.get("username") or []
+            if values and isinstance(values[0], str):
+                email = values[0]
+
+        if not email:
+            return None
+
+        normalized = email.strip().lower()
+        return normalized or None
+
+    async def _get_bucket_subject(self, request: Request, bucket: str, client_ip: str) -> str:
+        if not self._uses_login_identity(bucket):
+            return client_ip
+
+        identifier = await self._extract_login_identifier(request)
+        if identifier:
+            return identifier
+
+        return f"fallback:{client_ip}"
+
     async def _cleanup_old_requests(self, request_queue: Deque[float], period: int):
         """Remove old requests outside the time window"""
         current_time = time.time()
         while request_queue and current_time - request_queue[0] > period:
             request_queue.popleft()
 
-    async def _check_redis_limit(self, client_ip: str, bucket: str, limit: int, period: int) -> tuple[bool, int, int]:
+    async def _check_redis_limit(self, subject: str, bucket: str, limit: int, period: int) -> tuple[bool, int, int]:
         """
         Check rate limit using Redis.
         Returns: (is_limited, remaining, reset_time)
         """
-        key = CacheKeys.rate_limit(client_ip, bucket)
+        key = CacheKeys.rate_limit(subject, bucket)
 
         try:
             # Simple fixed window implementation
@@ -124,7 +189,7 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
             if not cache.redis_client:
                  # Should not happen if check passed, but safety first
                  async with self.lock:
-                    return await self._check_memory_limit(client_ip, bucket, limit, period)
+                    return await self._check_memory_limit(subject, bucket, limit, period)
 
             current_count = await cache.redis_client.incr(key)
 
@@ -144,16 +209,16 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
             # Fallback to memory if Redis fails
             # We must acquire lock here as we are entering critical section for memory storage
             async with self.lock:
-                return await self._check_memory_limit(client_ip, bucket, limit, period)
+                return await self._check_memory_limit(subject, bucket, limit, period)
 
-    async def _check_memory_limit(self, client_ip: str, bucket: str, limit: int, period: int) -> tuple[bool, int, int]:
+    async def _check_memory_limit(self, subject: str, bucket: str, limit: int, period: int) -> tuple[bool, int, int]:
         """
         Check rate limit using in-memory sliding window.
         Returns: (is_limited, remaining, reset_time)
         """
         # NOTE: This method must be called within an 'async with self.lock:' block
 
-        bucket_key = f"{bucket}:{client_ip}"
+        bucket_key = f"{bucket}:{subject}"
         request_queue = self.request_windows[bucket_key]
 
         # Cleanup old requests
@@ -188,35 +253,59 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
             return await call_next(request)
 
         client_ip = self._get_client_ip(request)
-        bucket, limit, period, is_auth = self._get_rate_limit_config(request.url.path)
-
-        # Optimization: Don't lock for Redis calls, only for in-memory operations
-        if cache.enabled and cache.redis_client:
-            is_limited, remaining, reset_time = await self._check_redis_limit(client_ip, bucket, limit, period)
-        else:
-            async with self.lock:
-                is_limited, remaining, reset_time = await self._check_memory_limit(client_ip, bucket, limit, period)
-
-        if is_limited:
-            retry_after = max(1, reset_time - int(time.time()))
-            response = JSONResponse(
-                status_code=429,
-                content={
-                    "error": "Rate limit exceeded",
-                    "message": f"Too many requests. Try again later.",
-                    "retry_after": retry_after,
-                },
+        primary_bucket, primary_limit, primary_period, _ = self._get_rate_limit_config(request.url.path)
+        rate_limit_targets = [
+            (
+                primary_bucket,
+                primary_limit,
+                primary_period,
+                await self._get_bucket_subject(request, primary_bucket, client_ip),
             )
-            response.headers["Retry-After"] = str(retry_after)
-            response.headers["X-RateLimit-Remaining"] = "0"
-            response.headers["X-RateLimit-Reset"] = str(reset_time)
-            return response
+        ]
+        for extra_bucket, extra_limit, extra_period, _ in self._get_additional_rate_limit_configs(request.url.path):
+            rate_limit_targets.append(
+                (
+                    extra_bucket,
+                    extra_limit,
+                    extra_period,
+                    await self._get_bucket_subject(request, extra_bucket, client_ip),
+                )
+            )
+
+        header_remaining: Optional[int] = None
+        header_reset: Optional[int] = None
+
+        for bucket, limit, period, subject in rate_limit_targets:
+            if cache.enabled and cache.redis_client:
+                is_limited, remaining, reset_time = await self._check_redis_limit(subject, bucket, limit, period)
+            else:
+                async with self.lock:
+                    is_limited, remaining, reset_time = await self._check_memory_limit(subject, bucket, limit, period)
+
+            if header_remaining is None or remaining < header_remaining:
+                header_remaining = remaining
+                header_reset = reset_time
+
+            if is_limited:
+                retry_after = max(1, reset_time - int(time.time()))
+                response = JSONResponse(
+                    status_code=429,
+                    content={
+                        "error": "Rate limit exceeded",
+                        "message": f"Too many requests. Try again later.",
+                        "retry_after": retry_after,
+                    },
+                )
+                response.headers["Retry-After"] = str(retry_after)
+                response.headers["X-RateLimit-Remaining"] = "0"
+                response.headers["X-RateLimit-Reset"] = str(reset_time)
+                return response
 
         # Continue with the request
         response = await call_next(request)
 
         # Add rate limit headers to response
-        response.headers["X-RateLimit-Remaining"] = str(remaining)
-        response.headers["X-RateLimit-Reset"] = str(reset_time)
+        response.headers["X-RateLimit-Remaining"] = str(header_remaining if header_remaining is not None else 0)
+        response.headers["X-RateLimit-Reset"] = str(header_reset if header_reset is not None else int(time.time()))
 
         return response

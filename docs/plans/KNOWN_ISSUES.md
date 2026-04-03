@@ -168,3 +168,84 @@
 | **Total** | **19** | |
 
 **Priority order**: C1 + C2 (can't start server), then C3 + C4 (security holes), then C5-C8 (data is wrong), then H1-H7, then M1-M4.
+
+---
+
+## Vendor Scraper — Issues Found & Fixed (2026-04-02)
+
+**Scope**: `vendor_scraper/config.py`, `run.py`, `export_json.py`, `manage_services.sh`, `vendor_service.py`, `vendor_import.py`, `VendorImportModal.tsx`, `vendorManagementApi.ts`
+
+All issues below were found during the city→state refactor review and fixed in the same session.
+
+### VS1: FIXED — Config loaded at import time crashed FastAPI server
+- **File**: `app/jobs/vendor_scraper/config.py`
+- **Was**: `STATES = _load_states()` at module level. If `states.json` was missing or malformed, the FastAPI server crashed at startup — not just the scraper CLI.
+- **Fix**: Replaced with `get_states()` lazy loader. Config is only loaded when the scraper actually runs. Cached after first call.
+
+### VS2: FIXED — No config validation on states.json
+- **File**: `app/jobs/vendor_scraper/config.py`
+- **Was**: `_load_states()` did `e["state"]` with no validation. A typo like `"satte": "OK"` threw an unhelpful `KeyError`.
+- **Fix**: Added validation for required keys (`state`, `state_full`, `country`), type checks per entry, empty-file check, malformed-JSON error with line number.
+
+### VS3: FIXED — Shell injection via states.json values
+- **File**: `service-manager/manage_services.sh`
+- **Was**: State names from `states.json` were interpolated directly into `bash -c` command string. A malicious state name like `"; rm -rf /; echo "` would execute arbitrary shell commands.
+- **Fix**: (a) Sanitize state values with `tr -cd 'a-zA-Z0-9 .-'` after reading from JSON. (b) Pass `$states_file` as a `sys.argv` argument to the Python one-liner instead of string interpolation.
+
+### VS4: FIXED — Multiple --state flags ignored (only last one used)
+- **File**: `app/jobs/vendor_scraper/run.py`
+- **Was**: `parser.add_argument("--state", type=str)` — argparse with `type=str` captures only the last value when multiple `--state` flags are passed (e.g. `--state "OK" --state "TX"`).
+- **Fix**: Changed to `action="extend", nargs="+", dest="states"` — supports both `--state OK TX` and repeated `--state OK --state TX`.
+
+### VS5: FIXED — MongoDB connection leak on early return
+- **File**: `app/jobs/vendor_scraper/run.py`
+- **Was**: If no matching states found, `run_scraper()` called `return` without `await mongo.close()`. Connection opened but never cleaned up.
+- **Fix**: Wrapped scraper logic in `try/finally` block — `mongo.close()` always runs.
+
+### VS6: FIXED — Insert/update stat counting always counted inserts
+- **File**: `app/jobs/vendor_scraper/run.py`
+- **Was**: `if result.get("_id"): stats["inserted"] += 1` — but `upsert_scraped_vendor` returns `_id` for BOTH inserts and updates (and skipped manual entries). Updates and skips were never counted.
+- **Fix**: Now checks `result.get("source") == "manual"` for skips, `result.get("created_at") == result.get("updated_at")` for inserts (timestamps match only on insert), else update.
+
+### VS7: FIXED — MongoDB regex injection in vendor dedup
+- **File**: `app/services/vendor_service.py`
+- **Was**: `{"$regex": f"^{business_name}$", "$options": "i"}` — `business_name` from user-uploaded JSON passed directly into regex. A name containing `.*` would match unintended documents.
+- **Fix**: Added `import re` and used `re.escape(business_name)` and `re.escape(city)` before building the regex pattern.
+
+### VS8: FIXED — Unbounded `to_list(length=None)` in export
+- **File**: `app/jobs/vendor_scraper/export_json.py`
+- **Was**: `cursor.to_list(length=None)` loaded all scraped vendors into memory at once. With state-level scraping producing more results, OOM risk increases.
+- **Fix**: Rewrote export to stream results via `async for doc in cursor` with `batch_size=5000`, writing each document to the file incrementally. Also wrapped in `try/finally` for `mongo.close()`.
+
+### VS9: FIXED — No file size limit on import modal
+- **File**: `app/components/vendor/VendorImportModal.tsx`
+- **Was**: `FileReader.readAsText()` called on any file. No size guard before parsing. A multi-MB file could freeze the browser tab.
+- **Fix**: Added 10 MB max file size check (`MAX_FILE_SIZE_BYTES`) before `FileReader` starts. Shows clear error message with actual file size.
+
+### VS10: FIXED — Import modal showed "0 Cities" when vendors lack city data
+- **File**: `app/components/vendor/VendorImportModal.tsx`
+- **Was**: Preview stat always counted unique `v.city` values. With state-level scraping, some vendors may not have `city` populated, showing "0 Cities" which is confusing.
+- **Fix**: Falls back to counting unique `v.state` values and shows "States" label when city count is 0. Per-vendor row shows `v.city || v.state || '—'`.
+
+### VS11: FIXED — Dead import in run.py
+- **File**: `app/jobs/vendor_scraper/run.py`
+- **Was**: `SYSTEM_CREATED_BY` imported from config but never used in run.py.
+- **Fix**: Removed from import statement.
+
+### VS12: FIXED — Scraper refactored from city-based to state-based
+- **Files**: `config.py`, `run.py`, `export_json.py`, `manage_services.sh`, `vendor_service.py`, `vendor_import.py`, `vendorManagementApi.ts`, `VendorImportModal.tsx`, `vendor.py` model
+- **Was**: Cities hardcoded in `PILOT_CITIES` across config.py, run.py, and manage_services.sh. User in Oklahoma couldn't add their own cities.
+- **Fix**: Replaced with state-based `states.json` config. Search queries use full state name. CLI uses `--state`. Service manager reads states dynamically. All `scraped_from_city` references updated to `scraped_from_state` across 6 files.
+
+---
+
+### Vendor Scraper Summary
+
+| Severity | Count | Status |
+|----------|-------|--------|
+| Security | 2 | FIXED — VS3, VS7 |
+| Bug | 5 | FIXED — VS1, VS2, VS4, VS5, VS6 |
+| Performance | 1 | FIXED — VS8 |
+| Frontend | 2 | FIXED — VS9, VS10 |
+| Code quality | 2 | FIXED — VS11, VS12 |
+| **Total** | **12** | **ALL FIXED** |

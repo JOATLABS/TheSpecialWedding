@@ -6,26 +6,95 @@ States are loaded from states.json — edit that file to change target states.
 """
 
 import json
+import logging
 import os
+from typing import List, Tuple
+
+logger = logging.getLogger(__name__)
 
 # ─── Load states from states.json ────────────────────────────────────────────
 # Edit states.json to add/remove/change target states.
 # Each entry: {"state": "XX", "state_full": "Oklahoma", "country": "US"}
 _STATES_FILE = os.path.join(os.path.dirname(__file__), "states.json")
 
-def _load_states():
-    """Load states from the JSON config file."""
+# Required keys for each state entry
+_REQUIRED_KEYS = {"state", "state_full", "country"}
+
+_states_cache: List[Tuple[str, str, str]] | None = None
+
+
+def get_states() -> List[Tuple[str, str, str]]:
+    """
+    Load and validate states from the JSON config file.
+
+    Lazy-loaded on first call and cached. This prevents the FastAPI server
+    from crashing at import time if states.json is missing or malformed —
+    only the scraper CLI fails when it actually tries to use the config.
+
+    Returns:
+        List of (state_abbrev, state_full, country) tuples.
+
+    Raises:
+        FileNotFoundError: If states.json doesn't exist.
+        ValueError: If states.json has invalid structure or entries.
+    """
+    global _states_cache
+    if _states_cache is not None:
+        return _states_cache
+
     if not os.path.exists(_STATES_FILE):
         raise FileNotFoundError(
             f"states.json not found at {_STATES_FILE}. "
             "Create it with an array of state objects: "
             '[{"state": "OK", "state_full": "Oklahoma", "country": "US"}]'
         )
-    with open(_STATES_FILE, "r") as f:
-        entries = json.load(f)
-    return [(e["state"], e["state_full"], e["country"]) for e in entries]
 
-STATES = _load_states()
+    try:
+        with open(_STATES_FILE, "r") as f:
+            entries = json.load(f)
+    except json.JSONDecodeError as e:
+        raise ValueError(
+            f"Invalid JSON in states.json at line {e.lineno}: {e.msg}"
+        )
+
+    if not isinstance(entries, list):
+        raise ValueError(
+            f"states.json must contain a JSON array, got {type(entries).__name__}"
+        )
+
+    if len(entries) == 0:
+        raise ValueError("states.json is empty — add at least one state entry")
+
+    states = []
+    for i, entry in enumerate(entries):
+        if not isinstance(entry, dict):
+            raise ValueError(
+                f"states.json entry at index {i} must be an object, "
+                f"got {type(entry).__name__}"
+            )
+
+        missing = _REQUIRED_KEYS - set(entry.keys())
+        if missing:
+            raise ValueError(
+                f"states.json entry at index {i} is missing required keys: "
+                f"{', '.join(sorted(missing))}. "
+                f"Got: {entry}"
+            )
+
+        state_abbrev = str(entry["state"]).strip()
+        state_full = str(entry["state_full"]).strip()
+        country = str(entry["country"]).strip()
+
+        if not state_abbrev or not state_full:
+            raise ValueError(
+                f"states.json entry at index {i} has empty state or state_full"
+            )
+
+        states.append((state_abbrev, state_full, country))
+
+    _states_cache = states
+    logger.info(f"Loaded {len(states)} states from states.json")
+    return _states_cache
 
 
 # ─── Google Places type → VendorCategory mapping ─────────────────────────────

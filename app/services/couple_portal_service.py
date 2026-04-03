@@ -4,14 +4,18 @@ Couple Portal Service
 Aggregates wedding data for the couple's portal view.
 Sprint 3: Adds email digest generation for unread updates, messages, payments.
 """
+import asyncio
 from datetime import datetime, timezone, timedelta
 from typing import Optional, Dict, Any, List
 from app.core.database import mongo
+from app.core.cache import cache, CacheKeys
 from app.services.guest_media_service import guest_media_service
 from bson import ObjectId
 import logging
 
 logger = logging.getLogger(__name__)
+
+DASHBOARD_CACHE_TTL_SECONDS = 10
 
 
 class CouplePortalService:
@@ -32,36 +36,56 @@ class CouplePortalService:
         Get complete portal dashboard data for a couple.
         Aggregates wedding info, guest stats, budget summary, events, and planner info.
         """
-        # Get wedding
-        wedding = await mongo.get_weddings_collection().find_one({"_id": wedding_id})
+        cache_key = CacheKeys.couple_portal_dashboard(str(wedding_id), couple_email.strip().lower())
+        cached_dashboard = await cache.get(cache_key)
+        if cached_dashboard is not None:
+            return cached_dashboard
+
+        wedding = await mongo.get_weddings_collection().find_one(
+            {"_id": wedding_id},
+            {
+                "couple_names": 1,
+                "date": 1,
+                "timezone": 1,
+                "venue": 1,
+                "cultural_style": 1,
+                "theme_config": 1,
+                "events": 1,
+                "registries": 1,
+                "faqs": 1,
+                "assigned_planner_email": 1,
+            },
+        )
         if not wedding:
             return None
 
-        # Get planner info
         planner_email = wedding.get("assigned_planner_email")
-        planner = None
-        if planner_email:
-            planner = await mongo.get_users_collection().find_one({"email": planner_email})
+        planner_task = (
+            mongo.get_users_collection().find_one(
+                {"email": planner_email},
+                {
+                    "first_name": 1,
+                    "last_name": 1,
+                    "company_name": 1,
+                    "support_phone": 1,
+                    "profile_image_url": 1,
+                },
+            )
+            if planner_email
+            else asyncio.sleep(0, result=None)
+        )
 
-        # Get guest stats (aggregated, not individual)
-        guest_stats = await self._get_guest_stats(wedding)
+        planner, guest_stats, budget_summary, contract_info, shared_forms, updates, memories_summary = await asyncio.gather(
+            planner_task,
+            self._get_guest_stats(wedding),
+            self._get_budget_summary(wedding_id),
+            self._get_contract_info(wedding_id, couple_email),
+            self._get_shared_forms(wedding_id, couple_email),
+            self._get_updates(wedding_id),
+            guest_media_service.get_dashboard_summary(wedding_id),
+        )
 
-        # Get budget summary (totals only, not line items)
-        budget_summary = await self._get_budget_summary(wedding_id)
-
-        # Get contract/payment info
-        contract_info = await self._get_contract_info(wedding_id, couple_email)
-
-        # Get shared forms
-        shared_forms = await self._get_shared_forms(wedding_id, couple_email)
-
-        # Get updates/milestones
-        updates = await self._get_updates(wedding_id)
-
-        # Get guest memories summary
-        memories_summary = await guest_media_service.get_dashboard_summary(wedding_id)
-
-        return {
+        dashboard = {
             "wedding": {
                 "id": str(wedding["_id"]),
                 "couple_names": wedding.get("couple_names"),
@@ -98,6 +122,9 @@ class CouplePortalService:
             "memories_summary": memories_summary,
         }
 
+        await cache.set(cache_key, dashboard, expire=DASHBOARD_CACHE_TTL_SECONDS)
+        return dashboard
+
     async def _get_guest_stats(self, wedding: Dict[str, Any]) -> Dict[str, Any]:
         """Get aggregated guest statistics in couple-friendly language."""
         try:
@@ -105,21 +132,29 @@ class CouplePortalService:
             guests_collection = mongo.db["guests"]
             rsvp_collection = mongo.db["rsvps"]
 
-            guests = await guests_collection.find(
+            guests_task = guests_collection.find(
                 {"wedding_id": wedding_id},
                 {"_id": 1, "invite_sent": 1},
             ).to_list(length=5000)
 
+            rsvps_task = rsvp_collection.find(
+                {
+                    "$or": [
+                        {"wedding_id": wedding_id},
+                        {"wedding_id": wedding.get("_id")},
+                    ]
+                },
+                {
+                    "guest_id": 1,
+                    "attending": 1,
+                },
+            ).to_list(length=5000)
+
+            guests, rsvps = await asyncio.gather(guests_task, rsvps_task)
+
             guest_list_total = len(guests)
             planned_total = max(int(wedding.get("guest_count") or 0), guest_list_total)
             invited = sum(1 for guest in guests if guest.get("invite_sent"))
-
-            rsvps = await rsvp_collection.find({
-                "$or": [
-                    {"wedding_id": wedding_id},
-                    {"wedding_id": wedding.get("_id")},
-                ]
-            }).to_list(length=5000)
 
             confirmed = 0
             declined = 0
@@ -238,11 +273,21 @@ class CouplePortalService:
             contract = await mongo.db["contracts"].find_one({
                 "wedding_id": wedding_id,
                 "couple.email": couple_email
+            }, {
+                "status": 1,
+                "package_name": 1,
+                "signed_at": 1,
+                "payments": 1,
             })
 
             if not contract:
                 # Try finding by wedding_id only
-                contract = await mongo.db["contracts"].find_one({"wedding_id": wedding_id})
+                contract = await mongo.db["contracts"].find_one({"wedding_id": wedding_id}, {
+                    "status": 1,
+                    "package_name": 1,
+                    "signed_at": 1,
+                    "payments": 1,
+                })
 
             if not contract:
                 return None
@@ -292,6 +337,10 @@ class CouplePortalService:
                     {"target_audience": "couple"},
                     {"couple_email": couple_email}
                 ]
+            }, {
+                "title": 1,
+                "description": 1,
+                "created_at": 1,
             }).sort("created_at", -1):
                 form_list.append(form)
                 form_ids.append(str(form["_id"]))
@@ -330,6 +379,15 @@ class CouplePortalService:
             updates = []
             async for update in mongo.db["couple_updates"].find({
                 "wedding_id": wedding_id
+            }, {
+                "type": 1,
+                "title": 1,
+                "content": 1,
+                "category": 1,
+                "attachments": 1,
+                "is_milestone": 1,
+                "created_at": 1,
+                "created_by_name": 1,
             }).sort("created_at", -1).limit(50):
                 updates.append({
                     "id": str(update["_id"]),

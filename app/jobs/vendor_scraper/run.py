@@ -9,8 +9,9 @@ Usage:
     # From project root:
     python -m app.jobs.vendor_scraper.run
 
-    # Scrape specific state only:
-    python -m app.jobs.vendor_scraper.run --state "OK"
+    # Scrape specific state(s):
+    python -m app.jobs.vendor_scraper.run --state OK
+    python -m app.jobs.vendor_scraper.run --state OK TX CA
 
     # Dry run (no DB writes):
     python -m app.jobs.vendor_scraper.run --dry-run
@@ -28,10 +29,9 @@ from typing import List, Optional
 from app.core.database import mongo
 from app.services.vendor_service import VendorService
 from app.jobs.vendor_scraper.config import (
-    STATES,
+    get_states,
     SEARCH_QUERIES,
     REQUEST_DELAY_SECONDS,
-    SYSTEM_CREATED_BY,
 )
 from app.jobs.vendor_scraper.google_places import search_vendors
 from app.jobs.vendor_scraper.website_enricher import enrich_from_website
@@ -102,8 +102,13 @@ async def scrape_state(
                     stats["skipped"] += 1
                 else:
                     result = await vendor_service.upsert_scraped_vendor(place)
-                    # Check if it was an insert or update by looking at created_at
-                    if result.get("_id"):
+                    if result is None:
+                        stats["skipped"] += 1
+                    elif result.get("source") == "manual":
+                        # Manual entry was not overwritten
+                        stats["skipped"] += 1
+                    elif result.get("created_at") == result.get("updated_at"):
+                        # Newly inserted — created_at and updated_at match
                         stats["inserted"] += 1
                     else:
                         stats["updated"] += 1
@@ -126,68 +131,78 @@ async def run_scraper(
     """
     Main entry point. Scrapes all configured states (or a specific subset).
     """
+    # Load states config (lazy — only loaded when scraper actually runs)
+    all_states = get_states()
+
     # Initialize MongoDB connection
     await mongo.connect()
 
-    vendor_service = VendorService()
+    try:
+        vendor_service = VendorService()
 
-    # Filter to specific states if requested
-    state_list = STATES
-    if states:
-        state_list = [
-            s for s in STATES
-            if s[0].lower() in [x.lower() for x in states]
-            or s[1].lower() in [x.lower() for x in states]
-        ]
-        if not state_list:
-            logger.error(f"No matching states for: {states}")
-            logger.info(f"Available (from states.json): {[(s[0], s[1]) for s in STATES]}")
-            return
+        # Filter to specific states if requested
+        state_list = all_states
+        if states:
+            state_list = [
+                s for s in all_states
+                if s[0].lower() in [x.lower() for x in states]
+                or s[1].lower() in [x.lower() for x in states]
+            ]
+            if not state_list:
+                logger.error(f"No matching states for: {states}")
+                logger.info(f"Available (from states.json): {[(s[0], s[1]) for s in all_states]}")
+                return
 
-    total_stats = {"inserted": 0, "updated": 0, "skipped": 0, "errors": 0}
-    start_time = time.time()
+        total_stats = {"inserted": 0, "updated": 0, "skipped": 0, "errors": 0}
+        start_time = time.time()
 
-    logger.info(f"{'[DRY RUN] ' if dry_run else ''}Starting vendor scraper for {len(state_list)} states")
+        logger.info(f"{'[DRY RUN] ' if dry_run else ''}Starting vendor scraper for {len(state_list)} states")
 
-    for state, state_full, country in state_list:
+        for state, state_full, country in state_list:
+            logger.info(f"\n{'='*60}")
+            logger.info(f"Scraping: {state_full} ({state})")
+            logger.info(f"{'='*60}")
+
+            stats = await scrape_state(
+                state=state,
+                state_full=state_full,
+                country=country,
+                vendor_service=vendor_service,
+                categories_filter=categories,
+                dry_run=dry_run,
+            )
+
+            for key in total_stats:
+                total_stats[key] += stats[key]
+
+            logger.info(f"State {state_full} done: {stats}")
+
+        elapsed = time.time() - start_time
         logger.info(f"\n{'='*60}")
-        logger.info(f"Scraping: {state_full} ({state})")
+        logger.info(f"Scraper complete in {elapsed:.1f}s")
+        logger.info(f"Total: {total_stats}")
         logger.info(f"{'='*60}")
 
-        stats = await scrape_state(
-            state=state,
-            state_full=state_full,
-            country=country,
-            vendor_service=vendor_service,
-            categories_filter=categories,
-            dry_run=dry_run,
-        )
-
-        for key in total_stats:
-            total_stats[key] += stats[key]
-
-        logger.info(f"State {state_full} done: {stats}")
-
-    elapsed = time.time() - start_time
-    logger.info(f"\n{'='*60}")
-    logger.info(f"Scraper complete in {elapsed:.1f}s")
-    logger.info(f"Total: {total_stats}")
-    logger.info(f"{'='*60}")
-
-    await mongo.close()
+    finally:
+        await mongo.close()
 
 
 def main():
     parser = argparse.ArgumentParser(description="Scrape wedding vendors from Google Places")
-    parser.add_argument("--state", type=str, help="Scrape a specific state only (abbrev or full name)")
+    parser.add_argument(
+        "--state",
+        action="extend",
+        nargs="+",
+        dest="states",
+        help="State(s) to scrape (abbrev or full name). Repeatable: --state OK TX",
+    )
     parser.add_argument("--categories", type=str, help="Comma-separated categories to scrape")
     parser.add_argument("--dry-run", action="store_true", help="Search but don't write to DB")
     args = parser.parse_args()
 
-    states = [args.state] if args.state else None
     categories = args.categories.split(",") if args.categories else None
 
-    asyncio.run(run_scraper(states=states, categories=categories, dry_run=args.dry_run))
+    asyncio.run(run_scraper(states=args.states, categories=categories, dry_run=args.dry_run))
 
 
 if __name__ == "__main__":

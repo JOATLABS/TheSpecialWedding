@@ -6,6 +6,7 @@ Handles all business logic for the vendor management feature.
 """
 
 import os
+import re
 import secrets
 import string
 import logging
@@ -322,9 +323,12 @@ class VendorService:
                 )
 
             if not existing and business_name and city:
+                # Escape regex metacharacters to prevent injection via business_name/city
+                safe_name = re.escape(business_name)
+                safe_city = re.escape(city)
                 existing = await self.vendor_profiles.find_one({
-                    "business_name": {"$regex": f"^{business_name}$", "$options": "i"},
-                    "city": {"$regex": f"^{city}$", "$options": "i"},
+                    "business_name": {"$regex": f"^{safe_name}$", "$options": "i"},
+                    "city": {"$regex": f"^{safe_city}$", "$options": "i"},
                     "service_category": service_category,
                 })
 
@@ -338,7 +342,7 @@ class VendorService:
 
             # If it exists as a previously scraped entry, refresh it
             if existing:
-                update_fields = {
+                update_fields: Dict[str, Any] = {
                     "scraped_at": now,
                     "updated_at": now,
                 }
