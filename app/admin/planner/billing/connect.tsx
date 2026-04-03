@@ -6,6 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { useAdmin } from '@/contexts/AdminContext';
 import { Loader2, CheckCircle2, AlertCircle, ExternalLink } from 'lucide-react';
 import { toast } from 'sonner';
+import { getApiBaseUrl } from '@/utils/env';
 
 // Stripe Connect supported countries for Express accounts
 const SUPPORTED_COUNTRIES = [
@@ -36,6 +37,7 @@ const SUPPORTED_COUNTRIES = [
 
 export default function StripeConnectCard() {
   const { token } = useAdmin();
+  const apiBaseUrl = getApiBaseUrl();
   const [loading, setLoading] = useState(true);
   const [connectStatus, setConnectStatus] = useState<{
     status: string;
@@ -49,7 +51,7 @@ export default function StripeConnectCard() {
     try {
       if (!token) return;
 
-      const response = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL}/stripe/connect/status`, {
+      const response = await fetch(`${apiBaseUrl}/stripe/connect/status`, {
         headers: {
           'Authorization': `Bearer ${token}`
         },
@@ -65,7 +67,7 @@ export default function StripeConnectCard() {
     } finally {
       setLoading(false);
     }
-  }, [token]);
+  }, [apiBaseUrl, token]);
 
   useEffect(() => {
     checkStatus();
@@ -74,7 +76,7 @@ export default function StripeConnectCard() {
   const handleConnect = async () => {
     try {
       setLoading(true);
-      const response = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL}/stripe/connect/onboard`, {
+      const response = await fetch(`${apiBaseUrl}/stripe/connect/onboard`, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${token}`,

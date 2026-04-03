@@ -11,6 +11,7 @@ POST /admin/vendors/import
   - Returns counts: {inserted, updated, skipped, errors}
 """
 
+import ipaddress
 import logging
 import re
 from typing import Any, Dict, List, Optional
@@ -80,12 +81,25 @@ class VendorImportItem(BaseModel):
     def validate_website(cls, v: Optional[str]) -> Optional[str]:
         if v is None or v == "":
             return None
-        # Basic URL sanity check — block internal/private IPs
+        # Block internal/private IPs and localhost — SSRF prevention
         lower = v.lower()
-        blocked_patterns = ["127.0.0.1", "localhost", "10.", "192.168.", "169.254.", "0.0.0.0"]
-        for pattern in blocked_patterns:
-            if pattern in lower:
+        # Check for localhost and IPv6 loopback
+        if any(pat in lower for pat in ["localhost", "127.0.0.1", "0.0.0.0", "[::1]", "::1"]):
+            return None
+        # Extract host portion for IP-range checks (strip scheme + path)
+        host = lower
+        for prefix in ("https://", "http://"):
+            if host.startswith(prefix):
+                host = host[len(prefix):]
+        host = host.split("/")[0].split(":")[0]  # strip port and path
+        # Block private/reserved IP ranges by parsing the host
+        try:
+            addr = ipaddress.ip_address(host)
+            if addr.is_private or addr.is_loopback or addr.is_reserved or addr.is_link_local:
                 return None
+        except ValueError:
+            # Not a bare IP — it's a hostname, which is fine
+            pass
         if not lower.startswith(("http://", "https://")):
             return f"https://{v}"
         return v

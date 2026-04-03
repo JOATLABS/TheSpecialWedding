@@ -13,6 +13,7 @@ import {
   pointerWithin,
 } from '@dnd-kit/core';
 import { useAdmin } from '@/contexts/AdminContext';
+import { getApiBaseUrl } from '@/utils/env';
 import PageHeader from '../components/PageHeader';
 import { useTables } from '@/admin/hooks/useTables';
 import { useGuests } from '@/admin/hooks/useGuests';
@@ -96,6 +97,7 @@ type ActiveDragData =
 
 export default function SeatingPage() {
   const { token } = useAdmin();
+  const apiBaseUrl = getApiBaseUrl();
 
   // Wedding selection state
   const [weddings, setWeddings] = useState<Wedding[]>([]);
@@ -195,7 +197,7 @@ export default function SeatingPage() {
     if (!token) return;
     setLoadingWeddings(true);
     try {
-      const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || '';
+      const baseUrl = apiBaseUrl;
       const response = await fetch(`${baseUrl}/admin/planner/weddings`, {
         headers: {
           Authorization: `Bearer ${token}`,
@@ -211,7 +213,7 @@ export default function SeatingPage() {
     } finally {
       setLoadingWeddings(false);
     }
-  }, [token]);
+  }, [apiBaseUrl, token]);
 
   useEffect(() => {
     fetchWeddings();
@@ -319,7 +321,7 @@ export default function SeatingPage() {
     setPdfLoading(true);
     setPdfMenuOpen(false);
     try {
-      const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || '';
+      const baseUrl = apiBaseUrl;
       const response = await fetch(
         `${baseUrl}/admin/tables/${selectedWedding}/export/pdf?layout=visual&size=${size}`,
         {
@@ -367,7 +369,7 @@ export default function SeatingPage() {
 
     try {
       const response = await fetch(
-        `${process.env.NEXT_PUBLIC_API_BASE_URL}/admin/ai/weddings/${selectedWedding}/seating-optimize`,
+        `${apiBaseUrl}/admin/ai/weddings/${selectedWedding}/seating-optimize`,
         {
           method: 'POST',
           headers: {

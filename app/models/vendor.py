@@ -11,7 +11,7 @@ This module contains all models for the comprehensive vendor management system:
 
 from pydantic import BaseModel, Field, ConfigDict, field_serializer, EmailStr
 from typing import List, Dict, Optional, Any
-from datetime import datetime
+from datetime import datetime, timezone
 from enum import Enum
 from bson import ObjectId
 from app.utils.pydantic_objectid import PyObjectId, generate_object_id
@@ -246,8 +246,8 @@ class VendorProfile(BaseModel):
 
     # System
     is_active: bool = Field(True, description="Whether vendor is active")
-    created_at: datetime = Field(default_factory=datetime.utcnow)
-    updated_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
     model_config = ConfigDict(
         populate_by_name=True,
@@ -321,8 +321,8 @@ class ContractTemplate(BaseModel):
     # System
     is_active: bool = Field(True)
     usage_count: int = Field(0, description="How many times used")
-    created_at: datetime = Field(default_factory=datetime.utcnow)
-    updated_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
     model_config = ConfigDict(
         populate_by_name=True,
@@ -428,8 +428,8 @@ class VendorContract(BaseModel):
     vendor_notes: Optional[str] = Field(None, description="Notes from vendor")
 
     # System
-    created_at: datetime = Field(default_factory=datetime.utcnow)
-    updated_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
     model_config = ConfigDict(
         populate_by_name=True,
@@ -500,8 +500,8 @@ class VendorPaymentMilestone(BaseModel):
 
     # System
     created_by: str = Field(..., description="Planner email")
-    created_at: datetime = Field(default_factory=datetime.utcnow)
-    updated_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
     model_config = ConfigDict(
         populate_by_name=True,
@@ -565,8 +565,8 @@ class VendorAssignment(BaseModel):
 
     # System
     created_by: str = Field(..., description="Planner email")
-    created_at: datetime = Field(default_factory=datetime.utcnow)
-    updated_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
     model_config = ConfigDict(
         populate_by_name=True,
@@ -640,8 +640,8 @@ class PaymentLink(BaseModel):
 
     # System
     created_by: str = Field(..., description="Planner email who created this")
-    created_at: datetime = Field(default_factory=datetime.utcnow)
-    updated_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
     model_config = ConfigDict(
         populate_by_name=True,
@@ -686,7 +686,7 @@ class VendorCommunication(BaseModel):
 
     # System
     created_by: str = Field(..., description="User who logged this")
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
     model_config = ConfigDict(
         populate_by_name=True,

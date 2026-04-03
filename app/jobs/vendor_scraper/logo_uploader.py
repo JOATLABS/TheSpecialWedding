@@ -56,13 +56,15 @@ def _get_s3_client():
 async def download_and_upload_logo(
     photo_url: str,
     business_name: str,
-    city: str,
+    city: str | None = None,
+    state: str | None = None,
 ) -> str | None:
     """
     Download an image from photo_url and upload it to R2.
 
     Returns the public CDN URL, or None on failure.
-    Key format: scraped-vendors/{city_slug}/{timestamp}_{business_slug}.jpg
+    Key format: scraped-vendors/{location_slug}/{timestamp}_{business_slug}.jpg
+    Uses city when available, falls back to state for the directory slug.
     """
     if not _AD_BUCKET_NAME:
         logger.warning("S3_AD_BUCKET_NAME not set — skipping logo upload")
@@ -88,11 +90,12 @@ async def download_and_upload_logo(
         }
         ext = ext_map.get(content_type.split(";")[0].strip(), "jpg")
 
-        # Build R2 key
-        city_slug = _slugify(city)
+        # Build R2 key — prefer city, fall back to state
+        location = city or state or "unknown"
+        location_slug = _slugify(location)
         name_slug = _slugify(business_name)
         timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
-        key = f"{R2_LOGO_PREFIX}/{city_slug}/{timestamp}_{name_slug}.{ext}"
+        key = f"{R2_LOGO_PREFIX}/{location_slug}/{timestamp}_{name_slug}.{ext}"
 
         # Upload to R2
         s3 = _get_s3_client()

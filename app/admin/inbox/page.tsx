@@ -23,6 +23,7 @@ import PageHeader from '../components/PageHeader';
 import InboxListItem from '@/components/ui/InboxListItem';
 import MessageBubble from '@/components/ui/MessageBubble';
 import ChatInput from '@/components/ui/ChatInput';
+import { getApiBaseUrl } from '@/utils/env';
 
 // ==================== TYPES ====================
 
@@ -106,7 +107,7 @@ interface InboxItem {
 
 export default function InboxPage() {
   const { token } = useAdmin();
-  const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || '';
+  const baseUrl = getApiBaseUrl();
 
   // ---- Weddings for filter ----
   const [weddings, setWeddings] = useState<Wedding[]>([]);

@@ -4,6 +4,7 @@ import React, { useEffect, useState, Suspense } from 'react';
 import dynamic from 'next/dynamic';
 import { useParams } from 'next/navigation';
 import { useAdmin } from '@/contexts/AdminContext';
+import { getApiBaseUrl } from '@/utils/env';
 import { useTables } from '@/admin/hooks/useTables';
 import { useGuests } from '@/admin/hooks/useGuests';
 import { SeatingCanvas } from '@/admin/components/seating/SeatingCanvas';
@@ -51,6 +52,7 @@ interface AISuggestion {
 export default function SeatingPage() {
   const params = useParams();
   const { token } = useAdmin();
+  const apiBaseUrl = getApiBaseUrl();
   const weddingId = params?.id as string;
 
   const {
@@ -162,7 +164,7 @@ export default function SeatingPage() {
 
     try {
       const response = await fetch(
-        `${process.env.NEXT_PUBLIC_API_BASE_URL}/admin/ai/weddings/${weddingId}/seating-optimize`,
+        `${apiBaseUrl}/admin/ai/weddings/${weddingId}/seating-optimize`,
         {
           method: 'POST',
           headers: {

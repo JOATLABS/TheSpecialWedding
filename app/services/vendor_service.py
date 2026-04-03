@@ -33,6 +33,7 @@ logger = logging.getLogger(__name__)
 # =============================================================================
 # CONFIGURATION CONSTANTS
 # =============================================================================
+SYSTEM_CREATED_BY = "system@thespecialwedding.com"
 TOKEN_EXPIRY_DAYS = int(os.getenv("CONTRACT_TOKEN_EXPIRY_DAYS", "30"))
 DEPOSIT_DUE_DAYS = int(os.getenv("DEPOSIT_DUE_DAYS", "7"))
 MAX_FILE_SIZE_MB = int(os.getenv("MAX_CONTRACT_FILE_SIZE_MB", "10"))
@@ -332,6 +333,17 @@ class VendorService:
                     "service_category": service_category,
                 })
 
+            # Third dedup tier: business_name + state + category (when city is empty)
+            state = (data.get("state") or "").strip()
+            if not existing and business_name and not city and state:
+                safe_name = re.escape(business_name)
+                safe_state = re.escape(state)
+                existing = await self.vendor_profiles.find_one({
+                    "business_name": {"$regex": f"^{safe_name}$", "$options": "i"},
+                    "state": {"$regex": f"^{safe_state}$", "$options": "i"},
+                    "service_category": service_category,
+                })
+
             # If it exists and was manually added by a planner, don't touch it
             if existing and existing.get("source", "manual") == "manual":
                 logger.debug(
@@ -397,7 +409,7 @@ class VendorService:
                 "google_place_id": google_place_id,
                 "scraped_at": now,
                 "scraped_from_state": data.get("scraped_from_state"),
-                "created_by": "system@thespecialwedding.com",
+                "created_by": SYSTEM_CREATED_BY,
                 "weddings_count": 0,
                 "total_revenue": 0.0,
                 "is_active": True,

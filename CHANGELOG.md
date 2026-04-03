@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.28.1] - 2026-04-03
+
+### Changed
+
+- **Two-server Coolify staging-first rollout wiring** (`/.github/workflows/coolify-deploy-shared.yml`, `/.github/workflows/deploy-coolify.yml`, `/.github/workflows/promote-coolify-production.yml`, `/scripts/deploy/verify_environment.py`, `/docs/plans/COOLIFY_SPLIT_DEPLOY_GUIDE.md`, `/docs/plans/DEPLOYMENT_STRATEGY_STATUS.md`, `/README.md`) — Replaced the old production-only split-service deploy flow with a real two-environment release path: CI still builds the frontend and backend once, staging now auto-deploys after successful `main` CI, and production is promoted manually by the exact same immutable SHA tag. Added a shared Coolify deploy/verify/rollback workflow, a reusable Python smoke verifier for frontend health, backend health, admin login, planner reads, public wedding load, couple login, couple dashboard, and SSE, and rewrote the deployment guide around two DO workload servers managed by Coolify Cloud rather than the earlier single-environment split-service assumption.
+- **Frontend image made staging-promotable without rebuild** (`/app/utils/env.ts`, `/app/admin/guests/page.tsx`, `/app/admin/inbox/page.tsx`, `/app/admin/seating/page.tsx`, `/app/admin/weddings/[id]/seating/page.tsx`, `/app/admin/components/seating/SeatingConstraintsModal.tsx`, `/app/admin/planner/billing/connect.tsx`, `/app/admin/billing/success/page.tsx`, `/app/components/RequestRSVPLinkModal.tsx`, `/app/components/payments/CollectPaymentModal.tsx`, `/app/components/saas/SignupModal.tsx`, `/app/components/saas/apiClient.ts`, `/Dockerfile.frontend`, `/.github/workflows/ci.yml`, `/.env.example`) — Browser-side API routing now derives from the current hostname instead of depending on a production-only baked `NEXT_PUBLIC_API_BASE_URL`, while server-rendered frontend fetches rely on `INTERNAL_API_BASE_URL` / `FRONTEND_URL`. This lets the same frontend image move from staging to production without rebuilding, and CI now builds the frontend around `FRONTEND_URL` rather than a production-only public API URL.
+
 ## [2.28.0] - 2026-04-02
 
 ### Added
