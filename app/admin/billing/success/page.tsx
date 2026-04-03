@@ -6,11 +6,13 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { Button } from '@/components/ui/Button';
 import { useAdmin } from '@/contexts/AdminContext';
 import { CheckCircle2, Loader2, ArrowRight } from 'lucide-react';
+import { getApiBaseUrl } from '@/utils/env';
 
 export default function BillingSuccessPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { token } = useAdmin();
+  const apiBaseUrl = getApiBaseUrl();
   const [loading, setLoading] = useState(true);
   const [session, setSession] = useState<any>(null);
   const [error, setError] = useState<string | null>(null);
@@ -32,7 +34,7 @@ export default function BillingSuccessPage() {
         }
 
         const response = await fetch(
-          `${process.env.NEXT_PUBLIC_API_BASE_URL}/stripe/checkout-session/${sessionId}`,
+          `${apiBaseUrl}/stripe/checkout-session/${sessionId}`,
           {
             headers: {
               'Authorization': `Bearer ${token}`,
@@ -57,7 +59,7 @@ export default function BillingSuccessPage() {
     };
 
     verifySession();
-  }, [searchParams, token]);
+  }, [apiBaseUrl, searchParams, token]);
 
   if (loading) {
     return (

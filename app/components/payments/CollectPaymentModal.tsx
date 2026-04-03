@@ -9,6 +9,7 @@ import { Textarea } from '@/components/ui/Textarea';
 import { useAdmin } from '@/contexts/AdminContext';
 import { Loader2, DollarSign } from 'lucide-react';
 import { toast } from 'sonner';
+import { getApiBaseUrl } from '@/utils/env';
 
 interface Wedding {
   _id: string;
@@ -31,6 +32,7 @@ export function CollectPaymentModal({
   onPaymentCreated,
 }: CollectPaymentModalProps) {
   const { token } = useAdmin();
+  const apiBaseUrl = getApiBaseUrl();
   const [loading, setLoading] = useState(false);
   const [amount, setAmount] = useState('');
   const [description, setDescription] = useState('');
@@ -46,7 +48,7 @@ export function CollectPaymentModal({
         setFetchingWeddings(true);
         try {
           if (!token) return;
-          const response = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL}/admin/weddings`, {
+          const response = await fetch(`${apiBaseUrl}/admin/weddings`, {
              headers: { 'Authorization': `Bearer ${token}` },
              credentials: 'include',
           });
@@ -62,7 +64,7 @@ export function CollectPaymentModal({
       };
       fetchWeddings();
     }
-  }, [token, weddingId, open]);
+  }, [apiBaseUrl, token, weddingId, open]);
 
   const handleCreatePayment = async () => {
     if (!amount || parseFloat(amount) <= 0) {
@@ -86,7 +88,7 @@ export function CollectPaymentModal({
       }
 
       const response = await fetch(
-        `${process.env.NEXT_PUBLIC_API_BASE_URL}/stripe/create-payment-intent`,
+        `${apiBaseUrl}/stripe/create-payment-intent`,
         {
           method: 'POST',
           headers: {

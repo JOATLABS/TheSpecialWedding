@@ -10,8 +10,10 @@ still gets inserted with Google Places data only.
 """
 
 import re
+import ipaddress
 import logging
 from typing import Dict, Optional, Tuple
+from urllib.parse import urlparse
 
 import httpx
 
@@ -32,6 +34,23 @@ async def enrich_from_website(website_url: str) -> Dict:
     """
     result = {}
     if not website_url:
+        return result
+
+    # SSRF protection — block private/reserved IPs and localhost
+    try:
+        parsed = urlparse(website_url)
+        host = (parsed.hostname or "").lower()
+        if host in ("localhost", ""):
+            logger.debug(f"Blocked private/local URL: {website_url}")
+            return result
+        try:
+            addr = ipaddress.ip_address(host)
+            if addr.is_private or addr.is_loopback or addr.is_reserved or addr.is_link_local:
+                logger.debug(f"Blocked private/reserved IP URL: {website_url}")
+                return result
+        except ValueError:
+            pass  # Hostname, not an IP — fine
+    except Exception:
         return result
 
     try:
@@ -67,12 +86,24 @@ async def enrich_from_website(website_url: str) -> Dict:
 
 
 def _extract_description(html: str) -> Optional[str]:
-    """Extract best description from meta tags."""
+    """Extract best description from meta tags.
+
+    Handles both attribute orderings:
+      <meta property="og:description" content="...">
+      <meta content="..." property="og:description">
+    """
     # Try og:description first (usually more marketing-friendly)
+    # Pattern 1: property/name before content
     og_match = re.search(
         r'<meta\s+(?:property|name)=["\']og:description["\']\s+content=["\']([^"\']+)["\']',
         html, re.IGNORECASE
     )
+    if not og_match:
+        # Pattern 2: content before property/name
+        og_match = re.search(
+            r'<meta\s+content=["\']([^"\']+)["\']\s+(?:property|name)=["\']og:description["\']',
+            html, re.IGNORECASE
+        )
     if og_match:
         return og_match.group(1).strip()
 
@@ -81,6 +112,11 @@ def _extract_description(html: str) -> Optional[str]:
         r'<meta\s+name=["\']description["\']\s+content=["\']([^"\']+)["\']',
         html, re.IGNORECASE
     )
+    if not meta_match:
+        meta_match = re.search(
+            r'<meta\s+content=["\']([^"\']+)["\']\s+name=["\']description["\']',
+            html, re.IGNORECASE
+        )
     if meta_match:
         return meta_match.group(1).strip()
 

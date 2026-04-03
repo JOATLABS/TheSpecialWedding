@@ -4,6 +4,7 @@ import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { useAdmin } from '@/contexts/AdminContext';
 import { useSSE } from '@/hooks/useSSE';
 import { BUILT_IN_WEDDING_EVENT_OPTIONS, getWeddingEventLabel, getWeddingEventOptions } from '@/utils/weddingEvents';
+import { getApiBaseUrl } from '@/utils/env';
 import PageHeader from '../components/PageHeader';
 import { usePagination } from '@/admin/hooks/usePagination';
 import { GlassPagination } from '@/admin/components/ui/glass/GlassPagination';
@@ -97,6 +98,7 @@ const WEDDING_PARTY_GROUP_IDS = ['maid_of_honor', 'bridesmaids', 'best_man', 'gr
 
 export default function AdminGuestsPage() {
   const { token } = useAdmin();
+  const apiBaseUrl = getApiBaseUrl();
 
   // Data state
   const [weddings, setWeddings] = useState<Wedding[]>([]);
@@ -199,7 +201,7 @@ export default function AdminGuestsPage() {
   const fetchWeddings = useCallback(async () => {
     if (!token) return;
     try {
-      const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || '';
+      const baseUrl = apiBaseUrl;
       const response = await fetch(`${baseUrl}/admin/planner/weddings`, {
         headers: {
           'Authorization': `Bearer ${token}`,
@@ -211,14 +213,14 @@ export default function AdminGuestsPage() {
     } catch {
       setError('Failed to load weddings');
     }
-  }, [token]);
+  }, [apiBaseUrl, token]);
 
   const fetchGuestData = useCallback(async () => {
     if (!selectedWedding) return;
 
     setLoading(true);
     try {
-      const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || '';
+      const baseUrl = apiBaseUrl;
 
       // Fetch guests with pagination
       const guestsResponse = await fetch(
@@ -281,7 +283,7 @@ export default function AdminGuestsPage() {
     } finally {
       setLoading(false);
     }
-  }, [selectedWedding, token, currentPage, itemsPerPage, setPaginationTotalItems]);
+  }, [apiBaseUrl, selectedWedding, token, currentPage, itemsPerPage, setPaginationTotalItems]);
 
   useEffect(() => {
     fetchWeddings();
@@ -317,7 +319,7 @@ export default function AdminGuestsPage() {
       setQrImageLoading(true);
       try {
         const guestId = qrModalGuest.id || qrModalGuest._id;
-        const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || '';
+        const baseUrl = apiBaseUrl;
         const response = await fetch(
           `${baseUrl}/admin/guests/${guestId}/qr?wedding_id=${selectedWedding}`,
           {
@@ -351,14 +353,14 @@ export default function AdminGuestsPage() {
       }
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [qrModalGuest, selectedWedding, token]);
+  }, [apiBaseUrl, qrModalGuest, selectedWedding, token]);
 
   // Fetch guest activity when a guest is expanded
   const fetchGuestActivity = useCallback(async (guestId: string) => {
     if (!token || !guestId || guestActivity[guestId]) return;
     setActivityLoading(guestId);
     try {
-      const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || '';
+      const baseUrl = apiBaseUrl;
       const response = await fetch(`${baseUrl}/admin/guests/${guestId}/activity`, {
         headers: {
           'Authorization': `Bearer ${token}`,
@@ -374,7 +376,7 @@ export default function AdminGuestsPage() {
     } finally {
       setActivityLoading(null);
     }
-  }, [token, guestActivity]);
+  }, [apiBaseUrl, token, guestActivity]);
 
   // Trigger activity fetch when guest is expanded
   useEffect(() => {
@@ -610,7 +612,7 @@ export default function AdminGuestsPage() {
     }
 
     try {
-      const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || '';
+      const baseUrl = apiBaseUrl;
       const response = await fetch(`${baseUrl}/admin/guests?wedding_id=${selectedWedding}`, {
         method: 'POST',
         headers: {
@@ -672,7 +674,7 @@ export default function AdminGuestsPage() {
     const guestId = editingGuest.id || editingGuest._id;
 
     try {
-      const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || '';
+      const baseUrl = apiBaseUrl;
 
       // Update guest info
       const guestResponse = await fetch(`${baseUrl}/admin/guests/${guestId}`, {
@@ -728,7 +730,7 @@ export default function AdminGuestsPage() {
     if (!confirm('Are you sure you want to delete this guest? This will also delete their RSVP and plus-ones.')) return;
 
     try {
-      const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || '';
+      const baseUrl = apiBaseUrl;
       const response = await fetch(`${baseUrl}/admin/guests/${guestId}`, {
         method: 'DELETE',
         headers: { 'Authorization': `Bearer ${token}` },
@@ -780,7 +782,7 @@ export default function AdminGuestsPage() {
 
     setSendingReminder(true);
     try {
-      const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || '';
+      const baseUrl = apiBaseUrl;
       let smsSent = 0;
       let emailSent = 0;
       let smsError = '';
@@ -876,7 +878,7 @@ export default function AdminGuestsPage() {
     setExportLoading(true);
     setExportMenuOpen(false);
     try {
-      const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || '';
+      const baseUrl = apiBaseUrl;
       const response = await fetch(
         `${baseUrl}/admin/guests/export/pdf?wedding_id=${selectedWedding}`,
         { headers: { 'Authorization': `Bearer ${token}` } }
@@ -939,7 +941,7 @@ export default function AdminGuestsPage() {
     setExportLoading(true);
     setExportMenuOpen(false);
     try {
-      const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || '';
+      const baseUrl = apiBaseUrl;
       const response = await fetch(`${baseUrl}/admin/guests/export/qr-zip`, {
         method: 'POST',
         headers: {
@@ -976,7 +978,7 @@ export default function AdminGuestsPage() {
 
     setExportLoading(true);
     try {
-      const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || '';
+      const baseUrl = apiBaseUrl;
       const response = await fetch(`${baseUrl}/admin/guests/export/qr-zip`, {
         method: 'POST',
         headers: {
@@ -1013,7 +1015,7 @@ export default function AdminGuestsPage() {
     if (!selectedWedding || !guestId) return;
 
     try {
-      const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || '';
+      const baseUrl = apiBaseUrl;
       const response = await fetch(
         `${baseUrl}/admin/guests/${guestId}/qr/download?wedding_id=${selectedWedding}`,
         { headers: { 'Authorization': `Bearer ${token}` } }
@@ -1044,7 +1046,7 @@ export default function AdminGuestsPage() {
     }
 
     try {
-      const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || '';
+      const baseUrl = apiBaseUrl;
       const promises = Array.from(selectedGuests).map(guestId =>
         fetch(`${baseUrl}/admin/guests/${guestId}`, {
           method: 'PUT',
@@ -1078,7 +1080,7 @@ export default function AdminGuestsPage() {
       const selectedGuestsList = guests.filter(g => selectedGuests.has(g.id || g._id || ''));
       const tokens = selectedGuestsList.map(g => g.token);
 
-      const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || '';
+      const baseUrl = apiBaseUrl;
       const response = await fetch(`${baseUrl}/admin/reminders/send-to-guests`, {
         method: 'POST',
         headers: {
@@ -1140,7 +1142,7 @@ export default function AdminGuestsPage() {
       const formData = new FormData();
       formData.append('file', importFile);
 
-      const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || '';
+      const baseUrl = apiBaseUrl;
       const response = await fetch(
         `${baseUrl}/admin/guests/import?wedding_id=${selectedWedding}`,
         {

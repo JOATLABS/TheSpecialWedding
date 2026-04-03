@@ -83,7 +83,8 @@ async def scrape_state(
                     logo_url = await download_and_upload_logo(
                         photo_url=photo_url,
                         business_name=place["business_name"],
-                        city=place.get("city", state),
+                        city=place.get("city"),
+                        state=state_full,
                     )
                     if logo_url:
                         place["logo_url"] = logo_url
@@ -134,19 +135,19 @@ async def run_scraper(
     # Load states config (lazy — only loaded when scraper actually runs)
     all_states = get_states()
 
-    # Initialize MongoDB connection
-    await mongo.connect()
-
     try:
+        # Initialize MongoDB connection inside try so close() runs even on partial connect
+        await mongo.connect()
         vendor_service = VendorService()
 
         # Filter to specific states if requested
         state_list = all_states
         if states:
+            states_lower = {x.lower() for x in states}
             state_list = [
                 s for s in all_states
-                if s[0].lower() in [x.lower() for x in states]
-                or s[1].lower() in [x.lower() for x in states]
+                if s[0].lower() in states_lower
+                or s[1].lower() in states_lower
             ]
             if not state_list:
                 logger.error(f"No matching states for: {states}")

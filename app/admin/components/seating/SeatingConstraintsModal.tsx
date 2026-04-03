@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { X, Link2, Unlink, Plus, Users, AlertTriangle, Check, Loader2, ChevronDown, Trash2, Info } from 'lucide-react';
 import { Guest, SeatingConstraintsResponse } from '@/types/table';
+import { getApiBaseUrl } from '@/utils/env';
 
 interface SeatingConstraintsModalProps {
   isOpen: boolean;
@@ -29,6 +30,7 @@ export function SeatingConstraintsModal({
   token,
   onConstraintsUpdated
 }: SeatingConstraintsModalProps) {
+  const baseUrl = getApiBaseUrl();
   const [constraints, setConstraints] = useState<SeatingConstraintsResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -42,8 +44,6 @@ export function SeatingConstraintsModal({
     guest2Id: '',
     type: 'must_sit_together'
   });
-
-  const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || '';
 
   // Fetch existing constraints
   const fetchConstraints = useCallback(async () => {
