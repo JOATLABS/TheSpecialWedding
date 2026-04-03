@@ -44,7 +44,7 @@ EXPORT_FIELDS = {
     "tags": 1,
     "source": 1,
     "scraped_at": 1,
-    "scraped_from_city": 1,
+    "scraped_from_state": 1,
     "created_at": 1,
 }
 

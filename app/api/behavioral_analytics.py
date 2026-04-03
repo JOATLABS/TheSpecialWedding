@@ -11,14 +11,29 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 
-from app.dependencies.auth_extended import require_root_admin, get_current_active_user
+from app.dependencies.auth_extended import (
+    ExtendedAuthUser,
+    check_wedding_access,
+    enforce_team_permission,
+    get_accessible_wedding_ids,
+    require_root_admin,
+    require_team_or_planner,
+)
 from app.dependencies.couple_auth import require_couple_auth
-from app.models.user_extended import ExtendedAuthUser
 from app.services.behavioral_analytics_service import service as analytics_service
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+
+def _resolve_planner_scope_email(current_user: ExtendedAuthUser) -> Optional[str]:
+    """Map admin/team auth to the planner owner scope used by wedding records."""
+    if current_user.is_root_admin:
+        return None
+    if current_user.is_team_member:
+        return current_user.team_owner_email
+    return current_user.email
 
 
 # ──────────────────────────────────────────────────
@@ -31,7 +46,7 @@ router = APIRouter()
     summary="Get behavioral product metrics (WAU, funnels, retention, MRR movement)",
 )
 async def get_behavioral_analytics(
-    timeframe: str = Query(default="30d", regex="^(7d|30d|90d|1y)$"),
+    timeframe: str = Query(default="30d", pattern="^(7d|30d|90d|1y)$"),
     current_user: ExtendedAuthUser = Depends(require_root_admin),
 ):
     """Return the full behavioral analytics payload for the root admin dashboard.
@@ -56,19 +71,23 @@ async def get_behavioral_analytics(
     summary="Get per-wedding engagement signals for the current planner",
 )
 async def get_engagement_signals(
-    current_user: ExtendedAuthUser = Depends(get_current_active_user),
+    current_user: ExtendedAuthUser = Depends(require_team_or_planner),
 ):
     """Return engagement signals for each wedding assigned to the current planner.
 
     Includes: last activity date, RSVP velocity, form completion,
     and needs-attention flags.
     """
-    if current_user.role not in ("wedding_planner", "ROOT_ADMIN"):
-        raise HTTPException(status_code=403, detail="Not authorized")
+    enforce_team_permission(current_user, "view_analytics")
+
+    planner_scope_email = _resolve_planner_scope_email(current_user)
+    if current_user.is_team_member and not planner_scope_email:
+        raise HTTPException(status_code=403, detail="Team member is not linked to a planner")
 
     try:
         signals = await analytics_service.get_planner_engagement_signals(
-            current_user.email
+            planner_email=planner_scope_email,
+            accessible_wedding_ids=get_accessible_wedding_ids(current_user),
         )
         return {"signals": signals, "count": len(signals)}
     except Exception as exc:
@@ -87,11 +106,15 @@ async def get_engagement_signals(
 )
 async def get_non_responders(
     wedding_id: str,
-    current_user: ExtendedAuthUser = Depends(get_current_active_user),
+    current_user: ExtendedAuthUser = Depends(require_team_or_planner),
 ):
     """Return invited guests who haven't submitted an RSVP,
     sorted by days since invitation was sent (longest first).
     """
+    enforce_team_permission(current_user, "view_analytics")
+    if not await check_wedding_access(current_user, wedding_id):
+        raise HTTPException(status_code=403, detail="Access to this wedding denied")
+
     try:
         non_responders = await analytics_service.get_non_responders(wedding_id)
         return {
@@ -115,11 +138,15 @@ async def get_non_responders(
 )
 async def get_budget_breakdown(
     wedding_id: str,
-    current_user: ExtendedAuthUser = Depends(get_current_active_user),
+    current_user: ExtendedAuthUser = Depends(require_team_or_planner),
 ):
     """Return budget categories with allocation, spend, and percentage data
     for rendering a budget distribution chart.
     """
+    enforce_team_permission(current_user, "view_analytics")
+    if not await check_wedding_access(current_user, wedding_id):
+        raise HTTPException(status_code=403, detail="Access to this wedding denied")
+
     try:
         breakdown = await analytics_service.get_budget_breakdown(wedding_id)
         return {"wedding_id": wedding_id, **breakdown}

@@ -12,13 +12,20 @@ collections are required for the core metrics.
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import logging
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional, Sequence
 
+from bson import ObjectId
+
+from app.core.cache import cache
 from app.core.database import mongo
 
 logger = logging.getLogger(__name__)
+
+BEHAVIORAL_METRICS_CACHE_TTL = timedelta(minutes=5)
+PLANNER_ENGAGEMENT_CACHE_TTL = timedelta(minutes=1)
 
 
 class BehavioralAnalyticsService:
@@ -33,6 +40,11 @@ class BehavioralAnalyticsService:
 
     async def compile_behavioral_metrics(self, timeframe: str = "30d") -> Dict[str, Any]:
         """Return the full behavioral analytics payload."""
+        cache_key = self._behavioral_metrics_cache_key(timeframe)
+        cached_payload = await cache.get(cache_key)
+        if isinstance(cached_payload, dict):
+            return cached_payload
+
         period_days = self._resolve_timeframe(timeframe)
         now = datetime.now(timezone.utc)
         period_start = now - timedelta(days=period_days)
@@ -50,8 +62,8 @@ class BehavioralAnalyticsService:
             engagement_task, mrr_movement_task, wow_task,
         )
 
-        return {
-            "generated_at": now.isoformat() + "Z",
+        payload = {
+            "generated_at": self._serialize_datetime(now),
             "timeframe": timeframe,
             "weekly_active_users": wau,
             "activation_funnel": activation,
@@ -60,6 +72,8 @@ class BehavioralAnalyticsService:
             "mrr_movement": mrr_movement,
             "week_over_week": wow,
         }
+        await cache.set(cache_key, payload, expire=BEHAVIORAL_METRICS_CACHE_TTL)
+        return payload
 
     # ──────────────────────────────────────────────
     #  WAU: Weekly Active Users
@@ -163,24 +177,25 @@ class BehavioralAnalyticsService:
         rsvps_col = self._mongo.get_rsvps_collection()
 
         # Step 1: New planner signups (last 30d)
-        new_planners = await users_col.find(
+        total_signups = 0
+        onboarded = 0
+        planner_emails: List[str] = []
+        async for planner in users_col.find(
             {
                 "created_at": {"$gte": thirty_days_ago},
                 "role": "wedding_planner",
             },
-            {"_id": 1, "email": 1, "onboarding_completed": 1, "created_at": 1},
-        ).to_list(length=None)
+            {"email": 1, "onboarding_completed": 1},
+        ):
+            total_signups += 1
+            if planner.get("onboarding_completed") is True:
+                onboarded += 1
+            email = planner.get("email")
+            if email:
+                planner_emails.append(email)
 
-        total_signups = len(new_planners)
         if total_signups == 0:
             return self._empty_funnel()
-
-        planner_emails = [p["email"] for p in new_planners]
-
-        # Step 2: Onboarding completed
-        onboarded = sum(
-            1 for p in new_planners if p.get("onboarding_completed") is True
-        )
 
         # Step 3: First wedding created
         # Find which of these planners have at least 1 wedding
@@ -299,27 +314,28 @@ class BehavioralAnalyticsService:
         activity_col = self._mongo.db.get_collection("activity_logs")
 
         cohorts = []
+        cohort_anchor = self._month_floor(now)
 
         for months_ago in range(4):
             # Define cohort month boundaries
-            cohort_start = (now.replace(day=1) - timedelta(days=months_ago * 30)).replace(
-                day=1, hour=0, minute=0, second=0, microsecond=0
-            )
-            if cohort_start.month == 12:
-                cohort_end = cohort_start.replace(year=cohort_start.year + 1, month=1)
-            else:
-                cohort_end = cohort_start.replace(month=cohort_start.month + 1)
+            cohort_start = self._add_months(cohort_anchor, -months_ago)
+            cohort_end = self._add_months(cohort_start, 1)
 
             # Get planners who signed up in this month
-            cohort_users = await users_col.find(
+            cohort_size = 0
+            cohort_emails: List[str] = []
+            async for user in users_col.find(
                 {
                     "created_at": {"$gte": cohort_start, "$lt": cohort_end},
                     "role": "wedding_planner",
                 },
-                {"_id": 1, "email": 1, "last_login": 1, "created_at": 1},
-            ).to_list(length=None)
+                {"email": 1},
+            ):
+                cohort_size += 1
+                email = user.get("email")
+                if email:
+                    cohort_emails.append(email)
 
-            cohort_size = len(cohort_users)
             if cohort_size == 0:
                 cohorts.append({
                     "month": cohort_start.strftime("%Y-%m"),
@@ -327,8 +343,6 @@ class BehavioralAnalyticsService:
                     "d7": None, "d30": None, "d60": None, "d90": None,
                 })
                 continue
-
-            cohort_emails = [u["email"] for u in cohort_users]
 
             # For each retention window, check if user was active after that threshold
             retention_windows = {"d7": 7, "d30": 30, "d60": 60, "d90": 90}
@@ -343,13 +357,17 @@ class BehavioralAnalyticsService:
                     continue
 
                 # Count users who logged in after the threshold
-                login_count = await self._count_documents(
-                    users_col,
-                    {
-                        "email": {"$in": cohort_emails},
-                        "last_login": {"$gte": threshold},
-                    },
-                )
+                login_emails = {
+                    doc.get("email")
+                    async for doc in users_col.find(
+                        {
+                            "email": {"$in": cohort_emails},
+                            "last_login": {"$gte": threshold},
+                        },
+                        {"email": 1},
+                    )
+                    if doc.get("email")
+                }
 
                 # Also count users active in activity_logs after threshold
                 activity_pipeline = [
@@ -360,14 +378,14 @@ class BehavioralAnalyticsService:
                         }
                     },
                     {"$group": {"_id": "$actor_email"}},
-                    {"$count": "count"},
                 ]
                 activity_docs = await self._safe_aggregate(activity_col, activity_pipeline)
-                activity_count = activity_docs[0]["count"] if activity_docs else 0
+                activity_emails = {
+                    doc["_id"] for doc in activity_docs if doc.get("_id")
+                }
 
                 # Retained = union of login-based and activity-based
-                # For accuracy, we take the max of the two (since they may overlap)
-                retained = max(login_count, activity_count)
+                retained = len(login_emails | activity_emails)
 
                 retention_data[label] = round(retained / cohort_size * 100, 1)
 
@@ -459,15 +477,15 @@ class BehavioralAnalyticsService:
     #
     #  Decomposes MRR changes into:
     #  - New MRR (from new subscriptions this period)
-    #  - Expansion MRR (upgrades: state_history shows plan changes)
-    #  - Contraction MRR (downgrades)
+    #  - Expansion/contraction tracking is deferred until plan-change events
+    #    are recorded reliably in subscription history.
     #  - Churned MRR (cancellations)
     #
-    #  Uses subscription state_history for transition tracking.
+    #  Trial conversion is derived from subscriptions whose trial_end_date
+    #  falls inside the reporting window and whose current status is active.
 
     async def _compute_mrr_movement(self, now: datetime) -> Dict[str, Any]:
         thirty_days_ago = now - timedelta(days=30)
-        sixty_days_ago = now - timedelta(days=60)
 
         subs_col = self._mongo.db.get_collection("user_subscriptions")
         plans_col = self._mongo.get_subscription_plans_collection()
@@ -483,69 +501,46 @@ class BehavioralAnalyticsService:
             }
 
         # New MRR: subscriptions created in the last 30 days with active status
-        new_subs = await subs_col.find(
+        new_mrr = 0.0
+        async for sub in subs_col.find(
             {
                 "start_date": {"$gte": thirty_days_ago},
                 "status": {"$in": ["active", "trial"]},
             },
             {"plan_id": 1, "billing_interval": 1, "status": 1},
-        ).to_list(length=None)
-
-        new_mrr = 0.0
-        for sub in new_subs:
+        ):
             if sub.get("status") == "active":
                 plan = plans_lookup.get(str(sub.get("plan_id", "")), {})
                 new_mrr += self._monthly_value(plan, sub.get("billing_interval"))
 
         # Churned MRR: subscriptions cancelled in the last 30 days
-        churned_subs = await subs_col.find(
+        churned_mrr = 0.0
+        async for sub in subs_col.find(
             {
                 "cancelled_at": {"$gte": thirty_days_ago},
                 "status": "cancelled",
             },
             {"plan_id": 1, "billing_interval": 1},
-        ).to_list(length=None)
-
-        churned_mrr = 0.0
-        for sub in churned_subs:
+        ):
             plan = plans_lookup.get(str(sub.get("plan_id", "")), {})
             churned_mrr += self._monthly_value(plan, sub.get("billing_interval"))
 
         # Current total MRR (for context)
-        active_subs = await subs_col.find(
+        current_mrr = 0.0
+        async for sub in subs_col.find(
             {"status": "active"},
             {"plan_id": 1, "billing_interval": 1},
-        ).to_list(length=None)
-
-        current_mrr = 0.0
-        for sub in active_subs:
+        ):
             plan = plans_lookup.get(str(sub.get("plan_id", "")), {})
             current_mrr += self._monthly_value(plan, sub.get("billing_interval"))
 
         # Trial-to-paid conversion in the period
-        trial_to_paid_pipeline = [
-            {
-                "$match": {
-                    "state_history": {
-                        "$elemMatch": {
-                            "from": "trial",
-                            "to": "active",
-                            "at": {"$gte": thirty_days_ago.isoformat()},
-                        }
-                    }
-                }
-            },
-            {"$count": "count"},
-        ]
-        conversion_docs = await self._safe_aggregate(subs_col, trial_to_paid_pipeline)
-        trial_conversions = conversion_docs[0]["count"] if conversion_docs else 0
-
-        total_trials_in_period = await self._count_documents(
-            subs_col,
-            {
-                "trial_start_date": {"$gte": sixty_days_ago, "$lt": thirty_days_ago},
-            },
+        conversion_query, total_trials_query = self._trial_conversion_queries(
+            thirty_days_ago,
+            now,
         )
+        trial_conversions = await self._count_documents(subs_col, conversion_query)
+        total_trials_in_period = await self._count_documents(subs_col, total_trials_query)
         trial_conversion_rate = (
             round(trial_conversions / total_trials_in_period * 100, 1)
             if total_trials_in_period > 0
@@ -641,13 +636,20 @@ class BehavioralAnalyticsService:
     # ──────────────────────────────────────────────
 
     async def get_planner_engagement_signals(
-        self, planner_email: str
+        self,
+        planner_email: Optional[str] = None,
+        accessible_wedding_ids: Optional[Sequence[str]] = None,
     ) -> List[Dict[str, Any]]:
         """Return per-wedding engagement signals for a specific planner.
 
         Includes: couple last activity, form completion status,
         RSVP velocity per wedding, and needs-attention flags.
         """
+        cache_key = self._planner_engagement_cache_key(planner_email, accessible_wedding_ids)
+        cached_signals = await cache.get(cache_key)
+        if isinstance(cached_signals, list):
+            return cached_signals
+
         now = datetime.now(timezone.utc)
         seven_days_ago = now - timedelta(days=7)
 
@@ -658,39 +660,121 @@ class BehavioralAnalyticsService:
         forms_col = self._mongo.get_forms_collection()
         form_responses_col = self._mongo.get_form_responses_collection()
 
-        # Get planner's weddings
+        wedding_query: Dict[str, Any] = {"status": {"$ne": "deleted"}}
+        if planner_email:
+            wedding_query["assigned_planner_email"] = planner_email
+
+        if accessible_wedding_ids is not None:
+            normalized_ids = self._normalize_wedding_ids(accessible_wedding_ids)
+            if not normalized_ids:
+                return []
+            wedding_query["_id"] = {"$in": normalized_ids}
+
         weddings = await weddings_col.find(
-            {"assigned_planner_email": planner_email, "status": {"$ne": "deleted"}},
-            {"_id": 1, "couple_names": 1, "date": 1, "guest_count": 1},
-        ).to_list(length=None)
+            wedding_query,
+            {"_id": 1, "couple_names": 1, "date": 1},
+        ).to_list(length=5000)
+
+        if not weddings:
+            return []
+
+        wedding_ids = [str(wedding["_id"]) for wedding in weddings]
+
+        last_activity_docs = await self._safe_aggregate(
+            activity_col,
+            [
+                {"$match": {"wedding_id": {"$in": wedding_ids}}},
+                {"$sort": {"timestamp": -1}},
+                {"$group": {"_id": "$wedding_id", "last_activity_at": {"$first": "$timestamp"}}},
+            ],
+        )
+        last_activity_map = {
+            str(doc["_id"]): doc.get("last_activity_at")
+            for doc in last_activity_docs
+            if doc.get("_id") is not None
+        }
+
+        guest_stats_docs = await self._safe_aggregate(
+            guests_col,
+            [
+                {"$match": {"wedding_id": {"$in": wedding_ids}}},
+                {
+                    "$group": {
+                        "_id": "$wedding_id",
+                        "guest_count": {"$sum": 1},
+                        "invited_count": {
+                            "$sum": {"$cond": [{"$eq": ["$invite_sent", True]}, 1, 0]}
+                        },
+                    }
+                },
+            ],
+        )
+        guest_stats_map = {
+            str(doc["_id"]): {
+                "guest_count": int(doc.get("guest_count", 0) or 0),
+                "invited_count": int(doc.get("invited_count", 0) or 0),
+            }
+            for doc in guest_stats_docs
+            if doc.get("_id") is not None
+        }
+
+        rsvp_counts = self._count_map(
+            await self._safe_aggregate(
+                rsvps_col,
+                [
+                    {"$match": {"wedding_id": {"$in": wedding_ids}}},
+                    {"$group": {"_id": "$wedding_id", "count": {"$sum": 1}}},
+                ],
+            )
+        )
+        recent_rsvp_counts = self._count_map(
+            await self._safe_aggregate(
+                activity_col,
+                [
+                    {
+                        "$match": {
+                            "wedding_id": {"$in": wedding_ids},
+                            "type": "rsvp_received",
+                            "timestamp": {"$gte": seven_days_ago},
+                        }
+                    },
+                    {"$group": {"_id": "$wedding_id", "count": {"$sum": 1}}},
+                ],
+            )
+        )
+        form_counts = self._count_map(
+            await self._safe_aggregate(
+                forms_col,
+                [
+                    {"$match": {"wedding_id": {"$in": wedding_ids}, "is_active": True}},
+                    {"$group": {"_id": "$wedding_id", "count": {"$sum": 1}}},
+                ],
+            )
+        )
+        form_submission_counts = self._count_map(
+            await self._safe_aggregate(
+                form_responses_col,
+                [
+                    {"$match": {"wedding_id": {"$in": wedding_ids}}},
+                    {"$group": {"_id": "$wedding_id", "count": {"$sum": 1}}},
+                ],
+            )
+        )
 
         signals = []
         for wedding in weddings:
             wid = str(wedding["_id"])
-
-            # Last activity on this wedding
-            last_activity = await activity_col.find_one(
-                {"wedding_id": wid},
-                sort=[("timestamp", -1)],
+            last_activity_at = self._as_datetime(last_activity_map.get(wid))
+            guest_stats = guest_stats_map.get(
+                wid,
+                {"guest_count": 0, "invited_count": 0},
             )
-            last_activity_at = last_activity.get("timestamp") if last_activity else None
-
-            # RSVP stats for this wedding
-            guest_count = await self._count_documents(guests_col, {"wedding_id": wid})
-            invited_count = await self._count_documents(
-                guests_col, {"wedding_id": wid, "invite_sent": True}
-            )
-            rsvp_count = await self._count_documents(rsvps_col, {"wedding_id": wid})
-
-            # RSVPs in last 7 days (velocity)
-            recent_rsvps = await self._count_documents(
-                activity_col,
-                {"wedding_id": wid, "type": "rsvp_received", "timestamp": {"$gte": seven_days_ago}},
-            )
-
-            # Form completion: forms for this wedding vs submissions
-            form_count = await self._count_documents(forms_col, {"wedding_id": wid, "is_active": True})
-            form_submissions = await self._count_documents(form_responses_col, {"wedding_id": wid})
+            guest_count = guest_stats["guest_count"]
+            invited_count = guest_stats["invited_count"]
+            rsvp_count = rsvp_counts.get(wid, 0)
+            recent_rsvps = recent_rsvp_counts.get(wid, 0)
+            form_count = form_counts.get(wid, 0)
+            form_submissions = form_submission_counts.get(wid, 0)
 
             # Determine needs-attention flags
             needs_attention = []
@@ -709,7 +793,7 @@ class BehavioralAnalyticsService:
                 "wedding_id": wid,
                 "couple_names": wedding.get("couple_names", ""),
                 "wedding_date": wedding.get("date", ""),
-                "last_activity_at": last_activity_at.isoformat() + "Z" if last_activity_at else None,
+                "last_activity_at": self._serialize_datetime(last_activity_at),
                 "days_since_activity": (now - last_activity_at).days if last_activity_at else None,
                 "guest_count": guest_count,
                 "invited_count": invited_count,
@@ -721,6 +805,7 @@ class BehavioralAnalyticsService:
                 "needs_attention": needs_attention,
             })
 
+        await cache.set(cache_key, signals, expire=PLANNER_ENGAGEMENT_CACHE_TTL)
         return signals
 
     # ──────────────────────────────────────────────
@@ -734,23 +819,29 @@ class BehavioralAnalyticsService:
         rsvps_col = self._mongo.get_rsvps_collection()
 
         # Get all invited guests
-        invited_guests = await guests_col.find(
-            {"wedding_id": wedding_id, "invite_sent": True},
-            {
-                "_id": 1, "name": 1, "email": 1, "phone": 1,
-                "invite_sent_date": 1, "group_id": 1,
-            },
-        ).to_list(length=None)
+        invited_guests = [
+            doc
+            async for doc in guests_col.find(
+                {"wedding_id": wedding_id, "invite_sent": True},
+                {
+                    "_id": 1, "name": 1, "email": 1, "phone": 1,
+                    "invite_sent_date": 1, "group_id": 1,
+                },
+            )
+        ]
 
         if not invited_guests:
             return []
 
         # Get all guest_ids that have submitted RSVPs
         guest_ids = [str(g["_id"]) for g in invited_guests]
-        rsvps = await rsvps_col.find(
-            {"wedding_id": wedding_id, "guest_id": {"$in": guest_ids}},
-            {"guest_id": 1},
-        ).to_list(length=None)
+        rsvps = [
+            doc
+            async for doc in rsvps_col.find(
+                {"wedding_id": wedding_id, "guest_id": {"$in": guest_ids}},
+                {"guest_id": 1},
+            )
+        ]
 
         responded_ids = {r["guest_id"] for r in rsvps}
 
@@ -759,7 +850,7 @@ class BehavioralAnalyticsService:
         for guest in invited_guests:
             gid = str(guest["_id"])
             if gid not in responded_ids:
-                invite_date = guest.get("invite_sent_date")
+                invite_date = self._as_datetime(guest.get("invite_sent_date"))
                 days_since = (now - invite_date).days if invite_date else None
 
                 non_responders.append({
@@ -767,7 +858,7 @@ class BehavioralAnalyticsService:
                     "name": guest.get("name", ""),
                     "email": guest.get("email"),
                     "phone": guest.get("phone"),
-                    "invite_sent_date": invite_date.isoformat() + "Z" if invite_date else None,
+                    "invite_sent_date": self._serialize_datetime(invite_date),
                     "days_since_invite": days_since,
                     "group_id": guest.get("group_id"),
                 })
@@ -788,13 +879,16 @@ class BehavioralAnalyticsService:
         """Return per-category budget allocation and spend."""
         budget_col = self._mongo.db.get_collection("budget_categories")
 
-        categories = await budget_col.find(
-            {"wedding_id": wedding_id},
-            {
-                "name": 1, "budgeted_amount": 1, "actual_spent": 1,
-                "payment_status": 1, "priority": 1,
-            },
-        ).to_list(length=None)
+        categories = [
+            doc
+            async for doc in budget_col.find(
+                {"wedding_id": wedding_id},
+                {
+                    "name": 1, "budgeted_amount": 1, "actual_spent": 1,
+                    "payment_status": 1, "priority": 1,
+                },
+            )
+        ]
 
         total_budgeted = sum(c.get("budgeted_amount", 0) for c in categories)
         total_spent = sum(c.get("actual_spent", 0) for c in categories)
@@ -858,6 +952,86 @@ class BehavioralAnalyticsService:
         if interval_norm == "yearly":
             return yearly / 12 if yearly else monthly
         return monthly if monthly else yearly / 12
+
+    @staticmethod
+    def _month_floor(value: datetime) -> datetime:
+        return value.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+
+    @staticmethod
+    def _behavioral_metrics_cache_key(timeframe: str) -> str:
+        return f"behavioral_analytics:v1:dashboard:{timeframe.lower()}"
+
+    @staticmethod
+    def _planner_engagement_cache_key(
+        planner_email: Optional[str],
+        accessible_wedding_ids: Optional[Sequence[str]],
+    ) -> str:
+        scope_email = planner_email or "root_admin"
+        if accessible_wedding_ids is None:
+            scope = "all"
+        else:
+            digest_source = "|".join(sorted(accessible_wedding_ids))
+            scope = hashlib.sha1(digest_source.encode("utf-8")).hexdigest() if digest_source else "none"
+        return f"behavioral_analytics:v1:planner_signals:{scope_email}:{scope}"
+
+    @classmethod
+    def _add_months(cls, value: datetime, months: int) -> datetime:
+        base = cls._month_floor(value)
+        month_index = base.year * 12 + (base.month - 1) + months
+        year = month_index // 12
+        month = month_index % 12 + 1
+        return base.replace(year=year, month=month)
+
+    @staticmethod
+    def _trial_conversion_queries(
+        period_start: datetime,
+        period_end: datetime,
+    ) -> tuple[Dict[str, Any], Dict[str, Any]]:
+        base_query = {
+            "trial_end_date": {"$gte": period_start, "$lte": period_end},
+        }
+        return {**base_query, "status": "active"}, base_query
+
+    @staticmethod
+    def _normalize_wedding_ids(wedding_ids: Sequence[str]) -> List[Any]:
+        normalized: List[Any] = []
+        for wedding_id in wedding_ids:
+            if not wedding_id:
+                continue
+            if ObjectId.is_valid(wedding_id):
+                normalized.append(ObjectId(wedding_id))
+            normalized.append(wedding_id)
+        return normalized
+
+    @staticmethod
+    def _count_map(
+        docs: Sequence[Dict[str, Any]],
+        value_key: str = "count",
+    ) -> Dict[str, int]:
+        result: Dict[str, int] = {}
+        for doc in docs:
+            doc_id = doc.get("_id")
+            if doc_id is None:
+                continue
+            result[str(doc_id)] = int(doc.get(value_key, 0) or 0)
+        return result
+
+    @staticmethod
+    def _as_datetime(value: Any) -> Optional[datetime]:
+        if isinstance(value, datetime):
+            if value.tzinfo is None:
+                return value.replace(tzinfo=timezone.utc)
+            return value
+        return None
+
+    @classmethod
+    def _serialize_datetime(cls, value: Any) -> Optional[str]:
+        if isinstance(value, str):
+            return value
+        dt = cls._as_datetime(value)
+        if not dt:
+            return None
+        return dt.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
 
     @staticmethod
     def _resolve_timeframe(timeframe: str) -> int:

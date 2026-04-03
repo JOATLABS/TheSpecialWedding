@@ -163,6 +163,52 @@ interface Testimonial {
   created_by?: string;
 }
 
+const EMPTY_BEHAVIORAL_METRICS: BehavioralAnalyticsResponse = {
+  generated_at: '',
+  timeframe: '30d',
+  weekly_active_users: {
+    current: 0,
+    previous_week: 0,
+    change: 0,
+    change_percent: 0,
+    mau: 0,
+    stickiness_ratio: 0,
+  },
+  activation_funnel: {
+    period: 'last_30_days',
+    steps: [],
+    conversion_rate: 0,
+    signups_90d: 0,
+  },
+  retention_cohorts: { cohorts: [] },
+  engagement_signals: {
+    rsvp_velocity: {
+      current_7d: 0,
+      previous_7d: 0,
+      change: 0,
+      trend: 'flat',
+    },
+    platform_response_rate: 0,
+    active_engaged_weddings: 0,
+    north_star_metric: 0,
+  },
+  mrr_movement: {
+    current_mrr: 0,
+    new_mrr: 0,
+    churned_mrr: 0,
+    net_change: 0,
+    net_change_percent: 0,
+    trial_conversions: 0,
+    trial_conversion_rate: 0,
+  },
+  week_over_week: {
+    new_users: { current: 0, previous: 0, change: 0, change_percent: 0, trend: 'flat' },
+    new_weddings: { current: 0, previous: 0, change: 0, change_percent: 0, trend: 'flat' },
+    new_rsvps: { current: 0, previous: 0, change: 0, change_percent: 0, trend: 'flat' },
+    active_users: { current: 0, previous: 0, change: 0, change_percent: 0, trend: 'flat' },
+  },
+};
+
 const SaasAdminDashboard = () => {
  const router = useRouter();
  const searchParams = useSearchParams();
@@ -178,8 +224,28 @@ const SaasAdminDashboard = () => {
  const [metrics, setMetrics] = useState<PlatformMetricsResponse | null>(null);
  const [metricsTimeframe, setMetricsTimeframe] = useState<TimeframeKey>('30d');
  const [metricsLoading, setMetricsLoading] = useState(false);
- const [behavioralMetrics, setBehavioralMetrics] = useState<BehavioralAnalyticsResponse | null>(null);
- const [behavioralLoading, setBehavioralLoading] = useState(false);
+	 const [behavioralMetrics, setBehavioralMetrics] = useState<BehavioralAnalyticsResponse | null>(null);
+	 const [behavioralLoading, setBehavioralLoading] = useState(false);
+	 const safeBehavioralMetrics = behavioralMetrics ? {
+	   ...EMPTY_BEHAVIORAL_METRICS,
+	   ...behavioralMetrics,
+	   weekly_active_users: behavioralMetrics.weekly_active_users ?? EMPTY_BEHAVIORAL_METRICS.weekly_active_users,
+	   activation_funnel: {
+	     ...EMPTY_BEHAVIORAL_METRICS.activation_funnel,
+	     ...behavioralMetrics.activation_funnel,
+	     steps: behavioralMetrics.activation_funnel?.steps ?? EMPTY_BEHAVIORAL_METRICS.activation_funnel.steps,
+	   },
+	   retention_cohorts: {
+	     cohorts: behavioralMetrics.retention_cohorts?.cohorts ?? EMPTY_BEHAVIORAL_METRICS.retention_cohorts.cohorts,
+	   },
+	   engagement_signals: {
+	     ...EMPTY_BEHAVIORAL_METRICS.engagement_signals,
+	     ...behavioralMetrics.engagement_signals,
+	     rsvp_velocity: behavioralMetrics.engagement_signals?.rsvp_velocity ?? EMPTY_BEHAVIORAL_METRICS.engagement_signals.rsvp_velocity,
+	   },
+	   mrr_movement: behavioralMetrics.mrr_movement ?? EMPTY_BEHAVIORAL_METRICS.mrr_movement,
+	   week_over_week: behavioralMetrics.week_over_week ?? EMPTY_BEHAVIORAL_METRICS.week_over_week,
+	 } : null;
 
   // ROOT_ADMIN access control - redirect non-root admins
   useEffect(() => {
@@ -991,7 +1057,7 @@ const SaasAdminDashboard = () => {
          </div>
        )}
 
-       {behavioralMetrics && (
+       {safeBehavioralMetrics && (
          <>
            {/* North Star + WAU + Stickiness */}
            <section className="space-y-4">
@@ -1002,32 +1068,32 @@ const SaasAdminDashboard = () => {
              <div className="grid gap-6 md:grid-cols-2 xl:grid-cols-4">
                <Card className="p-6 border-l-4 border-l-indigo-600">
                  <p className="text-sm font-medium text-gray-500 dark:text-gray-400">North Star: Active Engaged Weddings</p>
-                 <p className="mt-2 text-3xl font-bold text-indigo-600">{behavioralMetrics.engagement_signals.north_star_metric}</p>
+	                 <p className="mt-2 text-3xl font-bold text-indigo-600">{safeBehavioralMetrics.engagement_signals.north_star_metric}</p>
                  <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">Weddings with guest activity this week</p>
                </Card>
                <Card className="p-6">
                  <div className="flex items-center justify-between">
                    <p className="text-sm font-medium text-gray-500 dark:text-gray-400">Weekly Active Users</p>
-                   {behavioralMetrics.weekly_active_users.change !== 0 && (
-                     <span className={`flex items-center gap-1 text-xs font-medium ${
-                       behavioralMetrics.weekly_active_users.change > 0 ? 'text-green-600' : 'text-red-600'
-                     }`}>
-                       {behavioralMetrics.weekly_active_users.change > 0 ? <TrendingUp className="h-3 w-3" /> : <TrendingDown className="h-3 w-3" />}
-                       {behavioralMetrics.weekly_active_users.change > 0 ? '+' : ''}{behavioralMetrics.weekly_active_users.change_percent}%
-                     </span>
-                   )}
-                 </div>
-                 <p className="mt-2 text-3xl font-bold text-gray-900 dark:text-white">{behavioralMetrics.weekly_active_users.current}</p>
-                 <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">vs {behavioralMetrics.weekly_active_users.previous_week} last week</p>
+	                   {safeBehavioralMetrics.weekly_active_users.change !== 0 && (
+	                     <span className={`flex items-center gap-1 text-xs font-medium ${
+	                       safeBehavioralMetrics.weekly_active_users.change > 0 ? 'text-green-600' : 'text-red-600'
+	                     }`}>
+	                       {safeBehavioralMetrics.weekly_active_users.change > 0 ? <TrendingUp className="h-3 w-3" /> : <TrendingDown className="h-3 w-3" />}
+	                       {safeBehavioralMetrics.weekly_active_users.change > 0 ? '+' : ''}{safeBehavioralMetrics.weekly_active_users.change_percent}%
+	                     </span>
+	                   )}
+	                 </div>
+	                 <p className="mt-2 text-3xl font-bold text-gray-900 dark:text-white">{safeBehavioralMetrics.weekly_active_users.current}</p>
+	                 <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">vs {safeBehavioralMetrics.weekly_active_users.previous_week} last week</p>
                </Card>
                <Card className="p-6">
                  <p className="text-sm font-medium text-gray-500 dark:text-gray-400">MAU</p>
-                 <p className="mt-2 text-3xl font-bold text-gray-900 dark:text-white">{behavioralMetrics.weekly_active_users.mau}</p>
+	                 <p className="mt-2 text-3xl font-bold text-gray-900 dark:text-white">{safeBehavioralMetrics.weekly_active_users.mau}</p>
                  <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">Monthly active users</p>
                </Card>
                <Card className="p-6">
                  <p className="text-sm font-medium text-gray-500 dark:text-gray-400">Stickiness (WAU/MAU)</p>
-                 <p className="mt-2 text-3xl font-bold text-gray-900 dark:text-white">{behavioralMetrics.weekly_active_users.stickiness_ratio}%</p>
+	                 <p className="mt-2 text-3xl font-bold text-gray-900 dark:text-white">{safeBehavioralMetrics.weekly_active_users.stickiness_ratio}%</p>
                  <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">Higher = more engaged user base</p>
                </Card>
              </div>
@@ -1042,7 +1108,7 @@ const SaasAdminDashboard = () => {
              </h2>
              <Card className="p-6">
                <div className="space-y-4">
-                 {behavioralMetrics.activation_funnel.steps.map((step, idx) => (
+	                 {safeBehavioralMetrics.activation_funnel.steps.map((step, idx) => (
                    <div key={step.name}>
                      <div className="flex items-center justify-between mb-1">
                        <span className="text-sm font-medium text-gray-700 dark:text-gray-300">{step.name}</span>
@@ -1064,7 +1130,7 @@ const SaasAdminDashboard = () => {
                  ))}
                  <div className="pt-3 border-t border-gray-200 dark:border-slate-700">
                    <p className="text-sm text-gray-600 dark:text-gray-400">
-                     Signup → Value conversion: <strong className="text-gray-900 dark:text-white">{behavioralMetrics.activation_funnel.conversion_rate}%</strong>
+	                     Signup → Value conversion: <strong className="text-gray-900 dark:text-white">{safeBehavioralMetrics.activation_funnel.conversion_rate}%</strong>
                    </p>
                  </div>
                </div>
@@ -1093,7 +1159,7 @@ const SaasAdminDashboard = () => {
                        </tr>
                      </thead>
                      <tbody>
-                       {behavioralMetrics.retention_cohorts.cohorts.map((cohort) => (
+	                       {safeBehavioralMetrics.retention_cohorts.cohorts.map((cohort) => (
                          <tr key={cohort.month} className="border-b border-gray-100 dark:border-slate-700/50 last:border-0">
                            <td className="py-2 pr-4 font-medium text-gray-900 dark:text-white">{cohort.month}</td>
                            <td className="py-2 pr-4 text-center text-gray-600 dark:text-gray-400">{cohort.cohort_size}</td>
@@ -1132,37 +1198,37 @@ const SaasAdminDashboard = () => {
                  <div className="space-y-4">
                    <div className="flex items-center justify-between">
                      <span className="text-sm text-gray-600 dark:text-gray-400">Current MRR</span>
-                     <span className="text-2xl font-bold text-gray-900 dark:text-white">${behavioralMetrics.mrr_movement.current_mrr.toLocaleString()}</span>
+	                     <span className="text-2xl font-bold text-gray-900 dark:text-white">${safeBehavioralMetrics.mrr_movement.current_mrr.toLocaleString()}</span>
                    </div>
                    <div className="space-y-2 pt-3 border-t border-gray-200 dark:border-slate-700">
                      <div className="flex items-center justify-between">
                        <span className="text-sm text-gray-600 dark:text-gray-400 flex items-center gap-2">
                          <span className="inline-block w-2 h-2 rounded-full bg-green-500" /> New MRR
                        </span>
-                       <span className="text-sm font-medium text-green-600">+${behavioralMetrics.mrr_movement.new_mrr.toLocaleString()}</span>
+	                       <span className="text-sm font-medium text-green-600">+${safeBehavioralMetrics.mrr_movement.new_mrr.toLocaleString()}</span>
                      </div>
                      <div className="flex items-center justify-between">
                        <span className="text-sm text-gray-600 dark:text-gray-400 flex items-center gap-2">
                          <span className="inline-block w-2 h-2 rounded-full bg-red-500" /> Churned MRR
                        </span>
-                       <span className="text-sm font-medium text-red-600">-${behavioralMetrics.mrr_movement.churned_mrr.toLocaleString()}</span>
+	                       <span className="text-sm font-medium text-red-600">-${safeBehavioralMetrics.mrr_movement.churned_mrr.toLocaleString()}</span>
                      </div>
                      <div className="flex items-center justify-between pt-2 border-t border-gray-200 dark:border-slate-700">
                        <span className="text-sm font-medium text-gray-900 dark:text-white">Net Change</span>
-                       <span className={`text-sm font-bold ${behavioralMetrics.mrr_movement.net_change >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                         {behavioralMetrics.mrr_movement.net_change >= 0 ? '+' : ''}${behavioralMetrics.mrr_movement.net_change.toLocaleString()}
-                         <span className="text-xs ml-1">({behavioralMetrics.mrr_movement.net_change_percent}%)</span>
-                       </span>
+	                       <span className={`text-sm font-bold ${safeBehavioralMetrics.mrr_movement.net_change >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+	                         {safeBehavioralMetrics.mrr_movement.net_change >= 0 ? '+' : ''}${safeBehavioralMetrics.mrr_movement.net_change.toLocaleString()}
+	                         <span className="text-xs ml-1">({safeBehavioralMetrics.mrr_movement.net_change_percent}%)</span>
+	                       </span>
                      </div>
                    </div>
                    <div className="pt-3 border-t border-gray-200 dark:border-slate-700">
                      <div className="flex items-center justify-between">
                        <span className="text-sm text-gray-600 dark:text-gray-400">Trial → Paid Conversions</span>
-                       <span className="text-sm font-medium text-gray-900 dark:text-white">{behavioralMetrics.mrr_movement.trial_conversions}</span>
+	                       <span className="text-sm font-medium text-gray-900 dark:text-white">{safeBehavioralMetrics.mrr_movement.trial_conversions}</span>
                      </div>
                      <div className="flex items-center justify-between mt-1">
                        <span className="text-sm text-gray-600 dark:text-gray-400">Conversion Rate</span>
-                       <span className="text-sm font-medium text-gray-900 dark:text-white">{behavioralMetrics.mrr_movement.trial_conversion_rate}%</span>
+	                       <span className="text-sm font-medium text-gray-900 dark:text-white">{safeBehavioralMetrics.mrr_movement.trial_conversion_rate}%</span>
                      </div>
                    </div>
                  </div>
@@ -1177,26 +1243,26 @@ const SaasAdminDashboard = () => {
                <Card className="p-6">
                  <div className="flex items-center justify-between">
                    <p className="text-sm font-medium text-gray-500 dark:text-gray-400">RSVPs This Week</p>
-                   {behavioralMetrics.engagement_signals.rsvp_velocity.trend !== 'flat' && (
-                     <span className={`flex items-center gap-1 text-xs font-medium ${
-                       behavioralMetrics.engagement_signals.rsvp_velocity.trend === 'up' ? 'text-green-600' : 'text-red-600'
-                     }`}>
-                       {behavioralMetrics.engagement_signals.rsvp_velocity.trend === 'up' ? <TrendingUp className="h-3 w-3" /> : <TrendingDown className="h-3 w-3" />}
-                       {behavioralMetrics.engagement_signals.rsvp_velocity.change > 0 ? '+' : ''}{behavioralMetrics.engagement_signals.rsvp_velocity.change}
-                     </span>
-                   )}
-                 </div>
-                 <p className="mt-2 text-3xl font-bold text-gray-900 dark:text-white">{behavioralMetrics.engagement_signals.rsvp_velocity.current_7d}</p>
-                 <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">vs {behavioralMetrics.engagement_signals.rsvp_velocity.previous_7d} previous week</p>
+	                   {safeBehavioralMetrics.engagement_signals.rsvp_velocity.trend !== 'flat' && (
+	                     <span className={`flex items-center gap-1 text-xs font-medium ${
+	                       safeBehavioralMetrics.engagement_signals.rsvp_velocity.trend === 'up' ? 'text-green-600' : 'text-red-600'
+	                     }`}>
+	                       {safeBehavioralMetrics.engagement_signals.rsvp_velocity.trend === 'up' ? <TrendingUp className="h-3 w-3" /> : <TrendingDown className="h-3 w-3" />}
+	                       {safeBehavioralMetrics.engagement_signals.rsvp_velocity.change > 0 ? '+' : ''}{safeBehavioralMetrics.engagement_signals.rsvp_velocity.change}
+	                     </span>
+	                   )}
+	                 </div>
+	                 <p className="mt-2 text-3xl font-bold text-gray-900 dark:text-white">{safeBehavioralMetrics.engagement_signals.rsvp_velocity.current_7d}</p>
+	                 <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">vs {safeBehavioralMetrics.engagement_signals.rsvp_velocity.previous_7d} previous week</p>
                </Card>
                <Card className="p-6">
                  <p className="text-sm font-medium text-gray-500 dark:text-gray-400">Platform Response Rate</p>
-                 <p className="mt-2 text-3xl font-bold text-gray-900 dark:text-white">{behavioralMetrics.engagement_signals.platform_response_rate}%</p>
+	                 <p className="mt-2 text-3xl font-bold text-gray-900 dark:text-white">{safeBehavioralMetrics.engagement_signals.platform_response_rate}%</p>
                  <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">Of invited guests who responded</p>
                </Card>
                <Card className="p-6">
                  <p className="text-sm font-medium text-gray-500 dark:text-gray-400">Active Engaged Weddings</p>
-                 <p className="mt-2 text-3xl font-bold text-gray-900 dark:text-white">{behavioralMetrics.engagement_signals.active_engaged_weddings}</p>
+	                 <p className="mt-2 text-3xl font-bold text-gray-900 dark:text-white">{safeBehavioralMetrics.engagement_signals.active_engaged_weddings}</p>
                  <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">With guest activity in last 7 days</p>
                </Card>
              </div>

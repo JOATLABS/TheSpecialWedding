@@ -3,12 +3,13 @@ Security audit service for logging and monitoring security events
 """
 import logging
 import json
+import os
 from datetime import datetime, timedelta, timezone
 from typing import Dict, Any, Optional, List
 from enum import Enum
 from dataclasses import dataclass, asdict
 from app.core.database import mongo
-import os
+from app.core.settings import settings
 
 logger = logging.getLogger(__name__)
 
@@ -80,8 +81,8 @@ class SecurityAuditService:
     def __init__(self):
         self.audit_collection = mongo.db["security_audit_logs"]
         self.enable_db_logging = True
-        self.enable_file_logging = True
-        self.log_file_path = os.getenv("SECURITY_LOG_FILE", "/var/log/wedding_app_security.log")
+        self.enable_file_logging = settings.security_log_to_file
+        self.log_file_path = settings.security_log_file
 
         # Setup file logging if enabled
         if self.enable_file_logging:
@@ -93,9 +94,19 @@ class SecurityAuditService:
             # Create security logger
             security_logger = logging.getLogger("security_audit")
             security_logger.setLevel(logging.INFO)
+            security_logger.propagate = False
+
+            normalized_path = os.path.abspath(self.log_file_path)
+            for existing_handler in security_logger.handlers:
+                if isinstance(existing_handler, logging.FileHandler) and getattr(existing_handler, "baseFilename", None) == normalized_path:
+                    return
+
+            log_dir = os.path.dirname(normalized_path)
+            if log_dir:
+                os.makedirs(log_dir, exist_ok=True)
 
             # Create file handler
-            handler = logging.FileHandler(self.log_file_path)
+            handler = logging.FileHandler(normalized_path)
             handler.setLevel(logging.INFO)
 
             # Create formatter
@@ -105,10 +116,10 @@ class SecurityAuditService:
             handler.setFormatter(formatter)
 
             # Add handler to logger
-            if not security_logger.handlers:
-                security_logger.addHandler(handler)
+            security_logger.addHandler(handler)
 
         except Exception as e:
+            self.enable_file_logging = False
             logger.warning(f"Failed to setup security file logging: {str(e)}")
 
     async def log_security_event(

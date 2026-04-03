@@ -392,7 +392,7 @@ class VendorService:
                 "source": "scraped",
                 "google_place_id": google_place_id,
                 "scraped_at": now,
-                "scraped_from_city": data.get("scraped_from_city", city),
+                "scraped_from_state": data.get("scraped_from_state"),
                 "created_by": "system@thespecialwedding.com",
                 "weddings_count": 0,
                 "total_revenue": 0.0,

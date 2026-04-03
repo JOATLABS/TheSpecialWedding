@@ -794,12 +794,23 @@ function DashboardSection({ data }: { data: DashboardData }) {
 
 function WeddingReadinessCard({ data }: { data: DashboardData }) {
   // Replicate the planner-side progress calculation for couple visibility
-  const stats = data.guest_stats;
+  const stats: GuestStats = data.guest_stats ?? {
+    planned_total: 0,
+    guest_list_total: 0,
+    invited: 0,
+    responded: 0,
+    confirmed: 0,
+    declined: 0,
+    pending: 0,
+    not_invited: 0,
+    response_rate: 0,
+    event_breakdown: [],
+  };
   const wedding = data.wedding;
 
   let progressScore = 0;
-  const guestCount = stats.guest_list_total || 0;
-  const rsvpCount = stats.responded || 0;
+  const guestCount = stats.guest_list_total ?? 0;
+  const rsvpCount = stats.responded ?? 0;
 
   // Up to 40% for RSVP completion rate
   if (guestCount > 0) {
@@ -825,7 +836,7 @@ function WeddingReadinessCard({ data }: { data: DashboardData }) {
 
   const milestones = [
     { label: 'Guest list started', done: guestCount > 0 },
-    { label: 'Invites sent', done: stats.invited > 0 },
+    { label: 'Invites sent', done: (stats.invited ?? 0) > 0 },
     { label: 'RSVPs coming in', done: rsvpCount > 0 },
     { label: 'Events configured', done: (wedding?.events?.length || 0) > 0 },
     { label: 'Venue set', done: !!wedding?.venue },
@@ -978,7 +989,10 @@ function BudgetBreakdownCard({ weddingId }: { weddingId?: string }) {
     fetchBreakdown();
   }, [weddingId]);
 
-  if (!breakdown || breakdown.category_count === 0) return null;
+  if (!breakdown) return null;
+
+  const categories = Array.isArray(breakdown.categories) ? breakdown.categories : [];
+  if ((breakdown.category_count ?? categories.length) === 0 || categories.length === 0) return null;
 
   // Color palette for categories
   const colors = [
@@ -1000,7 +1014,7 @@ function BudgetBreakdownCard({ weddingId }: { weddingId?: string }) {
         <>
           {/* Stacked bar */}
           <div className="w-full flex rounded-full h-4 overflow-hidden mb-4">
-            {breakdown.categories.map((cat: any, i: number) => (
+            {categories.map((cat: any, i: number) => (
               <div
                 key={cat.category_id}
                 className={`${colors[i % colors.length]} transition-all`}
@@ -1012,7 +1026,7 @@ function BudgetBreakdownCard({ weddingId }: { weddingId?: string }) {
 
           {/* Category list */}
           <div className="space-y-3">
-            {breakdown.categories.map((cat: any, i: number) => (
+            {categories.map((cat: any, i: number) => (
               <div key={cat.category_id} className="flex items-center gap-3">
                 <span className={`w-3 h-3 rounded-full flex-shrink-0 ${colors[i % colors.length]}`} />
                 <div className="flex-1 min-w-0">

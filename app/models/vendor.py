@@ -242,7 +242,7 @@ class VendorProfile(BaseModel):
     source: str = Field("manual", description="How vendor was added: manual, scraped, claimed")
     google_place_id: Optional[str] = Field(None, description="Google Places ID for dedup")
     scraped_at: Optional[datetime] = Field(None, description="When vendor was last scraped/refreshed")
-    scraped_from_city: Optional[str] = Field(None, description="Which city search discovered this vendor")
+    scraped_from_state: Optional[str] = Field(None, description="Which state search discovered this vendor")
 
     # System
     is_active: bool = Field(True, description="Whether vendor is active")

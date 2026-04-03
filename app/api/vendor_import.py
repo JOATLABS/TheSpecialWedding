@@ -52,7 +52,7 @@ class VendorImportItem(BaseModel):
     typical_price_max: Optional[float] = Field(default=None, ge=0)
     currency: str = Field(default="USD", max_length=5)
     tags: List[str] = Field(default_factory=list)
-    scraped_from_city: Optional[str] = None
+    scraped_from_state: Optional[str] = None
 
     @field_validator("service_category")
     @classmethod

@@ -1170,7 +1170,7 @@ export interface VendorImportItem {
   typical_price_max?: number;
   currency?: string;
   tags?: string[];
-  scraped_from_city?: string;
+  scraped_from_state?: string;
 }
 
 export interface VendorImportResponse {
