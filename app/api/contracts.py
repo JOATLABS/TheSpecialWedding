@@ -1443,11 +1443,18 @@ async def confirm_payment_method_update(
         if not customer_id:
             raise HTTPException(status_code=400, detail="No customer on file")
 
-        # Attach the new payment method to the customer
-        stripe.PaymentMethod.attach(
-            update_data.payment_method_id,
-            customer=customer_id
-        )
+        payment_method = stripe.PaymentMethod.retrieve(update_data.payment_method_id)
+
+        resolved_customer = payment_method.customer
+        if isinstance(resolved_customer, dict):
+            resolved_customer = resolved_customer.get("id")
+
+        if resolved_customer and resolved_customer != customer_id:
+            raise HTTPException(status_code=400, detail="Payment method belongs to a different customer")
+
+        card = payment_method.card if payment_method.type == "card" else None
+        payment_method_last4 = update_data.payment_method_last4 or (card.last4 if card else None)
+        payment_method_brand = update_data.payment_method_brand or (card.brand if card else None)
 
         # Set as default payment method
         stripe.Customer.modify(
@@ -1463,8 +1470,8 @@ async def confirm_payment_method_update(
             {
                 "$set": {
                     "stripe_payment_method_id": update_data.payment_method_id,
-                    "payment_method_last4": update_data.payment_method_last4,
-                    "payment_method_brand": update_data.payment_method_brand,
+                    "payment_method_last4": payment_method_last4,
+                    "payment_method_brand": payment_method_brand,
                     "payment_method_updated_at": datetime.now(timezone.utc)
                 }
             }
@@ -1486,7 +1493,7 @@ async def confirm_payment_method_update(
                     "html": f"""
                     <h2>Payment Method Updated</h2>
                     <p><strong>{couple_name}</strong> has updated their payment method.</p>
-                    <p>New card: {update_data.payment_method_brand or 'Card'} ending in {update_data.payment_method_last4 or '****'}</p>
+                    <p>New card: {payment_method_brand or 'Card'} ending in {payment_method_last4 or '****'}</p>
                     """
                 })
         except Exception as email_err:
@@ -1495,8 +1502,8 @@ async def confirm_payment_method_update(
         return {
             "message": "Payment method updated successfully",
             "payment_method": {
-                "last4": update_data.payment_method_last4,
-                "brand": update_data.payment_method_brand
+                "last4": payment_method_last4,
+                "brand": payment_method_brand
             }
         }
 

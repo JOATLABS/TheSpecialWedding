@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.28.2] - 2026-04-05
+
+### Fixed
+
+- **Stripe checkout gating, expiry recovery, and status normalization** (`/app/api/stripe_payment.py`, `/app/services/stripe_service.py`, `/app/models/subscription.py`, `/app/dependencies/auth_extended.py`, `/app/dependencies/feature_gates.py`, `/app/services/team_management_service.py`, `/app/services/platform_metrics_service.py`, `/app/scripts/sync_stripe_subscription.py`, `/scripts/resend_checkout_webhook.py`, `/app/utils/subscriptionStatus.ts`, `/app/components/AdminRouteGuard.tsx`, `/app/admin/components/TrialBanner.tsx`, `/app/admin/page.tsx`, `/app/admin/billing/page.tsx`, `/app/admin/planner/billing/page.tsx`, `/app/admin/saas/page.tsx`) — Locked the public checkout route down to true signup-retry states, blocked authenticated planners with active or delinquent subscriptions from spawning duplicate Checkout sessions, taught `checkout.session.expired` handling to roll `pending_checkout` records and users to `expired`, and normalized the internal status vocabulary so Stripe `trialing`, `incomplete`, `incomplete_expired`, and `unpaid` now resolve consistently across webhook sync, planner auth gating, feature entitlements, billing dashboards, and operational sync scripts. `past_due` is preserved as a first-class recoverable billing state instead of being silently collapsed into `suspended`.
+- **Couple payment success and payment-method update completion** (`/app/pay/[id]/page.tsx`, `/app/pay/success/page.tsx`, `/app/portal/[token]/page.tsx`, `/app/components/contracts/StripePaymentCapture.tsx`, `/app/api/contracts.py`) — Finished the couple-facing Stripe flows by adding the missing `/pay/success` route, switching the public payment page to inline `confirmPayment(..., redirect: 'if_required')` handling for normal card payments, wiring the couple portal’s payment-method update button to the existing Stripe Elements capture component, and only showing the “saved” success state after the contract/default payment method update actually succeeds. The backend confirmation endpoint now validates the retrieved payment method, derives the card brand/last4 from Stripe, and stops redundantly re-attaching a method that the completed SetupIntent already attached.
+
 ## [2.28.1] - 2026-04-03
 
 ### Changed

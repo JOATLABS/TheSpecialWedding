@@ -23,6 +23,7 @@ from app.utils.auth_utils import get_password_hash
 from app.utils.id_utils import to_object_id, to_str_id
 from app.services.email_service_resend import ResendEmailService
 from app.services.activity_log_service import activity_log_service
+from app.models.subscription import ACTIVE_SUBSCRIPTION_STATUSES
 from app.models.team_member import (
     TeamMemberRole,
     TeamMemberStatus,
@@ -195,14 +196,14 @@ class TeamManagementService:
         """Get the owner planner's current subscription plan (with staff_seats)"""
         # Find subscription
         subscription = await self.subscriptions_collection.find_one(
-            {"user_email": owner_email, "status": {"$in": ["active", "trial", "trialing"]}}
+            {"user_email": owner_email, "status": {"$in": list(ACTIVE_SUBSCRIPTION_STATUSES)}}
         )
         if not subscription:
             # Fallback: lookup by user_id
             user = await self.users_collection.find_one({"email": owner_email})
             if user:
                 subscription = await self.subscriptions_collection.find_one(
-                    {"user_id": str(user["_id"]), "status": {"$in": ["active", "trial", "trialing"]}}
+                    {"user_id": str(user["_id"]), "status": {"$in": list(ACTIVE_SUBSCRIPTION_STATUSES)}}
                 )
         if not subscription:
             return None

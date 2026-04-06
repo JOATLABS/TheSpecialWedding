@@ -4,6 +4,7 @@ import React, { useMemo } from 'react';
 import { useAdmin } from '@/contexts/AdminContext';
 import { useRouter } from 'next/navigation';
 import { AlertTriangle, Clock, XCircle } from 'lucide-react';
+import { isBlockedSubscriptionStatus, normalizeSubscriptionStatus } from '@/utils/subscriptionStatus';
 
 export default function TrialBanner() {
   const { userProfile } = useAdmin();
@@ -14,13 +15,13 @@ export default function TrialBanner() {
 
     // Support both data paths: user_data (full profile) and top-level fields
     const ud = userProfile.user_data || {};
-    const status = ud.subscription_status || userProfile.subscription_status;
+    const status = normalizeSubscriptionStatus(ud.subscription_status || userProfile.subscription_status);
     const trialEnd = ud.trial_end_date || userProfile.trial_end_date;
 
     if (!status) return null;
 
     // Show banner for unpaid/expired/blocked users
-    if (status === 'expired' || status === 'cancelled' || status === 'suspended' || status === 'pending_payment' || status === 'pending' || status === 'inactive') {
+    if (isBlockedSubscriptionStatus(status)) {
       return {
         type: 'expired' as const,
         message:

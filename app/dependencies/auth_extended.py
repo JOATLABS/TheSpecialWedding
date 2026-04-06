@@ -8,6 +8,7 @@ import time
 import asyncio
 from datetime import datetime, timezone
 from app.core.database import mongo
+from app.models.subscription import PLANNER_BLOCKED_SUBSCRIPTION_STATUSES, normalize_subscription_status
 from bson import ObjectId
 
 logger = logging.getLogger(__name__)
@@ -167,14 +168,19 @@ async def get_current_user_extended(
                 )
             # Tag users with subscription issues — don't block here so they can
             # still access profile and billing endpoints to upgrade/reactivate.
-            sub_status = user_data.get("subscription_status")
-            if role == "wedding_planner" and sub_status in ("pending", "pending_payment", "inactive", "cancelled", "suspended", "expired"):
+            sub_status = normalize_subscription_status(user_data.get("subscription_status"))
+            if sub_status:
+                user_data["subscription_status"] = sub_status
+
+            if role == "wedding_planner" and sub_status in PLANNER_BLOCKED_SUBSCRIPTION_STATUSES:
                 user_data["_subscription_blocked"] = True
                 user_data["_subscription_block_reason"] = {
                     "pending": "Please complete your subscription checkout to access the platform.",
+                    "pending_checkout": "Please complete your Stripe checkout to activate your subscription.",
                     "pending_payment": "Please complete your subscription payment to access the platform.",
                     "inactive": "Please choose a plan and complete checkout to access the platform.",
                     "cancelled": "Your subscription has been cancelled. Please resubscribe to continue.",
+                    "past_due": "Your latest subscription payment failed. Please update your payment method to continue.",
                     "suspended": "Your subscription is suspended due to a payment issue. Please update your payment method.",
                     "expired": "Free trial has expired. Please upgrade your subscription to continue using the platform.",
                 }.get(sub_status, "Subscription issue. Please contact support.")

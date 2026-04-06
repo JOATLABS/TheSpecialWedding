@@ -58,8 +58,10 @@ tests/backend/*
 !tests/backend/test_behavioral_analytics_contract.py
 !tests/backend/test_team_management_invite_lock.py
 !tests/backend/test_gallery_storage_paths.py
+!tests/backend/test_public_checkout_gating.py
 tests/unit/*
 !tests/unit/blogRichText.test.ts
+!tests/unit/subscriptionStatus.test.ts
 !tests/resources-blog-rendering.spec.ts
 
 ARCHITECTURAL_IMPROVEMENTS_COMPLETE.md

@@ -11,7 +11,7 @@ from bson import ObjectId
 from pymongo.errors import DuplicateKeyError
 import logging
 
-from app.models.subscription import SubscriptionStatus
+from app.models.subscription import SubscriptionStatus, normalize_subscription_status
 from app.services.email_service_resend import ResendEmailService
 
 logger = logging.getLogger(__name__)
@@ -536,7 +536,7 @@ class StripeService:
                         "stripe_customer_id": customer_id,
                         "billing_interval": billing_interval,
                         "plan_id": plan_id,
-                        "status": "pending_checkout",
+                        "status": SubscriptionStatus.PENDING_CHECKOUT.value,
                     },
                     "$setOnInsert": {
                         "created_at": datetime.now(timezone.utc),
@@ -574,6 +574,8 @@ class StripeService:
                 "expires_at": checkout_session.expires_at
             }
 
+        except HTTPException:
+            raise
         except StripeError as e:
             logger.error(f"Stripe error creating checkout session: {str(e)}")
             raise HTTPException(status_code=500, detail=f"Payment service error: {str(e)}")
@@ -597,17 +599,7 @@ class StripeService:
         if not stripe_status:
             return SubscriptionStatus.ACTIVE.value
 
-        mapping = {
-            "trialing": SubscriptionStatus.TRIAL.value,
-            "active": SubscriptionStatus.ACTIVE.value,
-            "past_due": SubscriptionStatus.SUSPENDED.value,
-            "unpaid": SubscriptionStatus.SUSPENDED.value,
-            "incomplete": SubscriptionStatus.SUSPENDED.value,
-            "incomplete_expired": SubscriptionStatus.CANCELLED.value,
-            "canceled": SubscriptionStatus.CANCELLED.value,
-            "cancelled": SubscriptionStatus.CANCELLED.value,
-        }
-        mapped = mapping.get(stripe_status)
+        mapped = normalize_subscription_status(stripe_status)
         if mapped is None:
             logger.warning(f"Unknown Stripe subscription status '{stripe_status}', defaulting to ACTIVE")
             return SubscriptionStatus.ACTIVE.value
@@ -1523,10 +1515,10 @@ class StripeService:
             result = await self.subscriptions_collection.update_one(
                 {
                     "stripe_checkout_session_id": session_id,
-                    "status": {"$in": ["pending", "pending_payment"]}
+                    "status": {"$in": ["pending", "pending_payment", SubscriptionStatus.PENDING_CHECKOUT.value]}
                 },
                 {"$set": {
-                    "status": "expired",
+                    "status": SubscriptionStatus.EXPIRED.value,
                     "updated_at": datetime.now(timezone.utc),
                     "expired_reason": "checkout_session_expired"
                 }}
@@ -1537,11 +1529,15 @@ class StripeService:
         # Sync user status to "expired" to match subscription record
         if user_id:
             user = await self.users_collection.find_one({"_id": ObjectId(user_id)})
-            if user and user.get("subscription_status") in ("pending_payment", "pending"):
+            if user and normalize_subscription_status(user.get("subscription_status")) in (
+                SubscriptionStatus.PENDING_PAYMENT.value,
+                SubscriptionStatus.PENDING_CHECKOUT.value,
+                "pending",
+            ):
                 await self.users_collection.update_one(
                     {"_id": ObjectId(user_id)},
                     {"$set": {
-                        "subscription_status": "expired",
+                        "subscription_status": SubscriptionStatus.EXPIRED.value,
                         "checkout_expired_at": datetime.now(timezone.utc),
                         "updated_at": datetime.now(timezone.utc),
                     }}

@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import type { Stripe } from '@stripe/stripe-js';
 import { Elements, PaymentElement, useStripe, useElements } from '@stripe/react-stripe-js';
 import { Loader2 } from 'lucide-react';
@@ -8,7 +9,8 @@ import { getApiBaseUrl } from '@/utils/env';
 import { getStripeClient, preloadStripeClient } from '@/utils/stripeClient';
 
 // Checkout Form Component
-function CheckoutForm({ clientSecret, amount, currency }: { clientSecret: string; amount: number; currency: string }) {
+function CheckoutForm({ amount, currency }: { amount: number; currency: string }) {
+  const router = useRouter();
   const stripe = useStripe();
   const elements = useElements();
   const [loading, setLoading] = useState(false);
@@ -22,17 +24,26 @@ function CheckoutForm({ clientSecret, amount, currency }: { clientSecret: string
     setLoading(true);
     setErrorMessage(null);
 
-    const { error } = await stripe.confirmPayment({
+    const { error, paymentIntent } = await stripe.confirmPayment({
       elements,
       confirmParams: {
         return_url: `${window.location.origin}/pay/success`,
       },
+      redirect: 'if_required',
     });
 
     if (error) {
       setErrorMessage(error.message || 'Payment failed');
       setLoading(false);
+      return;
     }
+
+    if (paymentIntent) {
+      router.push(`/pay/success?payment_intent=${encodeURIComponent(paymentIntent.id)}`);
+      return;
+    }
+
+    setLoading(false);
   };
 
   return (
@@ -153,7 +164,7 @@ export default function PaymentPage({ params }: { params: Promise<{ id: string }
 
           <div className="p-6">
             <Elements stripe={stripePromiseState} options={{ clientSecret, appearance: { theme: 'stripe' } }}>
-              <CheckoutForm clientSecret={clientSecret} amount={amount} currency={currency} />
+              <CheckoutForm amount={amount} currency={currency} />
             </Elements>
           </div>
         </div>
