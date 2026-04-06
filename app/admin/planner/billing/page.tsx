@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { useAdmin } from '@/contexts/AdminContext';
 import { getApiBaseUrl } from '@/utils/env';
 import { formatAdminDate, DEFAULT_TIMEZONE } from '@/utils/dateFormat';
+import { BLOCKED_SUBSCRIPTION_STATUSES, normalizeSubscriptionStatus } from '@/utils/subscriptionStatus';
 import PageHeader from '../../components/PageHeader';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
@@ -102,10 +103,15 @@ interface PaymentRequest {
   wedding_title?: string;
 }
 
+const normalizeSubscription = (subscription: UserSubscription): UserSubscription => ({
+  ...subscription,
+  status: normalizeSubscriptionStatus(subscription.status),
+});
+
 export default function PlannerBillingPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const { userProfile, apiRequest, token } = useAdmin();
+  const { userProfile, token } = useAdmin();
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<'subscription' | 'client_payments'>('subscription');
   const [plans, setPlans] = useState<SubscriptionPlan[]>([]);
@@ -126,19 +132,6 @@ export default function PlannerBillingPage() {
   const paginationInvoices = usePagination({ initialItemsPerPage: 50 });
   const requestedPlanId = searchParams.get('plan');
   const requestedInterval = searchParams.get('interval') === 'yearly' ? 'yearly' : 'monthly';
-  const blockedSubscriptionStatuses = new Set([
-    'expired',
-    'cancelled',
-    'suspended',
-    'pending',
-    'pending_payment',
-    'pending_checkout',
-    'inactive',
-    'incomplete',
-    'incomplete_expired',
-    'unpaid',
-  ]);
-
   // Access control - only for wedding planners
   useEffect(() => {
     if (userProfile && !userProfile.is_wedding_planner && !userProfile.is_root_admin) {
@@ -180,7 +173,7 @@ export default function PlannerBillingPage() {
         );
 
         if (stripeSubResponse.ok) {
-          const subData = await stripeSubResponse.json();
+          const subData = normalizeSubscription(await stripeSubResponse.json());
           if (subData && subData.plan_id) {
             setCurrentSubscription(subData);
             const planDetail = fetchedPlans.find((p: SubscriptionPlan) => p._id === subData.plan_id);
@@ -210,7 +203,7 @@ export default function PlannerBillingPage() {
           );
 
           if (subResponse.ok) {
-            const subData = await subResponse.json();
+            const subData = normalizeSubscription(await subResponse.json());
             if (subData && subData.plan_id) {
               setCurrentSubscription(subData);
               const planDetail = fetchedPlans.find((p: SubscriptionPlan) => p._id === subData.plan_id);
@@ -226,12 +219,13 @@ export default function PlannerBillingPage() {
       // the user profile indicates an active/trial subscription (set by webhook
       // updating the users collection), construct a minimal subscription object
       // so the billing page shows the management view instead of "Choose Your Plan".
-      if (!subscriptionLoaded && userProfile.subscription_status && ['active', 'trial'].includes(userProfile.subscription_status)) {
+      const normalizedProfileStatus = normalizeSubscriptionStatus(userProfile.subscription_status);
+      if (!subscriptionLoaded && ['active', 'trial'].includes(normalizedProfileStatus)) {
         const profilePlanId = (userProfile as any).user_data?.plan_id || '';
         if (profilePlanId) {
           const minimalSub: any = {
             plan_id: profilePlanId,
-            status: userProfile.subscription_status,
+            status: normalizedProfileStatus,
             billing_interval: 'monthly',
             payment_status: 'paid',
           };
@@ -390,7 +384,7 @@ export default function PlannerBillingPage() {
     }
 
     // Check subscription status
-    if (subscription.status === 'past_due') {
+    if (normalizeSubscriptionStatus(subscription.status) === 'past_due') {
       alerts.push({
         type: 'error',
         title: 'Payment Failed',
@@ -406,7 +400,7 @@ export default function PlannerBillingPage() {
       const now = new Date();
       const daysUntilRenewal = (endDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24);
 
-      if (daysUntilRenewal <= 7 && daysUntilRenewal > 0 && subscription.status === 'active') {
+      if (daysUntilRenewal <= 7 && daysUntilRenewal > 0 && normalizeSubscriptionStatus(subscription.status) === 'active') {
         const price = subscription.billing_interval === 'yearly'
           ? plan?.price_yearly
           : plan?.price_monthly;
@@ -542,6 +536,7 @@ export default function PlannerBillingPage() {
   };
 
   const getStatusConfig = (status: string) => {
+    const normalizedStatus = normalizeSubscriptionStatus(status);
     const config: Record<string, { color: string; bgColor: string; icon: React.ReactNode; label: string }> = {
       active: {
         color: 'text-green-700 dark:text-green-300',
@@ -549,7 +544,7 @@ export default function PlannerBillingPage() {
         icon: <CheckCircle2 className="w-4 h-4" />,
         label: 'Active'
       },
-      trialing: {
+      trial: {
         color: 'text-blue-700 dark:text-blue-300',
         bgColor: 'bg-blue-100 dark:bg-blue-900/30',
         icon: <Clock className="w-4 h-4" />,
@@ -579,6 +574,12 @@ export default function PlannerBillingPage() {
         icon: <AlertTriangle className="w-4 h-4" />,
         label: 'Payment Required'
       },
+      suspended: {
+        color: 'text-red-700 dark:text-red-300',
+        bgColor: 'bg-red-100 dark:bg-red-900/30',
+        icon: <AlertCircle className="w-4 h-4" />,
+        label: 'Suspended'
+      },
       inactive: {
         color: 'text-slate-700 dark:text-slate-300',
         bgColor: 'bg-slate-100 dark:bg-slate-800',
@@ -586,11 +587,11 @@ export default function PlannerBillingPage() {
         label: 'Inactive'
       }
     };
-    return config[status] || {
+    return config[normalizedStatus] || {
       color: 'text-slate-700 dark:text-slate-300',
       bgColor: 'bg-slate-100 dark:bg-slate-800',
       icon: <AlertCircle className="w-4 h-4" />,
-      label: status ? status.replace(/_/g, ' ') : 'Unknown',
+      label: normalizedStatus ? normalizedStatus.replace(/_/g, ' ') : 'Unknown',
     };
   };
 
@@ -638,9 +639,9 @@ export default function PlannerBillingPage() {
   }
 
   // No subscription OR unpaid/expired/cancelled — show plan selection with fresh checkout
-  const subStatus = currentSubscription?.status;
+  const subStatus = normalizeSubscriptionStatus(currentSubscription?.status);
   const needsNewSubscription = !currentSubscription || !currentPlan
-    || (subStatus ? blockedSubscriptionStatuses.has(subStatus) : false);
+    || BLOCKED_SUBSCRIPTION_STATUSES.has(subStatus);
   if (needsNewSubscription) {
     const requestedPlan = requestedPlanId
       ? plans.find((plan) => plan._id === requestedPlanId) ?? null

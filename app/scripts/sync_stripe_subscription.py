@@ -17,6 +17,7 @@ from datetime import datetime, timezone
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
 
 from app.core.database import mongo, init_database  # noqa: E402
+from app.models.subscription import normalize_subscription_status  # noqa: E402
 from app.core.settings import settings  # noqa: E402
 
 
@@ -120,16 +121,7 @@ async def sync(email: str):
     print(f"[RESOLVED] Platform plan: {resolved_plan_id} ({matched_plan.get('name')})")
 
     # Map Stripe status to internal status
-    status_map = {
-        "trialing": "trial",
-        "active": "active",
-        "past_due": "suspended",
-        "canceled": "cancelled",
-        "unpaid": "suspended",
-        "incomplete": "pending_payment",
-        "incomplete_expired": "expired",
-    }
-    internal_status = status_map.get(stripe_sub.status, "active")
+    internal_status = normalize_subscription_status(stripe_sub.status) or "active"
 
     now = datetime.now(timezone.utc)
 

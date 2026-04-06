@@ -3,6 +3,7 @@
 import { useEffect } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 import { useAdmin } from '@/contexts/AdminContext';
+import { isBlockedSubscriptionStatus, normalizeSubscriptionStatus } from '@/utils/subscriptionStatus';
 
 // Pages that expired/blocked planners are allowed to access
 const BILLING_PATHS = [
@@ -59,9 +60,9 @@ export default function AdminRouteGuard({ children }: { children: React.ReactNod
       }
 
       const ud = userProfile.user_data || {};
-      const status = ud.subscription_status || userProfile.subscription_status;
+      const status = normalizeSubscriptionStatus(ud.subscription_status || userProfile.subscription_status);
       const isPlanner = userProfile.is_wedding_planner;
-      const isBlocked = status && ['expired', 'cancelled', 'suspended', 'pending_payment', 'pending', 'inactive'].includes(status);
+      const isBlocked = isBlockedSubscriptionStatus(status);
 
       if (isPlanner && isBlocked && !isAllowedForExpired(pathname)) {
         router.replace('/admin/planner/billing');
@@ -96,9 +97,9 @@ export default function AdminRouteGuard({ children }: { children: React.ReactNod
     }
 
     const ud = userProfile.user_data || {};
-    const status = ud.subscription_status || userProfile.subscription_status;
+    const status = normalizeSubscriptionStatus(ud.subscription_status || userProfile.subscription_status);
     const isPlanner = userProfile.is_wedding_planner;
-    const isBlocked = status && ['expired', 'cancelled', 'suspended', 'pending_payment', 'pending', 'inactive'].includes(status);
+    const isBlocked = isBlockedSubscriptionStatus(status);
 
     if (isPlanner && isBlocked && !isAllowedForExpired(pathname)) {
       return null; // Don't render — useEffect above will redirect

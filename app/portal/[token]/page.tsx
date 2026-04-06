@@ -6,6 +6,7 @@ import { getApiBaseUrl } from '@/utils/env';
 import { toast } from 'sonner';
 import { Card } from '../../components/ui/Card';
 import { Button } from '../../components/ui/Button';
+import StripePaymentCapture, { type PaymentMethodData } from '@/components/contracts/StripePaymentCapture';
 import {
   Loader2,
   CheckCircle,
@@ -14,14 +15,11 @@ import {
   XCircle,
   CreditCard,
   Calendar,
-  DollarSign,
   Download,
   RefreshCw,
   Mail,
   Phone,
   User,
-  ExternalLink,
-  ChevronRight
 } from 'lucide-react';
 
 interface Payment {
@@ -83,6 +81,9 @@ export default function CouplePortalPage() {
   const [error, setError] = useState<string>('');
   const [data, setData] = useState<PortalData | null>(null);
   const [updatingPayment, setUpdatingPayment] = useState(false);
+  const [savingPaymentMethod, setSavingPaymentMethod] = useState(false);
+  const [paymentUpdateClientSecret, setPaymentUpdateClientSecret] = useState<string | null>(null);
+  const [paymentUpdateCustomerId, setPaymentUpdateCustomerId] = useState<string | null>(null);
 
   const fetchPortalData = useCallback(async () => {
     if (!token) return;
@@ -190,17 +191,63 @@ export default function CouplePortalPage() {
         throw new Error('Failed to initialize payment update');
       }
 
-      const { client_secret } = await response.json();
-
-      // Redirect to payment update page or open modal
-      // For now, show a message
-      toast.info('Payment method update flow would open here with Stripe Elements');
+      const { client_secret, customer_id } = await response.json();
+      setPaymentUpdateClientSecret(client_secret);
+      setPaymentUpdateCustomerId(customer_id || null);
+      toast.success('Enter your new payment method below.');
 
     } catch (err) {
       toast.error('Failed to start payment method update');
     } finally {
       setUpdatingPayment(false);
     }
+  };
+
+  const handlePaymentMethodCaptured = async (paymentData: PaymentMethodData) => {
+    setSavingPaymentMethod(true);
+
+    try {
+      const baseUrl = getApiBaseUrl();
+      const response = await fetch(`${baseUrl}/public/portal/${token}/payment-method`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          payment_method_id: paymentData.paymentMethodId,
+          payment_method_last4: paymentData.last4,
+          payment_method_brand: paymentData.brand,
+        }),
+      });
+
+      if (!response.ok) {
+        const problem = await response.json().catch(() => ({}));
+        throw new Error(problem.detail || 'Failed to update payment method');
+      }
+
+      const result = await response.json();
+      setData((current) => current ? {
+        ...current,
+        contract: {
+          ...current.contract,
+          payment_method_last4: result.payment_method?.last4 || paymentData.last4,
+          payment_method_brand: result.payment_method?.brand || paymentData.brand,
+        },
+      } : current);
+      setPaymentUpdateClientSecret(null);
+      setPaymentUpdateCustomerId(null);
+      toast.success('Payment method updated successfully.');
+      await fetchPortalData();
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to update payment method';
+      toast.error(message);
+    } finally {
+      setSavingPaymentMethod(false);
+    }
+  };
+
+  const handlePaymentMethodCaptureError = (message: string) => {
+    toast.error(message);
   };
 
   // Loading state
@@ -320,7 +367,7 @@ export default function CouplePortalPage() {
                   variant="ghost"
                   size="sm"
                   onClick={handleUpdatePaymentMethod}
-                  disabled={updatingPayment}
+                  disabled={updatingPayment || savingPaymentMethod}
                   className="mt-3 text-primary-600"
                 >
                   {updatingPayment ? (
@@ -336,6 +383,39 @@ export default function CouplePortalPage() {
             )}
           </Card>
         </div>
+
+        {paymentUpdateClientSecret && (
+          <Card className="mb-8 p-6">
+            <div className="mb-6 flex items-start justify-between gap-4">
+              <div>
+                <h2 className="text-xl font-semibold text-slate-900 dark:text-white">
+                  Update Payment Method
+                </h2>
+                <p className="mt-1 text-sm text-slate-600 dark:text-slate-400">
+                  Your new card will be saved securely with Stripe and used for future scheduled payments.
+                </p>
+              </div>
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setPaymentUpdateClientSecret(null);
+                  setPaymentUpdateCustomerId(null);
+                }}
+                disabled={savingPaymentMethod}
+              >
+                Cancel
+              </Button>
+            </div>
+
+            <StripePaymentCapture
+              clientSecret={paymentUpdateClientSecret}
+              customerId={paymentUpdateCustomerId || undefined}
+              onPaymentMethodCaptured={handlePaymentMethodCaptured}
+              onError={handlePaymentMethodCaptureError}
+              disabled={savingPaymentMethod}
+            />
+          </Card>
+        )}
 
         {/* Payment Schedule */}
         <Card className="mb-8">

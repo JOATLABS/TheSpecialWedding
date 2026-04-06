@@ -15,7 +15,7 @@ import { getStripeClient, preloadStripeClient } from '@/utils/stripeClient';
 interface PaymentCaptureFormProps {
   clientSecret: string;
   customerId?: string;
-  onPaymentMethodCaptured: (paymentData: PaymentMethodData) => void;
+  onPaymentMethodCaptured: (paymentData: PaymentMethodData) => void | Promise<void>;
   onError: (error: string) => void;
   disabled?: boolean;
 }
@@ -86,13 +86,13 @@ function PaymentCaptureForm({
               setLoading(false);
               return;
             }
-            setCaptured(true);
-            onPaymentMethodCaptured({
+            await onPaymentMethodCaptured({
               customerId: resolvedCustomerId,
               paymentMethodId: paymentMethodId,
               last4: pmData.card?.last4 || '****',
               brand: pmData.card?.brand || 'card'
             });
+            setCaptured(true);
           } else {
             // Fallback if we can't get details
             if (!customerId) {
@@ -101,13 +101,13 @@ function PaymentCaptureForm({
               setLoading(false);
               return;
             }
-            setCaptured(true);
-            onPaymentMethodCaptured({
+            await onPaymentMethodCaptured({
               customerId,
               paymentMethodId: paymentMethodId,
               last4: '****',
               brand: 'card'
             });
+            setCaptured(true);
           }
         }
       }
@@ -196,7 +196,7 @@ function PaymentCaptureForm({
 interface StripePaymentCaptureProps {
   clientSecret: string;
   customerId?: string;
-  onPaymentMethodCaptured: (paymentData: PaymentMethodData) => void;
+  onPaymentMethodCaptured: (paymentData: PaymentMethodData) => void | Promise<void>;
   onError: (error: string) => void;
   disabled?: boolean;
 }

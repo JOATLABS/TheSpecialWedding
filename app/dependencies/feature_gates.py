@@ -8,6 +8,7 @@ to specific features based on their subscription plan.
 from fastapi import Depends, HTTPException, status
 from app.dependencies.auth_extended import require_admin_or_planner, ExtendedAuthUser
 from app.core.database import mongo
+from app.models.subscription import ACTIVE_SUBSCRIPTION_STATUSES
 import logging
 
 logger = logging.getLogger(__name__)
@@ -24,7 +25,7 @@ async def get_user_plan_features(user_email: str) -> dict:
         # Get user's subscription — check both user_email and user_id fields
         # since subscriptions may be stored with either identifier
         subscription = await mongo.db["user_subscriptions"].find_one(
-            {"user_email": user_email, "status": {"$in": ["active", "trial", "trialing"]}}
+            {"user_email": user_email, "status": {"$in": list(ACTIVE_SUBSCRIPTION_STATUSES)}}
         )
 
         if not subscription:
@@ -33,7 +34,7 @@ async def get_user_plan_features(user_email: str) -> dict:
             if user:
                 user_id_str = str(user["_id"])
                 subscription = await mongo.db["user_subscriptions"].find_one(
-                    {"user_id": user_id_str, "status": {"$in": ["active", "trial", "trialing"]}}
+                    {"user_id": user_id_str, "status": {"$in": list(ACTIVE_SUBSCRIPTION_STATUSES)}}
                 )
 
         if not subscription:
@@ -154,13 +155,13 @@ async def require_team_management(
     email = current_user.email
     try:
         subscription = await mongo.db["user_subscriptions"].find_one(
-            {"user_email": email, "status": {"$in": ["active", "trial", "trialing"]}}
+            {"user_email": email, "status": {"$in": list(ACTIVE_SUBSCRIPTION_STATUSES)}}
         )
         if not subscription:
             user = await mongo.get_users_collection().find_one({"email": email})
             if user:
                 subscription = await mongo.db["user_subscriptions"].find_one(
-                    {"user_id": str(user["_id"]), "status": {"$in": ["active", "trial", "trialing"]}}
+                    {"user_id": str(user["_id"]), "status": {"$in": list(ACTIVE_SUBSCRIPTION_STATUSES)}}
                 )
 
         staff_seats = 0

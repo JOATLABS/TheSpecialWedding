@@ -400,7 +400,7 @@ const SaasAdminDashboard = () => {
           email: 'jordan@everafterstudio.com',
           companyName: 'EverAfter Studio',
           subscriptionPlanId: 'plan-2',
-          subscriptionStatus: 'trialing',
+          subscriptionStatus: 'trial',
           maxWeddings: 30,
           is_active: true,
           createdAt: new Date().toISOString(),

@@ -106,26 +106,29 @@ def get_states() -> List[Tuple[str, str, str]]:
 
 SEARCH_QUERIES = [
     # (search_query_template, our_vendor_category)
+    # Each query is crafted to minimize false positives from Google Places.
+    # Be specific: "wedding event" context + concrete service terms.
+
     ("wedding photographer in {state_full}", "photographer"),
     ("wedding videographer in {state_full}", "videographer"),
-    ("wedding florist in {state_full}", "florist"),
-    ("wedding caterer in {state_full}", "caterer"),
-    ("wedding venue in {state_full}", "venue"),
-    ("wedding DJ in {state_full}", "dj"),
-    ("wedding MC host in {state_full}", "mc"),
-    ("wedding band in {state_full}", "band"),
-    ("wedding officiant in {state_full}", "officiant"),
-    ("wedding planner in {state_full}", "planner"),
-    ("wedding decorator in {state_full}", "decorator"),
+    ("wedding florist flower arrangement in {state_full}", "florist"),
+    ("wedding catering service in {state_full}", "caterer"),
+    ("wedding reception venue in {state_full}", "venue"),
+    ("wedding DJ entertainment in {state_full}", "dj"),
+    ("wedding emcee master of ceremonies in {state_full}", "mc"),
+    ("wedding live band music entertainment in {state_full}", "band"),
+    ("wedding officiant minister in {state_full}", "officiant"),
+    ("wedding planner coordinator in {state_full}", "planner"),
+    ("wedding event decorator design in {state_full}", "decorator"),
     ("wedding cake bakery in {state_full}", "cake"),
     ("bridal hair makeup artist in {state_full}", "hair_makeup"),
-    ("wedding transportation limo in {state_full}", "transportation"),
-    ("wedding invitations stationery in {state_full}", "stationery"),
-    ("wedding rentals in {state_full}", "rentals"),
-    ("wedding lighting in {state_full}", "lighting"),
-    ("photo booth rental wedding in {state_full}", "photo_booth"),
-    ("wedding jewelry in {state_full}", "jewelry"),
-    ("bridal shop wedding attire in {state_full}", "attire"),
+    ("wedding limousine party bus transportation in {state_full}", "transportation"),
+    ("wedding invitation printing stationery in {state_full}", "stationery"),
+    ("wedding event table chair tent rental in {state_full}", "rentals"),
+    ("wedding event uplighting lighting design in {state_full}", "lighting"),
+    ("photo booth rental wedding event in {state_full}", "photo_booth"),
+    ("wedding engagement ring jeweler in {state_full}", "jewelry"),
+    ("bridal shop wedding dress attire in {state_full}", "attire"),
 ]
 
 

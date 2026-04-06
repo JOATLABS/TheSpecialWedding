@@ -21,6 +21,12 @@ import stripe
 from pymongo import MongoClient
 from bson import ObjectId
 
+PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+if PROJECT_ROOT not in sys.path:
+    sys.path.insert(0, PROJECT_ROOT)
+
+from app.models.subscription import normalize_subscription_status
+
 # Connect to MongoDB (same pattern as seed_subscription_plans.py)
 mongo_uri = (
     os.getenv("MONGO_URI") or os.getenv("MONGODB_URI") or os.getenv("MONGO_URL") or "mongodb://localhost:27017"
@@ -120,17 +126,7 @@ def main():
     print(f"  resolved plan_id: {plan_id}")
 
     # Map Stripe status to internal status
-    status_map = {
-        "active": "active",
-        "trialing": "trial",
-        "past_due": "past_due",
-        "canceled": "cancelled",
-        "unpaid": "unpaid",
-        "incomplete": "incomplete",
-        "incomplete_expired": "expired",
-        "paused": "paused",
-    }
-    internal_status = status_map.get(subscription.status, subscription.status)
+    internal_status = normalize_subscription_status(subscription.status) or subscription.status
 
     now = datetime.now(timezone.utc)
     period_start = datetime.fromtimestamp(raw_period_start, tz=timezone.utc) if raw_period_start else now

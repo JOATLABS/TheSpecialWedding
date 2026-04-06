@@ -5,6 +5,7 @@ import { getApiBaseUrl } from '@/utils/env';
 import { useRouter } from 'next/navigation';
 import { useAdmin } from '@/contexts/AdminContext';
 import { formatAdminDate, DEFAULT_TIMEZONE } from '@/utils/dateFormat';
+import { normalizeSubscriptionStatus } from '@/utils/subscriptionStatus';
 import { Card } from '@/components/ui/Card';
 import PageHeader from '../components/PageHeader';
 import {
@@ -61,14 +62,6 @@ interface RecentEvent {
   timestamp: string;
   user_email?: string;
 }
-
-const normalizeSubscriptionStatus = (status?: string | null): string => {
-  const normalized = status?.trim().toLowerCase();
-  if (!normalized) return 'unknown';
-  if (normalized === 'trialing') return 'trial';
-  if (normalized === 'canceled') return 'cancelled';
-  return normalized;
-};
 
 export default function AdminBillingDashboard() {
   const router = useRouter();
@@ -239,11 +232,6 @@ export default function AdminBillingDashboard() {
         text: 'text-green-800 dark:text-green-300',
         icon: <CheckCircle className="w-3 h-3" />
       },
-      trialing: {
-        bg: 'bg-blue-100 dark:bg-blue-900/30',
-        text: 'text-blue-800 dark:text-blue-300',
-        icon: <Clock className="w-3 h-3" />
-      },
       trial: {
         bg: 'bg-blue-100 dark:bg-blue-900/30',
         text: 'text-blue-800 dark:text-blue-300',
@@ -254,10 +242,25 @@ export default function AdminBillingDashboard() {
         text: 'text-indigo-800 dark:text-indigo-300',
         icon: <Clock className="w-3 h-3" />
       },
+      pending_payment: {
+        bg: 'bg-amber-100 dark:bg-amber-900/30',
+        text: 'text-amber-800 dark:text-amber-300',
+        icon: <AlertCircle className="w-3 h-3" />
+      },
       past_due: {
         bg: 'bg-yellow-100 dark:bg-yellow-900/30',
         text: 'text-yellow-800 dark:text-yellow-300',
         icon: <AlertCircle className="w-3 h-3" />
+      },
+      suspended: {
+        bg: 'bg-red-100 dark:bg-red-900/30',
+        text: 'text-red-800 dark:text-red-300',
+        icon: <XCircle className="w-3 h-3" />
+      },
+      expired: {
+        bg: 'bg-amber-100 dark:bg-amber-900/30',
+        text: 'text-amber-800 dark:text-amber-300',
+        icon: <Clock className="w-3 h-3" />
       },
       canceled: {
         bg: 'bg-red-100 dark:bg-red-900/30',
@@ -506,7 +509,10 @@ export default function AdminBillingDashboard() {
                   <option value="active">Active</option>
                   <option value="trial">Trial</option>
                   <option value="pending_checkout">Pending Checkout</option>
+                  <option value="pending_payment">Pending Payment</option>
                   <option value="past_due">Past Due</option>
+                  <option value="expired">Expired</option>
+                  <option value="suspended">Suspended</option>
                   <option value="cancelled">Cancelled</option>
                   <option value="unknown">Unknown</option>
                 </select>

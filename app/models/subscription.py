@@ -11,6 +11,7 @@ class SubscriptionStatus(str, Enum):
     machine (P0-12).  The state machine validates transitions — see
     docs/P0_ARCHITECTURAL_REFACTORS.md for the full transition graph.
     """
+    PENDING_CHECKOUT = "pending_checkout"
     PENDING_PAYMENT = "pending_payment"
     TRIAL = "trial"
     TRIAL_EXPIRING = "trial_expiring"
@@ -19,6 +20,58 @@ class SubscriptionStatus(str, Enum):
     CANCELLED = "cancelled"
     EXPIRED = "expired"
     SUSPENDED = "suspended"
+
+
+SUBSCRIPTION_STATUS_ALIASES = {
+    "trialing": SubscriptionStatus.TRIAL.value,
+    "canceled": SubscriptionStatus.CANCELLED.value,
+    "cancelled": SubscriptionStatus.CANCELLED.value,
+    "incomplete": SubscriptionStatus.PENDING_PAYMENT.value,
+    "incomplete_expired": SubscriptionStatus.EXPIRED.value,
+    "unpaid": SubscriptionStatus.SUSPENDED.value,
+}
+
+ACTIVE_SUBSCRIPTION_STATUSES = frozenset(
+    {
+        SubscriptionStatus.ACTIVE.value,
+        SubscriptionStatus.TRIAL.value,
+        SubscriptionStatus.TRIAL_EXPIRING.value,
+    }
+)
+
+PLANNER_BLOCKED_SUBSCRIPTION_STATUSES = frozenset(
+    {
+        SubscriptionStatus.PENDING_CHECKOUT.value,
+        SubscriptionStatus.PENDING_PAYMENT.value,
+        SubscriptionStatus.PAST_DUE.value,
+        SubscriptionStatus.CANCELLED.value,
+        SubscriptionStatus.EXPIRED.value,
+        SubscriptionStatus.SUSPENDED.value,
+        "inactive",
+        "pending",
+    }
+)
+
+PUBLIC_CHECKOUT_ALLOWED_STATUSES = frozenset(
+    {
+        SubscriptionStatus.PENDING_PAYMENT.value,
+        SubscriptionStatus.PENDING_CHECKOUT.value,
+        SubscriptionStatus.EXPIRED.value,
+    }
+)
+
+
+def normalize_subscription_status(status: Optional[str]) -> Optional[str]:
+    """Return the canonical internal subscription status string."""
+
+    if status is None:
+        return None
+
+    normalized = status.strip().lower()
+    if not normalized:
+        return None
+
+    return SUBSCRIPTION_STATUS_ALIASES.get(normalized, normalized)
 
 
 class BillingInterval(str, Enum):

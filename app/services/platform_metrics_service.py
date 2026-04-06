@@ -19,6 +19,7 @@ try:  # pragma: no cover - optional Motor runtime
 except ImportError:  # pragma: no cover - Motor not installed in tests
     AsyncIOMotorCollection = None  # type: ignore[assignment,misc]
 from app.core.database import mongo
+from app.models.subscription import normalize_subscription_status
 
 logger = logging.getLogger(__name__)
 
@@ -228,14 +229,10 @@ class PlatformMetricsService:
         total_subscriptions_task = asyncio.create_task(
             self._count_documents(subscriptions_collection, {})
         )
-        status_aliases = {
-            "canceled": "cancelled",
-            "trialing": "trial",
-        }
         status_breakdown: Dict[str, int] = {}
         for doc in status_docs:
             raw_status = str(doc.get("_id") or "").strip()
-            canonical_status = status_aliases.get(raw_status, raw_status or "unknown")
+            canonical_status = normalize_subscription_status(raw_status) or "unknown"
             status_breakdown[canonical_status] = (
                 status_breakdown.get(canonical_status, 0) + int(doc.get("count", 0))
             )

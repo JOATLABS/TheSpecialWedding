@@ -8,6 +8,7 @@ from pydantic import BaseModel, Field
 import stripe
 from app.services.stripe_service import stripe_service
 from app.dependencies.auth_extended import require_admin_or_planner, ExtendedAuthUser
+from app.models.subscription import ACTIVE_SUBSCRIPTION_STATUSES, PUBLIC_CHECKOUT_ALLOWED_STATUSES, normalize_subscription_status
 import logging
 
 logger = logging.getLogger(__name__)
@@ -77,6 +78,15 @@ async def create_checkout_session(
     """
     try:
         user_id = str(current_user.user_data.get("_id"))
+        current_status = normalize_subscription_status(
+            current_user.user_data.get("subscription_status") or current_user.subscription_status
+        )
+
+        if current_status in ACTIVE_SUBSCRIPTION_STATUSES or current_status == "past_due":
+            raise HTTPException(
+                status_code=409,
+                detail="Your account already has an active billing relationship. Use the billing portal to manage or update it."
+            )
 
         session = await stripe_service.create_checkout_session(
             user_id=user_id,
@@ -114,7 +124,8 @@ async def create_public_checkout_session(
         if not pending_user:
             raise HTTPException(status_code=400, detail="Unable to create checkout session. Please check your email and try again.")
 
-        if pending_user.get("subscription_status") not in ["pending_payment", "trial", "active"]:
+        pending_status = normalize_subscription_status(pending_user.get("subscription_status"))
+        if pending_status not in PUBLIC_CHECKOUT_ALLOWED_STATUSES:
             raise HTTPException(status_code=400, detail="Unable to create checkout session. Please check your email and try again.")
 
         session = await stripe_service.create_checkout_session(
