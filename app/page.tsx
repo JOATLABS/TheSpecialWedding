@@ -490,8 +490,8 @@ function LandingContent({
         <section className="relative mx-auto max-w-5xl px-6 py-16 sm:px-10">
           <div className="grid gap-6 md:grid-cols-2">
             {testimonials.map((t) => (
-              <blockquote key={t.name} className="rounded-[2rem] border border-white/10 bg-white/5 p-8 backdrop-blur-xl">
-                <p className="text-lg text-white">&ldquo;{t.quote}&rdquo;</p>
+              <blockquote key={t.name} className="rounded-[2rem] border border-white/10 bg-white/5 p-8 backdrop-blur-xl" suppressHydrationWarning>
+                <p className="text-lg text-white" suppressHydrationWarning>&ldquo;{t.quote}&rdquo;</p>
                 <p className="mt-6 text-xs font-semibold uppercase tracking-[0.3em] text-wedding-rose">{t.name}</p>
                 <p className="mt-1 text-[11px] uppercase tracking-[0.4em] text-slate-300">{t.role}</p>
               </blockquote>
