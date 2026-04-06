@@ -426,89 +426,6 @@ const SaasAdminDashboard = () => {
     }
   }, [searchParams]);
 
-  // ── Vendor Data tab helpers ──────────────────────────────────────────────
-  const fetchVendors = useCallback(async () => {
-    if (!token) return;
-    try {
-      setVendorLoading(true);
-      const data = await getVendorDirectory(token, { limit: 5000 });
-      setVendors(data);
-    } catch (err: any) {
-      console.error('Failed to fetch vendors:', err);
-      toast.error(err.message || 'Failed to load vendor directory');
-    } finally {
-      setVendorLoading(false);
-    }
-  }, [token]);
-
-  // Fetch vendors when switching to the vendor-data tab
-  useEffect(() => {
-    if (activeTab === 'vendor-data' && vendors.length === 0 && !vendorLoading) {
-      fetchVendors();
-    }
-  }, [activeTab, vendors.length, vendorLoading, fetchVendors]);
-
-  const handleDeleteVendor = useCallback(async (vendorId: string, businessName: string) => {
-    if (!token) return;
-    if (!confirm(`Delete "${businessName}" from the vendor directory? This cannot be undone.`)) return;
-    try {
-      setDeletingVendorId(vendorId);
-      await deleteVendorProfile(token, vendorId);
-      setVendors((prev) => prev.filter((v) => v._id !== vendorId));
-      toast.success(`Deleted "${businessName}"`);
-    } catch (err: any) {
-      toast.error(err.message || 'Failed to delete vendor');
-    } finally {
-      setDeletingVendorId(null);
-    }
-  }, [token]);
-
-  const vendorStats = useMemo(() => {
-    const byCategory: Record<string, number> = {};
-    const byState: Record<string, number> = {};
-    for (const v of vendors) {
-      const cat = v.service_category || 'unknown';
-      byCategory[cat] = (byCategory[cat] || 0) + 1;
-      const st = v.state || 'Unknown';
-      byState[st] = (byState[st] || 0) + 1;
-    }
-    return {
-      total: vendors.length,
-      categories: Object.keys(byCategory).length,
-      states: Object.keys(byState).length,
-      byCategory: Object.entries(byCategory).sort((a, b) => b[1] - a[1]),
-      byState: Object.entries(byState).sort((a, b) => b[1] - a[1]),
-    };
-  }, [vendors]);
-
-  const filteredVendors = useMemo(() => {
-    let list = vendors;
-    if (vendorCategoryFilter) {
-      list = list.filter((v) => v.service_category === vendorCategoryFilter);
-    }
-    if (vendorSearch.trim()) {
-      const q = vendorSearch.toLowerCase();
-      list = list.filter(
-        (v) =>
-          v.business_name.toLowerCase().includes(q) ||
-          (v.city || '').toLowerCase().includes(q) ||
-          (v.state || '').toLowerCase().includes(q) ||
-          (v.email || '').toLowerCase().includes(q)
-      );
-    }
-    return list;
-  }, [vendors, vendorCategoryFilter, vendorSearch]);
-
-  const pagedVendors = useMemo(() => {
-    const start = vendorPage * VENDOR_PAGE_SIZE;
-    return filteredVendors.slice(start, start + VENDOR_PAGE_SIZE);
-  }, [filteredVendors, vendorPage]);
-
-  const vendorTotalPages = Math.max(1, Math.ceil(filteredVendors.length / VENDOR_PAGE_SIZE));
-
-  const categoryLabel = (cat: string) =>
-    cat.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
-
   // Refetch only platform metrics when timeframe changes (without re-fetching plans/planners)
   const fetchMetricsOnly = useCallback(async (tf: TimeframeKey) => {
     try {
@@ -1464,6 +1381,10 @@ const SaasAdminDashboard = () => {
 
  {activeTab === 'ad-config' && (
    <AdPlatformConfigTab />
+ )}
+
+ {activeTab === 'vendor-data' && (
+   <VendorDataTab />
  )}
 
  </div>
@@ -2536,6 +2457,330 @@ function AdPlatformConfigTab() {
             )}
           </Card>
         </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Vendor Data Tab ────────────────────────────────────────────────────────
+
+const VENDOR_PAGE_SIZE = 25;
+
+const vendorCategoryLabel = (cat: string) =>
+  cat.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
+
+function VendorDataTab() {
+  const { token } = useAdmin();
+  const [showImportModal, setShowImportModal] = useState(false);
+  const [vendors, setVendors] = useState<VendorProfile[]>([]);
+  const [vendorLoading, setVendorLoading] = useState(false);
+  const [vendorSearch, setVendorSearch] = useState('');
+  const [vendorCategoryFilter, setVendorCategoryFilter] = useState('');
+  const [vendorPage, setVendorPage] = useState(0);
+  const [expandedVendorId, setExpandedVendorId] = useState<string | null>(null);
+  const [deletingVendorId, setDeletingVendorId] = useState<string | null>(null);
+
+  const fetchVendors = useCallback(async () => {
+    if (!token) return;
+    try {
+      setVendorLoading(true);
+      const data = await getVendorDirectory(token, { limit: 5000 });
+      setVendors(data);
+    } catch (err: any) {
+      console.error('Failed to fetch vendors:', err);
+      toast.error(err.message || 'Failed to load vendor directory');
+    } finally {
+      setVendorLoading(false);
+    }
+  }, [token]);
+
+  // Auto-fetch on mount
+  useEffect(() => {
+    fetchVendors();
+  }, [fetchVendors]);
+
+  const handleDeleteVendor = useCallback(async (vendorId: string, businessName: string) => {
+    if (!token) return;
+    if (!confirm(`Delete "${businessName}" from the vendor directory? This cannot be undone.`)) return;
+    try {
+      setDeletingVendorId(vendorId);
+      await deleteVendorProfile(token, vendorId);
+      setVendors((prev) => prev.filter((v) => v._id !== vendorId));
+      toast.success(`Deleted "${businessName}"`);
+    } catch (err: any) {
+      toast.error(err.message || 'Failed to delete vendor');
+    } finally {
+      setDeletingVendorId(null);
+    }
+  }, [token]);
+
+  const vendorStats = useMemo(() => {
+    const byCategory: Record<string, number> = {};
+    const byState: Record<string, number> = {};
+    for (const v of vendors) {
+      const cat = v.service_category || 'unknown';
+      byCategory[cat] = (byCategory[cat] || 0) + 1;
+      const st = v.state || 'Unknown';
+      byState[st] = (byState[st] || 0) + 1;
+    }
+    return {
+      total: vendors.length,
+      categories: Object.keys(byCategory).length,
+      states: Object.keys(byState).length,
+      byCategory: Object.entries(byCategory).sort((a, b) => b[1] - a[1]),
+      byState: Object.entries(byState).sort((a, b) => b[1] - a[1]),
+    };
+  }, [vendors]);
+
+  const filteredVendors = useMemo(() => {
+    let list = vendors;
+    if (vendorCategoryFilter) {
+      list = list.filter((v) => v.service_category === vendorCategoryFilter);
+    }
+    if (vendorSearch.trim()) {
+      const q = vendorSearch.toLowerCase();
+      list = list.filter(
+        (v) =>
+          v.business_name.toLowerCase().includes(q) ||
+          (v.city || '').toLowerCase().includes(q) ||
+          (v.state || '').toLowerCase().includes(q) ||
+          (v.email || '').toLowerCase().includes(q)
+      );
+    }
+    return list;
+  }, [vendors, vendorCategoryFilter, vendorSearch]);
+
+  const pagedVendors = useMemo(() => {
+    const start = vendorPage * VENDOR_PAGE_SIZE;
+    return filteredVendors.slice(start, start + VENDOR_PAGE_SIZE);
+  }, [filteredVendors, vendorPage]);
+
+  const vendorTotalPages = Math.max(1, Math.ceil(filteredVendors.length / VENDOR_PAGE_SIZE));
+
+  return (
+    <div className="space-y-6">
+      {/* Header row */}
+      <div className="flex items-center justify-between">
+        <div>
+          <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100">Vendor Directory</h3>
+          <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
+            Import scraped vendor JSON or manage existing vendors.
+          </p>
+        </div>
+        <div className="flex items-center gap-3">
+          <button
+            onClick={fetchVendors}
+            disabled={vendorLoading}
+            className="flex items-center gap-2 px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
+          >
+            <RefreshCw className={`w-4 h-4 ${vendorLoading ? 'animate-spin' : ''}`} />
+            Refresh
+          </button>
+          <button
+            onClick={() => setShowImportModal(true)}
+            className="flex items-center gap-2 px-4 py-2 border-2 border-dashed border-rose-300 text-rose-500 rounded-lg text-sm font-semibold hover:bg-rose-50 transition-colors dark:border-rose-700 dark:text-rose-400 dark:hover:bg-rose-900/20"
+          >
+            <Upload className="w-4 h-4" />
+            Import Vendors (JSON)
+          </button>
+        </div>
+      </div>
+
+      {/* Stats cards */}
+      <div className="grid grid-cols-3 gap-4">
+        <Card className="p-4">
+          <div className="text-sm text-gray-500 dark:text-gray-400">Total Vendors</div>
+          <div className="text-2xl font-bold text-gray-900 dark:text-gray-100 mt-1">
+            {vendorLoading ? '...' : vendorStats.total.toLocaleString()}
+          </div>
+        </Card>
+        <Card className="p-4">
+          <div className="text-sm text-gray-500 dark:text-gray-400">Categories</div>
+          <div className="text-2xl font-bold text-gray-900 dark:text-gray-100 mt-1">
+            {vendorLoading ? '...' : vendorStats.categories}
+          </div>
+        </Card>
+        <Card className="p-4">
+          <div className="text-sm text-gray-500 dark:text-gray-400">States</div>
+          <div className="text-2xl font-bold text-gray-900 dark:text-gray-100 mt-1">
+            {vendorLoading ? '...' : vendorStats.states}
+          </div>
+        </Card>
+      </div>
+
+      {/* Category breakdown */}
+      {vendorStats.byCategory.length > 0 && (
+        <Card className="p-4">
+          <h4 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">By Category</h4>
+          <div className="flex flex-wrap gap-2">
+            {vendorStats.byCategory.map(([cat, count]) => (
+              <button
+                key={cat}
+                onClick={() => { setVendorCategoryFilter(vendorCategoryFilter === cat ? '' : cat); setVendorPage(0); }}
+                className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${
+                  vendorCategoryFilter === cat
+                    ? 'bg-rose-100 text-rose-700 dark:bg-rose-900/30 dark:text-rose-300'
+                    : 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700'
+                }`}
+              >
+                {vendorCategoryLabel(cat)}
+                <span className="text-[10px] opacity-70">({count})</span>
+              </button>
+            ))}
+          </div>
+        </Card>
+      )}
+
+      {/* Search bar */}
+      <div className="flex items-center gap-3">
+        <div className="relative flex-1">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+          <input
+            type="text"
+            placeholder="Search by name, city, state, or email..."
+            value={vendorSearch}
+            onChange={(e) => { setVendorSearch(e.target.value); setVendorPage(0); }}
+            className="w-full pl-10 pr-4 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 placeholder-gray-400 focus:ring-2 focus:ring-rose-500 focus:border-transparent"
+          />
+        </div>
+        <span className="text-sm text-gray-500 dark:text-gray-400 whitespace-nowrap">
+          {filteredVendors.length} vendor{filteredVendors.length !== 1 ? 's' : ''}
+          {vendorCategoryFilter && (
+            <button onClick={() => { setVendorCategoryFilter(''); setVendorPage(0); }} className="ml-2 text-rose-500 hover:text-rose-600 underline">
+              clear filter
+            </button>
+          )}
+        </span>
+      </div>
+
+      {/* Vendor list */}
+      {vendorLoading ? (
+        <div className="flex items-center justify-center py-16">
+          <RefreshCw className="w-6 h-6 animate-spin text-gray-400" />
+          <span className="ml-3 text-sm text-gray-500">Loading vendors...</span>
+        </div>
+      ) : pagedVendors.length === 0 ? (
+        <Card className="p-8 text-center">
+          <Store className="w-10 h-10 text-gray-300 dark:text-gray-600 mx-auto mb-3" />
+          <p className="text-sm text-gray-500 dark:text-gray-400">
+            {vendors.length === 0
+              ? 'No vendors imported yet. Use the Import button above to upload a JSON export.'
+              : 'No vendors match your search / filter.'}
+          </p>
+        </Card>
+      ) : (
+        <div className="space-y-2">
+          {pagedVendors.map((v) => {
+            const isExpanded = expandedVendorId === v._id;
+            return (
+              <Card key={v._id} className="overflow-hidden">
+                <button
+                  onClick={() => setExpandedVendorId(isExpanded ? null : v._id)}
+                  className="w-full flex items-center gap-4 px-4 py-3 text-left hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors"
+                >
+                  {v.logo_url ? (
+                    <img src={v.logo_url} alt="" className="w-8 h-8 rounded-full object-cover flex-shrink-0 bg-gray-100" />
+                  ) : (
+                    <div className="w-8 h-8 rounded-full bg-gray-100 dark:bg-gray-700 flex items-center justify-center flex-shrink-0">
+                      <Store className="w-4 h-4 text-gray-400" />
+                    </div>
+                  )}
+                  <div className="flex-1 min-w-0">
+                    <div className="text-sm font-medium text-gray-900 dark:text-gray-100 truncate">{v.business_name}</div>
+                    <div className="text-xs text-gray-500 dark:text-gray-400 truncate">
+                      {[v.city, v.state].filter(Boolean).join(', ') || 'No location'}
+                      {' · '}
+                      {vendorCategoryLabel(v.service_category)}
+                    </div>
+                  </div>
+                  {v.website && (
+                    <a
+                      href={v.website}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      onClick={(e) => e.stopPropagation()}
+                      className="text-gray-400 hover:text-rose-500 transition-colors"
+                      title="Open website"
+                    >
+                      <ExternalLink className="w-4 h-4" />
+                    </a>
+                  )}
+                  <button
+                    onClick={(e) => { e.stopPropagation(); handleDeleteVendor(v._id, v.business_name); }}
+                    disabled={deletingVendorId === v._id}
+                    className="text-gray-400 hover:text-red-500 transition-colors p-1"
+                    title="Delete vendor"
+                  >
+                    <Trash2 className={`w-4 h-4 ${deletingVendorId === v._id ? 'animate-pulse' : ''}`} />
+                  </button>
+                  {isExpanded ? <ChevronUp className="w-4 h-4 text-gray-400" /> : <ChevronDown className="w-4 h-4 text-gray-400" />}
+                </button>
+                {isExpanded && (
+                  <div className="px-4 pb-4 pt-1 border-t border-gray-100 dark:border-gray-700 grid grid-cols-2 gap-x-8 gap-y-2 text-sm">
+                    <div><span className="text-gray-500 dark:text-gray-400">Email:</span> <span className="text-gray-900 dark:text-gray-100">{v.email || '—'}</span></div>
+                    <div><span className="text-gray-500 dark:text-gray-400">Phone:</span> <span className="text-gray-900 dark:text-gray-100">{v.phone || '—'}</span></div>
+                    <div><span className="text-gray-500 dark:text-gray-400">Address:</span> <span className="text-gray-900 dark:text-gray-100">{v.address || '—'}</span></div>
+                    <div><span className="text-gray-500 dark:text-gray-400">Website:</span> {v.website ? <a href={v.website} target="_blank" rel="noopener noreferrer" className="text-rose-500 hover:underline truncate inline-block max-w-[200px] align-bottom">{v.website.replace(/^https?:\/\//, '')}</a> : <span className="text-gray-900 dark:text-gray-100">—</span>}</div>
+                    <div><span className="text-gray-500 dark:text-gray-400">Category:</span> <span className="text-gray-900 dark:text-gray-100">{vendorCategoryLabel(v.service_category)}</span></div>
+                    <div><span className="text-gray-500 dark:text-gray-400">Preferred:</span> <span className="text-gray-900 dark:text-gray-100">{v.is_preferred ? 'Yes' : 'No'}</span></div>
+                    {v.service_description && (
+                      <div className="col-span-2"><span className="text-gray-500 dark:text-gray-400">Description:</span> <span className="text-gray-900 dark:text-gray-100">{v.service_description}</span></div>
+                    )}
+                    {v.tags && v.tags.length > 0 && (
+                      <div className="col-span-2 flex items-center gap-1.5 flex-wrap">
+                        <span className="text-gray-500 dark:text-gray-400">Tags:</span>
+                        {v.tags.map((t) => (
+                          <span key={t} className="px-2 py-0.5 rounded-full bg-gray-100 dark:bg-gray-800 text-xs text-gray-600 dark:text-gray-300">{t}</span>
+                        ))}
+                      </div>
+                    )}
+                    <div className="col-span-2 text-xs text-gray-400 mt-1">ID: {v._id} · Created: {v.created_at ? new Date(v.created_at).toLocaleDateString() : '—'}</div>
+                  </div>
+                )}
+              </Card>
+            );
+          })}
+
+          {/* Pagination */}
+          {vendorTotalPages > 1 && (
+            <div className="flex items-center justify-between pt-2">
+              <button
+                disabled={vendorPage === 0}
+                onClick={() => setVendorPage((p) => Math.max(0, p - 1))}
+                className="px-3 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg disabled:opacity-40 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
+              >
+                Previous
+              </button>
+              <span className="text-sm text-gray-500 dark:text-gray-400">
+                Page {vendorPage + 1} of {vendorTotalPages}
+              </span>
+              <button
+                disabled={vendorPage >= vendorTotalPages - 1}
+                onClick={() => setVendorPage((p) => p + 1)}
+                className="px-3 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg disabled:opacity-40 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
+              >
+                Next
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Import Modal */}
+      {token && (
+        <VendorImportModal
+          isOpen={showImportModal}
+          onClose={() => setShowImportModal(false)}
+          token={token}
+          onImportComplete={(result) => {
+            toast.success(
+              `Import complete: ${result.inserted} inserted, ${result.updated} updated` +
+              (result.errors > 0 ? `, ${result.errors} errors` : '')
+            );
+            fetchVendors();
+            setShowImportModal(false);
+          }}
+        />
       )}
     </div>
   );
