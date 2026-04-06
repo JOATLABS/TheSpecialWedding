@@ -1338,12 +1338,12 @@ const addEvent = () => {
  <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4 mb-6">
  <h4 className="font-semibold text-blue-900 dark:text-blue-200 mb-2">Image Organization</h4>
  <p className="text-sm text-blue-800 dark:text-blue-300 mb-2">
- To keep wedding party photos separate from the public gallery, use these folder structures:
+ Gallery Manager now writes planner-scoped storage paths automatically. Legacy <code className="bg-blue-100 dark:bg-blue-800/50 px-1 rounded">folder/{wedding.slug}/...</code> keys still resolve, but new uploads should use the keys returned by Gallery Manager for this wedding.
  </p>
  <ul className="text-sm text-blue-700 dark:text-blue-300 space-y-1">
- <li>• <code className="bg-blue-100 dark:bg-blue-800/50 px-1 rounded">gallery/{wedding.slug}/</code> - Public gallery photos</li>
- <li>• <code className="bg-blue-100 dark:bg-blue-800/50 px-1 rounded">our-story/{wedding.slug}/</code> - Couple photos for story section</li>
- <li>• <code className="bg-blue-100 dark:bg-blue-800/50 px-1 rounded">wedding-party/{wedding.slug}/</code> - Wedding party member photos</li>
+ <li>• Gallery Manager keeps public gallery, story, and wedding-party assets separated automatically.</li>
+ <li>• Existing legacy keys remain valid during the migration window.</li>
+ <li>• For manual edits, paste the exact key from Gallery Manager instead of guessing the storage path.</li>
  </ul>
  </div>
 
@@ -1390,7 +1390,7 @@ const addEvent = () => {
  Couple Photo
  </label>
  <p className="text-sm text-gray-500 dark:text-gray-400 mb-2">
- Upload to gallery, then use format: our-story/{wedding.slug}/filename.jpg
+ Upload in Gallery Manager, then paste the exact returned key for the story image. Legacy keys still work, but new uploads are planner-scoped.
  </p>
  <input
  type="text"
@@ -1400,7 +1400,7 @@ const addEvent = () => {
  our_story: { ...wedding.our_story!, image_url: e.target.value }
  })}
  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100"
- placeholder="our-story/wedding-slug/image.jpg"
+ placeholder="Paste the Gallery Manager image key"
  />
  </div>
  </div>
@@ -1546,7 +1546,7 @@ const addEvent = () => {
  </div>
  <div className="md:col-span-2">
  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
- Photo (optional) - Use format: wedding-party/{wedding.slug}/name.jpg
+ Photo (optional) - Paste the exact Gallery Manager key for this member's image
  </label>
  <input
  type="text"
@@ -1557,7 +1557,7 @@ const addEvent = () => {
  setWedding({ ...wedding, wedding_party: updated });
  }}
  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100"
- placeholder="wedding-party/wedding-slug/member-photo.jpg"
+ placeholder="Paste the Gallery Manager member image key"
  />
  </div>
  <div className="flex items-end">

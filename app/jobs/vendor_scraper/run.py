@@ -136,8 +136,9 @@ async def run_scraper(
     all_states = get_states()
 
     try:
-        # Initialize MongoDB connection inside try so close() runs even on partial connect
-        await mongo.connect()
+        # Motor connects lazily on first DB operation — no explicit connect needed.
+        # Verify the connection is live before starting the scrape.
+        await mongo.test_connection()
         vendor_service = VendorService()
 
         # Filter to specific states if requested
@@ -185,7 +186,7 @@ async def run_scraper(
         logger.info(f"{'='*60}")
 
     finally:
-        await mongo.close()
+        mongo.close()
 
 
 def main():
