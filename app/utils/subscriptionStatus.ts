@@ -37,6 +37,8 @@ export const FRESH_CHECKOUT_SUBSCRIPTION_STATUSES = new Set([
   'pending_payment',
 ]);
 
+export type PlannerBillingEntryState = 'new_checkout' | 'portal_recovery' | 'dashboard';
+
 export function normalizeSubscriptionStatus(status?: string | null): string {
   const normalized = status?.trim().toLowerCase();
   if (!normalized) return 'unknown';
@@ -45,4 +47,36 @@ export function normalizeSubscriptionStatus(status?: string | null): string {
 
 export function isBlockedSubscriptionStatus(status?: string | null): boolean {
   return BLOCKED_SUBSCRIPTION_STATUSES.has(normalizeSubscriptionStatus(status));
+}
+
+export function getPlannerBillingEntryState(options: {
+  status?: string | null;
+  hasSubscription: boolean;
+  hasPlan: boolean;
+}): PlannerBillingEntryState {
+  const normalizedStatus = normalizeSubscriptionStatus(options.status);
+  const hasActiveBillingRelationship =
+    options.hasSubscription && ACTIVE_SUBSCRIPTION_STATUSES.has(normalizedStatus);
+  const needsPortalRecovery =
+    options.hasSubscription && BILLING_PORTAL_RECOVERY_SUBSCRIPTION_STATUSES.has(normalizedStatus);
+
+  if (hasActiveBillingRelationship) {
+    return 'dashboard';
+  }
+
+  if (needsPortalRecovery) {
+    return 'portal_recovery';
+  }
+
+  if (
+    !options.hasSubscription ||
+    !options.hasPlan ||
+    FRESH_CHECKOUT_SUBSCRIPTION_STATUSES.has(normalizedStatus) ||
+    (BLOCKED_SUBSCRIPTION_STATUSES.has(normalizedStatus) &&
+      !BILLING_PORTAL_RECOVERY_SUBSCRIPTION_STATUSES.has(normalizedStatus))
+  ) {
+    return 'new_checkout';
+  }
+
+  return 'dashboard';
 }

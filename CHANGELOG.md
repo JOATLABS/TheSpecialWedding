@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.28.3] - 2026-04-06
+
+### Fixed
+
+- **Root-admin notification inbox/read-state wiring** (`/app/admin/components/TopHeader.tsx`, `/app/admin/notifications/page.tsx`) — Fixed the root-admin bell taking users to the platform send/history screen instead of their own unread notification inbox. Root admins now land on a dedicated inbox tab backed by `/admin/user/notifications`, can mark alerts as read there, and keep the bell badge in sync with the actual unread state instead of being stranded with a badge that could not be cleared from the UI.
+- **Planner reminders issue remediation flow** (`/app/admin/reminders/page.tsx`) — The reminders screen now correctly parses planner weddings, auto-selects the first available wedding, loads the matching guests with the current paginated guest API shape, and surfaces actionable issue drill-downs for unreachable guests, invalid/unreachable phone numbers, and SMS opt-outs. Each issue block now exposes the affected guests plus deep links into guest management so planners can fix the exact records instead of seeing only aggregate warning counts. Also corrected the admin plus-one fetch path from `/admin/plus-ones/...` to the mounted `/admin/plus-one/...` route to remove the silent 404 on the reminders screen.
+- **Server-side guest filtering for planner guest management** (`/app/admin/guests/page.tsx`, `/app/api/guest.py`, `/app/services/guest_service.py`, `/app/core/database_indexes.py`, `/app/admin/utils/guestListResponse.ts`) — Replaced the page-local `All / RSVP'd / Awaiting RSVP` button filters with server-backed column filters and sorting for name, email, phone, group, RSVP state, plus-one state, phone-health, and SMS preference. The guest list now queries the full wedding dataset instead of filtering only the current page slice, returns consistent summary/filter metadata for the planner dashboard cards, and uses wedding-scoped Mongo indexes to keep the planner experience viable as guest counts grow.
+
 ## [2.28.2] - 2026-04-05
 
 ### Fixed

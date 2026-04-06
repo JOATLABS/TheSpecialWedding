@@ -428,7 +428,7 @@ class VendorService:
 
     async def get_vendor_profiles(
         self,
-        created_by: str,
+        created_by: Optional[str] = None,
         category: Optional[str] = None,
         is_preferred: Optional[bool] = None,
         search: Optional[str] = None,
@@ -436,9 +436,11 @@ class VendorService:
         skip: int = 0,
         limit: int = 50
     ) -> List[dict]:
-        """Get vendor profiles for a planner with filtering"""
+        """Get vendor profiles with filtering. If created_by is None, returns all active vendors."""
         try:
-            query = {"created_by": created_by, "is_active": True}
+            query: dict = {"is_active": True}
+            if created_by is not None:
+                query["created_by"] = created_by
 
             if category:
                 query["service_category"] = category
@@ -501,12 +503,13 @@ class VendorService:
             logger.error(f"Error fetching vendor profile: {str(e)}")
             raise HTTPException(status_code=500, detail="Failed to fetch vendor")
 
-    async def update_vendor_profile(self, vendor_id: str, data: dict, created_by: str) -> dict:
-        """Update a vendor profile"""
+    async def update_vendor_profile(self, vendor_id: str, data: dict, created_by: Optional[str] = None) -> dict:
+        """Update a vendor profile. If created_by is None, updates any vendor (root admin)."""
         try:
-            existing = await self.vendor_profiles.find_one(
-                {"_id": ObjectId(vendor_id), "created_by": created_by}
-            )
+            query: dict = {"_id": ObjectId(vendor_id)}
+            if created_by is not None:
+                query["created_by"] = created_by
+            existing = await self.vendor_profiles.find_one(query)
             if not existing:
                 raise HTTPException(status_code=404, detail="Vendor not found")
 
@@ -516,7 +519,7 @@ class VendorService:
             update_data["updated_at"] = datetime.now(timezone.utc)
 
             result = await self.vendor_profiles.find_one_and_update(
-                {"_id": ObjectId(vendor_id), "created_by": created_by},
+                query,
                 {"$set": update_data},
                 return_document=True
             )
@@ -541,11 +544,14 @@ class VendorService:
             logger.error(f"Failed to update vendor profile: {str(e)}")
             raise HTTPException(status_code=500, detail="Failed to update vendor")
 
-    async def delete_vendor_profile(self, vendor_id: str, created_by: str) -> dict:
-        """Soft delete a vendor profile"""
+    async def delete_vendor_profile(self, vendor_id: str, created_by: Optional[str] = None) -> dict:
+        """Soft delete a vendor profile. If created_by is None, deletes any vendor (root admin)."""
         try:
+            query: dict = {"_id": ObjectId(vendor_id)}
+            if created_by is not None:
+                query["created_by"] = created_by
             result = await self.vendor_profiles.find_one_and_update(
-                {"_id": ObjectId(vendor_id), "created_by": created_by},
+                query,
                 {"$set": {"is_active": False, "updated_at": datetime.now(timezone.utc)}},
                 return_document=True
             )

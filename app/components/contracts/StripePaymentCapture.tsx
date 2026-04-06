@@ -13,14 +13,12 @@ import { getStripeClient, preloadStripeClient } from '@/utils/stripeClient';
 
 interface PaymentCaptureFormProps {
   clientSecret: string;
-  customerId?: string;
   onPaymentMethodCaptured: (paymentData: PaymentMethodData) => void | Promise<void>;
   onError: (error: string) => void;
   disabled?: boolean;
 }
 
 export interface PaymentMethodData {
-  customerId: string;
   paymentMethodId: string;
   last4: string;
   brand: string;
@@ -29,7 +27,6 @@ export interface PaymentMethodData {
 
 function PaymentCaptureForm({
   clientSecret,
-  customerId,
   onPaymentMethodCaptured,
   onError,
   disabled = false
@@ -73,15 +70,7 @@ function PaymentCaptureForm({
         const paymentMethodId = setupIntent.payment_method;
 
         if (typeof paymentMethodId === 'string') {
-          if (!customerId) {
-            setError('Unable to attach this payment method to a customer record');
-            onError('Unable to attach this payment method to a customer record');
-            setLoading(false);
-            return;
-          }
-
           await onPaymentMethodCaptured({
-            customerId,
             paymentMethodId,
             last4: '****',
             brand: 'card',
@@ -174,7 +163,6 @@ function PaymentCaptureForm({
 
 interface StripePaymentCaptureProps {
   clientSecret: string;
-  customerId?: string;
   onPaymentMethodCaptured: (paymentData: PaymentMethodData) => void | Promise<void>;
   onError: (error: string) => void;
   disabled?: boolean;
@@ -182,7 +170,6 @@ interface StripePaymentCaptureProps {
 
 export default function StripePaymentCapture({
   clientSecret,
-  customerId,
   onPaymentMethodCaptured,
   onError,
   disabled = false
@@ -279,7 +266,6 @@ export default function StripePaymentCapture({
     >
       <PaymentCaptureForm
         clientSecret={clientSecret}
-        customerId={customerId}
         onPaymentMethodCaptured={onPaymentMethodCaptured}
         onError={onError}
         disabled={disabled}

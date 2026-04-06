@@ -5,6 +5,7 @@ import {
   BILLING_PORTAL_RECOVERY_SUBSCRIPTION_STATUSES,
   BLOCKED_SUBSCRIPTION_STATUSES,
   FRESH_CHECKOUT_SUBSCRIPTION_STATUSES,
+  getPlannerBillingEntryState,
   isBlockedSubscriptionStatus,
   normalizeSubscriptionStatus,
 } from '@/utils/subscriptionStatus';
@@ -30,4 +31,51 @@ test('status buckets separate fresh checkout from billing-portal recovery', () =
   assert.equal(FRESH_CHECKOUT_SUBSCRIPTION_STATUSES.has('past_due'), false);
   assert.equal(BILLING_PORTAL_RECOVERY_SUBSCRIPTION_STATUSES.has('past_due'), true);
   assert.equal(BILLING_PORTAL_RECOVERY_SUBSCRIPTION_STATUSES.has('suspended'), true);
+});
+
+test('planner billing entry state preserves portal recovery when plan lookup fails', () => {
+  assert.equal(
+    getPlannerBillingEntryState({
+      status: 'past_due',
+      hasSubscription: true,
+      hasPlan: false,
+    }),
+    'portal_recovery',
+  );
+
+  assert.equal(
+    getPlannerBillingEntryState({
+      status: 'pending_checkout',
+      hasSubscription: true,
+      hasPlan: false,
+    }),
+    'new_checkout',
+  );
+
+  assert.equal(
+    getPlannerBillingEntryState({
+      status: 'active',
+      hasSubscription: true,
+      hasPlan: false,
+    }),
+    'dashboard',
+  );
+
+  assert.equal(
+    getPlannerBillingEntryState({
+      status: 'trial',
+      hasSubscription: true,
+      hasPlan: false,
+    }),
+    'dashboard',
+  );
+
+  assert.equal(
+    getPlannerBillingEntryState({
+      status: 'active',
+      hasSubscription: true,
+      hasPlan: true,
+    }),
+    'dashboard',
+  );
 });

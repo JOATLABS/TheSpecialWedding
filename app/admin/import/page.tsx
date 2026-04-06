@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { getApiBaseUrl } from '@/utils/env';
 import { useAdmin } from '@/contexts/AdminContext';
 import { Card } from '@/components/ui/Card';
+import { extractGuestList } from '@/admin/utils/guestListResponse';
 import PageHeader from '../components/PageHeader';
 
 interface Wedding {
@@ -73,7 +74,7 @@ export default function AdminImportPage() {
  try {
  const baseUrl = getApiBaseUrl();
  const response = await fetch(
- `${baseUrl}/admin/guests?wedding_id=${selectedWedding}`,
+ `${baseUrl}/admin/guests?wedding_id=${selectedWedding}&fetch_all=true`,
  {
  headers: {
  'Authorization': `Bearer ${token}`,
@@ -86,7 +87,7 @@ export default function AdminImportPage() {
  }
 
  const data = await response.json();
- setGuests(Array.isArray(data) ? data : []);
+ setGuests(extractGuestList<Guest>(data));
  } catch (err) {
  console.error('Error fetching guests:', err);
  setError('Failed to load guests');

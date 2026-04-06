@@ -52,7 +52,6 @@ export async function preloadStripeClient(): Promise<void> {
 export interface ResolvedSetupIntent {
   id: string;
   paymentMethodId: string;
-  customerId?: string;
 }
 
 export async function retrieveSucceededSetupIntent(
@@ -80,6 +79,5 @@ export async function retrieveSucceededSetupIntent(
   return {
     id: setupIntent.id,
     paymentMethodId: setupIntent.payment_method,
-    customerId: typeof setupIntent.customer === 'string' ? setupIntent.customer : undefined,
   };
 }

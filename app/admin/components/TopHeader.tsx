@@ -114,9 +114,9 @@ export default function TopHeader({ onMenuClick, title }: TopHeaderProps) {
             )}
           </button>
 
-          {/* Notifications - links to history tab for root admin to see sent/received notifications */}
+          {/* Notifications */}
           <Link
-            href="/admin/notifications?tab=history"
+            href={userProfile?.is_root_admin ? '/admin/notifications?tab=inbox' : '/admin/notifications?tab=history'}
             className="p-2 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors relative"
             aria-label={`Notifications${unreadCount > 0 ? ` (${unreadCount} unread)` : ''}`}
             title={`View notifications${unreadCount > 0 ? ` (${unreadCount} unread)` : ''}`}

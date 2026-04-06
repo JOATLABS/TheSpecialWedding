@@ -8,10 +8,10 @@ import { Card } from '../../components/ui/Card';
 import { formatDate, formatDateTime } from '@/utils/dateFormat';
 import PageHeader from '../components/PageHeader';
 import { toast } from 'sonner';
-import { Settings, Download, Database, RefreshCw, Save, TrendingUp, TrendingDown, Minus, Activity, Users, Zap, DollarSign, Upload, Store, Trash2, Search, ChevronDown, ChevronUp, ExternalLink } from 'lucide-react';
+import { Settings, Download, Database, RefreshCw, Save, TrendingUp, TrendingDown, Minus, Activity, Users, Zap, DollarSign, Upload, Store, Trash2, Search, ChevronDown, ChevronUp, ExternalLink, Pencil, X } from 'lucide-react';
 import { fetchBehavioralAnalytics, type BehavioralAnalyticsResponse } from '@/services/behavioralAnalyticsApi';
 import VendorImportModal from '@/components/vendor/VendorImportModal';
-import { getVendorDirectory, deleteVendorProfile, type VendorProfile } from '@/services/vendorManagementApi';
+import { getVendorDirectory, deleteVendorProfile, updateVendorProfile, type VendorProfile } from '@/services/vendorManagementApi';
 import {
   getAdminConfig,
   getAdminPipelineStatus,
@@ -2479,13 +2479,25 @@ function VendorDataTab() {
   const [vendorPage, setVendorPage] = useState(0);
   const [expandedVendorId, setExpandedVendorId] = useState<string | null>(null);
   const [deletingVendorId, setDeletingVendorId] = useState<string | null>(null);
+  const [editingVendorId, setEditingVendorId] = useState<string | null>(null);
+  const [editForm, setEditForm] = useState<Partial<VendorProfile>>({});
+  const [savingEdit, setSavingEdit] = useState(false);
 
   const fetchVendors = useCallback(async () => {
     if (!token) return;
     try {
       setVendorLoading(true);
-      const data = await getVendorDirectory(token, { limit: 5000 });
-      setVendors(data);
+      const PAGE = 100;
+      let all: VendorProfile[] = [];
+      let skip = 0;
+      // Paginate through all vendors (backend caps at 100 per request)
+      while (true) {
+        const batch = await getVendorDirectory(token, { limit: PAGE, skip });
+        all = all.concat(batch);
+        if (batch.length < PAGE) break;
+        skip += PAGE;
+      }
+      setVendors(all);
     } catch (err: any) {
       console.error('Failed to fetch vendors:', err);
       toast.error(err.message || 'Failed to load vendor directory');
@@ -2513,6 +2525,43 @@ function VendorDataTab() {
       setDeletingVendorId(null);
     }
   }, [token]);
+
+  const startEditing = useCallback((v: VendorProfile) => {
+    setEditingVendorId(v._id);
+    setEditForm({
+      business_name: v.business_name,
+      email: v.email,
+      phone: v.phone || '',
+      website: v.website || '',
+      address: v.address || '',
+      city: v.city || '',
+      state: v.state || '',
+      service_category: v.service_category,
+      service_description: v.service_description || '',
+      is_preferred: v.is_preferred,
+    });
+  }, []);
+
+  const cancelEditing = useCallback(() => {
+    setEditingVendorId(null);
+    setEditForm({});
+  }, []);
+
+  const handleSaveEdit = useCallback(async () => {
+    if (!token || !editingVendorId) return;
+    try {
+      setSavingEdit(true);
+      const updated = await updateVendorProfile(token, editingVendorId, editForm);
+      setVendors((prev) => prev.map((v) => v._id === editingVendorId ? { ...v, ...updated } : v));
+      toast.success('Vendor updated');
+      setEditingVendorId(null);
+      setEditForm({});
+    } catch (err: any) {
+      toast.error(err.message || 'Failed to update vendor');
+    } finally {
+      setSavingEdit(false);
+    }
+  }, [token, editingVendorId, editForm]);
 
   const vendorStats = useMemo(() => {
     const byCategory: Record<string, number> = {};
@@ -2674,9 +2723,12 @@ function VendorDataTab() {
             const isExpanded = expandedVendorId === v._id;
             return (
               <Card key={v._id} className="overflow-hidden">
-                <button
+                <div
+                  role="button"
+                  tabIndex={0}
                   onClick={() => setExpandedVendorId(isExpanded ? null : v._id)}
-                  className="w-full flex items-center gap-4 px-4 py-3 text-left hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors"
+                  onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setExpandedVendorId(isExpanded ? null : v._id); } }}
+                  className="w-full flex items-center gap-4 px-4 py-3 text-left hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors cursor-pointer"
                 >
                   {v.logo_url ? (
                     <img src={v.logo_url} alt="" className="w-8 h-8 rounded-full object-cover flex-shrink-0 bg-gray-100" />
@@ -2706,6 +2758,13 @@ function VendorDataTab() {
                     </a>
                   )}
                   <button
+                    onClick={(e) => { e.stopPropagation(); setExpandedVendorId(v._id); startEditing(v); }}
+                    className="text-gray-400 hover:text-blue-500 transition-colors p-1"
+                    title="Edit vendor"
+                  >
+                    <Pencil className="w-4 h-4" />
+                  </button>
+                  <button
                     onClick={(e) => { e.stopPropagation(); handleDeleteVendor(v._id, v.business_name); }}
                     disabled={deletingVendorId === v._id}
                     className="text-gray-400 hover:text-red-500 transition-colors p-1"
@@ -2714,8 +2773,80 @@ function VendorDataTab() {
                     <Trash2 className={`w-4 h-4 ${deletingVendorId === v._id ? 'animate-pulse' : ''}`} />
                   </button>
                   {isExpanded ? <ChevronUp className="w-4 h-4 text-gray-400" /> : <ChevronDown className="w-4 h-4 text-gray-400" />}
-                </button>
-                {isExpanded && (
+                </div>
+                {isExpanded && editingVendorId === v._id ? (
+                  /* ── Inline Edit Form ── */
+                  <div className="px-4 pb-4 pt-3 border-t border-gray-100 dark:border-gray-700 space-y-3">
+                    <div className="grid grid-cols-2 gap-4">
+                      <label className="block">
+                        <span className="text-xs font-medium text-gray-500 dark:text-gray-400">Business Name</span>
+                        <input type="text" value={editForm.business_name || ''} onChange={(e) => setEditForm((f) => ({ ...f, business_name: e.target.value }))}
+                          className="mt-1 w-full px-3 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-rose-500 focus:border-transparent" />
+                      </label>
+                      <label className="block">
+                        <span className="text-xs font-medium text-gray-500 dark:text-gray-400">Email</span>
+                        <input type="email" value={editForm.email || ''} onChange={(e) => setEditForm((f) => ({ ...f, email: e.target.value }))}
+                          className="mt-1 w-full px-3 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-rose-500 focus:border-transparent" />
+                      </label>
+                      <label className="block">
+                        <span className="text-xs font-medium text-gray-500 dark:text-gray-400">Phone</span>
+                        <input type="text" value={editForm.phone || ''} onChange={(e) => setEditForm((f) => ({ ...f, phone: e.target.value }))}
+                          className="mt-1 w-full px-3 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-rose-500 focus:border-transparent" />
+                      </label>
+                      <label className="block">
+                        <span className="text-xs font-medium text-gray-500 dark:text-gray-400">Website</span>
+                        <input type="url" value={editForm.website || ''} onChange={(e) => setEditForm((f) => ({ ...f, website: e.target.value }))}
+                          className="mt-1 w-full px-3 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-rose-500 focus:border-transparent" />
+                      </label>
+                      <label className="block">
+                        <span className="text-xs font-medium text-gray-500 dark:text-gray-400">Address</span>
+                        <input type="text" value={editForm.address || ''} onChange={(e) => setEditForm((f) => ({ ...f, address: e.target.value }))}
+                          className="mt-1 w-full px-3 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-rose-500 focus:border-transparent" />
+                      </label>
+                      <div className="grid grid-cols-2 gap-3">
+                        <label className="block">
+                          <span className="text-xs font-medium text-gray-500 dark:text-gray-400">City</span>
+                          <input type="text" value={editForm.city || ''} onChange={(e) => setEditForm((f) => ({ ...f, city: e.target.value }))}
+                            className="mt-1 w-full px-3 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-rose-500 focus:border-transparent" />
+                        </label>
+                        <label className="block">
+                          <span className="text-xs font-medium text-gray-500 dark:text-gray-400">State</span>
+                          <input type="text" value={editForm.state || ''} onChange={(e) => setEditForm((f) => ({ ...f, state: e.target.value }))}
+                            className="mt-1 w-full px-3 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-rose-500 focus:border-transparent" />
+                        </label>
+                      </div>
+                      <label className="block">
+                        <span className="text-xs font-medium text-gray-500 dark:text-gray-400">Service Category</span>
+                        <input type="text" value={editForm.service_category || ''} onChange={(e) => setEditForm((f) => ({ ...f, service_category: e.target.value as VendorProfile['service_category'] }))}
+                          className="mt-1 w-full px-3 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-rose-500 focus:border-transparent" />
+                      </label>
+                      <label className="flex items-center gap-2 self-end pb-1">
+                        <input type="checkbox" checked={editForm.is_preferred || false} onChange={(e) => setEditForm((f) => ({ ...f, is_preferred: e.target.checked }))}
+                          className="rounded border-gray-300 text-rose-500 focus:ring-rose-500" />
+                        <span className="text-sm text-gray-700 dark:text-gray-300">Preferred Vendor</span>
+                      </label>
+                    </div>
+                    <label className="block">
+                      <span className="text-xs font-medium text-gray-500 dark:text-gray-400">Service Description</span>
+                      <textarea value={editForm.service_description || ''} onChange={(e) => setEditForm((f) => ({ ...f, service_description: e.target.value }))} rows={3}
+                        className="mt-1 w-full px-3 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-rose-500 focus:border-transparent resize-none" />
+                    </label>
+                    <div className="flex items-center gap-3 pt-1">
+                      <button onClick={handleSaveEdit} disabled={savingEdit}
+                        className="flex items-center gap-2 px-4 py-2 text-sm font-semibold text-white bg-rose-500 hover:bg-rose-600 rounded-lg transition-colors disabled:opacity-50">
+                        <Save className="w-4 h-4" />
+                        {savingEdit ? 'Saving...' : 'Save Changes'}
+                      </button>
+                      <button onClick={cancelEditing} disabled={savingEdit}
+                        className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-gray-600 dark:text-gray-400 border border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-800 rounded-lg transition-colors disabled:opacity-50">
+                        <X className="w-4 h-4" />
+                        Cancel
+                      </button>
+                    </div>
+                    <div className="text-xs text-gray-400 mt-1">ID: {v._id} · Created: {v.created_at ? new Date(v.created_at).toLocaleDateString() : '—'}</div>
+                  </div>
+                ) : isExpanded ? (
+                  /* ── Read-only Detail View ── */
                   <div className="px-4 pb-4 pt-1 border-t border-gray-100 dark:border-gray-700 grid grid-cols-2 gap-x-8 gap-y-2 text-sm">
                     <div><span className="text-gray-500 dark:text-gray-400">Email:</span> <span className="text-gray-900 dark:text-gray-100">{v.email || '—'}</span></div>
                     <div><span className="text-gray-500 dark:text-gray-400">Phone:</span> <span className="text-gray-900 dark:text-gray-100">{v.phone || '—'}</span></div>
@@ -2736,7 +2867,7 @@ function VendorDataTab() {
                     )}
                     <div className="col-span-2 text-xs text-gray-400 mt-1">ID: {v._id} · Created: {v.created_at ? new Date(v.created_at).toLocaleDateString() : '—'}</div>
                   </div>
-                )}
+                ) : null}
               </Card>
             );
           })}

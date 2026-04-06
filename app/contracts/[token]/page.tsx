@@ -85,7 +85,6 @@ export default function PublicContractPage() {
   // Signing flow state
   const [currentStep, setCurrentStep] = useState<SigningStep>('review');
   const [setupIntentSecret, setSetupIntentSecret] = useState<string>('');
-  const [setupCustomerId, setSetupCustomerId] = useState<string>('');
   const [paymentData, setPaymentData] = useState<PaymentMethodData | null>(null);
   const [signatureData, setSignatureData] = useState<SignatureData | null>(null);
   const [signing, setSigning] = useState(false);
@@ -145,7 +144,6 @@ export default function PublicContractPage() {
         if (!active) return;
 
         setPaymentData({
-          customerId: paymentSetup.customerId || setupCustomerId,
           paymentMethodId: paymentSetup.paymentMethodId,
           last4: '****',
           brand: 'card',
@@ -166,7 +164,7 @@ export default function PublicContractPage() {
     return () => {
       active = false;
     };
-  }, [currentStep, router, searchParams, setupCustomerId, token]);
+  }, [currentStep, router, searchParams, token]);
 
   const initiatePaymentSetup = async () => {
     try {
@@ -184,7 +182,6 @@ export default function PublicContractPage() {
 
       const data = await response.json();
       setSetupIntentSecret(data.client_secret);
-      setSetupCustomerId(data.customer_id || '');
       setCurrentStep('payment');
     } catch (err) {
       toast.error('Failed to initialize payment. Please try again.');
@@ -214,7 +211,6 @@ export default function PublicContractPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           signature_name: data.signatureName,
-          stripe_customer_id: paymentData.customerId,
           stripe_payment_method_id: paymentData.paymentMethodId,
           setup_intent_id: paymentData.setupIntentId,
           payment_method_last4: paymentData.last4,
@@ -455,7 +451,6 @@ export default function PublicContractPage() {
 
             <StripePaymentCapture
               clientSecret={setupIntentSecret}
-              customerId={setupCustomerId}
               onPaymentMethodCaptured={handlePaymentMethodCaptured}
               onError={(err) => toast.error(err)}
             />

@@ -5,6 +5,7 @@ import { getApiBaseUrl } from '@/utils/env';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useAdmin } from '@/contexts/AdminContext';
+import { extractGuestList } from '@/admin/utils/guestListResponse';
 import { Wedding, WeddingEvent, RegistryItem, FAQItem, OurStory, WeddingPartyMember, PrivacySettings, WeddingPartySyncSettings } from '@/types/wedding';
 import { formatAdminTimestamp, DEFAULT_TIMEZONE } from '@/utils/dateFormat';
 import { EVENT_TIME_FORMAT_HINT, getEventTimeValidationMessage, normalizeEventTimeInput } from '@/utils/eventTime';
@@ -173,7 +174,7 @@ export default function WeddingDetailsPage() {
    if (!weddingId) return;
    try {
      const baseUrl = getApiBaseUrl();
-     const response = await fetch(`${baseUrl}/admin/guests?wedding_id=${weddingId}`, {
+     const response = await fetch(`${baseUrl}/admin/guests?wedding_id=${weddingId}&fetch_all=true`, {
        headers: {
          'Authorization': `Bearer ${token}`,
          'Content-Type': 'application/json'
@@ -181,7 +182,7 @@ export default function WeddingDetailsPage() {
      });
      if (response.ok) {
        const data = await response.json();
-       setGuests(data);
+       setGuests(extractGuestList<Guest>(data));
      }
    } catch (err) {
      console.error('Failed to fetch guests:', err);
@@ -203,7 +204,7 @@ export default function WeddingDetailsPage() {
    try {
      // Fetch latest guests
      const baseUrl = getApiBaseUrl();
-     const response = await fetch(`${baseUrl}/admin/guests?wedding_id=${weddingId}`, {
+     const response = await fetch(`${baseUrl}/admin/guests?wedding_id=${weddingId}&fetch_all=true`, {
        headers: {
          'Authorization': `Bearer ${token}`,
          'Content-Type': 'application/json'
@@ -211,7 +212,7 @@ export default function WeddingDetailsPage() {
      });
 
      if (!response.ok) throw new Error('Failed to fetch guests');
-     const guestList: Guest[] = await response.json();
+     const guestList = extractGuestList<Guest>(await response.json());
 
      console.log('Fetched guests for sync:', guestList.length);
      console.log('Guests with group_id:', guestList.filter(g => g.group_id).map(g => ({ name: g.name, group_id: g.group_id })));

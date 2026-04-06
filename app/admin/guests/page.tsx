@@ -1,6 +1,7 @@
 'use client';
 
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import { useSearchParams } from 'next/navigation';
 import { useAdmin } from '@/contexts/AdminContext';
 import { useSSE } from '@/hooks/useSSE';
 import { BUILT_IN_WEDDING_EVENT_OPTIONS, getWeddingEventLabel, getWeddingEventOptions } from '@/utils/weddingEvents';
@@ -8,6 +9,13 @@ import { getApiBaseUrl } from '@/utils/env';
 import PageHeader from '../components/PageHeader';
 import { usePagination } from '@/admin/hooks/usePagination';
 import { GlassPagination } from '@/admin/components/ui/glass/GlassPagination';
+import {
+  EMPTY_GUEST_LIST_FILTER_OPTIONS,
+  EMPTY_GUEST_LIST_SUMMARY,
+  extractGuestListResponse,
+  type GuestListFilterOptions,
+  type GuestListSummary,
+} from '@/admin/utils/guestListResponse';
 
 // ==================== INTERFACES ====================
 
@@ -75,6 +83,23 @@ interface GuestImportResult {
 type SortField = 'name' | 'email' | 'phone' | 'role' | 'group_id' | 'rsvp_status' | 'plus_ones';
 type SortDirection = 'asc' | 'desc';
 type ViewMode = 'table' | 'cards';
+type GuestsTab = 'all' | 'import';
+type RsvpStatusFilter = 'all' | 'responded' | 'pending' | 'not_invited';
+type PlusOneStatusFilter = 'all' | 'allowed' | 'submitted' | 'none';
+type PhoneIssueFilter = 'all' | 'invalid_or_unreachable' | 'no_contact';
+type SmsStatusFilter = 'all' | 'opted_in' | 'opted_out';
+
+interface GuestColumnFilters {
+  name: string;
+  email: string;
+  phone: string;
+  groupId: string;
+  role: string;
+  rsvpStatus: RsvpStatusFilter;
+  plusOneStatus: PlusOneStatusFilter;
+  phoneIssue: PhoneIssueFilter;
+  smsStatus: SmsStatusFilter;
+}
 
 // Preset guest groups
 const PRESET_GROUPS = [
@@ -99,6 +124,8 @@ const WEDDING_PARTY_GROUP_IDS = ['maid_of_honor', 'bridesmaids', 'best_man', 'gr
 export default function AdminGuestsPage() {
   const { token } = useAdmin();
   const apiBaseUrl = getApiBaseUrl();
+  const searchParams = useSearchParams();
+  const didHydrateFiltersFromUrl = useRef(false);
 
   // Data state
   const [weddings, setWeddings] = useState<Wedding[]>([]);
@@ -106,13 +133,14 @@ export default function AdminGuestsPage() {
   const [guests, setGuests] = useState<Guest[]>([]);
   const [rsvps, setRsvps] = useState<RSVP[]>([]);
   const [plusOnes, setPlusOnes] = useState<PlusOne[]>([]);
+  const [summary, setSummary] = useState<GuestListSummary>(EMPTY_GUEST_LIST_SUMMARY);
+  const [filterOptions, setFilterOptions] = useState<GuestListFilterOptions>(EMPTY_GUEST_LIST_FILTER_OPTIONS);
 
   // UI state
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string>('');
   const [successMessage, setSuccessMessage] = useState<string>('');
-  const [activeTab, setActiveTab] = useState<'all' | 'rsvp' | 'pending' | 'not_invited' | 'import'>('all');
-  const [searchTerm, setSearchTerm] = useState('');
+  const [activeTab, setActiveTab] = useState<GuestsTab>('all');
   const [viewMode, setViewMode] = useState<ViewMode>('table');
   const [expandedGuest, setExpandedGuest] = useState<string | null>(null);
 
@@ -121,8 +149,28 @@ export default function AdminGuestsPage() {
   const [sortDirection, setSortDirection] = useState<SortDirection>('asc');
 
   // Filter state
-  const [filterGroup, setFilterGroup] = useState<string>('');
-  const [filterRole, setFilterRole] = useState<string>('');
+  const [filters, setFilters] = useState<GuestColumnFilters>({
+    name: '',
+    email: '',
+    phone: '',
+    groupId: '',
+    role: '',
+    rsvpStatus: 'all',
+    plusOneStatus: 'all',
+    phoneIssue: 'all',
+    smsStatus: 'all',
+  });
+  const [debouncedFilters, setDebouncedFilters] = useState<GuestColumnFilters>({
+    name: '',
+    email: '',
+    phone: '',
+    groupId: '',
+    role: '',
+    rsvpStatus: 'all',
+    plusOneStatus: 'all',
+    phoneIssue: 'all',
+    smsStatus: 'all',
+  });
 
   // Selection state for bulk actions
   const [selectedGuests, setSelectedGuests] = useState<Set<string>>(new Set());
@@ -221,22 +269,43 @@ export default function AdminGuestsPage() {
     setLoading(true);
     try {
       const baseUrl = apiBaseUrl;
+      const guestParams = new URLSearchParams({
+        wedding_id: selectedWedding,
+        page: String(currentPage),
+        limit: String(itemsPerPage),
+        sort_field: sortField,
+        sort_direction: sortDirection,
+      });
+
+      if (debouncedFilters.name) guestParams.set('name', debouncedFilters.name);
+      if (debouncedFilters.email) guestParams.set('email', debouncedFilters.email);
+      if (debouncedFilters.phone) guestParams.set('phone', debouncedFilters.phone);
+      if (debouncedFilters.groupId) guestParams.set('group_id', debouncedFilters.groupId);
+      if (debouncedFilters.role) guestParams.set('role', debouncedFilters.role);
+      if (debouncedFilters.rsvpStatus !== 'all') guestParams.set('rsvp_status', debouncedFilters.rsvpStatus);
+      if (debouncedFilters.plusOneStatus !== 'all') guestParams.set('plus_one_status', debouncedFilters.plusOneStatus);
+      if (debouncedFilters.phoneIssue !== 'all') guestParams.set('phone_issue', debouncedFilters.phoneIssue);
+      if (debouncedFilters.smsStatus !== 'all') guestParams.set('sms_status', debouncedFilters.smsStatus);
 
       // Fetch guests with pagination
       const guestsResponse = await fetch(
-        `${baseUrl}/admin/guests?wedding_id=${selectedWedding}&page=${currentPage}&limit=${itemsPerPage}`,
+        `${baseUrl}/admin/guests?${guestParams.toString()}`,
         { headers: { 'Authorization': `Bearer ${token}` } }
       );
 
       let normalizedGuests: Guest[] = [];
       if (guestsResponse.ok) {
-        const guestsData = await guestsResponse.json();
-        const guestData = guestsData.guests || guestsData || [];
-        normalizedGuests = Array.isArray(guestData) ? guestData : [];
+        const guestsData = extractGuestListResponse<Guest>(await guestsResponse.json());
+        normalizedGuests = guestsData.guests;
         setGuests(normalizedGuests);
         setPaginationTotalItems(guestsData.total || normalizedGuests.length);
+        setSummary(guestsData.summary ?? EMPTY_GUEST_LIST_SUMMARY);
+        setFilterOptions(guestsData.filter_options ?? EMPTY_GUEST_LIST_FILTER_OPTIONS);
       } else {
         setGuests([]);
+        setPaginationTotalItems(0);
+        setSummary(EMPTY_GUEST_LIST_SUMMARY);
+        setFilterOptions(EMPTY_GUEST_LIST_FILTER_OPTIONS);
       }
 
       const guestIds = normalizedGuests
@@ -280,23 +349,93 @@ export default function AdminGuestsPage() {
 
     } catch {
       setError('Failed to load guest data');
+      setGuests([]);
+      setPaginationTotalItems(0);
+      setSummary(EMPTY_GUEST_LIST_SUMMARY);
+      setFilterOptions(EMPTY_GUEST_LIST_FILTER_OPTIONS);
     } finally {
       setLoading(false);
     }
-  }, [apiBaseUrl, selectedWedding, token, currentPage, itemsPerPage, setPaginationTotalItems]);
+  }, [
+    apiBaseUrl,
+    selectedWedding,
+    token,
+    currentPage,
+    itemsPerPage,
+    sortField,
+    sortDirection,
+    debouncedFilters,
+    setPaginationTotalItems,
+  ]);
 
   useEffect(() => {
     fetchWeddings();
   }, [fetchWeddings]);
 
   useEffect(() => {
+    if (didHydrateFiltersFromUrl.current) return;
+
+    const requestedWeddingId = searchParams.get('wedding_id') || '';
+    setFilters({
+      name: searchParams.get('name') || '',
+      email: searchParams.get('email') || '',
+      phone: searchParams.get('phone') || '',
+      groupId: searchParams.get('group_id') || '',
+      role: searchParams.get('role') || '',
+      rsvpStatus: (searchParams.get('rsvp_status') as RsvpStatusFilter) || 'all',
+      plusOneStatus: (searchParams.get('plus_one_status') as PlusOneStatusFilter) || 'all',
+      phoneIssue: (searchParams.get('phone_issue') as PhoneIssueFilter) || 'all',
+      smsStatus: (searchParams.get('sms_status') as SmsStatusFilter) || 'all',
+    });
+    setDebouncedFilters({
+      name: searchParams.get('name') || '',
+      email: searchParams.get('email') || '',
+      phone: searchParams.get('phone') || '',
+      groupId: searchParams.get('group_id') || '',
+      role: searchParams.get('role') || '',
+      rsvpStatus: (searchParams.get('rsvp_status') as RsvpStatusFilter) || 'all',
+      plusOneStatus: (searchParams.get('plus_one_status') as PlusOneStatusFilter) || 'all',
+      phoneIssue: (searchParams.get('phone_issue') as PhoneIssueFilter) || 'all',
+      smsStatus: (searchParams.get('sms_status') as SmsStatusFilter) || 'all',
+    });
+    if (requestedWeddingId) {
+      setSelectedWedding(requestedWeddingId);
+    }
+    didHydrateFiltersFromUrl.current = true;
+  }, [searchParams]);
+
+  useEffect(() => {
+    if (!weddings.length) return;
+    const hasSelectedWedding = weddings.some((wedding) => (wedding.id || wedding._id) === selectedWedding);
+    if (hasSelectedWedding) return;
+    const requestedWeddingId = searchParams.get('wedding_id');
+    const matchingWedding = requestedWeddingId
+      ? weddings.find((wedding) => (wedding.id || wedding._id) === requestedWeddingId)
+      : null;
+    const nextWeddingId = matchingWedding?.id || matchingWedding?._id || weddings[0].id || weddings[0]._id || '';
+    if (nextWeddingId) {
+      setSelectedWedding(nextWeddingId);
+    }
+  }, [searchParams, selectedWedding, weddings]);
+
+  useEffect(() => {
+    const timeoutId = window.setTimeout(() => {
+      setDebouncedFilters(filters);
+    }, 250);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [filters]);
+
+  useEffect(() => {
     if (selectedWedding) {
       fetchGuestData();
-      // Clear selections when wedding changes
-      setSelectedGuests(new Set());
-      setSelectAll(false);
     }
   }, [fetchGuestData, selectedWedding]);
+
+  useEffect(() => {
+    setSelectedGuests(new Set());
+    setSelectAll(false);
+  }, [selectedWedding, currentPage, itemsPerPage, debouncedFilters, sortField, sortDirection]);
 
   // Real-time updates via SSE — refetch guest data when the server
   // signals a change to guests, RSVPs, plus-ones, or invites for
@@ -397,8 +536,6 @@ export default function AdminGuestsPage() {
     return lookup;
   }, [rsvps]);
 
-  const rsvpGuestIds = useMemo(() => new Set(rsvpByGuestId.keys()), [rsvpByGuestId]);
-
   const plusOnesByGuestId = useMemo(() => {
     const lookup = new Map<string, PlusOne[]>();
     for (const plusOne of plusOnes) {
@@ -481,84 +618,45 @@ export default function AdminGuestsPage() {
 
   // ==================== FILTERING & SORTING ====================
 
-  // Reset pagination to page 1 when filters change
+  // Reset pagination to page 1 when filters or sorting change
   useEffect(() => {
     setPaginationPage(1);
-  }, [searchTerm, activeTab, filterGroup, filterRole, setPaginationPage]);
+  }, [filters, sortField, sortDirection, setPaginationPage]);
 
-  const filteredAndSortedGuests = useMemo(() => {
-    let result = guests.filter(guest => {
-      // Search filter
-      const matchesSearch =
-        guest.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        guest.email?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        guest.phone?.includes(searchTerm);
+  const filteredAndSortedGuests = guests;
+  const hasActiveFilters = useMemo(
+    () =>
+      Boolean(
+        filters.name ||
+          filters.email ||
+          filters.phone ||
+          filters.groupId ||
+          filters.role ||
+          filters.rsvpStatus !== 'all' ||
+          filters.plusOneStatus !== 'all' ||
+          filters.phoneIssue !== 'all' ||
+          filters.smsStatus !== 'all'
+      ),
+    [filters]
+  );
 
-      if (!matchesSearch) return false;
+  const updateFilter = <K extends keyof GuestColumnFilters>(key: K, value: GuestColumnFilters[K]) => {
+    setFilters((current) => ({ ...current, [key]: value }));
+  };
 
-      // Tab filter
-      const guestId = normalizeId(guest.id || guest._id);
-      const hasRSVP = rsvpGuestIds.has(guestId);
-
-      if (activeTab === 'rsvp' && !hasRSVP) return false;
-      if (activeTab === 'pending' && (!guest.invite_sent || hasRSVP)) return false;
-      if (activeTab === 'not_invited' && (guest.invite_sent || hasRSVP)) return false;
-
-      // Group filter
-      if (filterGroup && guest.group_id !== filterGroup) return false;
-
-      // Role filter
-      if (filterRole && guest.role !== filterRole) return false;
-
-      return true;
+  const resetFilters = () => {
+    setFilters({
+      name: '',
+      email: '',
+      phone: '',
+      groupId: '',
+      role: '',
+      rsvpStatus: 'all',
+      plusOneStatus: 'all',
+      phoneIssue: 'all',
+      smsStatus: 'all',
     });
-
-    // Sorting
-    result.sort((a, b) => {
-      let aValue: string | number = '';
-      let bValue: string | number = '';
-
-      switch (sortField) {
-        case 'name':
-          aValue = a.name.toLowerCase();
-          bValue = b.name.toLowerCase();
-          break;
-        case 'email':
-          aValue = (a.email || '').toLowerCase();
-          bValue = (b.email || '').toLowerCase();
-          break;
-        case 'phone':
-          aValue = a.phone || '';
-          bValue = b.phone || '';
-          break;
-        case 'role':
-          aValue = a.role;
-          bValue = b.role;
-          break;
-        case 'group_id':
-          aValue = getGroupLabel(a.group_id);
-          bValue = getGroupLabel(b.group_id);
-          break;
-        case 'rsvp_status':
-          // RSVP status priority: 0 = Not Invited, 1 = Pending (invited), 2 = RSVP'd
-          const aHasRSVP = rsvpGuestIds.has(normalizeId(a.id || a._id));
-          const bHasRSVP = rsvpGuestIds.has(normalizeId(b.id || b._id));
-          aValue = aHasRSVP ? 2 : (a.invite_sent ? 1 : 0);
-          bValue = bHasRSVP ? 2 : (b.invite_sent ? 1 : 0);
-          break;
-        case 'plus_ones':
-          aValue = (plusOnesByGuestId.get(normalizeId(a.id || a._id || '')) ?? []).length;
-          bValue = (plusOnesByGuestId.get(normalizeId(b.id || b._id || '')) ?? []).length;
-          break;
-      }
-
-      if (aValue < bValue) return sortDirection === 'asc' ? -1 : 1;
-      if (aValue > bValue) return sortDirection === 'asc' ? 1 : -1;
-      return 0;
-    });
-
-    return result;
-  }, [guests, searchTerm, activeTab, filterGroup, filterRole, sortField, sortDirection, rsvpGuestIds, plusOnesByGuestId]);
+  };
 
   // ==================== SELECTION HANDLERS ====================
 
@@ -1202,8 +1300,8 @@ export default function AdminGuestsPage() {
       ),
     [selectedWeddingData]
   );
-  const uniqueGroups = Array.from(new Set(guests.map(g => g.group_id).filter((g): g is string => Boolean(g))));
-  const uniqueRoles = Array.from(new Set(guests.map(g => g.role).filter((r): r is string => Boolean(r))));
+  const availableGroups = filterOptions.groups;
+  const availableRoles = filterOptions.roles;
 
   // Activity icon and color mapping
   const activityStyle: Record<string, { color: string; icon: string }> = {
@@ -1308,38 +1406,22 @@ export default function AdminGuestsPage() {
         </div>
 
         {selectedWedding && (() => {
-          // Calculate stats once for use in both stat cards and tabs
-          const guestsWithRsvp = new Set(rsvps.map(r => normalizeId(r.guest_id)));
-          const invitedNoRsvpGuests = guests.filter(g => g.invite_sent && !guestsWithRsvp.has(normalizeId(g.id || g._id)));
-          const invitedNoRsvp = invitedNoRsvpGuests.length;
-          const notInvited = guests.filter(g => !g.invite_sent && !guestsWithRsvp.has(normalizeId(g.id || g._id))).length;
-
-          // Plus-one calculations
-          const totalPlusOnesAllowed = guests.reduce((sum, g) => sum + (g.number_of_plus_ones_allowed || 0), 0);
-          const confirmedGuests = guests.filter(g => guestsWithRsvp.has(normalizeId(g.id || g._id)) && rsvps.find(r => normalizeId(r.guest_id) === normalizeId(g.id || g._id) && r.attending && r.attending.length > 0));
-          const confirmedPlusOnesAllowed = confirmedGuests.reduce((sum, g) => sum + (g.number_of_plus_ones_allowed || 0), 0);
-          const pendingPlusOnesAllowed = invitedNoRsvpGuests.reduce((sum, g) => sum + (g.number_of_plus_ones_allowed || 0), 0);
-
-          // Count actual plus-ones submitted by confirmed guests
-          const confirmedGuestIds = new Set(confirmedGuests.map(g => normalizeId(g.id || g._id)));
-          const confirmedPlusOnesSubmitted = plusOnes.filter(po => confirmedGuestIds.has(normalizeId(po.guest_id))).length;
-
           return (
           <>
             {/* Stats Overview */}
             <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-8">
                   {/* Total Guests */}
-                  <div onClick={() => setActiveTab('all')} className={`bg-white dark:bg-slate-800 rounded-xl shadow-lg p-6 cursor-pointer transition-all hover:ring-2 hover:ring-wedding-navy/30 ${activeTab === 'all' ? 'ring-2 ring-wedding-navy' : ''}`}>
+                  <div className="bg-white dark:bg-slate-800 rounded-xl shadow-lg p-6">
                     <div className="flex flex-col items-center text-center">
                       <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-1">Total Guests</h3>
                       <div className="flex items-baseline gap-2 justify-center">
                         <div>
-                          <p className="text-3xl font-bold text-wedding-navy">{guests.length}</p>
+                          <p className="text-3xl font-bold text-wedding-navy">{summary.totalGuests}</p>
                           <p className="text-xs text-gray-400">guests</p>
                         </div>
-                        {totalPlusOnesAllowed > 0 && (
+                        {summary.totalPlusOneSlots > 0 && (
                           <div className="border-l border-gray-200 dark:border-gray-600 pl-2">
-                            <p className="text-lg font-semibold text-purple-600 dark:text-purple-400">+{totalPlusOnesAllowed}</p>
+                            <p className="text-lg font-semibold text-purple-600 dark:text-purple-400">+{summary.totalPlusOneSlots}</p>
                             <p className="text-xs text-gray-400">plus-ones</p>
                           </div>
                         )}
@@ -1347,17 +1429,17 @@ export default function AdminGuestsPage() {
                     </div>
                   </div>
                   {/* RSVPs Received */}
-                  <div onClick={() => setActiveTab('rsvp')} className={`bg-white dark:bg-slate-800 rounded-xl shadow-lg p-6 cursor-pointer transition-all hover:ring-2 hover:ring-green-500/30 ${activeTab === 'rsvp' ? 'ring-2 ring-green-500' : ''}`}>
+                  <div className="bg-white dark:bg-slate-800 rounded-xl shadow-lg p-6">
                     <div className="flex flex-col items-center text-center">
                       <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-1">RSVPs Confirmed</h3>
                       <div className="flex items-baseline gap-2 justify-center">
                         <div>
-                          <p className="text-3xl font-bold text-green-600 dark:text-green-300">{confirmedGuests.length}</p>
+                          <p className="text-3xl font-bold text-green-600 dark:text-green-300">{summary.respondedGuests}</p>
                           <p className="text-xs text-gray-400">guests</p>
                         </div>
-                        {confirmedPlusOnesSubmitted > 0 && (
+                        {summary.respondedPlusOnes > 0 && (
                           <div className="border-l border-gray-200 dark:border-gray-600 pl-2">
-                            <p className="text-lg font-semibold text-green-600 dark:text-green-400">+{confirmedPlusOnesSubmitted}</p>
+                            <p className="text-lg font-semibold text-green-600 dark:text-green-400">+{summary.respondedPlusOnes}</p>
                             <p className="text-xs text-gray-400">plus-ones</p>
                           </div>
                         )}
@@ -1365,17 +1447,17 @@ export default function AdminGuestsPage() {
                     </div>
                   </div>
                   {/* Awaiting Response */}
-                  <div onClick={() => setActiveTab('pending')} className={`bg-white dark:bg-slate-800 rounded-xl shadow-lg p-6 cursor-pointer transition-all hover:ring-2 hover:ring-yellow-500/30 ${activeTab === 'pending' ? 'ring-2 ring-yellow-500' : ''}`}>
+                  <div className="bg-white dark:bg-slate-800 rounded-xl shadow-lg p-6">
                     <div className="flex flex-col items-center text-center">
                       <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-1">Awaiting Response</h3>
                       <div className="flex items-baseline gap-2 justify-center">
                         <div>
-                          <p className="text-3xl font-bold text-yellow-600">{invitedNoRsvp}</p>
+                          <p className="text-3xl font-bold text-yellow-600">{summary.pendingGuests}</p>
                           <p className="text-xs text-gray-400">guests</p>
                         </div>
-                        {pendingPlusOnesAllowed > 0 && (
+                        {summary.pendingPlusOneSlots > 0 && (
                           <div className="border-l border-gray-200 dark:border-gray-600 pl-2">
-                            <p className="text-lg font-semibold text-yellow-600 dark:text-yellow-400">+{pendingPlusOnesAllowed}</p>
+                            <p className="text-lg font-semibold text-yellow-600 dark:text-yellow-400">+{summary.pendingPlusOneSlots}</p>
                             <p className="text-xs text-gray-400">plus-ones</p>
                           </div>
                         )}
@@ -1383,17 +1465,17 @@ export default function AdminGuestsPage() {
                     </div>
                   </div>
                   {/* Not Invited */}
-                  <div onClick={() => setActiveTab('not_invited')} className={`bg-white dark:bg-slate-800 rounded-xl shadow-lg p-6 cursor-pointer transition-all hover:ring-2 hover:ring-gray-400/30 ${activeTab === 'not_invited' ? 'ring-2 ring-gray-400' : ''}`}>
+                  <div className="bg-white dark:bg-slate-800 rounded-xl shadow-lg p-6">
                     <div className="flex flex-col items-center text-center">
                       <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-1">Not Invited</h3>
-                      <p className="text-3xl font-bold text-gray-500 mt-1">{notInvited}</p>
+                      <p className="text-3xl font-bold text-gray-500 mt-1">{summary.notInvitedGuests}</p>
                     </div>
                   </div>
                   {/* Plus Ones Submitted */}
                   <div className="bg-white dark:bg-slate-800 rounded-xl shadow-lg p-6">
                     <div className="flex flex-col items-center text-center">
                       <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-1">Plus Ones</h3>
-                      <p className="text-3xl font-bold text-wedding-sage mt-1">{plusOnes.length}</p>
+                      <p className="text-3xl font-bold text-wedding-sage mt-1">{summary.submittedPlusOnes}</p>
                     </div>
                   </div>
                 </div>
@@ -1401,64 +1483,37 @@ export default function AdminGuestsPage() {
             {/* Controls */}
             <div className="bg-white dark:bg-slate-800 rounded-xl shadow-lg p-6 mb-8">
               <div className="flex flex-col gap-4">
-                {/* Top row: Tabs and Actions */}
+                {/* Top row: Results and Actions */}
                 <div className="flex flex-col md:flex-row gap-4 items-center justify-between">
-                  {/* Tabs */}
-                  <div className="flex gap-2 flex-wrap">
+                  <div className="flex flex-col gap-1">
+                    <p className="text-sm font-medium text-gray-700 dark:text-gray-200">
+                      Showing {guests.length} of {pagination.totalItems} matching guests
+                    </p>
+                    <p className="text-xs text-gray-500 dark:text-gray-400">
+                      Filters, sorting, and pagination are now applied server-side for the full wedding guest list.
+                    </p>
+                  </div>
+
+                  {/* Action buttons */}
+                  <div className="flex gap-2 flex-wrap justify-end">
+                    {hasActiveFilters && (
+                      <button
+                        onClick={resetFilters}
+                        className="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition-colors"
+                      >
+                        Clear Filters
+                      </button>
+                    )}
                     <button
-                      onClick={() => setActiveTab('all')}
-                      className={`px-4 py-2 rounded-lg font-medium transition-colors ${
-                        activeTab === 'all'
-                          ? 'bg-wedding-navy text-white'
-                          : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
-                      }`}
-                    >
-                      All ({guests.length})
-                    </button>
-                    <button
-                      onClick={() => setActiveTab('rsvp')}
-                      className={`px-4 py-2 rounded-lg font-medium transition-colors ${
-                        activeTab === 'rsvp'
-                          ? 'bg-wedding-navy text-white'
-                          : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
-                      }`}
-                    >
-                      RSVP&apos;d ({rsvps.length})
-                    </button>
-                    <button
-                      onClick={() => setActiveTab('pending')}
-                      className={`px-4 py-2 rounded-lg font-medium transition-colors ${
-                        activeTab === 'pending'
-                          ? 'bg-yellow-500 text-white'
-                          : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
-                      }`}
-                    >
-                      Pending ({invitedNoRsvp})
-                    </button>
-                    <button
-                      onClick={() => setActiveTab('not_invited')}
-                      className={`px-4 py-2 rounded-lg font-medium transition-colors ${
-                        activeTab === 'not_invited'
-                          ? 'bg-gray-500 text-white'
-                          : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
-                      }`}
-                    >
-                      Not Invited ({notInvited})
-                    </button>
-                    <button
-                      onClick={() => setActiveTab('import')}
+                      onClick={() => setActiveTab(activeTab === 'import' ? 'all' : 'import')}
                       className={`px-4 py-2 rounded-lg font-medium transition-colors ${
                         activeTab === 'import'
                           ? 'bg-wedding-sage text-white'
                           : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
                       }`}
                     >
-                      Import
+                      {activeTab === 'import' ? 'Back to Guests' : 'Import'}
                     </button>
-                  </div>
-
-                  {/* Action buttons */}
-                  <div className="flex gap-2">
                     <button
                       onClick={() => setAddingGuest(true)}
                       className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors font-medium"
@@ -1528,41 +1583,102 @@ export default function AdminGuestsPage() {
                   </div>
                 </div>
 
-                {/* Second row: Search and Filters */}
-                <div className="flex flex-col md:flex-row gap-4">
+                {/* Second row: Column filters */}
+                <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-6 gap-4">
                   <input
                     type="text"
-                    placeholder="Search guests..."
-                    value={searchTerm}
-                    onChange={(e) => setSearchTerm(e.target.value)}
-                    className="flex-1 px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-wedding-rose focus:border-transparent"
+                    placeholder="Filter name"
+                    value={filters.name}
+                    onChange={(e) => updateFilter('name', e.target.value)}
+                    className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-wedding-rose focus:border-transparent"
+                  />
+                  <input
+                    type="text"
+                    placeholder="Filter email"
+                    value={filters.email}
+                    onChange={(e) => updateFilter('email', e.target.value)}
+                    className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-wedding-rose focus:border-transparent"
+                  />
+                  <input
+                    type="text"
+                    placeholder="Filter phone"
+                    value={filters.phone}
+                    onChange={(e) => updateFilter('phone', e.target.value)}
+                    className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-wedding-rose focus:border-transparent"
                   />
                   <select
-                    value={filterGroup}
-                    onChange={(e) => setFilterGroup(e.target.value)}
+                    value={filters.groupId}
+                    onChange={(e) => updateFilter('groupId', e.target.value)}
                     className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100"
                   >
                     <option value="">All Groups</option>
-                    {PRESET_GROUPS.map(group => (
+                    {PRESET_GROUPS.map((group) => (
                       <option key={group.id} value={group.id}>{group.label}</option>
                     ))}
-                    {uniqueGroups.filter(g => !PRESET_GROUPS.find(p => p.id === g)).map(group => (
-                      <option key={group} value={group}>{group}</option>
-                    ))}
+                    {availableGroups
+                      .filter((group) => !PRESET_GROUPS.find((preset) => preset.id === group))
+                      .map((group) => (
+                        <option key={group} value={group}>{group}</option>
+                      ))}
                   </select>
                   <select
-                    value={filterRole}
-                    onChange={(e) => setFilterRole(e.target.value)}
+                    value={filters.rsvpStatus}
+                    onChange={(e) => updateFilter('rsvpStatus', e.target.value as RsvpStatusFilter)}
                     className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100"
                   >
-                    <option value="">All Roles</option>
-                    {uniqueRoles.map(role => (
-                      <option key={role} value={role}>{role}</option>
-                    ))}
+                    <option value="all">All RSVP states</option>
+                    <option value="responded">RSVP&apos;d</option>
+                    <option value="pending">Awaiting RSVP</option>
+                    <option value="not_invited">Not invited</option>
+                  </select>
+                  <select
+                    value={filters.plusOneStatus}
+                    onChange={(e) => updateFilter('plusOneStatus', e.target.value as PlusOneStatusFilter)}
+                    className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100"
+                  >
+                    <option value="all">All plus-one states</option>
+                    <option value="submitted">Has plus-ones submitted</option>
+                    <option value="allowed">Plus-ones allowed</option>
+                    <option value="none">No plus-ones</option>
                   </select>
                 </div>
 
-                {/* Third row: Bulk actions (shown when guests selected) */}
+                {/* Third row: Secondary filters */}
+                <div className="grid grid-cols-1 md:grid-cols-3 xl:grid-cols-4 gap-4">
+                  <select
+                    value={filters.role}
+                    onChange={(e) => updateFilter('role', e.target.value)}
+                    className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100"
+                  >
+                    <option value="">All Roles</option>
+                    {availableRoles.map((role) => (
+                      <option key={role} value={role}>{role}</option>
+                    ))}
+                  </select>
+                  <select
+                    value={filters.phoneIssue}
+                    onChange={(e) => updateFilter('phoneIssue', e.target.value as PhoneIssueFilter)}
+                    className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100"
+                  >
+                    <option value="all">All phone health</option>
+                    <option value="invalid_or_unreachable">Invalid or unreachable phone</option>
+                    <option value="no_contact">No phone and no email</option>
+                  </select>
+                  <select
+                    value={filters.smsStatus}
+                    onChange={(e) => updateFilter('smsStatus', e.target.value as SmsStatusFilter)}
+                    className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100"
+                  >
+                    <option value="all">All SMS preferences</option>
+                    <option value="opted_in">SMS opted in</option>
+                    <option value="opted_out">SMS opted out</option>
+                  </select>
+                  <div className="flex items-center text-xs text-gray-500 dark:text-gray-400">
+                    Text filters are debounced before refetching so planners can type without hammering the API.
+                  </div>
+                </div>
+
+                {/* Fourth row: Bulk actions (shown when guests selected) */}
                 {selectedGuests.size > 0 && (
                   <div className="flex items-center gap-4 p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg">
                     <span className="text-sm font-medium text-blue-700 dark:text-blue-300">
@@ -1982,7 +2098,8 @@ export default function AdminGuestsPage() {
                   </div>
                 ) : (
                   /* CARD VIEW */
-                  <div className="divide-y divide-gray-200 dark:divide-gray-700">
+                  <div>
+                    <div className="divide-y divide-gray-200 dark:divide-gray-700">
                     {filteredAndSortedGuests.map((guest) => {
                       const guestId = guest.id || guest._id || '';
                       const rsvp = getRSVPForGuest(guestId);
@@ -2178,6 +2295,16 @@ export default function AdminGuestsPage() {
                         </div>
                       );
                     })}
+                    </div>
+                    <GlassPagination
+                      currentPage={pagination.currentPage}
+                      totalPages={pagination.totalPages}
+                      totalItems={pagination.totalItems}
+                      itemsPerPage={pagination.itemsPerPage}
+                      onPageChange={pagination.setPage}
+                      onItemsPerPageChange={pagination.setItemsPerPage}
+                      itemLabel="guests"
+                    />
                   </div>
                 )}
               </div>
