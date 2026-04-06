@@ -5,10 +5,16 @@ from fastapi import APIRouter, Depends, HTTPException, Request, Header
 from typing import Optional
 from bson import ObjectId
 from pydantic import BaseModel, Field
+import secrets
 import stripe
 from app.services.stripe_service import stripe_service
 from app.dependencies.auth_extended import require_admin_or_planner, ExtendedAuthUser
-from app.models.subscription import ACTIVE_SUBSCRIPTION_STATUSES, PUBLIC_CHECKOUT_ALLOWED_STATUSES, normalize_subscription_status
+from app.models.subscription import (
+    ACTIVE_SUBSCRIPTION_STATUSES,
+    BILLING_PORTAL_RECOVERY_SUBSCRIPTION_STATUSES,
+    PUBLIC_CHECKOUT_ALLOWED_STATUSES,
+    normalize_subscription_status,
+)
 import logging
 
 logger = logging.getLogger(__name__)
@@ -17,6 +23,25 @@ router = APIRouter(prefix="", tags=["Stripe Payments"])
 
 
 # ==================== REQUEST MODELS ====================
+
+def _is_public_checkout_resume_candidate(user_doc: dict) -> bool:
+    """Allow unauthenticated checkout resumes only for public self-signups."""
+
+    status = normalize_subscription_status(user_doc.get("subscription_status"))
+    return (
+        status in PUBLIC_CHECKOUT_ALLOWED_STATUSES
+        and user_doc.get("registration_source") == "public_signup"
+    )
+
+
+async def _get_payment_request_by_public_token(public_token: str) -> dict:
+    from app.core.database import mongo
+
+    payment_request = await mongo.db["payment_requests"].find_one({"public_token": public_token})
+    if not payment_request:
+        raise HTTPException(status_code=404, detail="Payment request not found")
+
+    return payment_request
 
 class CreateCheckoutSessionRequest(BaseModel):
     """Request model for creating a Stripe Checkout Session"""
@@ -82,7 +107,7 @@ async def create_checkout_session(
             current_user.user_data.get("subscription_status") or current_user.subscription_status
         )
 
-        if current_status in ACTIVE_SUBSCRIPTION_STATUSES or current_status == "past_due":
+        if current_status in ACTIVE_SUBSCRIPTION_STATUSES or current_status in BILLING_PORTAL_RECOVERY_SUBSCRIPTION_STATUSES:
             raise HTTPException(
                 status_code=409,
                 detail="Your account already has an active billing relationship. Use the billing portal to manage or update it."
@@ -124,8 +149,7 @@ async def create_public_checkout_session(
         if not pending_user:
             raise HTTPException(status_code=400, detail="Unable to create checkout session. Please check your email and try again.")
 
-        pending_status = normalize_subscription_status(pending_user.get("subscription_status"))
-        if pending_status not in PUBLIC_CHECKOUT_ALLOWED_STATUSES:
+        if not _is_public_checkout_resume_candidate(pending_user):
             raise HTTPException(status_code=400, detail="Unable to create checkout session. Please check your email and try again.")
 
         session = await stripe_service.create_checkout_session(
@@ -136,13 +160,6 @@ async def create_public_checkout_session(
             cancel_url=request.cancel_url or "",
             trial_days=request.trial_days
         )
-
-        # Keep the users collection plan_id in sync with the checkout selection
-        if request.plan_id and pending_user.get("plan_id") != request.plan_id:
-            await stripe_service.users_collection.update_one(
-                {"_id": pending_user["_id"]},
-                {"$set": {"plan_id": request.plan_id}}
-            )
 
         return {
             "status": "success",
@@ -205,7 +222,8 @@ async def get_payment_intent_details(id: str):
 
         stripe.api_key = settings.stripe_secret_key
 
-        pi = stripe.PaymentIntent.retrieve(id)
+        payment_request = await _get_payment_request_by_public_token(id)
+        pi = stripe.PaymentIntent.retrieve(payment_request["payment_intent_id"])
 
         return {
             "id": pi.id,
@@ -213,10 +231,45 @@ async def get_payment_intent_details(id: str):
             "amount": pi.amount / 100,
             "currency": pi.currency,
             "status": pi.status,
-            "description": pi.description
+            "description": pi.description,
+            "public_token": payment_request["public_token"],
         }
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Error retrieving PI: {e}")
+        raise HTTPException(status_code=404, detail="Payment request not found")
+
+
+@router.get("/payment-intent/{id}/summary")
+async def get_payment_intent_summary(id: str):
+    """
+    Public endpoint to retrieve non-secret PaymentIntent details for the success page.
+    """
+    try:
+        import stripe
+        from app.core.settings import settings
+
+        if not settings.stripe_secret_key:
+            raise HTTPException(status_code=503, detail="Stripe is not configured")
+
+        stripe.api_key = settings.stripe_secret_key
+
+        payment_request = await _get_payment_request_by_public_token(id)
+        pi = stripe.PaymentIntent.retrieve(payment_request["payment_intent_id"])
+
+        return {
+            "id": pi.id,
+            "amount": pi.amount / 100,
+            "currency": pi.currency,
+            "status": pi.status,
+            "description": pi.description,
+            "public_token": payment_request["public_token"],
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error retrieving PI summary: {e}")
         raise HTTPException(status_code=404, detail="Payment request not found")
 
 
@@ -549,18 +602,22 @@ async def create_payment_intent(
         from app.core.database import mongo
         from datetime import datetime, timezone
 
+        public_token = secrets.token_urlsafe(24)
+
         await mongo.db["payment_requests"].insert_one({
             "user_id": str(current_user.user_data.get("_id")),
+            "public_token": public_token,
             "payment_intent_id": payment_intent["payment_intent_id"],
             "amount": request.amount,
             "currency": request.currency,
             "status": "pending",  # Initial status
             "wedding_id": wedding_id,
             "description": request.description,
-            "client_secret": payment_intent["client_secret"],
             "created_at": datetime.now(timezone.utc),
             "updated_at": datetime.now(timezone.utc)
         })
+
+        payment_intent["public_token"] = public_token
 
         return {
             "status": "success",
@@ -810,12 +867,13 @@ async def get_subscription_details(
                     "trial_end_date": 1, "created_at": 1,
                 }
             )
-            if user_doc and user_doc.get("subscription_status") in ("active", "trial"):
+            normalized_status = normalize_subscription_status(user_doc.get("subscription_status")) if user_doc else None
+            if user_doc and normalized_status in ACTIVE_SUBSCRIPTION_STATUSES:
                 # Construct a minimal subscription record from users collection
                 subscription_record = {
                     "user_id": user_id,
                     "plan_id": user_doc.get("plan_id"),
-                    "status": user_doc.get("subscription_status"),
+                    "status": normalized_status,
                     "stripe_subscription_id": user_doc.get("stripe_subscription_id"),
                     "stripe_customer_id": user_doc.get("stripe_customer_id"),
                     "billing_interval": "monthly",

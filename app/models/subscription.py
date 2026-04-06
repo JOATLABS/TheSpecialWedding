@@ -39,6 +39,13 @@ ACTIVE_SUBSCRIPTION_STATUSES = frozenset(
     }
 )
 
+BILLING_PORTAL_RECOVERY_SUBSCRIPTION_STATUSES = frozenset(
+    {
+        SubscriptionStatus.PAST_DUE.value,
+        SubscriptionStatus.SUSPENDED.value,
+    }
+)
+
 PLANNER_BLOCKED_SUBSCRIPTION_STATUSES = frozenset(
     {
         SubscriptionStatus.PENDING_CHECKOUT.value,
@@ -56,7 +63,6 @@ PUBLIC_CHECKOUT_ALLOWED_STATUSES = frozenset(
     {
         SubscriptionStatus.PENDING_PAYMENT.value,
         SubscriptionStatus.PENDING_CHECKOUT.value,
-        SubscriptionStatus.EXPIRED.value,
     }
 )
 

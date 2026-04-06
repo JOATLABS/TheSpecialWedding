@@ -9,7 +9,17 @@ import { getApiBaseUrl } from '@/utils/env';
 import { getStripeClient, preloadStripeClient } from '@/utils/stripeClient';
 
 // Checkout Form Component
-function CheckoutForm({ amount, currency }: { amount: number; currency: string }) {
+function CheckoutForm({
+  amount,
+  currency,
+  clientSecret,
+  paymentId,
+}: {
+  amount: number;
+  currency: string;
+  clientSecret: string;
+  paymentId: string;
+}) {
   const router = useRouter();
   const stripe = useStripe();
   const elements = useElements();
@@ -27,7 +37,7 @@ function CheckoutForm({ amount, currency }: { amount: number; currency: string }
     const { error, paymentIntent } = await stripe.confirmPayment({
       elements,
       confirmParams: {
-        return_url: `${window.location.origin}/pay/success`,
+        return_url: `${window.location.origin}/pay/success?payment_id=${encodeURIComponent(paymentId)}`,
       },
       redirect: 'if_required',
     });
@@ -39,7 +49,7 @@ function CheckoutForm({ amount, currency }: { amount: number; currency: string }
     }
 
     if (paymentIntent) {
-      router.push(`/pay/success?payment_intent=${encodeURIComponent(paymentIntent.id)}`);
+      router.push(`/pay/success?payment_id=${encodeURIComponent(paymentId)}`);
       return;
     }
 
@@ -151,7 +161,7 @@ export default function PaymentPage({ params }: { params: Promise<{ id: string }
     );
   }
 
-  if (!clientSecret || !stripePromiseState) return null;
+  if (!id || !clientSecret || !stripePromiseState) return null;
 
   return (
     <div className="min-h-screen flex flex-col items-center justify-center bg-gray-50 dark:bg-slate-900 p-4 py-12">
@@ -164,7 +174,7 @@ export default function PaymentPage({ params }: { params: Promise<{ id: string }
 
           <div className="p-6">
             <Elements stripe={stripePromiseState} options={{ clientSecret, appearance: { theme: 'stripe' } }}>
-              <CheckoutForm amount={amount} currency={currency} />
+              <CheckoutForm amount={amount} currency={currency} clientSecret={clientSecret} paymentId={id} />
             </Elements>
           </div>
         </div>

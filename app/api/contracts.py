@@ -5,7 +5,7 @@ Includes both admin endpoints (authenticated) and public endpoints (token-based)
 Public endpoints allow couples to view and sign contracts without authentication.
 """
 from fastapi import APIRouter, HTTPException, Depends, Query, Request
-from typing import Optional
+from typing import Any, Optional
 from pydantic import BaseModel, Field
 from datetime import timezone
 from app.services.contract_service import contract_service
@@ -35,6 +35,70 @@ def _resolve_couple_display_name(couple: Optional[dict]) -> str:
     return partner1 or partner2 or "A couple"
 
 
+def _resolve_stripe_reference_id(value: Any) -> Optional[str]:
+    if isinstance(value, str):
+        return value
+    if isinstance(value, dict):
+        resolved = value.get("id")
+        return resolved if isinstance(resolved, str) else None
+    resolved = getattr(value, "id", None)
+    return resolved if isinstance(resolved, str) else None
+
+
+def _validate_setup_intent_payment_method(
+    stripe_client: Any,
+    *,
+    customer_id: str,
+    contract_token: str,
+    payment_method_id: str,
+    setup_intent_id: Optional[str],
+    expected_action: Optional[str],
+) -> tuple[str, Optional[str], Optional[str]]:
+    """Resolve and validate a payment method captured through Stripe SetupIntent."""
+
+    if setup_intent_id:
+        setup_intent = stripe_client.SetupIntent.retrieve(setup_intent_id)
+        if setup_intent.status != "succeeded":
+            raise HTTPException(status_code=400, detail="Payment setup is not complete")
+
+        setup_customer_id = _resolve_stripe_reference_id(setup_intent.customer)
+        if setup_customer_id != customer_id:
+            raise HTTPException(status_code=400, detail="Payment setup belongs to a different customer")
+
+        metadata = dict(getattr(setup_intent, "metadata", {}) or {})
+        if metadata.get("contract_token") != contract_token:
+            raise HTTPException(status_code=400, detail="Payment setup does not match this contract")
+        if expected_action and metadata.get("action") != expected_action:
+            raise HTTPException(status_code=400, detail="Payment setup action is invalid")
+
+        resolved_payment_method_id = _resolve_stripe_reference_id(setup_intent.payment_method)
+        if not resolved_payment_method_id:
+            raise HTTPException(status_code=400, detail="Payment setup did not produce a payment method")
+        if payment_method_id != resolved_payment_method_id:
+            raise HTTPException(status_code=400, detail="Payment method does not match the completed payment setup")
+
+    payment_method = stripe_client.PaymentMethod.retrieve(payment_method_id)
+    resolved_customer = _resolve_stripe_reference_id(payment_method.customer)
+    if resolved_customer != customer_id:
+        raise HTTPException(status_code=400, detail="Payment method belongs to a different customer")
+
+    card = payment_method.card if payment_method.type == "card" else None
+    resolved_payment_method_id = _resolve_stripe_reference_id(payment_method) or payment_method_id
+    if resolved_payment_method_id != payment_method_id:
+        raise HTTPException(status_code=400, detail="Retrieved payment method does not match the requested payment method")
+
+    return resolved_payment_method_id, card.last4 if card else None, card.brand if card else None
+
+
+def _extract_payment_method_card_summary(payment_method: object) -> dict:
+    payment_method_type = getattr(payment_method, "type", None)
+    card = getattr(payment_method, "card", None) if payment_method_type == "card" else None
+    return {
+        "brand": getattr(card, "brand", None),
+        "last4": getattr(card, "last4", None),
+    }
+
+
 # ============================================================================
 # REQUEST MODELS
 # ============================================================================
@@ -44,6 +108,7 @@ class SignContractRequest(BaseModel):
     signature_name: str = Field(..., min_length=1, max_length=200)
     stripe_customer_id: str = Field(..., min_length=1)
     stripe_payment_method_id: str = Field(..., min_length=1)
+    setup_intent_id: Optional[str] = Field(None, min_length=1)
     payment_method_last4: Optional[str] = Field(None, max_length=4)
     payment_method_brand: Optional[str] = Field(None, max_length=20)
     accept_terms: bool = Field(...)
@@ -1017,6 +1082,10 @@ async def sign_contract(
                 detail="You must accept the terms and conditions"
             )
 
+        resolved_payment_method_id = sign_data.stripe_payment_method_id
+        resolved_payment_method_last4 = sign_data.payment_method_last4
+        resolved_payment_method_brand = sign_data.payment_method_brand
+
         # C7: Validate Stripe payment method if provided
         if sign_data.stripe_payment_method_id and sign_data.stripe_customer_id:
             try:
@@ -1024,18 +1093,23 @@ async def sign_contract(
                 from app.core.settings import settings as app_settings
                 stripe.api_key = app_settings.stripe_secret_key
 
-                # Verify payment method belongs to the customer
-                pm = stripe.PaymentMethod.retrieve(sign_data.stripe_payment_method_id)
-                if pm.customer and pm.customer != sign_data.stripe_customer_id:
-                    raise HTTPException(
-                        status_code=400,
-                        detail="Payment method does not belong to this customer"
-                    )
+                (
+                    resolved_payment_method_id,
+                    resolved_payment_method_last4,
+                    resolved_payment_method_brand,
+                ) = _validate_setup_intent_payment_method(
+                    stripe,
+                    customer_id=sign_data.stripe_customer_id,
+                    contract_token=token,
+                    payment_method_id=sign_data.stripe_payment_method_id,
+                    setup_intent_id=sign_data.setup_intent_id,
+                    expected_action="contract_sign",
+                )
             except HTTPException:
                 raise
             except Exception as e:
-                # Log but don't block signing if Stripe validation fails
-                logger.warning(f"Could not validate payment method (non-blocking): {str(e)}")
+                logger.error(f"Could not validate payment method for signing: {str(e)}")
+                raise HTTPException(status_code=400, detail="Payment method validation failed")
 
         # Get IP and user agent
         ip_address = request.client.host if request.client else "unknown"
@@ -1047,9 +1121,9 @@ async def sign_contract(
             ip_address=ip_address,
             user_agent=user_agent,
             stripe_customer_id=sign_data.stripe_customer_id,
-            stripe_payment_method_id=sign_data.stripe_payment_method_id,
-            payment_method_last4=sign_data.payment_method_last4,
-            payment_method_brand=sign_data.payment_method_brand
+            stripe_payment_method_id=resolved_payment_method_id,
+            payment_method_last4=resolved_payment_method_last4,
+            payment_method_brand=resolved_payment_method_brand
         )
 
         if contract is None:
@@ -1190,10 +1264,11 @@ async def create_contract_setup_intent(token: str):
         # Create SetupIntent
         setup_intent = stripe.SetupIntent.create(
             customer=customer_id,
-            automatic_payment_methods={"enabled": True},
+            payment_method_types=["card"],
             metadata={
                 "contract_id": contract_id_str,
-                "contract_token": token
+                "contract_token": token,
+                "action": "contract_sign",
             }
         )
 
@@ -1207,42 +1282,6 @@ async def create_contract_setup_intent(token: str):
     except Exception as e:
         logger.error(f"Failed to create setup intent: {str(e)}")
         raise HTTPException(status_code=500, detail="Failed to initialize payment setup")
-
-
-@router.get("/public/payment-method/{payment_method_id}", tags=["Public Contracts"])
-async def get_payment_method_details(payment_method_id: str):
-    """
-    Get payment method details (public endpoint for contract signing).
-
-    Returns card brand and last 4 digits for display.
-    """
-    try:
-        import stripe
-        from app.core.settings import settings
-
-        if not settings.stripe_secret_key:
-            raise HTTPException(status_code=503, detail="Stripe is not configured")
-
-        stripe.api_key = settings.stripe_secret_key
-
-        pm = stripe.PaymentMethod.retrieve(payment_method_id)
-
-        return {
-            "id": pm.id,
-            "customer": pm.customer,
-            "type": pm.type,
-            "card": {
-                "brand": pm.card.brand if pm.card else None,
-                "last4": pm.card.last4 if pm.card else None,
-                "exp_month": pm.card.exp_month if pm.card else None,
-                "exp_year": pm.card.exp_year if pm.card else None
-            } if pm.type == "card" else None
-        }
-
-    except Exception as e:
-        logger.error(f"Failed to get payment method: {str(e)}")
-        raise HTTPException(status_code=404, detail="Payment method not found")
-
 
 # ============================================================================
 # COUPLE PORTAL ENDPOINTS (Public, token-based)
@@ -1389,6 +1428,7 @@ async def update_portal_payment_method(
             automatic_payment_methods={"enabled": True},
             metadata={
                 "contract_id": contract_id_str,
+                "contract_token": token,
                 "action": "update_payment_method"
             }
         )
@@ -1408,6 +1448,7 @@ async def update_portal_payment_method(
 class UpdatePaymentMethodRequest(BaseModel):
     """Request to confirm payment method update."""
     payment_method_id: str = Field(..., min_length=1)
+    setup_intent_id: Optional[str] = Field(None, min_length=1)
     payment_method_last4: Optional[str] = Field(None, max_length=4)
     payment_method_brand: Optional[str] = Field(None, max_length=20)
 
@@ -1443,24 +1484,24 @@ async def confirm_payment_method_update(
         if not customer_id:
             raise HTTPException(status_code=400, detail="No customer on file")
 
-        payment_method = stripe.PaymentMethod.retrieve(update_data.payment_method_id)
-
-        resolved_customer = payment_method.customer
-        if isinstance(resolved_customer, dict):
-            resolved_customer = resolved_customer.get("id")
-
-        if resolved_customer and resolved_customer != customer_id:
-            raise HTTPException(status_code=400, detail="Payment method belongs to a different customer")
-
-        card = payment_method.card if payment_method.type == "card" else None
-        payment_method_last4 = update_data.payment_method_last4 or (card.last4 if card else None)
-        payment_method_brand = update_data.payment_method_brand or (card.brand if card else None)
+        (
+            resolved_payment_method_id,
+            payment_method_last4,
+            payment_method_brand,
+        ) = _validate_setup_intent_payment_method(
+            stripe,
+            customer_id=customer_id,
+            contract_token=token,
+            payment_method_id=update_data.payment_method_id,
+            setup_intent_id=update_data.setup_intent_id,
+            expected_action="update_payment_method",
+        )
 
         # Set as default payment method
         stripe.Customer.modify(
             customer_id,
             invoice_settings={
-                "default_payment_method": update_data.payment_method_id
+                "default_payment_method": resolved_payment_method_id
             }
         )
 
@@ -1469,7 +1510,7 @@ async def confirm_payment_method_update(
             {"token": token},
             {
                 "$set": {
-                    "stripe_payment_method_id": update_data.payment_method_id,
+                    "stripe_payment_method_id": resolved_payment_method_id,
                     "payment_method_last4": payment_method_last4,
                     "payment_method_brand": payment_method_brand,
                     "payment_method_updated_at": datetime.now(timezone.utc)

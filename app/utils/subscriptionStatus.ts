@@ -12,6 +12,11 @@ export const ACTIVE_SUBSCRIPTION_STATUSES = new Set([
   'trial_expiring',
 ]);
 
+export const BILLING_PORTAL_RECOVERY_SUBSCRIPTION_STATUSES = new Set([
+  'past_due',
+  'suspended',
+]);
+
 export const BLOCKED_SUBSCRIPTION_STATUSES = new Set([
   'cancelled',
   'expired',
@@ -21,6 +26,15 @@ export const BLOCKED_SUBSCRIPTION_STATUSES = new Set([
   'pending_checkout',
   'pending_payment',
   'suspended',
+]);
+
+export const FRESH_CHECKOUT_SUBSCRIPTION_STATUSES = new Set([
+  'cancelled',
+  'expired',
+  'inactive',
+  'pending',
+  'pending_checkout',
+  'pending_payment',
 ]);
 
 export function normalizeSubscriptionStatus(status?: string | null): string {

@@ -5,6 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 
 from app.dependencies.auth_extended import require_root_admin, ExtendedAuthUser
 from app.core.database import mongo
+from app.models.subscription import ACTIVE_SUBSCRIPTION_STATUSES
 from app.utils.pydantic_objectid import PyObjectId
 from app.services.platform_metrics_service import PlatformMetricsService
 
@@ -613,13 +614,13 @@ async def get_overview_analytics(current_user: ExtendedAuthUser = Depends(requir
         # Safety cap: iterate through batches to avoid memory overload
         MAX_ACTIVE_USERS = 10000
         active_users_cursor = mongo.get_users_collection().find({
-            "subscription_status": {"$in": ["trial", "active"]},
+            "subscription_status": {"$in": list(ACTIVE_SUBSCRIPTION_STATUSES)},
             "is_active": True
         })
         active_users = await active_users_cursor.to_list(length=MAX_ACTIVE_USERS)
         for user in active_users:
             # Skip trial users for revenue calculation
-            if user.get("subscription_status") == "trial":
+            if user.get("subscription_status") in {"trial", "trial_expiring"}:
                 continue
             plan_id = user.get("plan_id")
             if plan_id:
@@ -668,7 +669,7 @@ async def get_revenue_analytics(current_user: ExtendedAuthUser = Depends(require
             # Count trial users on this plan
             trial_users_count = await mongo.get_users_collection().count_documents({
                 "plan_id": plan_id,
-                "subscription_status": "trial",
+                "subscription_status": {"$in": ["trial", "trial_expiring"]},
                 "is_active": True
             })
 

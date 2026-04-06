@@ -3,6 +3,7 @@
 import React, { createContext, useContext, useEffect, useState, useCallback, useRef } from 'react';
 import { flushSync } from 'react-dom';
 import { getApiBaseUrl } from '@/utils/env';
+import { isBlockedSubscriptionStatus, normalizeSubscriptionStatus } from '@/utils/subscriptionStatus';
 import { usePathname, useRouter } from 'next/navigation';
 import { toast } from 'sonner';
 
@@ -450,11 +451,13 @@ export const AdminProvider = ({ children }: { children: React.ReactNode }) => {
                 // throws away the in-memory access token before the destination
                 // route can hydrate, which caused the first-login bounce loop.
                 const subscriptionStatus =
-                    profile.user_data?.subscription_status ||
-                    profile.subscription_status;
+                    normalizeSubscriptionStatus(
+                        profile.user_data?.subscription_status ||
+                        profile.subscription_status
+                    );
                 const billingBlocked =
                     profile._subscription_blocked ||
-                    ['expired', 'cancelled', 'suspended', 'pending_payment', 'pending', 'inactive'].includes(subscriptionStatus || '');
+                    isBlockedSubscriptionStatus(subscriptionStatus);
 
                 if (profile.is_root_admin) {
                     router.replace('/admin');

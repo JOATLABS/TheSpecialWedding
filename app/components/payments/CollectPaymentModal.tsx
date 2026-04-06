@@ -116,9 +116,13 @@ export function CollectPaymentModal({
 
       const data = await response.json();
       const paymentIntent = data.payment_intent;
+      const publicToken = paymentIntent.public_token;
 
-      // Generate payment link (you'll need to create a payment page)
-      const link = `${window.location.origin}/pay/${paymentIntent.payment_intent_id}`;
+      if (!publicToken) {
+        throw new Error('Payment request token was not returned');
+      }
+
+      const link = `${window.location.origin}/pay/${publicToken}`;
       setPaymentLink(link);
 
       toast.success('Payment request created successfully!');
