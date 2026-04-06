@@ -16,6 +16,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - **Team invite acceptance lock rollback on validation errors** (`/app/services/team_management_service.py`, `/tests/backend/test_team_management_invite_lock.py`, `/.gitignore`) — The invite acceptance flow now releases its transitional `accepting` lock before re-raising handled `HTTPException`s such as password validation failures. This prevents pending invites from getting stranded in a non-terminal state that made later accept attempts look “already accepted” and blocked invite resend because resend only allows `pending` records.
+- **Planner-scoped wedding gallery storage with legacy mitigation path** (`/app/services/gallery_upload_service.py`, `/app/api/gallery_admin.py`, `/app/api/gallery_public.py`, `/app/admin/weddings/[id]/page.tsx`, `/scripts/migrate_gallery_storage_layout.py`, `/tests/backend/test_gallery_storage_paths.py`, `/.gitignore`) — Wedding gallery uploads now write into planner-scoped prefixes while the admin and public read paths still understand the legacy `folder/{wedding-slug}/...` layout. Added merge/dedupe behavior for mixed old/new prefixes, public legacy fallback for live galleries that have not been reconciled yet, updated the wedding admin copy so planners stop being told to type obsolete storage paths, and added a dry-run/execute migration script that can copy existing legacy wedding assets into the new planner-scoped layout and update wedding document references before the public launch cutover.
 
 ## [2.28.0] - 2026-04-02
 
