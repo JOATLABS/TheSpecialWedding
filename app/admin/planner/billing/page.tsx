@@ -1,14 +1,13 @@
 "use client";
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useAdmin } from '@/contexts/AdminContext';
 import { getApiBaseUrl } from '@/utils/env';
 import { formatAdminDate, DEFAULT_TIMEZONE } from '@/utils/dateFormat';
 import {
   BILLING_PORTAL_RECOVERY_SUBSCRIPTION_STATUSES,
-  BLOCKED_SUBSCRIPTION_STATUSES,
-  FRESH_CHECKOUT_SUBSCRIPTION_STATUSES,
+  getPlannerBillingEntryState,
   normalizeSubscriptionStatus,
 } from '@/utils/subscriptionStatus';
 import PageHeader from '../../components/PageHeader';
@@ -116,6 +115,7 @@ const normalizeSubscription = (subscription: UserSubscription): UserSubscription
 export default function PlannerBillingPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const handledCheckoutSessionRef = useRef<string | null>(null);
   const { userProfile, token } = useAdmin();
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<'subscription' | 'client_payments'>('subscription');
@@ -137,6 +137,8 @@ export default function PlannerBillingPage() {
   const paginationInvoices = usePagination({ initialItemsPerPage: 50 });
   const requestedPlanId = searchParams.get('plan');
   const requestedInterval = searchParams.get('interval') === 'yearly' ? 'yearly' : 'monthly';
+  const checkoutSucceeded = searchParams.get('success') === 'true';
+  const checkoutSessionId = searchParams.get('session_id');
   // Access control - only for wedding planners
   useEffect(() => {
     if (userProfile && !userProfile.is_wedding_planner && !userProfile.is_root_admin) {
@@ -426,6 +428,78 @@ export default function PlannerBillingPage() {
     }
   }, [userProfile, loadData]);
 
+  useEffect(() => {
+    if (!checkoutSucceeded || !checkoutSessionId || !token) {
+      return;
+    }
+
+    if (handledCheckoutSessionRef.current === checkoutSessionId) {
+      return;
+    }
+
+    handledCheckoutSessionRef.current = checkoutSessionId;
+
+    const reconcileCheckoutReturn = async () => {
+      try {
+        const baseUrl = getApiBaseUrl();
+        const sessionResponse = await fetch(
+          `${baseUrl}/stripe/checkout-session/${encodeURIComponent(checkoutSessionId)}`,
+          {
+            headers: {
+              'Authorization': `Bearer ${token}`,
+              'Content-Type': 'application/json',
+            },
+            credentials: 'include',
+          },
+        );
+
+        if (!sessionResponse.ok) {
+          throw new Error('Unable to verify the completed checkout session');
+        }
+
+        const sessionPayload = await sessionResponse.json();
+        const session = sessionPayload.session;
+
+        if (!session || (session.payment_status !== 'paid' && !session.subscription)) {
+          toast.error('Stripe checkout did not complete successfully.');
+          return;
+        }
+
+        toast.success('Checkout completed. Syncing your billing status...');
+
+        for (let attempt = 0; attempt < 5; attempt += 1) {
+          const subscriptionResponse = await fetch(
+            `${baseUrl}/stripe/subscription`,
+            {
+              headers: {
+                'Authorization': `Bearer ${token}`,
+                'Content-Type': 'application/json',
+              },
+              credentials: 'include',
+            },
+          );
+
+          if (subscriptionResponse.ok) {
+            await loadData();
+            router.replace('/admin/planner/billing');
+            return;
+          }
+
+          await new Promise((resolve) => window.setTimeout(resolve, 1200));
+        }
+
+        await loadData();
+        toast.message('Payment confirmed with Stripe. Billing details may take a few more seconds to refresh.');
+        router.replace('/admin/planner/billing');
+      } catch (error) {
+        console.error('Checkout reconciliation failed:', error);
+        toast.error(error instanceof Error ? error.message : 'Unable to verify your Stripe checkout return');
+      }
+    };
+
+    void reconcileCheckoutReturn();
+  }, [checkoutSessionId, checkoutSucceeded, loadData, router, token]);
+
   const openBillingPortal = async (flowType?: 'payment_method_update' | 'subscription_update' | 'subscription_cancel', loadingMessage?: string) => {
     try {
       const baseUrl = getApiBaseUrl();
@@ -514,7 +588,7 @@ export default function PlannerBillingPage() {
           body: JSON.stringify({
             plan_id: planId,
             billing_interval: interval,
-            success_url: `${window.location.origin}/admin/planner/billing?success=true`,
+            success_url: `${window.location.origin}/admin/planner/billing?success=true&session_id={CHECKOUT_SESSION_ID}`,
             cancel_url: `${window.location.origin}/admin/planner/billing`,
             trial_days: 0,
           })
@@ -645,15 +719,13 @@ export default function PlannerBillingPage() {
 
   // No subscription OR unpaid/expired/cancelled — show plan selection with fresh checkout
   const subStatus = normalizeSubscriptionStatus(currentSubscription?.status);
-  const needsPortalRecovery = currentSubscription
-    && currentPlan
-    && BILLING_PORTAL_RECOVERY_SUBSCRIPTION_STATUSES.has(subStatus);
-  const needsNewSubscription = !needsPortalRecovery && (
-    !currentSubscription
-      || !currentPlan
-      || FRESH_CHECKOUT_SUBSCRIPTION_STATUSES.has(subStatus)
-      || (BLOCKED_SUBSCRIPTION_STATUSES.has(subStatus) && !BILLING_PORTAL_RECOVERY_SUBSCRIPTION_STATUSES.has(subStatus))
-  );
+  const billingEntryState = getPlannerBillingEntryState({
+    status: subStatus,
+    hasSubscription: Boolean(currentSubscription),
+    hasPlan: Boolean(currentPlan),
+  });
+  const needsPortalRecovery = billingEntryState === 'portal_recovery';
+  const needsNewSubscription = billingEntryState === 'new_checkout';
   if (needsNewSubscription) {
     const requestedPlan = requestedPlanId
       ? plans.find((plan) => plan._id === requestedPlanId) ?? null
@@ -789,6 +861,32 @@ export default function PlannerBillingPage() {
           <div className="mt-6 flex flex-col justify-center gap-3 sm:flex-row">
             <Button onClick={handleUpdatePayment}>
               Update Payment Method
+            </Button>
+            <Button variant="outline" onClick={handleManageBilling}>
+              Open Billing Portal
+            </Button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (!currentSubscription || !currentPlan) {
+    return (
+      <div className="space-y-6">
+        <div className="mx-auto max-w-2xl rounded-2xl border border-slate-200 bg-white p-8 text-center dark:border-slate-700 dark:bg-slate-900">
+          <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300">
+            <AlertCircle className="h-8 w-8" />
+          </div>
+          <h1 className="mb-2 text-2xl font-bold text-slate-900 dark:text-white">
+            Billing Information Unavailable
+          </h1>
+          <p className="mx-auto max-w-xl text-sm text-slate-600 dark:text-slate-300">
+            Your billing data could not be fully loaded. Refresh the page or open the billing portal to continue.
+          </p>
+          <div className="mt-6 flex flex-col justify-center gap-3 sm:flex-row">
+            <Button onClick={loadData}>
+              Refresh Billing Data
             </Button>
             <Button variant="outline" onClick={handleManageBilling}>
               Open Billing Portal

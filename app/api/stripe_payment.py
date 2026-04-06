@@ -20,6 +20,11 @@ import logging
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="", tags=["Stripe Payments"])
+PAYABLE_PAYMENT_INTENT_STATUSES = {
+    "requires_payment_method",
+    "requires_confirmation",
+    "requires_action",
+}
 
 
 # ==================== REQUEST MODELS ====================
@@ -67,7 +72,7 @@ class CreatePaymentIntentRequest(BaseModel):
     """Request model for creating a payment intent for couple payments"""
     amount: float = Field(..., description="Payment amount in dollars", gt=0)
     currency: str = Field(default="usd", description="Currency code")
-    wedding_id: Optional[str] = Field(None, description="Associated wedding ID")
+    wedding_id: str = Field(..., description="Associated wedding ID")
     description: Optional[str] = Field(None, description="Payment description")
     metadata: Optional[dict] = Field(default=None, description="Additional metadata")
     destination_user_id: Optional[str] = Field(None, description="Internal ID of the user to receive funds (Connect account)")
@@ -225,15 +230,19 @@ async def get_payment_intent_details(id: str):
         payment_request = await _get_payment_request_by_public_token(id)
         pi = stripe.PaymentIntent.retrieve(payment_request["payment_intent_id"])
 
-        return {
+        response = {
             "id": pi.id,
-            "client_secret": pi.client_secret,
             "amount": pi.amount / 100,
             "currency": pi.currency,
             "status": pi.status,
             "description": pi.description,
             "public_token": payment_request["public_token"],
         }
+
+        if pi.status in PAYABLE_PAYMENT_INTENT_STATUSES:
+            response["client_secret"] = pi.client_secret
+
+        return response
     except HTTPException:
         raise
     except Exception as e:

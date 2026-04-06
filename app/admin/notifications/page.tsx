@@ -74,13 +74,14 @@ export default function NotificationsPage() {
   const tabFromUrl = searchParams.get('tab');
 
   // Initialize tab from URL query param, default to 'send' for root admin
-  const getInitialTab = (): 'send' | 'templates' | 'history' => {
+  const getInitialTab = (): 'inbox' | 'send' | 'templates' | 'history' => {
+    if (tabFromUrl === 'inbox') return 'inbox';
     if (tabFromUrl === 'history') return 'history';
     if (tabFromUrl === 'templates') return 'templates';
     return 'send';
   };
 
-  const [activeTab, setActiveTab] = useState<'send' | 'templates' | 'history'>(getInitialTab);
+  const [activeTab, setActiveTab] = useState<'inbox' | 'send' | 'templates' | 'history'>(getInitialTab);
   const [templates, setTemplates] = useState<NotificationTemplate[]>([]);
   const [sentNotifications, setSentNotifications] = useState<SentNotification[]>([]);
   const [plannerNotifications, setPlannerNotifications] = useState<PlannerNotification[]>([]);
@@ -92,7 +93,8 @@ export default function NotificationsPage() {
   // Update tab when URL query param changes (e.g., clicking bell icon with ?tab=history)
   useEffect(() => {
     if (tabFromUrl) {
-      if (tabFromUrl === 'history') setActiveTab('history');
+      if (tabFromUrl === 'inbox') setActiveTab('inbox');
+      else if (tabFromUrl === 'history') setActiveTab('history');
       else if (tabFromUrl === 'templates') setActiveTab('templates');
       else if (tabFromUrl === 'send') setActiveTab('send');
     }
@@ -117,6 +119,17 @@ export default function NotificationsPage() {
       setLoading(true);
 
       if (isRootAdmin) {
+        try {
+          const inboxResponse = await apiRequest<{ notifications: PlannerNotification[] }>('/admin/user/notifications', 'GET');
+          setPlannerNotifications((inboxResponse?.notifications ?? []).map((notification) => ({
+            ...notification,
+            source: 'platform' as const,
+          })));
+        } catch (error) {
+          console.warn('Root admin inbox endpoint not available, using empty array');
+          setPlannerNotifications([]);
+        }
+
         // Admin view: fetch templates and sent notifications
         try {
           const templatesResponse = await apiRequest<{ templates: NotificationTemplate[] }>('/admin/notification-templates', 'GET');
@@ -456,12 +469,22 @@ export default function NotificationsPage() {
       <PageHeader
         title="Platform Notifications"
         description="Send announcements and updates to all users"
-      />
+      >
+        {activeTab === 'inbox' && plannerNotifications.some(n => !n.is_read) && (
+          <button
+            onClick={markAllAsRead}
+            className="px-4 py-2 text-sm font-medium text-indigo-600 hover:text-indigo-800 dark:text-indigo-400 dark:hover:text-indigo-200 bg-indigo-50 dark:bg-indigo-900/30 rounded-lg transition-colors"
+          >
+            Mark all as read
+          </button>
+        )}
+      </PageHeader>
 
       {/* Tabs */}
       <div className="border-b border-slate-200 dark:border-slate-700">
         <nav className="flex space-x-8">
           {[
+            { key: 'inbox', label: 'Inbox' },
             { key: 'send', label: 'Send Notification' },
             { key: 'templates', label: 'Templates' },
             { key: 'history', label: 'History' }
@@ -480,6 +503,68 @@ export default function NotificationsPage() {
           ))}
         </nav>
       </div>
+
+      {/* Inbox Tab */}
+      {activeTab === 'inbox' && (
+        <div className="space-y-6">
+          <h2 className="text-xl font-semibold text-wedding-navy dark:text-white">My Notifications</h2>
+          <div className={surfaceClass}>
+            {plannerNotifications.length > 0 ? (
+              <div className="divide-y divide-slate-200 dark:divide-slate-700">
+                {plannerNotifications.map((notification) => (
+                  <div
+                    key={notification._id}
+                    onClick={() => !notification.is_read && markNotificationAsRead(notification._id, notification.source)}
+                    className={`p-4 transition-colors hover:bg-slate-50 dark:hover:bg-slate-700 ${
+                      !notification.is_read ? 'cursor-pointer bg-blue-50/80 dark:bg-blue-900/20' : ''
+                    }`}
+                  >
+                    <div className="flex items-start justify-between">
+                      <div className="flex-1">
+                        <div className="flex items-center gap-2">
+                          <span className={`w-2 h-2 rounded-full ${
+                            notification.type === 'support_ticket' ? 'bg-teal-500' :
+                            notification.type === 'system_config' ? 'bg-amber-500' :
+                            notification.type === 'sales_contact' ? 'bg-emerald-500' :
+                            notification.type === 'support_ticket_response' ? 'bg-cyan-500' :
+                            notification.type === 'system' ? 'bg-slate-500' :
+                            'bg-indigo-500'
+                          }`} />
+                          <h3 className="text-sm font-medium text-slate-900 dark:text-slate-100">
+                            {notification.title}
+                          </h3>
+                          {!notification.is_read && (
+                            <span className="px-2 py-0.5 text-xs bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-200 rounded">
+                              New
+                            </span>
+                          )}
+                        </div>
+                        <p className="mt-1 text-sm text-slate-600 dark:text-slate-400">
+                          {notification.message}
+                        </p>
+                        <div className="mt-2 flex items-center gap-4 text-xs text-slate-500 dark:text-slate-400">
+                          <span>{formatDate(notification.created_at)}</span>
+                          <span className="rounded bg-slate-100 px-2 py-0.5 capitalize dark:bg-slate-700">
+                            {notification.type.replace('_', ' ')}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="p-12 text-center">
+                <div className="mb-4 text-5xl text-slate-400 dark:text-slate-500">🔔</div>
+                <h3 className="mb-2 text-lg font-medium text-slate-900 dark:text-slate-100">No Notifications Yet</h3>
+                <p className="mx-auto max-w-md text-slate-600 dark:text-slate-400">
+                  Root admin alerts, support-ticket updates, and system notices will appear here.
+                </p>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Send Notification Tab */}
       {activeTab === 'send' && (

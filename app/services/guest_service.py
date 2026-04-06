@@ -1,9 +1,14 @@
+from collections import Counter
+from math import ceil
+import logging
+import re
+from typing import Any, Optional
+
 from fastapi import HTTPException
+
 from app.core.database import mongo
 from datetime import datetime, timezone
-from typing import Optional
-import logging
-from math import ceil
+from app.utils.contact_sanitizer import sanitize_phone
 from app.utils.token_generator import generate_token
 from app.utils.id_utils import to_object_id, to_str_id, normalize_doc_id
 
@@ -25,6 +30,8 @@ def _get_ai_cache_service():
 class GuestService:
     def __init__(self):
         self.collection = mongo.get_guest_collection()
+        self.rsvp_collection = mongo.db["rsvps"]
+        self.plus_one_collection = mongo.db["plus_ones"]
 
     async def _invalidate_guest_cache(self, wedding_id: str):
         """Invalidate AI cache when guest data changes (affects seating optimization)."""
@@ -72,7 +79,196 @@ class GuestService:
             {"$set": update_data}
         )
 
-    async def list_guests_by_wedding(self, wedding_id: str, page: int = 1, limit: int = 50):
+    def _build_guest_match(
+        self,
+        wedding_id: str,
+        name: Optional[str] = None,
+        email: Optional[str] = None,
+        phone: Optional[str] = None,
+        group_id: Optional[str] = None,
+        role: Optional[str] = None,
+        phone_issue: Optional[str] = None,
+        sms_status: Optional[str] = None,
+    ) -> dict[str, Any]:
+        match: dict[str, Any] = {"wedding_id": wedding_id}
+        and_clauses: list[dict[str, Any]] = []
+
+        if group_id:
+            match["group_id"] = group_id
+        if role:
+            match["role"] = role
+
+        if sms_status == "opted_out":
+            match["sms_opt_in"] = False
+        elif sms_status == "opted_in":
+            match["sms_opt_in"] = True
+
+        if phone_issue == "invalid_or_unreachable":
+            match["phone_status"] = {"$in": ["invalid", "landline", "unreachable"]}
+
+        if name:
+            and_clauses.append({"name": {"$regex": re.escape(name), "$options": "i"}})
+        if email:
+            and_clauses.append({"email": {"$regex": re.escape(email), "$options": "i"}})
+        if phone:
+            sanitized_phone = sanitize_phone(phone) or phone
+            and_clauses.append({"phone": {"$regex": re.escape(sanitized_phone), "$options": "i"}})
+        if phone_issue == "no_contact":
+            and_clauses.append(
+                {
+                    "$and": [
+                        {
+                            "$or": [
+                                {"phone": {"$exists": False}},
+                                {"phone": None},
+                                {"phone": ""},
+                            ]
+                        },
+                        {
+                            "$or": [
+                                {"email": {"$exists": False}},
+                                {"email": None},
+                                {"email": ""},
+                            ]
+                        },
+                    ]
+                }
+            )
+
+        if and_clauses:
+            match["$and"] = and_clauses
+
+        return match
+
+    def _build_guest_sort(self, sort_field: str, sort_direction: str) -> dict[str, int]:
+        sort_direction_value = -1 if sort_direction == "desc" else 1
+        sort_key = {
+            "name": "name",
+            "email": "email",
+            "phone": "phone",
+            "role": "role",
+            "group_id": "group_id",
+            "rsvp_status": "rsvp_sort_order",
+            "plus_ones": "plus_one_count",
+        }.get(sort_field, "name")
+
+        return {
+            sort_key: sort_direction_value,
+            "name": 1,
+            "_id": 1,
+        }
+
+    async def _build_guest_summary(self, wedding_id: str) -> dict[str, int]:
+        guest_docs = await self.collection.find(
+            {"wedding_id": wedding_id},
+            projection={
+                "_id": 1,
+                "invite_sent": 1,
+                "number_of_plus_ones_allowed": 1,
+            },
+        ).to_list(length=None)
+
+        if not guest_docs:
+            return {
+                "totalGuests": 0,
+                "totalPlusOneSlots": 0,
+                "respondedGuests": 0,
+                "respondedPlusOnes": 0,
+                "pendingGuests": 0,
+                "pendingPlusOneSlots": 0,
+                "notInvitedGuests": 0,
+                "submittedPlusOnes": 0,
+            }
+
+        guest_ids_obj = [guest["_id"] for guest in guest_docs]
+        guest_ids_str = [to_str_id(guest["_id"]) for guest in guest_docs]
+
+        rsvp_docs = await self.rsvp_collection.find(
+            {
+                "$or": [
+                    {"guest_id": {"$in": guest_ids_obj}},
+                    {"guest_id": {"$in": guest_ids_str}},
+                ]
+            },
+            projection={"guest_id": 1},
+        ).to_list(length=None)
+        responded_guest_ids = {str(doc.get("guest_id")) for doc in rsvp_docs}
+
+        plus_one_docs = await self.plus_one_collection.find(
+            {"guest_id": {"$in": guest_ids_str}},
+            projection={"guest_id": 1},
+        ).to_list(length=None)
+        plus_one_counts = Counter(str(doc.get("guest_id")) for doc in plus_one_docs if doc.get("guest_id"))
+
+        total_plus_one_slots = 0
+        responded_guests = 0
+        responded_plus_ones = 0
+        pending_guests = 0
+        pending_plus_one_slots = 0
+        not_invited_guests = 0
+
+        for guest, guest_id in zip(guest_docs, guest_ids_str):
+            plus_one_slots = int(guest.get("number_of_plus_ones_allowed") or 0)
+            invited = guest.get("invite_sent") is True
+            has_rsvp = guest_id in responded_guest_ids
+
+            total_plus_one_slots += plus_one_slots
+
+            if has_rsvp:
+                responded_guests += 1
+                responded_plus_ones += plus_one_counts.get(guest_id, 0)
+                continue
+
+            if invited:
+                pending_guests += 1
+                pending_plus_one_slots += plus_one_slots
+            else:
+                not_invited_guests += 1
+
+        return {
+            "totalGuests": len(guest_docs),
+            "totalPlusOneSlots": total_plus_one_slots,
+            "respondedGuests": responded_guests,
+            "respondedPlusOnes": responded_plus_ones,
+            "pendingGuests": pending_guests,
+            "pendingPlusOneSlots": pending_plus_one_slots,
+            "notInvitedGuests": not_invited_guests,
+            "submittedPlusOnes": len(plus_one_docs),
+        }
+
+    async def _build_guest_filter_options(self, wedding_id: str) -> dict[str, list[str]]:
+        groups = await self.collection.distinct(
+            "group_id",
+            {"wedding_id": wedding_id, "group_id": {"$exists": True, "$nin": [None, ""]}},
+        )
+        roles = await self.collection.distinct(
+            "role",
+            {"wedding_id": wedding_id, "role": {"$exists": True, "$nin": [None, ""]}},
+        )
+
+        return {
+            "groups": sorted([group for group in groups if isinstance(group, str)]),
+            "roles": sorted([role for role in roles if isinstance(role, str)]),
+        }
+
+    async def list_guests_by_wedding(
+        self,
+        wedding_id: str,
+        page: int = 1,
+        limit: int = 50,
+        fetch_all: bool = False,
+        name: Optional[str] = None,
+        email: Optional[str] = None,
+        phone: Optional[str] = None,
+        group_id: Optional[str] = None,
+        role: Optional[str] = None,
+        rsvp_status: str = "all",
+        plus_one_status: str = "all",
+        phone_issue: str = "all",
+        sms_status: str = "all",
+        sort_field: str = "name",
+        sort_direction: str = "asc",
+    ):
         """
         Retrieve guests for a wedding with pagination.
 
@@ -90,27 +286,166 @@ class GuestService:
             - limit: Guests per page
         """
         try:
-            # Count total documents
-            total = await self.collection.count_documents({"wedding_id": wedding_id})
+            match = self._build_guest_match(
+                wedding_id=wedding_id,
+                name=name,
+                email=email,
+                phone=phone,
+                group_id=group_id,
+                role=role,
+                phone_issue=phone_issue if phone_issue != "all" else None,
+                sms_status=sms_status if sms_status != "all" else None,
+            )
 
-            # Calculate pagination
-            skip = (page - 1) * limit
-            pages = ceil(total / limit) if limit > 0 else 0
+            requires_rsvp_lookup = rsvp_status != "all" or sort_field == "rsvp_status"
+            requires_plus_one_lookup = plus_one_status != "all" or sort_field == "plus_ones"
 
-            # Fetch paginated results
-            guests = await self.collection.find({"wedding_id": wedding_id}).skip(skip).limit(limit).to_list(length=limit)
+            pipeline: list[dict[str, Any]] = [{"$match": match}]
+            add_fields: dict[str, Any] = {}
+
+            if requires_rsvp_lookup:
+                pipeline.append(
+                    {
+                        "$lookup": {
+                            "from": "rsvps",
+                            "let": {
+                                "guest_object_id": "$_id",
+                                "guest_id_str": {"$toString": "$_id"},
+                            },
+                            "pipeline": [
+                                {
+                                    "$match": {
+                                        "$expr": {
+                                            "$or": [
+                                                {"$eq": ["$guest_id", "$$guest_object_id"]},
+                                                {"$eq": ["$guest_id", "$$guest_id_str"]},
+                                            ]
+                                        }
+                                    }
+                                }
+                            ],
+                            "as": "rsvp_docs",
+                        }
+                    }
+                )
+                add_fields["has_rsvp"] = {"$gt": [{"$size": "$rsvp_docs"}, 0]}
+                add_fields["rsvp_sort_order"] = {
+                    "$cond": [
+                        {"$gt": [{"$size": "$rsvp_docs"}, 0]},
+                        2,
+                        {
+                            "$cond": [
+                                {"$eq": ["$invite_sent", True]},
+                                1,
+                                0,
+                            ]
+                        },
+                    ]
+                }
+
+            if requires_plus_one_lookup:
+                pipeline.append(
+                    {
+                        "$lookup": {
+                            "from": "plus_ones",
+                            "let": {"guest_id_str": {"$toString": "$_id"}},
+                            "pipeline": [
+                                {
+                                    "$match": {
+                                        "$expr": {"$eq": ["$guest_id", "$$guest_id_str"]}
+                                    }
+                                }
+                            ],
+                            "as": "plus_one_docs",
+                        }
+                    }
+                )
+                add_fields["plus_one_count"] = {"$size": "$plus_one_docs"}
+
+            if add_fields:
+                pipeline.append({"$addFields": add_fields})
+
+            post_lookup_clauses: list[dict[str, Any]] = []
+            if rsvp_status == "responded":
+                post_lookup_clauses.append({"has_rsvp": True})
+            elif rsvp_status == "pending":
+                post_lookup_clauses.append({"invite_sent": True, "has_rsvp": False})
+            elif rsvp_status == "not_invited":
+                post_lookup_clauses.append({"invite_sent": {"$ne": True}, "has_rsvp": False})
+
+            if plus_one_status == "submitted":
+                post_lookup_clauses.append({"plus_one_count": {"$gt": 0}})
+            elif plus_one_status == "allowed":
+                post_lookup_clauses.append({"plus_one_allowed": True})
+            elif plus_one_status == "none":
+                post_lookup_clauses.append(
+                    {"plus_one_allowed": {"$ne": True}, "plus_one_count": 0}
+                )
+
+            if post_lookup_clauses:
+                pipeline.append(
+                    {
+                        "$match": (
+                            {"$and": post_lookup_clauses}
+                            if len(post_lookup_clauses) > 1
+                            else post_lookup_clauses[0]
+                        )
+                    }
+                )
+
+            pipeline.append({"$sort": self._build_guest_sort(sort_field, sort_direction)})
+
+            skip = 0 if fetch_all else (page - 1) * limit
+            paginated_items: list[dict[str, Any]] = []
+            if not fetch_all:
+                paginated_items.extend([{"$skip": skip}, {"$limit": limit}])
+            paginated_items.append(
+                {
+                    "$project": {
+                        "rsvp_docs": 0,
+                        "plus_one_docs": 0,
+                        "has_rsvp": 0,
+                        "plus_one_count": 0,
+                        "rsvp_sort_order": 0,
+                    }
+                }
+            )
+            pipeline.append(
+                {
+                    "$facet": {
+                        "items": paginated_items,
+                        "totalCount": [{"$count": "count"}],
+                    }
+                }
+            )
+
+            result = await self.collection.aggregate(pipeline).to_list(length=1)
+            aggregate_result = result[0] if result else {"items": [], "totalCount": []}
+            guests = aggregate_result.get("items", [])
+            total = (
+                aggregate_result["totalCount"][0]["count"]
+                if aggregate_result.get("totalCount")
+                else 0
+            )
+            pages = 1 if fetch_all else (ceil(total / limit) if limit > 0 else 1)
 
             # Normalize IDs
             for guest in guests:
                 normalize_doc_id(guest)
                 guest.pop("_id", None)
 
+            summary = await self._build_guest_summary(wedding_id)
+            filter_options = await self._build_guest_filter_options(wedding_id)
+            response_limit = total if fetch_all else limit
+
             return {
                 "guests": guests,
                 "total": total,
-                "page": page,
+                "page": 1 if fetch_all else page,
                 "pages": pages,
-                "limit": limit
+                "limit": response_limit,
+                "summary": summary,
+                "filter_options": filter_options,
             }
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Error retrieving guests: {str(e)}")

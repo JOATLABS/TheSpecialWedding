@@ -44,11 +44,14 @@ async def list_vendor_directory(
 ):
     """
     List all vendors in the planner's directory.
+    Root admins see ALL vendors; planners see only their own.
     Supports filtering by category, preferred status, search, and tags.
     """
     tag_list = tags.split(",") if tags else None
+    # Root admin sees every vendor regardless of created_by
+    owner_email = None if current_user.is_root_admin else current_user.email
     return await vendor_service.get_vendor_profiles(
-        created_by=current_user.email,
+        created_by=owner_email,
         category=category,
         is_preferred=is_preferred,
         search=search,
@@ -106,12 +109,13 @@ async def update_vendor_profile(
     data: UpdateVendorProfileRequest,
     current_user: ExtendedAuthUser = Depends(require_vendor_feature)
 ):
-    """Update a vendor in the directory"""
+    """Update a vendor in the directory. Root admins can update any vendor."""
     enforce_team_permission(current_user, "manage_vendors")
+    owner_email = None if current_user.is_root_admin else current_user.email
     return await vendor_service.update_vendor_profile(
         vendor_id=vendor_id,
         data=data.model_dump(exclude_none=True),
-        created_by=current_user.email
+        created_by=owner_email
     )
 
 
@@ -122,7 +126,9 @@ async def delete_vendor_from_directory(
 ):
     """Remove a vendor from the directory (soft delete)"""
     enforce_team_permission(current_user, "manage_vendors")
-    return await vendor_service.delete_vendor_profile(vendor_id, current_user.email)
+    # Root admin can delete any vendor; planners can only delete their own
+    owner_email = None if current_user.is_root_admin else current_user.email
+    return await vendor_service.delete_vendor_profile(vendor_id, owner_email)
 
 
 # =============================================================================

@@ -117,6 +117,41 @@ def test_payment_intent_details_require_public_token(monkeypatch):
     }
 
 
+def test_payment_intent_details_omit_client_secret_when_not_payable(monkeypatch):
+    fake_mongo = FakeMongo(
+        {
+            "public_token": "public-token-123",
+            "payment_intent_id": "pi_123",
+        }
+    )
+    monkeypatch.setattr(database_module, "mongo", fake_mongo)
+    monkeypatch.setattr(settings_module.settings, "stripe_secret_key", "sk_test_123", raising=False)
+    monkeypatch.setattr(
+        stripe.PaymentIntent,
+        "retrieve",
+        lambda payment_intent_id: SimpleNamespace(
+            id=payment_intent_id,
+            client_secret="pi_secret_123",
+            amount=12500,
+            currency="usd",
+            status="succeeded",
+            description="Deposit payment",
+        ),
+    )
+
+    result = asyncio.run(stripe_payment_module.get_payment_intent_details("public-token-123"))
+
+    assert result == {
+        "id": "pi_123",
+        "amount": 125.0,
+        "currency": "usd",
+        "status": "succeeded",
+        "description": "Deposit payment",
+        "public_token": "public-token-123",
+    }
+    assert "client_secret" not in result
+
+
 def test_payment_intent_summary_rejects_raw_payment_intent_id(monkeypatch):
     fake_mongo = FakeMongo(
         {

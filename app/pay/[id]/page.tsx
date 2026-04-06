@@ -95,6 +95,7 @@ function CheckoutForm({
 
 // Main Page Component
 export default function PaymentPage({ params }: { params: Promise<{ id: string }> }) {
+  const router = useRouter();
   const [clientSecret, setClientSecret] = useState<string | null>(null);
   const [id, setId] = useState<string | null>(null);
 
@@ -103,6 +104,7 @@ export default function PaymentPage({ params }: { params: Promise<{ id: string }
   }, [params]);
   const [amount, setAmount] = useState<number>(0);
   const [currency, setCurrency] = useState<string>('usd');
+  const [paymentStatus, setPaymentStatus] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [stripePromiseState, setStripePromiseState] = useState<Promise<Stripe | null> | null>(null);
@@ -122,9 +124,19 @@ export default function PaymentPage({ params }: { params: Promise<{ id: string }
         }
 
         const data = await res.json();
+        setPaymentStatus(data.status);
         setClientSecret(data.client_secret);
         setAmount(data.amount);
         setCurrency(data.currency);
+
+        if (data.status === 'succeeded' || data.status === 'processing') {
+          router.replace(`/pay/success?payment_id=${encodeURIComponent(id)}`);
+          return;
+        }
+
+        if (!data.client_secret) {
+          throw new Error('This payment request is no longer payable. Please contact your wedding planner.');
+        }
       } catch (err: any) {
         console.error(err);
         setError(err.message);
@@ -134,13 +146,27 @@ export default function PaymentPage({ params }: { params: Promise<{ id: string }
     };
 
     fetchPaymentDetails();
-  }, [id]);
+  }, [id, router]);
 
 
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-slate-900">
         <Loader2 className="w-12 h-12 text-wedding-rose animate-spin" />
+      </div>
+    );
+  }
+
+  if (paymentStatus === 'succeeded' || paymentStatus === 'processing') {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-slate-900 p-4">
+        <div className="max-w-md w-full bg-white dark:bg-slate-800 p-8 rounded-2xl shadow-xl text-center">
+          <Loader2 className="w-12 h-12 text-wedding-rose animate-spin mx-auto mb-4" />
+          <h1 className="text-xl font-bold text-gray-900 dark:text-white mb-2">Redirecting to payment status…</h1>
+          <p className="text-gray-600 dark:text-gray-300">
+            This payment is already being processed. We&apos;re loading the latest status now.
+          </p>
+        </div>
       </div>
     );
   }

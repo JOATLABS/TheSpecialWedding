@@ -271,7 +271,6 @@ export default function CouplePortalPage() {
         if (!active) return;
 
         await handlePaymentMethodCaptured({
-          customerId: paymentSetup.customerId || paymentUpdateCustomerId || '',
           paymentMethodId: paymentSetup.paymentMethodId,
           last4: '****',
           brand: 'card',
@@ -456,7 +455,6 @@ export default function CouplePortalPage() {
 
             <StripePaymentCapture
               clientSecret={paymentUpdateClientSecret}
-              customerId={paymentUpdateCustomerId || undefined}
               onPaymentMethodCaptured={handlePaymentMethodCaptured}
               onError={handlePaymentMethodCaptureError}
               disabled={savingPaymentMethod}

@@ -91,13 +91,73 @@ async def list_guests(
     wedding_id: str = Query(...),
     page: int = Query(1, ge=1, le=10000, description="Page number (1-indexed)"),
     limit: int = Query(50, ge=1, le=100, description="Number of guests per page"),
+    fetch_all: bool = Query(False, description="Return all matching guests without pagination"),
+    name: Optional[str] = Query(None, description="Filter by guest name"),
+    email: Optional[str] = Query(None, description="Filter by guest email"),
+    phone: Optional[str] = Query(None, description="Filter by guest phone"),
+    group_id: Optional[str] = Query(None, description="Filter by guest group"),
+    role: Optional[str] = Query(None, description="Filter by guest role"),
+    rsvp_status: Optional[str] = Query(None, description="Filter by RSVP status"),
+    plus_one_status: Optional[str] = Query(None, description="Filter by plus-one status"),
+    phone_issue: Optional[str] = Query(None, description="Filter by phone/contact issue"),
+    sms_status: Optional[str] = Query(None, description="Filter by SMS opt-in status"),
+    sort_field: Optional[str] = Query("name", description="Sort field"),
+    sort_direction: Optional[str] = Query("asc", description="Sort direction"),
     current_user: ExtendedAuthUser = Depends(require_wedding_planner_only)
 ):
     # Check if user has access to this wedding
     if not await check_wedding_access(current_user, wedding_id):
         raise HTTPException(status_code=403, detail="Access to this wedding denied")
     try:
-        return await guest_service.list_guests_by_wedding(wedding_id, page=page, limit=limit)
+        validated_name = validated_string_filter(name, max_length=100)
+        validated_email = validated_string_filter(email, max_length=100)
+        validated_phone = validated_string_filter(phone, max_length=30)
+        validated_group_id = validated_string_filter(group_id, max_length=100)
+        validated_role = validated_string_filter(role, max_length=50)
+        validated_rsvp_status = (
+            rsvp_status
+            if rsvp_status in {"all", "responded", "pending", "not_invited"}
+            else "all"
+        )
+        validated_plus_one_status = (
+            plus_one_status
+            if plus_one_status in {"all", "allowed", "submitted", "none"}
+            else "all"
+        )
+        validated_phone_issue = (
+            phone_issue
+            if phone_issue in {"all", "invalid_or_unreachable", "no_contact"}
+            else "all"
+        )
+        validated_sms_status = (
+            sms_status
+            if sms_status in {"all", "opted_in", "opted_out"}
+            else "all"
+        )
+        validated_sort_field = (
+            sort_field
+            if sort_field in {"name", "email", "phone", "role", "group_id", "rsvp_status", "plus_ones"}
+            else "name"
+        )
+        validated_sort_direction = "desc" if sort_direction == "desc" else "asc"
+
+        return await guest_service.list_guests_by_wedding(
+            wedding_id,
+            page=page,
+            limit=limit,
+            fetch_all=fetch_all,
+            name=validated_name,
+            email=validated_email,
+            phone=validated_phone,
+            group_id=validated_group_id,
+            role=validated_role,
+            rsvp_status=validated_rsvp_status,
+            plus_one_status=validated_plus_one_status,
+            phone_issue=validated_phone_issue,
+            sms_status=validated_sms_status,
+            sort_field=validated_sort_field,
+            sort_direction=validated_sort_direction,
+        )
     except HTTPException as e:
         raise e
     except Exception:

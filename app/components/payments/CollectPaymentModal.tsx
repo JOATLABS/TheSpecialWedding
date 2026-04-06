@@ -73,8 +73,10 @@ export function CollectPaymentModal({
     }
 
     const finalWeddingId = weddingId || selectedWeddingId;
-    // Wedding ID is optional for payment intent if just a generic charge, but recommended.
-    // If not selected, we proceed without it.
+    if (!finalWeddingId) {
+      toast.error('Please select the wedding this payment request belongs to');
+      return;
+    }
 
     const selectedWedding = weddings.find(w => w._id === finalWeddingId);
     const finalWeddingTitle = weddingTitle || selectedWedding?.title || 'Wedding Services';
@@ -164,7 +166,7 @@ export function CollectPaymentModal({
             <>
               {!weddingId && (
                 <div className="space-y-2">
-                  <Label htmlFor="wedding">Wedding (Optional)</Label>
+                  <Label htmlFor="wedding">Wedding</Label>
                   <select
                     id="wedding"
                     className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
@@ -179,6 +181,9 @@ export function CollectPaymentModal({
                       </option>
                     ))}
                   </select>
+                  <p className="text-sm text-gray-500">
+                    Payment requests must be tied to a specific wedding so the planner and couple see the right record.
+                  </p>
                 </div>
               )}
 
@@ -258,7 +263,7 @@ export function CollectPaymentModal({
               <Button variant="outline" onClick={handleClose} disabled={loading}>
                 Cancel
               </Button>
-              <Button onClick={handleCreatePayment} disabled={loading || !amount}>
+              <Button onClick={handleCreatePayment} disabled={loading || !amount || (!weddingId && !selectedWeddingId)}>
                 {loading ? (
                   <>
                     <Loader2 className="w-4 h-4 mr-2 animate-spin" />

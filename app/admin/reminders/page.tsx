@@ -1,11 +1,13 @@
 'use client';
 
 import { useState, useEffect, useCallback, useMemo } from 'react';
+import Link from 'next/link';
 import { getApiBaseUrl } from '@/utils/env';
 import { useAdmin } from '@/contexts/AdminContext';
 import { formatDateTime } from '@/utils/dateFormat';
 import { MultiSelect } from '@/components/ui/MultiSelect';
 import { MessageEnrichment } from '@/components/ui/MessageEnrichment';
+import { extractGuestList } from '@/admin/utils/guestListResponse';
 import { Sparkles, X } from 'lucide-react';
 import { BUILT_IN_WEDDING_EVENT_OPTIONS, getWeddingEventLabel, getWeddingEventOptions } from '@/utils/weddingEvents';
 import PageHeader from '../components/PageHeader';
@@ -32,9 +34,12 @@ interface Guest {
  phone?: string;
  email?: string;
  role: string;
+ group_id?: string;
  plus_one_allowed: boolean;
  phone_status?: 'unknown' | 'valid' | 'invalid' | 'landline' | 'unreachable' | 'unsubscribed';
  sms_opt_in?: boolean;
+ phone_error?: string;
+ sms_opt_out_reason?: string;
 }
 
 interface PlusOne {
@@ -138,7 +143,12 @@ export default function AdminRemindersPage() {
    },
  });
  const data = await response.json();
- setWeddings(Array.isArray(data) ? data : []);
+ const weddingList = Array.isArray(data)
+   ? data
+   : Array.isArray(data?.weddings)
+     ? data.weddings
+     : [];
+ setWeddings(weddingList);
  } catch (err) {
  setError('Failed to load weddings');
  }
@@ -150,7 +160,7 @@ export default function AdminRemindersPage() {
  try {
  const baseUrl = getApiBaseUrl();
  const response = await fetch(
- `${baseUrl}/admin/guests?wedding_id=${selectedWedding}`,
+ `${baseUrl}/admin/guests?wedding_id=${selectedWedding}&fetch_all=true`,
  {
  headers: { 'Authorization': `Bearer ${token}` },
  }
@@ -162,8 +172,9 @@ export default function AdminRemindersPage() {
  }
 
  const data = await response.json();
- console.log('Fetched guests:', Array.isArray(data) ? data.length : 0, 'guests');
- setGuests(Array.isArray(data) ? data : []);
+ const guestList = extractGuestList<Guest>(data);
+ console.log('Fetched guests:', guestList.length, 'guests');
+ setGuests(guestList);
  } catch (err) {
  console.error('Failed to load guests:', err);
  }
@@ -175,7 +186,7 @@ export default function AdminRemindersPage() {
  try {
  const baseUrl = getApiBaseUrl();
  const response = await fetch(
- `${baseUrl}/admin/plus-ones/wedding/${selectedWedding}`,
+ `${baseUrl}/admin/plus-one/wedding/${selectedWedding}`,
  {
  headers: { 'Authorization': `Bearer ${token}` },
  }
@@ -237,6 +248,16 @@ export default function AdminRemindersPage() {
  fetchPlusOnes();
  }
  }, [fetchGuests, fetchPlusOnes, selectedWedding, token]);
+
+ useEffect(() => {
+ if (!weddings.length) return;
+ const hasSelectedWedding = weddings.some((wedding) => (wedding.id || wedding._id) === selectedWedding);
+ if (hasSelectedWedding) return;
+ const defaultWeddingId = weddings[0].id || weddings[0]._id || '';
+ if (defaultWeddingId) {
+ setSelectedWedding(defaultWeddingId);
+ }
+ }, [selectedWedding, weddings]);
 
  useEffect(() => {
  if (reminderEventOptions.length === 0) return;
@@ -662,11 +683,76 @@ export default function AdminRemindersPage() {
  g.phone_status === 'invalid' || g.phone_status === 'landline' || g.phone_status === 'unreachable'
  );
  const guestsOptedOut = guests.filter(g => g.sms_opt_in === false);
- console.log('All guests:', guests);
- console.log('Guests with phone:', guestsWithPhone);
- console.log('Selected wedding:', selectedWedding);
- console.log('Token exists:', !!token);
-
+ const buildGuestManagementHref = (params: Record<string, string>) => {
+ const searchParams = new URLSearchParams({
+ wedding_id: selectedWedding,
+ ...params,
+ });
+ return `/admin/guests?${searchParams.toString()}`;
+ };
+ const renderIssueGuestList = (
+ issueGuests: Guest[],
+ issueType: 'invalid_phone' | 'no_contact' | 'opted_out',
+ description: string
+ ) => (
+ <details className="mt-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-white/70 dark:bg-slate-900/40">
+ <summary className="cursor-pointer list-none px-3 py-2 text-sm font-medium text-wedding-navy dark:text-gray-100">
+ View affected guests
+ </summary>
+ <div className="border-t border-gray-200 dark:border-gray-700 px-3 py-3">
+ <div className="mb-3 flex items-center justify-between gap-3">
+ <p className="text-xs text-gray-500 dark:text-gray-400">{description}</p>
+ <Link
+ href={buildGuestManagementHref(
+ issueType === 'invalid_phone'
+ ? { phone_issue: 'invalid_or_unreachable' }
+ : issueType === 'no_contact'
+ ? { phone_issue: 'no_contact' }
+ : { sms_status: 'opted_out' }
+ )}
+ className="text-xs font-medium text-wedding-rose hover:text-wedding-navy"
+ >
+ Open filtered guest list
+ </Link>
+ </div>
+ <ul className="space-y-2">
+ {issueGuests.map((guest) => {
+ const guestKey = guest.id || guest._id || `${guest.name}-${guest.phone || guest.email || guest.token}`;
+ const guestParams: Record<string, string> = { name: guest.name };
+ if (guest.phone) {
+ guestParams.phone = guest.phone;
+ }
+ return (
+ <li
+ key={guestKey}
+ className="flex flex-col gap-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-slate-800/80 px-3 py-2 sm:flex-row sm:items-center sm:justify-between"
+ >
+ <div>
+ <p className="font-medium text-gray-900 dark:text-gray-100">{guest.name}</p>
+ <p className="text-xs text-gray-500 dark:text-gray-400">
+ {guest.phone || 'No phone'}{guest.email ? ` · ${guest.email}` : ' · No email'}
+ </p>
+ <p className="text-xs text-gray-500 dark:text-gray-400">
+ {issueType === 'invalid_phone'
+ ? `Phone status: ${guest.phone_status || 'unknown'}${guest.phone_error ? ` · ${guest.phone_error}` : ''}`
+ : issueType === 'opted_out'
+ ? `SMS opted out${guest.sms_opt_out_reason ? ` · ${guest.sms_opt_out_reason}` : ''}`
+ : 'Missing both phone number and email address'}
+ </p>
+ </div>
+ <Link
+ href={buildGuestManagementHref(guestParams)}
+ className="text-sm font-medium text-wedding-rose hover:text-wedding-navy"
+ >
+ Review guest
+ </Link>
+ </li>
+ );
+ })}
+ </ul>
+ </div>
+ </details>
+ );
  return (
  <div className="space-y-6">
  <PageHeader
@@ -809,19 +895,40 @@ export default function AdminRemindersPage() {
  Total reachable guests: {guestsWithPhoneOrEmail.length}
  </p>
  {unreachableGuests.length > 0 && (
+ <div>
  <p className="text-sm font-medium text-amber-600 dark:text-amber-400">
  {unreachableGuests.length} guest{unreachableGuests.length !== 1 ? 's have' : ' has'} no phone or email — unreachable
  </p>
+ {renderIssueGuestList(
+ unreachableGuests,
+ 'no_contact',
+ 'These guests cannot receive invitations or reminders until at least one contact method is added.'
+ )}
+ </div>
  )}
  {guestsWithInvalidPhone.length > 0 && (
+ <div>
  <p className="text-sm font-medium text-red-600 dark:text-red-400">
  {guestsWithInvalidPhone.length} guest{guestsWithInvalidPhone.length !== 1 ? 's have' : ' has'} invalid/unreachable phone numbers
  </p>
+ {renderIssueGuestList(
+ guestsWithInvalidPhone,
+ 'invalid_phone',
+ 'These guests have a phone number on file, but SMS delivery cannot reach it in its current state.'
+ )}
+ </div>
  )}
  {guestsOptedOut.length > 0 && (
+ <div>
  <p className="text-sm text-gray-500 dark:text-gray-400">
  {guestsOptedOut.length} guest{guestsOptedOut.length !== 1 ? 's have' : ' has'} opted out of SMS
  </p>
+ {renderIssueGuestList(
+ guestsOptedOut,
+ 'opted_out',
+ 'These guests have explicitly opted out of SMS and should only be contacted by email unless they opt back in.'
+ )}
+ </div>
  )}
  </div>
  </div>

@@ -211,6 +211,48 @@ async def create_guest_indexes():
         )
         logger.info("Created index: idx_wedding_table")
 
+        # 7. Wedding + name for guest list sorting and targeted planner lookups
+        await collection.create_index(
+            [("wedding_id", ASCENDING), ("name", ASCENDING)],
+            name="idx_wedding_name",
+        )
+        logger.info("Created index: idx_wedding_name")
+
+        # 8. Wedding + group_id for planner guest filters
+        await collection.create_index(
+            [("wedding_id", ASCENDING), ("group_id", ASCENDING)],
+            name="idx_wedding_group",
+        )
+        logger.info("Created index: idx_wedding_group")
+
+        # 9. Wedding + role for planner guest filters
+        await collection.create_index(
+            [("wedding_id", ASCENDING), ("role", ASCENDING)],
+            name="idx_wedding_role",
+        )
+        logger.info("Created index: idx_wedding_role")
+
+        # 10. Wedding + invite status for planner RSVP workflow filters
+        await collection.create_index(
+            [("wedding_id", ASCENDING), ("invite_sent", ASCENDING)],
+            name="idx_wedding_invite_sent",
+        )
+        logger.info("Created index: idx_wedding_invite_sent")
+
+        # 11. Wedding + phone status for reminders/remediation views
+        await collection.create_index(
+            [("wedding_id", ASCENDING), ("phone_status", ASCENDING)],
+            name="idx_wedding_phone_status",
+        )
+        logger.info("Created index: idx_wedding_phone_status")
+
+        # 12. Wedding + sms opt-in for delivery remediation views
+        await collection.create_index(
+            [("wedding_id", ASCENDING), ("sms_opt_in", ASCENDING)],
+            name="idx_wedding_sms_opt_in",
+        )
+        logger.info("Created index: idx_wedding_sms_opt_in")
+
         logger.info("All guest indexes created successfully")
         return True
     except Exception as e:
