@@ -116,7 +116,7 @@ SEARCH_QUERIES = [
     ("wedding reception venue in {state_full}", "venue"),
     ("wedding DJ entertainment in {state_full}", "dj"),
     ("wedding emcee master of ceremonies in {state_full}", "mc"),
-    ("wedding live band music entertainment in {state_full}", "band"),
+    ("live wedding band for hire in {state_full}", "band"),
     ("wedding officiant minister in {state_full}", "officiant"),
     ("wedding planner coordinator in {state_full}", "planner"),
     ("wedding event decorator design in {state_full}", "decorator"),
