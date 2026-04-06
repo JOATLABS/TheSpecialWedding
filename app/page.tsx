@@ -41,7 +41,7 @@ type FAQ = {
 
 /* ═══════════════════════════════════════════════════════════
    Feature showcase data — hardcoded for performance
-   13 features mapped to real dashboard screenshots
+   18 features mapped to real dashboard screenshots
    ═══════════════════════════════════════════════════════════ */
 
 const showcaseFeatures = MARKETING_FEATURES;
@@ -53,13 +53,14 @@ const showcaseFeatures = MARKETING_FEATURES;
 const metrics = [
   { value: "48k+", label: "Guests managed" },
   { value: "5 days", label: "Avg. RSVP turnaround" },
-  { value: "13", label: "Tools in one platform" },
+  { value: "18", label: "Tools in one platform" },
   { value: "99.9%", label: "Uptime" },
 ];
 
 const replacements = [
   "HoneyBook", "Aisle Planner", "Zola", "Google Sheets",
   "DocuSign", "Canva", "QuickBooks", "Trello",
+  "Typeform", "Mailchimp",
 ];
 
 /* ═══════════════════════════════════════════════════════════
@@ -69,19 +70,27 @@ const replacements = [
 const faqs: FAQ[] = [
   {
     question: "Can I manage multiple weddings at once?",
-    answer: "Yes. Each wedding gets its own workspace with separate guest lists, budgets, seating, and branding — all managed from a single dashboard.",
+    answer: "Yes. Each wedding gets its own workspace with separate guest lists, budgets, seating, vendors, and branding — all managed from a single dashboard with portfolio-level analytics.",
+  },
+  {
+    question: "What do my couples see?",
+    answer: "Every couple gets their own Couple Portal with a personalized dashboard, timeline, payment history, form submissions, an inbox to message you directly, photo memories, gift registry, and FAQs — no app download needed.",
+  },
+  {
+    question: "How does the AI help me run my business?",
+    answer: "AI is woven into contracts (clause generation), service packages (pricing suggestions), reminders (tone-aware message drafting), budgets (spend forecasting), payments (cash flow predictions), and seating (conflict resolution) — saving hours of manual work every week.",
+  },
+  {
+    question: "Can I send RSVPs and reminders via SMS?",
+    answer: "Yes. Send RSVP invitations and follow-up reminders via SMS (Twilio or Telnyx) or email (Resend), with automatic fallback if SMS fails, delivery tracking, and AI-drafted messages in formal, friendly, or casual tones.",
+  },
+  {
+    question: "Can vendors collaborate in the platform?",
+    answer: "Yes. Invite photographers, caterers, and venues into dedicated workspaces with role-based access to timelines, contracts, deliverables, and file exchanges — plus a vendor advertising portal for agencies.",
   },
   {
     question: "Is there support on the wedding day?",
     answer: "Signature and Agency plans include live chat with our success team plus on-call escalation for critical day-of moments.",
-  },
-  {
-    question: "How do AI pricing suggestions work?",
-    answer: "When you create a service package, our AI analyzes your market, services, and costs to suggest competitive pricing tiers — saving you hours of research.",
-  },
-  {
-    question: "Can vendors collaborate in the platform?",
-    answer: "Yes. Invite photographers, caterers, and venues into dedicated workspaces with role-based access to timelines, contracts, and file exchanges.",
   },
 ];
 
@@ -94,7 +103,16 @@ const fallbackPricing: PricingTier[] = [
     name: "Boutique",
     price: "$29",
     cadence: "per wedding / month",
-    features: ["Guest & RSVP manager", "Email invitations", "Wedding website", "Timeline builder"],
+    features: [
+      "Guest management & RSVP tracking",
+      "SMS & email reminders with delivery tracking",
+      "Couple portal (dashboard, timeline, inbox)",
+      "Photo gallery & guest memory uploads",
+      "Budget tracking by category",
+      "Wedding configuration & branding",
+      "Calendar with Google Sync",
+      "Knowledge base & support docs",
+    ],
     cta: "Start your free trial",
   },
   {
@@ -102,7 +120,16 @@ const fallbackPricing: PricingTier[] = [
     price: "$59",
     cadence: "per wedding / month",
     badge: "Popular",
-    features: ["Seating orchestration", "AI pricing suggestions", "Automated reminders", "Vendor collaboration"],
+    features: [
+      "Everything in Boutique, plus:",
+      "Seating orchestrator with drag-and-drop",
+      "AI contract generation & e-signatures",
+      "AI-powered service packages & pricing",
+      "Vendor CRM with payment tracking",
+      "Forms canvas with response analytics",
+      "AI cash flow predictions & budgeting",
+      "Team management with 12+ permissions",
+    ],
     cta: "Start your free trial",
     emphasized: true,
   },
@@ -110,7 +137,16 @@ const fallbackPricing: PricingTier[] = [
     name: "Agency",
     price: "Custom",
     cadence: "multi-tenant deployments",
-    features: ["Dedicated success architect", "Custom domains & branding", "SSO + role provisioning", "Compliance reporting"],
+    features: [
+      "Everything in Signature, plus:",
+      "Dedicated success architect",
+      "Custom domains & white-label branding",
+      "SSO + role provisioning",
+      "Compliance reporting & audit logs",
+      "Vendor advertising portal",
+      "Priority support & SLA",
+      "Advanced analytics & retention cohorts",
+    ],
     cta: "Talk with sales",
   },
 ];
@@ -119,7 +155,16 @@ const agencyTier: PricingTier = {
   name: "Agency",
   price: "Custom",
   cadence: "multi-tenant deployments",
-  features: ["Dedicated success architect", "Custom domains & branding", "SSO + role provisioning", "Compliance reporting"],
+  features: [
+    "Everything in Signature, plus:",
+    "Dedicated success architect",
+    "Custom domains & white-label branding",
+    "SSO + role provisioning",
+    "Compliance reporting & audit logs",
+    "Vendor advertising portal",
+    "Priority support & SLA",
+    "Advanced analytics & retention cohorts",
+  ],
   cta: "Talk with sales",
 };
 
@@ -526,7 +571,7 @@ function LandingContent({
             Stop juggling tools. Start planning weddings.
           </h2>
           <p className="mt-6 text-base text-slate-200">
-            Join planners who replaced 8+ subscriptions with one platform. Start free — no credit card required.
+            Join planners who replaced 10+ subscriptions with one platform. Start free — no credit card required.
           </p>
           <div className="mt-10 flex flex-col items-center justify-center gap-4 sm:flex-row">
             {!isClone ? (

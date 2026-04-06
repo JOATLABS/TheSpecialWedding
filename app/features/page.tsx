@@ -21,17 +21,22 @@ type ComparisonRow = {
 
 const comparison: ComparisonRow[] = [
   { feature: 'Guest Management & RSVPs', you: true, honeybook: false, aislePlanner: true, planningPod: true },
-  { feature: 'Seating Charts', you: true, honeybook: false, aislePlanner: false, planningPod: true },
-  { feature: 'AI Pricing Suggestions', you: true, honeybook: false, aislePlanner: false, planningPod: false },
-  { feature: 'AI Contract Generation', you: true, honeybook: false, aislePlanner: false, planningPod: false },
+  { feature: 'Couple Portal (dashboard, inbox, payments)', you: true, honeybook: false, aislePlanner: false, planningPod: false },
+  { feature: 'SMS & Email Reminders with Fallback', you: true, honeybook: false, aislePlanner: false, planningPod: false },
+  { feature: 'Seating Charts with AI Suggestions', you: true, honeybook: false, aislePlanner: false, planningPod: true },
+  { feature: 'AI Contract Generation & E-Sign', you: true, honeybook: false, aislePlanner: false, planningPod: false },
+  { feature: 'AI Pricing & Package Builder', you: true, honeybook: false, aislePlanner: false, planningPod: false },
   { feature: 'AI Cash Flow Predictions', you: true, honeybook: false, aislePlanner: false, planningPod: false },
-  { feature: 'Vendor Collaboration', you: true, honeybook: false, aislePlanner: true, planningPod: false },
-  { feature: 'Contracts & E-Sign', you: true, honeybook: true, aislePlanner: true, planningPod: true },
-  { feature: 'Invoicing & Payments', you: true, honeybook: true, aislePlanner: true, planningPod: true },
+  { feature: 'Budget Management & Forecasting', you: true, honeybook: false, aislePlanner: true, planningPod: true },
+  { feature: 'Photo Gallery & Guest QR Uploads', you: true, honeybook: false, aislePlanner: true, planningPod: false },
+  { feature: 'Vendor CRM & Payment Tracking', you: true, honeybook: false, aislePlanner: true, planningPod: false },
+  { feature: 'Custom Forms Builder & Analytics', you: true, honeybook: true, aislePlanner: false, planningPod: true },
+  { feature: 'Calendar with Google Sync', you: true, honeybook: true, aislePlanner: true, planningPod: true },
+  { feature: 'Team Management (12+ permissions)', you: true, honeybook: false, aislePlanner: false, planningPod: false },
+  { feature: 'Invoicing & Stripe Payments', you: true, honeybook: true, aislePlanner: true, planningPod: true },
   { feature: 'Multi-Tenant Agency Tier', you: true, honeybook: false, aislePlanner: false, planningPod: false },
+  { feature: 'Vendor Advertising Portal', you: true, honeybook: false, aislePlanner: false, planningPod: false },
   { feature: 'Touchless Day-of Check-in', you: true, honeybook: false, aislePlanner: false, planningPod: false },
-  { feature: 'Custom Forms Builder', you: true, honeybook: true, aislePlanner: false, planningPod: true },
-  { feature: 'Photo Gallery', you: true, honeybook: false, aislePlanner: true, planningPod: false },
 ];
 
 /* ═══════════════════════════════════════════════════════════
