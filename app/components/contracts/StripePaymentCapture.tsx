@@ -9,7 +9,6 @@ import {
 } from '@stripe/react-stripe-js';
 import { CreditCard, Lock, CheckCircle, Loader2, AlertCircle } from 'lucide-react';
 import { Button } from '../ui/Button';
-import { getApiBaseUrl } from '@/utils/env';
 import { getStripeClient, preloadStripeClient } from '@/utils/stripeClient';
 
 interface PaymentCaptureFormProps {
@@ -25,6 +24,7 @@ export interface PaymentMethodData {
   paymentMethodId: string;
   last4: string;
   brand: string;
+  setupIntentId?: string;
 }
 
 function PaymentCaptureForm({
@@ -73,42 +73,21 @@ function PaymentCaptureForm({
         const paymentMethodId = setupIntent.payment_method;
 
         if (typeof paymentMethodId === 'string') {
-          // Retrieve payment method details from API
-          const baseUrl = getApiBaseUrl();
-          const response = await fetch(`${baseUrl}/public/payment-method/${paymentMethodId}`);
-
-          if (response.ok) {
-            const pmData = await response.json();
-            const resolvedCustomerId = pmData.customer || customerId || '';
-            if (!resolvedCustomerId) {
-              setError('Unable to attach this payment method to a customer record');
-              onError('Unable to attach this payment method to a customer record');
-              setLoading(false);
-              return;
-            }
-            await onPaymentMethodCaptured({
-              customerId: resolvedCustomerId,
-              paymentMethodId: paymentMethodId,
-              last4: pmData.card?.last4 || '****',
-              brand: pmData.card?.brand || 'card'
-            });
-            setCaptured(true);
-          } else {
-            // Fallback if we can't get details
-            if (!customerId) {
-              setError('Unable to retrieve payment method details');
-              onError('Unable to retrieve payment method details');
-              setLoading(false);
-              return;
-            }
-            await onPaymentMethodCaptured({
-              customerId,
-              paymentMethodId: paymentMethodId,
-              last4: '****',
-              brand: 'card'
-            });
-            setCaptured(true);
+          if (!customerId) {
+            setError('Unable to attach this payment method to a customer record');
+            onError('Unable to attach this payment method to a customer record');
+            setLoading(false);
+            return;
           }
+
+          await onPaymentMethodCaptured({
+            customerId,
+            paymentMethodId,
+            last4: '****',
+            brand: 'card',
+            setupIntentId: setupIntent.id,
+          });
+          setCaptured(true);
         }
       }
     } catch (err) {

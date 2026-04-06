@@ -8,8 +8,10 @@ import { Card } from '../../components/ui/Card';
 import { formatDate, formatDateTime } from '@/utils/dateFormat';
 import PageHeader from '../components/PageHeader';
 import { toast } from 'sonner';
-import { Settings, Download, Database, RefreshCw, Save, TrendingUp, TrendingDown, Minus, Activity, Users, Zap, DollarSign } from 'lucide-react';
+import { Settings, Download, Database, RefreshCw, Save, TrendingUp, TrendingDown, Minus, Activity, Users, Zap, DollarSign, Upload, Store, Trash2, Search, ChevronDown, ChevronUp, ExternalLink } from 'lucide-react';
 import { fetchBehavioralAnalytics, type BehavioralAnalyticsResponse } from '@/services/behavioralAnalyticsApi';
+import VendorImportModal from '@/components/vendor/VendorImportModal';
+import { getVendorDirectory, deleteVendorProfile, type VendorProfile } from '@/services/vendorManagementApi';
 import {
   getAdminConfig,
   getAdminPipelineStatus,
@@ -213,7 +215,7 @@ const SaasAdminDashboard = () => {
  const router = useRouter();
  const searchParams = useSearchParams();
  const { userProfile, token, expireSession } = useAdmin();
- const [activeTab, setActiveTab] = useState<'overview' | 'plans' | 'reviews' | 'ad-config'>('overview');
+ const [activeTab, setActiveTab] = useState<'overview' | 'plans' | 'reviews' | 'ad-config' | 'vendor-data'>('overview');
  const [plans, setPlans] = useState<SubscriptionPlan[]>([]);
  const [planners, setPlanners] = useState<WeddingPlanner[]>([]);
  const [loading, setLoading] = useState(true);
@@ -419,10 +421,93 @@ const SaasAdminDashboard = () => {
 
   useEffect(() => {
     const requestedTab = searchParams.get('tab');
-    if (requestedTab === 'overview' || requestedTab === 'plans' || requestedTab === 'reviews' || requestedTab === 'ad-config') {
+    if (requestedTab === 'overview' || requestedTab === 'plans' || requestedTab === 'reviews' || requestedTab === 'ad-config' || requestedTab === 'vendor-data') {
       setActiveTab(requestedTab);
     }
   }, [searchParams]);
+
+  // ── Vendor Data tab helpers ──────────────────────────────────────────────
+  const fetchVendors = useCallback(async () => {
+    if (!token) return;
+    try {
+      setVendorLoading(true);
+      const data = await getVendorDirectory(token, { limit: 5000 });
+      setVendors(data);
+    } catch (err: any) {
+      console.error('Failed to fetch vendors:', err);
+      toast.error(err.message || 'Failed to load vendor directory');
+    } finally {
+      setVendorLoading(false);
+    }
+  }, [token]);
+
+  // Fetch vendors when switching to the vendor-data tab
+  useEffect(() => {
+    if (activeTab === 'vendor-data' && vendors.length === 0 && !vendorLoading) {
+      fetchVendors();
+    }
+  }, [activeTab, vendors.length, vendorLoading, fetchVendors]);
+
+  const handleDeleteVendor = useCallback(async (vendorId: string, businessName: string) => {
+    if (!token) return;
+    if (!confirm(`Delete "${businessName}" from the vendor directory? This cannot be undone.`)) return;
+    try {
+      setDeletingVendorId(vendorId);
+      await deleteVendorProfile(token, vendorId);
+      setVendors((prev) => prev.filter((v) => v._id !== vendorId));
+      toast.success(`Deleted "${businessName}"`);
+    } catch (err: any) {
+      toast.error(err.message || 'Failed to delete vendor');
+    } finally {
+      setDeletingVendorId(null);
+    }
+  }, [token]);
+
+  const vendorStats = useMemo(() => {
+    const byCategory: Record<string, number> = {};
+    const byState: Record<string, number> = {};
+    for (const v of vendors) {
+      const cat = v.service_category || 'unknown';
+      byCategory[cat] = (byCategory[cat] || 0) + 1;
+      const st = v.state || 'Unknown';
+      byState[st] = (byState[st] || 0) + 1;
+    }
+    return {
+      total: vendors.length,
+      categories: Object.keys(byCategory).length,
+      states: Object.keys(byState).length,
+      byCategory: Object.entries(byCategory).sort((a, b) => b[1] - a[1]),
+      byState: Object.entries(byState).sort((a, b) => b[1] - a[1]),
+    };
+  }, [vendors]);
+
+  const filteredVendors = useMemo(() => {
+    let list = vendors;
+    if (vendorCategoryFilter) {
+      list = list.filter((v) => v.service_category === vendorCategoryFilter);
+    }
+    if (vendorSearch.trim()) {
+      const q = vendorSearch.toLowerCase();
+      list = list.filter(
+        (v) =>
+          v.business_name.toLowerCase().includes(q) ||
+          (v.city || '').toLowerCase().includes(q) ||
+          (v.state || '').toLowerCase().includes(q) ||
+          (v.email || '').toLowerCase().includes(q)
+      );
+    }
+    return list;
+  }, [vendors, vendorCategoryFilter, vendorSearch]);
+
+  const pagedVendors = useMemo(() => {
+    const start = vendorPage * VENDOR_PAGE_SIZE;
+    return filteredVendors.slice(start, start + VENDOR_PAGE_SIZE);
+  }, [filteredVendors, vendorPage]);
+
+  const vendorTotalPages = Math.max(1, Math.ceil(filteredVendors.length / VENDOR_PAGE_SIZE));
+
+  const categoryLabel = (cat: string) =>
+    cat.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
 
   // Refetch only platform metrics when timeframe changes (without re-fetching plans/planners)
   const fetchMetricsOnly = useCallback(async (tf: TimeframeKey) => {
@@ -763,7 +848,8 @@ const SaasAdminDashboard = () => {
  { key: 'overview', label: 'Overview' },
  { key: 'plans', label: 'Subscription Plans' },
  { key: 'reviews', label: 'Customer Reviews' },
- { key: 'ad-config', label: 'Ad Platform' }
+ { key: 'ad-config', label: 'Ad Platform' },
+ { key: 'vendor-data', label: 'Vendor Data' }
  ].map((tab) => (
  <button
  key={tab.key}

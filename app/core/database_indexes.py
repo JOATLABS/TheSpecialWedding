@@ -431,14 +431,24 @@ async def create_payment_indexes():
     Create indexes for payment-related collections (payment_requests, stripe_customers)
 
     Key queries:
-    1. Get payment request by payment_intent_id (unique)
-    2. Get payment requests by user_id sorted by created_at
-    3. Get stripe customer by user_id (unique)
+    1. Get payment request by public_token (unique)
+    2. Get payment request by payment_intent_id (unique)
+    3. Get payment requests by user_id sorted by created_at
+    4. Get stripe customer by user_id (unique)
     """
     payment_requests = mongo.db["payment_requests"]
     stripe_customers = mongo.db["stripe_customers"]
 
     try:
+        # Payment Requests - Unique lookup by app-owned public token
+        await payment_requests.create_index(
+            [("public_token", ASCENDING)],
+            name="idx_payment_public_token",
+            unique=True,
+            sparse=True,
+        )
+        logger.info("Created index: idx_payment_public_token")
+
         # Payment Requests - Unique lookup by intent ID
         await payment_requests.create_index(
             [("payment_intent_id", ASCENDING)],

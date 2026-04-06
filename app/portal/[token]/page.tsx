@@ -1,8 +1,9 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
-import { useParams } from 'next/navigation';
+import { useState, useEffect, useCallback, useRef } from 'react';
+import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { getApiBaseUrl } from '@/utils/env';
+import { retrieveSucceededSetupIntent } from '@/utils/stripeClient';
 import { toast } from 'sonner';
 import { Card } from '../../components/ui/Card';
 import { Button } from '../../components/ui/Button';
@@ -75,6 +76,8 @@ interface PortalData {
 
 export default function CouplePortalPage() {
   const params = useParams();
+  const router = useRouter();
+  const searchParams = useSearchParams();
   const token = params.token as string;
 
   const [loading, setLoading] = useState(true);
@@ -84,6 +87,7 @@ export default function CouplePortalPage() {
   const [savingPaymentMethod, setSavingPaymentMethod] = useState(false);
   const [paymentUpdateClientSecret, setPaymentUpdateClientSecret] = useState<string | null>(null);
   const [paymentUpdateCustomerId, setPaymentUpdateCustomerId] = useState<string | null>(null);
+  const resumedSetupIntentRef = useRef<string | null>(null);
 
   const fetchPortalData = useCallback(async () => {
     if (!token) return;
@@ -203,7 +207,7 @@ export default function CouplePortalPage() {
     }
   };
 
-  const handlePaymentMethodCaptured = async (paymentData: PaymentMethodData) => {
+  const handlePaymentMethodCaptured = useCallback(async (paymentData: PaymentMethodData) => {
     setSavingPaymentMethod(true);
 
     try {
@@ -215,8 +219,7 @@ export default function CouplePortalPage() {
         },
         body: JSON.stringify({
           payment_method_id: paymentData.paymentMethodId,
-          payment_method_last4: paymentData.last4,
-          payment_method_brand: paymentData.brand,
+          setup_intent_id: paymentData.setupIntentId,
         }),
       });
 
@@ -244,11 +247,55 @@ export default function CouplePortalPage() {
     } finally {
       setSavingPaymentMethod(false);
     }
-  };
+  }, [fetchPortalData, token]);
 
   const handlePaymentMethodCaptureError = (message: string) => {
     toast.error(message);
   };
+
+  useEffect(() => {
+    const setupIntentClientSecret = searchParams.get('setup_intent_client_secret');
+    const setupIntentId = searchParams.get('setup_intent');
+    if (!setupIntentClientSecret || !setupIntentId || resumedSetupIntentRef.current === setupIntentId) {
+      return;
+    }
+
+    resumedSetupIntentRef.current = setupIntentId;
+    let active = true;
+
+    const resumePaymentMethodUpdate = async () => {
+      setSavingPaymentMethod(true);
+
+      try {
+        const paymentSetup = await retrieveSucceededSetupIntent(setupIntentClientSecret);
+        if (!active) return;
+
+        await handlePaymentMethodCaptured({
+          customerId: paymentSetup.customerId || paymentUpdateCustomerId || '',
+          paymentMethodId: paymentSetup.paymentMethodId,
+          last4: '****',
+          brand: 'card',
+          setupIntentId: paymentSetup.id,
+        });
+        router.replace(`/portal/${token}`);
+      } catch (error) {
+        if (!active) return;
+        resumedSetupIntentRef.current = null;
+        const message = error instanceof Error ? error.message : 'Failed to resume payment method update';
+        toast.error(message);
+      } finally {
+        if (active) {
+          setSavingPaymentMethod(false);
+        }
+      }
+    };
+
+    void resumePaymentMethodUpdate();
+
+    return () => {
+      active = false;
+    };
+  }, [handlePaymentMethodCaptured, paymentUpdateCustomerId, router, searchParams, token]);
 
   // Loading state
   if (loading) {

@@ -1,9 +1,9 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { useParams } from 'next/navigation';
+import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { getApiBaseUrl } from '@/utils/env';
-import { preloadStripeClient } from '@/utils/stripeClient';
+import { preloadStripeClient, retrieveSucceededSetupIntent } from '@/utils/stripeClient';
 import { toast } from 'sonner';
 import { Button } from '../../components/ui/Button';
 import { Card } from '../../components/ui/Card';
@@ -74,6 +74,8 @@ type SigningStep = 'review' | 'payment' | 'signature' | 'complete';
 
 export default function PublicContractPage() {
   const params = useParams();
+  const router = useRouter();
+  const searchParams = useSearchParams();
   const token = params.token as string;
 
   const [loading, setLoading] = useState(true);
@@ -129,6 +131,43 @@ export default function PublicContractPage() {
     preloadStripeClient().catch(() => undefined);
   }, []);
 
+  useEffect(() => {
+    const setupIntentClientSecret = searchParams.get('setup_intent_client_secret');
+    if (!setupIntentClientSecret || !token || currentStep === 'complete') {
+      return;
+    }
+
+    let active = true;
+
+    const resumePaymentSetup = async () => {
+      try {
+        const paymentSetup = await retrieveSucceededSetupIntent(setupIntentClientSecret);
+        if (!active) return;
+
+        setPaymentData({
+          customerId: paymentSetup.customerId || setupCustomerId,
+          paymentMethodId: paymentSetup.paymentMethodId,
+          last4: '****',
+          brand: 'card',
+          setupIntentId: paymentSetup.id,
+        });
+        setCurrentStep('signature');
+        router.replace(`/contracts/${token}`);
+        toast.success('Payment method saved!');
+      } catch (error) {
+        if (!active) return;
+        const message = error instanceof Error ? error.message : 'Unable to verify your payment setup.';
+        toast.error(message);
+      }
+    };
+
+    void resumePaymentSetup();
+
+    return () => {
+      active = false;
+    };
+  }, [currentStep, router, searchParams, setupCustomerId, token]);
+
   const initiatePaymentSetup = async () => {
     try {
       const baseUrl = getApiBaseUrl();
@@ -177,6 +216,7 @@ export default function PublicContractPage() {
           signature_name: data.signatureName,
           stripe_customer_id: paymentData.customerId,
           stripe_payment_method_id: paymentData.paymentMethodId,
+          setup_intent_id: paymentData.setupIntentId,
           payment_method_last4: paymentData.last4,
           payment_method_brand: paymentData.brand,
           accept_terms: data.acceptedTerms

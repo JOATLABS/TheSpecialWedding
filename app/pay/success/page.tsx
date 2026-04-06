@@ -23,9 +23,9 @@ function PaymentSuccessPageContent() {
   const [paymentIntent, setPaymentIntent] = useState<PaymentIntentSummary | null>(null);
 
   useEffect(() => {
-    const paymentIntentId = searchParams.get('payment_intent');
+    const paymentId = searchParams.get('payment_id');
 
-    if (!paymentIntentId) {
+    if (!paymentId) {
       setError('No payment confirmation was found for this session.');
       setLoading(false);
       return;
@@ -33,18 +33,19 @@ function PaymentSuccessPageContent() {
 
     const verifyPayment = async () => {
       try {
-        const response = await fetch(`${getApiBaseUrl()}/stripe/payment-intent/${paymentIntentId}`);
+        const response = await fetch(`${getApiBaseUrl()}/stripe/payment-intent/${encodeURIComponent(paymentId)}/summary`);
         if (!response.ok) {
           throw new Error('Unable to verify this payment right now.');
         }
 
-        const data = await response.json();
+        const stripePaymentIntent = await response.json();
+
         setPaymentIntent({
-          id: data.id,
-          amount: data.amount,
-          currency: data.currency,
-          status: data.status,
-          description: data.description,
+          id: stripePaymentIntent.id,
+          amount: stripePaymentIntent.amount,
+          currency: stripePaymentIntent.currency,
+          status: stripePaymentIntent.status,
+          description: stripePaymentIntent.description ?? undefined,
         });
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Unable to verify this payment right now.');
@@ -90,10 +91,17 @@ function PaymentSuccessPageContent() {
 
   const isProcessing = paymentIntent?.status === 'processing';
   const isSucceeded = paymentIntent?.status === 'succeeded';
-  const heading = isProcessing ? 'Payment Processing' : 'Payment Successful';
-  const summary = isProcessing
-    ? 'Stripe is still finalizing your payment. You can close this page and we will continue processing it securely.'
-    : 'Your payment was received successfully.';
+  const paymentId = searchParams.get('payment_id');
+  const heading = isSucceeded
+    ? 'Payment Successful'
+    : isProcessing
+      ? 'Payment Processing'
+      : 'Payment Incomplete';
+  const summary = isSucceeded
+    ? 'Your payment was received successfully.'
+    : isProcessing
+      ? 'Stripe is still finalizing your payment. You can close this page and we will continue processing it securely.'
+      : 'Your payment has not completed yet. Please retry or contact your wedding planner if the issue persists.';
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-gray-50 px-4 py-10 dark:bg-slate-900">
@@ -135,9 +143,15 @@ function PaymentSuccessPageContent() {
           )}
         </CardContent>
         <CardFooter className="justify-center">
-          <Button variant="outline" onClick={() => router.back()}>
-            Done
-          </Button>
+          {paymentId && !isSucceeded && !isProcessing ? (
+            <Button variant="outline" onClick={() => router.replace(`/pay/${paymentId}`)}>
+              Try Payment Again
+            </Button>
+          ) : (
+            <Button variant="outline" onClick={() => router.back()}>
+              Done
+            </Button>
+          )}
         </CardFooter>
       </Card>
     </div>

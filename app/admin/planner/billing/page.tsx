@@ -5,7 +5,12 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { useAdmin } from '@/contexts/AdminContext';
 import { getApiBaseUrl } from '@/utils/env';
 import { formatAdminDate, DEFAULT_TIMEZONE } from '@/utils/dateFormat';
-import { BLOCKED_SUBSCRIPTION_STATUSES, normalizeSubscriptionStatus } from '@/utils/subscriptionStatus';
+import {
+  BILLING_PORTAL_RECOVERY_SUBSCRIPTION_STATUSES,
+  BLOCKED_SUBSCRIPTION_STATUSES,
+  FRESH_CHECKOUT_SUBSCRIPTION_STATUSES,
+  normalizeSubscriptionStatus,
+} from '@/utils/subscriptionStatus';
 import PageHeader from '../../components/PageHeader';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
@@ -640,8 +645,15 @@ export default function PlannerBillingPage() {
 
   // No subscription OR unpaid/expired/cancelled — show plan selection with fresh checkout
   const subStatus = normalizeSubscriptionStatus(currentSubscription?.status);
-  const needsNewSubscription = !currentSubscription || !currentPlan
-    || BLOCKED_SUBSCRIPTION_STATUSES.has(subStatus);
+  const needsPortalRecovery = currentSubscription
+    && currentPlan
+    && BILLING_PORTAL_RECOVERY_SUBSCRIPTION_STATUSES.has(subStatus);
+  const needsNewSubscription = !needsPortalRecovery && (
+    !currentSubscription
+      || !currentPlan
+      || FRESH_CHECKOUT_SUBSCRIPTION_STATUSES.has(subStatus)
+      || (BLOCKED_SUBSCRIPTION_STATUSES.has(subStatus) && !BILLING_PORTAL_RECOVERY_SUBSCRIPTION_STATUSES.has(subStatus))
+  );
   if (needsNewSubscription) {
     const requestedPlan = requestedPlanId
       ? plans.find((plan) => plan._id === requestedPlanId) ?? null
@@ -755,6 +767,33 @@ export default function PlannerBillingPage() {
               </Card>
             );
           })}
+        </div>
+      </div>
+    );
+  }
+
+  if (needsPortalRecovery && !currentPlan) {
+    return (
+      <div className="space-y-6">
+        <div className="mx-auto max-w-2xl rounded-2xl border border-amber-200 bg-amber-50 p-8 text-center dark:border-amber-900/60 dark:bg-amber-950/30">
+          <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-amber-100 text-amber-700 dark:bg-amber-900/50 dark:text-amber-300">
+            <AlertCircle className="h-8 w-8" />
+          </div>
+          <h1 className="mb-2 text-2xl font-bold text-slate-900 dark:text-white">
+            Billing Action Required
+          </h1>
+          <p className="mx-auto max-w-xl text-sm text-slate-600 dark:text-slate-300">
+            Your billing relationship is still active, but the saved plan details could not be loaded.
+            Use the billing portal to update your payment method or review your subscription before continuing.
+          </p>
+          <div className="mt-6 flex flex-col justify-center gap-3 sm:flex-row">
+            <Button onClick={handleUpdatePayment}>
+              Update Payment Method
+            </Button>
+            <Button variant="outline" onClick={handleManageBilling}>
+              Open Billing Portal
+            </Button>
+          </div>
         </div>
       </div>
     );

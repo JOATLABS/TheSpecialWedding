@@ -1,7 +1,6 @@
 import asyncio
 import os
 import sys
-from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 import pytest
@@ -58,21 +57,21 @@ def test_public_checkout_rejects_active_users(monkeypatch):
     create_checkout.assert_not_awaited()
 
 
-@pytest.mark.parametrize("status_value", ["pending_payment", "pending_checkout", "expired"])
+@pytest.mark.parametrize("status_value", ["pending_payment", "pending_checkout"])
 def test_public_checkout_allows_retryable_signup_statuses(monkeypatch, status_value):
     stripe_payment_module.stripe_service.users_collection = FakeUsersCollection(
         {
             "_id": "user-1",
             "email": "planner@example.com",
             "subscription_status": status_value,
+            "registration_source": "public_signup",
             "plan_id": "plan_boutique",
         }
     )
     create_checkout = AsyncMock(return_value={"url": "https://checkout.stripe.test/session"})
     monkeypatch.setattr(stripe_payment_module.stripe_service, "create_checkout_session", create_checkout)
-    update_calls = []
     stripe_payment_module.stripe_service.users_collection.update_one = AsyncMock(
-        side_effect=lambda *args, **kwargs: update_calls.append((args, kwargs)) or SimpleNamespace(modified_count=0)
+        side_effect=AssertionError("public checkout should not mutate the user document before payment succeeds")
     )
 
     result = asyncio.run(
@@ -84,3 +83,27 @@ def test_public_checkout_allows_retryable_signup_statuses(monkeypatch, status_va
     assert result["status"] == "success"
     assert result["checkout_session"]["url"] == "https://checkout.stripe.test/session"
     create_checkout.assert_awaited_once()
+
+
+def test_public_checkout_rejects_expired_users(monkeypatch):
+    stripe_payment_module.stripe_service.users_collection = FakeUsersCollection(
+        {
+            "_id": "user-1",
+            "email": "planner@example.com",
+            "subscription_status": "expired",
+            "registration_source": "public_signup",
+        }
+    )
+    create_checkout = AsyncMock()
+    monkeypatch.setattr(stripe_payment_module.stripe_service, "create_checkout_session", create_checkout)
+
+    with pytest.raises(HTTPException) as exc:
+        asyncio.run(
+            stripe_payment_module.create_public_checkout_session(
+                _request("planner@example.com")
+            )
+        )
+
+    assert exc.value.status_code == 400
+    assert "Unable to create checkout session" in exc.value.detail
+    create_checkout.assert_not_awaited()

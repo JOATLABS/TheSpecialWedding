@@ -3,7 +3,7 @@ from datetime import datetime, timedelta, timezone
 from app.dependencies.auth_extended import require_root_admin, ExtendedAuthUser
 from app.services.stripe_service import stripe_service
 from app.core.database import mongo
-from app.models.subscription import SubscriptionStatus
+from app.models.subscription import SubscriptionStatus, normalize_subscription_status
 import stripe as stripe_lib
 import logging
 
@@ -199,7 +199,13 @@ async def process_orphaned_customer_cleanup():
             except Exception:
                 user = None
 
-            if user and user.get("subscription_status") not in ("pending_payment", "pending", None):
+            normalized_status = normalize_subscription_status(user.get("subscription_status")) if user else None
+            if user and normalized_status not in (
+                SubscriptionStatus.PENDING_PAYMENT.value,
+                SubscriptionStatus.PENDING_CHECKOUT.value,
+                "pending",
+                None,
+            ):
                 continue  # User has progressed beyond pending, skip
 
             # Verify in Stripe that customer has no subscriptions
