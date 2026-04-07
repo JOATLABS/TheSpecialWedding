@@ -4,6 +4,7 @@ import React from 'react';
 import Image from 'next/image';
 import Link from 'next/link';
 import SaasNav from '../components/saas/SaasNav';
+import BreadcrumbSchema from '../components/seo/BreadcrumbSchema';
 import { MARKETING_FEATURES } from '../data/marketingFeatures';
 
 /* ═══════════════════════════════════════════════════════════
@@ -21,22 +22,22 @@ type ComparisonRow = {
 
 const comparison: ComparisonRow[] = [
   { feature: 'Guest Management & RSVPs', you: true, honeybook: false, aislePlanner: true, planningPod: true },
-  { feature: 'Couple Portal (dashboard, inbox, payments)', you: true, honeybook: false, aislePlanner: false, planningPod: false },
-  { feature: 'SMS & Email Reminders with Fallback', you: true, honeybook: false, aislePlanner: false, planningPod: false },
-  { feature: 'Seating Charts with AI Suggestions', you: true, honeybook: false, aislePlanner: false, planningPod: true },
+  { feature: 'Client Portal / Couple Portal', you: true, honeybook: false, aislePlanner: false, planningPod: false },
+  { feature: 'SMS & Email Reminders', you: true, honeybook: false, aislePlanner: false, planningPod: true },
+  { feature: 'Seating Charts', you: true, honeybook: false, aislePlanner: true, planningPod: true },
   { feature: 'AI Contract Generation & E-Sign', you: true, honeybook: false, aislePlanner: false, planningPod: false },
-  { feature: 'AI Pricing & Package Builder', you: true, honeybook: false, aislePlanner: false, planningPod: false },
+  { feature: 'Service Packages', you: true, honeybook: false, aislePlanner: false, planningPod: false },
   { feature: 'AI Cash Flow Predictions', you: true, honeybook: false, aislePlanner: false, planningPod: false },
-  { feature: 'Budget Management & Forecasting', you: true, honeybook: false, aislePlanner: true, planningPod: true },
-  { feature: 'Photo Gallery & Guest QR Uploads', you: true, honeybook: false, aislePlanner: true, planningPod: false },
-  { feature: 'Vendor CRM & Payment Tracking', you: true, honeybook: false, aislePlanner: true, planningPod: false },
-  { feature: 'Custom Forms Builder & Analytics', you: true, honeybook: true, aislePlanner: false, planningPod: true },
-  { feature: 'Calendar with Google Sync', you: true, honeybook: true, aislePlanner: true, planningPod: true },
-  { feature: 'Team Management (12+ permissions)', you: true, honeybook: false, aislePlanner: false, planningPod: false },
-  { feature: 'Invoicing & Stripe Payments', you: true, honeybook: true, aislePlanner: true, planningPod: true },
+  { feature: 'Budget Management', you: true, honeybook: false, aislePlanner: true, planningPod: true },
+  { feature: 'Photo Gallery & Guest QR Uploads', you: true, honeybook: false, aislePlanner: false, planningPod: false },
+  { feature: 'Vendor / Contact CRM', you: true, honeybook: true, aislePlanner: true, planningPod: true },
+  { feature: 'Custom Forms & Intake', you: true, honeybook: true, aislePlanner: true, planningPod: true },
+  { feature: 'Calendar Sync', you: true, honeybook: false, aislePlanner: true, planningPod: false },
+  { feature: 'Team Management & Permissions', you: true, honeybook: false, aislePlanner: false, planningPod: false },
+  { feature: 'Invoicing & Online Payments', you: true, honeybook: true, aislePlanner: true, planningPod: true },
   { feature: 'Multi-Tenant Agency Tier', you: true, honeybook: false, aislePlanner: false, planningPod: false },
   { feature: 'Vendor Advertising Portal', you: true, honeybook: false, aislePlanner: false, planningPod: false },
-  { feature: 'Touchless Day-of Check-in', you: true, honeybook: false, aislePlanner: false, planningPod: false },
+  { feature: 'Day-of / Onsite Check-In', you: true, honeybook: false, aislePlanner: false, planningPod: true },
 ];
 
 /* ═══════════════════════════════════════════════════════════
@@ -47,6 +48,12 @@ export default function FeaturesPage() {
   return (
     <main className="min-h-screen bg-slate-950 text-white">
       <SaasNav />
+      <BreadcrumbSchema
+        items={[
+          { name: 'Home', href: '/' },
+          { name: 'Features', href: '/features' },
+        ]}
+      />
       {/* ── Hero ── */}
       <section className="relative overflow-hidden">
         <div
@@ -64,7 +71,7 @@ export default function FeaturesPage() {
             {features.length} tools. One platform.<br />Zero tool juggling.
           </h1>
           <p className="mt-5 text-base text-slate-300 max-w-2xl mx-auto">
-            The planner dashboard, couple portal, inbox, forms, payments, and every operational layer around them are designed to work together instead of fighting each other.
+            AI, the Couple Portal, and SMS reminders sit at the center, with the planner dashboard, inbox, forms, payments, and every operational layer around them designed to work together instead of fighting each other.
           </p>
           <div className="mt-8 flex flex-wrap justify-center gap-3">
             <a
@@ -181,13 +188,16 @@ export default function FeaturesPage() {
               <tr className="border-t border-white/10">
                 <td className="px-5 py-4 text-sm font-semibold text-white">Starting price</td>
                 <td className="text-center px-4 py-4 text-sm font-semibold text-wedding-rose">$29/mo</td>
-                <td className="text-center px-4 py-4 text-sm text-slate-400">$19/mo</td>
-                <td className="text-center px-4 py-4 text-sm text-slate-400">$39/mo</td>
-                <td className="text-center px-4 py-4 text-sm text-slate-400">$20/mo</td>
+                <td className="text-center px-4 py-4 text-sm text-slate-400">$29/mo</td>
+                <td className="text-center px-4 py-4 text-sm text-slate-400">$49.99/mo</td>
+                <td className="text-center px-4 py-4 text-sm text-slate-400">$149/mo</td>
               </tr>
             </tbody>
           </table>
         </div>
+        <p className="mt-4 text-xs leading-relaxed text-slate-500">
+          Pricing and feature statuses reflect publicly documented capabilities as of April 2026. Where a competitor has an adjacent workflow rather than a one-to-one match, this table uses the closest documented equivalent.
+        </p>
       </section>
 
       {/* ── CTA ── */}
@@ -195,17 +205,17 @@ export default function FeaturesPage() {
         <div className="absolute inset-0 bg-gradient-to-t from-transparent via-wedding-rose/[0.04] to-transparent" />
         <div className="relative mx-auto max-w-3xl px-6 py-20 text-center sm:px-10">
           <h2 className="text-3xl font-semibold text-white sm:text-4xl">
-            Replace 8+ subscriptions with one platform.
+            Replace 10+ subscriptions with one platform.
           </h2>
           <p className="mt-4 text-base text-slate-300">
-            Start your free trial \u2014 no credit card required.
+            Start free today — no credit card required.
           </p>
           <div className="mt-8 flex flex-col items-center gap-4 sm:flex-row sm:justify-center">
             <Link
               href="/admin/login"
               className="rounded-full bg-white px-6 py-3 text-base font-semibold text-slate-900 transition hover:bg-slate-100"
             >
-              Start free trial
+              Get started free
             </Link>
             <a
               href="mailto:hello@thespecialwedding.io?subject=I'd like a demo of The Special Wedding"

@@ -78,7 +78,7 @@ const faqs: FAQ[] = [
   },
   {
     question: "How does the AI help me run my business?",
-    answer: "AI is woven into contracts (clause generation), service packages (pricing suggestions), reminders (tone-aware message drafting), budgets (spend forecasting), payments (cash flow predictions), and seating (conflict resolution) — saving hours of manual work every week.",
+    answer: "AI is woven into contracts (clause generation), Service Packages (pricing suggestions), reminders (tone-aware message drafting), budgets (spend forecasting), payments (cash flow predictions), and seating (conflict resolution) — saving hours of manual work every week.",
   },
   {
     question: "Can I send RSVPs and reminders via SMS?",
@@ -113,7 +113,7 @@ const fallbackPricing: PricingTier[] = [
       "Calendar with Google Sync",
       "Knowledge base & support docs",
     ],
-    cta: "Start your free trial",
+    cta: "Try Boutique free",
   },
   {
     name: "Signature",
@@ -124,13 +124,13 @@ const fallbackPricing: PricingTier[] = [
       "Everything in Boutique, plus:",
       "Seating orchestrator with drag-and-drop",
       "AI contract generation & e-signatures",
-      "AI-powered service packages & pricing",
+      "Service Packages with AI pricing guidance",
       "Vendor CRM with payment tracking",
       "Forms canvas with response analytics",
       "AI cash flow predictions & budgeting",
       "Team management with 12+ permissions",
     ],
-    cta: "Start your free trial",
+    cta: "Try Signature free",
     emphasized: true,
   },
   {
@@ -398,7 +398,7 @@ function LandingContent({
             </h1>
 
             <p className="mt-6 text-lg text-slate-200 max-w-2xl mx-auto">
-              Guest management, budgets, contracts, vendor CRM, seating, payments, forms, reminders, and day-of execution — woven into one elegant workspace.
+              AI contracts, the Couple Portal, and SMS reminders lead the way, with guest management, budgets, seating, vendor CRM, and day-of execution woven into one elegant workspace.
             </p>
 
             {/* Replacement pills */}
@@ -450,6 +450,9 @@ function LandingContent({
                 </div>
               ))}
             </div>
+            <p className="mt-5 text-[11px] uppercase tracking-[0.28em] text-slate-500">
+              As of April 2026. Metrics are directional snapshots from current product and marketing data.
+            </p>
           </div>
         </div>
 
@@ -571,7 +574,7 @@ function LandingContent({
             Stop juggling tools. Start planning weddings.
           </h2>
           <p className="mt-6 text-base text-slate-200">
-            Join planners who replaced 10+ subscriptions with one platform. Start free — no credit card required.
+            Join planners who replaced 10+ subscriptions with one platform. Start free today — no credit card required.
           </p>
           <div className="mt-10 flex flex-col items-center justify-center gap-4 sm:flex-row">
             {!isClone ? (
@@ -579,11 +582,11 @@ function LandingContent({
                 href="/admin/login"
                 className="flex items-center justify-center rounded-full bg-white px-6 py-3 text-base font-semibold text-slate-900 transition hover:bg-slate-100"
               >
-                Start your free trial
+                Get started free
               </Link>
             ) : (
               <span className="flex items-center justify-center rounded-full bg-white px-6 py-3 text-base font-semibold text-slate-900">
-                Start your free trial
+                Get started free
               </span>
             )}
             {!isClone ? (
@@ -768,7 +771,7 @@ export default function HomePage() {
       price: `$${plan.price_monthly}`,
       cadence: "per wedding / month",
       features: plan.features_list || [],
-      cta: "Start your free trial",
+      cta: `Try ${plan.name} free`,
       badge: plan.is_featured ? "Popular" : undefined,
       emphasized: plan.is_featured,
     }));

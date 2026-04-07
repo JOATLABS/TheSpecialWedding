@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Query
 from typing import List, Optional, Any
 from app.dependencies.auth_extended import require_root_admin, require_admin_or_planner, ExtendedAuthUser
 from app.services.user_management_service import UserManagementService
+from app.services.planner_onboarding_email_service import planner_onboarding_email_service
 from app.services.gallery_upload_service import GalleryUploadService
 from pydantic import BaseModel, Field, validator, EmailStr
 from datetime import datetime
@@ -353,6 +354,10 @@ class ResetPasswordModel(BaseModel):
         return v
 
 
+class PlannerOnboardingUnsubscribeModel(BaseModel):
+    token: str = Field(..., min_length=16, max_length=256)
+
+
 @router.post("/forgot-password", tags=["Public"])
 async def forgot_password(data: ForgotPasswordModel):
     """Request a password reset email - No auth required"""
@@ -369,6 +374,26 @@ async def validate_reset_token(token: str):
 async def reset_password(data: ResetPasswordModel):
     """Reset password using reset token - No auth required"""
     return await user_service.reset_password(data.token, data.password)
+
+
+@router.get("/planner-onboarding/unsubscribe/status", tags=["Public"])
+async def get_planner_onboarding_unsubscribe_status(
+    token: str = Query(..., min_length=16, max_length=256),
+):
+    """Preview a planner onboarding unsubscribe request using a public token."""
+    result = await planner_onboarding_email_service.get_unsubscribe_status(token)
+    if not result:
+        raise HTTPException(status_code=404, detail="Invalid or expired unsubscribe link")
+    return result
+
+
+@router.post("/planner-onboarding/unsubscribe", tags=["Public"])
+async def unsubscribe_planner_onboarding(data: PlannerOnboardingUnsubscribeModel):
+    """Confirm planner onboarding email unsubscribe using a public token."""
+    result = await planner_onboarding_email_service.unsubscribe_by_token(data.token)
+    if not result:
+        raise HTTPException(status_code=404, detail="Invalid or expired unsubscribe link")
+    return result
 
 
 # ==================== USER PROFILE MANAGEMENT ====================

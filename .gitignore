@@ -61,6 +61,7 @@ tests/backend/*
 !tests/backend/test_public_checkout_gating.py
 !tests/backend/test_contract_payment_methods.py
 !tests/backend/test_payment_intent_summary.py
+!tests/backend/test_planner_onboarding_email_service.py
 tests/unit/*
 !tests/unit/blogRichText.test.ts
 !tests/unit/subscriptionStatus.test.ts
