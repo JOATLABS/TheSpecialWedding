@@ -13,8 +13,12 @@ class PlusOneInputModel(BaseModel):
     email: Optional[str] = None
     attending: List[str] = Field(default_factory=list)
     dietary: Optional[str] = Field(default=None, max_length=250)
-    sms_opt_in: Optional[bool] = Field(default=None, description="Opt-in for SMS reminders")
-    email_opt_in: Optional[bool] = Field(default=None, description="Opt-in for email updates")
+    sms_opt_in: Optional[bool] = Field(
+        default=None, description="Opt-in for SMS reminders"
+    )
+    email_opt_in: Optional[bool] = Field(
+        default=None, description="Opt-in for email updates"
+    )
 
     @model_validator(mode="before")
     @classmethod
@@ -48,16 +52,18 @@ class PlusOneInputModel(BaseModel):
     @field_validator("phone")
     def validate_phone(cls, value):
         if value and not re.match(r"^\+?\d{10,15}$", value):
-            raise ValueError("Phone number must be 10 to 15 digits, optionally prefixed with +")
+            raise ValueError(
+                "Phone number must be 10 to 15 digits, optionally prefixed with +"
+            )
         return value
 
     @field_validator("email")
     def validate_email(cls, v):
         if v is None:
             return v
-        email_pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
+        email_pattern = r"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$"
         if not re.match(email_pattern, v):
-            raise ValueError('Invalid email format')
+            raise ValueError("Invalid email format")
         return v.lower().strip()
 
     @field_validator("attending")
@@ -69,9 +75,15 @@ class RSVPModel(BaseModel):
     attending: List[str] = Field(default_factory=list)
     dietary: Optional[str] = Field(default=None, max_length=250)
     phone: Optional[str] = None
-    sms_opt_in: Optional[bool] = Field(default=False, description="Opt-in to receive SMS reminders")
-    email_opt_in: Optional[bool] = Field(default=False, description="Opt-in to receive email updates")
-    plus_ones: Optional[List[PlusOneInputModel]] = Field(default_factory=lambda: [], max_length=10)
+    sms_opt_in: Optional[bool] = Field(
+        default=False, description="Opt-in to receive SMS reminders"
+    )
+    email_opt_in: Optional[bool] = Field(
+        default=False, description="Opt-in to receive email updates"
+    )
+    plus_ones: Optional[List[PlusOneInputModel]] = Field(
+        default_factory=lambda: [], max_length=10
+    )
 
     @model_validator(mode="before")
     @classmethod
@@ -112,5 +124,7 @@ class RSVPModel(BaseModel):
     @field_validator("phone")
     def validate_phone(cls, value):
         if value and not re.match(r"^\+?\d{10,15}$", value):
-            raise ValueError("Phone number must be 10 to 15 digits, optionally prefixed with +")
+            raise ValueError(
+                "Phone number must be 10 to 15 digits, optionally prefixed with +"
+            )
         return value

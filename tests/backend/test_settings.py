@@ -13,9 +13,10 @@ def build_settings(**overrides) -> Settings:
         "SECRET_KEY": "test-secret-key-this-is-long-enough-for-validation-testing-purposes-2026",
         "CORS_ORIGINS": ["http://localhost:3000"],
         "ENVIRONMENT": "development",
+        "ENABLE_API_DOCS": None,
     }
     base.update(overrides)
-    return Settings(**base)
+    return Settings(_env_file=None, **base)
 
 
 def test_api_docs_enabled_by_default_outside_production():

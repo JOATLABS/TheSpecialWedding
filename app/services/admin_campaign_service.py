@@ -22,7 +22,6 @@ from fastapi import HTTPException
 from app.models.advertising_campaign import (
     CampaignStatus,
     CreativeReviewStatus,
-    VendorAccountStatus,
 )
 
 logger = logging.getLogger(__name__)
@@ -85,8 +84,7 @@ class AdminCampaignService:
 
         results = []
         async for doc in (
-            self.campaigns
-            .find(query)
+            self.campaigns.find(query)
             .sort("submitted_at", 1)  # FIFO: oldest submissions first
             .skip(skip)
             .limit(limit)
@@ -115,9 +113,7 @@ class AdminCampaignService:
 
         Returns counts for: pending_review, active, paused, rejected, draft, completed.
         """
-        pipeline = [
-            {"$group": {"_id": "$status", "count": {"$sum": 1}}}
-        ]
+        pipeline = [{"$group": {"_id": "$status", "count": {"$sum": 1}}}]
 
         counts: Dict[str, int] = {
             "pending_review": 0,
@@ -154,19 +150,21 @@ class AdminCampaignService:
 
         updated = await self.campaigns.find_one_and_update(
             {"_id": oid, "status": CampaignStatus.PENDING_REVIEW.value},
-            {"$set": {
-                "status": CampaignStatus.ACTIVE.value,
-                "reviewed_at": now,
-                "reviewed_by": admin_email,
-                "review_notes": review_notes,
-                "updated_at": now,
-            }},
+            {
+                "$set": {
+                    "status": CampaignStatus.ACTIVE.value,
+                    "reviewed_at": now,
+                    "reviewed_by": admin_email,
+                    "review_notes": review_notes,
+                    "updated_at": now,
+                }
+            },
             return_document=True,
         )
         if updated is None:
             raise HTTPException(
                 status_code=400,
-                detail="Campaign not found or not in pending_review status"
+                detail="Campaign not found or not in pending_review status",
             )
 
         # Auto-approve all pending creatives for this campaign
@@ -175,21 +173,24 @@ class AdminCampaignService:
                 "campaign_id": campaign_id,
                 "review_status": CreativeReviewStatus.PENDING.value,
             },
-            {"$set": {
-                "review_status": CreativeReviewStatus.APPROVED.value,
-                "reviewed_at": now,
-                "reviewed_by": admin_email,
-                "updated_at": now,
-            }},
+            {
+                "$set": {
+                    "review_status": CreativeReviewStatus.APPROVED.value,
+                    "reviewed_at": now,
+                    "reviewed_by": admin_email,
+                    "updated_at": now,
+                }
+            },
         )
 
-        logger.info(
-            f"Campaign {campaign_id} approved by {admin_email}"
-        )
+        logger.info(f"Campaign {campaign_id} approved by {admin_email}")
 
         # Push notification to vendor
         try:
-            from app.services.vendor_notification_service import VendorNotificationService
+            from app.services.vendor_notification_service import (
+                VendorNotificationService,
+            )
+
             vns = VendorNotificationService()
             await vns.notify_vendor_campaign_approved(
                 vendor_email=updated.get("vendor_email", ""),
@@ -212,28 +213,31 @@ class AdminCampaignService:
 
         updated = await self.campaigns.find_one_and_update(
             {"_id": oid, "status": CampaignStatus.PENDING_REVIEW.value},
-            {"$set": {
-                "status": CampaignStatus.REJECTED.value,
-                "reviewed_at": now,
-                "reviewed_by": admin_email,
-                "review_notes": review_notes,
-                "updated_at": now,
-            }},
+            {
+                "$set": {
+                    "status": CampaignStatus.REJECTED.value,
+                    "reviewed_at": now,
+                    "reviewed_by": admin_email,
+                    "review_notes": review_notes,
+                    "updated_at": now,
+                }
+            },
             return_document=True,
         )
         if updated is None:
             raise HTTPException(
                 status_code=400,
-                detail="Campaign not found or not in pending_review status"
+                detail="Campaign not found or not in pending_review status",
             )
 
-        logger.info(
-            f"Campaign {campaign_id} rejected by {admin_email}"
-        )
+        logger.info(f"Campaign {campaign_id} rejected by {admin_email}")
 
         # Push notification to vendor
         try:
-            from app.services.vendor_notification_service import VendorNotificationService
+            from app.services.vendor_notification_service import (
+                VendorNotificationService,
+            )
+
             vns = VendorNotificationService()
             await vns.notify_vendor_campaign_rejected(
                 vendor_email=updated.get("vendor_email", ""),
@@ -258,7 +262,7 @@ class AdminCampaignService:
         if not review_notes or not review_notes.strip():
             raise HTTPException(
                 status_code=400,
-                detail="Review notes are required when requesting changes"
+                detail="Review notes are required when requesting changes",
             )
 
         oid = _to_oid(campaign_id, "campaign_id")
@@ -266,19 +270,21 @@ class AdminCampaignService:
 
         updated = await self.campaigns.find_one_and_update(
             {"_id": oid, "status": CampaignStatus.PENDING_REVIEW.value},
-            {"$set": {
-                "status": CampaignStatus.DRAFT.value,
-                "reviewed_at": now,
-                "reviewed_by": admin_email,
-                "review_notes": review_notes,
-                "updated_at": now,
-            }},
+            {
+                "$set": {
+                    "status": CampaignStatus.DRAFT.value,
+                    "reviewed_at": now,
+                    "reviewed_by": admin_email,
+                    "review_notes": review_notes,
+                    "updated_at": now,
+                }
+            },
             return_document=True,
         )
         if updated is None:
             raise HTTPException(
                 status_code=400,
-                detail="Campaign not found or not in pending_review status"
+                detail="Campaign not found or not in pending_review status",
             )
 
         logger.info(
@@ -287,7 +293,10 @@ class AdminCampaignService:
 
         # Push notification to vendor
         try:
-            from app.services.vendor_notification_service import VendorNotificationService
+            from app.services.vendor_notification_service import (
+                VendorNotificationService,
+            )
+
             vns = VendorNotificationService()
             await vns.notify_vendor_campaign_changes_requested(
                 vendor_email=updated.get("vendor_email", ""),
@@ -309,8 +318,7 @@ class AdminCampaignService:
         """Get creatives pending review."""
         results = []
         async for doc in (
-            self.creatives
-            .find({"review_status": CreativeReviewStatus.PENDING.value})
+            self.creatives.find({"review_status": CreativeReviewStatus.PENDING.value})
             .sort("submitted_at", 1)
             .skip(skip)
             .limit(limit)
@@ -330,19 +338,20 @@ class AdminCampaignService:
 
         updated = await self.creatives.find_one_and_update(
             {"_id": oid, "review_status": CreativeReviewStatus.PENDING.value},
-            {"$set": {
-                "review_status": CreativeReviewStatus.APPROVED.value,
-                "reviewed_at": now,
-                "reviewed_by": admin_email,
-                "review_notes": review_notes,
-                "updated_at": now,
-            }},
+            {
+                "$set": {
+                    "review_status": CreativeReviewStatus.APPROVED.value,
+                    "reviewed_at": now,
+                    "reviewed_by": admin_email,
+                    "review_notes": review_notes,
+                    "updated_at": now,
+                }
+            },
             return_document=True,
         )
         if updated is None:
             raise HTTPException(
-                status_code=400,
-                detail="Creative not found or not pending review"
+                status_code=400, detail="Creative not found or not pending review"
             )
 
         logger.info(f"Creative {creative_id} approved by {admin_email}")
@@ -360,19 +369,20 @@ class AdminCampaignService:
 
         updated = await self.creatives.find_one_and_update(
             {"_id": oid, "review_status": CreativeReviewStatus.PENDING.value},
-            {"$set": {
-                "review_status": CreativeReviewStatus.REJECTED.value,
-                "reviewed_at": now,
-                "reviewed_by": admin_email,
-                "review_notes": review_notes,
-                "updated_at": now,
-            }},
+            {
+                "$set": {
+                    "review_status": CreativeReviewStatus.REJECTED.value,
+                    "reviewed_at": now,
+                    "reviewed_by": admin_email,
+                    "review_notes": review_notes,
+                    "updated_at": now,
+                }
+            },
             return_document=True,
         )
         if updated is None:
             raise HTTPException(
-                status_code=400,
-                detail="Creative not found or not pending review"
+                status_code=400, detail="Creative not found or not pending review"
             )
 
         logger.info(f"Creative {creative_id} rejected by {admin_email}")
@@ -396,11 +406,7 @@ class AdminCampaignService:
 
         results = []
         async for doc in (
-            self.campaigns
-            .find(query)
-            .sort("created_at", -1)
-            .skip(skip)
-            .limit(limit)
+            self.campaigns.find(query).sort("created_at", -1).skip(skip).limit(limit)
         ):
             results.append(_serialize(doc))
         return results
@@ -417,17 +423,18 @@ class AdminCampaignService:
 
         updated = await self.campaigns.find_one_and_update(
             {"_id": oid, "status": CampaignStatus.ACTIVE.value},
-            {"$set": {
-                "status": CampaignStatus.PAUSED.value,
-                "review_notes": f"[Admin pause by {admin_email}] {reason or ''}".strip(),
-                "updated_at": now,
-            }},
+            {
+                "$set": {
+                    "status": CampaignStatus.PAUSED.value,
+                    "review_notes": f"[Admin pause by {admin_email}] {reason or ''}".strip(),
+                    "updated_at": now,
+                }
+            },
             return_document=True,
         )
         if updated is None:
             raise HTTPException(
-                status_code=400,
-                detail="Campaign not found or not currently active"
+                status_code=400, detail="Campaign not found or not currently active"
             )
 
         logger.info(f"Campaign {campaign_id} admin-paused by {admin_email}: {reason}")
@@ -451,22 +458,27 @@ class AdminCampaignService:
         if existing is None:
             raise HTTPException(status_code=404, detail="Campaign not found")
 
-        terminal_statuses = {CampaignStatus.COMPLETED.value, CampaignStatus.REJECTED.value}
+        terminal_statuses = {
+            CampaignStatus.COMPLETED.value,
+            CampaignStatus.REJECTED.value,
+        }
         if existing.get("status") in terminal_statuses:
             raise HTTPException(
                 status_code=400,
-                detail=f"Campaign already in terminal status: {existing.get('status')}"
+                detail=f"Campaign already in terminal status: {existing.get('status')}",
             )
 
         updated = await self.campaigns.find_one_and_update(
             {"_id": oid},
-            {"$set": {
-                "status": CampaignStatus.REJECTED.value,
-                "reviewed_at": now,
-                "reviewed_by": admin_email,
-                "review_notes": f"[Admin deactivation by {admin_email}] {reason or ''}".strip(),
-                "updated_at": now,
-            }},
+            {
+                "$set": {
+                    "status": CampaignStatus.REJECTED.value,
+                    "reviewed_at": now,
+                    "reviewed_by": admin_email,
+                    "review_notes": f"[Admin deactivation by {admin_email}] {reason or ''}".strip(),
+                    "updated_at": now,
+                }
+            },
             return_document=True,
         )
 
@@ -495,19 +507,29 @@ class AdminCampaignService:
         # Aggregate engagement from ad_events in the period
         events_pipeline = [
             {"$match": {"created_at": {"$gte": period_start}}},
-            {"$group": {
-                "_id": None,
-                "total_impressions": {
-                    "$sum": {"$cond": [{"$eq": ["$event_type", "impression_served"]}, 1, 0]}
-                },
-                "total_clicks": {
-                    "$sum": {"$cond": [{"$eq": ["$event_type", "click"]}, 1, 0]}
-                },
-                "total_leads": {
-                    "$sum": {"$cond": [{"$eq": ["$event_type", "lead_created"]}, 1, 0]}
-                },
-                "unique_planners": {"$addToSet": "$planner_id"},
-            }},
+            {
+                "$group": {
+                    "_id": None,
+                    "total_impressions": {
+                        "$sum": {
+                            "$cond": [
+                                {"$eq": ["$event_type", "impression_served"]},
+                                1,
+                                0,
+                            ]
+                        }
+                    },
+                    "total_clicks": {
+                        "$sum": {"$cond": [{"$eq": ["$event_type", "click"]}, 1, 0]}
+                    },
+                    "total_leads": {
+                        "$sum": {
+                            "$cond": [{"$eq": ["$event_type", "lead_created"]}, 1, 0]
+                        }
+                    },
+                    "unique_planners": {"$addToSet": "$planner_id"},
+                }
+            },
         ]
 
         engagement = {
@@ -570,11 +592,7 @@ class AdminCampaignService:
 
         results = []
         async for doc in (
-            prefs_collection
-            .find(query)
-            .sort("updated_at", -1)
-            .skip(skip)
-            .limit(limit)
+            prefs_collection.find(query).sort("updated_at", -1).skip(skip).limit(limit)
         ):
             results.append(_serialize(doc))
 
@@ -611,8 +629,7 @@ class AdminCampaignService:
 
         results = []
         async for doc in (
-            self.fraud_signals
-            .find(query)
+            self.fraud_signals.find(query)
             .sort("flagged_at", -1)
             .skip(skip)
             .limit(limit)
@@ -633,11 +650,13 @@ class AdminCampaignService:
 
         updated = await self.fraud_signals.find_one_and_update(
             {"_id": oid},
-            {"$set": {
-                "status": status,
-                "notes": notes,
-                "updated_at": now,
-            }},
+            {
+                "$set": {
+                    "status": status,
+                    "notes": notes,
+                    "updated_at": now,
+                }
+            },
             return_document=True,
         )
         if updated is None:
@@ -688,7 +707,9 @@ class AdminCampaignService:
             date_range_q: Dict[str, Any] = {}
             if date_from:
                 try:
-                    date_range_q["$gte"] = datetime.fromisoformat(date_from.replace("Z", "+00:00"))
+                    date_range_q["$gte"] = datetime.fromisoformat(
+                        date_from.replace("Z", "+00:00")
+                    )
                 except ValueError:
                     raise HTTPException(
                         status_code=400,
@@ -696,7 +717,9 @@ class AdminCampaignService:
                     )
             if date_to:
                 try:
-                    date_range_q["$lte"] = datetime.fromisoformat(date_to.replace("Z", "+00:00"))
+                    date_range_q["$lte"] = datetime.fromisoformat(
+                        date_to.replace("Z", "+00:00")
+                    )
                 except ValueError:
                     raise HTTPException(
                         status_code=400,
@@ -706,7 +729,13 @@ class AdminCampaignService:
                 query["created_at"] = date_range_q
 
         # Validate sort field
-        valid_sorts = {"created_at", "business_name", "total_impressions", "total_clicks", "total_leads"}
+        valid_sorts = {
+            "created_at",
+            "business_name",
+            "total_impressions",
+            "total_clicks",
+            "total_leads",
+        }
         if sort_by not in valid_sorts:
             sort_by = "created_at"
 
@@ -714,11 +743,7 @@ class AdminCampaignService:
 
         results = []
         async for doc in (
-            self.users
-            .find(query)
-            .sort(sort_by, sort_order)
-            .skip(skip)
-            .limit(limit)
+            self.users.find(query).sort(sort_by, sort_order).skip(skip).limit(limit)
         ):
             results.append(_serialize(doc))
 
@@ -759,15 +784,30 @@ class AdminCampaignService:
                 "$group": {
                     "_id": "$vendor_id",
                     "impressions": {
-                        "$sum": {"$cond": [{"$eq": ["$event_type", "impression_served"]}, 1, 0]}
+                        "$sum": {
+                            "$cond": [
+                                {"$eq": ["$event_type", "impression_served"]},
+                                1,
+                                0,
+                            ]
+                        }
                     },
                     "clicks": {
                         "$sum": {"$cond": [{"$eq": ["$event_type", "click"]}, 1, 0]}
                     },
                     "leads": {
-                        "$sum": {"$cond": [
-                            {"$in": ["$event_type", ["lead_created", "quote_requested"]]}, 1, 0
-                        ]}
+                        "$sum": {
+                            "$cond": [
+                                {
+                                    "$in": [
+                                        "$event_type",
+                                        ["lead_created", "quote_requested"],
+                                    ]
+                                },
+                                1,
+                                0,
+                            ]
+                        }
                     },
                 }
             },
@@ -814,8 +854,12 @@ class AdminCampaignService:
         for vid in vendor_ids:
             if vid not in stats:
                 stats[vid] = {
-                    "impressions": 0, "clicks": 0, "leads": 0, "ctr": 0.0,
-                    "total_campaigns": 0, "active_campaigns": 0,
+                    "impressions": 0,
+                    "clicks": 0,
+                    "leads": 0,
+                    "ctr": 0.0,
+                    "total_campaigns": 0,
+                    "active_campaigns": 0,
                 }
 
         return stats
@@ -867,7 +911,9 @@ class AdminCampaignService:
             date_range_q: Dict[str, Any] = {}
             if date_from:
                 try:
-                    date_range_q["$gte"] = datetime.fromisoformat(date_from.replace("Z", "+00:00"))
+                    date_range_q["$gte"] = datetime.fromisoformat(
+                        date_from.replace("Z", "+00:00")
+                    )
                 except ValueError:
                     raise HTTPException(
                         status_code=400,
@@ -875,7 +921,9 @@ class AdminCampaignService:
                     )
             if date_to:
                 try:
-                    date_range_q["$lte"] = datetime.fromisoformat(date_to.replace("Z", "+00:00"))
+                    date_range_q["$lte"] = datetime.fromisoformat(
+                        date_to.replace("Z", "+00:00")
+                    )
                 except ValueError:
                     raise HTTPException(
                         status_code=400,
@@ -886,27 +934,39 @@ class AdminCampaignService:
 
         # If aggregation requested, return grouped counts
         if aggregate_by and aggregate_by in {
-            "event_type", "campaign_id", "vendor_id", "planner_id", "placement"
+            "event_type",
+            "campaign_id",
+            "vendor_id",
+            "planner_id",
+            "placement",
         }:
             agg_pipeline = [
                 {"$match": query},
-                {"$group": {
-                    "_id": f"${aggregate_by}",
-                    "count": {"$sum": 1},
-                    "first_event": {"$min": "$created_at"},
-                    "last_event": {"$max": "$created_at"},
-                }},
+                {
+                    "$group": {
+                        "_id": f"${aggregate_by}",
+                        "count": {"$sum": 1},
+                        "first_event": {"$min": "$created_at"},
+                        "last_event": {"$max": "$created_at"},
+                    }
+                },
                 {"$sort": {"count": -1}},
                 {"$limit": limit},
             ]
             aggregations = []
             async for doc in self.ad_events.aggregate(agg_pipeline):
-                aggregations.append({
-                    "key": doc["_id"],
-                    "count": doc["count"],
-                    "first_event": doc.get("first_event", "").isoformat() if doc.get("first_event") else None,
-                    "last_event": doc.get("last_event", "").isoformat() if doc.get("last_event") else None,
-                })
+                aggregations.append(
+                    {
+                        "key": doc["_id"],
+                        "count": doc["count"],
+                        "first_event": doc.get("first_event", "").isoformat()
+                        if doc.get("first_event")
+                        else None,
+                        "last_event": doc.get("last_event", "").isoformat()
+                        if doc.get("last_event")
+                        else None,
+                    }
+                )
 
             return {
                 "aggregations": aggregations,
@@ -918,17 +978,19 @@ class AdminCampaignService:
         total = await self.ad_events.count_documents(query)
 
         # Validate sort field
-        valid_sorts = {"created_at", "event_type", "campaign_id", "vendor_id", "planner_id"}
+        valid_sorts = {
+            "created_at",
+            "event_type",
+            "campaign_id",
+            "vendor_id",
+            "planner_id",
+        }
         if sort_by not in valid_sorts:
             sort_by = "created_at"
 
         items = []
         async for doc in (
-            self.ad_events
-            .find(query)
-            .sort(sort_by, sort_order)
-            .skip(skip)
-            .limit(limit)
+            self.ad_events.find(query).sort(sort_by, sort_order).skip(skip).limit(limit)
         ):
             items.append(_serialize(doc))
 
@@ -967,21 +1029,25 @@ class AdminCampaignService:
             business_name = vendor_data.get("business_name", "").strip()
 
             if not email or not business_name:
-                failed.append({
-                    "index": i,
-                    "email": email or "(missing)",
-                    "reason": "Missing required fields: email and business_name",
-                })
+                failed.append(
+                    {
+                        "index": i,
+                        "email": email or "(missing)",
+                        "reason": "Missing required fields: email and business_name",
+                    }
+                )
                 continue
 
             # Check if vendor already exists
             existing = await self.users.find_one({"email": email})
             if existing:
-                skipped.append({
-                    "index": i,
-                    "email": email,
-                    "reason": "Vendor account already exists",
-                })
+                skipped.append(
+                    {
+                        "index": i,
+                        "email": email,
+                        "reason": "Vendor account already exists",
+                    }
+                )
                 continue
 
             try:
@@ -1005,18 +1071,22 @@ class AdminCampaignService:
                 }
                 result = await self.users.insert_one(vendor_doc)
                 vendor_doc["_id"] = str(result.inserted_id)
-                created.append({
-                    "index": i,
-                    "email": email,
-                    "business_name": business_name,
-                    "_id": vendor_doc["_id"],
-                })
+                created.append(
+                    {
+                        "index": i,
+                        "email": email,
+                        "business_name": business_name,
+                        "_id": vendor_doc["_id"],
+                    }
+                )
             except Exception as e:
-                failed.append({
-                    "index": i,
-                    "email": email,
-                    "reason": str(e),
-                })
+                failed.append(
+                    {
+                        "index": i,
+                        "email": email,
+                        "reason": str(e),
+                    }
+                )
 
         logger.info(
             f"Bulk vendor create by {admin_email}: "
@@ -1070,12 +1140,14 @@ class AdminCampaignService:
 
         updated = await self.db["ad_feature_flags"].find_one_and_update(
             {"feature_key": "sponsored_vendors"},
-            {"$set": {
-                **updates,
-                "enabled_by": admin_email,
-                "enabled_at": now,
-                "updated_at": now,
-            }},
+            {
+                "$set": {
+                    **updates,
+                    "enabled_by": admin_email,
+                    "enabled_at": now,
+                    "updated_at": now,
+                }
+            },
             upsert=True,
             return_document=True,
         )

@@ -3,9 +3,10 @@ Blog Article Models for Public-Facing Marketing Blog
 Separate collection from Knowledge Base — these are SEO-targeted blog posts
 visible on /resources to the public (no auth required).
 """
+
 from pydantic import BaseModel, Field, field_validator
 from typing import Optional, List
-from datetime import datetime, timezone
+from datetime import datetime
 from app.models.base import MongoModel
 
 
@@ -44,9 +45,21 @@ class BlogArticleModel(MongoModel):
 
     # Article Content
     title: str = Field(..., min_length=5, max_length=200, description="Article title")
-    slug: str = Field(..., min_length=5, max_length=220, description="URL-friendly slug")
-    content: str = Field(..., min_length=50, max_length=100000, description="Markdown or basic editorial HTML rendered in React")
-    excerpt: str = Field(..., min_length=20, max_length=500, description="Short summary for card listings")
+    slug: str = Field(
+        ..., min_length=5, max_length=220, description="URL-friendly slug"
+    )
+    content: str = Field(
+        ...,
+        min_length=50,
+        max_length=100000,
+        description="Markdown or basic editorial HTML rendered in React",
+    )
+    excerpt: str = Field(
+        ...,
+        min_length=20,
+        max_length=500,
+        description="Short summary for card listings",
+    )
 
     # Classification
     category: str = Field(default="general", description="Blog category")
@@ -61,8 +74,12 @@ class BlogArticleModel(MongoModel):
     author_email: str = Field(default="hello@thespecialwedding.io", max_length=254)
 
     # SEO
-    meta_title: Optional[str] = Field(None, max_length=70, description="SEO title override")
-    meta_description: Optional[str] = Field(None, max_length=160, description="SEO description override")
+    meta_title: Optional[str] = Field(
+        None, max_length=70, description="SEO title override"
+    )
+    meta_description: Optional[str] = Field(
+        None, max_length=160, description="SEO description override"
+    )
     og_image: Optional[str] = Field(None, description="Open Graph image URL")
 
     # Metrics
@@ -71,7 +88,9 @@ class BlogArticleModel(MongoModel):
 
     # Display
     card_image: Optional[str] = Field(None, description="Card thumbnail URL")
-    published_at: Optional[datetime] = Field(default=None, description="When the article was published")
+    published_at: Optional[datetime] = Field(
+        default=None, description="When the article was published"
+    )
 
     @field_validator("category")
     @classmethod
@@ -92,7 +111,8 @@ class BlogArticleModel(MongoModel):
     @classmethod
     def validate_slug(cls, v):
         import re
-        if not re.match(r'^[a-z0-9]+(?:-[a-z0-9]+)*$', v):
+
+        if not re.match(r"^[a-z0-9]+(?:-[a-z0-9]+)*$", v):
             raise ValueError("Slug must be lowercase with hyphens only")
         return v
 
@@ -107,6 +127,7 @@ class BlogArticleModel(MongoModel):
 
 class BlogArticleCreateModel(BaseModel):
     """Input model for creating a blog article"""
+
     title: str = Field(..., min_length=5, max_length=200)
     content: str = Field(..., min_length=50, max_length=100000)
     excerpt: str = Field(..., min_length=20, max_length=500)
@@ -137,6 +158,7 @@ class BlogArticleCreateModel(BaseModel):
 
 class BlogArticleUpdateModel(BaseModel):
     """Partial update model for blog articles"""
+
     title: Optional[str] = Field(None, min_length=5, max_length=200)
     content: Optional[str] = Field(None, min_length=50, max_length=100000)
     excerpt: Optional[str] = Field(None, min_length=20, max_length=500)
@@ -168,9 +190,10 @@ class BlogArticleUpdateModel(BaseModel):
 def generate_blog_slug(title: str) -> str:
     """Generate URL-friendly slug from title"""
     import re
+
     slug = title.lower()
-    slug = re.sub(r'[\s_]+', '-', slug)
-    slug = re.sub(r'[^a-z0-9-]', '', slug)
-    slug = re.sub(r'-+', '-', slug)
-    slug = slug.strip('-')
+    slug = re.sub(r"[\s_]+", "-", slug)
+    slug = re.sub(r"[^a-z0-9-]", "", slug)
+    slug = re.sub(r"-+", "-", slug)
+    slug = slug.strip("-")
     return slug

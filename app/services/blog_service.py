@@ -3,6 +3,7 @@ Blog Service — CRUD operations for public-facing marketing blog.
 Mirrors KnowledgeBaseService architecture but uses 'blog_articles' collection.
 Blog articles are PUBLIC (no auth to read), admin-only to write.
 """
+
 from fastapi import HTTPException
 from app.core.database import mongo
 from typing import Dict, Optional, Any, List
@@ -13,8 +14,6 @@ import re
 import math
 
 from app.models.blog import (
-    BLOG_CATEGORIES,
-    BLOG_CATEGORY_DISPLAY_NAMES,
     generate_blog_slug,
     BlogArticleCreateModel,
     BlogArticleUpdateModel,
@@ -60,15 +59,22 @@ class BlogService:
             skip = (page - 1) * limit
             pages = max(1, (total + limit - 1) // limit)
 
-            cursor = self.collection.find(
-                query,
-                # Exclude full content for list view
-                {"content": 0},
-            ).sort([
-                ("featured", -1),
-                ("published_at", -1),
-                ("created_at", -1),
-            ]).skip(skip).limit(limit)
+            cursor = (
+                self.collection.find(
+                    query,
+                    # Exclude full content for list view
+                    {"content": 0},
+                )
+                .sort(
+                    [
+                        ("featured", -1),
+                        ("published_at", -1),
+                        ("created_at", -1),
+                    ]
+                )
+                .skip(skip)
+                .limit(limit)
+            )
 
             articles = []
             async for article in cursor:
@@ -86,12 +92,16 @@ class BlogService:
 
         except Exception as e:
             logger.error(f"Error getting blog articles: {str(e)}")
-            raise HTTPException(status_code=500, detail=f"Error retrieving articles: {str(e)}")
+            raise HTTPException(
+                status_code=500, detail=f"Error retrieving articles: {str(e)}"
+            )
 
     async def get_article_by_slug(self, slug: str, increment_view: bool = True) -> dict:
         """Get a single published article by slug (public)"""
         try:
-            article = await self.collection.find_one({"slug": slug, "status": "published"})
+            article = await self.collection.find_one(
+                {"slug": slug, "status": "published"}
+            )
 
             if not article:
                 raise HTTPException(status_code=404, detail="Article not found")
@@ -112,7 +122,9 @@ class BlogService:
             raise
         except Exception as e:
             logger.error(f"Error getting blog article by slug: {str(e)}")
-            raise HTTPException(status_code=500, detail=f"Error retrieving article: {str(e)}")
+            raise HTTPException(
+                status_code=500, detail=f"Error retrieving article: {str(e)}"
+            )
 
     async def get_slugs(self) -> List[str]:
         """Return all published slugs (for sitemap)"""
@@ -131,7 +143,9 @@ class BlogService:
 
     # ───────────────── ADMIN CRUD ─────────────────
 
-    async def create_article(self, data: BlogArticleCreateModel, author_email: str) -> dict:
+    async def create_article(
+        self, data: BlogArticleCreateModel, author_email: str
+    ) -> dict:
         """Create a new blog article (admin only)"""
         try:
             base_slug = generate_blog_slug(data.title)
@@ -144,7 +158,10 @@ class BlogService:
 
             sanitized_content = sanitize_blog_content(data.content)
             if not sanitized_content:
-                raise HTTPException(status_code=400, detail="Article content is empty after sanitization")
+                raise HTTPException(
+                    status_code=400,
+                    detail="Article content is empty after sanitization",
+                )
 
             word_count = blog_content_word_count(sanitized_content)
             estimated_read_minutes = max(1, math.ceil(word_count / 200))
@@ -191,9 +208,13 @@ class BlogService:
             raise
         except Exception as e:
             logger.error(f"Error creating blog article: {str(e)}")
-            raise HTTPException(status_code=500, detail=f"Error creating article: {str(e)}")
+            raise HTTPException(
+                status_code=500, detail=f"Error creating article: {str(e)}"
+            )
 
-    async def update_article(self, article_id: str, data: BlogArticleUpdateModel) -> dict:
+    async def update_article(
+        self, article_id: str, data: BlogArticleUpdateModel
+    ) -> dict:
         """Update a blog article (admin only)"""
         try:
             try:
@@ -213,24 +234,33 @@ class BlogService:
             if "content" in update_dict:
                 sanitized_content = sanitize_blog_content(update_dict["content"])
                 if not sanitized_content:
-                    raise HTTPException(status_code=400, detail="Article content is empty after sanitization")
+                    raise HTTPException(
+                        status_code=400,
+                        detail="Article content is empty after sanitization",
+                    )
 
                 update_dict["content"] = sanitized_content
                 word_count = blog_content_word_count(sanitized_content)
-                update_dict["estimated_read_minutes"] = max(1, math.ceil(word_count / 200))
+                update_dict["estimated_read_minutes"] = max(
+                    1, math.ceil(word_count / 200)
+                )
 
             if "title" in update_dict:
                 new_slug = generate_blog_slug(update_dict["title"])
                 if new_slug != existing["slug"]:
                     counter = 1
                     base_slug = new_slug
-                    while await self.collection.find_one({"slug": new_slug, "_id": {"$ne": obj_id}}):
+                    while await self.collection.find_one(
+                        {"slug": new_slug, "_id": {"$ne": obj_id}}
+                    ):
                         new_slug = f"{base_slug}-{counter}"
                         counter += 1
                     update_dict["slug"] = new_slug
 
             # If transitioning to published and no published_at yet
-            if update_dict.get("status") == "published" and not existing.get("published_at"):
+            if update_dict.get("status") == "published" and not existing.get(
+                "published_at"
+            ):
                 update_dict["published_at"] = datetime.now(timezone.utc)
 
             update_dict["updated_at"] = datetime.now(timezone.utc)
@@ -248,7 +278,9 @@ class BlogService:
             raise
         except Exception as e:
             logger.error(f"Error updating blog article: {str(e)}")
-            raise HTTPException(status_code=500, detail=f"Error updating article: {str(e)}")
+            raise HTTPException(
+                status_code=500, detail=f"Error updating article: {str(e)}"
+            )
 
     async def delete_article(self, article_id: str) -> dict:
         """Delete a blog article (admin only)"""
@@ -271,7 +303,9 @@ class BlogService:
             raise
         except Exception as e:
             logger.error(f"Error deleting blog article: {str(e)}")
-            raise HTTPException(status_code=500, detail=f"Error deleting article: {str(e)}")
+            raise HTTPException(
+                status_code=500, detail=f"Error deleting article: {str(e)}"
+            )
 
     async def get_article_by_id(self, article_id: str) -> dict:
         """Get article by ID (admin — any status)"""
@@ -293,7 +327,9 @@ class BlogService:
             raise
         except Exception as e:
             logger.error(f"Error getting blog article: {str(e)}")
-            raise HTTPException(status_code=500, detail=f"Error retrieving article: {str(e)}")
+            raise HTTPException(
+                status_code=500, detail=f"Error retrieving article: {str(e)}"
+            )
 
     async def get_all_articles_admin(
         self,
@@ -325,13 +361,20 @@ class BlogService:
             skip = (page - 1) * limit
             pages = max(1, (total + limit - 1) // limit)
 
-            cursor = self.collection.find(
-                query,
-                {"content": 0},
-            ).sort([
-                ("featured", -1),
-                ("updated_at", -1),
-            ]).skip(skip).limit(limit)
+            cursor = (
+                self.collection.find(
+                    query,
+                    {"content": 0},
+                )
+                .sort(
+                    [
+                        ("featured", -1),
+                        ("updated_at", -1),
+                    ]
+                )
+                .skip(skip)
+                .limit(limit)
+            )
 
             articles = []
             async for article in cursor:
@@ -349,7 +392,9 @@ class BlogService:
 
         except Exception as e:
             logger.error(f"Error getting admin blog articles: {str(e)}")
-            raise HTTPException(status_code=500, detail=f"Error retrieving articles: {str(e)}")
+            raise HTTPException(
+                status_code=500, detail=f"Error retrieving articles: {str(e)}"
+            )
 
 
 # Singleton

@@ -35,8 +35,10 @@ router = APIRouter(prefix="/api/v1/vendors", tags=["Vendor Signup"])
 # REQUEST MODELS
 # =============================================================================
 
+
 class VendorSignupRequest(BaseModel):
     """Public vendor signup form."""
+
     email: str = Field(..., min_length=5, max_length=254)
     business_name: str = Field(..., min_length=2, max_length=200)
     category: str = Field(default="", max_length=100)
@@ -55,6 +57,7 @@ class VendorSignupRequest(BaseModel):
 
 class ChangePasswordRequest(BaseModel):
     """Vendor changes temp password on first login."""
+
     current_password: str = Field(..., min_length=1, max_length=128)
     new_password: str = Field(..., min_length=8, max_length=128)
 
@@ -74,6 +77,7 @@ class ChangePasswordRequest(BaseModel):
 
 class UpdateProfileRequest(BaseModel):
     """Vendor profile update."""
+
     business_name: Optional[str] = Field(None, min_length=2, max_length=200)
     vendor_category: Optional[str] = Field(None, max_length=100)
     vendor_location: Optional[str] = Field(None, max_length=200)
@@ -87,6 +91,7 @@ class UpdateProfileRequest(BaseModel):
 # =============================================================================
 # DEPENDENCY INJECTION
 # =============================================================================
+
 
 async def get_vendor_signup_service() -> VendorSignupService:
     return VendorSignupService(mongo.db)
@@ -104,6 +109,7 @@ async def require_advertising_vendor(
 # =============================================================================
 # ENDPOINTS
 # =============================================================================
+
 
 @router.post("/signup", status_code=201)
 async def vendor_signup(
@@ -161,14 +167,17 @@ async def update_vendor_profile(
 # VENDOR WEB PUSH SUBSCRIPTION ENDPOINTS
 # =============================================================================
 
+
 class VendorPushSubscriptionKeys(BaseModel):
     """VAPID keys from browser push subscription."""
+
     p256dh: str
     auth: str
 
 
 class VendorPushSubscription(BaseModel):
     """Push subscription from browser's PushManager."""
+
     endpoint: str
     keys: VendorPushSubscriptionKeys
     expirationTime: Optional[int] = None
@@ -176,11 +185,13 @@ class VendorPushSubscription(BaseModel):
 
 class VendorSubscribeRequest(BaseModel):
     """Wrapper for push subscription from vendor frontend."""
+
     subscription: VendorPushSubscription
 
 
 class VendorUnsubscribeRequest(BaseModel):
     """Request to unsubscribe from push notifications."""
+
     endpoint: str = ""
 
 
@@ -188,6 +199,7 @@ class VendorUnsubscribeRequest(BaseModel):
 async def vendor_get_vapid_public_key():
     """Get the VAPID public key for vendor push subscription."""
     from app.services.web_push_service import web_push_service
+
     public_key = web_push_service.get_public_key()
     if not public_key:
         raise HTTPException(
@@ -205,6 +217,7 @@ async def vendor_subscribe_to_push(
 ):
     """Subscribe vendor to push notifications."""
     from app.services.web_push_service import web_push_service
+
     user_agent = request.headers.get("User-Agent")
 
     subscription_data = {
@@ -253,6 +266,7 @@ async def vendor_get_push_status(
 ):
     """Check if the current vendor has push notifications enabled."""
     from app.services.web_push_service import web_push_service
+
     is_subscribed = await web_push_service.check_user_subscribed(current_user.email)
     is_enabled = web_push_service.enabled
 
@@ -260,8 +274,10 @@ async def vendor_get_push_status(
         "enabled": is_enabled,
         "subscribed": is_subscribed,
         "message": (
-            "Push notifications are active" if is_subscribed
-            else "Not subscribed to push notifications" if is_enabled
+            "Push notifications are active"
+            if is_subscribed
+            else "Not subscribed to push notifications"
+            if is_enabled
             else "Push notifications not configured on server"
         ),
     }

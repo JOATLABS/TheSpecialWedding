@@ -8,7 +8,10 @@ import time
 import asyncio
 from datetime import datetime, timezone
 from app.core.database import mongo
-from app.models.subscription import PLANNER_BLOCKED_SUBSCRIPTION_STATUSES, normalize_subscription_status
+from app.models.subscription import (
+    PLANNER_BLOCKED_SUBSCRIPTION_STATUSES,
+    normalize_subscription_status,
+)
 from bson import ObjectId
 
 logger = logging.getLogger(__name__)
@@ -55,11 +58,13 @@ def invalidate_team_cache_by_owner(owner_id: str) -> None:
     """Invalidate all cached entries for a given owner (e.g., on bulk changes).
     Synchronous for simplicity."""
     keys_to_remove = [
-        k for k, v in _team_cache.items()
+        k
+        for k, v in _team_cache.items()
         if v.get("data", {}).get("owner_id") == owner_id
     ]
     for k in keys_to_remove:
         _team_cache.pop(k, None)
+
 
 # Security scheme
 security = HTTPBearer(auto_error=False)
@@ -71,21 +76,28 @@ ALGORITHM = "HS256"
 
 class ExtendedAuthUser:
     """Extended auth user supporting multiple roles including team members"""
+
     def __init__(self, email: str, role: str, user_data: Optional[dict] = None):
         self.email = email
         self.role = role
         self.user_data = user_data or {}
         # Role-specific properties
-        root_admin_email = os.getenv("ROOT_ADMIN_EMAIL", "thedeveloper@thespecialwedding.io")
-        self.is_root_admin = (role == "ROOT_ADMIN" and email == root_admin_email)
-        self.is_wedding_planner = (role == "wedding_planner")
-        self.is_vendor = (role == "vendor")
-        self.is_team_member = (role == "team_member")
-        self.is_advertising_vendor = (role == "advertising_vendor")
+        root_admin_email = os.getenv(
+            "ROOT_ADMIN_EMAIL", "thedeveloper@thespecialwedding.io"
+        )
+        self.is_root_admin = role == "ROOT_ADMIN" and email == root_admin_email
+        self.is_wedding_planner = role == "wedding_planner"
+        self.is_vendor = role == "vendor"
+        self.is_team_member = role == "team_member"
+        self.is_advertising_vendor = role == "advertising_vendor"
 
         # Team member properties (populated by get_current_user_extended for team members)
-        self.parent_planner_id: Optional[str] = user_data.get("parent_planner_id") if user_data else None
-        self.team_member_id: Optional[str] = user_data.get("team_member_id") if user_data else None
+        self.parent_planner_id: Optional[str] = (
+            user_data.get("parent_planner_id") if user_data else None
+        )
+        self.team_member_id: Optional[str] = (
+            user_data.get("team_member_id") if user_data else None
+        )
         self.team_permissions: Optional[dict] = None
         self.team_wedding_access: Optional[str] = None  # "all" or "assigned"
         self.team_assigned_wedding_ids: List[str] = []
@@ -121,7 +133,9 @@ async def get_current_user_extended(
         user_data = {}
 
         # Check if this is the ROOT_ADMIN
-        root_admin_email = os.getenv("ROOT_ADMIN_EMAIL", "thedeveloper@thespecialwedding.io")
+        root_admin_email = os.getenv(
+            "ROOT_ADMIN_EMAIL", "thedeveloper@thespecialwedding.io"
+        )
         if email == root_admin_email:
             # ROOT_ADMIN must exist in the users collection
             user = await mongo.get_users_collection().find_one({"email": email})
@@ -168,11 +182,16 @@ async def get_current_user_extended(
                 )
             # Tag users with subscription issues — don't block here so they can
             # still access profile and billing endpoints to upgrade/reactivate.
-            sub_status = normalize_subscription_status(user_data.get("subscription_status"))
+            sub_status = normalize_subscription_status(
+                user_data.get("subscription_status")
+            )
             if sub_status:
                 user_data["subscription_status"] = sub_status
 
-            if role == "wedding_planner" and sub_status in PLANNER_BLOCKED_SUBSCRIPTION_STATUSES:
+            if (
+                role == "wedding_planner"
+                and sub_status in PLANNER_BLOCKED_SUBSCRIPTION_STATUSES
+            ):
                 user_data["_subscription_blocked"] = True
                 user_data["_subscription_block_reason"] = {
                     "pending": "Please complete your subscription checkout to access the platform.",
@@ -185,17 +204,27 @@ async def get_current_user_extended(
                     "expired": "Free trial has expired. Please upgrade your subscription to continue using the platform.",
                 }.get(sub_status, "Subscription issue. Please contact support.")
             # Check trial expiration for wedding planners
-            if role == "wedding_planner" and user_data.get("subscription_status") == "trial":
+            if (
+                role == "wedding_planner"
+                and user_data.get("subscription_status") == "trial"
+            ):
                 trial_end_date = user_data.get("trial_end_date")
                 if trial_end_date:
                     # Handle both datetime objects and ISO strings, ensuring timezone-aware
                     if isinstance(trial_end_date, str):
                         try:
-                            trial_end_date = datetime.fromisoformat(trial_end_date.replace('Z', '+00:00'))
+                            trial_end_date = datetime.fromisoformat(
+                                trial_end_date.replace("Z", "+00:00")
+                            )
                         except ValueError:
                             # Parse and assume UTC if no timezone info
-                            trial_end_date = datetime.fromisoformat(trial_end_date).replace(tzinfo=timezone.utc)
-                    elif isinstance(trial_end_date, datetime) and trial_end_date.tzinfo is None:
+                            trial_end_date = datetime.fromisoformat(
+                                trial_end_date
+                            ).replace(tzinfo=timezone.utc)
+                    elif (
+                        isinstance(trial_end_date, datetime)
+                        and trial_end_date.tzinfo is None
+                    ):
                         # Handle naive datetime objects from MongoDB
                         trial_end_date = trial_end_date.replace(tzinfo=timezone.utc)
                     if datetime.now(timezone.utc) > trial_end_date:
@@ -203,26 +232,35 @@ async def get_current_user_extended(
                         expire_time = datetime.now(timezone.utc)
                         await mongo.get_users_collection().update_one(
                             {"email": email},
-                            {"$set": {
-                                "subscription_status": "expired",
-                                "trial_expired_at": expire_time
-                            }}
+                            {
+                                "$set": {
+                                    "subscription_status": "expired",
+                                    "trial_expired_at": expire_time,
+                                }
+                            },
                         )
                         # Keep user_subscriptions in sync (user_id is stored as string)
                         user_id_str = str(user_data.get("_id", ""))
                         if user_id_str:
                             await mongo.db["user_subscriptions"].update_one(
-                                {"user_id": user_id_str, "status": {"$in": ["trial", "active"]}},
-                                {"$set": {
-                                    "status": "expired",
-                                    "updated_at": expire_time,
-                                    "trial_expired_at": expire_time
-                                }}
+                                {
+                                    "user_id": user_id_str,
+                                    "status": {"$in": ["trial", "active"]},
+                                },
+                                {
+                                    "$set": {
+                                        "status": "expired",
+                                        "updated_at": expire_time,
+                                        "trial_expired_at": expire_time,
+                                    }
+                                },
                             )
                         # Tag as blocked — don't raise so user can access billing
                         user_data["subscription_status"] = "expired"
                         user_data["_subscription_blocked"] = True
-                        user_data["_subscription_block_reason"] = "Free trial has expired. Please upgrade your subscription to continue using the platform."
+                        user_data["_subscription_block_reason"] = (
+                            "Free trial has expired. Please upgrade your subscription to continue using the platform."
+                        )
 
         auth_user = ExtendedAuthUser(email=email, role=role, user_data=user_data)
 
@@ -236,18 +274,24 @@ async def get_current_user_extended(
                     team_doc = cached_data
                 else:
                     # Cache miss: query database
-                    team_doc = await mongo.db["team_members"].find_one({
-                        "_id": ObjectId(team_member_id),
-                        "status": "active",
-                    })
+                    team_doc = await mongo.db["team_members"].find_one(
+                        {
+                            "_id": ObjectId(team_member_id),
+                            "status": "active",
+                        }
+                    )
                     if team_doc:
                         # Store in cache for future requests
                         await _set_team_cache(team_member_id, team_doc)
 
                 if team_doc:
                     auth_user.team_permissions = team_doc.get("custom_permissions", {})
-                    auth_user.team_wedding_access = team_doc.get("wedding_access", "all")
-                    auth_user.team_assigned_wedding_ids = team_doc.get("assigned_wedding_ids", [])
+                    auth_user.team_wedding_access = team_doc.get(
+                        "wedding_access", "all"
+                    )
+                    auth_user.team_assigned_wedding_ids = team_doc.get(
+                        "assigned_wedding_ids", []
+                    )
                     auth_user.team_owner_email = team_doc.get("owner_email")
                     auth_user.parent_planner_id = team_doc.get("owner_id")
 
@@ -255,19 +299,30 @@ async def get_current_user_extended(
                     last_active = team_doc.get("last_active_at")
                     should_update = not last_active
                     if last_active:
-                        if isinstance(last_active, datetime) and last_active.tzinfo is None:
+                        if (
+                            isinstance(last_active, datetime)
+                            and last_active.tzinfo is None
+                        ):
                             last_active = last_active.replace(tzinfo=timezone.utc)
-                        should_update = (datetime.now(timezone.utc) - last_active).total_seconds() > 300
+                        should_update = (
+                            datetime.now(timezone.utc) - last_active
+                        ).total_seconds() > 300
                     if should_update:
                         try:
                             asyncio.create_task(
                                 mongo.db["team_members"].update_one(
                                     {"_id": ObjectId(team_member_id)},
-                                    {"$set": {"last_active_at": datetime.now(timezone.utc)}}
+                                    {
+                                        "$set": {
+                                            "last_active_at": datetime.now(timezone.utc)
+                                        }
+                                    },
                                 )
                             )
                         except Exception as e:
-                            logger.debug(f"Failed to update team member last_active_at: {e}")
+                            logger.debug(
+                                f"Failed to update team member last_active_at: {e}"
+                            )
                             pass  # Non-critical
                 else:
                     # Team membership revoked or deactivated
@@ -296,15 +351,18 @@ async def get_current_user_extended(
                 "/stripe/",
                 "/api/stripe/",
                 "/public/",
-                "/users/",           # subscription management self-view
+                "/users/",  # subscription management self-view
                 "/subscription-plans",  # view available plans
             )
-            if not any(path.startswith(p) or f"/{p.lstrip('/')}" in path for p in _SUB_WHITELIST):
+            if not any(
+                path.startswith(p) or f"/{p.lstrip('/')}" in path
+                for p in _SUB_WHITELIST
+            ):
                 raise HTTPException(
                     status_code=status.HTTP_402_PAYMENT_REQUIRED,
                     detail=auth_user.user_data.get(
                         "_subscription_block_reason",
-                        "Subscription issue. Please upgrade your plan."
+                        "Subscription issue. Please upgrade your plan.",
                     ),
                     headers={"WWW-Authenticate": "Bearer"},
                 )
@@ -324,37 +382,47 @@ async def get_current_user_extended(
 
 
 # Role-based dependency factories
-async def require_root_admin(current_user: ExtendedAuthUser = Depends(get_current_user_extended)) -> ExtendedAuthUser:
+async def require_root_admin(
+    current_user: ExtendedAuthUser = Depends(get_current_user_extended),
+) -> ExtendedAuthUser:
     """Require ROOT_ADMIN access (only thedeveloper@thespecialwedding.io)"""
     if not current_user.is_root_admin:
         raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Root admin access required"
+            status_code=status.HTTP_403_FORBIDDEN, detail="Root admin access required"
         )
     return current_user
 
 
-async def require_wedding_planner(current_user: ExtendedAuthUser = Depends(get_current_user_extended)) -> ExtendedAuthUser:
+async def require_wedding_planner(
+    current_user: ExtendedAuthUser = Depends(get_current_user_extended),
+) -> ExtendedAuthUser:
     """Require wedding planner access"""
     if not (current_user.is_wedding_planner or current_user.is_root_admin):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Wedding planner access required"
+            detail="Wedding planner access required",
         )
     return current_user
 
 
-async def require_vendor(current_user: ExtendedAuthUser = Depends(get_current_user_extended)) -> ExtendedAuthUser:
+async def require_vendor(
+    current_user: ExtendedAuthUser = Depends(get_current_user_extended),
+) -> ExtendedAuthUser:
     """Require vendor access"""
-    if not (current_user.is_vendor or current_user.is_wedding_planner or current_user.is_root_admin):
+    if not (
+        current_user.is_vendor
+        or current_user.is_wedding_planner
+        or current_user.is_root_admin
+    ):
         raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Vendor access required"
+            status_code=status.HTTP_403_FORBIDDEN, detail="Vendor access required"
         )
     return current_user
 
 
-async def require_admin_or_planner(current_user: ExtendedAuthUser = Depends(get_current_user_extended)) -> ExtendedAuthUser:
+async def require_admin_or_planner(
+    current_user: ExtendedAuthUser = Depends(get_current_user_extended),
+) -> ExtendedAuthUser:
     """Require root admin, wedding planner, team member, or advertising vendor access"""
     if current_user.is_root_admin or current_user.is_wedding_planner:
         return current_user
@@ -364,29 +432,31 @@ async def require_admin_or_planner(current_user: ExtendedAuthUser = Depends(get_
         return current_user
     raise HTTPException(
         status_code=status.HTTP_403_FORBIDDEN,
-        detail="Admin or wedding planner access required"
+        detail="Admin or wedding planner access required",
     )
 
 
-async def require_any_admin(current_user: ExtendedAuthUser = Depends(get_current_user_extended)) -> ExtendedAuthUser:
+async def require_any_admin(
+    current_user: ExtendedAuthUser = Depends(get_current_user_extended),
+) -> ExtendedAuthUser:
     """Require root admin access"""
     if not current_user.is_root_admin:
         raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Admin access required"
+            status_code=status.HTTP_403_FORBIDDEN, detail="Admin access required"
         )
     return current_user
 
 
-async def require_wedding_planner_only(current_user: ExtendedAuthUser = Depends(get_current_user_extended)) -> ExtendedAuthUser:
+async def require_wedding_planner_only(
+    current_user: ExtendedAuthUser = Depends(get_current_user_extended),
+) -> ExtendedAuthUser:
     """Require wedding planner or team member access (excludes root admin)"""
     if current_user.is_wedding_planner:
         return current_user
     if current_user.is_team_member and current_user.team_permissions is not None:
         return current_user
     raise HTTPException(
-        status_code=status.HTTP_403_FORBIDDEN,
-        detail="Wedding planner access required"
+        status_code=status.HTTP_403_FORBIDDEN, detail="Wedding planner access required"
     )
 
 
@@ -413,7 +483,7 @@ async def check_wedding_access(user: ExtendedAuthUser, wedding_id: str) -> bool:
             # Handle both string and ObjectId formats
             if isinstance(wedding_id, str):
                 # Check if it looks like a valid ObjectId (24 hex characters)
-                if re.match(r'^[0-9a-fA-F]{24}$', wedding_id):
+                if re.match(r"^[0-9a-fA-F]{24}$", wedding_id):
                     query_id = ObjectId(wedding_id)
                 else:
                     # Use as string for slug-based lookups, but sanitize
@@ -435,18 +505,29 @@ async def check_wedding_access(user: ExtendedAuthUser, wedding_id: str) -> bool:
         if user.team_wedding_access == "all":
             # Team member with "all" access: check if the wedding belongs to their owner planner
             import re
-            if not wedding_id or not isinstance(wedding_id, str) or len(wedding_id) > 100:
+
+            if (
+                not wedding_id
+                or not isinstance(wedding_id, str)
+                or len(wedding_id) > 100
+            ):
                 return False
             try:
-                if re.match(r'^[0-9a-fA-F]{24}$', wedding_id):
+                if re.match(r"^[0-9a-fA-F]{24}$", wedding_id):
                     query_id = ObjectId(wedding_id)
                 else:
                     query_id = wedding_id.strip()
-                wedding = await mongo.get_weddings_collection().find_one({"_id": query_id})
+                wedding = await mongo.get_weddings_collection().find_one(
+                    {"_id": query_id}
+                )
                 if wedding and user.team_owner_email:
-                    return wedding.get("assigned_planner_email") == user.team_owner_email
+                    return (
+                        wedding.get("assigned_planner_email") == user.team_owner_email
+                    )
             except Exception as e:
-                logger.warning(f"Error checking team wedding access for user {user.email}: {e}")
+                logger.warning(
+                    f"Error checking team wedding access for user {user.email}: {e}"
+                )
                 return False
         elif user.team_wedding_access == "assigned":
             # Team member with "assigned" access: must be in their list
@@ -455,24 +536,31 @@ async def check_wedding_access(user: ExtendedAuthUser, wedding_id: str) -> bool:
 
     if user.is_vendor:
         # Check if vendor has access to this wedding
-        vendor = await mongo.get_vendors_collection().find_one({"email": user.email, "wedding_id": wedding_id})
+        vendor = await mongo.get_vendors_collection().find_one(
+            {"email": user.email, "wedding_id": wedding_id}
+        )
         return vendor is not None
     return False
 
 
 async def require_wedding_access(wedding_id: str):
     """Factory function to require access to a specific wedding"""
-    async def wedding_access_checker(current_user: ExtendedAuthUser = Depends(get_current_user_extended)) -> ExtendedAuthUser:
+
+    async def wedding_access_checker(
+        current_user: ExtendedAuthUser = Depends(get_current_user_extended),
+    ) -> ExtendedAuthUser:
         if not await check_wedding_access(current_user, wedding_id):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail="Access to this wedding denied"
+                detail="Access to this wedding denied",
             )
         return current_user
+
     return wedding_access_checker
 
 
 # ─── Team-Aware Dependencies ─────────────────────────────────────────────
+
 
 async def require_team_or_planner(
     current_user: ExtendedAuthUser = Depends(get_current_user_extended),
@@ -506,6 +594,7 @@ def require_team_permission(permission_name: str):
         ):
             ...
     """
+
     async def _check_permission(
         current_user: ExtendedAuthUser = Depends(require_team_or_planner),
     ) -> ExtendedAuthUser:
@@ -514,7 +603,9 @@ def require_team_permission(permission_name: str):
             return current_user
 
         # Team member — check specific permission
-        if current_user.team_permissions and current_user.team_permissions.get(permission_name, False):
+        if current_user.team_permissions and current_user.team_permissions.get(
+            permission_name, False
+        ):
             return current_user
 
         raise HTTPException(
@@ -553,8 +644,11 @@ def enforce_team_permission(user: ExtendedAuthUser, permission: str) -> None:
     """
     # Validate permission key to catch typos at development time
     from app.models.team_member import ALL_PERMISSION_KEYS
+
     if permission not in ALL_PERMISSION_KEYS:
-        raise ValueError(f"Invalid permission key: '{permission}'. Valid keys: {ALL_PERMISSION_KEYS}")
+        raise ValueError(
+            f"Invalid permission key: '{permission}'. Valid keys: {ALL_PERMISSION_KEYS}"
+        )
 
     if user.is_root_admin or user.is_wedding_planner:
         return

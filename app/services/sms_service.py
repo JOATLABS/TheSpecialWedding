@@ -5,6 +5,7 @@ from app.core.sms_config import get_active_sms_provider, SMSProvider
 
 logger = logging.getLogger(__name__)
 
+
 class SMSService:
     """Unified SMS service that wraps both Twilio and Telnyx providers"""
 
@@ -28,7 +29,9 @@ class SMSService:
             self.from_phone = os.getenv("TWILIO_PHONE_NUMBER")
 
             if not all([account_sid, auth_token, self.from_phone]):
-                logger.warning("Twilio SMS service not configured. Missing required environment variables.")
+                logger.warning(
+                    "Twilio SMS service not configured. Missing required environment variables."
+                )
                 return
 
             http_client = TwilioHttpClient(pool_connections=False)
@@ -37,7 +40,7 @@ class SMSService:
                 password=auth_token,
                 http_client=http_client,
                 region=os.getenv("TWILIO_REGION"),
-                edge=os.getenv("TWILIO_EDGE")
+                edge=os.getenv("TWILIO_EDGE"),
             )
             self.configured = True
             logger.info("Twilio SMS service initialized successfully")
@@ -56,7 +59,9 @@ class SMSService:
             self.from_phone = os.getenv("TELNYX_PHONE_NUMBER")
 
             if not all([api_key, self.from_phone]):
-                logger.warning("Telnyx SMS service not configured. Missing required environment variables.")
+                logger.warning(
+                    "Telnyx SMS service not configured. Missing required environment variables."
+                )
                 return
 
             telnyx.api_key = api_key
@@ -84,7 +89,7 @@ class SMSService:
             return {
                 "success": False,
                 "error": f"{self.provider.value} SMS service not configured",
-                "provider": self.provider.value
+                "provider": self.provider.value,
             }
 
         try:
@@ -96,24 +101,18 @@ class SMSService:
                 return {
                     "success": False,
                     "error": f"Unknown SMS provider: {self.provider.value}",
-                    "provider": self.provider.value
+                    "provider": self.provider.value,
                 }
 
         except Exception as e:
             logger.error(f"SMS send failed via {self.provider.value}: {str(e)}")
-            return {
-                "success": False,
-                "error": str(e),
-                "provider": self.provider.value
-            }
+            return {"success": False, "error": str(e), "provider": self.provider.value}
 
     def _send_twilio(self, to_phone: str, message: str) -> Dict[str, Any]:
         """Send SMS via Twilio"""
         try:
             message_obj = self.client.messages.create(
-                to=to_phone,
-                from_=self.from_phone,
-                body=message
+                to=to_phone, from_=self.from_phone, body=message
             )
 
             logger.info(f"SMS sent via Twilio to {to_phone}, SID: {message_obj.sid}")
@@ -122,7 +121,7 @@ class SMSService:
                 "success": True,
                 "provider": "twilio",
                 "message_id": message_obj.sid,
-                "status": message_obj.status
+                "status": message_obj.status,
             }
 
         except Exception as e:
@@ -133,9 +132,7 @@ class SMSService:
         """Send SMS via Telnyx"""
         try:
             response = self.client.Message.create(
-                from_=self.from_phone,
-                to=to_phone,
-                text=message
+                from_=self.from_phone, to=to_phone, text=message
             )
 
             logger.info(f"SMS sent via Telnyx to {to_phone}, ID: {response.data.id}")
@@ -144,7 +141,7 @@ class SMSService:
                 "success": True,
                 "provider": "telnyx",
                 "message_id": response.data.id,
-                "status": response.data.status
+                "status": response.data.status,
             }
 
         except Exception as e:

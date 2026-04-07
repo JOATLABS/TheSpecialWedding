@@ -3,7 +3,11 @@ from typing import List, Optional
 from bson import ObjectId
 from datetime import datetime
 import re
-from app.utils.contact_sanitizer import sanitize_phone, sanitize_email, validate_email_format
+from app.utils.contact_sanitizer import (
+    sanitize_phone,
+    sanitize_email,
+    validate_email_format,
+)
 from app.utils.wedding_event_types import normalize_event_type_list
 
 
@@ -36,7 +40,7 @@ class PlusOneModel(BaseModel):
                 "attending": ["reception"],
                 "dietary": "Vegetarian",
                 "sms_opt_in": True,
-                "email_opt_in": True
+                "email_opt_in": True,
             }
         },
     )
@@ -47,12 +51,24 @@ class PlusOneModel(BaseModel):
     email: Optional[str] = None
     attending: List[str] = Field(default_factory=list)
     dietary: Optional[str] = None
-    sms_opt_in: Optional[bool] = Field(default=None, description="Opted in for SMS reminders")
-    sms_opt_in_date: Optional[datetime] = Field(None, description="When opted in to SMS")
-    sms_opt_out_date: Optional[datetime] = Field(None, description="When opted out of SMS")
-    email_opt_in: Optional[bool] = Field(default=None, description="Opted in for email reminders")
-    email_opt_in_date: Optional[datetime] = Field(None, description="When opted in to email")
-    email_opt_out_date: Optional[datetime] = Field(None, description="When opted out of email")
+    sms_opt_in: Optional[bool] = Field(
+        default=None, description="Opted in for SMS reminders"
+    )
+    sms_opt_in_date: Optional[datetime] = Field(
+        None, description="When opted in to SMS"
+    )
+    sms_opt_out_date: Optional[datetime] = Field(
+        None, description="When opted out of SMS"
+    )
+    email_opt_in: Optional[bool] = Field(
+        default=None, description="Opted in for email reminders"
+    )
+    email_opt_in_date: Optional[datetime] = Field(
+        None, description="When opted in to email"
+    )
+    email_opt_out_date: Optional[datetime] = Field(
+        None, description="When opted out of email"
+    )
 
     @field_validator("phone")
     def validate_phone(cls, value):
@@ -63,7 +79,9 @@ class PlusOneModel(BaseModel):
         if not value:
             return None
         if not re.match(r"^\+?\d{10,15}$", value):
-            raise ValueError("Phone number must be 10 to 15 digits, optionally prefixed with +")
+            raise ValueError(
+                "Phone number must be 10 to 15 digits, optionally prefixed with +"
+            )
         return value
 
     @field_validator("email")

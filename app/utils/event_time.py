@@ -1,8 +1,12 @@
 import re
 from typing import Optional
 
-TWELVE_HOUR_TIME_WITH_MINUTES = re.compile(r"^(0?[1-9]|1[0-2]):([0-5]\d)\s*([AP]M)$", re.IGNORECASE)
-TWELVE_HOUR_TIME_ON_THE_HOUR = re.compile(r"^(0?[1-9]|1[0-2])\s*([AP]M)$", re.IGNORECASE)
+TWELVE_HOUR_TIME_WITH_MINUTES = re.compile(
+    r"^(0?[1-9]|1[0-2]):([0-5]\d)\s*([AP]M)$", re.IGNORECASE
+)
+TWELVE_HOUR_TIME_ON_THE_HOUR = re.compile(
+    r"^(0?[1-9]|1[0-2])\s*([AP]M)$", re.IGNORECASE
+)
 TWENTY_FOUR_HOUR_TIME = re.compile(r"^([01]\d|2[0-3]):([0-5]\d)$")
 
 EVENT_TIME_FORMAT_HINT = "Use a time like 3:00 PM, 3 PM, or 15:00."

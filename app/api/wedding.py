@@ -5,22 +5,18 @@ from app.services.wedding_service import WeddingService
 from app.services.cascade_delete_service import cascade_delete_service
 from app.dependencies.auth_extended import (
     require_root_admin,
-    require_admin_or_planner,
     require_team_or_planner,
     ExtendedAuthUser,
     check_wedding_access,
     enforce_team_permission,
-    get_accessible_wedding_ids
+    get_accessible_wedding_ids,
 )
 from app.services.subscription_service import SubscriptionService
 from app.services.stripe_service import stripe_service
 from app.models.subscription import SubscriptionStatus
-from app.utils.response import dict_response
 from app.services.sse_manager import sse_manager
 from app.core.database import mongo
 from datetime import datetime, timezone
-from bson import ObjectId
-from math import ceil
 from typing import Optional
 
 logger = logging.getLogger(__name__)
@@ -35,38 +31,55 @@ async def list_weddings(
     page: int = Query(1, ge=1, le=10000),
     limit: int = Query(50, ge=1, le=100),
     search: Optional[str] = Query(None),
-    current_user: ExtendedAuthUser = Depends(require_team_or_planner)
+    current_user: ExtendedAuthUser = Depends(require_team_or_planner),
 ):
     """
     List weddings with pagination - ROOT_ADMIN sees all, planners see only assigned.
     Team members with "assigned" access see only their assigned weddings.
     """
     if current_user.is_root_admin:
-        return await wedding_service.list_weddings_with_planner_info(page=page, limit=limit, search=search)
+        return await wedding_service.list_weddings_with_planner_info(
+            page=page, limit=limit, search=search
+        )
 
     # Get accessible wedding IDs for team members
     accessible_ids = get_accessible_wedding_ids(current_user)
     if accessible_ids is not None:
         # Team member with "assigned" access - filter by their assigned weddings
-        return await wedding_service.list_weddings_for_planner(current_user.email, accessible_ids=accessible_ids, page=page, limit=limit, search=search)
+        return await wedding_service.list_weddings_for_planner(
+            current_user.email,
+            accessible_ids=accessible_ids,
+            page=page,
+            limit=limit,
+            search=search,
+        )
 
     # Planner owner or team member with "all" access
-    return await wedding_service.list_weddings_for_planner(current_user.email, page=page, limit=limit, search=search)
+    return await wedding_service.list_weddings_for_planner(
+        current_user.email, page=page, limit=limit, search=search
+    )
 
 
 @router.post("/weddings", tags=["Admin"])
-async def create_wedding(wedding: WeddingModel, current_user: ExtendedAuthUser = Depends(require_team_or_planner)):
+async def create_wedding(
+    wedding: WeddingModel,
+    current_user: ExtendedAuthUser = Depends(require_team_or_planner),
+):
     """Create a new wedding with subscription metering"""
     enforce_team_permission(current_user, "manage_wedding_settings")
     # Enforce limits for planners
     if not current_user.is_root_admin:
         user_id = current_user.user_data.get("_id")
         if user_id:
-            limits_check = await subscription_service.check_usage_limits(user_id, "weddings", 1)
+            limits_check = await subscription_service.check_usage_limits(
+                user_id, "weddings", 1
+            )
             if not limits_check.get("allowed", False):
                 raise HTTPException(
                     status_code=402,
-                    detail=limits_check.get("message", "Wedding creation limit exceeded")
+                    detail=limits_check.get(
+                        "message", "Wedding creation limit exceeded"
+                    ),
                 )
 
     wedding_data = wedding.dict(by_alias=True)
@@ -86,13 +99,14 @@ async def create_wedding(wedding: WeddingModel, current_user: ExtendedAuthUser =
         await subscription_service.increment_usage(user_id, "weddings", 1)
 
         try:
-            sub = await mongo.db["user_subscriptions"].find_one({
-                "user_id": user_id,
-                "status": SubscriptionStatus.ACTIVE.value
-            })
+            sub = await mongo.db["user_subscriptions"].find_one(
+                {"user_id": user_id, "status": SubscriptionStatus.ACTIVE.value}
+            )
 
             if sub and sub.get("stripe_customer_id") and sub.get("plan_id"):
-                plan = await mongo.db["subscription_plans"].find_one({"_id": sub["plan_id"]})
+                plan = await mongo.db["subscription_plans"].find_one(
+                    {"_id": sub["plan_id"]}
+                )
 
                 if plan and plan.get("is_metered") and plan.get("meter_event_name"):
                     current_period_start = sub.get("current_period_start")
@@ -100,26 +114,43 @@ async def create_wedding(wedding: WeddingModel, current_user: ExtendedAuthUser =
 
                     if isinstance(current_period_start, str):
                         try:
-                            current_period_start = datetime.fromisoformat(current_period_start.replace("Z", "+00:00"))
+                            current_period_start = datetime.fromisoformat(
+                                current_period_start.replace("Z", "+00:00")
+                            )
                         except Exception as e:
-                            logger.warning(f"Failed to parse current_period_start: {current_period_start}, error: {e}")
+                            logger.warning(
+                                f"Failed to parse current_period_start: {current_period_start}, error: {e}"
+                            )
                             current_period_start = None
-                    if isinstance(current_period_start, datetime) and current_period_start.tzinfo is None:
-                        current_period_start = current_period_start.replace(tzinfo=datetime.now(timezone.utc).astimezone().tzinfo)
+                    if (
+                        isinstance(current_period_start, datetime)
+                        and current_period_start.tzinfo is None
+                    ):
+                        current_period_start = current_period_start.replace(
+                            tzinfo=datetime.now(timezone.utc).astimezone().tzinfo
+                        )
 
                     # Check if this wedding was already billed this period
-                    wedding_record = await mongo.db["weddings"].find_one({"_id": wedding_data["_id"]})
+                    wedding_record = await mongo.db["weddings"].find_one(
+                        {"_id": wedding_data["_id"]}
+                    )
                     if wedding_record:
                         last_billed_at = wedding_record.get("last_billed_at")
                         if isinstance(last_billed_at, str):
                             try:
-                                last_billed_at = datetime.fromisoformat(last_billed_at.replace("Z", "+00:00"))
+                                last_billed_at = datetime.fromisoformat(
+                                    last_billed_at.replace("Z", "+00:00")
+                                )
                             except Exception as e:
-                                logger.warning(f"Failed to parse last_billed_at: {last_billed_at}, error: {e}")
+                                logger.warning(
+                                    f"Failed to parse last_billed_at: {last_billed_at}, error: {e}"
+                                )
                                 last_billed_at = None
 
                     already_billed_this_period = (
-                        last_billed_at and current_period_start and last_billed_at >= current_period_start
+                        last_billed_at
+                        and current_period_start
+                        and last_billed_at >= current_period_start
                     )
 
                     if not already_billed_this_period:
@@ -131,35 +162,48 @@ async def create_wedding(wedding: WeddingModel, current_user: ExtendedAuthUser =
                             event_name=plan["meter_event_name"],
                             payload={
                                 "stripe_customer_id": sub["stripe_customer_id"],
-                                "value": "1"
+                                "value": "1",
                             },
-                            identifier=idempotency_key
+                            identifier=idempotency_key,
                         )
                         if meter_result.get("status") == "success":
                             await mongo.db["weddings"].update_one(
                                 {"_id": wedding_data["_id"]},
-                                {"$set": {
-                                    "last_billed_at": datetime.now(timezone.utc),
-                                    "billed_period": datetime.now(timezone.utc).strftime("%Y-%m"),
-                                    "meter_pending": False,
-                                    "meter_pending_reason": None
-                                }}
+                                {
+                                    "$set": {
+                                        "last_billed_at": datetime.now(timezone.utc),
+                                        "billed_period": datetime.now(
+                                            timezone.utc
+                                        ).strftime("%Y-%m"),
+                                        "meter_pending": False,
+                                        "meter_pending_reason": None,
+                                    }
+                                },
                             )
                         else:
                             await mongo.db["weddings"].update_one(
                                 {"_id": wedding_data["_id"]},
-                                {"$set": {
-                                    "meter_pending": True,
-                                    "meter_pending_reason": meter_result.get("message") or "metering_failed",
-                                    "billed_period": datetime.now(timezone.utc).strftime("%Y-%m")
-                                }}
+                                {
+                                    "$set": {
+                                        "meter_pending": True,
+                                        "meter_pending_reason": meter_result.get(
+                                            "message"
+                                        )
+                                        or "metering_failed",
+                                        "billed_period": datetime.now(
+                                            timezone.utc
+                                        ).strftime("%Y-%m"),
+                                    }
+                                },
                             )
         except Exception as e:
             logger.error(f"Error reporting meter event on creation: {e}")
 
     # Broadcast SSE data-change so planner UI updates
     await sse_manager.broadcast_data_change(
-        current_user.email, "wedding", "created",
+        current_user.email,
+        "wedding",
+        "created",
         wedding_id=str(wedding_data.get("_id", "")),
     )
 
@@ -167,7 +211,11 @@ async def create_wedding(wedding: WeddingModel, current_user: ExtendedAuthUser =
 
 
 @router.put("/weddings/{wedding_id}", tags=["Admin"])
-async def update_wedding_admin(wedding_id: str, wedding: dict, current_user: ExtendedAuthUser = Depends(require_team_or_planner)):
+async def update_wedding_admin(
+    wedding_id: str,
+    wedding: dict,
+    current_user: ExtendedAuthUser = Depends(require_team_or_planner),
+):
     """Update a wedding via admin interface - with access control"""
     enforce_team_permission(current_user, "manage_wedding_settings")
     # Check if user has access to this wedding
@@ -181,7 +229,9 @@ async def update_wedding_admin(wedding_id: str, wedding: dict, current_user: Ext
 
     # Broadcast SSE data-change so planner UI updates
     await sse_manager.broadcast_data_change(
-        current_user.email, "wedding", "updated",
+        current_user.email,
+        "wedding",
+        "updated",
         wedding_id=wedding_id,
     )
 
@@ -192,7 +242,7 @@ async def update_wedding_admin(wedding_id: str, wedding: dict, current_user: Ext
 async def delete_wedding_admin(
     wedding_id: str,
     current_user: ExtendedAuthUser = Depends(require_root_admin),
-    hard_delete: bool = False
+    hard_delete: bool = False,
 ):
     """
     Delete a wedding and all dependent data.
@@ -218,10 +268,14 @@ async def delete_wedding_admin(
     if hard_delete:
         # Perform hard delete via cascade service
         try:
-            result = await cascade_delete_service.hard_delete_wedding(wedding_id, current_user.email)
+            result = await cascade_delete_service.hard_delete_wedding(
+                wedding_id, current_user.email
+            )
             logger.info(f"Hard deleted wedding {wedding_id}: {result}")
             await sse_manager.broadcast_data_change(
-                current_user.email, "wedding", "deleted",
+                current_user.email,
+                "wedding",
+                "deleted",
                 wedding_id=wedding_id,
             )
             return result
@@ -234,21 +288,26 @@ async def delete_wedding_admin(
         # Attempt meter reversal only once per period to keep billing accurate without enabling avoidance
         planner_email = wedding.get("assigned_planner_email")
         if planner_email:
-            planner = await mongo.get_users_collection().find_one({"email": planner_email})
+            planner = await mongo.get_users_collection().find_one(
+                {"email": planner_email}
+            )
         else:
             planner = None
 
         if planner:
             user_id = str(planner.get("_id"))
-            sub = await mongo.db["user_subscriptions"].find_one({
-                "user_id": user_id,
-                "status": SubscriptionStatus.ACTIVE.value
-            })
+            sub = await mongo.db["user_subscriptions"].find_one(
+                {"user_id": user_id, "status": SubscriptionStatus.ACTIVE.value}
+            )
             if sub and sub.get("stripe_customer_id") and sub.get("plan_id"):
-                plan = await mongo.db["subscription_plans"].find_one({"_id": sub["plan_id"]})
+                plan = await mongo.db["subscription_plans"].find_one(
+                    {"_id": sub["plan_id"]}
+                )
                 if plan and plan.get("is_metered") and plan.get("meter_event_name"):
                     current_period = datetime.now(timezone.utc).strftime("%Y-%m")
-                    already_reversed = wedding.get("meter_reversed_period") == current_period
+                    already_reversed = (
+                        wedding.get("meter_reversed_period") == current_period
+                    )
 
                     if not already_reversed:
                         # Idempotency key for reversal: prevents double-crediting on retries
@@ -258,37 +317,52 @@ async def delete_wedding_admin(
                             event_name=plan["meter_event_name"],
                             payload={
                                 "stripe_customer_id": sub["stripe_customer_id"],
-                                "value": "-1"
+                                "value": "-1",
                             },
-                            identifier=idempotency_key
+                            identifier=idempotency_key,
                         )
                         reversal_success = reverse_result.get("status") == "success"
                         await mongo.db["weddings"].update_one(
                             {"_id": wedding_id},
-                            {"$set": {
-                                "meter_reversed_period": current_period if reversal_success else wedding.get("meter_reversed_period"),
-                                "meter_pending": not reversal_success,
-                                "meter_pending_reason": None if reversal_success else reverse_result.get("message") or "meter_reversal_failed"
-                            }}
+                            {
+                                "$set": {
+                                    "meter_reversed_period": current_period
+                                    if reversal_success
+                                    else wedding.get("meter_reversed_period"),
+                                    "meter_pending": not reversal_success,
+                                    "meter_pending_reason": None
+                                    if reversal_success
+                                    else reverse_result.get("message")
+                                    or "meter_reversal_failed",
+                                }
+                            },
                         )
 
         # Perform soft delete cascade
-        result = await cascade_delete_service.soft_delete_wedding(wedding_id, current_user.email)
+        result = await cascade_delete_service.soft_delete_wedding(
+            wedding_id, current_user.email
+        )
 
         # Also mark wedding status as cancelled for backward compatibility
         await mongo.db["weddings"].update_one(
             {"_id": wedding_id},
-            {"$set": {
-                "status": "cancelled",
-                "cancelled_at": datetime.now(timezone.utc)
-            }}
+            {
+                "$set": {
+                    "status": "cancelled",
+                    "cancelled_at": datetime.now(timezone.utc),
+                }
+            },
         )
 
         logger.info(f"Soft deleted wedding {wedding_id}: {result}")
-        result["message"] = "Wedding cancelled (soft delete); all dependent records archived; billing usage preserved"
+        result["message"] = (
+            "Wedding cancelled (soft delete); all dependent records archived; billing usage preserved"
+        )
 
         await sse_manager.broadcast_data_change(
-            current_user.email, "wedding", "deleted",
+            current_user.email,
+            "wedding",
+            "deleted",
             wedding_id=wedding_id,
         )
 
@@ -298,11 +372,15 @@ async def delete_wedding_admin(
         raise
     except Exception as exc:
         logger.error(f"Delete operation failed for wedding {wedding_id}: {exc}")
-        raise HTTPException(status_code=500, detail=f"Delete operation failed: {str(exc)}")
+        raise HTTPException(
+            status_code=500, detail=f"Delete operation failed: {str(exc)}"
+        )
 
 
 @router.get("/weddings/{wedding_id}", tags=["Wedding"])
-async def get_wedding(wedding_id: str, current_user: ExtendedAuthUser = Depends(require_team_or_planner)):
+async def get_wedding(
+    wedding_id: str, current_user: ExtendedAuthUser = Depends(require_team_or_planner)
+):
     """Get a wedding by ID - with access control"""
     # Check if user has access to this wedding
     if not await check_wedding_access(current_user, wedding_id):

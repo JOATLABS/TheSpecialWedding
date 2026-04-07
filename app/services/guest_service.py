@@ -23,6 +23,7 @@ def _get_ai_cache_service():
     global _ai_cache_service
     if _ai_cache_service is None:
         from app.services.ai_cache_service import ai_cache_service
+
         _ai_cache_service = ai_cache_service
     return _ai_cache_service
 
@@ -47,14 +48,18 @@ class GuestService:
 
     async def get_guest_by_token(self, token: str, wedding_id: str):
         try:
-            guest = await self.collection.find_one({"token": token, "wedding_id": wedding_id})
+            guest = await self.collection.find_one(
+                {"token": token, "wedding_id": wedding_id}
+            )
             if not guest:
                 raise HTTPException(status_code=404, detail="Guest not found")
             normalize_doc_id(guest)
             guest.pop("_id", None)
             return guest
         except Exception as e:
-            raise HTTPException(status_code=500, detail="Error retrieving guest: {}".format(str(e)))
+            raise HTTPException(
+                status_code=500, detail="Error retrieving guest: {}".format(str(e))
+            )
 
     async def get_guest(self, guest_id: str):
         """Fetch a guest by ObjectId or string id."""
@@ -66,7 +71,7 @@ class GuestService:
         normalize_doc_id(guest)
         guest.pop("_id", None)
         return guest
-    
+
     async def update_guest_timestamps(self, guest_id, created=False):
         """Update guest timestamps"""
         update_data = {"updated_at": datetime.now(timezone.utc)}
@@ -74,10 +79,7 @@ class GuestService:
             update_data["created_at"] = datetime.now(timezone.utc)
 
         obj_id = to_object_id(guest_id, "guest_id")
-        await self.collection.update_one(
-            {"_id": obj_id},
-            {"$set": update_data}
-        )
+        await self.collection.update_one({"_id": obj_id}, {"$set": update_data})
 
     def _build_guest_match(
         self,
@@ -112,7 +114,9 @@ class GuestService:
             and_clauses.append({"email": {"$regex": re.escape(email), "$options": "i"}})
         if phone:
             sanitized_phone = sanitize_phone(phone) or phone
-            and_clauses.append({"phone": {"$regex": re.escape(sanitized_phone), "$options": "i"}})
+            and_clauses.append(
+                {"phone": {"$regex": re.escape(sanitized_phone), "$options": "i"}}
+            )
         if phone_issue == "no_contact":
             and_clauses.append(
                 {
@@ -198,7 +202,9 @@ class GuestService:
             {"guest_id": {"$in": guest_ids_str}},
             projection={"guest_id": 1},
         ).to_list(length=None)
-        plus_one_counts = Counter(str(doc.get("guest_id")) for doc in plus_one_docs if doc.get("guest_id"))
+        plus_one_counts = Counter(
+            str(doc.get("guest_id")) for doc in plus_one_docs if doc.get("guest_id")
+        )
 
         total_plus_one_slots = 0
         responded_guests = 0
@@ -236,10 +242,15 @@ class GuestService:
             "submittedPlusOnes": len(plus_one_docs),
         }
 
-    async def _build_guest_filter_options(self, wedding_id: str) -> dict[str, list[str]]:
+    async def _build_guest_filter_options(
+        self, wedding_id: str
+    ) -> dict[str, list[str]]:
         groups = await self.collection.distinct(
             "group_id",
-            {"wedding_id": wedding_id, "group_id": {"$exists": True, "$nin": [None, ""]}},
+            {
+                "wedding_id": wedding_id,
+                "group_id": {"$exists": True, "$nin": [None, ""]},
+            },
         )
         roles = await self.collection.distinct(
             "role",
@@ -298,7 +309,9 @@ class GuestService:
             )
 
             requires_rsvp_lookup = rsvp_status != "all" or sort_field == "rsvp_status"
-            requires_plus_one_lookup = plus_one_status != "all" or sort_field == "plus_ones"
+            requires_plus_one_lookup = (
+                plus_one_status != "all" or sort_field == "plus_ones"
+            )
 
             pipeline: list[dict[str, Any]] = [{"$match": match}]
             add_fields: dict[str, Any] = {}
@@ -317,8 +330,18 @@ class GuestService:
                                     "$match": {
                                         "$expr": {
                                             "$or": [
-                                                {"$eq": ["$guest_id", "$$guest_object_id"]},
-                                                {"$eq": ["$guest_id", "$$guest_id_str"]},
+                                                {
+                                                    "$eq": [
+                                                        "$guest_id",
+                                                        "$$guest_object_id",
+                                                    ]
+                                                },
+                                                {
+                                                    "$eq": [
+                                                        "$guest_id",
+                                                        "$$guest_id_str",
+                                                    ]
+                                                },
                                             ]
                                         }
                                     }
@@ -352,7 +375,9 @@ class GuestService:
                             "pipeline": [
                                 {
                                     "$match": {
-                                        "$expr": {"$eq": ["$guest_id", "$$guest_id_str"]}
+                                        "$expr": {
+                                            "$eq": ["$guest_id", "$$guest_id_str"]
+                                        }
                                     }
                                 }
                             ],
@@ -371,7 +396,9 @@ class GuestService:
             elif rsvp_status == "pending":
                 post_lookup_clauses.append({"invite_sent": True, "has_rsvp": False})
             elif rsvp_status == "not_invited":
-                post_lookup_clauses.append({"invite_sent": {"$ne": True}, "has_rsvp": False})
+                post_lookup_clauses.append(
+                    {"invite_sent": {"$ne": True}, "has_rsvp": False}
+                )
 
             if plus_one_status == "submitted":
                 post_lookup_clauses.append({"plus_one_count": {"$gt": 0}})
@@ -393,7 +420,9 @@ class GuestService:
                     }
                 )
 
-            pipeline.append({"$sort": self._build_guest_sort(sort_field, sort_direction)})
+            pipeline.append(
+                {"$sort": self._build_guest_sort(sort_field, sort_direction)}
+            )
 
             skip = 0 if fetch_all else (page - 1) * limit
             paginated_items: list[dict[str, Any]] = []
@@ -448,7 +477,9 @@ class GuestService:
                 "filter_options": filter_options,
             }
         except Exception as e:
-            raise HTTPException(status_code=500, detail=f"Error retrieving guests: {str(e)}")
+            raise HTTPException(
+                status_code=500, detail=f"Error retrieving guests: {str(e)}"
+            )
 
     async def list_all_guests_by_wedding(self, wedding_id: str):
         """
@@ -462,14 +493,18 @@ class GuestService:
             A list of all guest documents for the wedding
         """
         try:
-            guests = await self.collection.find({"wedding_id": wedding_id}).to_list(length=None)
+            guests = await self.collection.find({"wedding_id": wedding_id}).to_list(
+                length=None
+            )
             for guest in guests:
                 normalize_doc_id(guest)
                 guest.pop("_id", None)
             return guests
         except Exception as e:
-            raise HTTPException(status_code=500, detail=f"Error retrieving guests: {str(e)}")
-    
+            raise HTTPException(
+                status_code=500, detail=f"Error retrieving guests: {str(e)}"
+            )
+
     async def update_guest(self, guest_id: str, update_data: dict):
         try:
             # Remove fields that shouldn't be updated
@@ -483,8 +518,7 @@ class GuestService:
 
             obj_id = to_object_id(guest_id, "guest_id")
             result = await self.collection.update_one(
-                {"_id": obj_id},
-                {"$set": update_data}
+                {"_id": obj_id}, {"$set": update_data}
             )
 
             if result.matched_count == 0:
@@ -503,8 +537,10 @@ class GuestService:
         except HTTPException:
             raise
         except Exception as e:
-            raise HTTPException(status_code=500, detail=f"Error updating guest: {str(e)}")
-    
+            raise HTTPException(
+                status_code=500, detail=f"Error updating guest: {str(e)}"
+            )
+
     async def delete_guest(self, guest_id: str):
         try:
             # Convert guest_id to ObjectId
@@ -521,20 +557,14 @@ class GuestService:
             plus_one_collection = mongo.db["plus_ones"]
 
             # Delete associated RSVPs (handle both ObjectId and string formats)
-            rsvp_result = await rsvp_collection.delete_many({
-                "$or": [
-                    {"guest_id": guest_obj_id},
-                    {"guest_id": guest_id_str}
-                ]
-            })
+            rsvp_result = await rsvp_collection.delete_many(
+                {"$or": [{"guest_id": guest_obj_id}, {"guest_id": guest_id_str}]}
+            )
 
             # Delete associated plus-ones (typically stored with string guest_id)
-            plus_one_result = await plus_one_collection.delete_many({
-                "$or": [
-                    {"guest_id": guest_obj_id},
-                    {"guest_id": guest_id_str}
-                ]
-            })
+            plus_one_result = await plus_one_collection.delete_many(
+                {"$or": [{"guest_id": guest_obj_id}, {"guest_id": guest_id_str}]}
+            )
 
             # Clean up orphan seating constraint references (T2/T6)
             # Remove this guest's ID from other guests' must_sit_with and must_sit_apart arrays
@@ -545,15 +575,15 @@ class GuestService:
                         "wedding_id": wedding_id,
                         "$or": [
                             {"must_sit_with": guest_id_str},
-                            {"must_sit_apart": guest_id_str}
-                        ]
+                            {"must_sit_apart": guest_id_str},
+                        ],
                     },
                     {
                         "$pull": {
                             "must_sit_with": guest_id_str,
-                            "must_sit_apart": guest_id_str
+                            "must_sit_apart": guest_id_str,
                         }
-                    }
+                    },
                 )
 
             # Delete the guest
@@ -568,15 +598,22 @@ class GuestService:
                 "deleted": {
                     "guest": guest_result.deleted_count,
                     "rsvps": rsvp_result.deleted_count,
-                    "plus_ones": plus_one_result.deleted_count
-                }
+                    "plus_ones": plus_one_result.deleted_count,
+                },
             }
         except HTTPException:
             raise
         except Exception as e:
-            raise HTTPException(status_code=500, detail=f"Error deleting guest: {str(e)}")
+            raise HTTPException(
+                status_code=500, detail=f"Error deleting guest: {str(e)}"
+            )
 
-    async def get_guest_by_phone_or_name(self, phone: Optional[str] = None, name: Optional[str] = None, wedding_id: Optional[str] = None):
+    async def get_guest_by_phone_or_name(
+        self,
+        phone: Optional[str] = None,
+        name: Optional[str] = None,
+        wedding_id: Optional[str] = None,
+    ):
         """
         Search for a guest by phone or name, optionally filtered by wedding_id.
 
@@ -600,7 +637,9 @@ class GuestService:
                 query["name"] = name
 
             if not phone and not name:
-                raise HTTPException(status_code=400, detail="Must provide phone or name to search")
+                raise HTTPException(
+                    status_code=400, detail="Must provide phone or name to search"
+                )
 
             guest = await self.collection.find_one(query)
             if not guest:
@@ -611,17 +650,25 @@ class GuestService:
         except HTTPException:
             raise
         except Exception as e:
-            raise HTTPException(status_code=500, detail="Error retrieving guest: {}".format(str(e)))
+            raise HTTPException(
+                status_code=500, detail="Error retrieving guest: {}".format(str(e))
+            )
 
     async def create_guest(self, guest_data, wedding_id: str):
         """Create a single guest for a wedding."""
         try:
             # Convert Pydantic model to dict
-            data = guest_data.model_dump() if hasattr(guest_data, 'model_dump') else guest_data.dict()
+            data = (
+                guest_data.model_dump()
+                if hasattr(guest_data, "model_dump")
+                else guest_data.dict()
+            )
 
             # Require at least phone or email
             if not data.get("phone") and not data.get("email"):
-                raise HTTPException(status_code=400, detail="At least phone or email is required")
+                raise HTTPException(
+                    status_code=400, detail="At least phone or email is required"
+                )
 
             # Generate unique token
             token = generate_token()
@@ -639,12 +686,14 @@ class GuestService:
                 "role": data.get("role", "guest"),
                 "group_id": data.get("group_id"),
                 "plus_one_allowed": data.get("plus_one_allowed", False),
-                "number_of_plus_ones_allowed": data.get("number_of_plus_ones_allowed", 0),
+                "number_of_plus_ones_allowed": data.get(
+                    "number_of_plus_ones_allowed", 0
+                ),
                 "plus_one_submitted": False,
                 "sms_opt_in": True,  # Default to opted-in, guest can opt-out later
                 "email_opt_in": True,  # Default to opted-in, guest can opt-out later
                 "created_at": datetime.now(timezone.utc),
-                "updated_at": datetime.now(timezone.utc)
+                "updated_at": datetime.now(timezone.utc),
             }
 
             result = await self.collection.insert_one(doc)
@@ -658,6 +707,6 @@ class GuestService:
         except HTTPException:
             raise
         except Exception as e:
-            raise HTTPException(status_code=500, detail=f"Error creating guest: {str(e)}")
-        
-    
+            raise HTTPException(
+                status_code=500, detail=f"Error creating guest: {str(e)}"
+            )

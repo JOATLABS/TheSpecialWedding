@@ -32,7 +32,9 @@ class RSVPService:
             raise
         except Exception as e:
             logger.error(f"Error submitting RSVP: {str(e)}", exc_info=True)
-            raise HTTPException(status_code=500, detail="Error submitting RSVP: {}".format(str(e)))
+            raise HTTPException(
+                status_code=500, detail="Error submitting RSVP: {}".format(str(e))
+            )
 
     async def submit_rsvp_for_guest(self, guest_id: str, rsvp_data: RSVPModel):
         try:
@@ -48,8 +50,12 @@ class RSVPService:
         except HTTPException:
             raise
         except Exception as e:
-            logger.error(f"Error submitting RSVP for guest {guest_id}: {str(e)}", exc_info=True)
-            raise HTTPException(status_code=500, detail="Error submitting RSVP: {}".format(str(e)))
+            logger.error(
+                f"Error submitting RSVP for guest {guest_id}: {str(e)}", exc_info=True
+            )
+            raise HTTPException(
+                status_code=500, detail="Error submitting RSVP: {}".format(str(e))
+            )
 
     async def _submit_rsvp_for_guest_doc(self, guest: dict, rsvp_data: RSVPModel):
         guest_id = ObjectId(guest["_id"])
@@ -63,55 +69,58 @@ class RSVPService:
 
         await self.rsvp_collection.update_one(
             {"guest_id": guest_id_str},
-            {"$set": {
-                "guest_id": guest_id_str,
-                "wedding_id": wedding_id_str,
-                "attending": rsvp_data.attending,
-                "dietary": rsvp_data.dietary,
-                "submitted_at": datetime.now(timezone.utc)
-            }},
-            upsert=True
+            {
+                "$set": {
+                    "guest_id": guest_id_str,
+                    "wedding_id": wedding_id_str,
+                    "attending": rsvp_data.attending,
+                    "dietary": rsvp_data.dietary,
+                    "submitted_at": datetime.now(timezone.utc),
+                }
+            },
+            upsert=True,
         )
 
         update_data: dict[str, object] = {
             "phone": rsvp_data.phone,
-            "updated_at": datetime.now(timezone.utc)
+            "updated_at": datetime.now(timezone.utc),
         }
 
-        if hasattr(rsvp_data, 'sms_opt_in'):
+        if hasattr(rsvp_data, "sms_opt_in"):
             update_data["sms_opt_in"] = rsvp_data.sms_opt_in
             if rsvp_data.sms_opt_in:
                 update_data["sms_opt_in_date"] = datetime.now(timezone.utc)
             elif rsvp_data.sms_opt_in is False:
                 update_data["sms_opt_out_date"] = datetime.now(timezone.utc)
 
-        if hasattr(rsvp_data, 'email_opt_in'):
+        if hasattr(rsvp_data, "email_opt_in"):
             update_data["email_opt_in"] = rsvp_data.email_opt_in
             if rsvp_data.email_opt_in:
                 update_data["email_opt_in_date"] = datetime.now(timezone.utc)
             elif rsvp_data.email_opt_in is False:
                 update_data["email_opt_out_date"] = datetime.now(timezone.utc)
 
-        await self.guest_collection.update_one(
-            {"_id": guest_id},
-            {"$set": update_data}
-        )
+        await self.guest_collection.update_one({"_id": guest_id}, {"$set": update_data})
 
         await self.plus_one_collection.delete_many({"guest_id": guest_id_str})
 
         if rsvp_data.plus_ones and len(rsvp_data.plus_ones) > 0:
             if not guest.get("plus_one_allowed", False):
-                raise HTTPException(status_code=403, detail="Plus-ones not allowed for this guest")
+                raise HTTPException(
+                    status_code=403, detail="Plus-ones not allowed for this guest"
+                )
 
             max_plus_ones = guest.get("number_of_plus_ones_allowed", 0)
             if max_plus_ones == 0:
-                raise HTTPException(status_code=403, detail="No plus-ones allowed for this guest")
+                raise HTTPException(
+                    status_code=403, detail="No plus-ones allowed for this guest"
+                )
 
             new_plus_ones_count = len(rsvp_data.plus_ones)
             if new_plus_ones_count > max_plus_ones:
                 raise HTTPException(
                     status_code=400,
-                    detail=f"Cannot add {new_plus_ones_count} plus-one(s). Maximum allowed: {max_plus_ones}"
+                    detail=f"Cannot add {new_plus_ones_count} plus-one(s). Maximum allowed: {max_plus_ones}",
                 )
 
             now = datetime.now(timezone.utc)
@@ -147,13 +156,11 @@ class RSVPService:
 
             if new_plus_ones_count > 0:
                 await self.guest_collection.update_one(
-                    {"_id": guest_id},
-                    {"$set": {"plus_one_submitted": True}}
+                    {"_id": guest_id}, {"$set": {"plus_one_submitted": True}}
                 )
         else:
             await self.guest_collection.update_one(
-                {"_id": guest_id},
-                {"$set": {"plus_one_submitted": False}}
+                {"_id": guest_id}, {"$set": {"plus_one_submitted": False}}
             )
 
         await self._notify_planner_rsvp(
@@ -161,10 +168,12 @@ class RSVPService:
             guest_name=guest.get("name", "A guest"),
             status="confirmed" if rsvp_data.attending else "declined",
             guest_count=1 + len(rsvp_data.plus_ones) if rsvp_data.plus_ones else 1,
-            guest_id=guest_id_str
+            guest_id=guest_id_str,
         )
 
-        logger.info(f"RSVP submitted successfully for guest {guest_id_str} to wedding {wedding_id_str}")
+        logger.info(
+            f"RSVP submitted successfully for guest {guest_id_str} to wedding {wedding_id_str}"
+        )
         return {"message": "RSVP submitted successfully"}
 
     async def _notify_planner_rsvp(
@@ -173,31 +182,41 @@ class RSVPService:
         guest_name: str,
         status: str,
         guest_count: int = 1,
-        guest_id: str | None = None
+        guest_id: str | None = None,
     ):
         """Notify the planner about an RSVP update"""
         try:
-            logger.info(f"Looking up wedding for RSVP notification: wedding_id={wedding_id}")
+            logger.info(
+                f"Looking up wedding for RSVP notification: wedding_id={wedding_id}"
+            )
 
             # Get wedding to find planner
             # Note: wedding _id is stored as string, so this query should work
             wedding = await self.wedding_collection.find_one({"_id": wedding_id})
             if not wedding:
-                logger.warning(f"Wedding {wedding_id} not found for RSVP notification. "
-                               f"This may indicate a mismatch between guest.wedding_id and wedding._id")
+                logger.warning(
+                    f"Wedding {wedding_id} not found for RSVP notification. "
+                    f"This may indicate a mismatch between guest.wedding_id and wedding._id"
+                )
                 return
 
             planner_email = wedding.get("assigned_planner_email")
             couple_names = wedding.get("couple_names", "Unknown")
 
             if not planner_email:
-                logger.debug(f"No planner assigned to wedding {wedding_id} ({couple_names})")
+                logger.debug(
+                    f"No planner assigned to wedding {wedding_id} ({couple_names})"
+                )
                 return
 
-            logger.info(f"Sending RSVP notification: planner={planner_email}, wedding={couple_names}, guest={guest_name}, status={status}, count={guest_count}")
+            logger.info(
+                f"Sending RSVP notification: planner={planner_email}, wedding={couple_names}, guest={guest_name}, status={status}, count={guest_count}"
+            )
 
             # Import here to avoid circular imports
-            from app.services.planner_notification_service import planner_notification_service
+            from app.services.planner_notification_service import (
+                planner_notification_service,
+            )
 
             await planner_notification_service.notify_rsvp_update(
                 planner_id=planner_email,
@@ -205,9 +224,11 @@ class RSVPService:
                 guest_name=guest_name,
                 status=status,
                 guest_count=guest_count,
-                guest_id=guest_id
+                guest_id=guest_id,
             )
-            logger.info(f"RSVP notification sent successfully to {planner_email} for wedding {wedding_id}")
+            logger.info(
+                f"RSVP notification sent successfully to {planner_email} for wedding {wedding_id}"
+            )
 
             # Log activity for planner dashboard
             await activity_log_service.log_rsvp_received(
@@ -216,16 +237,23 @@ class RSVPService:
                 response=status,
                 planner_email=planner_email,
                 plus_ones=guest_count - 1 if guest_count > 1 else 0,
-                metadata={"guest_id": guest_id, "couple_names": couple_names}
+                metadata={"guest_id": guest_id, "couple_names": couple_names},
             )
 
             # Broadcast SSE data-change so planner UI updates in real time
             from app.services.sse_manager import sse_manager
+
             await sse_manager.broadcast_data_change(
-                planner_email, "rsvp", "created",
-                wedding_id=wedding_id, record_id=guest_id,
+                planner_email,
+                "rsvp",
+                "created",
+                wedding_id=wedding_id,
+                record_id=guest_id,
             )
 
         except Exception as e:
             # Don't fail the RSVP submission if notification fails
-            logger.error(f"Failed to send RSVP notification for wedding {wedding_id}: {str(e)}", exc_info=True)
+            logger.error(
+                f"Failed to send RSVP notification for wedding {wedding_id}: {str(e)}",
+                exc_info=True,
+            )

@@ -16,7 +16,7 @@ import logging
 import re
 from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field, field_validator
 
 from app.dependencies.auth_extended import require_root_admin, ExtendedAuthUser
@@ -36,6 +36,7 @@ MAX_IMPORT_SIZE = 500  # Hard cap on vendors per import
 
 class VendorImportItem(BaseModel):
     """A single vendor entry from the scraper export JSON."""
+
     google_place_id: Optional[str] = None
     business_name: str = Field(..., min_length=1, max_length=200)
     email: Optional[str] = Field(default="", max_length=200)
@@ -59,7 +60,9 @@ class VendorImportItem(BaseModel):
     @classmethod
     def validate_category(cls, v: str) -> str:
         if v not in VALID_CATEGORIES:
-            raise ValueError(f"Invalid category '{v}'. Must be one of: {', '.join(sorted(VALID_CATEGORIES))}")
+            raise ValueError(
+                f"Invalid category '{v}'. Must be one of: {', '.join(sorted(VALID_CATEGORIES))}"
+            )
         return v
 
     @field_validator("business_name")
@@ -84,18 +87,26 @@ class VendorImportItem(BaseModel):
         # Block internal/private IPs and localhost — SSRF prevention
         lower = v.lower()
         # Check for localhost and IPv6 loopback
-        if any(pat in lower for pat in ["localhost", "127.0.0.1", "0.0.0.0", "[::1]", "::1"]):
+        if any(
+            pat in lower
+            for pat in ["localhost", "127.0.0.1", "0.0.0.0", "[::1]", "::1"]
+        ):
             return None
         # Extract host portion for IP-range checks (strip scheme + path)
         host = lower
         for prefix in ("https://", "http://"):
             if host.startswith(prefix):
-                host = host[len(prefix):]
+                host = host[len(prefix) :]
         host = host.split("/")[0].split(":")[0]  # strip port and path
         # Block private/reserved IP ranges by parsing the host
         try:
             addr = ipaddress.ip_address(host)
-            if addr.is_private or addr.is_loopback or addr.is_reserved or addr.is_link_local:
+            if (
+                addr.is_private
+                or addr.is_loopback
+                or addr.is_reserved
+                or addr.is_link_local
+            ):
                 return None
         except ValueError:
             # Not a bare IP — it's a hostname, which is fine
@@ -107,11 +118,15 @@ class VendorImportItem(BaseModel):
 
 class VendorImportRequest(BaseModel):
     """Request body for bulk vendor import."""
-    vendors: List[VendorImportItem] = Field(..., min_length=1, max_length=MAX_IMPORT_SIZE)
+
+    vendors: List[VendorImportItem] = Field(
+        ..., min_length=1, max_length=MAX_IMPORT_SIZE
+    )
 
 
 class VendorImportResponse(BaseModel):
     """Response from vendor import."""
+
     inserted: int = 0
     updated: int = 0
     skipped: int = 0
@@ -121,6 +136,7 @@ class VendorImportResponse(BaseModel):
 
 
 # ─── Endpoint ───────────────────────────────────────────────────────────────
+
 
 @router.post(
     "/vendors/import",
@@ -164,11 +180,13 @@ async def import_vendors(
 
         except Exception as e:
             stats.errors += 1
-            stats.error_details.append({
-                "index": i,
-                "business_name": item.business_name,
-                "error": str(e),
-            })
+            stats.error_details.append(
+                {
+                    "index": i,
+                    "business_name": item.business_name,
+                    "error": str(e),
+                }
+            )
             logger.error(f"Import error for vendor '{item.business_name}': {e}")
 
     logger.info(

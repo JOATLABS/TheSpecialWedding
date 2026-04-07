@@ -21,7 +21,6 @@ import app.api.saas_config as saas_config  # noqa: E402
 import app.api.platform_metrics as platform_metrics_api  # noqa: E402
 from app.core.config import settings  # noqa: E402
 import app.core.database as database_module  # noqa: E402
-from app.dependencies.auth import require_admin  # noqa: E402
 from app.dependencies.auth_extended import require_root_admin  # noqa: E402
 from app.services.platform_metrics_service import PlatformMetricsService  # noqa: E402
 import app.services.platform_metrics_service as platform_metrics_service  # noqa: E402
@@ -94,7 +93,6 @@ def snapshot_test_client(monkeypatch):
     async def override_require_admin():
         return SimpleNamespace(role="admin", is_root_admin=True)
 
-    app.dependency_overrides[require_admin] = override_require_admin
     app.dependency_overrides[require_root_admin] = override_require_admin
 
     return TestClient(app)

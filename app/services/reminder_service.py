@@ -17,13 +17,16 @@ class ReminderService:
     ):
         # 1. Load and validate credentials & config
         account_sid = os.getenv("TWILIO_ACCOUNT_SID")
-        auth_token  = os.getenv("TWILIO_AUTH_TOKEN")
-        from_phone  = os.getenv("TWILIO_PHONE_NUMBER")
-        region      = os.getenv("TWILIO_REGION")
-        edge        = os.getenv("TWILIO_EDGE")
+        auth_token = os.getenv("TWILIO_AUTH_TOKEN")
+        from_phone = os.getenv("TWILIO_PHONE_NUMBER")
+        region = os.getenv("TWILIO_REGION")
+        edge = os.getenv("TWILIO_EDGE")
 
-        missing = [k for k in ("TWILIO_ACCOUNT_SID","TWILIO_AUTH_TOKEN","TWILIO_PHONE_NUMBER")
-                   if not os.getenv(k)]
+        missing = [
+            k
+            for k in ("TWILIO_ACCOUNT_SID", "TWILIO_AUTH_TOKEN", "TWILIO_PHONE_NUMBER")
+            if not os.getenv(k)
+        ]
         if missing:
             raise RuntimeError(f"Missing Twilio env vars: {', '.join(missing)}")
 
@@ -42,10 +45,10 @@ class ReminderService:
         self.from_phone = from_phone
 
         # 4. Mongo collections
-        self.guest_collection    = mongo.get_guest_collection()
-        self.rsvp_collection     = mongo.db["rsvps"]
+        self.guest_collection = mongo.get_guest_collection()
+        self.rsvp_collection = mongo.db["rsvps"]
         self.plus_one_collection = mongo.db["plus_ones"]
-        self.log_collection      = mongo.db["reminders_sent"]
+        self.log_collection = mongo.db["reminders_sent"]
 
     async def send_reminders(self, event_type: str, message: str, target_group: str):
         try:
@@ -79,15 +82,17 @@ class ReminderService:
                         skipped_opted_out += 1
                         continue
                     status = self._send_sms(phone, message)
-                    logs.append(self._log(
-                        phone,
-                        guest["_id"],
-                        message,
-                        "guest",
-                        event_type,
-                        status,
-                        now,
-                    ))
+                    logs.append(
+                        self._log(
+                            phone,
+                            guest["_id"],
+                            message,
+                            "guest",
+                            event_type,
+                            status,
+                            now,
+                        )
+                    )
 
         # Plus-ones
         if target_group in {"plus-ones", "all"}:
@@ -102,15 +107,17 @@ class ReminderService:
                         skipped_no_phone += 1
                         continue
                     status = self._send_sms(phone, message)
-                    logs.append(self._log(
-                        phone,
-                        po["guest_id"],
-                        message,
-                        "plus-one",
-                        event_type,
-                        status,
-                        now,
-                    ))
+                    logs.append(
+                        self._log(
+                            phone,
+                            po["guest_id"],
+                            message,
+                            "plus-one",
+                            event_type,
+                            status,
+                            now,
+                        )
+                    )
 
         if logs:
             await self.log_collection.insert_many(logs)
@@ -137,15 +144,17 @@ class ReminderService:
             # you could also log e here
             return f"failed: {e}"
 
-    def _log(self, phone, guest_id, message, target_type, event_type, status, timestamp):
+    def _log(
+        self, phone, guest_id, message, target_type, event_type, status, timestamp
+    ):
         return {
-            "phone":        phone,
-            "guest_id":     str(guest_id),
-            "message":      message,
-            "target_type":  target_type,
-            "event_type":   event_type,
-            "status":       status,
-            "sent_at":      timestamp,
+            "phone": phone,
+            "guest_id": str(guest_id),
+            "message": message,
+            "target_type": target_type,
+            "event_type": event_type,
+            "status": status,
+            "sent_at": timestamp,
         }
 
     async def get_logs(self):

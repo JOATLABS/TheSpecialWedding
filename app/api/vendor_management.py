@@ -6,24 +6,23 @@ All endpoints are feature-gated by subscription plan.
 """
 
 import logging
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Query, Request
-from typing import List, Optional
 from datetime import datetime
+from typing import List, Optional
 
-logger = logging.getLogger(__name__)
+from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
 
-from app.dependencies.auth_extended import require_admin_or_planner, ExtendedAuthUser, enforce_team_permission
+from app.dependencies.auth_extended import ExtendedAuthUser, enforce_team_permission
 from app.dependencies.feature_gates import require_vendor_feature
-from app.services.vendor_service import vendor_service
 from app.models.vendor import (
+    AssignVendorRequest,
+    CreatePaymentLinkRequest,
     CreateVendorProfileRequest,
     UpdateVendorProfileRequest,
-    AssignVendorRequest,
     VendorCategory,
-    CreatePaymentLinkRequest,
-    PayerType,
-    RecipientType
 )
+from app.services.vendor_service import vendor_service
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -32,15 +31,20 @@ router = APIRouter()
 # VENDOR DIRECTORY (Master List)
 # =============================================================================
 
+
 @router.get("/directory", tags=["Vendor Directory"])
 async def list_vendor_directory(
     category: Optional[str] = Query(None, description="Filter by service category"),
-    is_preferred: Optional[bool] = Query(None, description="Filter by preferred status"),
-    search: Optional[str] = Query(None, description="Search by name, email, description"),
+    is_preferred: Optional[bool] = Query(
+        None, description="Filter by preferred status"
+    ),
+    search: Optional[str] = Query(
+        None, description="Search by name, email, description"
+    ),
     tags: Optional[str] = Query(None, description="Comma-separated tags"),
     skip: int = Query(0, ge=0),
     limit: int = Query(50, ge=1, le=100),
-    current_user: ExtendedAuthUser = Depends(require_vendor_feature)
+    current_user: ExtendedAuthUser = Depends(require_vendor_feature),
 ):
     """
     List all vendors in the planner's directory.
@@ -57,14 +61,14 @@ async def list_vendor_directory(
         search=search,
         tags=tag_list,
         skip=skip,
-        limit=limit
+        limit=limit,
     )
 
 
 @router.post("/directory", tags=["Vendor Directory"])
 async def create_vendor_in_directory(
     data: CreateVendorProfileRequest,
-    current_user: ExtendedAuthUser = Depends(require_vendor_feature)
+    current_user: ExtendedAuthUser = Depends(require_vendor_feature),
 ):
     """
     Add a new vendor to the directory.
@@ -72,14 +76,13 @@ async def create_vendor_in_directory(
     """
     enforce_team_permission(current_user, "manage_vendors")
     return await vendor_service.create_vendor_profile(
-        data=data.model_dump(),
-        created_by=current_user.email
+        data=data.model_dump(), created_by=current_user.email
     )
 
 
 @router.get("/directory/categories", tags=["Vendor Directory"])
 async def get_used_categories(
-    current_user: ExtendedAuthUser = Depends(require_vendor_feature)
+    current_user: ExtendedAuthUser = Depends(require_vendor_feature),
 ):
     """Get list of service categories used in the planner's directory"""
     categories = await vendor_service.get_vendor_categories_used(current_user.email)
@@ -88,7 +91,7 @@ async def get_used_categories(
 
 @router.get("/directory/all-categories", tags=["Vendor Directory"])
 async def get_all_categories(
-    current_user: ExtendedAuthUser = Depends(require_vendor_feature)
+    current_user: ExtendedAuthUser = Depends(require_vendor_feature),
 ):
     """Get all available vendor categories"""
     return {"categories": [c.value for c in VendorCategory]}
@@ -96,8 +99,7 @@ async def get_all_categories(
 
 @router.get("/directory/{vendor_id}", tags=["Vendor Directory"])
 async def get_vendor_profile(
-    vendor_id: str,
-    current_user: ExtendedAuthUser = Depends(require_vendor_feature)
+    vendor_id: str, current_user: ExtendedAuthUser = Depends(require_vendor_feature)
 ):
     """Get a specific vendor from the directory"""
     return await vendor_service.get_vendor_profile(vendor_id, current_user.email)
@@ -107,7 +109,7 @@ async def get_vendor_profile(
 async def update_vendor_profile(
     vendor_id: str,
     data: UpdateVendorProfileRequest,
-    current_user: ExtendedAuthUser = Depends(require_vendor_feature)
+    current_user: ExtendedAuthUser = Depends(require_vendor_feature),
 ):
     """Update a vendor in the directory. Root admins can update any vendor."""
     enforce_team_permission(current_user, "manage_vendors")
@@ -115,14 +117,13 @@ async def update_vendor_profile(
     return await vendor_service.update_vendor_profile(
         vendor_id=vendor_id,
         data=data.model_dump(exclude_none=True),
-        created_by=owner_email
+        created_by=owner_email,
     )
 
 
 @router.delete("/directory/{vendor_id}", tags=["Vendor Directory"])
 async def delete_vendor_from_directory(
-    vendor_id: str,
-    current_user: ExtendedAuthUser = Depends(require_vendor_feature)
+    vendor_id: str, current_user: ExtendedAuthUser = Depends(require_vendor_feature)
 ):
     """Remove a vendor from the directory (soft delete)"""
     enforce_team_permission(current_user, "manage_vendors")
@@ -135,10 +136,11 @@ async def delete_vendor_from_directory(
 # VENDOR ASSIGNMENTS (Link to Wedding)
 # =============================================================================
 
+
 @router.post("/assign", tags=["Vendor Assignments"])
 async def assign_vendor_to_wedding(
     data: AssignVendorRequest,
-    current_user: ExtendedAuthUser = Depends(require_vendor_feature)
+    current_user: ExtendedAuthUser = Depends(require_vendor_feature),
 ):
     """
     Assign a vendor from the directory to a wedding.
@@ -150,14 +152,13 @@ async def assign_vendor_to_wedding(
         wedding_id=data.wedding_id,
         created_by=current_user.email,
         budget_category_id=data.budget_category_id,
-        service_notes=data.service_notes
+        service_notes=data.service_notes,
     )
 
 
 @router.get("/weddings/{wedding_id}/vendors", tags=["Vendor Assignments"])
 async def get_wedding_vendors(
-    wedding_id: str,
-    current_user: ExtendedAuthUser = Depends(require_vendor_feature)
+    wedding_id: str, current_user: ExtendedAuthUser = Depends(require_vendor_feature)
 ):
     """Get all vendors assigned to a wedding"""
     return await vendor_service.get_wedding_vendors(wedding_id, current_user.email)
@@ -166,16 +167,17 @@ async def get_wedding_vendors(
 @router.patch("/assignments/{assignment_id}/status", tags=["Vendor Assignments"])
 async def update_vendor_assignment_status(
     assignment_id: str,
-    status: str = Query(..., description="New status: inquiry, quoted, contracted, confirmed, completed, cancelled",
-                       pattern="^(inquiry|quoted|contracted|confirmed|completed|cancelled)$"),
-    current_user: ExtendedAuthUser = Depends(require_vendor_feature)
+    status: str = Query(
+        ...,
+        description="New status: inquiry, quoted, contracted, confirmed, completed, cancelled",
+        pattern="^(inquiry|quoted|contracted|confirmed|completed|cancelled)$",
+    ),
+    current_user: ExtendedAuthUser = Depends(require_vendor_feature),
 ):
     """Update the status of a vendor assignment"""
     enforce_team_permission(current_user, "manage_vendors")
     return await vendor_service.update_assignment_status(
-        assignment_id=assignment_id,
-        status=status,
-        created_by=current_user.email
+        assignment_id=assignment_id, status=status, created_by=current_user.email
     )
 
 
@@ -183,37 +185,33 @@ async def update_vendor_assignment_status(
 # CONTRACT TEMPLATES
 # =============================================================================
 
+
 @router.get("/templates", tags=["Contract Templates"])
 async def list_contract_templates(
     category: Optional[str] = Query(None, description="Filter by service category"),
     include_system: bool = Query(True, description="Include system templates"),
-    current_user: ExtendedAuthUser = Depends(require_vendor_feature)
+    current_user: ExtendedAuthUser = Depends(require_vendor_feature),
 ):
     """List available contract templates"""
     return await vendor_service.get_contract_templates(
-        created_by=current_user.email,
-        category=category,
-        include_system=include_system
+        created_by=current_user.email, category=category, include_system=include_system
     )
 
 
 @router.post("/templates", tags=["Contract Templates"])
 async def create_contract_template(
-    data: dict,
-    current_user: ExtendedAuthUser = Depends(require_vendor_feature)
+    data: dict, current_user: ExtendedAuthUser = Depends(require_vendor_feature)
 ):
     """Create a new contract template"""
     enforce_team_permission(current_user, "manage_vendors")
     return await vendor_service.create_contract_template(
-        data=data,
-        created_by=current_user.email
+        data=data, created_by=current_user.email
     )
 
 
 @router.get("/templates/{template_id}", tags=["Contract Templates"])
 async def get_contract_template(
-    template_id: str,
-    current_user: ExtendedAuthUser = Depends(require_vendor_feature)
+    template_id: str, current_user: ExtendedAuthUser = Depends(require_vendor_feature)
 ):
     """Get a specific contract template"""
     return await vendor_service.get_contract_template(template_id)
@@ -222,6 +220,7 @@ async def get_contract_template(
 # =============================================================================
 # CONTRACTS
 # =============================================================================
+
 
 @router.post("/contracts", tags=["Contracts"])
 async def create_contract(
@@ -234,7 +233,7 @@ async def create_contract(
     service_date: Optional[datetime] = None,
     service_location: Optional[str] = None,
     custom_sections: Optional[List[dict]] = None,
-    current_user: ExtendedAuthUser = Depends(require_vendor_feature)
+    current_user: ExtendedAuthUser = Depends(require_vendor_feature),
 ):
     """
     Create a new vendor contract.
@@ -252,7 +251,7 @@ async def create_contract(
         custom_sections=custom_sections,
         deposit_percentage=deposit_percentage,
         service_date=service_date,
-        service_location=service_location
+        service_location=service_location,
     )
 
 
@@ -263,7 +262,7 @@ async def list_contracts(
     status: Optional[str] = Query(None),
     skip: int = Query(0, ge=0),
     limit: int = Query(50, ge=1, le=100),
-    current_user: ExtendedAuthUser = Depends(require_vendor_feature)
+    current_user: ExtendedAuthUser = Depends(require_vendor_feature),
 ):
     """List contracts with optional filters"""
     return await vendor_service.get_contracts(
@@ -272,14 +271,13 @@ async def list_contracts(
         vendor_profile_id=vendor_profile_id,
         status=status,
         skip=skip,
-        limit=limit
+        limit=limit,
     )
 
 
 @router.get("/contracts/{contract_id}", tags=["Contracts"])
 async def get_contract(
-    contract_id: str,
-    current_user: ExtendedAuthUser = Depends(require_vendor_feature)
+    contract_id: str, current_user: ExtendedAuthUser = Depends(require_vendor_feature)
 ):
     """Get a specific contract (only contracts created by the current user)"""
     return await vendor_service.get_contract(contract_id, created_by=current_user.email)
@@ -289,7 +287,7 @@ async def get_contract(
 async def update_contract(
     contract_id: str,
     data: dict,
-    current_user: ExtendedAuthUser = Depends(require_vendor_feature)
+    current_user: ExtendedAuthUser = Depends(require_vendor_feature),
 ):
     """
     Update/customize a contract.
@@ -298,9 +296,7 @@ async def update_contract(
     """
     enforce_team_permission(current_user, "manage_vendors")
     return await vendor_service.update_contract(
-        contract_id=contract_id,
-        data=data,
-        updated_by=current_user.email
+        contract_id=contract_id, data=data, updated_by=current_user.email
     )
 
 
@@ -308,7 +304,7 @@ async def update_contract(
 async def update_contract_sections(
     contract_id: str,
     sections: List[dict],
-    current_user: ExtendedAuthUser = Depends(require_vendor_feature)
+    current_user: ExtendedAuthUser = Depends(require_vendor_feature),
 ):
     """
     Update contract sections.
@@ -317,22 +313,21 @@ async def update_contract_sections(
     """
     enforce_team_permission(current_user, "manage_vendors")
     return await vendor_service.update_contract_sections(
-        contract_id=contract_id,
-        sections=sections,
-        updated_by=current_user.email
+        contract_id=contract_id, sections=sections, updated_by=current_user.email
     )
 
 
 @router.get("/contracts/{contract_id}/form-data", tags=["Contracts"])
 async def get_vendor_form_data_for_contract(
-    contract_id: str,
-    current_user: ExtendedAuthUser = Depends(require_vendor_feature)
+    contract_id: str, current_user: ExtendedAuthUser = Depends(require_vendor_feature)
 ):
     """
     Get vendor form submission data that can be used in the contract.
     Returns form responses from this vendor that can populate contract placeholders.
     """
-    return await vendor_service.get_form_data_for_contract(contract_id, created_by=current_user.email)
+    return await vendor_service.get_form_data_for_contract(
+        contract_id, created_by=current_user.email
+    )
 
 
 @router.post("/contracts/{contract_id}/apply-form-data", tags=["Contracts"])
@@ -340,7 +335,7 @@ async def apply_form_data_to_contract(
     contract_id: str,
     form_submission_id: str,
     field_mappings: Optional[dict] = None,
-    current_user: ExtendedAuthUser = Depends(require_vendor_feature)
+    current_user: ExtendedAuthUser = Depends(require_vendor_feature),
 ):
     """
     Apply data from a vendor's form submission to the contract.
@@ -351,7 +346,7 @@ async def apply_form_data_to_contract(
         contract_id=contract_id,
         form_submission_id=form_submission_id,
         field_mappings=field_mappings,
-        applied_by=current_user.email
+        applied_by=current_user.email,
     )
 
 
@@ -360,7 +355,7 @@ async def send_contract_to_vendor(
     contract_id: str,
     message: Optional[str] = None,
     cc_emails: Optional[List[str]] = None,
-    current_user: ExtendedAuthUser = Depends(require_vendor_feature)
+    current_user: ExtendedAuthUser = Depends(require_vendor_feature),
 ):
     """
     Send contract to vendor for review and signing.
@@ -371,7 +366,7 @@ async def send_contract_to_vendor(
         contract_id=contract_id,
         created_by=current_user.email,
         message=message,
-        cc_emails=cc_emails or []
+        cc_emails=cc_emails or [],
     )
 
 
@@ -380,14 +375,12 @@ async def upload_contract_document(
     contract_id: str,
     file: UploadFile = File(...),
     document_type: str = Query("signed", description="Type: draft, signed, attachment"),
-    current_user: ExtendedAuthUser = Depends(require_vendor_feature)
+    current_user: ExtendedAuthUser = Depends(require_vendor_feature),
 ):
     """Upload a contract document (PDF, etc.)"""
     enforce_team_permission(current_user, "manage_vendors")
     return await vendor_service.upload_contract_document(
-        contract_id=contract_id,
-        file=file,
-        document_type=document_type
+        contract_id=contract_id, file=file, document_type=document_type
     )
 
 
@@ -395,11 +388,12 @@ async def upload_contract_document(
 # PAYMENT MILESTONES
 # =============================================================================
 
+
 @router.post("/contracts/{contract_id}/milestones", tags=["Payment Milestones"])
 async def create_payment_milestones(
     contract_id: str,
     milestones: List[dict],
-    current_user: ExtendedAuthUser = Depends(require_vendor_feature)
+    current_user: ExtendedAuthUser = Depends(require_vendor_feature),
 ):
     """
     Create payment milestones for a contract.
@@ -407,9 +401,7 @@ async def create_payment_milestones(
     """
     enforce_team_permission(current_user, "manage_vendors")
     return await vendor_service.create_payment_milestones(
-        contract_id=contract_id,
-        milestones=milestones,
-        created_by=current_user.email
+        contract_id=contract_id, milestones=milestones, created_by=current_user.email
     )
 
 
@@ -417,14 +409,14 @@ async def create_payment_milestones(
 async def list_payment_milestones(
     contract_id: Optional[str] = Query(None),
     wedding_id: Optional[str] = Query(None),
-    status: Optional[str] = Query(None, description="pending, due, overdue, paid, partial"),
-    current_user: ExtendedAuthUser = Depends(require_vendor_feature)
+    status: Optional[str] = Query(
+        None, description="pending, due, overdue, paid, partial"
+    ),
+    current_user: ExtendedAuthUser = Depends(require_vendor_feature),
 ):
     """List payment milestones with optional filters"""
     return await vendor_service.get_payment_milestones(
-        contract_id=contract_id,
-        wedding_id=wedding_id,
-        status=status
+        contract_id=contract_id, wedding_id=wedding_id, status=status
     )
 
 
@@ -432,11 +424,13 @@ async def list_payment_milestones(
 async def record_milestone_payment(
     milestone_id: str,
     amount: float,
-    payment_method: str = Query(..., description="cash, check, card, bank_transfer, stripe"),
+    payment_method: str = Query(
+        ..., description="cash, check, card, bank_transfer, stripe"
+    ),
     payment_date: Optional[datetime] = None,
     notes: Optional[str] = None,
     receipt_url: Optional[str] = None,
-    current_user: ExtendedAuthUser = Depends(require_vendor_feature)
+    current_user: ExtendedAuthUser = Depends(require_vendor_feature),
 ):
     """
     Record a payment against a milestone.
@@ -450,7 +444,7 @@ async def record_milestone_payment(
         created_by=current_user.email,
         payment_date=payment_date,
         notes=notes,
-        receipt_url=receipt_url
+        receipt_url=receipt_url,
     )
 
 
@@ -458,18 +452,17 @@ async def record_milestone_payment(
 # COMMUNICATION HISTORY
 # =============================================================================
 
+
 @router.get("/vendors/{vendor_id}/communications", tags=["Communication"])
 async def get_vendor_communication_history(
     vendor_id: str,
     wedding_id: Optional[str] = Query(None),
     limit: int = Query(50, ge=1, le=100),
-    current_user: ExtendedAuthUser = Depends(require_vendor_feature)
+    current_user: ExtendedAuthUser = Depends(require_vendor_feature),
 ):
     """Get communication history with a vendor"""
     return await vendor_service.get_vendor_communications(
-        vendor_profile_id=vendor_id,
-        wedding_id=wedding_id,
-        limit=limit
+        vendor_profile_id=vendor_id, wedding_id=wedding_id, limit=limit
     )
 
 
@@ -477,10 +470,11 @@ async def get_vendor_communication_history(
 # DASHBOARD / SUMMARY
 # =============================================================================
 
+
 @router.get("/dashboard", tags=["Vendor Dashboard"])
 async def get_vendor_management_dashboard(
     wedding_id: Optional[str] = Query(None, description="Filter by wedding"),
-    current_user: ExtendedAuthUser = Depends(require_vendor_feature)
+    current_user: ExtendedAuthUser = Depends(require_vendor_feature),
 ):
     """
     Get vendor management dashboard summary.
@@ -489,41 +483,32 @@ async def get_vendor_management_dashboard(
     """
     # Get counts efficiently using aggregation
     counts = await vendor_service.get_dashboard_counts(
-        created_by=current_user.email,
-        wedding_id=wedding_id
+        created_by=current_user.email, wedding_id=wedding_id
     )
 
     # Only fetch limited recent items for display
     recent_contracts = await vendor_service.get_contracts(
-        created_by=current_user.email,
-        wedding_id=wedding_id,
-        limit=5
+        created_by=current_user.email, wedding_id=wedding_id, limit=5
     )
 
     upcoming_milestones = await vendor_service.get_payment_milestones(
-        wedding_id=wedding_id,
-        status="pending"
+        wedding_id=wedding_id, status="pending"
     )
 
     return {
         "vendors": {
             **counts["vendors"],
-            "by_category": {}  # Could aggregate by category if needed
+            "by_category": {},  # Could aggregate by category if needed
         },
-        "contracts": {
-            **counts["contracts"],
-            "recent": recent_contracts[:5]
-        },
-        "payments": {
-            **counts["payments"],
-            "upcoming": upcoming_milestones[:5]
-        }
+        "contracts": {**counts["contracts"], "recent": recent_contracts[:5]},
+        "payments": {**counts["payments"], "upcoming": upcoming_milestones[:5]},
     }
 
 
 # =============================================================================
 # PDF CONTRACT UPLOAD
 # =============================================================================
+
 
 @router.post("/contracts/upload-pdf", tags=["Contracts"])
 async def upload_contract_pdf(
@@ -536,7 +521,7 @@ async def upload_contract_pdf(
     service_date: Optional[str] = Query(None, description="Service date (ISO format)"),
     service_location: Optional[str] = Query(None, description="Service location"),
     notes: Optional[str] = Query(None, description="Internal notes"),
-    current_user: ExtendedAuthUser = Depends(require_vendor_feature)
+    current_user: ExtendedAuthUser = Depends(require_vendor_feature),
 ):
     """
     Upload an existing PDF contract instead of using templates.
@@ -546,7 +531,9 @@ async def upload_contract_pdf(
     service_date_parsed = None
     if service_date:
         try:
-            service_date_parsed = datetime.fromisoformat(service_date.replace("Z", "+00:00"))
+            service_date_parsed = datetime.fromisoformat(
+                service_date.replace("Z", "+00:00")
+            )
         except ValueError:
             raise HTTPException(status_code=400, detail="Invalid service_date format")
 
@@ -560,7 +547,7 @@ async def upload_contract_pdf(
         deposit_amount=deposit_amount,
         service_date=service_date_parsed,
         service_location=service_location,
-        notes=notes
+        notes=notes,
     )
 
 
@@ -568,10 +555,11 @@ async def upload_contract_pdf(
 # PAYMENT LINKS
 # =============================================================================
 
+
 @router.post("/payment-links", tags=["Payment Links"])
 async def create_payment_link(
     request: CreatePaymentLinkRequest,
-    current_user: ExtendedAuthUser = Depends(require_vendor_feature)
+    current_user: ExtendedAuthUser = Depends(require_vendor_feature),
 ):
     """
     Create a payment link that can be sent to vendors or couples.
@@ -600,15 +588,17 @@ async def create_payment_link(
         vendor_profile_id=request.vendor_profile_id,
         email_subject=request.email_subject,
         email_message=request.email_message,
-        created_by=current_user.email
+        created_by=current_user.email,
     )
 
 
 @router.post("/payment-links/{payment_link_id}/send", tags=["Payment Links"])
 async def send_payment_link(
     payment_link_id: str,
-    custom_message: Optional[str] = Query(None, description="Custom message for the email"),
-    current_user: ExtendedAuthUser = Depends(require_vendor_feature)
+    custom_message: Optional[str] = Query(
+        None, description="Custom message for the email"
+    ),
+    current_user: ExtendedAuthUser = Depends(require_vendor_feature),
 ):
     """
     Send a payment link to the payer via email.
@@ -617,7 +607,7 @@ async def send_payment_link(
     return await vendor_service.send_payment_link(
         payment_link_id=payment_link_id,
         planner_email=current_user.email,
-        custom_message=custom_message
+        custom_message=custom_message,
     )
 
 
@@ -627,7 +617,7 @@ async def list_payment_links(
     status: Optional[str] = Query(None, description="Filter by status"),
     skip: int = Query(0, ge=0),
     limit: int = Query(50, ge=1, le=100),
-    current_user: ExtendedAuthUser = Depends(require_vendor_feature)
+    current_user: ExtendedAuthUser = Depends(require_vendor_feature),
 ):
     """
     List payment links created by the planner.
@@ -637,24 +627,23 @@ async def list_payment_links(
         wedding_id=wedding_id,
         status=status,
         skip=skip,
-        limit=limit
+        limit=limit,
     )
 
 
 @router.get("/payment-links/{payment_link_id}", tags=["Payment Links"])
 async def get_payment_link(
     payment_link_id: str,
-    current_user: ExtendedAuthUser = Depends(require_vendor_feature)
+    current_user: ExtendedAuthUser = Depends(require_vendor_feature),
 ):
     """
     Get a specific payment link.
     """
     from bson import ObjectId
 
-    link = await vendor_service.payment_links.find_one({
-        "_id": ObjectId(payment_link_id),
-        "created_by": current_user.email
-    })
+    link = await vendor_service.payment_links.find_one(
+        {"_id": ObjectId(payment_link_id), "created_by": current_user.email}
+    )
 
     if not link:
         raise HTTPException(status_code=404, detail="Payment link not found")
@@ -667,9 +656,10 @@ async def get_payment_link(
 # PLANNER CONTRACT SETTINGS
 # =============================================================================
 
+
 @router.get("/settings/contract", tags=["Settings"])
 async def get_contract_settings(
-    current_user: ExtendedAuthUser = Depends(require_vendor_feature)
+    current_user: ExtendedAuthUser = Depends(require_vendor_feature),
 ):
     """
     Get the planner's contract settings.
@@ -688,15 +678,14 @@ async def get_contract_settings(
             "deposit_due_days": 7,
             "payment_reminder_days": [7, 3, 1],
             "auto_followup_days": 3,
-            "default_currency": "USD"
-        }
+            "default_currency": "USD",
+        },
     }
 
 
 @router.put("/settings/contract", tags=["Settings"])
 async def update_contract_settings(
-    settings: dict,
-    current_user: ExtendedAuthUser = Depends(require_vendor_feature)
+    settings: dict, current_user: ExtendedAuthUser = Depends(require_vendor_feature)
 ):
     """
     Update the planner's contract settings.
@@ -711,8 +700,11 @@ async def update_contract_settings(
     enforce_team_permission(current_user, "manage_vendors")
     # Validate settings
     allowed_fields = {
-        "token_expiry_days", "deposit_due_days", "payment_reminder_days",
-        "auto_followup_days", "default_currency"
+        "token_expiry_days",
+        "deposit_due_days",
+        "payment_reminder_days",
+        "auto_followup_days",
+        "default_currency",
     }
 
     # Filter to only allowed fields
@@ -725,32 +717,32 @@ async def update_contract_settings(
         if key == "token_expiry_days":
             if not isinstance(value, int) or value < 7 or value > 90:
                 raise HTTPException(
-                    status_code=400,
-                    detail="token_expiry_days must be between 7 and 90"
+                    status_code=400, detail="token_expiry_days must be between 7 and 90"
                 )
         elif key == "deposit_due_days":
             if not isinstance(value, int) or value < 1 or value > 60:
                 raise HTTPException(
-                    status_code=400,
-                    detail="deposit_due_days must be between 1 and 60"
+                    status_code=400, detail="deposit_due_days must be between 1 and 60"
                 )
         elif key == "auto_followup_days":
             if not isinstance(value, int) or value < 1 or value > 14:
                 raise HTTPException(
                     status_code=400,
-                    detail="auto_followup_days must be between 1 and 14"
+                    detail="auto_followup_days must be between 1 and 14",
                 )
         elif key == "payment_reminder_days":
-            if not isinstance(value, list) or not all(isinstance(d, int) and d > 0 for d in value):
+            if not isinstance(value, list) or not all(
+                isinstance(d, int) and d > 0 for d in value
+            ):
                 raise HTTPException(
                     status_code=400,
-                    detail="payment_reminder_days must be an array of positive integers"
+                    detail="payment_reminder_days must be an array of positive integers",
                 )
         elif key == "default_currency":
             if not isinstance(value, str) or len(value) != 3:
                 raise HTTPException(
                     status_code=400,
-                    detail="default_currency must be a 3-letter currency code"
+                    detail="default_currency must be a 3-letter currency code",
                 )
 
         validated_settings[key] = value
@@ -763,13 +755,10 @@ async def update_contract_settings(
 
     result = await mongo.get_users_collection().update_one(
         {"email": current_user.email},
-        {"$set": {"contract_settings": validated_settings}}
+        {"$set": {"contract_settings": validated_settings}},
     )
 
     if result.modified_count == 0 and result.matched_count == 0:
         raise HTTPException(status_code=404, detail="User not found")
 
-    return {
-        "message": "Contract settings updated",
-        "settings": validated_settings
-    }
+    return {"message": "Contract settings updated", "settings": validated_settings}

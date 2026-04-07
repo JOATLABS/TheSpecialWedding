@@ -26,7 +26,7 @@ class SupportService:
         """Generate a unique ticket number"""
         prefix = "TKT"
         timestamp = datetime.now(timezone.utc).strftime("%Y%m%d")
-        random_suffix = ''.join(secrets.choice(string.digits) for _ in range(4))
+        random_suffix = "".join(secrets.choice(string.digits) for _ in range(4))
         return f"{prefix}-{timestamp}-{random_suffix}"
 
     async def create_ticket(self, ticket_data: dict, created_by: str) -> dict:
@@ -36,7 +36,9 @@ class SupportService:
             ticket_number = self.generate_ticket_number()
 
             # Ensure unique ticket number
-            while await self.tickets_collection.find_one({"ticket_number": ticket_number}):
+            while await self.tickets_collection.find_one(
+                {"ticket_number": ticket_number}
+            ):
                 ticket_number = self.generate_ticket_number()
 
             # Prepare ticket document
@@ -57,7 +59,7 @@ class SupportService:
                 "resolved_at": None,
                 "comments": [],
                 "tags": [],
-                "satisfaction_rating": None
+                "satisfaction_rating": None,
             }
 
             # Insert ticket
@@ -66,33 +68,40 @@ class SupportService:
             if not result.inserted_id:
                 raise HTTPException(status_code=500, detail="Failed to create ticket")
 
-            logger.info(f"Support ticket {ticket_number} created successfully by {created_by}")
+            logger.info(
+                f"Support ticket {ticket_number} created successfully by {created_by}"
+            )
 
             # Log activity for planner dashboard (activity_logs collection)
             try:
                 activity_logs_collection = mongo.db["activity_logs"]
-                await activity_logs_collection.insert_one({
-                    "type": "support_ticket_created",
-                    "message": f"Support ticket created: {ticket['subject'][:50]}",
-                    "timestamp": datetime.now(timezone.utc),
-                    "created_at": datetime.now(timezone.utc),
-                    "planner_email": created_by,
-                    "actor_email": created_by,
-                    "metadata": {
-                        "ticket_number": ticket_number,
-                        "ticket_id": str(result.inserted_id),
-                        "priority": ticket['priority'],
-                        "category": ticket['category']
+                await activity_logs_collection.insert_one(
+                    {
+                        "type": "support_ticket_created",
+                        "message": f"Support ticket created: {ticket['subject'][:50]}",
+                        "timestamp": datetime.now(timezone.utc),
+                        "created_at": datetime.now(timezone.utc),
+                        "planner_email": created_by,
+                        "actor_email": created_by,
+                        "metadata": {
+                            "ticket_number": ticket_number,
+                            "ticket_id": str(result.inserted_id),
+                            "priority": ticket["priority"],
+                            "category": ticket["category"],
+                        },
                     }
-                })
+                )
                 logger.info(f"Activity logged for support ticket {ticket_number}")
             except Exception as activity_error:
-                logger.error(f"Failed to log activity for ticket {ticket_number}: {str(activity_error)}")
+                logger.error(
+                    f"Failed to log activity for ticket {ticket_number}: {str(activity_error)}"
+                )
                 # Don't fail ticket creation if activity logging fails
 
             # Create in-app notification for ROOT_ADMIN
             try:
                 from app.services.notification_service import NotificationService
+
                 notification_service = NotificationService()
                 await notification_service.create_notification(
                     notification_data={
@@ -101,36 +110,48 @@ class SupportService:
                         "type": "support_ticket",
                         "target_audience": "root_admin",
                         "is_dismissible": True,
-                        "priority": "high" if ticket['priority'] in ['urgent', 'high'] else "medium"
+                        "priority": "high"
+                        if ticket["priority"] in ["urgent", "high"]
+                        else "medium",
                     },
-                    created_by="system"
+                    created_by="system",
                 )
-                logger.info(f"In-app notification created for support ticket {ticket_number}")
+                logger.info(
+                    f"In-app notification created for support ticket {ticket_number}"
+                )
             except Exception as notif_error:
-                logger.error(f"Failed to create notification for ticket {ticket_number}: {str(notif_error)}")
+                logger.error(
+                    f"Failed to create notification for ticket {ticket_number}: {str(notif_error)}"
+                )
                 # Don't fail ticket creation if notification fails
 
             # Send email notification to root admin
             try:
                 await self._send_new_ticket_notification(ticket, created_by)
             except Exception as email_error:
-                logger.error(f"Failed to send email notification for ticket {ticket_number}: {str(email_error)}")
+                logger.error(
+                    f"Failed to send email notification for ticket {ticket_number}: {str(email_error)}"
+                )
                 # Don't fail the ticket creation if email fails
 
             return {
                 "id": str(result.inserted_id),
                 "ticket_number": ticket_number,
                 "message": "Support ticket created successfully",
-                "created_at": ticket["created_at"]
+                "created_at": ticket["created_at"],
             }
 
         except HTTPException:
             raise
         except Exception as e:
             logger.error(f"Error creating ticket: {str(e)}")
-            raise HTTPException(status_code=500, detail=f"Error creating ticket: {str(e)}")
+            raise HTTPException(
+                status_code=500, detail=f"Error creating ticket: {str(e)}"
+            )
 
-    async def get_tickets(self, page: int = 1, limit: int = 20, filters: Optional[Dict[str, Any]] = None) -> dict:
+    async def get_tickets(
+        self, page: int = 1, limit: int = 20, filters: Optional[Dict[str, Any]] = None
+    ) -> dict:
         """Get tickets with filtering and pagination"""
         try:
             # Build query
@@ -150,11 +171,18 @@ class SupportService:
             # Get tickets with sorting (priority + created date)
             priority_order = {"urgent": 4, "high": 3, "medium": 2, "low": 1}
 
-            cursor = self.tickets_collection.find(query).sort([
-                ("status", 1),  # Open tickets first
-                ("priority", -1),  # High priority first
-                ("created_at", -1)  # Newest first
-            ]).skip(skip).limit(limit)
+            cursor = (
+                self.tickets_collection.find(query)
+                .sort(
+                    [
+                        ("status", 1),  # Open tickets first
+                        ("priority", -1),  # High priority first
+                        ("created_at", -1),  # Newest first
+                    ]
+                )
+                .skip(skip)
+                .limit(limit)
+            )
 
             tickets = []
             async for ticket in cursor:
@@ -164,27 +192,32 @@ class SupportService:
                 # Add computed fields
                 ticket["comment_count"] = len(ticket.get("comments", []))
                 ticket["is_overdue"] = self._is_ticket_overdue(ticket)
-                ticket["priority_order"] = priority_order.get(ticket.get("priority", "medium"), 2)
+                ticket["priority_order"] = priority_order.get(
+                    ticket.get("priority", "medium"), 2
+                )
 
                 # Get creator info
                 creator = await self.users_collection.find_one(
                     {"email": ticket["created_by"]},
-                    {"first_name": 1, "last_name": 1, "company_name": 1}
+                    {"first_name": 1, "last_name": 1, "company_name": 1},
                 )
-                ticket["creator_info"] = creator if creator else {"first_name": "Unknown", "last_name": "User"}
+                ticket["creator_info"] = (
+                    creator
+                    if creator
+                    else {"first_name": "Unknown", "last_name": "User"}
+                )
 
                 tickets.append(ticket)
 
-            return serialize_mongo_doc({
-                "tickets": tickets,
-                "total": total,
-                "page": page,
-                "pages": pages
-            })
+            return serialize_mongo_doc(
+                {"tickets": tickets, "total": total, "page": page, "pages": pages}
+            )
 
         except Exception as e:
             logger.error(f"Error getting tickets: {str(e)}")
-            raise HTTPException(status_code=500, detail=f"Error retrieving tickets: {str(e)}")
+            raise HTTPException(
+                status_code=500, detail=f"Error retrieving tickets: {str(e)}"
+            )
 
     async def get_ticket(self, ticket_id: str, current_user) -> dict:
         """Get specific ticket by ID"""
@@ -200,7 +233,10 @@ class SupportService:
                 raise HTTPException(status_code=404, detail="Ticket not found")
 
             # Check permissions - users can only see their own tickets unless they're ROOT_ADMIN
-            if current_user.role != "ROOT_ADMIN" and ticket["created_by"] != current_user.email:
+            if (
+                current_user.role != "ROOT_ADMIN"
+                and ticket["created_by"] != current_user.email
+            ):
                 raise HTTPException(status_code=403, detail="Access denied")
 
             ticket["id"] = str(ticket["_id"])
@@ -213,22 +249,25 @@ class SupportService:
             # Get creator info
             creator = await self.users_collection.find_one(
                 {"email": ticket["created_by"]},
-                {"first_name": 1, "last_name": 1, "company_name": 1, "email": 1}
+                {"first_name": 1, "last_name": 1, "company_name": 1, "email": 1},
             )
-            ticket["creator_info"] = creator if creator else {"first_name": "Unknown", "last_name": "User"}
+            ticket["creator_info"] = (
+                creator if creator else {"first_name": "Unknown", "last_name": "User"}
+            )
 
             # Get assignee info if assigned
             if ticket.get("assigned_to"):
                 assignee = await self.users_collection.find_one(
                     {"email": ticket["assigned_to"]},
-                    {"first_name": 1, "last_name": 1, "email": 1}
+                    {"first_name": 1, "last_name": 1, "email": 1},
                 )
                 ticket["assignee_info"] = assignee
 
             # Filter internal comments for non-admin users
             if current_user.role != "ROOT_ADMIN":
                 ticket["comments"] = [
-                    comment for comment in ticket.get("comments", [])
+                    comment
+                    for comment in ticket.get("comments", [])
                     if not comment.get("is_internal", False)
                 ]
 
@@ -238,9 +277,13 @@ class SupportService:
             raise
         except Exception as e:
             logger.error(f"Error getting ticket: {str(e)}")
-            raise HTTPException(status_code=500, detail=f"Error retrieving ticket: {str(e)}")
+            raise HTTPException(
+                status_code=500, detail=f"Error retrieving ticket: {str(e)}"
+            )
 
-    async def update_ticket(self, ticket_id: str, update_data: dict, current_user) -> dict:
+    async def update_ticket(
+        self, ticket_id: str, update_data: dict, current_user
+    ) -> dict:
         """Update a ticket"""
         try:
             # Validate ObjectId
@@ -255,7 +298,10 @@ class SupportService:
                 raise HTTPException(status_code=404, detail="Ticket not found")
 
             # Check permissions
-            if current_user.role != "ROOT_ADMIN" and existing["created_by"] != current_user.email:
+            if (
+                current_user.role != "ROOT_ADMIN"
+                and existing["created_by"] != current_user.email
+            ):
                 # Non-admin users can only update certain fields of their own tickets
                 allowed_fields = {"subject", "description"}
                 if not all(field in allowed_fields for field in update_data.keys()):
@@ -266,15 +312,19 @@ class SupportService:
 
             # Handle status changes
             if "status" in update_data:
-                if update_data["status"] in ["resolved", "closed"] and not existing.get("resolved_at"):
+                if update_data["status"] in ["resolved", "closed"] and not existing.get(
+                    "resolved_at"
+                ):
                     update_data["resolved_at"] = datetime.now(timezone.utc)
-                elif update_data["status"] not in ["resolved", "closed"] and existing.get("resolved_at"):
+                elif update_data["status"] not in [
+                    "resolved",
+                    "closed",
+                ] and existing.get("resolved_at"):
                     update_data["resolved_at"] = None
 
             # Update ticket
             result = await self.tickets_collection.update_one(
-                {"_id": obj_id},
-                {"$set": update_data}
+                {"_id": obj_id}, {"$set": update_data}
             )
 
             if result.modified_count == 0:
@@ -282,16 +332,20 @@ class SupportService:
 
             return {
                 "message": "Ticket updated successfully",
-                "updated_fields": list(update_data.keys())
+                "updated_fields": list(update_data.keys()),
             }
 
         except HTTPException:
             raise
         except Exception as e:
             logger.error(f"Error updating ticket: {str(e)}")
-            raise HTTPException(status_code=500, detail=f"Error updating ticket: {str(e)}")
+            raise HTTPException(
+                status_code=500, detail=f"Error updating ticket: {str(e)}"
+            )
 
-    async def add_comment(self, ticket_id: str, comment_data: dict, current_user) -> dict:
+    async def add_comment(
+        self, ticket_id: str, comment_data: dict, current_user
+    ) -> dict:
         """Add comment to ticket"""
         try:
             # Validate ObjectId
@@ -306,7 +360,10 @@ class SupportService:
                 raise HTTPException(status_code=404, detail="Ticket not found")
 
             # Check permissions
-            if current_user.role != "ROOT_ADMIN" and ticket["created_by"] != current_user.email:
+            if (
+                current_user.role != "ROOT_ADMIN"
+                and ticket["created_by"] != current_user.email
+            ):
                 raise HTTPException(status_code=403, detail="Access denied")
 
             # Only ROOT_ADMIN can create internal comments
@@ -319,7 +376,7 @@ class SupportService:
                 "user_id": current_user.email,
                 "message": comment_data["message"],
                 "created_at": datetime.now(timezone.utc),
-                "is_internal": comment_data.get("is_internal", False)
+                "is_internal": comment_data.get("is_internal", False),
             }
 
             # Add comment to ticket
@@ -327,56 +384,70 @@ class SupportService:
                 {"_id": obj_id},
                 {
                     "$push": {"comments": comment},
-                    "$set": {"updated_at": datetime.now(timezone.utc)}
-                }
+                    "$set": {"updated_at": datetime.now(timezone.utc)},
+                },
             )
 
             if result.modified_count == 0:
                 raise HTTPException(status_code=400, detail="Failed to add comment")
 
             # Notify planner when ROOT_ADMIN responds (not internal comments)
-            if current_user.role == "ROOT_ADMIN" and not comment_data.get("is_internal", False):
+            if current_user.role == "ROOT_ADMIN" and not comment_data.get(
+                "is_internal", False
+            ):
                 # Only notify if the planner is not the commenter
                 if ticket["created_by"] != current_user.email:
                     try:
-                        await self._notify_planner_ticket_response(ticket, comment, current_user)
+                        await self._notify_planner_ticket_response(
+                            ticket, comment, current_user
+                        )
                     except Exception as notif_error:
-                        logger.error(f"Failed to send ticket response notification: {str(notif_error)}")
+                        logger.error(
+                            f"Failed to send ticket response notification: {str(notif_error)}"
+                        )
                         # Don't fail the comment if notification fails
 
             # Log activity for all comments
             try:
                 activity_logs_collection = mongo.db["activity_logs"]
-                await activity_logs_collection.insert_one({
-                    "type": "support_ticket_comment",
-                    "message": f"Comment added to ticket {ticket.get('ticket_number', 'Unknown')}",
-                    "timestamp": datetime.now(timezone.utc),
-                    "created_at": datetime.now(timezone.utc),
-                    "planner_email": ticket["created_by"],
-                    "actor_email": current_user.email,
-                    "metadata": {
-                        "ticket_number": ticket.get("ticket_number"),
-                        "ticket_id": ticket_id,
-                        "comment_id": comment["id"],
-                        "is_internal": comment_data.get("is_internal", False)
+                await activity_logs_collection.insert_one(
+                    {
+                        "type": "support_ticket_comment",
+                        "message": f"Comment added to ticket {ticket.get('ticket_number', 'Unknown')}",
+                        "timestamp": datetime.now(timezone.utc),
+                        "created_at": datetime.now(timezone.utc),
+                        "planner_email": ticket["created_by"],
+                        "actor_email": current_user.email,
+                        "metadata": {
+                            "ticket_number": ticket.get("ticket_number"),
+                            "ticket_id": ticket_id,
+                            "comment_id": comment["id"],
+                            "is_internal": comment_data.get("is_internal", False),
+                        },
                     }
-                })
+                )
             except Exception as activity_error:
-                logger.error(f"Failed to log activity for comment: {str(activity_error)}")
+                logger.error(
+                    f"Failed to log activity for comment: {str(activity_error)}"
+                )
                 # Don't fail the comment if activity logging fails
 
             return {
                 "message": "Comment added successfully",
-                "comment_id": comment["id"]
+                "comment_id": comment["id"],
             }
 
         except HTTPException:
             raise
         except Exception as e:
             logger.error(f"Error adding comment: {str(e)}")
-            raise HTTPException(status_code=500, detail=f"Error adding comment: {str(e)}")
+            raise HTTPException(
+                status_code=500, detail=f"Error adding comment: {str(e)}"
+            )
 
-    async def get_comments(self, ticket_id: str, current_user, include_internal: bool = False) -> dict:
+    async def get_comments(
+        self, ticket_id: str, current_user, include_internal: bool = False
+    ) -> dict:
         """Get ticket comments"""
         try:
             # Get ticket with permission check
@@ -387,7 +458,8 @@ class SupportService:
             # Filter internal comments for non-admin users
             if current_user.role != "ROOT_ADMIN" or not include_internal:
                 comments = [
-                    comment for comment in comments
+                    comment
+                    for comment in comments
                     if not comment.get("is_internal", False)
                 ]
 
@@ -395,22 +467,25 @@ class SupportService:
             for comment in comments:
                 user = await self.users_collection.find_one(
                     {"email": comment["user_id"]},
-                    {"first_name": 1, "last_name": 1, "role": 1}
+                    {"first_name": 1, "last_name": 1, "role": 1},
                 )
-                comment["user_info"] = user if user else {"first_name": "Unknown", "last_name": "User"}
+                comment["user_info"] = (
+                    user if user else {"first_name": "Unknown", "last_name": "User"}
+                )
 
-            return {
-                "comments": comments,
-                "total": len(comments)
-            }
+            return {"comments": comments, "total": len(comments)}
 
         except HTTPException:
             raise
         except Exception as e:
             logger.error(f"Error getting comments: {str(e)}")
-            raise HTTPException(status_code=500, detail=f"Error retrieving comments: {str(e)}")
+            raise HTTPException(
+                status_code=500, detail=f"Error retrieving comments: {str(e)}"
+            )
 
-    async def assign_ticket(self, ticket_id: str, agent_email: str, assigned_by: str) -> dict:
+    async def assign_ticket(
+        self, ticket_id: str, agent_email: str, assigned_by: str
+    ) -> dict:
         """Assign ticket to support agent"""
         try:
             # Validate ObjectId
@@ -428,7 +503,11 @@ class SupportService:
             if not ticket:
                 raise HTTPException(status_code=404, detail="Ticket not found")
 
-            new_status = "in_progress" if ticket.get("status") == "open" else ticket.get("status", "in_progress")
+            new_status = (
+                "in_progress"
+                if ticket.get("status") == "open"
+                else ticket.get("status", "in_progress")
+            )
 
             # Update ticket
             result = await self.tickets_collection.update_one(
@@ -437,9 +516,9 @@ class SupportService:
                     "$set": {
                         "assigned_to": agent_email,
                         "updated_at": datetime.now(timezone.utc),
-                        "status": new_status
+                        "status": new_status,
                     }
-                }
+                },
             )
 
             if result.modified_count == 0:
@@ -453,7 +532,9 @@ class SupportService:
             raise
         except Exception as e:
             logger.error(f"Error assigning ticket: {str(e)}")
-            raise HTTPException(status_code=500, detail=f"Error assigning ticket: {str(e)}")
+            raise HTTPException(
+                status_code=500, detail=f"Error assigning ticket: {str(e)}"
+            )
 
     async def get_analytics(self, period: str = "30d") -> dict:
         """Get support analytics"""
@@ -474,7 +555,11 @@ class SupportService:
                 {"$match": {"created_at": {"$gte": start_date}}},
                 {
                     "$group": {
-                        "_id": {"status": "$status", "priority": "$priority", "category": "$category"},
+                        "_id": {
+                            "status": "$status",
+                            "priority": "$priority",
+                            "category": "$category",
+                        },
                         "count": {"$sum": 1},
                         "avg_resolution_time": {
                             "$avg": {
@@ -507,22 +592,32 @@ class SupportService:
                 category = key.get("category") or "unknown"
                 count = result.get("count", 0)
 
-                analytics["by_status"][status] = analytics["by_status"].get(status, 0) + count
-                analytics["by_priority"][priority] = analytics["by_priority"].get(priority, 0) + count
-                analytics["by_category"][category] = analytics["by_category"].get(category, 0) + count
+                analytics["by_status"][status] = (
+                    analytics["by_status"].get(status, 0) + count
+                )
+                analytics["by_priority"][priority] = (
+                    analytics["by_priority"].get(priority, 0) + count
+                )
+                analytics["by_category"][category] = (
+                    analytics["by_category"].get(category, 0) + count
+                )
 
                 avg_ms = result.get("avg_resolution_time")
                 if avg_ms:
                     resolution_times.append(avg_ms / 1000 / 3600)
 
             if resolution_times:
-                analytics["avg_resolution_time_hours"] = sum(resolution_times) / len(resolution_times)
+                analytics["avg_resolution_time_hours"] = sum(resolution_times) / len(
+                    resolution_times
+                )
 
             return analytics
 
         except Exception as e:
             logger.error(f"Error getting analytics: {str(e)}")
-            raise HTTPException(status_code=500, detail=f"Error retrieving analytics: {str(e)}")
+            raise HTTPException(
+                status_code=500, detail=f"Error retrieving analytics: {str(e)}"
+            )
 
     async def get_support_agents(self) -> dict:
         """Get support agents available for assignment"""
@@ -534,8 +629,13 @@ class SupportService:
             )
             async for agent in cursor:
                 agent["_id"] = str(agent["_id"])
-                agent["assigned_tickets"] = await self.tickets_collection.count_documents(
-                    {"assigned_to": agent["email"], "status": {"$in": ["open", "in_progress"]}}
+                agent[
+                    "assigned_tickets"
+                ] = await self.tickets_collection.count_documents(
+                    {
+                        "assigned_to": agent["email"],
+                        "status": {"$in": ["open", "in_progress"]},
+                    }
                 )
                 agents.append(agent)
 
@@ -543,20 +643,30 @@ class SupportService:
 
         except Exception as e:
             logger.error(f"Error getting support agents: {str(e)}")
-            raise HTTPException(status_code=500, detail=f"Error retrieving support agents: {str(e)}")
+            raise HTTPException(
+                status_code=500, detail=f"Error retrieving support agents: {str(e)}"
+            )
 
     async def get_dashboard_metrics(self) -> dict:
         """Get support dashboard metrics"""
         try:
-            today = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
+            today = datetime.now(timezone.utc).replace(
+                hour=0, minute=0, second=0, microsecond=0
+            )
 
             metrics: Dict[str, Any] = {
-                "open_tickets": await self.tickets_collection.count_documents({"status": "open"}),
-                "in_progress_tickets": await self.tickets_collection.count_documents({"status": "in_progress"}),
+                "open_tickets": await self.tickets_collection.count_documents(
+                    {"status": "open"}
+                ),
+                "in_progress_tickets": await self.tickets_collection.count_documents(
+                    {"status": "in_progress"}
+                ),
                 "resolved_today": await self.tickets_collection.count_documents(
                     {"status": "resolved", "resolved_at": {"$gte": today}}
                 ),
-                "new_tickets_today": await self.tickets_collection.count_documents({"created_at": {"$gte": today}}),
+                "new_tickets_today": await self.tickets_collection.count_documents(
+                    {"created_at": {"$gte": today}}
+                ),
                 "urgent_tickets": await self.tickets_collection.count_documents(
                     {"priority": "urgent", "status": {"$in": ["open", "in_progress"]}}
                 ),
@@ -570,16 +680,22 @@ class SupportService:
                 daily_count = await self.tickets_collection.count_documents(
                     {"created_at": {"$gte": day_start, "$lt": day_end}}
                 )
-                weekly_trend.append({"date": day_start.strftime("%Y-%m-%d"), "tickets": daily_count})
+                weekly_trend.append(
+                    {"date": day_start.strftime("%Y-%m-%d"), "tickets": daily_count}
+                )
 
             metrics["weekly_trend"] = list(reversed(weekly_trend))
             return metrics
 
         except Exception as e:
             logger.error(f"Error getting dashboard metrics: {str(e)}")
-            raise HTTPException(status_code=500, detail=f"Error retrieving dashboard metrics: {str(e)}")
+            raise HTTPException(
+                status_code=500, detail=f"Error retrieving dashboard metrics: {str(e)}"
+            )
 
-    async def upload_attachment(self, ticket_id: str, file: UploadFile, current_user) -> dict:
+    async def upload_attachment(
+        self, ticket_id: str, file: UploadFile, current_user
+    ) -> dict:
         """Upload attachment to ticket"""
         try:
             # Validate ticket and permissions (also ensures ticket exists)
@@ -607,7 +723,9 @@ class SupportService:
             if file_size > 10 * 1024 * 1024:
                 raise HTTPException(status_code=400, detail="File too large (max 10MB)")
 
-            upload_dir = os.getenv("SUPPORT_ATTACHMENTS_DIR", "uploads/support_attachments")
+            upload_dir = os.getenv(
+                "SUPPORT_ATTACHMENTS_DIR", "uploads/support_attachments"
+            )
             os.makedirs(upload_dir, exist_ok=True)
 
             timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
@@ -616,9 +734,13 @@ class SupportService:
             file_path = os.path.join(upload_dir, stored_filename)
 
             loop = asyncio.get_running_loop()
-            await loop.run_in_executor(None, lambda: open(file_path, "wb").write(content))
+            await loop.run_in_executor(
+                None, lambda: open(file_path, "wb").write(content)
+            )
 
-            file_url_prefix = os.getenv("SUPPORT_ATTACHMENTS_URL_PREFIX", "/uploads/support_attachments")
+            file_url_prefix = os.getenv(
+                "SUPPORT_ATTACHMENTS_URL_PREFIX", "/uploads/support_attachments"
+            )
             file_url = f"{file_url_prefix}/{stored_filename}"
 
             result = await self.tickets_collection.update_one(
@@ -643,13 +765,19 @@ class SupportService:
             if result.modified_count == 0:
                 raise HTTPException(status_code=400, detail="Failed to attach file")
 
-            return {"message": "File uploaded successfully", "filename": safe_name, "url": file_url}
+            return {
+                "message": "File uploaded successfully",
+                "filename": safe_name,
+                "url": file_url,
+            }
 
         except HTTPException:
             raise
         except Exception as e:
             logger.error(f"Error uploading attachment: {str(e)}")
-            raise HTTPException(status_code=500, detail=f"Error uploading attachment: {str(e)}")
+            raise HTTPException(
+                status_code=500, detail=f"Error uploading attachment: {str(e)}"
+            )
 
     def _is_ticket_overdue(self, ticket: dict) -> bool:
         """Check if ticket is overdue based on priority and creation time"""
@@ -663,7 +791,7 @@ class SupportService:
                 "urgent": 4,
                 "high": 24,
                 "medium": 72,
-                "low": 168  # 1 week
+                "low": 168,  # 1 week
             }
 
             sla_hours = sla_times.get(priority, 72)
@@ -678,7 +806,9 @@ class SupportService:
         except Exception:
             return False
 
-    async def _send_new_ticket_notification(self, ticket: dict, created_by: str) -> None:
+    async def _send_new_ticket_notification(
+        self, ticket: dict, created_by: str
+    ) -> None:
         """Send email notification to root admin when a new support ticket is created"""
         try:
             from app.services.email_service_resend import ResendEmailService
@@ -696,7 +826,8 @@ class SupportService:
                     creator_name = creator_info["company_name"]
                 else:
                     creator_name = (
-                        f"{creator_info.get('first_name', '')} {creator_info.get('last_name', '')}".strip() or created_by
+                        f"{creator_info.get('first_name', '')} {creator_info.get('last_name', '')}".strip()
+                        or created_by
                     )
 
             priority = (ticket.get("priority") or "medium").lower()
@@ -725,22 +856,32 @@ class SupportService:
                                 <table style="width: 100%; border-collapse: collapse;">
                                 <tr>
                                     <td style="padding: 6px 0; color: #6b7280; width: 120px;">Ticket #:</td>
-                                    <td style="padding: 6px 0; font-weight: 600;">{ticket.get('ticket_number', 'N/A')}</td>
+                                    <td style="padding: 6px 0; font-weight: 600;">{
+                ticket.get("ticket_number", "N/A")
+            }</td>
                                 </tr>
                                 <tr>
                                     <td style="padding: 6px 0; color: #6b7280;">From:</td>
-                                    <td style="padding: 6px 0; font-weight: 600;">{creator_name}<br>
-                                    <span style="font-weight: normal; color: #6b7280;">{created_by}</span>
+                                    <td style="padding: 6px 0; font-weight: 600;">{
+                creator_name
+            }<br>
+                                    <span style="font-weight: normal; color: #6b7280;">{
+                created_by
+            }</span>
                                     </td>
                                 </tr>
                                 <tr>
                                     <td style="padding: 6px 0; color: #6b7280;">Category:</td>
-                                    <td style="padding: 6px 0; text-transform: capitalize;">{(ticket.get('category') or 'general').replace('_', ' ')}</td>
+                                    <td style="padding: 6px 0; text-transform: capitalize;">{
+                (ticket.get("category") or "general").replace("_", " ")
+            }</td>
                                 </tr>
                                 <tr>
                                     <td style="padding: 6px 0; color: #6b7280;">Priority:</td>
                                     <td style="padding: 6px 0;">
-                                    <span style="background-color: {priority_color}; color: white; padding: 4px 10px; border-radius: 999px; font-size: 12px; font-weight: 700; text-transform: uppercase;">
+                                    <span style="background-color: {
+                priority_color
+            }; color: white; padding: 4px 10px; border-radius: 999px; font-size: 12px; font-weight: 700; text-transform: uppercase;">
                                         {priority}
                                     </span>
                                     </td>
@@ -748,19 +889,27 @@ class SupportService:
                                 </table>
                             </div>
 
-                            <h2 style="margin: 0 0 10px 0; font-size: 18px;">{ticket.get('subject', 'No Subject')}</h2>
+                            <h2 style="margin: 0 0 10px 0; font-size: 18px;">{
+                ticket.get("subject", "No Subject")
+            }</h2>
 
                             <div style="background-color: #f8fafc; border-left: 4px solid #3b82f6; padding: 12px; border-radius: 0 8px 8px 0;">
-                                <p style="margin: 0; line-height: 1.6; white-space: pre-wrap;">{ticket.get('description', 'No description provided')}</p>
+                                <p style="margin: 0; line-height: 1.6; white-space: pre-wrap;">{
+                ticket.get("description", "No description provided")
+            }</p>
                             </div>
 
-                            {f'''
+                            {
+                f'''
                             <div style="text-align: center; margin-top: 20px;">
                                 <a href="{dashboard_url}" style="display: inline-block; background-color: #3b82f6; color: white; padding: 10px 18px; border-radius: 8px; text-decoration: none; font-weight: 700;">
                                 View in Dashboard
                                 </a>
                             </div>
-                            ''' if dashboard_url else ''}
+                            '''
+                if dashboard_url
+                else ""
+            }
                             </div>
 
                             <div style="background-color: #f8fafc; padding: 14px; text-align: center; border-top: 1px solid #e5e7eb;">
@@ -792,10 +941,7 @@ class SupportService:
             raise
 
     async def _notify_planner_ticket_response(
-        self,
-        ticket: dict,
-        comment: dict,
-        responder
+        self, ticket: dict, comment: dict, responder
     ) -> None:
         """Notify planner when root admin responds to their support ticket"""
         try:
@@ -806,8 +952,7 @@ class SupportService:
 
             # Get responder name
             responder_info = await self.users_collection.find_one(
-                {"email": responder.email},
-                {"first_name": 1, "last_name": 1}
+                {"email": responder.email}, {"first_name": 1, "last_name": 1}
             )
             responder_name = "Support Team"
             if responder_info:
@@ -816,23 +961,28 @@ class SupportService:
                     responder_name = "Support Team"
 
             # 1. Create in-app planner notification
-            from app.services.planner_notification_service import planner_notification_service
+            from app.services.planner_notification_service import (
+                planner_notification_service,
+            )
+
             await planner_notification_service.notify_support_ticket_response(
                 planner_id=planner_email,
                 ticket_number=ticket_number,
                 ticket_subject=ticket_subject,
                 responder_name=responder_name,
                 ticket_id=ticket_id,
-                message_preview=comment.get("message")
+                message_preview=comment.get("message"),
             )
-            logger.info(f"Planner notification created for ticket response: {ticket_number}")
+            logger.info(
+                f"Planner notification created for ticket response: {ticket_number}"
+            )
 
             # 2. Send email notification
             await self._send_ticket_response_email(
                 planner_email=planner_email,
                 ticket=ticket,
                 comment=comment,
-                responder_name=responder_name
+                responder_name=responder_name,
             )
 
         except Exception as e:
@@ -840,11 +990,7 @@ class SupportService:
             raise
 
     async def _send_ticket_response_email(
-        self,
-        planner_email: str,
-        ticket: dict,
-        comment: dict,
-        responder_name: str
+        self, planner_email: str, ticket: dict, comment: dict, responder_name: str
     ) -> None:
         """Send email notification to planner when admin responds to their ticket"""
         try:
@@ -873,11 +1019,15 @@ class SupportService:
                             <table style="width: 100%; border-collapse: collapse;">
                                 <tr>
                                     <td style="padding: 6px 0; color: #6b7280; width: 120px;">Ticket #:</td>
-                                    <td style="padding: 6px 0; font-weight: 600;">{ticket_number}</td>
+                                    <td style="padding: 6px 0; font-weight: 600;">{
+                ticket_number
+            }</td>
                                 </tr>
                                 <tr>
                                     <td style="padding: 6px 0; color: #6b7280;">Subject:</td>
-                                    <td style="padding: 6px 0; font-weight: 600;">{ticket_subject}</td>
+                                    <td style="padding: 6px 0; font-weight: 600;">{
+                ticket_subject
+            }</td>
                                 </tr>
                                 <tr>
                                     <td style="padding: 6px 0; color: #6b7280;">Responded by:</td>
@@ -889,16 +1039,22 @@ class SupportService:
                         <h2 style="margin: 20px 0 10px 0; font-size: 16px; color: #374151;">Response:</h2>
 
                         <div style="background-color: #f0fdf4; border-left: 4px solid #10b981; padding: 16px; border-radius: 0 8px 8px 0;">
-                            <p style="margin: 0; line-height: 1.6; white-space: pre-wrap;">{message_content}</p>
+                            <p style="margin: 0; line-height: 1.6; white-space: pre-wrap;">{
+                message_content
+            }</p>
                         </div>
 
-                        {f'''
+                        {
+                f'''
                         <div style="text-align: center; margin-top: 24px;">
                             <a href="{support_url}" style="display: inline-block; background-color: #10b981; color: white; padding: 12px 24px; border-radius: 8px; text-decoration: none; font-weight: 600;">
                                 View in Support Center
                             </a>
                         </div>
-                        ''' if support_url else ''}
+                        '''
+                if support_url
+                else ""
+            }
                     </div>
 
                     <div style="background-color: #f8fafc; padding: 16px; text-align: center; border-top: 1px solid #e5e7eb;">
@@ -916,10 +1072,12 @@ class SupportService:
                 subject=f"Support Response: {ticket_subject} (#{ticket_number})",
                 html_content=html_content,
                 from_name="TheSpecialWedding Support",
-                email_type="support_ticket_response"
+                email_type="support_ticket_response",
             )
 
-            logger.info(f"Ticket response email sent to {planner_email} for ticket {ticket_number}")
+            logger.info(
+                f"Ticket response email sent to {planner_email} for ticket {ticket_number}"
+            )
 
         except Exception as e:
             logger.error(f"Failed to send ticket response email: {str(e)}")

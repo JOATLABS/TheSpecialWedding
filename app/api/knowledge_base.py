@@ -2,10 +2,15 @@
 Knowledge Base API Endpoints
 Community-driven documentation system for wedding planners
 """
+
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, Field, field_validator
 from typing import Optional, List
-from app.dependencies.auth_extended import require_root_admin, require_admin_or_planner, ExtendedAuthUser
+from app.dependencies.auth_extended import (
+    require_root_admin,
+    require_admin_or_planner,
+    ExtendedAuthUser,
+)
 from app.services.knowledge_base_service import knowledge_base_service
 from app.models.knowledge_base import KB_CATEGORIES, KB_STATUSES
 from app.utils.rate_limiter import (
@@ -24,32 +29,42 @@ router = APIRouter()
 
 # ==================== REQUEST MODELS ====================
 
+
 class ArticleCreateRequest(BaseModel):
     """Request model for creating a KB article"""
+
     title: str = Field(..., min_length=5, max_length=200, description="Article title")
-    content: str = Field(..., min_length=50, max_length=50000, description="Markdown content")
-    excerpt: str = Field(..., min_length=20, max_length=500, description="Short summary")
+    content: str = Field(
+        ..., min_length=50, max_length=50000, description="Markdown content"
+    )
+    excerpt: str = Field(
+        ..., min_length=20, max_length=500, description="Short summary"
+    )
     category: str = Field(default="general", description="Article category")
     tags: List[str] = Field(default_factory=list, description="Article tags")
     status: str = Field(default="published", description="Article status")
-    card_image: Optional[str] = Field(None, max_length=500, description="Card/thumbnail image URL")
-    og_image: Optional[str] = Field(None, max_length=500, description="OG/social share image URL")
+    card_image: Optional[str] = Field(
+        None, max_length=500, description="Card/thumbnail image URL"
+    )
+    og_image: Optional[str] = Field(
+        None, max_length=500, description="OG/social share image URL"
+    )
 
-    @field_validator('category')
+    @field_validator("category")
     @classmethod
     def validate_category(cls, v):
         if v not in KB_CATEGORIES:
-            raise ValueError(f'Category must be one of: {", ".join(KB_CATEGORIES)}')
+            raise ValueError(f"Category must be one of: {', '.join(KB_CATEGORIES)}")
         return v
 
-    @field_validator('status')
+    @field_validator("status")
     @classmethod
     def validate_status(cls, v):
         if v not in KB_STATUSES:
             raise ValueError(f"Status must be one of: {', '.join(KB_STATUSES)}")
         return v
 
-    @field_validator('tags')
+    @field_validator("tags")
     @classmethod
     def validate_tags(cls, v):
         if v:
@@ -59,6 +74,7 @@ class ArticleCreateRequest(BaseModel):
 
 class ArticleUpdateRequest(BaseModel):
     """Request model for updating a KB article"""
+
     title: Optional[str] = Field(None, min_length=5, max_length=200)
     content: Optional[str] = Field(None, min_length=50, max_length=50000)
     excerpt: Optional[str] = Field(None, min_length=20, max_length=500)
@@ -70,14 +86,14 @@ class ArticleUpdateRequest(BaseModel):
     card_image: Optional[str] = Field(None, max_length=500)
     og_image: Optional[str] = Field(None, max_length=500)
 
-    @field_validator('category')
+    @field_validator("category")
     @classmethod
     def validate_category(cls, v):
         if v is not None and v not in KB_CATEGORIES:
-            raise ValueError(f'Category must be one of: {", ".join(KB_CATEGORIES)}')
+            raise ValueError(f"Category must be one of: {', '.join(KB_CATEGORIES)}")
         return v
 
-    @field_validator('status')
+    @field_validator("status")
     @classmethod
     def validate_status(cls, v):
         if v is not None and v not in KB_STATUSES:
@@ -87,13 +103,17 @@ class ArticleUpdateRequest(BaseModel):
 
 class FeedbackRequest(BaseModel):
     """Request model for submitting article feedback"""
+
     helpful: bool = Field(..., description="Was the article helpful?")
     comment: Optional[str] = Field(None, max_length=500, description="Optional comment")
 
 
 class MarkOfficialRequest(BaseModel):
     """Request model for marking article as official"""
-    is_official: bool = Field(..., description="Mark as official platform documentation")
+
+    is_official: bool = Field(
+        ..., description="Mark as official platform documentation"
+    )
 
 
 # ==================== PUBLIC ENDPOINTS ====================
@@ -109,7 +129,7 @@ async def get_articles(
     search: Optional[str] = Query(None, min_length=2, description="Search query"),
     featured_only: bool = Query(False, description="Only featured articles"),
     official_only: bool = Query(False, description="Only official articles"),
-    current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
+    current_user: ExtendedAuthUser = Depends(require_admin_or_planner),
 ):
     """
     Get published KB articles with optional filtering
@@ -127,7 +147,7 @@ async def get_articles(
         search=search,
         status="published",
         featured_only=featured_only,
-        official_only=official_only
+        official_only=official_only,
     )
 
 
@@ -135,7 +155,7 @@ async def get_articles(
 async def get_article_by_slug(
     request: Request,
     slug: str,
-    current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
+    current_user: ExtendedAuthUser = Depends(require_admin_or_planner),
 ):
     """
     Get a specific article by its slug
@@ -151,8 +171,7 @@ async def get_article_by_slug(
 
 @router.get("/kb/categories", tags=["Knowledge Base"])
 async def get_categories(
-    request: Request,
-    current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
+    request: Request, current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
 ):
     """
     Get all KB categories with article counts
@@ -170,7 +189,7 @@ async def search_articles(
     request: Request,
     q: str = Query(..., min_length=2, max_length=100, description="Search query"),
     limit: int = Query(20, ge=1, le=50, description="Max results"),
-    current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
+    current_user: ExtendedAuthUser = Depends(require_admin_or_planner),
 ):
     """
     Full-text search across KB articles
@@ -188,16 +207,14 @@ async def search_articles(
 async def get_my_articles(
     page: int = Query(1, ge=1),
     limit: int = Query(20, ge=1, le=50),
-    current_user: ExtendedAuthUser = Depends(require_root_admin)
+    current_user: ExtendedAuthUser = Depends(require_root_admin),
 ):
     """
     Get articles created by the current user
     - ROOT_ADMIN only — for managing your own articles
     """
     return await knowledge_base_service.get_my_articles(
-        author_email=current_user.email,
-        page=page,
-        limit=limit
+        author_email=current_user.email, page=page, limit=limit
     )
 
 
@@ -206,7 +223,7 @@ async def get_related_articles(
     request: Request,
     article_id: str,
     limit: int = Query(5, ge=1, le=10),
-    current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
+    current_user: ExtendedAuthUser = Depends(require_admin_or_planner),
 ):
     """
     Get related articles based on category and tags
@@ -216,8 +233,7 @@ async def get_related_articles(
     await check_rate_limit(client_ip, public_read_limiter)
 
     return await knowledge_base_service.get_related_articles(
-        article_id=article_id,
-        limit=limit
+        article_id=article_id, limit=limit
     )
 
 
@@ -228,7 +244,7 @@ async def get_related_articles(
 @router.post("/kb/articles", tags=["Knowledge Base"])
 async def create_article(
     article_data: ArticleCreateRequest,
-    current_user: ExtendedAuthUser = Depends(require_root_admin)
+    current_user: ExtendedAuthUser = Depends(require_root_admin),
 ):
     """
     Create a new KB article
@@ -237,10 +253,11 @@ async def create_article(
     """
     # Get author name from user profile
     from app.core.database import mongo
+
     users_collection = mongo.get_users_collection()
     user_doc = await users_collection.find_one(
         {"email": current_user.email},
-        {"first_name": 1, "last_name": 1, "company_name": 1, "_id": 1}
+        {"first_name": 1, "last_name": 1, "company_name": 1, "_id": 1},
     )
 
     author_name = "Unknown"
@@ -255,6 +272,7 @@ async def create_article(
             author_name = f"{first} {last}".strip() or current_user.email
 
     from app.models.knowledge_base import KnowledgeBaseArticleCreateModel
+
     create_model = KnowledgeBaseArticleCreateModel(
         title=article_data.title,
         content=article_data.content,
@@ -272,7 +290,7 @@ async def create_article(
         article_data=create_model,
         author_email=current_user.email,
         author_id=author_id,
-        author_name=author_name
+        author_name=author_name,
     )
 
 
@@ -280,13 +298,14 @@ async def create_article(
 async def update_article(
     article_id: str,
     article_data: ArticleUpdateRequest,
-    current_user: ExtendedAuthUser = Depends(require_root_admin)
+    current_user: ExtendedAuthUser = Depends(require_root_admin),
 ):
     """
     Update a KB article
     - ROOT_ADMIN only — knowledge base is platform documentation
     """
     from app.models.knowledge_base import KnowledgeBaseArticleUpdateModel
+
     update_model = KnowledgeBaseArticleUpdateModel(
         title=article_data.title,
         content=article_data.content,
@@ -301,24 +320,20 @@ async def update_article(
     )
 
     return await knowledge_base_service.update_article(
-        article_id=article_id,
-        update_data=update_model,
-        current_user=current_user
+        article_id=article_id, update_data=update_model, current_user=current_user
     )
 
 
 @router.delete("/kb/articles/{article_id}", tags=["Knowledge Base"])
 async def delete_article(
-    article_id: str,
-    current_user: ExtendedAuthUser = Depends(require_root_admin)
+    article_id: str, current_user: ExtendedAuthUser = Depends(require_root_admin)
 ):
     """
     Delete a KB article
     - ROOT_ADMIN only — knowledge base is platform documentation
     """
     return await knowledge_base_service.delete_article(
-        article_id=article_id,
-        current_user=current_user
+        article_id=article_id, current_user=current_user
     )
 
 
@@ -329,7 +344,7 @@ async def delete_article(
 async def submit_feedback(
     article_id: str,
     feedback_data: FeedbackRequest,
-    current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
+    current_user: ExtendedAuthUser = Depends(require_admin_or_planner),
 ):
     """
     Submit helpful/not helpful feedback for an article
@@ -339,7 +354,7 @@ async def submit_feedback(
         article_id=article_id,
         helpful=feedback_data.helpful,
         user_email=current_user.email,
-        comment=feedback_data.comment
+        comment=feedback_data.comment,
     )
 
 
@@ -350,7 +365,7 @@ async def submit_feedback(
 async def mark_article_official(
     article_id: str,
     request_data: MarkOfficialRequest,
-    current_user: ExtendedAuthUser = Depends(require_root_admin)
+    current_user: ExtendedAuthUser = Depends(require_root_admin),
 ):
     """
     Mark an article as official platform documentation
@@ -360,7 +375,7 @@ async def mark_article_official(
     return await knowledge_base_service.mark_official(
         article_id=article_id,
         is_official=request_data.is_official,
-        current_user=current_user
+        current_user=current_user,
     )
 
 
@@ -371,7 +386,7 @@ async def get_all_articles_admin(
     status: Optional[str] = Query(None, description="Filter by status"),
     category: Optional[str] = Query(None),
     search: Optional[str] = Query(None, min_length=2),
-    current_user: ExtendedAuthUser = Depends(require_root_admin)
+    current_user: ExtendedAuthUser = Depends(require_root_admin),
 ):
     """
     Get all articles regardless of status (ROOT_ADMIN only)
@@ -380,7 +395,9 @@ async def get_all_articles_admin(
     """
     if status is not None and status not in KB_STATUSES:
         allowed_statuses = ", ".join(KB_STATUSES)
-        raise HTTPException(status_code=400, detail=f"Status must be one of: {allowed_statuses}")
+        raise HTTPException(
+            status_code=400, detail=f"Status must be one of: {allowed_statuses}"
+        )
 
     return await knowledge_base_service.get_articles(
         page=page,
@@ -389,5 +406,5 @@ async def get_all_articles_admin(
         search=search,
         status=status,
         featured_only=False,
-        official_only=False
+        official_only=False,
     )

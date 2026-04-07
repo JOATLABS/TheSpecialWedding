@@ -2,6 +2,7 @@
 Blog API Endpoints
 Public endpoints for the /resources page (no auth) + Admin CRUD (ROOT_ADMIN only)
 """
+
 from fastapi import APIRouter, Depends, Query, Request
 from pydantic import BaseModel, Field, field_validator
 from typing import Optional, List
@@ -23,8 +24,10 @@ router = APIRouter()
 
 # ==================== REQUEST MODELS ====================
 
+
 class BlogCreateRequest(BaseModel):
     """Request model for creating a blog article"""
+
     title: str = Field(..., min_length=5, max_length=200)
     content: str = Field(..., min_length=50, max_length=100000)
     excerpt: str = Field(..., min_length=20, max_length=500)
@@ -62,6 +65,7 @@ class BlogCreateRequest(BaseModel):
 
 class BlogUpdateRequest(BaseModel):
     """Request model for updating a blog article"""
+
     title: Optional[str] = Field(None, min_length=5, max_length=200)
     content: Optional[str] = Field(None, min_length=50, max_length=100000)
     excerpt: Optional[str] = Field(None, min_length=20, max_length=500)
@@ -256,6 +260,7 @@ async def get_blog_image_upload_url(
 ):
     """Get a presigned URL to upload a blog image directly to R2 (ROOT_ADMIN only)"""
     from app.services.gallery_upload_service import BlogUploadService
+
     blog_upload = BlogUploadService()
     return blog_upload.create_presigned_upload_url(
         filename=filename,

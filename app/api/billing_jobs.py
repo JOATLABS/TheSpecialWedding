@@ -15,7 +15,7 @@ router = APIRouter()
 @router.post("/billing/sync-usage")
 async def sync_usage_to_stripe(
     background_tasks: BackgroundTasks,
-    current_user: ExtendedAuthUser = Depends(require_root_admin)
+    current_user: ExtendedAuthUser = Depends(require_root_admin),
 ):
     """
     Manually trigger synchronization of active wedding usage to Stripe Meters.
@@ -35,10 +35,12 @@ async def process_daily_usage_check():
     logger.info("Starting daily usage sync...")
 
     # 1. Get all active subscriptions
-    subscriptions = mongo.db["user_subscriptions"].find({
-        "status": SubscriptionStatus.ACTIVE.value,
-        "stripe_subscription_id": {"$exists": True}
-    })
+    subscriptions = mongo.db["user_subscriptions"].find(
+        {
+            "status": SubscriptionStatus.ACTIVE.value,
+            "stripe_subscription_id": {"$exists": True},
+        }
+    )
 
     count_processed = 0
     count_reported = 0
@@ -62,10 +64,12 @@ async def process_daily_usage_check():
                 continue
 
             # 2. Get active weddings for this user
-            weddings = mongo.db["weddings"].find({
-                "created_by": user_id,  # Assuming created_by or owner field
-                "status": "active"  # Only active weddings
-            })
+            weddings = mongo.db["weddings"].find(
+                {
+                    "created_by": user_id,  # Assuming created_by or owner field
+                    "status": "active",  # Only active weddings
+                }
+            )
 
             # 3. Check if billing is needed
             # We need to know the current billing period start/end for the subscription
@@ -76,7 +80,9 @@ async def process_daily_usage_check():
 
             if isinstance(current_period_start, str):
                 try:
-                    current_period_start = datetime.fromisoformat(current_period_start.replace('Z', '+00:00'))
+                    current_period_start = datetime.fromisoformat(
+                        current_period_start.replace("Z", "+00:00")
+                    )
                 except ValueError:
                     continue
 
@@ -103,10 +109,7 @@ async def process_daily_usage_check():
 
                 if needs_billing:
                     # Report usage
-                    payload = {
-                        "stripe_customer_id": stripe_customer_id,
-                        "value": "1"
-                    }
+                    payload = {"stripe_customer_id": stripe_customer_id, "value": "1"}
 
                     # Idempotency key: prevents double-billing on job retries
                     billing_period = current_period_start.strftime("%Y-%m")
@@ -115,14 +118,14 @@ async def process_daily_usage_check():
                     result = stripe_service.report_meter_event(
                         event_name=meter_event_name,
                         payload=payload,
-                        identifier=idempotency_key
+                        identifier=idempotency_key,
                     )
 
                     if result.get("status") == "success":
                         # Update last_billed_at
                         await mongo.db["weddings"].update_one(
                             {"_id": wedding["_id"]},
-                            {"$set": {"last_billed_at": datetime.now(timezone.utc)}}
+                            {"$set": {"last_billed_at": datetime.now(timezone.utc)}},
                         )
                         count_reported += 1
 
@@ -131,13 +134,15 @@ async def process_daily_usage_check():
         except Exception as e:
             logger.error(f"Error processing subscription {sub.get('_id')}: {e}")
 
-    logger.info(f"Daily usage sync complete. Processed {count_processed} subs, reported {count_reported} events.")
+    logger.info(
+        f"Daily usage sync complete. Processed {count_processed} subs, reported {count_reported} events."
+    )
 
 
 @router.post("/billing/cleanup-orphaned-customers")
 async def cleanup_orphaned_stripe_customers(
     background_tasks: BackgroundTasks,
-    current_user: ExtendedAuthUser = Depends(require_root_admin)
+    current_user: ExtendedAuthUser = Depends(require_root_admin),
 ):
     """
     Clean up orphaned Stripe customers from abandoned signups.
@@ -146,7 +151,10 @@ async def cleanup_orphaned_stripe_customers(
     Should be called periodically (e.g., weekly) via cron or manually.
     """
     background_tasks.add_task(process_orphaned_customer_cleanup)
-    return {"status": "accepted", "message": "Orphaned customer cleanup started in background"}
+    return {
+        "status": "accepted",
+        "message": "Orphaned customer cleanup started in background",
+    }
 
 
 async def process_orphaned_customer_cleanup():
@@ -185,21 +193,28 @@ async def process_orphaned_customer_cleanup():
             # Check if user has ANY subscription record (any status means they
             # completed signup at some point - keep their Stripe customer for
             # billing history, reactivation, and portal access)
-            has_subscription = await user_subscriptions.find_one({
-                "user_id": user_id,
-            })
+            has_subscription = await user_subscriptions.find_one(
+                {
+                    "user_id": user_id,
+                }
+            )
 
             if has_subscription:
                 continue  # User has a valid subscription, skip
 
             # Check if user exists and is still pending
             from bson import ObjectId
+
             try:
                 user = await users_collection.find_one({"_id": ObjectId(user_id)})
             except Exception:
                 user = None
 
-            normalized_status = normalize_subscription_status(user.get("subscription_status")) if user else None
+            normalized_status = (
+                normalize_subscription_status(user.get("subscription_status"))
+                if user
+                else None
+            )
             if user and normalized_status not in (
                 SubscriptionStatus.PENDING_PAYMENT.value,
                 SubscriptionStatus.PENDING_CHECKOUT.value,
@@ -210,7 +225,9 @@ async def process_orphaned_customer_cleanup():
 
             # Verify in Stripe that customer has no subscriptions
             try:
-                stripe_subs = stripe_lib.Subscription.list(customer=customer_id, limit=1)
+                stripe_subs = stripe_lib.Subscription.list(
+                    customer=customer_id, limit=1
+                )
                 if stripe_subs.data:
                     continue  # Has Stripe subscriptions, skip
             except stripe_lib.error.InvalidRequestError:
@@ -224,7 +241,9 @@ async def process_orphaned_customer_cleanup():
             stripe_lib.Customer.delete(customer_id)
             await stripe_customers.delete_one({"_id": record["_id"]})
             orphaned_count += 1
-            logger.info(f"Cleaned up orphaned Stripe customer {customer_id} (user: {user_id})")
+            logger.info(
+                f"Cleaned up orphaned Stripe customer {customer_id} (user: {user_id})"
+            )
 
         except Exception as e:
             errors += 1
@@ -235,10 +254,12 @@ async def process_orphaned_customer_cleanup():
     # and stored ONLY on the invitation document. If the invitation expires, the
     # Stripe customer would be orphaned forever without this cleanup.
     user_invitations = mongo.db["user_invitations"]
-    invitation_cursor = user_invitations.find({
-        "expires_at": {"$lt": cutoff},
-        "stripe_customer_id": {"$exists": True, "$ne": None}
-    })
+    invitation_cursor = user_invitations.find(
+        {
+            "expires_at": {"$lt": cutoff},
+            "stripe_customer_id": {"$exists": True, "$ne": None},
+        }
+    )
 
     invitation_cleanup_count = 0
     async for invitation in invitation_cursor:
@@ -256,7 +277,9 @@ async def process_orphaned_customer_cleanup():
 
             # Verify in Stripe that customer has no subscriptions
             try:
-                stripe_subs = stripe_lib.Subscription.list(customer=customer_id, limit=1)
+                stripe_subs = stripe_lib.Subscription.list(
+                    customer=customer_id, limit=1
+                )
                 if stripe_subs.data:
                     continue  # Has active Stripe subscriptions - skip
             except stripe_lib.error.InvalidRequestError:
@@ -271,15 +294,18 @@ async def process_orphaned_customer_cleanup():
 
             # Clear reference from invitation (before TTL deletes the document)
             await user_invitations.update_one(
-                {"_id": invitation["_id"]},
-                {"$unset": {"stripe_customer_id": ""}}
+                {"_id": invitation["_id"]}, {"$unset": {"stripe_customer_id": ""}}
             )
             invitation_cleanup_count += 1
-            logger.info(f"Cleaned up Stripe customer {customer_id} from expired invitation")
+            logger.info(
+                f"Cleaned up Stripe customer {customer_id} from expired invitation"
+            )
 
         except Exception as e:
             errors += 1
-            logger.error(f"Error cleaning up invitation customer {invitation.get('stripe_customer_id')}: {e}")
+            logger.error(
+                f"Error cleaning up invitation customer {invitation.get('stripe_customer_id')}: {e}"
+            )
 
     logger.info(
         f"Orphaned customer cleanup complete. "
@@ -291,8 +317,12 @@ async def process_orphaned_customer_cleanup():
 @router.post("/billing/archive-inactive-subscriptions")
 async def archive_inactive_subscriptions(
     background_tasks: BackgroundTasks,
-    retention_days: int = Query(default=90, ge=30, description="Days since cancellation/expiration before archival"),
-    current_user: ExtendedAuthUser = Depends(require_root_admin)
+    retention_days: int = Query(
+        default=90,
+        ge=30,
+        description="Days since cancellation/expiration before archival",
+    ),
+    current_user: ExtendedAuthUser = Depends(require_root_admin),
 ):
     """
     Archive old cancelled/expired subscriptions and clean up associated data.
@@ -307,7 +337,7 @@ async def archive_inactive_subscriptions(
     background_tasks.add_task(process_subscription_archival, retention_days)
     return {
         "status": "accepted",
-        "message": f"Subscription archival started (retention: {retention_days} days)"
+        "message": f"Subscription archival started (retention: {retention_days} days)",
     }
 
 
@@ -332,9 +362,13 @@ async def process_subscription_archival(retention_days: int = 90):
         "$or": [
             {"status": "cancelled", "cancelled_at": {"$lt": cutoff}},
             {"status": "expired", "trial_expired_at": {"$lt": cutoff}},
-            {"status": "expired", "expired_reason": "checkout_session_expired", "updated_at": {"$lt": cutoff}},
+            {
+                "status": "expired",
+                "expired_reason": "checkout_session_expired",
+                "updated_at": {"$lt": cutoff},
+            },
             {"status": "suspended", "updated_at": {"$lt": cutoff}},
-        ]
+        ],
     }
 
     cursor = subscriptions.find(query)
@@ -348,11 +382,7 @@ async def process_subscription_archival(retention_days: int = 90):
 
             # Soft-archive the subscription
             result = await subscriptions.update_one(
-                {"_id": sub_id},
-                {"$set": {
-                    "archived_at": now,
-                    "updated_at": now
-                }}
+                {"_id": sub_id}, {"$set": {"archived_at": now, "updated_at": now}}
             )
 
             if result.modified_count > 0:

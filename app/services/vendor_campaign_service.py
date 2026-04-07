@@ -78,10 +78,12 @@ class VendorCampaignService:
             vendor_doc = await self.db["users"].find_one({"_id": ObjectId(vendor_id)})
             if not vendor_doc:
                 from fastapi import HTTPException
+
                 raise HTTPException(status_code=404, detail="Vendor account not found")
             completeness = check_profile_completeness(vendor_doc)
             if not completeness["is_complete"]:
                 from fastapi import HTTPException
+
                 raise HTTPException(
                     status_code=403,
                     detail={
@@ -152,7 +154,9 @@ class VendorCampaignService:
         result = await self.campaigns.insert_one(campaign)
         campaign["_id"] = str(result.inserted_id)
 
-        logger.info(f"Created campaign {result.inserted_id} for vendor {vendor_id} ({vendor_name})")
+        logger.info(
+            f"Created campaign {result.inserted_id} for vendor {vendor_id} ({vendor_name})"
+        )
         return campaign
 
     async def get_campaign(
@@ -203,11 +207,20 @@ class VendorCampaignService:
         if existing is None:
             raise HTTPException(status_code=404, detail="Campaign not found")
         if existing.get("status") != CampaignStatus.DRAFT.value:
-            raise HTTPException(status_code=400, detail="Only draft campaigns can be edited")
+            raise HTTPException(
+                status_code=400, detail="Only draft campaigns can be edited"
+            )
 
         # Strip immutable fields
-        for key in ("_id", "vendor_id", "vendor_email", "vendor_name",
-                     "created_by", "created_at", "status"):
+        for key in (
+            "_id",
+            "vendor_id",
+            "vendor_email",
+            "vendor_name",
+            "created_by",
+            "created_at",
+            "status",
+        ):
             updates.pop(key, None)
 
         updates["updated_at"] = datetime.now(timezone.utc)
@@ -231,7 +244,9 @@ class VendorCampaignService:
         if existing is None:
             raise HTTPException(status_code=404, detail="Campaign not found")
         if existing.get("status") != CampaignStatus.DRAFT.value:
-            raise HTTPException(status_code=400, detail="Only draft campaigns can be deleted")
+            raise HTTPException(
+                status_code=400, detail="Only draft campaigns can be deleted"
+            )
 
         await self.campaigns.delete_one({"_id": oid})
         logger.info(f"Deleted draft campaign {campaign_id}")
@@ -239,7 +254,9 @@ class VendorCampaignService:
 
     # ─── Campaign Submission ─────────────────────────────────────────
 
-    async def submit_for_review(self, campaign_id: str, vendor_id: str) -> Dict[str, Any]:
+    async def submit_for_review(
+        self, campaign_id: str, vendor_id: str
+    ) -> Dict[str, Any]:
         """Submit a draft campaign for root admin review."""
         oid = _to_oid(campaign_id, "campaign_id")
 
@@ -249,7 +266,7 @@ class VendorCampaignService:
         if campaign.get("status") != CampaignStatus.DRAFT.value:
             raise HTTPException(
                 status_code=400,
-                detail=f"Cannot submit campaign with status '{campaign.get('status')}'"
+                detail=f"Cannot submit campaign with status '{campaign.get('status')}'",
             )
 
         # Validate readiness
@@ -257,25 +274,32 @@ class VendorCampaignService:
         if errors:
             raise HTTPException(
                 status_code=400,
-                detail=f"Campaign not ready for review: {'; '.join(errors)}"
+                detail=f"Campaign not ready for review: {'; '.join(errors)}",
             )
 
         now = datetime.now(timezone.utc)
         updated = await self.campaigns.find_one_and_update(
             {"_id": oid},
-            {"$set": {
-                "status": CampaignStatus.PENDING_REVIEW.value,
-                "submitted_at": now,
-                "updated_at": now,
-            }},
+            {
+                "$set": {
+                    "status": CampaignStatus.PENDING_REVIEW.value,
+                    "submitted_at": now,
+                    "updated_at": now,
+                }
+            },
             return_document=True,
         )
 
-        logger.info(f"Campaign {campaign_id} submitted for review by vendor {vendor_id}")
+        logger.info(
+            f"Campaign {campaign_id} submitted for review by vendor {vendor_id}"
+        )
 
         # Notify admin (in-portal + push)
         try:
-            from app.services.vendor_notification_service import VendorNotificationService
+            from app.services.vendor_notification_service import (
+                VendorNotificationService,
+            )
+
             vns = VendorNotificationService()
             await vns.notify_admin_campaign_submitted(
                 vendor_name=campaign.get("vendor_name", vendor_id),
@@ -306,11 +330,18 @@ class VendorCampaignService:
 
         updated = await self.campaigns.find_one_and_update(
             {"_id": oid, "vendor_id": vendor_id, "status": CampaignStatus.ACTIVE.value},
-            {"$set": {"status": CampaignStatus.PAUSED.value, "updated_at": datetime.now(timezone.utc)}},
+            {
+                "$set": {
+                    "status": CampaignStatus.PAUSED.value,
+                    "updated_at": datetime.now(timezone.utc),
+                }
+            },
             return_document=True,
         )
         if updated is None:
-            raise HTTPException(status_code=400, detail="Campaign not found or not active")
+            raise HTTPException(
+                status_code=400, detail="Campaign not found or not active"
+            )
 
         logger.info(f"Campaign {campaign_id} paused by vendor {vendor_id}")
         return _serialize(updated)
@@ -335,7 +366,9 @@ class VendorCampaignService:
             "campaign_id": campaign_id,
             "vendor_id": vendor_id,
             "creative_type": data.get("creative_type", "image"),
-            "image_url": data.get("image_url"),  # CDN URL from vendor-ad-assets R2 bucket
+            "image_url": data.get(
+                "image_url"
+            ),  # CDN URL from vendor-ad-assets R2 bucket
             "image_alt_text": data.get("image_alt_text"),
             "headline": data["headline"],
             "description": data["description"],
@@ -371,7 +404,9 @@ class VendorCampaignService:
         return creative
 
     async def list_creatives(
-        self, campaign_id: str, vendor_id: Optional[str] = None,
+        self,
+        campaign_id: str,
+        vendor_id: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
         """List creatives for a campaign."""
         query: Dict[str, Any] = {"campaign_id": campaign_id}
@@ -384,7 +419,9 @@ class VendorCampaignService:
         return results
 
     async def get_creative(
-        self, creative_id: str, vendor_id: Optional[str] = None,
+        self,
+        creative_id: str,
+        vendor_id: Optional[str] = None,
     ) -> Dict[str, Any]:
         """Get a single creative."""
         oid = _to_oid(creative_id, "creative_id")
@@ -398,7 +435,10 @@ class VendorCampaignService:
         return _serialize(doc)
 
     async def update_creative(
-        self, creative_id: str, vendor_id: str, updates: Dict[str, Any],
+        self,
+        creative_id: str,
+        vendor_id: str,
+        updates: Dict[str, Any],
     ) -> Dict[str, Any]:
         """
         Update a creative. If content changes on an approved creative,
@@ -416,9 +456,18 @@ class VendorCampaignService:
         updates["updated_at"] = datetime.now(timezone.utc)
 
         # If creative content changed and was approved, reset to pending review
-        content_fields = {"headline", "description", "offer", "call_to_action", "image_url"}
+        content_fields = {
+            "headline",
+            "description",
+            "offer",
+            "call_to_action",
+            "image_url",
+        }
         content_changed = any(k in updates for k in content_fields)
-        if content_changed and existing.get("review_status") == CreativeReviewStatus.APPROVED.value:
+        if (
+            content_changed
+            and existing.get("review_status") == CreativeReviewStatus.APPROVED.value
+        ):
             updates["review_status"] = CreativeReviewStatus.PENDING.value
             updates["submitted_at"] = datetime.now(timezone.utc)
 
@@ -434,12 +483,17 @@ class VendorCampaignService:
         return _serialize(updated)
 
     async def set_primary_creative(
-        self, campaign_id: str, creative_id: str, vendor_id: str,
+        self,
+        campaign_id: str,
+        creative_id: str,
+        vendor_id: str,
     ) -> Dict[str, Any]:
         """Set a creative as the campaign's primary."""
         creative = await self.get_creative(creative_id, vendor_id)
         if creative["campaign_id"] != campaign_id:
-            raise HTTPException(status_code=400, detail="Creative does not belong to this campaign")
+            raise HTTPException(
+                status_code=400, detail="Creative does not belong to this campaign"
+            )
 
         # Unset existing primary
         await self.creatives.update_many(
@@ -456,7 +510,12 @@ class VendorCampaignService:
         # Update campaign
         updated = await self.campaigns.find_one_and_update(
             {"_id": ObjectId(campaign_id), "vendor_id": vendor_id},
-            {"$set": {"primary_creative_id": creative_id, "updated_at": datetime.now(timezone.utc)}},
+            {
+                "$set": {
+                    "primary_creative_id": creative_id,
+                    "updated_at": datetime.now(timezone.utc),
+                }
+            },
             return_document=True,
         )
         if updated is None:
@@ -500,7 +559,10 @@ class VendorCampaignService:
     # ─── Campaign Stats ──────────────────────────────────────────────
 
     async def get_campaign_stats(
-        self, campaign_id: str, vendor_id: str, days: int = 30,
+        self,
+        campaign_id: str,
+        vendor_id: str,
+        days: int = 30,
     ) -> Dict[str, Any]:
         """Get performance stats for a campaign from campaign_day_stats rollups."""
         campaign = await self.get_campaign(campaign_id, vendor_id)
@@ -531,7 +593,9 @@ class VendorCampaignService:
                 "leads": campaign.get("lead_count", 0),
                 "conversions": conversions,
                 "ctr": round(clicks / impressions * 100, 2) if impressions > 0 else 0.0,
-                "conversion_rate": round(conversions / clicks * 100, 2) if clicks > 0 else 0.0,
+                "conversion_rate": round(conversions / clicks * 100, 2)
+                if clicks > 0
+                else 0.0,
                 "spend": spend,
             },
             "daily_series": daily_stats,
@@ -559,36 +623,44 @@ class VendorCampaignService:
             "status": CampaignStatus.ACTIVE.value,
             "primary_creative_id": {"$ne": None},
             "$and": [
-                {"$or": [
-                    {"start_date": {"$lte": now}},
-                    {"start_date": {"$in": [None]}},
-                    {"start_date": {"$exists": False}},
-                ]},
-                {"$or": [
-                    {"end_date": {"$gte": now}},
-                    {"end_date": {"$in": [None]}},
-                    {"end_date": {"$exists": False}},
-                ]},
+                {
+                    "$or": [
+                        {"start_date": {"$lte": now}},
+                        {"start_date": {"$in": [None]}},
+                        {"start_date": {"$exists": False}},
+                    ]
+                },
+                {
+                    "$or": [
+                        {"end_date": {"$gte": now}},
+                        {"end_date": {"$in": [None]}},
+                        {"end_date": {"$exists": False}},
+                    ]
+                },
             ],
         }
 
         # Location targeting
         if planner_location:
-            query["$and"].append({
-                "$or": [
-                    {"target_regions": {"$in": [planner_location]}},
-                    {"target_regions": {"$size": 0}},  # Empty = all regions
-                ]
-            })
+            query["$and"].append(
+                {
+                    "$or": [
+                        {"target_regions": {"$in": [planner_location]}},
+                        {"target_regions": {"$size": 0}},  # Empty = all regions
+                    ]
+                }
+            )
 
         # Category targeting
         if categories:
-            query["$and"].append({
-                "$or": [
-                    {"target_categories": {"$in": categories}},
-                    {"target_categories": {"$size": 0}},
-                ]
-            })
+            query["$and"].append(
+                {
+                    "$or": [
+                        {"target_categories": {"$in": categories}},
+                        {"target_categories": {"$size": 0}},
+                    ]
+                }
+            )
 
         # Fetch more than needed for deduplication, then deduplicate by vendor_id
         raw_results = []
@@ -610,8 +682,14 @@ class VendorCampaignService:
                     try:
                         creative = await self.creatives.find_one(
                             {"_id": ObjectId(creative_id)},
-                            {"headline": 1, "description": 1, "offer": 1,
-                             "call_to_action": 1, "image_url": 1, "image_alt_text": 1}
+                            {
+                                "headline": 1,
+                                "description": 1,
+                                "offer": 1,
+                                "call_to_action": 1,
+                                "image_url": 1,
+                                "image_alt_text": 1,
+                            },
                         )
                         if creative:
                             campaign["creative"] = _serialize(creative)
@@ -638,10 +716,12 @@ class VendorCampaignService:
                 "status": CampaignStatus.ACTIVE.value,
                 "end_date": {"$lt": now, "$ne": None},
             },
-            {"$set": {
-                "status": CampaignStatus.COMPLETED.value,
-                "updated_at": now,
-            }},
+            {
+                "$set": {
+                    "status": CampaignStatus.COMPLETED.value,
+                    "updated_at": now,
+                }
+            },
         )
 
         if result.modified_count > 0:

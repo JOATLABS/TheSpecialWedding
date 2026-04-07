@@ -15,7 +15,6 @@ from urllib.parse import urlparse
 import aiohttp
 import boto3
 from botocore.config import Config
-from botocore.exceptions import ClientError
 from fastapi import HTTPException
 
 from app.core.database import mongo
@@ -54,7 +53,14 @@ EXPORT_JOB_STALE_MINUTES = 30
 NOT_SURE_EVENT = "not_sure"
 REVIEW_STATUSES = {"pending", "kept", "rejected"}
 UPLOAD_STATUSES = {"reserved", "uploaded", "failed"}
-STREAM_STATUSES = {"queued", "ingesting", "processing", "ready", "failed", "unconfigured"}
+STREAM_STATUSES = {
+    "queued",
+    "ingesting",
+    "processing",
+    "ready",
+    "failed",
+    "unconfigured",
+}
 
 
 def _safe_filename(filename: str) -> str:
@@ -81,7 +87,9 @@ def _coerce_datetime(value: Any) -> Optional[datetime]:
 
 class GuestMediaStorage:
     def __init__(self):
-        self.bucket_name = os.getenv("S3_GUEST_MEDIA_BUCKET_NAME") or os.getenv("S3_BUCKET_NAME")
+        self.bucket_name = os.getenv("S3_GUEST_MEDIA_BUCKET_NAME") or os.getenv(
+            "S3_BUCKET_NAME"
+        )
         self.s3 = boto3.client(
             "s3",
             endpoint_url=os.getenv("S3_ENDPOINT_URL"),
@@ -92,9 +100,16 @@ class GuestMediaStorage:
 
     @property
     def is_configured(self) -> bool:
-        return bool(self.bucket_name and os.getenv("S3_ENDPOINT_URL") and os.getenv("S3_ACCESS_KEY_ID") and os.getenv("S3_SECRET_ACCESS_KEY"))
+        return bool(
+            self.bucket_name
+            and os.getenv("S3_ENDPOINT_URL")
+            and os.getenv("S3_ACCESS_KEY_ID")
+            and os.getenv("S3_SECRET_ACCESS_KEY")
+        )
 
-    def build_key(self, wedding_slug: str, upload_batch_id: str, asset_id: str, filename: str) -> str:
+    def build_key(
+        self, wedding_slug: str, upload_batch_id: str, asset_id: str, filename: str
+    ) -> str:
         now = datetime.now(timezone.utc)
         return (
             f"guest-media/{wedding_slug}/{now.strftime('%Y')}/{now.strftime('%m')}/"
@@ -108,9 +123,13 @@ class GuestMediaStorage:
             f"{export_id}.zip"
         )
 
-    def create_presigned_upload_url(self, key: str, content_type: str, expires_in: int = UPLOAD_URL_EXPIRES_IN) -> str:
+    def create_presigned_upload_url(
+        self, key: str, content_type: str, expires_in: int = UPLOAD_URL_EXPIRES_IN
+    ) -> str:
         if not self.bucket_name:
-            raise HTTPException(status_code=503, detail="Guest media storage bucket is not configured")
+            raise HTTPException(
+                status_code=503, detail="Guest media storage bucket is not configured"
+            )
         return self.s3.generate_presigned_url(
             ClientMethod="put_object",
             Params={
@@ -121,13 +140,22 @@ class GuestMediaStorage:
             ExpiresIn=expires_in,
         )
 
-    def create_presigned_download_url(self, key: str, expires_in: int = DOWNLOAD_URL_EXPIRES_IN, filename: Optional[str] = None) -> str:
+    def create_presigned_download_url(
+        self,
+        key: str,
+        expires_in: int = DOWNLOAD_URL_EXPIRES_IN,
+        filename: Optional[str] = None,
+    ) -> str:
         if not self.bucket_name:
-            raise HTTPException(status_code=503, detail="Guest media storage bucket is not configured")
+            raise HTTPException(
+                status_code=503, detail="Guest media storage bucket is not configured"
+            )
 
         params: dict[str, Any] = {"Bucket": self.bucket_name, "Key": key}
         if filename:
-            params["ResponseContentDisposition"] = f'attachment; filename="{_safe_filename(filename)}"'
+            params["ResponseContentDisposition"] = (
+                f'attachment; filename="{_safe_filename(filename)}"'
+            )
 
         return self.s3.generate_presigned_url(
             ClientMethod="get_object",
@@ -137,12 +165,16 @@ class GuestMediaStorage:
 
     def head_object(self, key: str) -> dict[str, Any]:
         if not self.bucket_name:
-            raise HTTPException(status_code=503, detail="Guest media storage bucket is not configured")
+            raise HTTPException(
+                status_code=503, detail="Guest media storage bucket is not configured"
+            )
         return self.s3.head_object(Bucket=self.bucket_name, Key=key)
 
     def upload_file(self, local_path: str, key: str, content_type: str) -> None:
         if not self.bucket_name:
-            raise HTTPException(status_code=503, detail="Guest media storage bucket is not configured")
+            raise HTTPException(
+                status_code=503, detail="Guest media storage bucket is not configured"
+            )
         with open(local_path, "rb") as file_handle:
             self.s3.upload_fileobj(
                 file_handle,
@@ -153,7 +185,9 @@ class GuestMediaStorage:
 
     def get_object_bytes(self, key: str) -> bytes:
         if not self.bucket_name:
-            raise HTTPException(status_code=503, detail="Guest media storage bucket is not configured")
+            raise HTTPException(
+                status_code=503, detail="Guest media storage bucket is not configured"
+            )
         response = self.s3.get_object(Bucket=self.bucket_name, Key=key)
         return response["Body"].read()
 
@@ -169,7 +203,8 @@ class GuestMediaService:
         self.cloudflare_api_token = os.getenv("CLOUDFLARE_STREAM_API_TOKEN")
         self.stream_api_base = (
             f"https://api.cloudflare.com/client/v4/accounts/{self.cloudflare_account_id}/stream"
-            if self.cloudflare_account_id else None
+            if self.cloudflare_account_id
+            else None
         )
 
     @property
@@ -179,7 +214,9 @@ class GuestMediaService:
     def hash_upload_token(self, token: str) -> str:
         return hashlib.sha256(token.encode("utf-8")).hexdigest()
 
-    def _build_upload_token(self, wedding_id: str, wedding_slug: str, rotated_at: datetime) -> str:
+    def _build_upload_token(
+        self, wedding_id: str, wedding_slug: str, rotated_at: datetime
+    ) -> str:
         payload = f"{wedding_id}:{wedding_slug}:{rotated_at.astimezone(timezone.utc).isoformat()}"
         digest = hmac.new(
             settings.secret_key.encode("utf-8"),
@@ -228,7 +265,9 @@ class GuestMediaService:
                 pass
         return datetime.now(timezone.utc) + timedelta(days=DEFAULT_UPLOAD_WINDOW_DAYS)
 
-    async def ensure_guest_media_config(self, wedding: dict[str, Any]) -> dict[str, Any]:
+    async def ensure_guest_media_config(
+        self, wedding: dict[str, Any]
+    ) -> dict[str, Any]:
         now = datetime.now(timezone.utc)
         guest_media = dict(wedding.get("guest_media") or {})
         changed = False
@@ -250,7 +289,9 @@ class GuestMediaService:
             changed = True
 
         wedding_id = str(wedding.get("_id"))
-        upload_token = self._build_upload_token(wedding_id, wedding.get("slug", ""), last_rotated_at)
+        upload_token = self._build_upload_token(
+            wedding_id, wedding.get("slug", ""), last_rotated_at
+        )
         token_hash = self.hash_upload_token(upload_token)
 
         if guest_media.get("upload_token_hash") != token_hash:
@@ -289,20 +330,30 @@ class GuestMediaService:
 
             custom_label = event.get("custom_type_label")
             label = custom_label or str(event_type).replace("_", " ").title()
-            options.append({
-                "value": event_type,
-                "label": label,
-                "date": event.get("date"),
-            })
+            options.append(
+                {
+                    "value": event_type,
+                    "label": label,
+                    "date": event.get("date"),
+                }
+            )
         return options
 
-    def _normalize_event_type(self, event_type: Optional[str], wedding: dict[str, Any]) -> Optional[str]:
+    def _normalize_event_type(
+        self, event_type: Optional[str], wedding: dict[str, Any]
+    ) -> Optional[str]:
         if not event_type or event_type == NOT_SURE_EVENT:
             return None
 
-        allowed = {event.get("type") for event in wedding.get("events", []) if event.get("type")}
+        allowed = {
+            event.get("type")
+            for event in wedding.get("events", [])
+            if event.get("type")
+        }
         if event_type not in allowed:
-            raise HTTPException(status_code=400, detail=f"Unsupported event type: {event_type}")
+            raise HTTPException(
+                status_code=400, detail=f"Unsupported event type: {event_type}"
+            )
         return event_type
 
     def _validate_uploaded_object_constraints(
@@ -322,7 +373,9 @@ class GuestMediaService:
         if actual_content_type not in ALLOWED_MEDIA_TYPES:
             raise ValueError("Uploaded object uses an unsupported media type")
         if reserved_content_type and actual_content_type != reserved_content_type:
-            raise ValueError("Uploaded object content type does not match the reserved upload")
+            raise ValueError(
+                "Uploaded object content type does not match the reserved upload"
+            )
         if reserved_size and actual_size != reserved_size:
             raise ValueError("Uploaded object size does not match the reserved upload")
         if actual_size > MAX_BATCH_SIZE_BYTES:
@@ -357,7 +410,9 @@ class GuestMediaService:
             if not candidate or candidate == "*":
                 continue
 
-            parsed = urlparse(candidate if "://" in candidate else f"https://{candidate}")
+            parsed = urlparse(
+                candidate if "://" in candidate else f"https://{candidate}"
+            )
             hostname = (parsed.hostname or parsed.path.split("/")[0]).strip().lower()
             if not hostname or hostname in {"localhost", "127.0.0.1", "0.0.0.0"}:
                 continue
@@ -378,7 +433,9 @@ class GuestMediaService:
         normalized = json.dumps(payload, sort_keys=True, separators=(",", ":"))
         return hashlib.sha256(normalized.encode("utf-8")).hexdigest()
 
-    def _stream_result_needs_security_update(self, stream_result: dict[str, Any]) -> bool:
+    def _stream_result_needs_security_update(
+        self, stream_result: dict[str, Any]
+    ) -> bool:
         if not stream_result.get("requireSignedURLs"):
             return True
 
@@ -386,14 +443,18 @@ class GuestMediaService:
         if not required_origins:
             return False
 
-        current_origins = sorted({
-            str(origin).strip().lower()
-            for origin in (stream_result.get("allowedOrigins") or [])
-            if str(origin).strip()
-        })
+        current_origins = sorted(
+            {
+                str(origin).strip().lower()
+                for origin in (stream_result.get("allowedOrigins") or [])
+                if str(origin).strip()
+            }
+        )
         return current_origins != required_origins
 
-    def _build_stream_copy_payload(self, source_url: str, asset: dict[str, Any], asset_id: str) -> dict[str, Any]:
+    def _build_stream_copy_payload(
+        self, source_url: str, asset: dict[str, Any], asset_id: str
+    ) -> dict[str, Any]:
         payload: dict[str, Any] = {
             "url": source_url,
             "meta": {
@@ -436,7 +497,9 @@ class GuestMediaService:
 
                 await response.content.read(1)
 
-    def _stream_base_url_from_result(self, stream_result: dict[str, Any]) -> Optional[str]:
+    def _stream_base_url_from_result(
+        self, stream_result: dict[str, Any]
+    ) -> Optional[str]:
         candidates = [
             stream_result.get("preview"),
             stream_result.get("thumbnail"),
@@ -455,16 +518,24 @@ class GuestMediaService:
     def _require_upload_window_open(self, guest_media_config: dict[str, Any]) -> None:
         upload_closes_at = _coerce_datetime(guest_media_config.get("upload_closes_at"))
         if guest_media_config.get("enabled") is False:
-            raise HTTPException(status_code=403, detail="Guest uploads are currently closed")
+            raise HTTPException(
+                status_code=403, detail="Guest uploads are currently closed"
+            )
         if upload_closes_at and upload_closes_at < datetime.now(timezone.utc):
-            raise HTTPException(status_code=403, detail="Guest uploads are closed for this wedding")
+            raise HTTPException(
+                status_code=403, detail="Guest uploads are closed for this wedding"
+            )
 
-    async def validate_public_upload_access(self, slug: str, upload_token: str) -> dict[str, Any]:
+    async def validate_public_upload_access(
+        self, slug: str, upload_token: str
+    ) -> dict[str, Any]:
         wedding = await self._get_wedding_by_slug(slug)
         ensured = await self.ensure_guest_media_config(wedding)
         guest_media = ensured["config"]
         token_hash = self.hash_upload_token(upload_token)
-        if not hmac.compare_digest(guest_media.get("upload_token_hash", ""), token_hash):
+        if not hmac.compare_digest(
+            guest_media.get("upload_token_hash", ""), token_hash
+        ):
             raise HTTPException(status_code=404, detail="Upload link is invalid")
         self._require_upload_window_open(guest_media)
         return {
@@ -478,18 +549,28 @@ class GuestMediaService:
         size_bytes = int(file_data.get("size_bytes") or 0)
 
         if not filename:
-            raise HTTPException(status_code=400, detail="Each file must include a filename")
+            raise HTTPException(
+                status_code=400, detail="Each file must include a filename"
+            )
         if content_type not in ALLOWED_MEDIA_TYPES:
-            raise HTTPException(status_code=400, detail=f"File type '{content_type}' is not allowed")
+            raise HTTPException(
+                status_code=400, detail=f"File type '{content_type}' is not allowed"
+            )
         if size_bytes <= 0:
-            raise HTTPException(status_code=400, detail="Each file must include a positive file size")
+            raise HTTPException(
+                status_code=400, detail="Each file must include a positive file size"
+            )
 
         is_image = content_type in ALLOWED_IMAGE_TYPES
         max_allowed = MAX_IMAGE_SIZE_BYTES if is_image else MAX_VIDEO_SIZE_BYTES
         if size_bytes > max_allowed:
             if is_image:
-                raise HTTPException(status_code=400, detail="Images must be 25 MB or smaller")
-            raise HTTPException(status_code=400, detail="Videos must be 200 MB or smaller")
+                raise HTTPException(
+                    status_code=400, detail="Images must be 25 MB or smaller"
+                )
+            raise HTTPException(
+                status_code=400, detail="Videos must be 200 MB or smaller"
+            )
 
         return {
             "filename": _safe_filename(filename),
@@ -498,9 +579,13 @@ class GuestMediaService:
             "media_type": "image" if is_image else "video",
         }
 
-    async def get_public_upload_context(self, slug: str, upload_token: str) -> dict[str, Any]:
+    async def get_public_upload_context(
+        self, slug: str, upload_token: str
+    ) -> dict[str, Any]:
         if not self.storage.is_configured:
-            raise HTTPException(status_code=503, detail="Guest media uploads are not configured")
+            raise HTTPException(
+                status_code=503, detail="Guest media uploads are not configured"
+            )
 
         validated = await self.validate_public_upload_access(slug, upload_token)
         wedding = validated["wedding"]
@@ -514,7 +599,9 @@ class GuestMediaService:
             },
             "guest_media": {
                 "enabled": guest_media.get("enabled", True),
-                "upload_closes_at": self._serialize_datetime(guest_media.get("upload_closes_at")),
+                "upload_closes_at": self._serialize_datetime(
+                    guest_media.get("upload_closes_at")
+                ),
                 "link_status": "open",
                 "storage_ready": self.storage.is_configured,
                 "stream_configured": self.stream_is_configured,
@@ -539,7 +626,9 @@ class GuestMediaService:
         files: list[dict[str, Any]],
     ) -> dict[str, Any]:
         if not self.storage.is_configured:
-            raise HTTPException(status_code=503, detail="Guest media uploads are not configured")
+            raise HTTPException(
+                status_code=503, detail="Guest media uploads are not configured"
+            )
 
         validated = await self.validate_public_upload_access(slug, upload_token)
         wedding = validated["wedding"]
@@ -548,12 +637,19 @@ class GuestMediaService:
         if not cleaned_name:
             raise HTTPException(status_code=400, detail="Guest name is required")
         if len(cleaned_name) > 120:
-            raise HTTPException(status_code=400, detail="Guest name must be 120 characters or fewer")
+            raise HTTPException(
+                status_code=400, detail="Guest name must be 120 characters or fewer"
+            )
 
         if not files:
-            raise HTTPException(status_code=400, detail="Select at least one file to upload")
+            raise HTTPException(
+                status_code=400, detail="Select at least one file to upload"
+            )
         if len(files) > MAX_FILES_PER_BATCH:
-            raise HTTPException(status_code=400, detail=f"You can upload up to {MAX_FILES_PER_BATCH} files at a time")
+            raise HTTPException(
+                status_code=400,
+                detail=f"You can upload up to {MAX_FILES_PER_BATCH} files at a time",
+            )
 
         normalized_batch_event = self._normalize_event_type(batch_event_type, wedding)
         normalized_files: list[dict[str, Any]] = []
@@ -561,15 +657,22 @@ class GuestMediaService:
 
         for file_data in files:
             validated_file = self._validate_file_descriptor(file_data)
-            validated_file["event_type"] = self._normalize_event_type(file_data.get("event_type"), wedding) or normalized_batch_event
+            validated_file["event_type"] = (
+                self._normalize_event_type(file_data.get("event_type"), wedding)
+                or normalized_batch_event
+            )
             total_size_bytes += validated_file["size_bytes"]
             normalized_files.append(validated_file)
 
         if total_size_bytes > MAX_BATCH_SIZE_BYTES:
-            raise HTTPException(status_code=400, detail="Batch uploads must be 500 MB or smaller")
+            raise HTTPException(
+                status_code=400, detail="Batch uploads must be 500 MB or smaller"
+            )
 
         upload_batch_id = hashlib.sha1(
-            f"{slug}:{cleaned_name}:{datetime.now(timezone.utc).isoformat()}".encode("utf-8")
+            f"{slug}:{cleaned_name}:{datetime.now(timezone.utc).isoformat()}".encode(
+                "utf-8"
+            )
         ).hexdigest()[:20]
         created_at = datetime.now(timezone.utc)
         wedding_id = str(wedding.get("_id"))
@@ -579,45 +682,55 @@ class GuestMediaService:
 
         for index, file_data in enumerate(normalized_files):
             asset_id = hashlib.sha1(
-                f"{upload_batch_id}:{index}:{file_data['filename']}:{created_at.isoformat()}".encode("utf-8")
+                f"{upload_batch_id}:{index}:{file_data['filename']}:{created_at.isoformat()}".encode(
+                    "utf-8"
+                )
             ).hexdigest()[:24]
-            key = self.storage.build_key(slug, upload_batch_id, asset_id, file_data["filename"])
-            upload_url = self.storage.create_presigned_upload_url(key, file_data["content_type"])
+            key = self.storage.build_key(
+                slug, upload_batch_id, asset_id, file_data["filename"]
+            )
+            upload_url = self.storage.create_presigned_upload_url(
+                key, file_data["content_type"]
+            )
 
-            asset_docs.append({
-                "_id": asset_id,
-                "wedding_id": wedding_id,
-                "wedding_slug": slug,
-                "upload_batch_id": upload_batch_id,
-                "uploader_name": cleaned_name,
-                "event_type": file_data["event_type"],
-                "media_type": file_data["media_type"],
-                "mime_type": file_data["content_type"],
-                "size_bytes": file_data["size_bytes"],
-                "original_filename": file_data["filename"],
-                "original_bucket": self.storage.bucket_name,
-                "original_key": key,
-                "stream_uid": None,
-                "stream_status": None,
-                "stream_playback_base_url": None,
-                "review_status": "pending",
-                "visibility": "couple_only",
-                "upload_status": "reserved",
-                "uploaded_at": None,
-                "reviewed_at": None,
-                "created_at": created_at,
-                "updated_at": created_at,
-            })
+            asset_docs.append(
+                {
+                    "_id": asset_id,
+                    "wedding_id": wedding_id,
+                    "wedding_slug": slug,
+                    "upload_batch_id": upload_batch_id,
+                    "uploader_name": cleaned_name,
+                    "event_type": file_data["event_type"],
+                    "media_type": file_data["media_type"],
+                    "mime_type": file_data["content_type"],
+                    "size_bytes": file_data["size_bytes"],
+                    "original_filename": file_data["filename"],
+                    "original_bucket": self.storage.bucket_name,
+                    "original_key": key,
+                    "stream_uid": None,
+                    "stream_status": None,
+                    "stream_playback_base_url": None,
+                    "review_status": "pending",
+                    "visibility": "couple_only",
+                    "upload_status": "reserved",
+                    "uploaded_at": None,
+                    "reviewed_at": None,
+                    "created_at": created_at,
+                    "updated_at": created_at,
+                }
+            )
 
-            upload_entries.append({
-                "asset_id": asset_id,
-                "upload_url": upload_url,
-                "key": key,
-                "content_type": file_data["content_type"],
-                "media_type": file_data["media_type"],
-                "event_type": file_data["event_type"] or NOT_SURE_EVENT,
-                "filename": file_data["filename"],
-            })
+            upload_entries.append(
+                {
+                    "asset_id": asset_id,
+                    "upload_url": upload_url,
+                    "key": key,
+                    "content_type": file_data["content_type"],
+                    "media_type": file_data["media_type"],
+                    "event_type": file_data["event_type"] or NOT_SURE_EVENT,
+                    "filename": file_data["filename"],
+                }
+            )
 
         try:
             await self.assets.insert_many(asset_docs, ordered=True)
@@ -644,17 +757,23 @@ class GuestMediaService:
         if not upload_batch_id:
             raise HTTPException(status_code=400, detail="Upload batch ID is required")
         if not asset_ids:
-            raise HTTPException(status_code=400, detail="At least one uploaded asset is required")
+            raise HTTPException(
+                status_code=400, detail="At least one uploaded asset is required"
+            )
 
-        docs = await self.assets.find({
-            "_id": {"$in": asset_ids},
-            "wedding_id": wedding_id,
-            "wedding_slug": slug,
-            "upload_batch_id": upload_batch_id,
-        }).to_list(length=len(asset_ids))
+        docs = await self.assets.find(
+            {
+                "_id": {"$in": asset_ids},
+                "wedding_id": wedding_id,
+                "wedding_slug": slug,
+                "upload_batch_id": upload_batch_id,
+            }
+        ).to_list(length=len(asset_ids))
 
         if not docs:
-            raise HTTPException(status_code=404, detail="Reserved uploads were not found")
+            raise HTTPException(
+                status_code=404, detail="Reserved uploads were not found"
+            )
 
         finalized_ids: list[str] = []
         failed_assets: list[dict[str, str]] = []
@@ -664,7 +783,9 @@ class GuestMediaService:
             try:
                 head = self.storage.head_object(doc["original_key"])
                 actual_size = int(head.get("ContentLength") or 0)
-                actual_content_type = str(head.get("ContentType") or doc.get("mime_type") or "").lower()
+                actual_content_type = str(
+                    head.get("ContentType") or doc.get("mime_type") or ""
+                ).lower()
 
                 self._validate_uploaded_object_constraints(
                     doc,
@@ -681,12 +802,16 @@ class GuestMediaService:
                 }
 
                 if doc.get("media_type") == "video":
-                    update_data["stream_status"] = "queued" if self.stream_is_configured else "unconfigured"
+                    update_data["stream_status"] = (
+                        "queued" if self.stream_is_configured else "unconfigured"
+                    )
 
                 await self.assets.update_one({"_id": doc["_id"]}, {"$set": update_data})
                 finalized_ids.append(str(doc["_id"]))
             except Exception as exc:
-                logger.warning("Guest media finalize failed for %s: %s", doc.get("_id"), exc)
+                logger.warning(
+                    "Guest media finalize failed for %s: %s", doc.get("_id"), exc
+                )
                 await self.assets.update_one(
                     {"_id": doc["_id"]},
                     {
@@ -697,13 +822,17 @@ class GuestMediaService:
                         }
                     },
                 )
-                failed_assets.append({
-                    "asset_id": str(doc["_id"]),
-                    "reason": str(exc),
-                })
+                failed_assets.append(
+                    {
+                        "asset_id": str(doc["_id"]),
+                        "reason": str(exc),
+                    }
+                )
 
         if not finalized_ids:
-            raise HTTPException(status_code=400, detail="No files finished uploading successfully")
+            raise HTTPException(
+                status_code=400, detail="No files finished uploading successfully"
+            )
 
         return {
             "uploaded_count": len(finalized_ids),
@@ -712,11 +841,15 @@ class GuestMediaService:
             "failed_assets": failed_assets,
         }
 
-    async def _stream_request(self, method: str, path: str, payload: Optional[dict[str, Any]] = None) -> dict[str, Any]:
+    async def _stream_request(
+        self, method: str, path: str, payload: Optional[dict[str, Any]] = None
+    ) -> dict[str, Any]:
         if not self.stream_api_base or not self.cloudflare_api_token:
             raise RuntimeError("Cloudflare Stream is not configured")
 
-        async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=30)) as session:
+        async with aiohttp.ClientSession(
+            timeout=aiohttp.ClientTimeout(total=30)
+        ) as session:
             async with session.request(
                 method,
                 f"{self.stream_api_base}{path}",
@@ -731,7 +864,9 @@ class GuestMediaService:
                     raise RuntimeError(f"Cloudflare Stream error: {data}")
                 return data.get("result") or {}
 
-    async def _create_stream_signed_token(self, stream_uid: str) -> tuple[str, datetime]:
+    async def _create_stream_signed_token(
+        self, stream_uid: str
+    ) -> tuple[str, datetime]:
         now_ts = int(datetime.now(timezone.utc).timestamp())
         result = await self._stream_request(
             "POST",
@@ -743,8 +878,12 @@ class GuestMediaService:
         )
         token = result.get("token")
         if not token:
-            raise RuntimeError("Cloudflare Stream did not return a signed playback token")
-        expires_at = datetime.fromtimestamp(now_ts + STREAM_TOKEN_EXPIRES_IN, tz=timezone.utc)
+            raise RuntimeError(
+                "Cloudflare Stream did not return a signed playback token"
+            )
+        expires_at = datetime.fromtimestamp(
+            now_ts + STREAM_TOKEN_EXPIRES_IN, tz=timezone.utc
+        )
         return token, expires_at
 
     async def _enforce_stream_security(self, stream_uid: str) -> None:
@@ -758,7 +897,9 @@ class GuestMediaService:
         await self._stream_request("DELETE", f"/{stream_uid}")
 
     async def _ingest_video_into_stream(self, asset_id: str) -> None:
-        asset = await self.assets.find_one({"_id": asset_id, "upload_status": "uploaded"})
+        asset = await self.assets.find_one(
+            {"_id": asset_id, "upload_status": "uploaded"}
+        )
         if not asset or asset.get("media_type") != "video":
             return
 
@@ -796,7 +937,9 @@ class GuestMediaService:
                     "$set": {
                         "stream_uid": stream_uid,
                         "stream_status": "processing",
-                        "stream_playback_base_url": self._stream_base_url_from_result(result),
+                        "stream_playback_base_url": self._stream_base_url_from_result(
+                            result
+                        ),
                         "stream_security_signature": self._stream_security_signature(),
                         "updated_at": datetime.now(timezone.utc),
                     }
@@ -808,7 +951,11 @@ class GuestMediaService:
                 try:
                     await self._delete_stream_video(stream_uid)
                 except Exception as cleanup_exc:
-                    logger.warning("Failed to clean up orphaned Cloudflare Stream video %s: %s", stream_uid, cleanup_exc)
+                    logger.warning(
+                        "Failed to clean up orphaned Cloudflare Stream video %s: %s",
+                        stream_uid,
+                        cleanup_exc,
+                    )
             await self.assets.update_one(
                 {"_id": asset_id},
                 {
@@ -833,7 +980,11 @@ class GuestMediaService:
 
             update_data: dict[str, Any]
             if state == "error":
-                error_reason = status.get("errorReasonText") or status.get("errorReasonCode") or "Cloudflare Stream processing failed"
+                error_reason = (
+                    status.get("errorReasonText")
+                    or status.get("errorReasonCode")
+                    or "Cloudflare Stream processing failed"
+                )
                 update_data = {
                     "stream_status": "failed",
                     "stream_error": error_reason,
@@ -842,13 +993,17 @@ class GuestMediaService:
             else:
                 update_data = {
                     "stream_status": "ready" if ready else "processing",
-                    "stream_playback_base_url": self._stream_base_url_from_result(result),
+                    "stream_playback_base_url": self._stream_base_url_from_result(
+                        result
+                    ),
                     "stream_security_signature": self._stream_security_signature(),
                     "updated_at": datetime.now(timezone.utc),
                 }
                 ready_at = _coerce_datetime(result.get("readyToStreamAt"))
                 if ready:
-                    update_data["stream_ready_at"] = ready_at or datetime.now(timezone.utc)
+                    update_data["stream_ready_at"] = ready_at or datetime.now(
+                        timezone.utc
+                    )
             await self.assets.update_one({"_id": asset_id}, {"$set": update_data})
         except Exception as exc:
             logger.warning("Stream readiness poll failed for %s: %s", asset_id, exc)
@@ -869,7 +1024,10 @@ class GuestMediaService:
                     "stream_uid": None,
                     "$or": [
                         {"stream_status": "queued"},
-                        {"stream_status": "ingesting", "updated_at": {"$lte": stale_cutoff}},
+                        {
+                            "stream_status": "ingesting",
+                            "updated_at": {"$lte": stale_cutoff},
+                        },
                     ],
                 },
                 {
@@ -891,15 +1049,20 @@ class GuestMediaService:
         if processed >= limit:
             return processed
 
-        pending_polls = await self.assets.find(
-            {
-                "media_type": "video",
-                "upload_status": "uploaded",
-                "stream_uid": {"$ne": None},
-                "stream_status": "processing",
-                "updated_at": {"$lte": poll_cutoff},
-            }
-        ).sort("updated_at", 1).limit(limit - processed).to_list(length=limit - processed)
+        pending_polls = (
+            await self.assets.find(
+                {
+                    "media_type": "video",
+                    "upload_status": "uploaded",
+                    "stream_uid": {"$ne": None},
+                    "stream_status": "processing",
+                    "updated_at": {"$lte": poll_cutoff},
+                }
+            )
+            .sort("updated_at", 1)
+            .limit(limit - processed)
+            .to_list(length=limit - processed)
+        )
 
         for asset in pending_polls:
             await self._poll_stream_ready_once(str(asset["_id"]), asset["stream_uid"])
@@ -918,9 +1081,13 @@ class GuestMediaService:
         guest_media = ensured["config"]
 
         normalized_wedding_id = str(wedding.get("_id"))
-        pending = await self._count_assets(normalized_wedding_id, review_status="pending")
+        pending = await self._count_assets(
+            normalized_wedding_id, review_status="pending"
+        )
         kept = await self._count_assets(normalized_wedding_id, review_status="kept")
-        rejected = await self._count_assets(normalized_wedding_id, review_status="rejected")
+        rejected = await self._count_assets(
+            normalized_wedding_id, review_status="rejected"
+        )
         processing_videos = await self._count_assets(
             normalized_wedding_id,
             media_type="video",
@@ -928,7 +1095,9 @@ class GuestMediaService:
         )
 
         upload_closes_at = _coerce_datetime(guest_media.get("upload_closes_at"))
-        is_open = guest_media.get("enabled", True) and (not upload_closes_at or upload_closes_at >= datetime.now(timezone.utc))
+        is_open = guest_media.get("enabled", True) and (
+            not upload_closes_at or upload_closes_at >= datetime.now(timezone.utc)
+        )
 
         return {
             "pending_count": pending,
@@ -952,8 +1121,12 @@ class GuestMediaService:
 
         return {
             **summary,
-            "upload_url": self._build_upload_link(wedding.get("slug", ""), upload_token),
-            "upload_token_last_rotated_at": self._serialize_datetime(guest_media.get("last_rotated_at")),
+            "upload_url": self._build_upload_link(
+                wedding.get("slug", ""), upload_token
+            ),
+            "upload_token_last_rotated_at": self._serialize_datetime(
+                guest_media.get("last_rotated_at")
+            ),
             "event_options": self._event_options(wedding),
             "wedding": {
                 "slug": wedding.get("slug"),
@@ -978,10 +1151,16 @@ class GuestMediaService:
             if enabled:
                 current_close = _coerce_datetime(guest_media.get("upload_closes_at"))
                 if not current_close or current_close < now:
-                    guest_media["upload_closes_at"] = now + timedelta(days=REOPEN_WINDOW_DAYS)
+                    guest_media["upload_closes_at"] = now + timedelta(
+                        days=REOPEN_WINDOW_DAYS
+                    )
 
         if upload_closes_at is not None:
-            normalized_close = upload_closes_at if upload_closes_at.tzinfo else upload_closes_at.replace(tzinfo=timezone.utc)
+            normalized_close = (
+                upload_closes_at
+                if upload_closes_at.tzinfo
+                else upload_closes_at.replace(tzinfo=timezone.utc)
+            )
             guest_media["upload_closes_at"] = normalized_close
 
         await self.weddings.update_one(
@@ -1001,7 +1180,9 @@ class GuestMediaService:
         guest_media = dict(wedding.get("guest_media") or {})
         now = datetime.now(timezone.utc)
         guest_media["last_rotated_at"] = now
-        upload_token = self._build_upload_token(str(wedding.get("_id")), wedding.get("slug", ""), now)
+        upload_token = self._build_upload_token(
+            str(wedding.get("_id")), wedding.get("slug", ""), now
+        )
         guest_media["upload_token_hash"] = self.hash_upload_token(upload_token)
         if "enabled" not in guest_media:
             guest_media["enabled"] = True
@@ -1029,10 +1210,17 @@ class GuestMediaService:
     async def _get_stream_base_url(self, asset: dict[str, Any]) -> str:
         base_url = asset.get("stream_playback_base_url")
         stream_uid = asset.get("stream_uid")
-        if base_url and stream_uid and asset.get("stream_security_signature") == self._stream_security_signature():
+        if (
+            base_url
+            and stream_uid
+            and asset.get("stream_security_signature")
+            == self._stream_security_signature()
+        ):
             return base_url
         if not stream_uid:
-            raise HTTPException(status_code=409, detail="Video playback is not ready yet")
+            raise HTTPException(
+                status_code=409, detail="Video playback is not ready yet"
+            )
 
         result = await self._stream_request("GET", f"/{stream_uid}")
         if self._stream_result_needs_security_update(result):
@@ -1041,7 +1229,11 @@ class GuestMediaService:
 
         status = result.get("status") or {}
         if str(status.get("state") or "").lower() == "error":
-            error_reason = status.get("errorReasonText") or status.get("errorReasonCode") or "Cloudflare Stream processing failed"
+            error_reason = (
+                status.get("errorReasonText")
+                or status.get("errorReasonCode")
+                or "Cloudflare Stream processing failed"
+            )
             await self.assets.update_one(
                 {"_id": asset["_id"]},
                 {
@@ -1056,7 +1248,9 @@ class GuestMediaService:
 
         base_url = self._stream_base_url_from_result(result)
         if not base_url:
-            raise HTTPException(status_code=503, detail="Video playback domain is unavailable")
+            raise HTTPException(
+                status_code=503, detail="Video playback domain is unavailable"
+            )
 
         await self.assets.update_one(
             {"_id": asset["_id"]},
@@ -1101,7 +1295,9 @@ class GuestMediaService:
     async def _build_signed_stream_player_url(self, asset: dict[str, Any]) -> str:
         stream_uid = asset.get("stream_uid")
         if not stream_uid or asset.get("stream_status") not in {"processing", "ready"}:
-            raise HTTPException(status_code=409, detail="Video playback is not ready yet")
+            raise HTTPException(
+                status_code=409, detail="Video playback is not ready yet"
+            )
 
         stream_token = await self._get_stream_player_token(asset)
         base_url = await self._get_stream_base_url(asset)
@@ -1110,7 +1306,9 @@ class GuestMediaService:
     async def _build_signed_stream_thumbnail_url(self, asset: dict[str, Any]) -> str:
         stream_uid = asset.get("stream_uid")
         if not stream_uid or asset.get("stream_status") not in {"processing", "ready"}:
-            raise HTTPException(status_code=409, detail="Video thumbnail is not ready yet")
+            raise HTTPException(
+                status_code=409, detail="Video thumbnail is not ready yet"
+            )
 
         stream_token = await self._get_stream_player_token(asset)
         base_url = await self._get_stream_base_url(asset)
@@ -1126,7 +1324,9 @@ class GuestMediaService:
         else:
             if asset.get("stream_uid"):
                 serialized["player_path"] = self._asset_api_path(asset_id, "player")
-                serialized["thumbnail_path"] = self._asset_api_path(asset_id, "thumbnail")
+                serialized["thumbnail_path"] = self._asset_api_path(
+                    asset_id, "thumbnail"
+                )
 
         serialized["event_type"] = serialized.get("event_type") or NOT_SURE_EVENT
         serialized["download_ready"] = serialized.get("upload_status") == "uploaded"
@@ -1158,7 +1358,9 @@ class GuestMediaService:
 
         if review_status != "all":
             if review_status not in REVIEW_STATUSES:
-                raise HTTPException(status_code=400, detail="Invalid review status filter")
+                raise HTTPException(
+                    status_code=400, detail="Invalid review status filter"
+                )
             query["review_status"] = review_status
 
         if media_type != "all":
@@ -1173,7 +1375,10 @@ class GuestMediaService:
                 query["event_type"] = self._normalize_event_type(event_type, wedding)
 
         if uploader_query:
-            query["uploader_name"] = {"$regex": re.escape(uploader_query.strip()), "$options": "i"}
+            query["uploader_name"] = {
+                "$regex": re.escape(uploader_query.strip()),
+                "$options": "i",
+            }
 
         total = await self.assets.count_documents(query)
         skip = max(0, page - 1) * limit
@@ -1189,7 +1394,9 @@ class GuestMediaService:
             "summary": await self.get_dashboard_summary(str(wedding.get("_id"))),
         }
 
-    async def update_review_status(self, wedding_id: str, asset_id: str, review_status: str) -> dict[str, Any]:
+    async def update_review_status(
+        self, wedding_id: str, asset_id: str, review_status: str
+    ) -> dict[str, Any]:
         if review_status not in REVIEW_STATUSES:
             raise HTTPException(status_code=400, detail="Unsupported review status")
 
@@ -1215,13 +1422,17 @@ class GuestMediaService:
         updated_doc = await self.assets.find_one({"_id": asset_id})
         return self._serialize_asset(updated_doc)
 
-    async def get_asset_download(self, wedding_id: str, asset_id: str) -> dict[str, Any]:
+    async def get_asset_download(
+        self, wedding_id: str, asset_id: str
+    ) -> dict[str, Any]:
         wedding = await self._get_wedding_by_id(wedding_id)
-        asset = await self.assets.find_one({
-            "_id": asset_id,
-            "wedding_id": str(wedding.get("_id")),
-            "upload_status": "uploaded",
-        })
+        asset = await self.assets.find_one(
+            {
+                "_id": asset_id,
+                "wedding_id": str(wedding.get("_id")),
+                "upload_status": "uploaded",
+            }
+        )
         if not asset:
             raise HTTPException(status_code=404, detail="Memory item not found")
 
@@ -1235,13 +1446,17 @@ class GuestMediaService:
             "filename": asset.get("original_filename"),
         }
 
-    async def get_asset_redirect_url(self, wedding_id: str, asset_id: str, variant: str) -> str:
+    async def get_asset_redirect_url(
+        self, wedding_id: str, asset_id: str, variant: str
+    ) -> str:
         wedding = await self._get_wedding_by_id(wedding_id)
-        asset = await self.assets.find_one({
-            "_id": asset_id,
-            "wedding_id": str(wedding.get("_id")),
-            "upload_status": "uploaded",
-        })
+        asset = await self.assets.find_one(
+            {
+                "_id": asset_id,
+                "wedding_id": str(wedding.get("_id")),
+                "upload_status": "uploaded",
+            }
+        )
         if not asset:
             raise HTTPException(status_code=404, detail="Memory item not found")
 
@@ -1253,18 +1468,30 @@ class GuestMediaService:
 
             if variant == "player":
                 if asset.get("media_type") != "video":
-                    raise HTTPException(status_code=400, detail="Only video memories support player playback")
+                    raise HTTPException(
+                        status_code=400,
+                        detail="Only video memories support player playback",
+                    )
                 return await self._build_signed_stream_player_url(asset)
 
             if variant == "thumbnail":
                 if asset.get("media_type") != "video":
-                    raise HTTPException(status_code=400, detail="Only video memories have thumbnails")
+                    raise HTTPException(
+                        status_code=400, detail="Only video memories have thumbnails"
+                    )
                 return await self._build_signed_stream_thumbnail_url(asset)
         except HTTPException:
             raise
         except Exception as exc:
-            logger.error("Failed to build guest media redirect URL for %s (%s): %s", asset_id, variant, exc)
-            raise HTTPException(status_code=503, detail="Media playback is temporarily unavailable")
+            logger.error(
+                "Failed to build guest media redirect URL for %s (%s): %s",
+                asset_id,
+                variant,
+                exc,
+            )
+            raise HTTPException(
+                status_code=503, detail="Media playback is temporarily unavailable"
+            )
 
         raise HTTPException(status_code=400, detail="Unsupported memory asset variant")
 
@@ -1287,18 +1514,28 @@ class GuestMediaService:
             query["_id"] = {"$in": asset_ids}
         if review_status != "all":
             if review_status not in REVIEW_STATUSES:
-                raise HTTPException(status_code=400, detail="Unsupported export status filter")
+                raise HTTPException(
+                    status_code=400, detail="Unsupported export status filter"
+                )
             query["review_status"] = review_status
 
-        assets = await self.assets.find(query).sort("uploaded_at", 1).to_list(length=5000)
+        assets = (
+            await self.assets.find(query).sort("uploaded_at", 1).to_list(length=5000)
+        )
         if not assets:
-            raise HTTPException(status_code=404, detail="No memories matched this export request")
+            raise HTTPException(
+                status_code=404, detail="No memories matched this export request"
+            )
 
         export_id = hashlib.sha1(
-            f"{normalized_wedding_id}:{requested_by}:{datetime.now(timezone.utc).isoformat()}".encode("utf-8")
+            f"{normalized_wedding_id}:{requested_by}:{datetime.now(timezone.utc).isoformat()}".encode(
+                "utf-8"
+            )
         ).hexdigest()[:24]
         now = datetime.now(timezone.utc)
-        export_key = self.storage.build_export_key(wedding.get("slug", "wedding"), export_id)
+        export_key = self.storage.build_export_key(
+            wedding.get("slug", "wedding"), export_id
+        )
 
         document = {
             "_id": export_id,
@@ -1324,7 +1561,9 @@ class GuestMediaService:
             "asset_count": len(assets),
         }
 
-    def _write_export_archive_sync(self, export_key: str, asset_docs: list[dict[str, Any]]) -> None:
+    def _write_export_archive_sync(
+        self, export_key: str, asset_docs: list[dict[str, Any]]
+    ) -> None:
         with tempfile.NamedTemporaryFile(suffix=".zip", delete=False) as temp_file:
             temp_path = temp_file.name
 
@@ -1332,7 +1571,9 @@ class GuestMediaService:
             with zipfile.ZipFile(temp_path, "w", zipfile.ZIP_DEFLATED) as zip_file:
                 for index, asset in enumerate(asset_docs, start=1):
                     file_ext = os.path.splitext(asset.get("original_filename") or "")[1]
-                    sanitized_name = _safe_filename(asset.get("original_filename") or f"memory-{index}{file_ext}")
+                    sanitized_name = _safe_filename(
+                        asset.get("original_filename") or f"memory-{index}{file_ext}"
+                    )
                     archive_name = f"{index:03d}-{asset.get('uploader_name', 'guest')}-{sanitized_name}"
                     object_bytes = self.storage.get_object_bytes(asset["original_key"])
                     zip_file.writestr(archive_name, object_bytes)
@@ -1343,7 +1584,9 @@ class GuestMediaService:
                 os.remove(temp_path)
 
     async def process_export_job(self, export_id: str) -> None:
-        stale_cutoff = datetime.now(timezone.utc) - timedelta(minutes=EXPORT_JOB_STALE_MINUTES)
+        stale_cutoff = datetime.now(timezone.utc) - timedelta(
+            minutes=EXPORT_JOB_STALE_MINUTES
+        )
         export_doc = await self.exports.find_one_and_update(
             {
                 "_id": export_id,
@@ -1364,10 +1607,16 @@ class GuestMediaService:
             return
 
         try:
-            assets = await self.assets.find({
-                "_id": {"$in": export_doc.get("asset_ids", [])},
-                "upload_status": "uploaded",
-            }).sort("uploaded_at", 1).to_list(length=5000)
+            assets = (
+                await self.assets.find(
+                    {
+                        "_id": {"$in": export_doc.get("asset_ids", [])},
+                        "upload_status": "uploaded",
+                    }
+                )
+                .sort("uploaded_at", 1)
+                .to_list(length=5000)
+            )
 
             if not assets:
                 raise RuntimeError("No uploaded assets were available for export")
@@ -1402,15 +1651,22 @@ class GuestMediaService:
             )
 
     async def process_pending_export_jobs(self, *, limit: int = 1) -> int:
-        stale_cutoff = datetime.now(timezone.utc) - timedelta(minutes=EXPORT_JOB_STALE_MINUTES)
-        export_docs = await self.exports.find(
-            {
-                "$or": [
-                    {"status": "queued"},
-                    {"status": "processing", "updated_at": {"$lte": stale_cutoff}},
-                ]
-            }
-        ).sort("created_at", 1).limit(limit).to_list(length=limit)
+        stale_cutoff = datetime.now(timezone.utc) - timedelta(
+            minutes=EXPORT_JOB_STALE_MINUTES
+        )
+        export_docs = (
+            await self.exports.find(
+                {
+                    "$or": [
+                        {"status": "queued"},
+                        {"status": "processing", "updated_at": {"$lte": stale_cutoff}},
+                    ]
+                }
+            )
+            .sort("created_at", 1)
+            .limit(limit)
+            .to_list(length=limit)
+        )
 
         processed = 0
         for export_doc in export_docs:
@@ -1420,10 +1676,12 @@ class GuestMediaService:
 
     async def get_export_job(self, wedding_id: str, export_id: str) -> dict[str, Any]:
         wedding = await self._get_wedding_by_id(wedding_id)
-        export_doc = await self.exports.find_one({
-            "_id": export_id,
-            "wedding_id": str(wedding.get("_id")),
-        })
+        export_doc = await self.exports.find_one(
+            {
+                "_id": export_id,
+                "wedding_id": str(wedding.get("_id")),
+            }
+        )
         if not export_doc:
             raise HTTPException(status_code=404, detail="Export job not found")
 

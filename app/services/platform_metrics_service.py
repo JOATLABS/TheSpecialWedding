@@ -77,7 +77,9 @@ class PlatformMetricsService:
 
         document.setdefault(
             "timestamp",
-            snapshot_time.replace(tzinfo=timezone.utc).isoformat().replace("+00:00", "Z"),
+            snapshot_time.replace(tzinfo=timezone.utc)
+            .isoformat()
+            .replace("+00:00", "Z"),
         )
         document.setdefault("metrics", {})
 
@@ -103,9 +105,7 @@ class PlatformMetricsService:
         if since is not None:
             query["snapshot_time"] = {"$gte": self._normalize_to_utc(since)}
 
-        cursor = collection.find(query).sort(
-            [("snapshot_time", -1), ("_id", -1)]
-        )
+        cursor = collection.find(query).sort([("snapshot_time", -1), ("_id", -1)])
         documents = await self._collect_cursor(cursor)
 
         return [self._prepare_snapshot_document(doc) for doc in documents]
@@ -167,9 +167,7 @@ class PlatformMetricsService:
     async def _compile_user_metrics(self, period_start: datetime) -> Dict[str, Any]:
         users_collection = self._mongo.get_users_collection()
 
-        total_task = asyncio.create_task(
-            self._count_documents(users_collection, {})
-        )
+        total_task = asyncio.create_task(self._count_documents(users_collection, {}))
         active_task = asyncio.create_task(
             self._count_documents(
                 users_collection,
@@ -213,7 +211,9 @@ class PlatformMetricsService:
             "role_breakdown": role_breakdown,
         }
 
-    async def _compile_subscription_metrics(self, period_start: datetime) -> Dict[str, Any]:
+    async def _compile_subscription_metrics(
+        self, period_start: datetime
+    ) -> Dict[str, Any]:
         subscriptions_collection = self._mongo.db.get_collection("user_subscriptions")
         plans_collection = self._mongo.get_subscription_plans_collection()
 
@@ -233,9 +233,9 @@ class PlatformMetricsService:
         for doc in status_docs:
             raw_status = str(doc.get("_id") or "").strip()
             canonical_status = normalize_subscription_status(raw_status) or "unknown"
-            status_breakdown[canonical_status] = (
-                status_breakdown.get(canonical_status, 0) + int(doc.get("count", 0))
-            )
+            status_breakdown[canonical_status] = status_breakdown.get(
+                canonical_status, 0
+            ) + int(doc.get("count", 0))
 
         # Ensure all expected status keys exist with default 0 to prevent NaN in frontend
         expected_statuses = [
@@ -256,7 +256,9 @@ class PlatformMetricsService:
         accounted_statuses = sum(status_breakdown.values())
         unknown_statuses = max(total_subscriptions - accounted_statuses, 0)
         if unknown_statuses > 0:
-            status_breakdown["unknown"] = status_breakdown.get("unknown", 0) + unknown_statuses
+            status_breakdown["unknown"] = (
+                status_breakdown.get("unknown", 0) + unknown_statuses
+            )
 
         active_plans_task = asyncio.create_task(
             self._count_documents(plans_collection, {"is_active": True})
@@ -447,9 +449,7 @@ class PlatformMetricsService:
         guest_total = await self._count_documents(
             self._mongo.get_guest_collection(), {}
         )
-        rsvp_total = await self._count_documents(
-            self._mongo.get_rsvps_collection(), {}
-        )
+        rsvp_total = await self._count_documents(self._mongo.get_rsvps_collection(), {})
 
         return {
             "total": total,
@@ -582,12 +582,8 @@ class PlatformMetricsService:
                     "plan_name": "$plan_doc.name",
                     "status": "$status",
                     "billing_interval": "$billing_interval",
-                    "price_monthly": {
-                        "$ifNull": ["$plan_doc.price_monthly", 0]
-                    },
-                    "price_yearly": {
-                        "$ifNull": ["$plan_doc.price_yearly", 0]
-                    },
+                    "price_monthly": {"$ifNull": ["$plan_doc.price_monthly", 0]},
+                    "price_yearly": {"$ifNull": ["$plan_doc.price_yearly", 0]},
                 }
             },
             {
@@ -599,9 +595,7 @@ class PlatformMetricsService:
                         "$switch": {
                             "branches": [
                                 {
-                                    "case": {
-                                        "$eq": ["$billing_interval", "yearly"]
-                                    },
+                                    "case": {"$eq": ["$billing_interval", "yearly"]},
                                     "then": {
                                         "$cond": [
                                             {"$gt": ["$price_yearly", 0]},
@@ -611,9 +605,7 @@ class PlatformMetricsService:
                                     },
                                 },
                                 {
-                                    "case": {
-                                        "$eq": ["$billing_interval", "monthly"]
-                                    },
+                                    "case": {"$eq": ["$billing_interval", "monthly"]},
                                     "then": {
                                         "$cond": [
                                             {"$gt": ["$price_monthly", 0]},
@@ -744,7 +736,11 @@ class PlatformMetricsService:
                     "trial_users": 0,
                 }
 
-        return {"monthly": monthly_total, "annual": annual_total, "plans": plan_breakdown}
+        return {
+            "monthly": monthly_total,
+            "annual": annual_total,
+            "plans": plan_breakdown,
+        }
 
     async def _revenue_fallback(
         self, subscriptions_collection: Any, plans_collection: Any
@@ -820,7 +816,11 @@ class PlatformMetricsService:
                         "trial_users": 0,
                     }
 
-        return {"monthly": monthly_total, "annual": annual_total, "plans": plan_breakdown}
+        return {
+            "monthly": monthly_total,
+            "annual": annual_total,
+            "plans": plan_breakdown,
+        }
 
     async def _iterate_documents(
         self,
@@ -919,9 +919,7 @@ class PlatformMetricsService:
         )
         return int(result)
 
-    def _prepare_snapshot_document(
-        self, document: Mapping[str, Any]
-    ) -> Dict[str, Any]:
+    def _prepare_snapshot_document(self, document: Mapping[str, Any]) -> Dict[str, Any]:
         prepared = dict(document)
         identifier = prepared.get("_id")
         if identifier is not None:
@@ -966,9 +964,7 @@ class PlatformMetricsService:
         normalized = timeframe.lower()
         mapping = {"7d": 7, "30d": 30, "90d": 90, "1y": 365}
         if normalized not in mapping:
-            raise ValueError(
-                "Invalid timeframe. Use one of: 7d, 30d, 90d, 1y."
-            )
+            raise ValueError("Invalid timeframe. Use one of: 7d, 30d, 90d, 1y.")
         return mapping[normalized]
 
 

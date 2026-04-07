@@ -2,12 +2,13 @@ from fastapi import HTTPException
 from app.core.database import mongo
 from app.services.email_service_resend import ResendEmailService
 from typing import List, Dict, Optional
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from bson import ObjectId
 import logging
 import asyncio
 
 logger = logging.getLogger(__name__)
+
 
 class NotificationService:
     def __init__(self):
@@ -16,7 +17,9 @@ class NotificationService:
         self.users_collection = mongo.get_users_collection()
         self.email_service = ResendEmailService()
 
-    async def create_notification(self, notification_data: dict, created_by: str) -> dict:
+    async def create_notification(
+        self, notification_data: dict, created_by: str
+    ) -> dict:
         """Create a new notification"""
         try:
             # Prepare notification document
@@ -36,14 +39,16 @@ class NotificationService:
                 "priority": notification_data["priority"],
                 "status": "active",
                 "read_by": [],
-                "dismissed_by": []
+                "dismissed_by": [],
             }
 
             # Insert notification
             result = await self.notifications_collection.insert_one(notification)
 
             if not result.inserted_id:
-                raise HTTPException(status_code=500, detail="Failed to create notification")
+                raise HTTPException(
+                    status_code=500, detail="Failed to create notification"
+                )
 
             # ── WebPush: push to targeted user if applicable ──
             try:
@@ -63,21 +68,27 @@ class NotificationService:
                         notification["message"],
                     )
             except Exception as push_err:
-                logger.warning("WebPush delivery failed (non-blocking): %s", str(push_err))
+                logger.warning(
+                    "WebPush delivery failed (non-blocking): %s", str(push_err)
+                )
 
             return {
                 "id": str(result.inserted_id),
                 "message": "Notification created successfully",
-                "created_at": notification["created_at"]
+                "created_at": notification["created_at"],
             }
 
         except HTTPException:
             raise
         except Exception as e:
             logger.error(f"Error creating notification: {str(e)}")
-            raise HTTPException(status_code=500, detail=f"Error creating notification: {str(e)}")
+            raise HTTPException(
+                status_code=500, detail=f"Error creating notification: {str(e)}"
+            )
 
-    async def get_notifications(self, page: int = 1, limit: int = 20, filters: dict = None) -> dict:
+    async def get_notifications(
+        self, page: int = 1, limit: int = 20, filters: dict = None
+    ) -> dict:
         """Get notifications with filtering and pagination"""
         try:
             # Build query
@@ -100,26 +111,35 @@ class NotificationService:
             pages = (total + limit - 1) // limit
 
             # Get notifications
-            cursor = self.notifications_collection.find(query).sort("created_at", -1).skip(skip).limit(limit)
+            cursor = (
+                self.notifications_collection.find(query)
+                .sort("created_at", -1)
+                .skip(skip)
+                .limit(limit)
+            )
             notifications = []
 
             async for notification in cursor:
                 notification["id"] = str(notification["_id"])
                 notification["_id"] = str(notification["_id"])
                 notification["read_count"] = len(notification.get("read_by", []))
-                notification["total_recipients"] = await self._count_target_audience(notification)
+                notification["total_recipients"] = await self._count_target_audience(
+                    notification
+                )
                 notifications.append(notification)
 
             return {
                 "notifications": notifications,
                 "total": total,
                 "page": page,
-                "pages": pages
+                "pages": pages,
             }
 
         except Exception as e:
             logger.error(f"Error getting notifications: {str(e)}")
-            raise HTTPException(status_code=500, detail=f"Error retrieving notifications: {str(e)}")
+            raise HTTPException(
+                status_code=500, detail=f"Error retrieving notifications: {str(e)}"
+            )
 
     async def get_notification(self, notification_id: str) -> dict:
         """Get specific notification by ID"""
@@ -128,7 +148,10 @@ class NotificationService:
             try:
                 obj_id = ObjectId(notification_id)
             except Exception as e:
-                logger.error(f"Invalid ObjectId provided: {notification_id}, error: {e}", exc_info=True)
+                logger.error(
+                    f"Invalid ObjectId provided: {notification_id}, error: {e}",
+                    exc_info=True,
+                )
                 raise HTTPException(status_code=400, detail="Invalid notification ID")
 
             notification = await self.notifications_collection.find_one({"_id": obj_id})
@@ -138,7 +161,9 @@ class NotificationService:
             notification["id"] = str(notification["_id"])
             notification["_id"] = str(notification["_id"])
             notification["read_count"] = len(notification.get("read_by", []))
-            notification["total_recipients"] = await self._count_target_audience(notification)
+            notification["total_recipients"] = await self._count_target_audience(
+                notification
+            )
 
             return notification
 
@@ -146,16 +171,23 @@ class NotificationService:
             raise
         except Exception as e:
             logger.error(f"Error getting notification: {str(e)}")
-            raise HTTPException(status_code=500, detail=f"Error retrieving notification: {str(e)}")
+            raise HTTPException(
+                status_code=500, detail=f"Error retrieving notification: {str(e)}"
+            )
 
-    async def update_notification(self, notification_id: str, update_data: dict, updated_by: str) -> dict:
+    async def update_notification(
+        self, notification_id: str, update_data: dict, updated_by: str
+    ) -> dict:
         """Update a notification"""
         try:
             # Validate ObjectId
             try:
                 obj_id = ObjectId(notification_id)
             except Exception as e:
-                logger.error(f"Invalid ObjectId provided: {notification_id}, error: {e}", exc_info=True)
+                logger.error(
+                    f"Invalid ObjectId provided: {notification_id}, error: {e}",
+                    exc_info=True,
+                )
                 raise HTTPException(status_code=400, detail="Invalid notification ID")
 
             # Check if notification exists
@@ -169,23 +201,26 @@ class NotificationService:
 
             # Update notification
             result = await self.notifications_collection.update_one(
-                {"_id": obj_id},
-                {"$set": update_data}
+                {"_id": obj_id}, {"$set": update_data}
             )
 
             if result.modified_count == 0:
-                raise HTTPException(status_code=400, detail="Notification update failed")
+                raise HTTPException(
+                    status_code=400, detail="Notification update failed"
+                )
 
             return {
                 "message": "Notification updated successfully",
-                "updated_fields": list(update_data.keys())
+                "updated_fields": list(update_data.keys()),
             }
 
         except HTTPException:
             raise
         except Exception as e:
             logger.error(f"Error updating notification: {str(e)}")
-            raise HTTPException(status_code=500, detail=f"Error updating notification: {str(e)}")
+            raise HTTPException(
+                status_code=500, detail=f"Error updating notification: {str(e)}"
+            )
 
     async def delete_notification(self, notification_id: str) -> dict:
         """Delete a notification"""
@@ -194,7 +229,10 @@ class NotificationService:
             try:
                 obj_id = ObjectId(notification_id)
             except Exception as e:
-                logger.error(f"Invalid ObjectId provided: {notification_id}, error: {e}", exc_info=True)
+                logger.error(
+                    f"Invalid ObjectId provided: {notification_id}, error: {e}",
+                    exc_info=True,
+                )
                 raise HTTPException(status_code=400, detail="Invalid notification ID")
 
             # Delete notification
@@ -209,7 +247,9 @@ class NotificationService:
             raise
         except Exception as e:
             logger.error(f"Error deleting notification: {str(e)}")
-            raise HTTPException(status_code=500, detail=f"Error deleting notification: {str(e)}")
+            raise HTTPException(
+                status_code=500, detail=f"Error deleting notification: {str(e)}"
+            )
 
     async def send_notification(self, notification_id: str) -> dict:
         """Send notification to target audience"""
@@ -217,11 +257,16 @@ class NotificationService:
             notification = await self.get_notification(notification_id)
 
             if not getattr(self.email_service, "configured", False):
-                raise HTTPException(status_code=503, detail="Email service not configured")
+                raise HTTPException(
+                    status_code=503, detail="Email service not configured"
+                )
 
             recipients = await self._resolve_recipients(notification)
             if not recipients:
-                raise HTTPException(status_code=400, detail="No active recipients found for this notification")
+                raise HTTPException(
+                    status_code=400,
+                    detail="No active recipients found for this notification",
+                )
 
             dispatch_started = datetime.now(timezone.utc)
             sent = []
@@ -229,7 +274,9 @@ class NotificationService:
 
             for recipient in recipients:
                 try:
-                    html_content = self._render_notification_email(notification, recipient)
+                    html_content = self._render_notification_email(
+                        notification, recipient
+                    )
                     result = await self.email_service.send_email(
                         to_email=recipient["email"],
                         subject=notification["title"],
@@ -240,20 +287,24 @@ class NotificationService:
                     if result.get("success"):
                         sent.append(recipient["email"])
                     else:
-                        failed.append({
-                            "email": recipient["email"],
-                            "error": result.get("error", "Unknown error"),
-                        })
+                        failed.append(
+                            {
+                                "email": recipient["email"],
+                                "error": result.get("error", "Unknown error"),
+                            }
+                        )
                 except Exception as email_error:  # noqa: BLE001 - capture and record delivery issues
                     logger.error(
                         "Error sending notification email to %s: %s",
                         recipient.get("email"),
                         str(email_error),
                     )
-                    failed.append({
-                        "email": recipient.get("email"),
-                        "error": str(email_error),
-                    })
+                    failed.append(
+                        {
+                            "email": recipient.get("email"),
+                            "error": str(email_error),
+                        }
+                    )
 
             delivery_summary = {
                 "attempted": len(recipients),
@@ -291,6 +342,7 @@ class NotificationService:
 
             # Broadcast via SSE to successful recipients (non-blocking)
             from app.services.sse_manager import sse_manager
+
             notification_data = {
                 "title": notification.get("title"),
                 "message": notification.get("message"),
@@ -301,14 +353,20 @@ class NotificationService:
             for recipient_email in sent:
                 task = asyncio.create_task(
                     sse_manager.broadcast_to_user(
-                        recipient_email,
-                        "notification-new",
-                        notification_data
+                        recipient_email, "notification-new", notification_data
                     )
                 )
-                task.add_done_callback(lambda t: t.exception() if not t.cancelled() and t.exception() else None)
+                task.add_done_callback(
+                    lambda t: (
+                        t.exception() if not t.cancelled() and t.exception() else None
+                    )
+                )
 
-            message = "Notification sent successfully" if not failed else "Notification sent with partial failures"
+            message = (
+                "Notification sent successfully"
+                if not failed
+                else "Notification sent with partial failures"
+            )
 
             return {
                 "message": message,
@@ -322,9 +380,18 @@ class NotificationService:
             raise
         except Exception as e:
             logger.error(f"Error sending notification: {str(e)}")
-            raise HTTPException(status_code=500, detail=f"Error sending notification: {str(e)}")
+            raise HTTPException(
+                status_code=500, detail=f"Error sending notification: {str(e)}"
+            )
 
-    async def get_user_notifications(self, user_email: str, user_role: str, page: int = 1, limit: int = 20, unread_only: bool = False) -> dict:
+    async def get_user_notifications(
+        self,
+        user_email: str,
+        user_role: str,
+        page: int = 1,
+        limit: int = 20,
+        unread_only: bool = False,
+    ) -> dict:
         """Get notifications for a specific user"""
         try:
             # Build target audience conditions based on role
@@ -332,15 +399,19 @@ class NotificationService:
                 # Root admin only sees: system alerts (root_admin) and direct targeting
                 # NOT platform announcements (all, wedding_planners, vendors) - those are FOR users
                 audience_conditions = [
-                    {"target_audience": "root_admin"},  # System alerts: support tickets, config errors, contact forms
-                    {"user_id": user_email}  # Direct user targeting
+                    {
+                        "target_audience": "root_admin"
+                    },  # System alerts: support tickets, config errors, contact forms
+                    {"user_id": user_email},  # Direct user targeting
                 ]
             else:
                 # Regular users (planners, vendors) see: all, their role, and direct targeting
                 audience_conditions = [
                     {"target_audience": "all"},
-                    {"target_audience": user_role + "s"},  # wedding_planner -> wedding_planners
-                    {"user_id": user_email}  # Direct user targeting
+                    {
+                        "target_audience": user_role + "s"
+                    },  # wedding_planner -> wedding_planners
+                    {"user_id": user_email},  # Direct user targeting
                 ]
 
             # Build query for user-specific notifications
@@ -354,11 +425,11 @@ class NotificationService:
                         "$or": [
                             {"expiry_date": {"$exists": False}},
                             {"expiry_date": None},
-                            {"expiry_date": {"$gt": datetime.now(timezone.utc)}}
+                            {"expiry_date": {"$gt": datetime.now(timezone.utc)}},
                         ]
                     },
                     # Check target audience
-                    {"$or": audience_conditions}
+                    {"$or": audience_conditions},
                 ]
             }
 
@@ -377,7 +448,13 @@ class NotificationService:
             pages = (total + limit - 1) // limit
 
             # Get notifications
-            cursor = self.notifications_collection.find(query).sort("priority_order", -1).sort("created_at", -1).skip(skip).limit(limit)
+            cursor = (
+                self.notifications_collection.find(query)
+                .sort("priority_order", -1)
+                .sort("created_at", -1)
+                .skip(skip)
+                .limit(limit)
+            )
             notifications = []
 
             priority_order = {"urgent": 4, "high": 3, "medium": 2, "low": 1}
@@ -387,10 +464,15 @@ class NotificationService:
                 notification["_id"] = str(notification["_id"])
 
                 # Check if user has read this notification
-                notification["is_read"] = any(read["user_id"] == user_email for read in notification.get("read_by", []))
+                notification["is_read"] = any(
+                    read["user_id"] == user_email
+                    for read in notification.get("read_by", [])
+                )
 
                 # Add priority ordering
-                notification["priority_order"] = priority_order.get(notification.get("priority", "medium"), 2)
+                notification["priority_order"] = priority_order.get(
+                    notification.get("priority", "medium"), 2
+                )
 
                 notifications.append(notification)
 
@@ -398,28 +480,34 @@ class NotificationService:
                 "notifications": notifications,
                 "total": total,
                 "page": page,
-                "pages": pages
+                "pages": pages,
             }
 
         except Exception as e:
             logger.error(f"Error getting user notifications: {str(e)}")
-            raise HTTPException(status_code=500, detail=f"Error retrieving user notifications: {str(e)}")
+            raise HTTPException(
+                status_code=500, detail=f"Error retrieving user notifications: {str(e)}"
+            )
 
-    async def mark_notification_read(self, notification_id: str, user_id: str, user_role: str = "wedding_planner") -> dict:
+    async def mark_notification_read(
+        self, notification_id: str, user_id: str, user_role: str = "wedding_planner"
+    ) -> dict:
         """Mark notification as read by user"""
         try:
             # Validate ObjectId
             try:
                 obj_id = ObjectId(notification_id)
             except Exception as e:
-                logger.error(f"Invalid ObjectId provided: {notification_id}, error: {e}", exc_info=True)
+                logger.error(
+                    f"Invalid ObjectId provided: {notification_id}, error: {e}",
+                    exc_info=True,
+                )
                 raise HTTPException(status_code=400, detail="Invalid notification ID")
 
             # Check if already read by this user
-            existing_read = await self.notifications_collection.find_one({
-                "_id": obj_id,
-                "read_by.user_id": user_id
-            })
+            existing_read = await self.notifications_collection.find_one(
+                {"_id": obj_id, "read_by.user_id": user_id}
+            )
 
             if existing_read:
                 return {"message": "Notification already marked as read"}
@@ -431,10 +519,10 @@ class NotificationService:
                     "$push": {
                         "read_by": {
                             "user_id": user_id,
-                            "read_at": datetime.now(timezone.utc)
+                            "read_at": datetime.now(timezone.utc),
                         }
                     }
-                }
+                },
             )
 
             if result.modified_count == 0:
@@ -442,12 +530,17 @@ class NotificationService:
 
             # Broadcast updated count via SSE
             from app.services.sse_manager import sse_manager
+
             try:
                 counts = await self.get_user_notification_count(user_id, user_role)
                 task = asyncio.create_task(
                     sse_manager.broadcast_to_user(user_id, "notification-count", counts)
                 )
-                task.add_done_callback(lambda t: t.exception() if not t.cancelled() and t.exception() else None)
+                task.add_done_callback(
+                    lambda t: (
+                        t.exception() if not t.cancelled() and t.exception() else None
+                    )
+                )
             except Exception:
                 pass
 
@@ -457,46 +550,54 @@ class NotificationService:
             raise
         except Exception as e:
             logger.error(f"Error marking notification as read: {str(e)}")
-            raise HTTPException(status_code=500, detail=f"Error marking notification as read: {str(e)}")
+            raise HTTPException(
+                status_code=500, detail=f"Error marking notification as read: {str(e)}"
+            )
 
-    async def mark_all_notifications_read(self, user_id: str, user_role: str = "wedding_planner") -> dict:
+    async def mark_all_notifications_read(
+        self, user_id: str, user_role: str = "wedding_planner"
+    ) -> dict:
         """Mark all notifications as read for a user"""
         try:
             # Find all notifications that haven't been read by this user yet
             result = await self.notifications_collection.update_many(
-                {
-                    "status": "active",
-                    "read_by.user_id": {"$ne": user_id}
-                },
+                {"status": "active", "read_by.user_id": {"$ne": user_id}},
                 {
                     "$addToSet": {
                         "read_by": {
                             "user_id": user_id,
-                            "read_at": datetime.now(timezone.utc)
+                            "read_at": datetime.now(timezone.utc),
                         }
                     }
-                }
+                },
             )
 
             # Broadcast updated count via SSE
             from app.services.sse_manager import sse_manager
+
             try:
                 counts = await self.get_user_notification_count(user_id, user_role)
                 task = asyncio.create_task(
                     sse_manager.broadcast_to_user(user_id, "notification-count", counts)
                 )
-                task.add_done_callback(lambda t: t.exception() if not t.cancelled() and t.exception() else None)
+                task.add_done_callback(
+                    lambda t: (
+                        t.exception() if not t.cancelled() and t.exception() else None
+                    )
+                )
             except Exception:
                 pass
 
             return {
                 "message": f"Marked {result.modified_count} notifications as read",
-                "count": result.modified_count
+                "count": result.modified_count,
             }
 
         except Exception as e:
             logger.error(f"Error marking all notifications as read: {str(e)}")
-            raise HTTPException(status_code=500, detail=f"Error marking all as read: {str(e)}")
+            raise HTTPException(
+                status_code=500, detail=f"Error marking all as read: {str(e)}"
+            )
 
     async def dismiss_notification(self, notification_id: str, user_id: str) -> dict:
         """Dismiss notification for user"""
@@ -505,7 +606,10 @@ class NotificationService:
             try:
                 obj_id = ObjectId(notification_id)
             except Exception as e:
-                logger.error(f"Invalid ObjectId provided: {notification_id}, error: {e}", exc_info=True)
+                logger.error(
+                    f"Invalid ObjectId provided: {notification_id}, error: {e}",
+                    exc_info=True,
+                )
                 raise HTTPException(status_code=400, detail="Invalid notification ID")
 
             # Check if notification is dismissible
@@ -514,13 +618,14 @@ class NotificationService:
                 raise HTTPException(status_code=404, detail="Notification not found")
 
             if not notification.get("is_dismissible", True):
-                raise HTTPException(status_code=400, detail="Notification cannot be dismissed")
+                raise HTTPException(
+                    status_code=400, detail="Notification cannot be dismissed"
+                )
 
             # Check if already dismissed by this user
-            existing_dismissed = await self.notifications_collection.find_one({
-                "_id": obj_id,
-                "dismissed_by.user_id": user_id
-            })
+            existing_dismissed = await self.notifications_collection.find_one(
+                {"_id": obj_id, "dismissed_by.user_id": user_id}
+            )
 
             if existing_dismissed:
                 return {"message": "Notification already dismissed"}
@@ -532,10 +637,10 @@ class NotificationService:
                     "$push": {
                         "dismissed_by": {
                             "user_id": user_id,
-                            "dismissed_at": datetime.now(timezone.utc)
+                            "dismissed_at": datetime.now(timezone.utc),
                         }
                     }
-                }
+                },
             )
 
             if result.modified_count == 0:
@@ -547,9 +652,13 @@ class NotificationService:
             raise
         except Exception as e:
             logger.error(f"Error dismissing notification: {str(e)}")
-            raise HTTPException(status_code=500, detail=f"Error dismissing notification: {str(e)}")
+            raise HTTPException(
+                status_code=500, detail=f"Error dismissing notification: {str(e)}"
+            )
 
-    async def get_user_notification_count(self, user_email: str, user_role: str) -> dict:
+    async def get_user_notification_count(
+        self, user_email: str, user_role: str
+    ) -> dict:
         """Get notification count for user"""
         try:
             # Build target audience conditions based on role
@@ -557,15 +666,17 @@ class NotificationService:
                 # Root admin only sees: system alerts (root_admin) and direct targeting
                 # NOT platform announcements (all, wedding_planners, vendors) - those are FOR users
                 audience_conditions = [
-                    {"target_audience": "root_admin"},  # System alerts: support tickets, config errors, contact forms
-                    {"user_id": user_email}  # Direct user targeting
+                    {
+                        "target_audience": "root_admin"
+                    },  # System alerts: support tickets, config errors, contact forms
+                    {"user_id": user_email},  # Direct user targeting
                 ]
             else:
                 # Regular users (planners, vendors) see: all, their role, and direct targeting
                 audience_conditions = [
                     {"target_audience": "all"},
                     {"target_audience": user_role + "s"},
-                    {"user_id": user_email}
+                    {"user_id": user_email},
                 ]
 
             # Query for user notifications
@@ -578,11 +689,11 @@ class NotificationService:
                         "$or": [
                             {"expiry_date": {"$exists": False}},
                             {"expiry_date": None},
-                            {"expiry_date": {"$gt": datetime.now(timezone.utc)}}
+                            {"expiry_date": {"$gt": datetime.now(timezone.utc)}},
                         ]
                     },
                     {"$or": audience_conditions},
-                    {"dismissed_by.user_id": {"$ne": user_email}}
+                    {"dismissed_by.user_id": {"$ne": user_email}},
                 ]
             }
 
@@ -594,17 +705,17 @@ class NotificationService:
             unread_query["$and"].append({"read_by.user_id": {"$ne": user_email}})
             unread = await self.notifications_collection.count_documents(unread_query)
 
-            return {
-                "total": total,
-                "unread": unread,
-                "read": total - unread
-            }
+            return {"total": total, "unread": unread, "read": total - unread}
 
         except Exception as e:
             logger.error(f"Error getting notification count: {str(e)}")
-            raise HTTPException(status_code=500, detail=f"Error getting notification count: {str(e)}")
+            raise HTTPException(
+                status_code=500, detail=f"Error getting notification count: {str(e)}"
+            )
 
-    async def _resolve_recipients(self, notification: dict) -> List[Dict[str, Optional[str]]]:
+    async def _resolve_recipients(
+        self, notification: dict
+    ) -> List[Dict[str, Optional[str]]]:
         """Resolve the actual recipient list for the notification."""
         target = notification.get("target_audience", "all")
         recipients: List[Dict[str, Optional[str]]] = []
@@ -620,13 +731,15 @@ class NotificationService:
 
         base_query = {
             "is_active": True,
-            "email": {"$exists": True, "$ne": None, "$ne": ""},
+            "email": {"$exists": True, "$nin": [None, ""]},
         }
 
         if target == "all":
             cursor = self.users_collection.find(base_query)
         elif target == "wedding_planners":
-            cursor = self.users_collection.find({**base_query, "role": "wedding_planner"})
+            cursor = self.users_collection.find(
+                {**base_query, "role": "wedding_planner"}
+            )
         elif target == "vendors":
             cursor = self.users_collection.find({**base_query, "role": "vendor"})
         else:
@@ -650,11 +763,17 @@ class NotificationService:
 
         try:
             if ObjectId.is_valid(identifier):
-                user = await self.users_collection.find_one({"_id": ObjectId(identifier)})
+                user = await self.users_collection.find_one(
+                    {"_id": ObjectId(identifier)}
+                )
                 if user:
                     return user
         except Exception as exc:  # noqa: BLE001 - capture lookup issues without aborting send
-            logger.debug("Failed ObjectId lookup for user identifier %s: %s", identifier, str(exc))
+            logger.debug(
+                "Failed ObjectId lookup for user identifier %s: %s",
+                identifier,
+                str(exc),
+            )
 
         return await self.users_collection.find_one({"email": identifier})
 
@@ -664,7 +783,9 @@ class NotificationService:
         name_parts = [user.get("first_name"), user.get("last_name")]
         full_name = " ".join(part for part in name_parts if part).strip()
         if not full_name:
-            full_name = user.get("full_name") or user.get("name") or user.get("company_name")
+            full_name = (
+                user.get("full_name") or user.get("name") or user.get("company_name")
+            )
         if not full_name and user.get("email"):
             full_name = user["email"].split("@")[0]
 
@@ -676,7 +797,9 @@ class NotificationService:
         }
 
     @staticmethod
-    def _render_notification_email(notification: dict, recipient: Dict[str, Optional[str]]) -> str:
+    def _render_notification_email(
+        notification: dict, recipient: Dict[str, Optional[str]]
+    ) -> str:
         """Generate a glass-inspired HTML email for the notification."""
         headline = notification.get("title", "Platform Update")
         body = notification.get("message", "")
@@ -716,9 +839,13 @@ class NotificationService:
             if target == "all":
                 return await self.users_collection.count_documents({"is_active": True})
             elif target == "wedding_planners":
-                return await self.users_collection.count_documents({"role": "wedding_planner", "is_active": True})
+                return await self.users_collection.count_documents(
+                    {"role": "wedding_planner", "is_active": True}
+                )
             elif target == "vendors":
-                return await self.users_collection.count_documents({"role": "vendor", "is_active": True})
+                return await self.users_collection.count_documents(
+                    {"role": "vendor", "is_active": True}
+                )
             elif notification.get("user_id"):
                 return 1  # Targeted to specific user
             else:
@@ -743,11 +870,14 @@ class NotificationService:
         except Exception:
             return True
 
-    async def _send_push_to_user(self, user_email: str, title: str, message: str) -> None:
+    async def _send_push_to_user(
+        self, user_email: str, title: str, message: str
+    ) -> None:
         """Send a WebPush notification to a specific user (non-blocking)."""
         if not await self._check_push_enabled(user_email):
             return
         from app.services.web_push_service import web_push_service
+
         if web_push_service.enabled:
             await web_push_service.send_notification(
                 user_id=user_email,
@@ -759,12 +889,14 @@ class NotificationService:
     async def _send_push_to_admin(self, title: str, message: str) -> None:
         """Send a WebPush notification to root admin (non-blocking)."""
         import os
+
         root_admin_email = os.getenv(
             "ROOT_ADMIN_EMAIL", "thedeveloper@thespecialwedding.io"
         )
         if not await self._check_push_enabled(root_admin_email):
             return
         from app.services.web_push_service import web_push_service
+
         if web_push_service.enabled:
             await web_push_service.send_notification(
                 user_id=root_admin_email,
@@ -800,16 +932,20 @@ class NotificationService:
             return {
                 "id": str(result.inserted_id),
                 "message": "Template created successfully",
-                "created_at": template["created_at"]
+                "created_at": template["created_at"],
             }
 
         except HTTPException:
             raise
         except Exception as e:
             logger.error(f"Error creating template: {str(e)}")
-            raise HTTPException(status_code=500, detail=f"Error creating template: {str(e)}")
+            raise HTTPException(
+                status_code=500, detail=f"Error creating template: {str(e)}"
+            )
 
-    async def get_templates(self, page: int = 1, limit: int = 50, filters: dict = None) -> dict:
+    async def get_templates(
+        self, page: int = 1, limit: int = 50, filters: dict = None
+    ) -> dict:
         """Get notification templates with filtering and pagination"""
         try:
             query = {}
@@ -823,7 +959,12 @@ class NotificationService:
             skip = (page - 1) * limit
             pages = (total + limit - 1) // limit
 
-            cursor = self.templates_collection.find(query).sort("created_at", -1).skip(skip).limit(limit)
+            cursor = (
+                self.templates_collection.find(query)
+                .sort("created_at", -1)
+                .skip(skip)
+                .limit(limit)
+            )
             templates = []
 
             async for template in cursor:
@@ -835,12 +976,14 @@ class NotificationService:
                 "templates": templates,
                 "total": total,
                 "page": page,
-                "pages": pages
+                "pages": pages,
             }
 
         except Exception as e:
             logger.error(f"Error getting templates: {str(e)}")
-            raise HTTPException(status_code=500, detail=f"Error retrieving templates: {str(e)}")
+            raise HTTPException(
+                status_code=500, detail=f"Error retrieving templates: {str(e)}"
+            )
 
     async def get_template(self, template_id: str) -> dict:
         """Get specific template by ID"""
@@ -848,7 +991,10 @@ class NotificationService:
             try:
                 obj_id = ObjectId(template_id)
             except Exception as e:
-                logger.error(f"Invalid ObjectId provided: {template_id}, error: {e}", exc_info=True)
+                logger.error(
+                    f"Invalid ObjectId provided: {template_id}, error: {e}",
+                    exc_info=True,
+                )
                 raise HTTPException(status_code=400, detail="Invalid template ID")
 
             template = await self.templates_collection.find_one({"_id": obj_id})
@@ -864,15 +1010,22 @@ class NotificationService:
             raise
         except Exception as e:
             logger.error(f"Error getting template: {str(e)}")
-            raise HTTPException(status_code=500, detail=f"Error retrieving template: {str(e)}")
+            raise HTTPException(
+                status_code=500, detail=f"Error retrieving template: {str(e)}"
+            )
 
-    async def update_template(self, template_id: str, update_data: dict, updated_by: str) -> dict:
+    async def update_template(
+        self, template_id: str, update_data: dict, updated_by: str
+    ) -> dict:
         """Update a notification template"""
         try:
             try:
                 obj_id = ObjectId(template_id)
             except Exception as e:
-                logger.error(f"Invalid ObjectId provided: {template_id}, error: {e}", exc_info=True)
+                logger.error(
+                    f"Invalid ObjectId provided: {template_id}, error: {e}",
+                    exc_info=True,
+                )
                 raise HTTPException(status_code=400, detail="Invalid template ID")
 
             existing = await self.templates_collection.find_one({"_id": obj_id})
@@ -883,8 +1036,7 @@ class NotificationService:
             update_data["updated_by"] = updated_by
 
             result = await self.templates_collection.update_one(
-                {"_id": obj_id},
-                {"$set": update_data}
+                {"_id": obj_id}, {"$set": update_data}
             )
 
             if result.modified_count == 0:
@@ -892,14 +1044,16 @@ class NotificationService:
 
             return {
                 "message": "Template updated successfully",
-                "updated_fields": list(update_data.keys())
+                "updated_fields": list(update_data.keys()),
             }
 
         except HTTPException:
             raise
         except Exception as e:
             logger.error(f"Error updating template: {str(e)}")
-            raise HTTPException(status_code=500, detail=f"Error updating template: {str(e)}")
+            raise HTTPException(
+                status_code=500, detail=f"Error updating template: {str(e)}"
+            )
 
     async def delete_template(self, template_id: str) -> dict:
         """Delete a notification template"""
@@ -907,7 +1061,10 @@ class NotificationService:
             try:
                 obj_id = ObjectId(template_id)
             except Exception as e:
-                logger.error(f"Invalid ObjectId provided: {template_id}, error: {e}", exc_info=True)
+                logger.error(
+                    f"Invalid ObjectId provided: {template_id}, error: {e}",
+                    exc_info=True,
+                )
                 raise HTTPException(status_code=400, detail="Invalid template ID")
 
             result = await self.templates_collection.delete_one({"_id": obj_id})
@@ -921,7 +1078,9 @@ class NotificationService:
             raise
         except Exception as e:
             logger.error(f"Error deleting template: {str(e)}")
-            raise HTTPException(status_code=500, detail=f"Error deleting template: {str(e)}")
+            raise HTTPException(
+                status_code=500, detail=f"Error deleting template: {str(e)}"
+            )
 
     # =========================================================================
     # TEAM MANAGEMENT NOTIFICATIONS

@@ -21,14 +21,14 @@ PRD Reference: Phase 9 — Auction Engine
 
 import logging
 from datetime import datetime, timezone, timedelta
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List
 
 logger = logging.getLogger(__name__)
 
 # ── Bayesian smoothing for EstimatedActionRate ──
 # We use a beta prior so cold-start campaigns don't get unfairly boosted/penalized.
 # Prior: ~2% action rate (industry average for display advertising)
-PRIOR_ACTIONS = 2       # pseudo-observations of actions
+PRIOR_ACTIONS = 2  # pseudo-observations of actions
 PRIOR_IMPRESSIONS = 100  # pseudo-observations of impressions
 # This gives a prior rate of 2/100 = 2%
 
@@ -75,15 +75,9 @@ class AdAuctionService:
             {
                 "$group": {
                     "_id": None,
-                    "total_impressions": {
-                        "$sum": "$events.impression_served"
-                    },
-                    "total_clicks": {
-                        "$sum": "$events.click"
-                    },
-                    "total_leads": {
-                        "$sum": "$events.lead_created"
-                    },
+                    "total_impressions": {"$sum": "$events.impression_served"},
+                    "total_clicks": {"$sum": "$events.click"},
+                    "total_leads": {"$sum": "$events.lead_created"},
                 }
             },
         ]
@@ -190,13 +184,15 @@ class AdAuctionService:
             adrank = self.compute_adrank(bid, ear, quality_score)
 
             if adrank >= MIN_ADRANK_TO_SERVE:
-                scored.append({
-                    "campaign": campaign,
-                    "adrank": adrank,
-                    "estimated_action_rate": ear,
-                    "bid": bid,
-                    "quality_score": quality_score,
-                })
+                scored.append(
+                    {
+                        "campaign": campaign,
+                        "adrank": adrank,
+                        "estimated_action_rate": ear,
+                        "bid": bid,
+                        "quality_score": quality_score,
+                    }
+                )
 
         if not scored:
             logger.warning(
@@ -225,12 +221,14 @@ class AdAuctionService:
                 winner_quality_score=entry["quality_score"],
             )
 
-            winners.append({
-                "campaign": entry["campaign"],
-                "adrank": entry["adrank"],
-                "estimated_action_rate": round(entry["estimated_action_rate"], 4),
-                "effective_cost": effective_cost,
-                "position": i + 1,
-            })
+            winners.append(
+                {
+                    "campaign": entry["campaign"],
+                    "adrank": entry["adrank"],
+                    "estimated_action_rate": round(entry["estimated_action_rate"], 4),
+                    "effective_cost": effective_cost,
+                    "position": i + 1,
+                }
+            )
 
         return winners

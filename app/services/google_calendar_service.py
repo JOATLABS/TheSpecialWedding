@@ -31,7 +31,7 @@ class GoogleCalendarService:
         if not settings.GOOGLE_CLIENT_ID or not settings.GOOGLE_CLIENT_SECRET:
             raise HTTPException(
                 status_code=503,
-                detail="Google Calendar integration not configured. Missing client credentials."
+                detail="Google Calendar integration not configured. Missing client credentials.",
             )
 
         return {
@@ -96,7 +96,9 @@ class GoogleCalendarService:
             flow.fetch_token(code=code)
         except Exception as e:
             logger.error(f"Failed to fetch token for {user_email}: {str(e)}")
-            raise HTTPException(status_code=400, detail="Failed to complete Google authorization")
+            raise HTTPException(
+                status_code=400, detail="Failed to complete Google authorization"
+            )
 
         credentials = flow.credentials
 
@@ -113,7 +115,7 @@ class GoogleCalendarService:
         }
 
         # Upsert: update if exists, insert if not
-        result = await self.tokens_collection.update_one(
+        await self.tokens_collection.update_one(
             {"user_email": user_email},
             {
                 "$set": token_data,
@@ -156,6 +158,7 @@ class GoogleCalendarService:
         if credentials.expired and credentials.refresh_token:
             try:
                 from google.auth.transport.requests import Request
+
                 credentials.refresh(Request())
 
                 # Update stored tokens
@@ -197,10 +200,12 @@ class GoogleCalendarService:
             }
 
         # Count synced events
-        synced_count = await self.tasks_collection.count_documents({
-            "planner_email": user_email,
-            "synced_to_google": True,
-        })
+        synced_count = await self.tasks_collection.count_documents(
+            {
+                "planner_email": user_email,
+                "synced_to_google": True,
+            }
+        )
 
         return {
             "connected": True,
@@ -219,7 +224,7 @@ class GoogleCalendarService:
         Returns:
             Disconnection status
         """
-        result = await self.tokens_collection.delete_one({"user_email": user_email})
+        await self.tokens_collection.delete_one({"user_email": user_email})
 
         # Clear sync flags from tasks but keep the tasks
         await self.tasks_collection.update_many(
@@ -276,17 +281,28 @@ class GoogleCalendarService:
                 # All-day events use date format
                 if isinstance(start_date, datetime):
                     event_body["start"] = {"date": start_date.strftime("%Y-%m-%d")}
-                    event_body["end"] = {"date": (end_date + timedelta(days=1)).strftime("%Y-%m-%d")}
+                    event_body["end"] = {
+                        "date": (end_date + timedelta(days=1)).strftime("%Y-%m-%d")
+                    }
                 else:
                     event_body["start"] = {"date": str(start_date)[:10]}
                     event_body["end"] = {"date": str(end_date)[:10]}
             else:
                 # Timed events use dateTime format
                 if isinstance(start_date, datetime):
-                    event_body["start"] = {"dateTime": start_date.isoformat(), "timeZone": "UTC"}
-                    event_body["end"] = {"dateTime": end_date.isoformat(), "timeZone": "UTC"}
+                    event_body["start"] = {
+                        "dateTime": start_date.isoformat(),
+                        "timeZone": "UTC",
+                    }
+                    event_body["end"] = {
+                        "dateTime": end_date.isoformat(),
+                        "timeZone": "UTC",
+                    }
                 else:
-                    event_body["start"] = {"dateTime": str(start_date), "timeZone": "UTC"}
+                    event_body["start"] = {
+                        "dateTime": str(start_date),
+                        "timeZone": "UTC",
+                    }
                     event_body["end"] = {"dateTime": str(end_date), "timeZone": "UTC"}
 
             # Add reminders if specified
@@ -313,20 +329,28 @@ class GoogleCalendarService:
                 "#46d6db": "7",  # Peacock
                 "#e1e1e1": "8",  # Graphite
                 "#5484ed": "9",  # Blueberry
-                "#51b749": "10", # Basil
-                "#dc2127": "11", # Tomato
+                "#51b749": "10",  # Basil
+                "#dc2127": "11",  # Tomato
             }
             if task.get("color") and task["color"].lower() in color_map:
                 event_body["colorId"] = color_map[task["color"].lower()]
 
             # Get calendar ID from stored tokens
-            token_doc = await self.tokens_collection.find_one({"user_email": user_email})
-            calendar_id = token_doc.get("calendar_id", "primary") if token_doc else "primary"
+            token_doc = await self.tokens_collection.find_one(
+                {"user_email": user_email}
+            )
+            calendar_id = (
+                token_doc.get("calendar_id", "primary") if token_doc else "primary"
+            )
 
-            event = service.events().insert(
-                calendarId=calendar_id,
-                body=event_body,
-            ).execute()
+            event = (
+                service.events()
+                .insert(
+                    calendarId=calendar_id,
+                    body=event_body,
+                )
+                .execute()
+            )
 
             logger.info(f"Created Google event {event['id']} for user {user_email}")
             return event.get("id")
@@ -361,14 +385,22 @@ class GoogleCalendarService:
         try:
             service = build("calendar", "v3", credentials=credentials)
 
-            token_doc = await self.tokens_collection.find_one({"user_email": user_email})
-            calendar_id = token_doc.get("calendar_id", "primary") if token_doc else "primary"
+            token_doc = await self.tokens_collection.find_one(
+                {"user_email": user_email}
+            )
+            calendar_id = (
+                token_doc.get("calendar_id", "primary") if token_doc else "primary"
+            )
 
             # Get existing event first
-            existing = service.events().get(
-                calendarId=calendar_id,
-                eventId=google_event_id,
-            ).execute()
+            existing = (
+                service.events()
+                .get(
+                    calendarId=calendar_id,
+                    eventId=google_event_id,
+                )
+                .execute()
+            )
 
             # Update fields
             if task.get("title"):
@@ -381,13 +413,31 @@ class GoogleCalendarService:
             end_date = task.get("end_date")
             if start_date:
                 if task.get("all_day"):
-                    existing["start"] = {"date": start_date.strftime("%Y-%m-%d") if isinstance(start_date, datetime) else str(start_date)[:10]}
+                    existing["start"] = {
+                        "date": start_date.strftime("%Y-%m-%d")
+                        if isinstance(start_date, datetime)
+                        else str(start_date)[:10]
+                    }
                     if end_date:
-                        existing["end"] = {"date": end_date.strftime("%Y-%m-%d") if isinstance(end_date, datetime) else str(end_date)[:10]}
+                        existing["end"] = {
+                            "date": end_date.strftime("%Y-%m-%d")
+                            if isinstance(end_date, datetime)
+                            else str(end_date)[:10]
+                        }
                 else:
-                    existing["start"] = {"dateTime": start_date.isoformat() if isinstance(start_date, datetime) else str(start_date), "timeZone": "UTC"}
+                    existing["start"] = {
+                        "dateTime": start_date.isoformat()
+                        if isinstance(start_date, datetime)
+                        else str(start_date),
+                        "timeZone": "UTC",
+                    }
                     if end_date:
-                        existing["end"] = {"dateTime": end_date.isoformat() if isinstance(end_date, datetime) else str(end_date), "timeZone": "UTC"}
+                        existing["end"] = {
+                            "dateTime": end_date.isoformat()
+                            if isinstance(end_date, datetime)
+                            else str(end_date),
+                            "timeZone": "UTC",
+                        }
 
             service.events().update(
                 calendarId=calendar_id,
@@ -426,8 +476,12 @@ class GoogleCalendarService:
         try:
             service = build("calendar", "v3", credentials=credentials)
 
-            token_doc = await self.tokens_collection.find_one({"user_email": user_email})
-            calendar_id = token_doc.get("calendar_id", "primary") if token_doc else "primary"
+            token_doc = await self.tokens_collection.find_one(
+                {"user_email": user_email}
+            )
+            calendar_id = (
+                token_doc.get("calendar_id", "primary") if token_doc else "primary"
+            )
 
             service.events().delete(
                 calendarId=calendar_id,
@@ -472,22 +526,30 @@ class GoogleCalendarService:
         try:
             service = build("calendar", "v3", credentials=credentials)
 
-            token_doc = await self.tokens_collection.find_one({"user_email": user_email})
-            calendar_id = token_doc.get("calendar_id", "primary") if token_doc else "primary"
+            token_doc = await self.tokens_collection.find_one(
+                {"user_email": user_email}
+            )
+            calendar_id = (
+                token_doc.get("calendar_id", "primary") if token_doc else "primary"
+            )
 
             if not time_min:
                 time_min = datetime.now(UTC)
             if not time_max:
                 time_max = time_min + timedelta(days=365)
 
-            events_result = service.events().list(
-                calendarId=calendar_id,
-                timeMin=time_min.isoformat(),
-                timeMax=time_max.isoformat(),
-                maxResults=max_results,
-                singleEvents=True,
-                orderBy="startTime",
-            ).execute()
+            events_result = (
+                service.events()
+                .list(
+                    calendarId=calendar_id,
+                    timeMin=time_min.isoformat(),
+                    timeMax=time_max.isoformat(),
+                    maxResults=max_results,
+                    singleEvents=True,
+                    orderBy="startTime",
+                )
+                .execute()
+            )
 
             events = events_result.get("items", [])
 
@@ -497,7 +559,9 @@ class GoogleCalendarService:
                 {"$set": {"last_sync_at": datetime.now(UTC)}},
             )
 
-            logger.info(f"Fetched {len(events)} events from Google Calendar for {user_email}")
+            logger.info(
+                f"Fetched {len(events)} events from Google Calendar for {user_email}"
+            )
             return events
 
         except HttpError as e:

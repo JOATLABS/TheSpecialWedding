@@ -40,6 +40,7 @@ def _resolve_planner_scope_email(current_user: ExtendedAuthUser) -> Optional[str
 #  ROOT ADMIN: Full behavioral analytics dashboard
 # ──────────────────────────────────────────────────
 
+
 @router.get(
     "/behavioral-analytics",
     tags=["Behavioral Analytics"],
@@ -58,12 +59,15 @@ async def get_behavioral_analytics(
         return await analytics_service.compile_behavioral_metrics(timeframe)
     except Exception as exc:
         logger.error("Failed to compile behavioral metrics: %s", exc, exc_info=True)
-        raise HTTPException(status_code=500, detail="Failed to compile behavioral metrics")
+        raise HTTPException(
+            status_code=500, detail="Failed to compile behavioral metrics"
+        )
 
 
 # ──────────────────────────────────────────────────
 #  PLANNER: Per-wedding engagement signals
 # ──────────────────────────────────────────────────
+
 
 @router.get(
     "/engagement-signals",
@@ -82,7 +86,9 @@ async def get_engagement_signals(
 
     planner_scope_email = _resolve_planner_scope_email(current_user)
     if current_user.is_team_member and not planner_scope_email:
-        raise HTTPException(status_code=403, detail="Team member is not linked to a planner")
+        raise HTTPException(
+            status_code=403, detail="Team member is not linked to a planner"
+        )
 
     try:
         signals = await analytics_service.get_planner_engagement_signals(
@@ -98,6 +104,7 @@ async def get_engagement_signals(
 # ──────────────────────────────────────────────────
 #  COUPLE PORTAL: Non-responders list
 # ──────────────────────────────────────────────────
+
 
 @router.get(
     "/weddings/{wedding_id}/non-responders",
@@ -130,6 +137,7 @@ async def get_non_responders(
 # ──────────────────────────────────────────────────
 #  COUPLE PORTAL: Budget category breakdown
 # ──────────────────────────────────────────────────
+
 
 @router.get(
     "/weddings/{wedding_id}/budget-breakdown",
@@ -175,7 +183,9 @@ async def couple_get_non_responders(
     """Return non-responding guests for the authenticated couple's wedding."""
     wedding_id = couple.get("wedding_id")
     if not wedding_id:
-        raise HTTPException(status_code=400, detail="No wedding associated with this account")
+        raise HTTPException(
+            status_code=400, detail="No wedding associated with this account"
+        )
 
     try:
         non_responders = await analytics_service.get_non_responders(str(wedding_id))
@@ -200,7 +210,9 @@ async def couple_get_budget_breakdown(
     """Return budget category breakdown for the authenticated couple's wedding."""
     wedding_id = couple.get("wedding_id")
     if not wedding_id:
-        raise HTTPException(status_code=400, detail="No wedding associated with this account")
+        raise HTTPException(
+            status_code=400, detail="No wedding associated with this account"
+        )
 
     try:
         breakdown = await analytics_service.get_budget_breakdown(str(wedding_id))

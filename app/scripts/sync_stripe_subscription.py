@@ -66,7 +66,9 @@ async def sync(email: str):
         return
 
     # Convert Stripe object to dict for safe access
-    sub_dict = stripe_sub.to_dict() if hasattr(stripe_sub, 'to_dict') else dict(stripe_sub)
+    sub_dict = (
+        stripe_sub.to_dict() if hasattr(stripe_sub, "to_dict") else dict(stripe_sub)
+    )
 
     print(f"\n[STRIPE] Subscription status: {sub_dict.get('status')}")
 
@@ -78,15 +80,23 @@ async def sync(email: str):
         mongo.close()
         return
 
-    first_item = items_list[0] if isinstance(items_list[0], dict) else (items_list[0].to_dict() if hasattr(items_list[0], 'to_dict') else {})
+    first_item = (
+        items_list[0]
+        if isinstance(items_list[0], dict)
+        else (items_list[0].to_dict() if hasattr(items_list[0], "to_dict") else {})
+    )
 
     # Period dates live on items in newer Stripe API
-    raw_period_start = first_item.get("current_period_start") or sub_dict.get("current_period_start")
-    raw_period_end = first_item.get("current_period_end") or sub_dict.get("current_period_end")
+    raw_period_start = first_item.get("current_period_start") or sub_dict.get(
+        "current_period_start"
+    )
+    raw_period_end = first_item.get("current_period_end") or sub_dict.get(
+        "current_period_end"
+    )
     print(f"[STRIPE] Current period: {raw_period_start} → {raw_period_end}")
 
     price_obj = first_item.get("price", {})
-    if not isinstance(price_obj, dict) and hasattr(price_obj, 'to_dict'):
+    if not isinstance(price_obj, dict) and hasattr(price_obj, "to_dict"):
         price_obj = price_obj.to_dict()
     elif not isinstance(price_obj, dict):
         price_obj = {}
@@ -94,26 +104,34 @@ async def sync(email: str):
     current_price_id = price_obj.get("id")
     price_amount = (price_obj.get("unit_amount") or 0) / 100
     recurring = price_obj.get("recurring", {}) or {}
-    price_interval = recurring.get("interval", "month") if isinstance(recurring, dict) else "month"
+    price_interval = (
+        recurring.get("interval", "month") if isinstance(recurring, dict) else "month"
+    )
 
     print(f"[STRIPE] Current price ID: {current_price_id}")
     print(f"[STRIPE] Price: ${price_amount}/{price_interval}")
 
     # Resolve platform plan from Stripe price
-    matched_plan = await plans_col.find_one({
-        "$or": [
-            {"stripe_price_id_monthly": current_price_id},
-            {"stripe_price_id_yearly": current_price_id},
-        ]
-    })
+    matched_plan = await plans_col.find_one(
+        {
+            "$or": [
+                {"stripe_price_id_monthly": current_price_id},
+                {"stripe_price_id_yearly": current_price_id},
+            ]
+        }
+    )
 
     if not matched_plan:
-        print(f"[ERROR] No platform plan found matching Stripe price: {current_price_id}")
+        print(
+            f"[ERROR] No platform plan found matching Stripe price: {current_price_id}"
+        )
         # List all plans for debugging
         all_plans = await plans_col.find({}).to_list(length=None)
         print("\n[DEBUG] Available plans:")
         for p in all_plans:
-            print(f"  {p['_id']}: monthly={p.get('stripe_price_id_monthly')}, yearly={p.get('stripe_price_id_yearly')}")
+            print(
+                f"  {p['_id']}: monthly={p.get('stripe_price_id_monthly')}, yearly={p.get('stripe_price_id_yearly')}"
+            )
         mongo.close()
         return
 
@@ -143,44 +161,60 @@ async def sync(email: str):
     }
 
     # Parse period dates (from items or top-level)
-    period_start = datetime.fromtimestamp(raw_period_start, tz=timezone.utc) if raw_period_start else now
-    period_end = datetime.fromtimestamp(raw_period_end, tz=timezone.utc) if raw_period_end else now
+    period_start = (
+        datetime.fromtimestamp(raw_period_start, tz=timezone.utc)
+        if raw_period_start
+        else now
+    )
+    period_end = (
+        datetime.fromtimestamp(raw_period_end, tz=timezone.utc)
+        if raw_period_end
+        else now
+    )
 
-    print(f"\n[SYNC] Updating platform:")
+    print("\n[SYNC] Updating platform:")
     print(f"  plan_id: {user.get('plan_id')} → {resolved_plan_id}")
-    print(f"  subscription_status: {user.get('subscription_status')} → {internal_status}")
+    print(
+        f"  subscription_status: {user.get('subscription_status')} → {internal_status}"
+    )
     print(f"  billing_interval: {billing_interval}")
     print(f"  period: {period_start.isoformat()} → {period_end.isoformat()}")
 
     # Update users collection
     await users_col.update_one(
         {"_id": user["_id"]},
-        {"$set": {
-            "plan_id": resolved_plan_id,
-            "subscription_status": internal_status,
-            "stripe_subscription_id": stripe_sub_id,
-            "updated_at": now,
-        }}
+        {
+            "$set": {
+                "plan_id": resolved_plan_id,
+                "subscription_status": internal_status,
+                "stripe_subscription_id": stripe_sub_id,
+                "updated_at": now,
+            }
+        },
     )
     print("[OK] Users collection updated")
 
     # Update user_subscriptions collection
     result = await subs_col.update_one(
         {"user_id": user_id},
-        {"$set": {
-            "plan_id": resolved_plan_id,
-            "status": internal_status,
-            "stripe_status": stripe_sub.status,
-            "billing_interval": billing_interval,
-            "current_period_start": period_start,
-            "current_period_end": period_end,
-            "plan_snapshot": plan_snapshot,
-            "updated_at": now,
-        }}
+        {
+            "$set": {
+                "plan_id": resolved_plan_id,
+                "status": internal_status,
+                "stripe_status": stripe_sub.status,
+                "billing_interval": billing_interval,
+                "current_period_start": period_start,
+                "current_period_end": period_end,
+                "plan_snapshot": plan_snapshot,
+                "updated_at": now,
+            }
+        },
     )
     print(f"[OK] Subscriptions updated: {result.modified_count}")
 
-    print(f"\n[DONE] {email} synced to {matched_plan.get('name')} ({resolved_plan_id}) — status: {internal_status}")
+    print(
+        f"\n[DONE] {email} synced to {matched_plan.get('name')} ({resolved_plan_id}) — status: {internal_status}"
+    )
 
     mongo.close()
 

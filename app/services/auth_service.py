@@ -4,8 +4,11 @@ from datetime import datetime, timedelta, timezone
 from fastapi import HTTPException
 
 from app.core.database import mongo
-from app.utils.auth_utils import (DUMMY_PASSWORD_HASH, create_access_token,
-                                  verify_password)
+from app.utils.auth_utils import (
+    DUMMY_PASSWORD_HASH,
+    create_access_token,
+    verify_password,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -33,7 +36,7 @@ class AuthService:
             raise HTTPException(status_code=401, detail="Invalid credentials")
 
         # Check if account is active (default to True for backward compatibility with legacy users)
-        if user.get("is_active") == False:  # Explicitly check for False, not just falsy
+        if user.get("is_active") is False:  # Explicitly check for False, not just falsy
             raise HTTPException(
                 status_code=401, detail="Account is not active. Please contact support."
             )

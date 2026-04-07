@@ -33,6 +33,7 @@ async def readiness():
     # Check MongoDB
     try:
         from app.core.database import mongo
+
         await mongo.client.server_info()
         checks["database"] = "connected"
     except Exception as e:
@@ -43,6 +44,7 @@ async def readiness():
     # Check Redis (non-fatal if not configured)
     try:
         from app.core.cache import cache
+
         if cache.redis_client:
             await cache.redis_client.ping()
             checks["redis"] = "connected"
@@ -79,6 +81,7 @@ async def health_check():
     # Check MongoDB connectivity
     try:
         from app.core.database import mongo
+
         await mongo.client.server_info()
         checks["database"] = "connected"
     except Exception as e:

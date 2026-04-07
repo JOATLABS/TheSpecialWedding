@@ -28,15 +28,18 @@ from app.models.base import MongoModel
 # ENUMS
 # =============================================================================
 
+
 class CampaignGoal(str, Enum):
     """What the vendor wants to achieve with the campaign."""
-    PROFILE_VISITS = "profile_visits"    # CPC — get planners to view profile
-    QUOTE_REQUESTS = "quote_requests"    # CPL — get planners to request quotes
-    BOOKINGS = "bookings"               # CPA — get planners to book (Phase 4+)
+
+    PROFILE_VISITS = "profile_visits"  # CPC — get planners to view profile
+    QUOTE_REQUESTS = "quote_requests"  # CPL — get planners to request quotes
+    BOOKINGS = "bookings"  # CPA — get planners to book (Phase 4+)
 
 
 class CampaignStatus(str, Enum):
     """Campaign lifecycle status."""
+
     DRAFT = "draft"
     PENDING_REVIEW = "pending_review"
     ACTIVE = "active"
@@ -47,6 +50,7 @@ class CampaignStatus(str, Enum):
 
 class CreativeReviewStatus(str, Enum):
     """Review status for campaign creatives."""
+
     PENDING = "pending"
     APPROVED = "approved"
     REJECTED = "rejected"
@@ -55,36 +59,42 @@ class CreativeReviewStatus(str, Enum):
 
 class CreativeType(str, Enum):
     """Types of ad creative assets."""
+
     IMAGE = "image"
     TEXT = "text"
 
 
 class PacingStrategy(str, Enum):
     """How budget is distributed over campaign duration."""
+
     EVEN = "even"
     ACCELERATED = "accelerated"
 
 
 class BidStrategy(str, Enum):
     """Bidding strategy for auction (Phase 4+)."""
+
     FIXED = "fixed"
     AUTO = "auto"
 
 
 class BillingModel(str, Enum):
     """How the vendor is charged for ad activity."""
-    CPL = "cpl"          # Cost per lead (quote request + directory add)
-    FREE = "free"        # No charge (root admin override)
+
+    CPL = "cpl"  # Cost per lead (quote request + directory add)
+    FREE = "free"  # No charge (root admin override)
 
 
 class LeadChargeType(str, Enum):
     """Differentiates lead types for pricing."""
+
     QUOTE_REQUEST = "quote_request"
     ADD_TO_DIRECTORY = "add_to_directory"
 
 
 class FraudSignalType(str, Enum):
     """Types of fraud/anomaly signals."""
+
     UNUSUAL_TRAFFIC = "unusual_traffic"
     DUPLICATE_CLICK = "duplicate_click"
     BOT_PATTERN = "bot_pattern"
@@ -94,6 +104,7 @@ class FraudSignalType(str, Enum):
 
 class FraudSignalStatus(str, Enum):
     """Status of a fraud investigation."""
+
     PENDING = "pending"
     INVESTIGATED = "investigated"
     FALSE_ALARM = "false_alarm"
@@ -102,6 +113,7 @@ class FraudSignalStatus(str, Enum):
 
 class VendorAccountStatus(str, Enum):
     """Status of an advertising vendor account."""
+
     PENDING_APPROVAL = "pending_approval"
     ACTIVE = "active"
     SUSPENDED = "suspended"
@@ -111,6 +123,7 @@ class VendorAccountStatus(str, Enum):
 # =============================================================================
 # AD CAMPAIGN MODEL
 # =============================================================================
+
 
 class AdCampaign(MongoModel):
     """
@@ -131,78 +144,64 @@ class AdCampaign(MongoModel):
     # ── Vendor identity (independent of planner vendor directory) ──
     vendor_id: str = Field(
         ...,
-        description="Independent advertiser vendor user _id (NOT vendor_profile_id)"
+        description="Independent advertiser vendor user _id (NOT vendor_profile_id)",
     )
     vendor_email: str = Field(
-        ...,
-        max_length=254,
-        description="Vendor's registered email"
+        ..., max_length=254, description="Vendor's registered email"
     )
     vendor_name: str = Field(
         ...,
         max_length=200,
-        description="Vendor's business name (denormalized for display)"
+        description="Vendor's business name (denormalized for display)",
     )
 
     # ── Campaign metadata ──
-    campaign_name: str = Field(
-        ...,
-        max_length=200,
-        description="Campaign display name"
-    )
+    campaign_name: str = Field(..., max_length=200, description="Campaign display name")
     campaign_description: Optional[str] = Field(
-        None,
-        max_length=1000,
-        description="Campaign description"
+        None, max_length=1000, description="Campaign description"
     )
     goal: CampaignGoal = Field(
         default=CampaignGoal.PROFILE_VISITS,
-        description="Campaign objective: profile_visits (CPC), quote_requests (CPL), bookings (CPA)"
+        description="Campaign objective: profile_visits (CPC), quote_requests (CPL), bookings (CPA)",
     )
     status: CampaignStatus = Field(
-        default=CampaignStatus.DRAFT,
-        description="Campaign lifecycle status"
+        default=CampaignStatus.DRAFT, description="Campaign lifecycle status"
     )
 
     # ── Targeting ──
     target_categories: List[str] = Field(
         default_factory=list,
-        description="VendorCategory values to target (empty = all)"
+        description="VendorCategory values to target (empty = all)",
     )
     target_wedding_stages: List[str] = Field(
-        default_factory=list,
-        description="Wedding stages to target (empty = all)"
+        default_factory=list, description="Wedding stages to target (empty = all)"
     )
     target_placements: List[str] = Field(
         default_factory=list,
-        description="AdPlacementType values (empty = all placements)"
+        description="AdPlacementType values (empty = all placements)",
     )
     target_regions: List[str] = Field(
-        default_factory=list,
-        description="Geographic targeting: city, state, zip codes"
+        default_factory=list, description="Geographic targeting: city, state, zip codes"
     )
     target_budget_min: Optional[float] = Field(
-        None, ge=0,
-        description="Only show to planners with wedding budget >= this"
+        None, ge=0, description="Only show to planners with wedding budget >= this"
     )
     target_budget_max: Optional[float] = Field(
-        None, ge=0,
-        description="Only show to planners with wedding budget <= this"
+        None, ge=0, description="Only show to planners with wedding budget <= this"
     )
 
     # ── Budget & pacing ──
     daily_budget: float = Field(
-        default=0.0, ge=0,
-        description="Daily budget cap in USD (0 = unlimited for free tier)"
+        default=0.0,
+        ge=0,
+        description="Daily budget cap in USD (0 = unlimited for free tier)",
     )
     total_budget: float = Field(
-        default=0.0, ge=0,
-        description="Lifetime budget cap in USD (0 = unlimited for free tier)"
+        default=0.0,
+        ge=0,
+        description="Lifetime budget cap in USD (0 = unlimited for free tier)",
     )
-    budget_consumed: float = Field(
-        default=0.0, ge=0,
-        description="Total spend to date"
-    )
+    budget_consumed: float = Field(default=0.0, ge=0, description="Total spend to date")
     pacing_strategy: PacingStrategy = Field(
         default=PacingStrategy.EVEN,
     )
@@ -214,19 +213,17 @@ class AdCampaign(MongoModel):
     # ── Billing model ──
     billing_model: str = Field(
         default="cpl",
-        description="Billing model: 'cpl' (cost per lead) or 'free' (no charge)"
+        description="Billing model: 'cpl' (cost per lead) or 'free' (no charge)",
     )
     is_free_tier: bool = Field(
         default=False,
-        description="Campaign-level free tier override. Set by root admin only."
+        description="Campaign-level free tier override. Set by root admin only.",
     )
     cpl_quote_request: float = Field(
-        default=10.0, ge=0,
-        description="Cost per quote_request lead in USD"
+        default=10.0, ge=0, description="Cost per quote_request lead in USD"
     )
     cpl_directory_add: float = Field(
-        default=3.0, ge=0,
-        description="Cost per add_to_directory lead in USD"
+        default=3.0, ge=0, description="Cost per add_to_directory lead in USD"
     )
 
     # ── Bidding (placeholder for auction engine) ──
@@ -296,6 +293,7 @@ class AdCampaign(MongoModel):
 # AD CREATIVE MODEL
 # =============================================================================
 
+
 class AdCreative(MongoModel):
     """
     Creative asset for an ad campaign.
@@ -319,8 +317,9 @@ class AdCreative(MongoModel):
     headline: str = Field(..., max_length=100)
     description: str = Field(..., max_length=300)
     offer: Optional[str] = Field(
-        None, max_length=200,
-        description="Special offer text (e.g., '20% off if booked by March 31')"
+        None,
+        max_length=200,
+        description="Special offer text (e.g., '20% off if booked by March 31')",
     )
     call_to_action: str = Field(default="View Portfolio", max_length=50)
 
@@ -339,6 +338,7 @@ class AdCreative(MongoModel):
 # CAMPAIGN DAY STATS (ROLLUP)
 # =============================================================================
 
+
 class CampaignDayStats(MongoModel):
     """
     Pre-aggregated daily rollup per campaign.
@@ -356,7 +356,7 @@ class CampaignDayStats(MongoModel):
     # ── Event counts ──
     events: Dict[str, int] = Field(
         default_factory=dict,
-        description="{impression_served: N, click: N, lead_created: N, ...}"
+        description="{impression_served: N, click: N, lead_created: N, ...}",
     )
 
     # ── Lead breakdown ──
@@ -380,6 +380,7 @@ class CampaignDayStats(MongoModel):
 # =============================================================================
 # PLACEMENT DAY STATS (ROLLUP)
 # =============================================================================
+
 
 class PlacementDayStats(MongoModel):
     """
@@ -405,6 +406,7 @@ class PlacementDayStats(MongoModel):
 # FRAUD SIGNAL
 # =============================================================================
 
+
 class AdFraudSignal(MongoModel):
     """
     TTL-indexed fraud/anomaly detection record. Auto-expires after 7 days.
@@ -416,7 +418,9 @@ class AdFraudSignal(MongoModel):
     planner_id: Optional[str] = Field(None, max_length=254)
     session_id: Optional[str] = Field(None)
 
-    click_velocity: Optional[int] = Field(None, description="Clicks in last 5 min window")
+    click_velocity: Optional[int] = Field(
+        None, description="Clicks in last 5 min window"
+    )
     details: Dict[str, Any] = Field(default_factory=dict)
 
     status: FraudSignalStatus = Field(default=FraudSignalStatus.PENDING)
@@ -427,6 +431,7 @@ class AdFraudSignal(MongoModel):
 # =============================================================================
 # VENDOR AD BILLING
 # =============================================================================
+
 
 class VendorAdBilling(MongoModel):
     """
@@ -451,12 +456,19 @@ class VendorAdBilling(MongoModel):
     conversions: int = Field(default=0, ge=0)
 
     # ── Spend ──
-    total_spend: float = Field(default=0.0, ge=0, description="Total charges this period")
+    total_spend: float = Field(
+        default=0.0, ge=0, description="Total charges this period"
+    )
     currency: str = Field(default="USD")
-    is_free_tier: bool = Field(default=False, description="True if campaign/vendor was free-tier at billing time")
+    is_free_tier: bool = Field(
+        default=False,
+        description="True if campaign/vendor was free-tier at billing time",
+    )
 
     # ── Stripe integration ──
-    payment_status: str = Field(default="pending", description="pending | invoiced | paid | failed | free")
+    payment_status: str = Field(
+        default="pending", description="pending | invoiced | paid | failed | free"
+    )
     stripe_invoice_id: Optional[str] = Field(None)
     stripe_customer_id: Optional[str] = Field(None)
 
@@ -481,7 +493,9 @@ class AdLeadCharge(MongoModel):
     # ── Stripe ──
     stripe_invoice_item_id: Optional[str] = Field(None)
     stripe_customer_id: Optional[str] = Field(None)
-    charge_status: str = Field(default="pending", description="pending | charged | free | failed")
+    charge_status: str = Field(
+        default="pending", description="pending | charged | free | failed"
+    )
 
     # ── Context ──
     planner_id: Optional[str] = Field(None)
@@ -491,6 +505,7 @@ class AdLeadCharge(MongoModel):
 # =============================================================================
 # VENDOR FREE TIER CONFIG
 # =============================================================================
+
 
 class VendorFreeTierConfig(MongoModel):
     """
@@ -504,10 +519,13 @@ class VendorFreeTierConfig(MongoModel):
     vendor_name: str = Field(default="", max_length=200)
     is_free: bool = Field(default=True)
     reason: str = Field(
-        default="", max_length=500,
-        description="Why this vendor gets free tier (e.g., 'launch partner', 'promo')"
+        default="",
+        max_length=500,
+        description="Why this vendor gets free tier (e.g., 'launch partner', 'promo')",
     )
-    granted_by: str = Field(..., max_length=254, description="Root admin email who granted it")
+    granted_by: str = Field(
+        ..., max_length=254, description="Root admin email who granted it"
+    )
     expires_at: Optional[datetime] = Field(
         None, description="Optional expiry. Null = permanent free tier."
     )
@@ -517,8 +535,10 @@ class VendorFreeTierConfig(MongoModel):
 # REQUEST / RESPONSE MODELS
 # =============================================================================
 
+
 class CreateCampaignRequest(MongoModel):
     """Request to create a new ad campaign."""
+
     campaign_name: str = Field(..., max_length=200)
     campaign_description: Optional[str] = Field(None, max_length=1000)
     goal: CampaignGoal = Field(default=CampaignGoal.PROFILE_VISITS)
@@ -530,7 +550,9 @@ class CreateCampaignRequest(MongoModel):
     target_budget_max: Optional[float] = Field(None, ge=0)
     daily_budget: float = Field(default=0.0, ge=0)
     total_budget: float = Field(default=0.0, ge=0)
-    bid_amount: float = Field(default=0.0, ge=0, description="CPL bid amount for auction ranking")
+    bid_amount: float = Field(
+        default=0.0, ge=0, description="CPL bid amount for auction ranking"
+    )
     pacing_strategy: PacingStrategy = Field(default=PacingStrategy.EVEN)
     start_date: Optional[datetime] = Field(None)
     end_date: Optional[datetime] = Field(None)
@@ -541,6 +563,7 @@ class CreateCampaignRequest(MongoModel):
 
 class UpdateCampaignRequest(MongoModel):
     """Request to update a draft campaign. Only mutable fields."""
+
     campaign_name: Optional[str] = Field(None, max_length=200)
     campaign_description: Optional[str] = Field(None, max_length=1000)
     goal: Optional[CampaignGoal] = Field(None)
@@ -552,7 +575,9 @@ class UpdateCampaignRequest(MongoModel):
     target_budget_max: Optional[float] = Field(None, ge=0)
     daily_budget: Optional[float] = Field(None, ge=0)
     total_budget: Optional[float] = Field(None, ge=0)
-    bid_amount: Optional[float] = Field(None, ge=0, description="CPL bid amount for auction ranking")
+    bid_amount: Optional[float] = Field(
+        None, ge=0, description="CPL bid amount for auction ranking"
+    )
     pacing_strategy: Optional[PacingStrategy] = Field(None)
     start_date: Optional[datetime] = Field(None)
     end_date: Optional[datetime] = Field(None)
@@ -563,6 +588,7 @@ class UpdateCampaignRequest(MongoModel):
 
 class CreateCreativeRequest(MongoModel):
     """Request to create a new ad creative."""
+
     creative_type: CreativeType = Field(default=CreativeType.IMAGE)
     image_url: Optional[str] = Field(None)
     image_alt_text: Optional[str] = Field(None, max_length=200)
@@ -576,16 +602,19 @@ class CreateCreativeRequest(MongoModel):
 
 class ReviewCampaignDecisionRequest(MongoModel):
     """Root admin request to review a campaign (approve/reject/request changes)."""
+
     review_notes: Optional[str] = Field(None, max_length=2000)
 
 
 class ReviewCreativeDecisionRequest(MongoModel):
     """Root admin request to review a creative."""
+
     review_notes: Optional[str] = Field(None, max_length=2000)
 
 
 class SetFreeTierRequest(MongoModel):
     """Root admin request to toggle free tier on a campaign or vendor."""
+
     is_free: bool = Field(...)
     reason: str = Field(default="", max_length=500)
     expires_at: Optional[datetime] = Field(None)
@@ -593,6 +622,7 @@ class SetFreeTierRequest(MongoModel):
 
 class UpdateCPLPricingRequest(MongoModel):
     """Root admin request to update CPL pricing on a campaign."""
+
     cpl_quote_request: Optional[float] = Field(None, ge=0)
     cpl_directory_add: Optional[float] = Field(None, ge=0)
 
@@ -600,6 +630,7 @@ class UpdateCPLPricingRequest(MongoModel):
 # =============================================================================
 # PLATFORM CONFIG (Singleton document in ad_platform_config collection)
 # =============================================================================
+
 
 class AdPlatformConfig(MongoModel):
     """
@@ -629,8 +660,10 @@ class AdPlatformConfig(MongoModel):
     # ── Fraud Detection ──
     max_clicks_per_planner_campaign_hour: int = Field(default=5, ge=1, le=50)
     hide_rate_auto_pause_threshold: int = Field(
-        default=3, ge=1, le=20,
-        description="Unique planners hiding in 7d before auto-pause"
+        default=3,
+        ge=1,
+        le=20,
+        description="Unique planners hiding in 7d before auto-pause",
     )
     click_velocity_window_minutes: int = Field(default=5, ge=1, le=60)
     auto_void_suspicious_clicks: bool = Field(default=True)
@@ -680,6 +713,7 @@ class UpdatePlatformConfigRequest(MongoModel):
 # PLANNER AD PREFERENCES
 # =============================================================================
 
+
 class PlannerAdPreferences(MongoModel):
     """
     Per-planner ad preferences.
@@ -693,19 +727,19 @@ class PlannerAdPreferences(MongoModel):
     # ── Vendor hiding ──
     hidden_vendor_ids: List[str] = Field(
         default_factory=list,
-        description="Vendor IDs this planner has dismissed — never shown again"
+        description="Vendor IDs this planner has dismissed — never shown again",
     )
 
     # ── Category suppression ──
     suppressed_categories: List[str] = Field(
         default_factory=list,
-        description="Vendor categories the planner has suppressed (e.g., already booked)"
+        description="Vendor categories the planner has suppressed (e.g., already booked)",
     )
 
     # ── Frequency ──
     reduced_frequency: bool = Field(
         default=False,
-        description="When true, show max 1 card instead of 3 (P10 decision)"
+        description="When true, show max 1 card instead of 3 (P10 decision)",
     )
 
     # ── Metadata ──

@@ -2,7 +2,11 @@
 
 from fastapi import APIRouter, Depends, Query
 
-from app.dependencies.auth_extended import ExtendedAuthUser, require_vendor, enforce_team_permission
+from app.dependencies.auth_extended import (
+    ExtendedAuthUser,
+    require_vendor,
+    enforce_team_permission,
+)
 from app.services.vendor_dashboard_service import VendorDashboardService
 
 
@@ -16,7 +20,11 @@ def get_vendor_dashboard(
 ):
     """Return the aggregated dashboard data for the current vendor."""
 
-    assigned_weddings = current_user.user_data.get("assigned_wedding_ids", []) if current_user.user_data else []
+    assigned_weddings = (
+        current_user.user_data.get("assigned_wedding_ids", [])
+        if current_user.user_data
+        else []
+    )
 
     return service.get_dashboard(
         vendor_email=current_user.email,

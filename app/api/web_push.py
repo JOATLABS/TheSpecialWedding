@@ -18,12 +18,14 @@ router = APIRouter()
 
 class PushSubscriptionKeys(BaseModel):
     """VAPID keys from browser subscription"""
+
     p256dh: str
     auth: str
 
 
 class PushSubscription(BaseModel):
     """Push subscription from browser's PushManager"""
+
     endpoint: str
     keys: PushSubscriptionKeys
     expirationTime: Optional[int] = None
@@ -31,16 +33,19 @@ class PushSubscription(BaseModel):
 
 class SubscribeRequest(BaseModel):
     """Wrapper for push subscription from frontend"""
+
     subscription: PushSubscription
 
 
 class UnsubscribeRequest(BaseModel):
     """Request to unsubscribe from push notifications"""
+
     endpoint: str
 
 
 class PushNotificationRequest(BaseModel):
     """Request to send a push notification"""
+
     title: str
     body: str
     url: Optional[str] = None
@@ -57,8 +62,7 @@ async def get_vapid_public_key():
 
     if not public_key:
         raise HTTPException(
-            status_code=503,
-            detail="Push notifications not configured on this server"
+            status_code=503, detail="Push notifications not configured on this server"
         )
 
     return {"vapid_public_key": public_key}
@@ -68,7 +72,7 @@ async def get_vapid_public_key():
 async def subscribe_to_push(
     body: SubscribeRequest,
     request: Request,
-    current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
+    current_user: ExtendedAuthUser = Depends(require_admin_or_planner),
 ):
     """
     Subscribe to push notifications.
@@ -82,13 +86,13 @@ async def subscribe_to_push(
     subscription_data = {
         "endpoint": body.subscription.endpoint,
         "keys": body.subscription.keys.model_dump(),
-        "expirationTime": body.subscription.expirationTime
+        "expirationTime": body.subscription.expirationTime,
     }
 
     success = await web_push_service.save_subscription(
         user_id=current_user.email,
         subscription=subscription_data,
-        user_agent=user_agent
+        user_agent=user_agent,
     )
 
     if not success:
@@ -100,7 +104,7 @@ async def subscribe_to_push(
 @router.delete("/web-push/unsubscribe", tags=["Web Push"])
 async def unsubscribe_from_push(
     body: Optional[UnsubscribeRequest] = None,
-    current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
+    current_user: ExtendedAuthUser = Depends(require_admin_or_planner),
 ):
     """
     Unsubscribe from push notifications.
@@ -115,20 +119,17 @@ async def unsubscribe_from_push(
         )
         return {
             "success": success,
-            "message": "Subscription removed" if success else "Subscription not found"
+            "message": "Subscription removed" if success else "Subscription not found",
         }
     else:
         # Remove all subscriptions for user
         count = await web_push_service.remove_user_subscriptions(current_user.email)
-        return {
-            "success": True,
-            "message": f"Removed {count} subscription(s)"
-        }
+        return {"success": True, "message": f"Removed {count} subscription(s)"}
 
 
 @router.get("/web-push/status", tags=["Web Push"])
 async def get_push_status(
-    current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
+    current_user: ExtendedAuthUser = Depends(require_admin_or_planner),
 ):
     """
     Check if the current user has push notifications enabled.
@@ -140,41 +141,39 @@ async def get_push_status(
         "enabled": is_enabled,
         "subscribed": is_subscribed,
         "message": (
-            "Push notifications are active" if is_subscribed
-            else "Not subscribed to push notifications" if is_enabled
+            "Push notifications are active"
+            if is_subscribed
+            else "Not subscribed to push notifications"
+            if is_enabled
             else "Push notifications not configured on server"
-        )
+        ),
     }
 
 
 @router.post("/web-push/test", tags=["Web Push"])
 async def send_test_notification(
-    current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
+    current_user: ExtendedAuthUser = Depends(require_admin_or_planner),
 ):
     """
     Send a test push notification to the current user.
     """
     if not web_push_service.enabled:
-        raise HTTPException(
-            status_code=503,
-            detail="Push notifications not configured"
-        )
+        raise HTTPException(status_code=503, detail="Push notifications not configured")
 
     result = await web_push_service.send_notification(
         user_id=current_user.email,
         title="Test Notification",
         body="Push notifications are working!",
         url="/admin/planner",
-        tag="test-notification"
+        tag="test-notification",
     )
 
     if not result.get("success"):
         raise HTTPException(
-            status_code=400,
-            detail=result.get("error", "No active subscriptions found")
+            status_code=400, detail=result.get("error", "No active subscriptions found")
         )
 
     return {
         "success": True,
-        "message": f"Test notification sent to {result.get('sent', 0)} device(s)"
+        "message": f"Test notification sent to {result.get('sent', 0)} device(s)",
     }

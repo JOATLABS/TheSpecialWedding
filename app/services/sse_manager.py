@@ -55,6 +55,7 @@ class SSEManager:
         """
         try:
             from app.core.settings import settings
+
             if not settings.redis_enabled:
                 logger.info("SSE Redis pub/sub disabled (REDIS_ENABLED=false)")
                 return
@@ -91,7 +92,9 @@ class SSEManager:
             self._listener_task = asyncio.create_task(self._redis_listener())
 
         except Exception as e:
-            logger.warning(f"SSE Redis pub/sub unavailable, falling back to in-process only: {e}")
+            logger.warning(
+                f"SSE Redis pub/sub unavailable, falling back to in-process only: {e}"
+            )
             self._redis_sub = None
             self._redis_pub = None
 
@@ -155,7 +158,9 @@ class SSEManager:
         """Register a new SSE connection for a user. Returns the queue to listen on."""
         # Global ceiling check
         if self._total_connections >= MAX_GLOBAL_CONNECTIONS:
-            logger.error(f"SSE: Global connection limit ({MAX_GLOBAL_CONNECTIONS}) reached, rejecting {user_email}")
+            logger.error(
+                f"SSE: Global connection limit ({MAX_GLOBAL_CONNECTIONS}) reached, rejecting {user_email}"
+            )
             raise ConnectionError("SSE connection limit reached")
 
         queue: asyncio.Queue = asyncio.Queue(maxsize=50)
@@ -168,11 +173,15 @@ class SSEManager:
             oldest = next(iter(self._connections[user_email]))
             self._connections[user_email].discard(oldest)
             self._total_connections -= 1
-            logger.warning(f"SSE: Evicted stale connection for {user_email} (hit limit of {self.MAX_CONNECTIONS_PER_USER})")
+            logger.warning(
+                f"SSE: Evicted stale connection for {user_email} (hit limit of {self.MAX_CONNECTIONS_PER_USER})"
+            )
 
         self._connections[user_email].add(queue)
         self._total_connections += 1
-        logger.info(f"SSE connected: {user_email} (user={len(self._connections[user_email])}, global={self._total_connections})")
+        logger.info(
+            f"SSE connected: {user_email} (user={len(self._connections[user_email])}, global={self._total_connections})"
+        )
         return queue
 
     def disconnect(self, user_email: str, queue: asyncio.Queue):
@@ -183,7 +192,9 @@ class SSEManager:
                 self._total_connections = max(0, self._total_connections - 1)
             if not self._connections[user_email]:
                 del self._connections[user_email]
-            logger.info(f"SSE disconnected: {user_email} (global={self._total_connections})")
+            logger.info(
+                f"SSE disconnected: {user_email} (global={self._total_connections})"
+            )
 
     # ------------------------------------------------------------------
     # Broadcasting
@@ -250,12 +261,16 @@ class SSEManager:
             wedding_id: Optional — scopes the change to a specific wedding.
             record_id: Optional — the specific record that changed.
         """
-        await self.broadcast_to_user(user_email, "data-change", {
-            "resource": resource,
-            "action": action,
-            "wedding_id": wedding_id,
-            "record_id": record_id,
-        })
+        await self.broadcast_to_user(
+            user_email,
+            "data-change",
+            {
+                "resource": resource,
+                "action": action,
+                "wedding_id": wedding_id,
+                "record_id": record_id,
+            },
+        )
 
     @property
     def active_connections(self) -> int:

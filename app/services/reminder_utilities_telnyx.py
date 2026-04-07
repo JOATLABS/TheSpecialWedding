@@ -3,14 +3,13 @@
 from datetime import datetime, timezone
 from fastapi import HTTPException
 from app.core.database import mongo
-from app.models.rsvp import RSVPModel
-from app.models.plus_one import PlusOneModel
 from bson import ObjectId
 import telnyx
 import os
 import logging
 
 logger = logging.getLogger(__name__)
+
 
 class TelnyxRSVPReminderHelper:
     def __init__(self):
@@ -26,11 +25,15 @@ class TelnyxRSVPReminderHelper:
         if not self.base_url:
             raise ValueError("FRONTEND_URL environment variable is required")
 
-    async def send_personalized_rsvp_links(self, slug: str, custom_message: str = None, event_type: str = "traditional"):
+    async def send_personalized_rsvp_links(
+        self, slug: str, custom_message: str = None, event_type: str = "traditional"
+    ):
         # Get the wedding by slug to filter guests properly
         wedding = await mongo.db["weddings"].find_one({"slug": slug})
         if not wedding:
-            raise HTTPException(status_code=404, detail=f"Wedding with slug '{slug}' not found")
+            raise HTTPException(
+                status_code=404, detail=f"Wedding with slug '{slug}' not found"
+            )
 
         wedding_id = wedding.get("_id")
 
@@ -66,7 +69,7 @@ class TelnyxRSVPReminderHelper:
                 message = f"You're invited! RSVP here: {url}"
 
             # Ensure phone number is in E.164 format
-            if not phone.startswith('+'):
+            if not phone.startswith("+"):
                 phone = f"+1{phone}"  # Assume US number if no country code
 
             try:
@@ -76,7 +79,7 @@ class TelnyxRSVPReminderHelper:
                     to=phone,
                     text=message,
                     messaging_profile_id=self.profile_id,
-                    type="SMS"
+                    type="SMS",
                 )
 
                 logger.info(f"Telnyx invite sent to {phone}, ID: {telnyx_message.id}")
@@ -86,13 +89,11 @@ class TelnyxRSVPReminderHelper:
                 logger.error(f"Failed to send Telnyx invite to {phone}: {str(e)}")
                 failed += 1
 
-        return {
-            "sent": sent,
-            "failed": failed,
-            "provider": "telnyx"
-        }
+        return {"sent": sent, "failed": failed, "provider": "telnyx"}
 
-    async def simulate_rsvp_for_guest(self, token: str, attending=None, dietary=None, phone=None, plus_one=None):
+    async def simulate_rsvp_for_guest(
+        self, token: str, attending=None, dietary=None, phone=None, plus_one=None
+    ):
         if attending is None:
             attending = ["traditional"]
         guest = await self.guest_collection.find_one({"token": token})
@@ -104,30 +105,33 @@ class TelnyxRSVPReminderHelper:
         # Insert RSVP
         await self.rsvp_collection.update_one(
             {"guest_id": guest_id},
-            {"$set": {
-                "guest_id": guest_id,
-                "attending": attending,
-                "dietary": dietary,
-                "submitted_at": datetime.now(timezone.utc)
-            }},
-            upsert=True
+            {
+                "$set": {
+                    "guest_id": guest_id,
+                    "attending": attending,
+                    "dietary": dietary,
+                    "submitted_at": datetime.now(timezone.utc),
+                }
+            },
+            upsert=True,
         )
 
         # Update guest phone if provided
         if phone:
             await self.guest_collection.update_one(
-                {"_id": guest_id},
-                {"$set": {"phone": phone}}
+                {"_id": guest_id}, {"$set": {"phone": phone}}
             )
 
         # Handle plus-one if provided
         if plus_one and guest.get("plus_one_allowed", False):
-            await self.plus_one_collection.insert_one({
-                "guest_id": str(guest_id),
-                "name": plus_one.get("name"),
-                "phone": plus_one.get("phone"),
-                "attending": plus_one.get("attending", attending),
-                "dietary": plus_one.get("dietary")
-            })
+            await self.plus_one_collection.insert_one(
+                {
+                    "guest_id": str(guest_id),
+                    "name": plus_one.get("name"),
+                    "phone": plus_one.get("phone"),
+                    "attending": plus_one.get("attending", attending),
+                    "dietary": plus_one.get("dietary"),
+                }
+            )
 
         return {"message": "Test RSVP submitted successfully"}

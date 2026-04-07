@@ -1,5 +1,4 @@
 from fastapi import HTTPException
-from bson import ObjectId
 from app.core.database import mongo
 from app.models.plus_one import PlusOneModel
 from datetime import datetime, timezone
@@ -41,16 +40,20 @@ class PlusOneService:
                 raise HTTPException(status_code=404, detail="Guest not found")
 
             if not guest.get("plus_one_allowed", False):
-                raise HTTPException(status_code=403, detail="Plus-ones not allowed for this guest")
+                raise HTTPException(
+                    status_code=403, detail="Plus-ones not allowed for this guest"
+                )
 
             max_plus_ones = guest.get("number_of_plus_ones_allowed", 0)
 
             # Pre-check count (fast fail for obvious over-limit cases)
-            current_count = await self.collection.count_documents({"guest_id": guest_id_str})
+            current_count = await self.collection.count_documents(
+                {"guest_id": guest_id_str}
+            )
             if current_count >= max_plus_ones:
                 raise HTTPException(
                     status_code=400,
-                    detail=f"Maximum number of plus-ones ({max_plus_ones}) already reached"
+                    detail=f"Maximum number of plus-ones ({max_plus_ones}) already reached",
                 )
 
             # Insert the plus-one document
@@ -60,40 +63,58 @@ class PlusOneService:
             inserted_id = result.inserted_id
 
             # Verify we haven't exceeded the limit after insert (handles race condition)
-            current_count = await self.collection.count_documents({"guest_id": guest_id_str})
+            current_count = await self.collection.count_documents(
+                {"guest_id": guest_id_str}
+            )
 
             if current_count > max_plus_ones:
                 # Race condition detected - rollback the insert
                 await self.collection.delete_one({"_id": inserted_id})
                 raise HTTPException(
                     status_code=409,
-                    detail=f"Maximum number of plus-ones ({max_plus_ones}) already reached. Please try again."
+                    detail=f"Maximum number of plus-ones ({max_plus_ones}) already reached. Please try again.",
                 )
 
             # Update guest if all slots filled
             if current_count >= max_plus_ones:
                 await guest_collection.update_one(
                     {"_id": guest_id},
-                    {"$set": {"plus_one_submitted": True, "updated_at": datetime.now(timezone.utc)}}
+                    {
+                        "$set": {
+                            "plus_one_submitted": True,
+                            "updated_at": datetime.now(timezone.utc),
+                        }
+                    },
                 )
 
-            return {"id": to_str_id(inserted_id), "message": "Plus-one added successfully"}
+            return {
+                "id": to_str_id(inserted_id),
+                "message": "Plus-one added successfully",
+            }
         except HTTPException:
             raise
         except Exception as e:
-            raise HTTPException(status_code=500, detail=f"Failed to add plus-one: {str(e)}")
+            raise HTTPException(
+                status_code=500, detail=f"Failed to add plus-one: {str(e)}"
+            )
 
     async def get_plus_ones_by_guest(self, guest_id: str):
         try:
-            results = await self.collection.find({"guest_id": guest_id}).to_list(length=None)
+            results = await self.collection.find({"guest_id": guest_id}).to_list(
+                length=None
+            )
             for r in results:
                 normalize_doc_id(r)
                 r.pop("_id", None)
             return results
         except Exception as e:
-            raise HTTPException(status_code=500, detail=f"Failed to retrieve plus-ones: {str(e)}")
+            raise HTTPException(
+                status_code=500, detail=f"Failed to retrieve plus-ones: {str(e)}"
+            )
 
-    async def get_plus_ones_by_wedding_id(self, wedding_id: str, guest_ids: Optional[List[str]] = None):
+    async def get_plus_ones_by_wedding_id(
+        self, wedding_id: str, guest_ids: Optional[List[str]] = None
+    ):
         try:
             # 1. Get all guest IDs for this wedding
             guest_collection = mongo.get_guest_collection()
@@ -103,12 +124,13 @@ class PlusOneService:
                 if not guest_ids:
                     return []
                 guest_query["_id"] = {
-                    "$in": [to_object_id(guest_id, "guest_id") for guest_id in guest_ids]
+                    "$in": [
+                        to_object_id(guest_id, "guest_id") for guest_id in guest_ids
+                    ]
                 }
 
             guests = await guest_collection.find(
-                guest_query,
-                projection={"_id": 1}
+                guest_query, projection={"_id": 1}
             ).to_list(length=None)
 
             if not guests:
@@ -129,20 +151,22 @@ class PlusOneService:
             return results
         except Exception as e:
             logger.error(f"Error fetching plus-ones for wedding {wedding_id}: {str(e)}")
-            raise HTTPException(status_code=500, detail=f"Failed to retrieve plus-ones for wedding: {str(e)}")
+            raise HTTPException(
+                status_code=500,
+                detail=f"Failed to retrieve plus-ones for wedding: {str(e)}",
+            )
 
     async def update_plus_one(self, plus_one_id: str, data: dict):
         try:
             obj_id = to_object_id(plus_one_id, "plus_one_id")
-            result = await self.collection.update_one(
-                {"_id": obj_id},
-                {"$set": data}
-            )
+            result = await self.collection.update_one({"_id": obj_id}, {"$set": data})
             if result.matched_count == 0:
                 raise HTTPException(status_code=404, detail="Plus-one not found")
             return {"message": "Plus-one updated successfully"}
         except Exception as e:
-            raise HTTPException(status_code=500, detail=f"Failed to update plus-one: {str(e)}")
+            raise HTTPException(
+                status_code=500, detail=f"Failed to update plus-one: {str(e)}"
+            )
 
     async def delete_plus_one(self, plus_one_id: str):
         try:
@@ -174,7 +198,9 @@ class PlusOneService:
 
                 # Count using string format (plus_ones store guest_id as string)
                 # This count happens after deletion, so it's the new post-deletion count
-                current_count = await self.collection.count_documents({"guest_id": guest_id_str})
+                current_count = await self.collection.count_documents(
+                    {"guest_id": guest_id_str}
+                )
 
                 # If we now have room for more plus-ones, set submitted to False
                 # Note: There is still a potential race condition if another plus-one is added
@@ -183,11 +209,18 @@ class PlusOneService:
                 if current_count < max_plus_ones:
                     await guest_collection.update_one(
                         {"_id": guest_object_id},
-                        {"$set": {"plus_one_submitted": False, "updated_at": datetime.now(timezone.utc)}}
+                        {
+                            "$set": {
+                                "plus_one_submitted": False,
+                                "updated_at": datetime.now(timezone.utc),
+                            }
+                        },
                     )
 
             return {"message": "Plus-one deleted successfully"}
         except HTTPException:
             raise
         except Exception as e:
-            raise HTTPException(status_code=500, detail=f"Failed to delete plus-one: {str(e)}")
+            raise HTTPException(
+                status_code=500, detail=f"Failed to delete plus-one: {str(e)}"
+            )

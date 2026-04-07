@@ -73,9 +73,7 @@ class CampaignRollupService:
         """
         day_start, day_end = self._get_day_boundaries(target_date)
 
-        logger.info(
-            f"Computing campaign rollup for {day_start.strftime('%Y-%m-%d')}"
-        )
+        logger.info(f"Computing campaign rollup for {day_start.strftime('%Y-%m-%d')}")
 
         # ── Stage 1: Aggregate ad_events by campaign_id ──
         events_pipeline = [
@@ -90,28 +88,56 @@ class CampaignRollupService:
                     "_id": "$campaign_id",
                     # Event counts
                     "impression_served": {
-                        "$sum": {"$cond": [{"$eq": ["$event_type", "impression_served"]}, 1, 0]}
+                        "$sum": {
+                            "$cond": [
+                                {"$eq": ["$event_type", "impression_served"]},
+                                1,
+                                0,
+                            ]
+                        }
                     },
                     "click": {
                         "$sum": {"$cond": [{"$eq": ["$event_type", "click"]}, 1, 0]}
                     },
                     "lead_created": {
-                        "$sum": {"$cond": [{"$eq": ["$event_type", "lead_created"]}, 1, 0]}
+                        "$sum": {
+                            "$cond": [{"$eq": ["$event_type", "lead_created"]}, 1, 0]
+                        }
                     },
                     "vendor_profile_view": {
-                        "$sum": {"$cond": [{"$eq": ["$event_type", "vendor_profile_view"]}, 1, 0]}
+                        "$sum": {
+                            "$cond": [
+                                {"$eq": ["$event_type", "vendor_profile_view"]},
+                                1,
+                                0,
+                            ]
+                        }
                     },
                     "vendor_added_to_directory": {
-                        "$sum": {"$cond": [{"$eq": ["$event_type", "vendor_added_to_directory"]}, 1, 0]}
+                        "$sum": {
+                            "$cond": [
+                                {"$eq": ["$event_type", "vendor_added_to_directory"]},
+                                1,
+                                0,
+                            ]
+                        }
                     },
                     "vendor_added_to_wedding": {
-                        "$sum": {"$cond": [{"$eq": ["$event_type", "vendor_added_to_wedding"]}, 1, 0]}
+                        "$sum": {
+                            "$cond": [
+                                {"$eq": ["$event_type", "vendor_added_to_wedding"]},
+                                1,
+                                0,
+                            ]
+                        }
                     },
                     "dismiss": {
                         "$sum": {"$cond": [{"$eq": ["$event_type", "dismiss"]}, 1, 0]}
                     },
                     "contact_click": {
-                        "$sum": {"$cond": [{"$eq": ["$event_type", "contact_click"]}, 1, 0]}
+                        "$sum": {
+                            "$cond": [{"$eq": ["$event_type", "contact_click"]}, 1, 0]
+                        }
                     },
                     # Unique reach
                     "unique_planners_set": {"$addToSet": "$planner_id"},
@@ -144,7 +170,9 @@ class CampaignRollupService:
         async for doc in self.ad_events.aggregate(events_pipeline):
             campaign_id = doc["_id"]
 
-            hourly_impressions = self._build_hourly_array(doc.get("hourly_impressions_raw", []))
+            hourly_impressions = self._build_hourly_array(
+                doc.get("hourly_impressions_raw", [])
+            )
             hourly_clicks = self._build_hourly_array(doc.get("hourly_clicks_raw", []))
 
             impressions = doc.get("impression_served", 0)
@@ -162,7 +190,9 @@ class CampaignRollupService:
                     "click": clicks,
                     "lead_created": doc.get("lead_created", 0),
                     "vendor_profile_view": doc.get("vendor_profile_view", 0),
-                    "vendor_added_to_directory": doc.get("vendor_added_to_directory", 0),
+                    "vendor_added_to_directory": doc.get(
+                        "vendor_added_to_directory", 0
+                    ),
                     "vendor_added_to_wedding": doc.get("vendor_added_to_wedding", 0),
                     "dismiss": doc.get("dismiss", 0),
                     "contact_click": doc.get("contact_click", 0),
@@ -193,7 +223,9 @@ class CampaignRollupService:
                 ):
                     cid = str(campaign["_id"])
                     if cid in campaign_rollups:
-                        campaign_rollups[cid]["vendor_id"] = campaign.get("vendor_id", "")
+                        campaign_rollups[cid]["vendor_id"] = campaign.get(
+                            "vendor_id", ""
+                        )
             except Exception as e:
                 logger.warning(f"Failed to enrich vendor_id for campaign rollups: {e}")
 
@@ -209,19 +241,27 @@ class CampaignRollupService:
                 "$group": {
                     "_id": "$campaign_id",
                     "quote_request": {
-                        "$sum": {"$cond": [{"$eq": ["$lead_type", "quote_request"]}, 1, 0]}
+                        "$sum": {
+                            "$cond": [{"$eq": ["$lead_type", "quote_request"]}, 1, 0]
+                        }
                     },
                     "message": {
                         "$sum": {"$cond": [{"$eq": ["$lead_type", "message"]}, 1, 0]}
                     },
                     "add_to_directory": {
-                        "$sum": {"$cond": [{"$eq": ["$lead_type", "add_to_directory"]}, 1, 0]}
+                        "$sum": {
+                            "$cond": [{"$eq": ["$lead_type", "add_to_directory"]}, 1, 0]
+                        }
                     },
                     "add_to_wedding": {
-                        "$sum": {"$cond": [{"$eq": ["$lead_type", "add_to_wedding"]}, 1, 0]}
+                        "$sum": {
+                            "$cond": [{"$eq": ["$lead_type", "add_to_wedding"]}, 1, 0]
+                        }
                     },
                     "vendor_invite": {
-                        "$sum": {"$cond": [{"$eq": ["$lead_type", "vendor_invite"]}, 1, 0]}
+                        "$sum": {
+                            "$cond": [{"$eq": ["$lead_type", "vendor_invite"]}, 1, 0]
+                        }
                     },
                     "status_pending": {
                         "$sum": {"$cond": [{"$eq": ["$status", "pending"]}, 1, 0]}
@@ -296,9 +336,7 @@ class CampaignRollupService:
         """
         day_start, day_end = self._get_day_boundaries(target_date)
 
-        logger.info(
-            f"Computing placement rollup for {day_start.strftime('%Y-%m-%d')}"
-        )
+        logger.info(f"Computing placement rollup for {day_start.strftime('%Y-%m-%d')}")
 
         pipeline = [
             {
@@ -311,13 +349,21 @@ class CampaignRollupService:
                 "$group": {
                     "_id": "$placement",
                     "impressions": {
-                        "$sum": {"$cond": [{"$eq": ["$event_type", "impression_served"]}, 1, 0]}
+                        "$sum": {
+                            "$cond": [
+                                {"$eq": ["$event_type", "impression_served"]},
+                                1,
+                                0,
+                            ]
+                        }
                     },
                     "clicks": {
                         "$sum": {"$cond": [{"$eq": ["$event_type", "click"]}, 1, 0]}
                     },
                     "leads": {
-                        "$sum": {"$cond": [{"$eq": ["$event_type", "lead_created"]}, 1, 0]}
+                        "$sum": {
+                            "$cond": [{"$eq": ["$event_type", "lead_created"]}, 1, 0]
+                        }
                     },
                     "unique_planners_set": {"$addToSet": "$planner_id"},
                     "unique_campaigns_set": {"$addToSet": "$campaign_id"},
@@ -423,11 +469,9 @@ class CampaignRollupService:
         period_start = self._get_period_start(days)
 
         results = []
-        async for doc in (
-            self.campaign_day_stats
-            .find({"campaign_id": campaign_id, "date": {"$gte": period_start}})
-            .sort("date", -1)
-        ):
+        async for doc in self.campaign_day_stats.find(
+            {"campaign_id": campaign_id, "date": {"$gte": period_start}}
+        ).sort("date", -1):
             results.append(_serialize(doc))
         return results
 
@@ -445,10 +489,7 @@ class CampaignRollupService:
 
         results = []
         async for doc in (
-            self.placement_day_stats
-            .find(query)
-            .sort("date", -1)
-            .limit(5000)
+            self.placement_day_stats.find(query).sort("date", -1).limit(5000)
         ):
             results.append(_serialize(doc))
         return results
@@ -456,7 +497,8 @@ class CampaignRollupService:
     # ─── Helpers ──────────────────────────────────────────────────
 
     def _get_day_boundaries(
-        self, target_date: Optional[datetime] = None,
+        self,
+        target_date: Optional[datetime] = None,
     ) -> tuple:
         """Get UTC midnight boundaries for a date."""
         if target_date is None:
@@ -466,7 +508,10 @@ class CampaignRollupService:
             )
         else:
             target_date = target_date.replace(
-                hour=0, minute=0, second=0, microsecond=0,
+                hour=0,
+                minute=0,
+                second=0,
+                microsecond=0,
                 tzinfo=timezone.utc,
             )
 

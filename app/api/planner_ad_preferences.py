@@ -13,7 +13,7 @@ Routes: /planner/ads/preferences/*
 
 import logging
 from datetime import datetime, timezone
-from fastapi import APIRouter, Depends, HTTPException, Body
+from fastapi import APIRouter, Depends, Body
 
 from app.dependencies.auth_extended import (
     get_current_user_extended,
@@ -40,6 +40,7 @@ def _get_planner_id(user: ExtendedAuthUser) -> str:
 # GET PREFERENCES
 # =============================================================================
 
+
 @router.get(
     "",
     summary="Get ad preferences",
@@ -49,9 +50,7 @@ async def get_preferences(
     user: ExtendedAuthUser = Depends(get_current_user_extended),
 ):
     planner_id = _get_planner_id(user)
-    doc = await mongo.db["planner_ad_preferences"].find_one(
-        {"planner_id": planner_id}
-    )
+    doc = await mongo.db["planner_ad_preferences"].find_one({"planner_id": planner_id})
     if not doc:
         return {
             "planner_id": planner_id,
@@ -66,6 +65,7 @@ async def get_preferences(
 # =============================================================================
 # HIDE VENDOR
 # =============================================================================
+
 
 @router.post(
     "/hide-vendor",
@@ -94,12 +94,14 @@ async def hide_vendor(
     )
 
     # Record the dismiss event
-    await mongo.db["ad_events"].insert_one({
-        "event_type": "dismiss",
-        "planner_id": planner_id,
-        "vendor_id": vendor_id,
-        "created_at": now,
-    })
+    await mongo.db["ad_events"].insert_one(
+        {
+            "event_type": "dismiss",
+            "planner_id": planner_id,
+            "vendor_id": vendor_id,
+            "created_at": now,
+        }
+    )
 
     logger.info(f"Planner {planner_id} hid vendor {vendor_id}")
     return {"status": "hidden", "vendor_id": vendor_id}
@@ -108,6 +110,7 @@ async def hide_vendor(
 # =============================================================================
 # UNHIDE VENDOR (undo)
 # =============================================================================
+
 
 @router.post(
     "/unhide-vendor",
@@ -133,6 +136,7 @@ async def unhide_vendor(
 # =============================================================================
 # SUPPRESS CATEGORY
 # =============================================================================
+
 
 @router.post(
     "/suppress-category",
@@ -161,12 +165,14 @@ async def suppress_category(
     )
 
     # Record the category suppression event
-    await mongo.db["ad_events"].insert_one({
-        "event_type": "category_suppressed",
-        "planner_id": planner_id,
-        "category": category,
-        "created_at": now,
-    })
+    await mongo.db["ad_events"].insert_one(
+        {
+            "event_type": "category_suppressed",
+            "planner_id": planner_id,
+            "category": category,
+            "created_at": now,
+        }
+    )
 
     return {"status": "suppressed", "category": category}
 
@@ -174,6 +180,7 @@ async def suppress_category(
 # =============================================================================
 # UNSUPPRESS CATEGORY
 # =============================================================================
+
 
 @router.post(
     "/unsuppress-category",
@@ -199,6 +206,7 @@ async def unsuppress_category(
 # =============================================================================
 # TOGGLE REDUCED FREQUENCY
 # =============================================================================
+
 
 @router.put(
     "/frequency",

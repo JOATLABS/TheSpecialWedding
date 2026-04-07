@@ -12,7 +12,7 @@ Usage:
 
 import logging
 from datetime import datetime, timedelta, timezone
-from typing import List, Dict, Optional
+from typing import Dict
 from app.core.database import mongo
 from app.services.planner_notification_service import planner_notification_service
 
@@ -48,7 +48,7 @@ class TaskReminderService:
             "reminders_sent": 0,
             "already_sent": 0,
             "errors": [],
-            "dry_run": dry_run
+            "dry_run": dry_run,
         }
 
         try:
@@ -86,11 +86,7 @@ class TaskReminderService:
             return results
 
     async def _process_single_task(
-        self,
-        task: Dict,
-        now: datetime,
-        results: Dict,
-        dry_run: bool
+        self, task: Dict, now: datetime, results: Dict, dry_run: bool
     ):
         """Process a single task for reminder notification"""
         task_id = str(task["_id"])
@@ -107,7 +103,7 @@ class TaskReminderService:
         # Parse date if string
         if isinstance(task_date, str):
             try:
-                task_date = datetime.fromisoformat(task_date.replace('Z', '+00:00'))
+                task_date = datetime.fromisoformat(task_date.replace("Z", "+00:00"))
                 if task_date.tzinfo:
                     task_date = task_date.replace(tzinfo=None)
             except ValueError:
@@ -136,7 +132,9 @@ class TaskReminderService:
             return
 
         if dry_run:
-            logger.info(f"[DRY RUN] Would send reminder for task '{task.get('title')}' to {planner_email}")
+            logger.info(
+                f"[DRY RUN] Would send reminder for task '{task.get('title')}' to {planner_email}"
+            )
             results["reminders_sent"] += 1
             return
 
@@ -145,17 +143,21 @@ class TaskReminderService:
             await planner_notification_service.notify_task_reminder(
                 planner_id=planner_email,
                 task_title=task.get("title", "Untitled Task"),
-                due_date=task_date.isoformat() if isinstance(task_date, datetime) else str(task_date),
+                due_date=task_date.isoformat()
+                if isinstance(task_date, datetime)
+                else str(task_date),
                 wedding_id=task.get("wedding_id"),
                 task_id=task_id,
-                reminder_minutes=reminder_minutes
+                reminder_minutes=reminder_minutes,
             )
 
             # Record that we sent this reminder
             await self._record_reminder_sent(task_id, planner_email, reminder_time)
 
             results["reminders_sent"] += 1
-            logger.info(f"Sent task reminder for '{task.get('title')}' to {planner_email}")
+            logger.info(
+                f"Sent task reminder for '{task.get('title')}' to {planner_email}"
+            )
 
         except Exception as e:
             error_msg = f"Failed to send reminder for task {task_id}: {str(e)}"
@@ -167,33 +169,37 @@ class TaskReminderService:
         # Allow up to 1 hour before reminder_time as the same "window"
         window_start = reminder_time - timedelta(hours=1)
 
-        existing = await self.sent_reminders_collection.find_one({
-            "task_id": task_id,
-            "reminder_time": {"$gte": window_start, "$lte": reminder_time + timedelta(hours=1)}
-        })
+        existing = await self.sent_reminders_collection.find_one(
+            {
+                "task_id": task_id,
+                "reminder_time": {
+                    "$gte": window_start,
+                    "$lte": reminder_time + timedelta(hours=1),
+                },
+            }
+        )
 
         return existing is not None
 
     async def _record_reminder_sent(
-        self,
-        task_id: str,
-        planner_email: str,
-        reminder_time: datetime
+        self, task_id: str, planner_email: str, reminder_time: datetime
     ):
         """Record that a reminder was sent to prevent duplicates"""
-        await self.sent_reminders_collection.insert_one({
-            "task_id": task_id,
-            "planner_email": planner_email,
-            "reminder_time": reminder_time,
-            "sent_at": datetime.now(timezone.utc)
-        })
+        await self.sent_reminders_collection.insert_one(
+            {
+                "task_id": task_id,
+                "planner_email": planner_email,
+                "reminder_time": reminder_time,
+                "sent_at": datetime.now(timezone.utc),
+            }
+        )
 
     async def cleanup_old_records(self, days_old: int = 7) -> int:
         """Remove old sent reminder records to prevent collection bloat"""
         cutoff = datetime.now(timezone.utc) - timedelta(days=days_old)
-        result = await self.sent_reminders_collection.delete_many({
-            "sent_at": {"$lt": cutoff}
-        })
+        result = await self.sent_reminders_collection.delete_many(
+            {"sent_at": {"$lt": cutoff}}
+        )
         logger.info(f"Cleaned up {result.deleted_count} old reminder records")
         return result.deleted_count
 

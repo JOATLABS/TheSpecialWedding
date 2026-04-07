@@ -3,7 +3,15 @@ import hashlib
 import logging
 from typing import Literal, Optional
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Request, Response
+from fastapi import (
+    APIRouter,
+    BackgroundTasks,
+    Depends,
+    HTTPException,
+    Query,
+    Request,
+    Response,
+)
 from fastapi.responses import RedirectResponse
 from pydantic import BaseModel, Field
 
@@ -26,9 +34,15 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
-guest_media_bootstrap_limiter = create_rate_limiter("guest_media_bootstrap", requests_per_minute=20)
-guest_media_upload_plan_limiter = create_rate_limiter("guest_media_upload_plan", requests_per_minute=10)
-guest_media_finalize_limiter = create_rate_limiter("guest_media_finalize", requests_per_minute=10)
+guest_media_bootstrap_limiter = create_rate_limiter(
+    "guest_media_bootstrap", requests_per_minute=20
+)
+guest_media_upload_plan_limiter = create_rate_limiter(
+    "guest_media_upload_plan", requests_per_minute=10
+)
+guest_media_finalize_limiter = create_rate_limiter(
+    "guest_media_finalize", requests_per_minute=10
+)
 
 
 def _token_scope_key(request: Request, upload_token: str) -> str:
@@ -36,7 +50,9 @@ def _token_scope_key(request: Request, upload_token: str) -> str:
     return f"{get_client_ip(request)}:{token_hash}"
 
 
-async def _apply_public_guest_media_rate_limit(request: Request, upload_token: str, bucket) -> None:
+async def _apply_public_guest_media_rate_limit(
+    request: Request, upload_token: str, bucket
+) -> None:
     await check_rate_limit(_token_scope_key(request, upload_token), bucket)
 
 
@@ -83,19 +99,27 @@ class CoupleGuestMediaExportRequest(BaseModel):
 
 
 @router.get("/guest-media/public/{slug}/{upload_token}", tags=["Guest Memories"])
-async def get_public_guest_media_context(slug: str, upload_token: str, request: Request):
-    await _apply_public_guest_media_rate_limit(request, upload_token, guest_media_bootstrap_limiter)
+async def get_public_guest_media_context(
+    slug: str, upload_token: str, request: Request
+):
+    await _apply_public_guest_media_rate_limit(
+        request, upload_token, guest_media_bootstrap_limiter
+    )
     return await guest_media_service.get_public_upload_context(slug, upload_token)
 
 
-@router.post("/guest-media/public/{slug}/{upload_token}/upload-plan", tags=["Guest Memories"])
+@router.post(
+    "/guest-media/public/{slug}/{upload_token}/upload-plan", tags=["Guest Memories"]
+)
 async def create_guest_media_upload_plan(
     slug: str,
     upload_token: str,
     payload: GuestMediaUploadPlanRequest,
     request: Request,
 ):
-    await _apply_public_guest_media_rate_limit(request, upload_token, guest_media_upload_plan_limiter)
+    await _apply_public_guest_media_rate_limit(
+        request, upload_token, guest_media_upload_plan_limiter
+    )
     return await guest_media_service.create_upload_plan(
         slug,
         upload_token,
@@ -105,14 +129,18 @@ async def create_guest_media_upload_plan(
     )
 
 
-@router.post("/guest-media/public/{slug}/{upload_token}/finalize", tags=["Guest Memories"])
+@router.post(
+    "/guest-media/public/{slug}/{upload_token}/finalize", tags=["Guest Memories"]
+)
 async def finalize_guest_media_upload(
     slug: str,
     upload_token: str,
     payload: GuestMediaFinalizeRequest,
     request: Request,
 ):
-    await _apply_public_guest_media_rate_limit(request, upload_token, guest_media_finalize_limiter)
+    await _apply_public_guest_media_rate_limit(
+        request, upload_token, guest_media_finalize_limiter
+    )
     return await guest_media_service.finalize_upload_batch(
         slug,
         upload_token,
@@ -137,7 +165,9 @@ async def update_planner_guest_media_settings(
     current_user: ExtendedAuthUser = Depends(require_team_or_planner),
 ):
     if payload.enabled is None and payload.upload_closes_at is None:
-        raise HTTPException(status_code=400, detail="No guest media settings were provided")
+        raise HTTPException(
+            status_code=400, detail="No guest media settings were provided"
+        )
 
     await _authorize_planner_guest_memories_access(wedding_id, current_user)
     return await guest_media_service.update_couple_settings(
@@ -186,13 +216,19 @@ async def download_planner_guest_media_sign_pdf(
 
     try:
         settings_payload = await guest_media_service.get_couple_settings(wedding_id)
-        qr_bytes = guest_export_service.generate_qr_code(settings_payload["upload_url"], box_size=12)
+        qr_bytes = guest_export_service.generate_qr_code(
+            settings_payload["upload_url"], box_size=12
+        )
         pdf_bytes = await guest_export_service.generate_guest_memories_sign_pdf(
-            couple_names=settings_payload.get("wedding", {}).get("couple_names") or "Wedding",
+            couple_names=settings_payload.get("wedding", {}).get("couple_names")
+            or "Wedding",
             upload_url=settings_payload["upload_url"],
             qr_png_bytes=qr_bytes,
-            upload_closes_at=datetime.fromisoformat(settings_payload["upload_closes_at"].replace("Z", "+00:00"))
-            if settings_payload.get("upload_closes_at") else None,
+            upload_closes_at=datetime.fromisoformat(
+                settings_payload["upload_closes_at"].replace("Z", "+00:00")
+            )
+            if settings_payload.get("upload_closes_at")
+            else None,
         )
     except ImportError as exc:
         logger.error(f"Guest memories sign PDF generation dependency missing: {exc}")
@@ -204,7 +240,9 @@ async def download_planner_guest_media_sign_pdf(
         raise
     except Exception as exc:
         logger.error(f"Failed to generate guest memories sign PDF: {exc}")
-        raise HTTPException(status_code=500, detail="Failed to generate guest memories sign PDF") from exc
+        raise HTTPException(
+            status_code=500, detail="Failed to generate guest memories sign PDF"
+        ) from exc
 
     wedding_slug = settings_payload.get("wedding", {}).get("slug") or "wedding"
     return Response(
@@ -231,7 +269,9 @@ async def update_couple_guest_media_settings(
     couple: dict = Depends(require_couple_auth),
 ):
     if payload.enabled is None and payload.upload_closes_at is None:
-        raise HTTPException(status_code=400, detail="No guest media settings were provided")
+        raise HTTPException(
+            status_code=400, detail="No guest media settings were provided"
+        )
 
     wedding_id = couple.get("wedding_id")
     if not wedding_id:
@@ -275,7 +315,9 @@ async def get_guest_media_qr_code(couple: dict = Depends(require_couple_auth)):
 async def list_couple_guest_media(
     review_status: str = Query("all", pattern="^(all|pending|kept|rejected)$"),
     media_type: str = Query("all", pattern="^(all|image|video)$"),
-    event_type: str = Query("all", description=f"Wedding event type filter or {NOT_SURE_EVENT}"),
+    event_type: str = Query(
+        "all", description=f"Wedding event type filter or {NOT_SURE_EVENT}"
+    ),
     uploader_query: Optional[str] = Query(default=None, max_length=120),
     page: int = Query(1, ge=1),
     limit: int = Query(24, ge=1, le=60),
@@ -314,36 +356,48 @@ async def review_couple_guest_media(
 
 
 @router.get("/couple/portal/memories/{asset_id}/download", tags=["Guest Memories"])
-async def download_guest_media_asset(asset_id: str, couple: dict = Depends(require_couple_auth)):
+async def download_guest_media_asset(
+    asset_id: str, couple: dict = Depends(require_couple_auth)
+):
     wedding_id = couple.get("wedding_id")
     if not wedding_id:
         raise HTTPException(status_code=404, detail="No wedding linked to this account")
     return await guest_media_service.get_asset_download(wedding_id, asset_id)
 
 
-async def _redirect_to_couple_memory_variant(couple: dict, asset_id: str, variant: str) -> RedirectResponse:
+async def _redirect_to_couple_memory_variant(
+    couple: dict, asset_id: str, variant: str
+) -> RedirectResponse:
     wedding_id = couple.get("wedding_id")
     if not wedding_id:
         raise HTTPException(status_code=404, detail="No wedding linked to this account")
 
-    target_url = await guest_media_service.get_asset_redirect_url(wedding_id, asset_id, variant)
+    target_url = await guest_media_service.get_asset_redirect_url(
+        wedding_id, asset_id, variant
+    )
     response = RedirectResponse(target_url, status_code=307)
     response.headers["Cache-Control"] = "private, no-store"
     return response
 
 
 @router.get("/couple/portal/memories/{asset_id}/preview", tags=["Guest Memories"])
-async def preview_guest_media_asset(asset_id: str, couple: dict = Depends(require_couple_auth)):
+async def preview_guest_media_asset(
+    asset_id: str, couple: dict = Depends(require_couple_auth)
+):
     return await _redirect_to_couple_memory_variant(couple, asset_id, "preview")
 
 
 @router.get("/couple/portal/memories/{asset_id}/player", tags=["Guest Memories"])
-async def player_guest_media_asset(asset_id: str, couple: dict = Depends(require_couple_auth)):
+async def player_guest_media_asset(
+    asset_id: str, couple: dict = Depends(require_couple_auth)
+):
     return await _redirect_to_couple_memory_variant(couple, asset_id, "player")
 
 
 @router.get("/couple/portal/memories/{asset_id}/thumbnail", tags=["Guest Memories"])
-async def thumbnail_guest_media_asset(asset_id: str, couple: dict = Depends(require_couple_auth)):
+async def thumbnail_guest_media_asset(
+    asset_id: str, couple: dict = Depends(require_couple_auth)
+):
     return await _redirect_to_couple_memory_variant(couple, asset_id, "thumbnail")
 
 
@@ -363,20 +417,28 @@ async def create_guest_media_export(
         asset_ids=payload.asset_ids or None,
         review_status=payload.review_status,
     )
-    background_tasks.add_task(guest_media_service.process_export_job, export_job["export_id"])
+    background_tasks.add_task(
+        guest_media_service.process_export_job, export_job["export_id"]
+    )
     return export_job
 
 
 @router.get("/couple/portal/memories/exports/{export_id}", tags=["Guest Memories"])
-async def get_guest_media_export(export_id: str, couple: dict = Depends(require_couple_auth)):
+async def get_guest_media_export(
+    export_id: str, couple: dict = Depends(require_couple_auth)
+):
     wedding_id = couple.get("wedding_id")
     if not wedding_id:
         raise HTTPException(status_code=404, detail="No wedding linked to this account")
     return await guest_media_service.get_export_job(wedding_id, export_id)
 
 
-@router.get("/couple/portal/memories/exports/{export_id}/download", tags=["Guest Memories"])
-async def download_guest_media_export(export_id: str, couple: dict = Depends(require_couple_auth)):
+@router.get(
+    "/couple/portal/memories/exports/{export_id}/download", tags=["Guest Memories"]
+)
+async def download_guest_media_export(
+    export_id: str, couple: dict = Depends(require_couple_auth)
+):
     wedding_id = couple.get("wedding_id")
     if not wedding_id:
         raise HTTPException(status_code=404, detail="No wedding linked to this account")
@@ -384,5 +446,7 @@ async def download_guest_media_export(export_id: str, couple: dict = Depends(req
     export_job = await guest_media_service.get_export_job(wedding_id, export_id)
     download_url = export_job.get("download_url")
     if not download_url:
-        raise HTTPException(status_code=409, detail="Export is not ready to download yet")
+        raise HTTPException(
+            status_code=409, detail="Export is not ready to download yet"
+        )
     return {"download_url": download_url}

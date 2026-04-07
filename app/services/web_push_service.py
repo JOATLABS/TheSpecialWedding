@@ -30,7 +30,9 @@ class WebPushService:
         self.enabled = bool(self.vapid_private_key and self.vapid_public_key)
 
         if not self.enabled:
-            logger.warning("Web Push disabled - VAPID_PRIVATE_KEY and VAPID_PUBLIC_KEY not configured")
+            logger.warning(
+                "Web Push disabled - VAPID_PRIVATE_KEY and VAPID_PUBLIC_KEY not configured"
+            )
         else:
             logger.info("Web Push notifications enabled")
 
@@ -52,7 +54,7 @@ class WebPushService:
             "vapid_email": self.vapid_email,
             "error": None,
             "total_subscriptions": 0,
-            "checked_at": datetime.now(timezone.utc).isoformat()
+            "checked_at": datetime.now(timezone.utc).isoformat(),
         }
 
         if not self.enabled:
@@ -77,7 +79,7 @@ class WebPushService:
         self,
         user_id: str,
         subscription: Dict[str, Any],
-        user_agent: Optional[str] = None
+        user_agent: Optional[str] = None,
     ) -> bool:
         """
         Save a push subscription for a user.
@@ -104,9 +106,9 @@ class WebPushService:
                     },
                     "$setOnInsert": {
                         "created_at": datetime.now(timezone.utc),
-                    }
+                    },
                 },
-                upsert=True
+                upsert=True,
             )
 
             logger.info(f"Saved push subscription for user {user_id}")
@@ -116,7 +118,9 @@ class WebPushService:
             logger.error(f"Error saving push subscription: {e}")
             return False
 
-    async def remove_subscription(self, endpoint: str, user_id: Optional[str] = None) -> bool:
+    async def remove_subscription(
+        self, endpoint: str, user_id: Optional[str] = None
+    ) -> bool:
         """Remove a push subscription by endpoint, optionally scoped to a user."""
         try:
             collection = mongo.db["push_subscriptions"]
@@ -157,7 +161,7 @@ class WebPushService:
         url: Optional[str] = None,
         tag: Optional[str] = None,
         icon: Optional[str] = None,
-        data: Optional[Dict[str, Any]] = None
+        data: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         """
         Send a push notification to all of a user's subscribed devices.
@@ -171,14 +175,16 @@ class WebPushService:
         if not subscriptions:
             return {"success": False, "error": "No subscriptions found"}
 
-        payload = json.dumps({
-            "title": title,
-            "body": body,
-            "url": url or "/",
-            "tag": tag or f"notification-{datetime.now(timezone.utc).timestamp()}",
-            "icon": icon or "/icon-192x192.png",
-            **(data or {})
-        })
+        payload = json.dumps(
+            {
+                "title": title,
+                "body": body,
+                "url": url or "/",
+                "tag": tag or f"notification-{datetime.now(timezone.utc).timestamp()}",
+                "icon": icon or "/icon-192x192.png",
+                **(data or {}),
+            }
+        )
 
         success_count = 0
         errors = []
@@ -194,13 +200,15 @@ class WebPushService:
                     subscription_info=subscription,
                     data=payload,
                     vapid_private_key=self.vapid_private_key,
-                    vapid_claims={"sub": self.vapid_email}
+                    vapid_claims={"sub": self.vapid_email},
                 )
                 success_count += 1
 
             except WebPushException as e:
                 error_msg = str(e)
-                logger.warning(f"WebPush error for {sub_doc.get('endpoint', 'unknown')}: {error_msg}")
+                logger.warning(
+                    f"WebPush error for {sub_doc.get('endpoint', 'unknown')}: {error_msg}"
+                )
 
                 # If subscription expired or invalid, mark for removal
                 if e.response and e.response.status_code in [404, 410]:
@@ -222,15 +230,11 @@ class WebPushService:
             "sent": success_count,
             "total": len(subscriptions),
             "expired_removed": len(expired_endpoints),
-            "errors": errors if errors else None
+            "errors": errors if errors else None,
         }
 
     async def send_to_multiple_users(
-        self,
-        user_ids: List[str],
-        title: str,
-        body: str,
-        **kwargs
+        self, user_ids: List[str], title: str, body: str, **kwargs
     ) -> Dict[str, Any]:
         """Send notification to multiple users"""
         results = {"total_users": len(user_ids), "success": 0, "failed": 0}

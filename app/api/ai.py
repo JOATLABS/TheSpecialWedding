@@ -8,6 +8,7 @@ Provides endpoints for AI-powered features:
 - Progress reports
 - Package pricing suggestions
 """
+
 from fastapi import APIRouter, Depends, HTTPException
 from typing import Dict, Any, List, Optional
 from pydantic import BaseModel, Field
@@ -24,10 +25,14 @@ from app.services.ai_service import (
     AITimeoutError,
     AIInvalidResponseError,
     MODEL_PRIMARY,
-    MODEL_ECONOMY
+    MODEL_ECONOMY,
 )
 from app.core.settings import settings
-from app.dependencies.auth_extended import require_admin_or_planner, check_wedding_access, ExtendedAuthUser
+from app.dependencies.auth_extended import (
+    require_admin_or_planner,
+    check_wedding_access,
+    ExtendedAuthUser,
+)
 from app.core.database import mongo
 from bson import ObjectId
 
@@ -57,8 +62,8 @@ def handle_ai_error(e: Exception):
                 "error": "insufficient_credits",
                 "message": e.message,
                 "required": e.required,
-                "available": e.available
-            }
+                "available": e.available,
+            },
         )
     elif isinstance(e, AIRateLimitError):
         raise HTTPException(
@@ -66,17 +71,13 @@ def handle_ai_error(e: Exception):
             detail={
                 "error": e.error_code,
                 "message": e.message,
-                "retry_after": e.retry_after
+                "retry_after": e.retry_after,
             },
-            headers={"Retry-After": str(e.retry_after)} if e.retry_after else None
+            headers={"Retry-After": str(e.retry_after)} if e.retry_after else None,
         )
     elif isinstance(e, AIQuotaExceededError):
         raise HTTPException(
-            status_code=429,
-            detail={
-                "error": e.error_code,
-                "message": e.message
-            }
+            status_code=429, detail={"error": e.error_code, "message": e.message}
         )
     elif isinstance(e, AIServiceUnavailableError):
         raise HTTPException(
@@ -84,9 +85,9 @@ def handle_ai_error(e: Exception):
             detail={
                 "error": e.error_code,
                 "message": e.message,
-                "retry_after": e.retry_after
+                "retry_after": e.retry_after,
             },
-            headers={"Retry-After": str(e.retry_after)} if e.retry_after else None
+            headers={"Retry-After": str(e.retry_after)} if e.retry_after else None,
         )
     elif isinstance(e, AITimeoutError):
         raise HTTPException(
@@ -94,32 +95,20 @@ def handle_ai_error(e: Exception):
             detail={
                 "error": e.error_code,
                 "message": e.message,
-                "retry_after": e.retry_after
-            }
+                "retry_after": e.retry_after,
+            },
         )
     elif isinstance(e, AIContentBlockedError):
         raise HTTPException(
-            status_code=400,
-            detail={
-                "error": e.error_code,
-                "message": e.message
-            }
+            status_code=400, detail={"error": e.error_code, "message": e.message}
         )
     elif isinstance(e, AIInvalidResponseError):
         raise HTTPException(
-            status_code=502,
-            detail={
-                "error": e.error_code,
-                "message": e.message
-            }
+            status_code=502, detail={"error": e.error_code, "message": e.message}
         )
     elif isinstance(e, AIGenerationError):
         raise HTTPException(
-            status_code=500,
-            detail={
-                "error": e.error_code,
-                "message": e.message
-            }
+            status_code=500, detail={"error": e.error_code, "message": e.message}
         )
     else:
         # Unknown error
@@ -128,14 +117,15 @@ def handle_ai_error(e: Exception):
             status_code=500,
             detail={
                 "error": "unknown_error",
-                "message": "An unexpected error occurred. Please try again."
-            }
+                "message": "An unexpected error occurred. Please try again.",
+            },
         )
 
 
 # =========================================================================
 # VALIDATION HELPERS
 # =========================================================================
+
 
 def _extract_guest_id(guest: Any) -> Optional[str]:
     """
@@ -158,7 +148,7 @@ def _extract_guest_id(guest: Any) -> Optional[str]:
 def validate_seating_suggestions(
     ai_tables: List[Dict[str, Any]],
     original_guests: Optional[List[Dict[str, Any]]],
-    original_tables: Optional[List[Dict[str, Any]]]
+    original_tables: Optional[List[Dict[str, Any]]],
 ) -> Dict[str, Any]:
     """
     Validate AI-generated seating suggestions for correctness.
@@ -175,31 +165,35 @@ def validate_seating_suggestions(
     if not original_guests or not original_tables:
         return {
             "tables": [],
-            "warnings": [{
-                "type": "invalid_input",
-                "message": "No guests or tables provided for validation"
-            }],
+            "warnings": [
+                {
+                    "type": "invalid_input",
+                    "message": "No guests or tables provided for validation",
+                }
+            ],
             "stats": {
                 "total_guests": 0,
                 "assigned_guests": 0,
                 "unassigned_guests": 0,
-                "tables_over_capacity": 0
-            }
+                "tables_over_capacity": 0,
+            },
         }
 
     if not ai_tables:
         return {
             "tables": [],
-            "warnings": [{
-                "type": "empty_response",
-                "message": "AI returned no seating suggestions"
-            }],
+            "warnings": [
+                {
+                    "type": "empty_response",
+                    "message": "AI returned no seating suggestions",
+                }
+            ],
             "stats": {
                 "total_guests": len(original_guests),
                 "assigned_guests": 0,
                 "unassigned_guests": len(original_guests),
-                "tables_over_capacity": 0
-            }
+                "tables_over_capacity": 0,
+            },
         }
 
     # Build lookup maps - filter out guests without valid IDs
@@ -237,7 +231,12 @@ def validate_seating_suggestions(
             if guest_id and guest_id in valid_guest_ids:
                 # Normalize to object format for consistent output
                 if isinstance(guest, str):
-                    valid_guests.append({"id": guest_id, "name": guest_id_to_name.get(guest_id, "Unknown")})
+                    valid_guests.append(
+                        {
+                            "id": guest_id,
+                            "name": guest_id_to_name.get(guest_id, "Unknown"),
+                        }
+                    )
                 else:
                     valid_guests.append(guest)
                 assigned_guest_ids.add(guest_id)
@@ -246,12 +245,14 @@ def validate_seating_suggestions(
             # Skip None/invalid entries silently
 
         if invalid_guests:
-            warnings.append({
-                "type": "invalid_guest_ids",
-                "table": table_names.get(table_id, table_id),
-                "invalid_ids": invalid_guests,
-                "message": f"Removed {len(invalid_guests)} invalid guest ID(s) from {table_names.get(table_id, table_id)}"
-            })
+            warnings.append(
+                {
+                    "type": "invalid_guest_ids",
+                    "table": table_names.get(table_id, table_id),
+                    "invalid_ids": invalid_guests,
+                    "message": f"Removed {len(invalid_guests)} invalid guest ID(s) from {table_names.get(table_id, table_id)}",
+                }
+            )
 
         # Check capacity (account for party sizes if available)
         total_seats_used = 0
@@ -263,20 +264,24 @@ def validate_seating_suggestions(
             total_seats_used += party_size
 
         if total_seats_used > capacity:
-            warnings.append({
-                "type": "over_capacity",
-                "table": table_names.get(table_id, table_id),
-                "capacity": capacity,
-                "assigned": total_seats_used,
-                "message": f"{table_names.get(table_id, table_id)} is over capacity ({total_seats_used}/{capacity})"
-            })
+            warnings.append(
+                {
+                    "type": "over_capacity",
+                    "table": table_names.get(table_id, table_id),
+                    "capacity": capacity,
+                    "assigned": total_seats_used,
+                    "message": f"{table_names.get(table_id, table_id)} is over capacity ({total_seats_used}/{capacity})",
+                }
+            )
 
-        validated_tables.append({
-            **table,
-            "guests": valid_guests,
-            "capacity": capacity,
-            "seats_used": total_seats_used
-        })
+        validated_tables.append(
+            {
+                **table,
+                "guests": valid_guests,
+                "capacity": capacity,
+                "seats_used": total_seats_used,
+            }
+        )
 
     # Find unassigned guests
     unassigned = valid_guest_ids - assigned_guest_ids
@@ -286,13 +291,15 @@ def validate_seating_suggestions(
             guest_id_to_name.get(gid, "Unknown")
             for gid in list(unassigned)[:10]  # Limit to first 10
         ]
-        warnings.append({
-            "type": "unassigned_guests",
-            "count": unassigned_count,
-            "guest_ids": list(unassigned)[:50],  # Limit stored IDs
-            "guest_names": unassigned_names,
-            "message": f"{unassigned_count} guest(s) not assigned to any table"
-        })
+        warnings.append(
+            {
+                "type": "unassigned_guests",
+                "count": unassigned_count,
+                "guest_ids": list(unassigned)[:50],  # Limit stored IDs
+                "guest_names": unassigned_names,
+                "message": f"{unassigned_count} guest(s) not assigned to any table",
+            }
+        )
 
     return {
         "tables": validated_tables,
@@ -301,14 +308,17 @@ def validate_seating_suggestions(
             "total_guests": len(valid_guest_ids),
             "assigned_guests": len(assigned_guest_ids),
             "unassigned_guests": unassigned_count,
-            "tables_over_capacity": sum(1 for w in warnings if w.get("type") == "over_capacity")
-        }
+            "tables_over_capacity": sum(
+                1 for w in warnings if w.get("type") == "over_capacity"
+            ),
+        },
     }
 
 
 # =========================================================================
 # REQUEST/RESPONSE MODELS
 # =========================================================================
+
 
 class BudgetInsightsRequest(BaseModel):
     force_refresh: bool = False
@@ -322,7 +332,9 @@ class SeatingOptimizeRequest(BaseModel):
 
 
 class DraftCommunicationRequest(BaseModel):
-    communication_type: str = Field(..., max_length=50)  # follow_up, reminder, thank_you, progress_update
+    communication_type: str = Field(
+        ..., max_length=50
+    )  # follow_up, reminder, thank_you, progress_update
     couple_name: str = Field(..., min_length=1, max_length=200)
     wedding_date: Optional[str] = None
     context: Optional[str] = Field(None, max_length=2000)
@@ -347,6 +359,7 @@ class PricingSuggestionRequest(BaseModel):
 # UTILITY FUNCTIONS
 # =========================================================================
 
+
 def get_season_from_date(date_str: Optional[str]) -> Optional[str]:
     """
     Derive the wedding season from the date string.
@@ -356,6 +369,7 @@ def get_season_from_date(date_str: Optional[str]) -> Optional[str]:
         return None
     try:
         from datetime import datetime as dt
+
         # Parse YYYY-MM-DD format
         wedding_date = dt.strptime(date_str, "%Y-%m-%d")
         month = wedding_date.month
@@ -418,7 +432,9 @@ async def get_wedding_by_id(wedding_id: str) -> Optional[Dict]:
         if not wedding:
             # Try ObjectId if string lookup failed
             try:
-                wedding = await mongo.db["weddings"].find_one({"_id": ObjectId(wedding_id)})
+                wedding = await mongo.db["weddings"].find_one(
+                    {"_id": ObjectId(wedding_id)}
+                )
             except Exception:
                 pass
         if wedding:
@@ -432,7 +448,9 @@ async def get_budget_data(wedding_id: str) -> Dict[str, Any]:
     """Get budget data for a wedding from budget_categories collection."""
     try:
         # Get budget categories from the budget_categories collection
-        categories_cursor = mongo.db["budget_categories"].find({"wedding_id": wedding_id})
+        categories_cursor = mongo.db["budget_categories"].find(
+            {"wedding_id": wedding_id}
+        )
         categories_list = await categories_cursor.to_list(length=100)
 
         if not categories_list:
@@ -441,14 +459,16 @@ async def get_budget_data(wedding_id: str) -> Dict[str, Any]:
         # Format categories for AI consumption
         categories = []
         for cat in categories_list:
-            categories.append({
-                "name": cat.get("name", "Unknown"),
-                "budget": cat.get("budgeted_amount", 0),
-                "spent": cat.get("actual_spent", 0),
-                "status": cat.get("payment_status", "pending"),
-                "priority": cat.get("priority", 3),
-                "percentage": cat.get("percentage_of_total", 0)
-            })
+            categories.append(
+                {
+                    "name": cat.get("name", "Unknown"),
+                    "budget": cat.get("budgeted_amount", 0),
+                    "spent": cat.get("actual_spent", 0),
+                    "status": cat.get("payment_status", "pending"),
+                    "priority": cat.get("priority", 3),
+                    "percentage": cat.get("percentage_of_total", 0),
+                }
+            )
 
         total_budget = sum(c.get("budget", 0) for c in categories)
         total_spent = sum(c.get("spent", 0) for c in categories)
@@ -457,7 +477,7 @@ async def get_budget_data(wedding_id: str) -> Dict[str, Any]:
             "categories": categories,
             "total_budget": total_budget,
             "total_spent": total_spent,
-            "remaining": total_budget - total_spent
+            "remaining": total_budget - total_spent,
         }
     except Exception as e:
         logger.error(f"Error fetching budget: {str(e)}")
@@ -467,10 +487,18 @@ async def get_budget_data(wedding_id: str) -> Dict[str, Any]:
 async def get_rsvp_data(wedding_id: str) -> Dict[str, Any]:
     """Get RSVP summary for a wedding."""
     try:
-        guest_count = await mongo.db["guests"].count_documents({"wedding_id": wedding_id})
+        guest_count = await mongo.db["guests"].count_documents(
+            {"wedding_id": wedding_id}
+        )
 
         if guest_count == 0:
-            return {"total_guests": 0, "accepted": 0, "declined": 0, "pending": 0, "response_rate": 0}
+            return {
+                "total_guests": 0,
+                "accepted": 0,
+                "declined": 0,
+                "pending": 0,
+                "response_rate": 0,
+            }
 
         rsvps_cursor = mongo.db["rsvps"].find({"wedding_id": wedding_id})
         rsvps = await rsvps_cursor.to_list(length=None)
@@ -492,22 +520,31 @@ async def get_rsvp_data(wedding_id: str) -> Dict[str, Any]:
             "accepted": accepted,
             "declined": declined,
             "pending": pending,
-            "response_rate": round((len(rsvps) / guest_count * 100), 1) if guest_count > 0 else 0
+            "response_rate": round((len(rsvps) / guest_count * 100), 1)
+            if guest_count > 0
+            else 0,
         }
     except Exception as e:
         logger.error(f"Error fetching RSVP data for wedding {wedding_id}: {str(e)}")
-        return {"total_guests": 0, "accepted": 0, "declined": 0, "pending": 0, "response_rate": 0}
+        return {
+            "total_guests": 0,
+            "accepted": 0,
+            "declined": 0,
+            "pending": 0,
+            "response_rate": 0,
+        }
 
 
 # =========================================================================
 # BUDGET INSIGHTS (WFA-701)
 # =========================================================================
 
+
 @router.get("/weddings/{wedding_id}/budget-insights")
 async def get_budget_insights(
     wedding_id: str,
     force_refresh: bool = False,
-    current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
+    current_user: ExtendedAuthUser = Depends(require_admin_or_planner),
 ):
     """
     Get AI-powered budget insights for a wedding.
@@ -522,8 +559,8 @@ async def get_budget_insights(
             detail={
                 "error": "ai_not_configured",
                 "message": "AI service is not configured. Please contact the administrator.",
-                "hint": "GEMINI_API_KEY environment variable may be missing."
-            }
+                "hint": "GEMINI_API_KEY environment variable may be missing.",
+            },
         )
 
     try:
@@ -532,8 +569,7 @@ async def get_budget_insights(
         # Verify planner has access to this wedding
         if not await check_wedding_access(current_user, wedding_id):
             raise HTTPException(
-                status_code=403,
-                detail="You don't have access to this wedding"
+                status_code=403, detail="You don't have access to this wedding"
             )
 
         # Verify wedding exists
@@ -548,7 +584,7 @@ async def get_budget_insights(
             return {
                 "insights": [],
                 "message": "No budget data available. Add budget categories first.",
-                "credits_used": 0
+                "credits_used": 0,
             }
 
         # Build context with cultural and regional awareness
@@ -558,7 +594,12 @@ async def get_budget_insights(
             location = venue.get("city")
         elif isinstance(venue, str):
             location = venue
-        location = location or wedding.get("region") or wedding.get("city") or wedding.get("location")
+        location = (
+            location
+            or wedding.get("region")
+            or wedding.get("city")
+            or wedding.get("location")
+        )
 
         # Get cultural style - explicit or inferred from events
         cultural_style = wedding.get("cultural_style")
@@ -575,10 +616,11 @@ async def get_budget_insights(
             "wedding_date": wedding_date,
             "guest_count": wedding.get("guest_count", 100),
             "location": location,
-            "cultural_style": cultural_style or "western",  # Default to western if not specified
+            "cultural_style": cultural_style
+            or "western",  # Default to western if not specified
             "season": season or "unknown",
             "total_budget": wedding.get("total_budget"),
-            "budget": budget_data
+            "budget": budget_data,
         }
 
         # Stable cache key — uses budget totals rather than full category details
@@ -610,33 +652,43 @@ async def get_budget_insights(
             prompt=cultural_prompt,
             context=context,
             force_refresh=force_refresh,
-            cache_context=cache_context
+            cache_context=cache_context,
         )
 
         return {
             "insights": result["response"].get("insights", []),
             "cached": result["cached"],
-            "credits_used": result["credits_used"]
+            "credits_used": result["credits_used"],
         }
 
-    except (InsufficientCreditsError, AIGenerationError, AIRateLimitError,
-            AIContentBlockedError, AIServiceUnavailableError, AIQuotaExceededError,
-            AITimeoutError, AIInvalidResponseError) as e:
+    except (
+        InsufficientCreditsError,
+        AIGenerationError,
+        AIRateLimitError,
+        AIContentBlockedError,
+        AIServiceUnavailableError,
+        AIQuotaExceededError,
+        AITimeoutError,
+        AIInvalidResponseError,
+    ) as e:
         handle_ai_error(e)
     except Exception as e:
         logger.error(f"Error generating budget insights: {str(e)}")
-        raise HTTPException(status_code=500, detail="Failed to generate budget insights")
+        raise HTTPException(
+            status_code=500, detail="Failed to generate budget insights"
+        )
 
 
 # =========================================================================
 # DASHBOARD INSIGHTS (AI-002)
 # =========================================================================
 
+
 @router.get("/weddings/{wedding_id}/insights")
 async def get_dashboard_insights(
     wedding_id: str,
     force_refresh: bool = False,
-    current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
+    current_user: ExtendedAuthUser = Depends(require_admin_or_planner),
 ):
     """
     Get AI-powered actionable insights for a wedding dashboard.
@@ -657,8 +709,8 @@ async def get_dashboard_insights(
             detail={
                 "error": "ai_not_configured",
                 "message": "AI service is not configured. Please contact the administrator.",
-                "hint": "GEMINI_API_KEY environment variable may be missing."
-            }
+                "hint": "GEMINI_API_KEY environment variable may be missing.",
+            },
         )
 
     try:
@@ -667,8 +719,7 @@ async def get_dashboard_insights(
         # Verify planner has access to this wedding
         if not await check_wedding_access(current_user, wedding_id):
             raise HTTPException(
-                status_code=403,
-                detail="You don't have access to this wedding"
+                status_code=403, detail="You don't have access to this wedding"
             )
 
         # Verify wedding exists
@@ -681,37 +732,49 @@ async def get_dashboard_insights(
         rsvp_data = await get_rsvp_data(wedding_id)
 
         # Get upcoming tasks
-        tasks = await mongo.db["tasks"].find({
-            "wedding_id": wedding_id,
-            "status": {"$ne": "completed"}
-        }).sort("due_date", 1).limit(10).to_list(length=10)
+        tasks = (
+            await mongo.db["tasks"]
+            .find({"wedding_id": wedding_id, "status": {"$ne": "completed"}})
+            .sort("due_date", 1)
+            .limit(10)
+            .to_list(length=10)
+        )
 
         upcoming_tasks = [
             {
                 "title": t.get("title"),
                 "due_date": str(t.get("due_date")) if t.get("due_date") else None,
                 "priority": t.get("priority", "medium"),
-                "category": t.get("category")
+                "category": t.get("category"),
             }
             for t in tasks
         ]
 
         # Get upcoming vendor payments
         from datetime import datetime, timedelta, timezone
+
         upcoming_deadline = datetime.now(timezone.utc) + timedelta(days=30)
 
-        scheduled_payments = await mongo.db["scheduled_payments"].find({
-            "wedding_id": wedding_id,
-            "status": {"$in": ["scheduled", "pending"]},
-            "due_date": {"$lte": upcoming_deadline}
-        }).sort("due_date", 1).limit(5).to_list(length=5)
+        scheduled_payments = (
+            await mongo.db["scheduled_payments"]
+            .find(
+                {
+                    "wedding_id": wedding_id,
+                    "status": {"$in": ["scheduled", "pending"]},
+                    "due_date": {"$lte": upcoming_deadline},
+                }
+            )
+            .sort("due_date", 1)
+            .limit(5)
+            .to_list(length=5)
+        )
 
         vendor_payments = [
             {
                 "vendor": p.get("vendor_name", "Unknown Vendor"),
                 "amount": p.get("amount", 0),
                 "due_date": str(p.get("due_date")) if p.get("due_date") else None,
-                "status": p.get("status")
+                "status": p.get("status"),
             }
             for p in scheduled_payments
         ]
@@ -722,7 +785,10 @@ async def get_dashboard_insights(
         if wedding_date_str and isinstance(wedding_date_str, str):
             try:
                 from datetime import datetime as dt, timezone
-                wedding_date = dt.strptime(wedding_date_str, "%Y-%m-%d").replace(tzinfo=timezone.utc)
+
+                wedding_date = dt.strptime(wedding_date_str, "%Y-%m-%d").replace(
+                    tzinfo=timezone.utc
+                )
                 days_until_wedding = (wedding_date - dt.now(timezone.utc)).days
             except (ValueError, TypeError):
                 # Ignore if date format is wrong
@@ -740,7 +806,7 @@ async def get_dashboard_insights(
             "budget": budget_data,
             "rsvp": rsvp_data,
             "upcoming_tasks": upcoming_tasks,
-            "vendor_payments": vendor_payments
+            "vendor_payments": vendor_payments,
         }
 
         # Stable cache key context — excludes volatile data like upcoming_tasks,
@@ -766,7 +832,7 @@ async def get_dashboard_insights(
             prompt="Analyze this wedding's current status and generate actionable insights for the planner.",
             context=context,
             force_refresh=force_refresh,
-            cache_context=cache_context
+            cache_context=cache_context,
         )
 
         response = result["response"]
@@ -777,12 +843,19 @@ async def get_dashboard_insights(
             "wedding_id": wedding_id,
             "cached": result["cached"],
             "credits_used": result["credits_used"],
-            "credits_remaining": result.get("credits_remaining")
+            "credits_remaining": result.get("credits_remaining"),
         }
 
-    except (InsufficientCreditsError, AIGenerationError, AIRateLimitError,
-            AIContentBlockedError, AIServiceUnavailableError, AIQuotaExceededError,
-            AITimeoutError, AIInvalidResponseError) as e:
+    except (
+        InsufficientCreditsError,
+        AIGenerationError,
+        AIRateLimitError,
+        AIContentBlockedError,
+        AIServiceUnavailableError,
+        AIQuotaExceededError,
+        AITimeoutError,
+        AIInvalidResponseError,
+    ) as e:
         handle_ai_error(e)
     except HTTPException:
         raise
@@ -795,11 +868,12 @@ async def get_dashboard_insights(
 # SEATING OPTIMIZATION (WFA-702, WFA-703, WFA-704)
 # =========================================================================
 
+
 @router.post("/weddings/{wedding_id}/seating-optimize")
 async def optimize_seating(
     wedding_id: str,
     request: SeatingOptimizeRequest,
-    current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
+    current_user: ExtendedAuthUser = Depends(require_admin_or_planner),
 ):
     """
     AI-powered seating optimization.
@@ -816,8 +890,8 @@ async def optimize_seating(
             detail={
                 "error": "ai_not_configured",
                 "message": "AI service is not configured. Please contact the administrator.",
-                "hint": "GEMINI_API_KEY environment variable may be missing."
-            }
+                "hint": "GEMINI_API_KEY environment variable may be missing.",
+            },
         )
 
     try:
@@ -826,8 +900,7 @@ async def optimize_seating(
         # Verify planner has access to this wedding
         if not await check_wedding_access(current_user, wedding_id):
             raise HTTPException(
-                status_code=403,
-                detail="You don't have access to this wedding"
+                status_code=403, detail="You don't have access to this wedding"
             )
 
         # Verify wedding exists
@@ -838,7 +911,7 @@ async def optimize_seating(
         if not request.guests or not request.tables:
             raise HTTPException(
                 status_code=400,
-                detail="Guests and tables are required for optimization"
+                detail="Guests and tables are required for optimization",
             )
 
         guest_count = len(request.guests)
@@ -853,10 +926,9 @@ async def optimize_seating(
 
         # Fetch RSVP data to get dietary restrictions
         guest_ids = [g.get("id") or g.get("_id") for g in request.guests]
-        rsvp_cursor = mongo.db["rsvps"].find({
-            "wedding_id": wedding_id,
-            "guest_id": {"$in": guest_ids}
-        })
+        rsvp_cursor = mongo.db["rsvps"].find(
+            {"wedding_id": wedding_id, "guest_id": {"$in": guest_ids}}
+        )
         rsvps = await rsvp_cursor.to_list(length=None)
 
         # Create lookup map for dietary info
@@ -872,7 +944,7 @@ async def optimize_seating(
         sanitized_guests: list[dict] = []
         relationship_constraints: dict[str, list] = {
             "must_sit_together": [],  # Pairs of guest IDs
-            "must_sit_apart": []      # Pairs of guest IDs to separate
+            "must_sit_apart": [],  # Pairs of guest IDs to separate
         }
 
         for g in request.guests:
@@ -884,13 +956,18 @@ async def optimize_seating(
                 "group": g.get("group_id"),
                 "role": g.get("role"),
                 "plus_one": g.get("plus_one_allowed"),
-                "party_size": 1 + (g.get("number_of_plus_ones_allowed", 0) if g.get("plus_one_allowed") else 0),
+                "party_size": 1
+                + (
+                    g.get("number_of_plus_ones_allowed", 0)
+                    if g.get("plus_one_allowed")
+                    else 0
+                ),
                 # Enhanced fields for smarter seating
                 "dietary": dietary_map.get(guest_id) if guest_id else None,
                 "accessibility": g.get("accessibility_needs"),
                 "age_group": g.get("age_group"),
                 "language": g.get("language_preference"),
-                "seating_pref": g.get("seating_preference")
+                "seating_pref": g.get("seating_preference"),
             }
             sanitized_guests.append(guest_data)
 
@@ -911,8 +988,12 @@ async def optimize_seating(
                         relationship_constraints["must_sit_apart"].append(pair)
 
         # Convert tuples to lists for JSON serialization
-        relationship_constraints["must_sit_together"] = [list(p) for p in relationship_constraints["must_sit_together"]]
-        relationship_constraints["must_sit_apart"] = [list(p) for p in relationship_constraints["must_sit_apart"]]
+        relationship_constraints["must_sit_together"] = [
+            list(p) for p in relationship_constraints["must_sit_together"]
+        ]
+        relationship_constraints["must_sit_apart"] = [
+            list(p) for p in relationship_constraints["must_sit_apart"]
+        ]
 
         # Count special needs for context
         dietary_count = sum(1 for g in sanitized_guests if g.get("dietary"))
@@ -930,9 +1011,13 @@ async def optimize_seating(
             "special_needs_summary": {
                 "guests_with_dietary_restrictions": dietary_count,
                 "guests_with_accessibility_needs": accessibility_count,
-                "total_must_sit_together_pairs": len(relationship_constraints["must_sit_together"]),
-                "total_must_sit_apart_pairs": len(relationship_constraints["must_sit_apart"])
-            }
+                "total_must_sit_together_pairs": len(
+                    relationship_constraints["must_sit_together"]
+                ),
+                "total_must_sit_apart_pairs": len(
+                    relationship_constraints["must_sit_apart"]
+                ),
+            },
         }
 
         # Enhanced prompt with comprehensive constraints
@@ -957,7 +1042,7 @@ async def optimize_seating(
             feature=feature,
             prompt=system_prompt,
             context=context,
-            force_refresh=request.force_refresh
+            force_refresh=request.force_refresh,
         )
 
         # Validate AI response
@@ -965,7 +1050,7 @@ async def optimize_seating(
         validation = validate_seating_suggestions(
             ai_tables=ai_tables,
             original_guests=request.guests,
-            original_tables=request.tables
+            original_tables=request.tables,
         )
 
         # Log any warnings for monitoring
@@ -985,13 +1070,20 @@ async def optimize_seating(
             "credits_used": result["credits_used"],
             "validation": {
                 "warnings": validation["warnings"],
-                "stats": validation["stats"]
-            }
+                "stats": validation["stats"],
+            },
         }
 
-    except (InsufficientCreditsError, AIGenerationError, AIRateLimitError,
-            AIContentBlockedError, AIServiceUnavailableError, AIQuotaExceededError,
-            AITimeoutError, AIInvalidResponseError) as e:
+    except (
+        InsufficientCreditsError,
+        AIGenerationError,
+        AIRateLimitError,
+        AIContentBlockedError,
+        AIServiceUnavailableError,
+        AIQuotaExceededError,
+        AITimeoutError,
+        AIInvalidResponseError,
+    ) as e:
         handle_ai_error(e)
     except Exception as e:
         logger.error(f"Error optimizing seating: {str(e)}")
@@ -1002,10 +1094,11 @@ async def optimize_seating(
 # COMMUNICATION COPILOT (WFA-705)
 # =========================================================================
 
+
 @router.post("/draft-communication")
 async def draft_communication(
     request: DraftCommunicationRequest,
-    current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
+    current_user: ExtendedAuthUser = Depends(require_admin_or_planner),
 ):
     """
     AI-powered email/message drafting.
@@ -1021,7 +1114,7 @@ async def draft_communication(
         if request.communication_type not in valid_types:
             raise HTTPException(
                 status_code=400,
-                detail=f"Invalid communication type. Must be one of: {valid_types}"
+                detail=f"Invalid communication type. Must be one of: {valid_types}",
             )
 
         # Build context
@@ -1030,10 +1123,14 @@ async def draft_communication(
             "couple_name": request.couple_name,
             "wedding_date": request.wedding_date,
             "additional_context": request.context,
-            "planner_name": user_data.get("first_name") or user_data.get("company_name")
+            "planner_name": user_data.get("first_name")
+            or user_data.get("company_name"),
         }
 
-        prompt = request.custom_instructions or f"Draft a {request.communication_type.replace('_', ' ')} message."
+        prompt = (
+            request.custom_instructions
+            or f"Draft a {request.communication_type.replace('_', ' ')} message."
+        )
 
         # Generate draft (not cached)
         result = await ai_service.generate(
@@ -1042,7 +1139,7 @@ async def draft_communication(
             feature="email_draft",
             prompt=prompt,
             context=context,
-            force_refresh=True  # Never cache drafts
+            force_refresh=True,  # Never cache drafts
         )
 
         # Extract text from response
@@ -1055,12 +1152,19 @@ async def draft_communication(
         return {
             "draft": draft,
             "communication_type": request.communication_type,
-            "credits_used": result["credits_used"]
+            "credits_used": result["credits_used"],
         }
 
-    except (InsufficientCreditsError, AIGenerationError, AIRateLimitError,
-            AIContentBlockedError, AIServiceUnavailableError, AIQuotaExceededError,
-            AITimeoutError, AIInvalidResponseError) as e:
+    except (
+        InsufficientCreditsError,
+        AIGenerationError,
+        AIRateLimitError,
+        AIContentBlockedError,
+        AIServiceUnavailableError,
+        AIQuotaExceededError,
+        AITimeoutError,
+        AIInvalidResponseError,
+    ) as e:
         handle_ai_error(e)
     except Exception as e:
         logger.error(f"Error drafting communication: {str(e)}")
@@ -1071,6 +1175,7 @@ async def draft_communication(
 # PROGRESS REPORT (WFA-706)
 # =========================================================================
 
+
 @router.get("/weddings/{wedding_id}/progress-report")
 async def generate_progress_report(
     wedding_id: str,
@@ -1078,7 +1183,7 @@ async def generate_progress_report(
     include_rsvp: bool = True,
     include_timeline: bool = True,
     force_refresh: bool = False,
-    current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
+    current_user: ExtendedAuthUser = Depends(require_admin_or_planner),
 ):
     """
     Generate a wedding progress report for the couple.
@@ -1091,8 +1196,7 @@ async def generate_progress_report(
         # Verify planner has access to this wedding
         if not await check_wedding_access(current_user, wedding_id):
             raise HTTPException(
-                status_code=403,
-                detail="You don't have access to this wedding"
+                status_code=403, detail="You don't have access to this wedding"
             )
 
         # Verify wedding exists
@@ -1116,14 +1220,16 @@ async def generate_progress_report(
 
         if include_timeline:
             # Get upcoming tasks
-            tasks = await mongo.db["tasks"].find({
-                "wedding_id": wedding_id,
-                "status": {"$ne": "completed"}
-            }).sort("due_date", 1).limit(5).to_list(length=5)
+            tasks = (
+                await mongo.db["tasks"]
+                .find({"wedding_id": wedding_id, "status": {"$ne": "completed"}})
+                .sort("due_date", 1)
+                .limit(5)
+                .to_list(length=5)
+            )
 
             context["upcoming_tasks"] = [
-                {"title": t.get("title"), "due_date": t.get("due_date")}
-                for t in tasks
+                {"title": t.get("title"), "due_date": t.get("due_date")} for t in tasks
             ]
 
         # Generate report
@@ -1133,7 +1239,7 @@ async def generate_progress_report(
             feature="progress_report",
             prompt="Generate a progress report for this wedding.",
             context=context,
-            force_refresh=force_refresh
+            force_refresh=force_refresh,
         )
 
         # Extract report text
@@ -1148,29 +1254,39 @@ async def generate_progress_report(
             "data_included": {
                 "budget": include_budget,
                 "rsvp": include_rsvp,
-                "timeline": include_timeline
+                "timeline": include_timeline,
             },
             "cached": result["cached"],
-            "credits_used": result["credits_used"]
+            "credits_used": result["credits_used"],
         }
 
-    except (InsufficientCreditsError, AIGenerationError, AIRateLimitError,
-            AIContentBlockedError, AIServiceUnavailableError, AIQuotaExceededError,
-            AITimeoutError, AIInvalidResponseError) as e:
+    except (
+        InsufficientCreditsError,
+        AIGenerationError,
+        AIRateLimitError,
+        AIContentBlockedError,
+        AIServiceUnavailableError,
+        AIQuotaExceededError,
+        AITimeoutError,
+        AIInvalidResponseError,
+    ) as e:
         handle_ai_error(e)
     except Exception as e:
         logger.error(f"Error generating progress report: {str(e)}")
-        raise HTTPException(status_code=500, detail="Failed to generate progress report")
+        raise HTTPException(
+            status_code=500, detail="Failed to generate progress report"
+        )
 
 
 # =========================================================================
 # PACKAGE PRICING SUGGESTIONS (WFA-707)
 # =========================================================================
 
+
 @router.post("/suggest-pricing")
 async def suggest_pricing(
     request: PricingSuggestionRequest,
-    current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
+    current_user: ExtendedAuthUser = Depends(require_admin_or_planner),
 ):
     """
     AI-powered pricing suggestions for service packages.
@@ -1182,14 +1298,16 @@ async def suggest_pricing(
         user_data = current_user.user_data or {}
 
         if not request.services:
-            raise HTTPException(status_code=400, detail="At least one service is required")
+            raise HTTPException(
+                status_code=400, detail="At least one service is required"
+            )
 
         # Build context
         context = {
             "services": request.services,
             "location": request.location or "USA",
             "wedding_size": request.wedding_size or 100,
-            "planner_experience": user_data.get("years_experience", "unknown")
+            "planner_experience": user_data.get("years_experience", "unknown"),
         }
 
         # Generate pricing suggestion
@@ -1199,7 +1317,7 @@ async def suggest_pricing(
             feature="package_pricing",
             prompt="Suggest pricing for this wedding package.",
             context=context,
-            force_refresh=request.force_refresh
+            force_refresh=request.force_refresh,
         )
 
         response = result["response"]
@@ -1210,15 +1328,22 @@ async def suggest_pricing(
                 "max_price": response.get("max_price"),
                 "recommended": response.get("recommended"),
                 "market_comparison": response.get("market_comparison", "at"),
-                "schedule_suggestion": response.get("schedule_suggestion", [])
+                "schedule_suggestion": response.get("schedule_suggestion", []),
             },
             "cached": result["cached"],
-            "credits_used": result["credits_used"]
+            "credits_used": result["credits_used"],
         }
 
-    except (InsufficientCreditsError, AIGenerationError, AIRateLimitError,
-            AIContentBlockedError, AIServiceUnavailableError, AIQuotaExceededError,
-            AITimeoutError, AIInvalidResponseError) as e:
+    except (
+        InsufficientCreditsError,
+        AIGenerationError,
+        AIRateLimitError,
+        AIContentBlockedError,
+        AIServiceUnavailableError,
+        AIQuotaExceededError,
+        AITimeoutError,
+        AIInvalidResponseError,
+    ) as e:
         handle_ai_error(e)
     except Exception as e:
         logger.error(f"Error suggesting pricing: {str(e)}")
@@ -1229,9 +1354,14 @@ async def suggest_pricing(
 # CONTRACT SECTION GENERATION (AI-005)
 # =========================================================================
 
+
 class ContractSectionRequest(BaseModel):
-    section_type: str = Field(..., max_length=50)  # payment_terms, cancellation_policy, scope_of_work, liability, force_majeure, custom
-    vendor_type: Optional[str] = Field(None, max_length=100)  # photographer, caterer, florist, dj, venue, etc.
+    section_type: str = Field(
+        ..., max_length=50
+    )  # payment_terms, cancellation_policy, scope_of_work, liability, force_majeure, custom
+    vendor_type: Optional[str] = Field(
+        None, max_length=100
+    )  # photographer, caterer, florist, dj, venue, etc.
     wedding_id: Optional[str] = None
     custom_prompt: Optional[str] = Field(None, max_length=3000)
 
@@ -1239,7 +1369,7 @@ class ContractSectionRequest(BaseModel):
 @router.post("/generate-contract-section")
 async def generate_contract_section(
     request: ContractSectionRequest,
-    current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
+    current_user: ExtendedAuthUser = Depends(require_admin_or_planner),
 ):
     """
     Generate contract clause content using AI.
@@ -1264,39 +1394,45 @@ async def generate_contract_section(
                 raise InsufficientCreditsError(
                     message=credit_check.get("message", "Insufficient AI credits"),
                     required=credit_check.get("credits_needed", 1),
-                    available=credit_check.get("credits_remaining", 0)
+                    available=credit_check.get("credits_remaining", 0),
                 )
         except InsufficientCreditsError:
             raise
         except Exception:
             pass  # Allow through if credit check itself fails — generate() will re-check
 
-        valid_sections = ["payment_terms", "cancellation_policy", "scope_of_work", "liability", "force_majeure", "custom"]
+        valid_sections = [
+            "payment_terms",
+            "cancellation_policy",
+            "scope_of_work",
+            "liability",
+            "force_majeure",
+            "custom",
+        ]
         if request.section_type not in valid_sections:
             raise HTTPException(
                 status_code=400,
-                detail=f"Invalid section_type. Must be one of: {valid_sections}"
+                detail=f"Invalid section_type. Must be one of: {valid_sections}",
             )
 
         # If custom section, require custom_prompt
         if request.section_type == "custom" and not request.custom_prompt:
             raise HTTPException(
                 status_code=400,
-                detail="custom_prompt is required when section_type is 'custom'"
+                detail="custom_prompt is required when section_type is 'custom'",
             )
 
         # Build context
         context = {
             "section_type": request.section_type,
-            "vendor_type": request.vendor_type or "general vendor"
+            "vendor_type": request.vendor_type or "general vendor",
         }
 
         # Add wedding context if provided
         if request.wedding_id:
             if not await check_wedding_access(current_user, request.wedding_id):
                 raise HTTPException(
-                    status_code=403,
-                    detail="You don't have access to this wedding"
+                    status_code=403, detail="You don't have access to this wedding"
                 )
 
             wedding = await get_wedding_by_id(request.wedding_id)
@@ -1313,7 +1449,7 @@ async def generate_contract_section(
             "scope_of_work": f"Generate a scope of work section for a {request.vendor_type or 'wedding vendor'} contract. Detail the services, deliverables, timeline, and what is/isn't included.",
             "liability": f"Generate a liability clause for a {request.vendor_type or 'wedding vendor'} contract. Include limitation of liability, insurance requirements, and indemnification.",
             "force_majeure": f"Generate a force majeure clause for a {request.vendor_type or 'wedding vendor'} contract. Include covered events, notification requirements, and remedies.",
-            "custom": request.custom_prompt
+            "custom": request.custom_prompt,
         }
 
         prompt = section_prompts[request.section_type]
@@ -1322,7 +1458,7 @@ async def generate_contract_section(
         if prompt is None:
             raise HTTPException(
                 status_code=400,
-                detail="Unable to generate prompt for the specified section type"
+                detail="Unable to generate prompt for the specified section type",
             )
 
         # Add custom instructions if provided for non-custom sections
@@ -1336,7 +1472,7 @@ async def generate_contract_section(
             feature="contract_section",
             prompt=prompt,
             context=context,
-            force_refresh=True  # Never cache - each generation is unique
+            force_refresh=True,  # Never cache - each generation is unique
         )
 
         # Extract text from response
@@ -1351,21 +1487,31 @@ async def generate_contract_section(
             "section_type": request.section_type,
             "vendor_type": request.vendor_type,
             "credits_used": result["credits_used"],
-            "credits_remaining": result.get("credits_remaining")
+            "credits_remaining": result.get("credits_remaining"),
         }
 
-    except (InsufficientCreditsError, AIGenerationError, AIRateLimitError,
-            AIContentBlockedError, AIServiceUnavailableError, AIQuotaExceededError,
-            AITimeoutError, AIInvalidResponseError) as e:
+    except (
+        InsufficientCreditsError,
+        AIGenerationError,
+        AIRateLimitError,
+        AIContentBlockedError,
+        AIServiceUnavailableError,
+        AIQuotaExceededError,
+        AITimeoutError,
+        AIInvalidResponseError,
+    ) as e:
         handle_ai_error(e)
     except Exception as e:
         logger.error(f"Error generating contract section: {str(e)}")
-        raise HTTPException(status_code=500, detail="Failed to generate contract section")
+        raise HTTPException(
+            status_code=500, detail="Failed to generate contract section"
+        )
 
 
 # =========================================================================
 # VENDOR RECOMMENDATIONS (AI-011)
 # =========================================================================
+
 
 class VendorRecommendationRequest(BaseModel):
     vendor_type: str  # photographer, caterer, florist, dj, venue, etc.
@@ -1379,7 +1525,7 @@ class VendorRecommendationRequest(BaseModel):
 @router.post("/vendor-recommendations")
 async def get_vendor_recommendations(
     request: VendorRecommendationRequest,
-    current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
+    current_user: ExtendedAuthUser = Depends(require_admin_or_planner),
 ):
     """
     Get AI-powered vendor selection criteria and recommendations.
@@ -1402,23 +1548,28 @@ async def get_vendor_recommendations(
             "budget_range": request.budget_range or {"min": 0.0, "max": 0.0},
             "wedding_style": request.wedding_style or "western",
             "region": request.region or "USA",
-            "guest_count": request.guest_count or 100
+            "guest_count": request.guest_count or 100,
         }
 
         # Add wedding context if provided
         if request.wedding_id:
             if not await check_wedding_access(current_user, request.wedding_id):
                 raise HTTPException(
-                    status_code=403,
-                    detail="You don't have access to this wedding"
+                    status_code=403, detail="You don't have access to this wedding"
                 )
 
             wedding = await get_wedding_by_id(request.wedding_id)
             if wedding:
                 # Override with wedding data if not explicitly provided
-                context["wedding_style"] = request.wedding_style or wedding.get("cultural_style", "western")
-                context["region"] = request.region or wedding.get("region") or wedding.get("venue")
-                context["guest_count"] = request.guest_count or wedding.get("guest_count", 100)
+                context["wedding_style"] = request.wedding_style or wedding.get(
+                    "cultural_style", "western"
+                )
+                context["region"] = (
+                    request.region or wedding.get("region") or wedding.get("venue")
+                )
+                context["guest_count"] = request.guest_count or wedding.get(
+                    "guest_count", 100
+                )
                 context["wedding_date"] = wedding.get("date")
 
         prompt = f"Provide vendor selection guidance for hiring a {request.vendor_type} for a {context['wedding_style']} wedding in {context['region']} with approximately {context['guest_count']} guests."
@@ -1445,37 +1596,49 @@ async def get_vendor_recommendations(
             feature="vendor_recommendations",
             prompt=prompt,
             context=context,
-            force_refresh=rec_force_refresh
+            force_refresh=rec_force_refresh,
         )
 
         response = result["response"]
 
         return {
-            "recommendations": response if isinstance(response, dict) else {"raw": response},
+            "recommendations": response
+            if isinstance(response, dict)
+            else {"raw": response},
             "vendor_type": request.vendor_type,
             "cached": result["cached"],
             "credits_used": result["credits_used"],
-            "credits_remaining": result.get("credits_remaining")
+            "credits_remaining": result.get("credits_remaining"),
         }
 
-    except (InsufficientCreditsError, AIGenerationError, AIRateLimitError,
-            AIContentBlockedError, AIServiceUnavailableError, AIQuotaExceededError,
-            AITimeoutError, AIInvalidResponseError) as e:
+    except (
+        InsufficientCreditsError,
+        AIGenerationError,
+        AIRateLimitError,
+        AIContentBlockedError,
+        AIServiceUnavailableError,
+        AIQuotaExceededError,
+        AITimeoutError,
+        AIInvalidResponseError,
+    ) as e:
         handle_ai_error(e)
     except Exception as e:
         logger.error(f"Error generating vendor recommendations: {str(e)}")
-        raise HTTPException(status_code=500, detail="Failed to generate vendor recommendations")
+        raise HTTPException(
+            status_code=500, detail="Failed to generate vendor recommendations"
+        )
 
 
 # =========================================================================
 # TASK PRIORITIZATION (AI-013)
 # =========================================================================
 
+
 @router.post("/weddings/{wedding_id}/prioritize-tasks")
 async def prioritize_tasks(
     wedding_id: str,
     force_refresh: bool = False,
-    current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
+    current_user: ExtendedAuthUser = Depends(require_admin_or_planner),
 ):
     """
     Get AI-powered task prioritization for a wedding.
@@ -1495,8 +1658,7 @@ async def prioritize_tasks(
         # Verify planner has access to this wedding
         if not await check_wedding_access(current_user, wedding_id):
             raise HTTPException(
-                status_code=403,
-                detail="You don't have access to this wedding"
+                status_code=403, detail="You don't have access to this wedding"
             )
 
         # Verify wedding exists
@@ -1506,20 +1668,25 @@ async def prioritize_tasks(
 
         # Calculate days until wedding
         from datetime import datetime as dt, timedelta, timezone
+
         days_until_wedding = None
         wedding_date_str = wedding.get("date")
         if wedding_date_str and isinstance(wedding_date_str, str):
             try:
-                wedding_date = dt.strptime(wedding_date_str, "%Y-%m-%d").replace(tzinfo=timezone.utc)
+                wedding_date = dt.strptime(wedding_date_str, "%Y-%m-%d").replace(
+                    tzinfo=timezone.utc
+                )
                 days_until_wedding = (wedding_date - dt.now(timezone.utc)).days
             except Exception:
                 pass
 
         # Get all pending tasks
-        tasks = await mongo.db["tasks"].find({
-            "wedding_id": wedding_id,
-            "status": {"$ne": "completed"}
-        }).sort("due_date", 1).to_list(length=50)
+        tasks = (
+            await mongo.db["tasks"]
+            .find({"wedding_id": wedding_id, "status": {"$ne": "completed"}})
+            .sort("due_date", 1)
+            .to_list(length=50)
+        )
 
         pending_tasks = [
             {
@@ -1528,25 +1695,33 @@ async def prioritize_tasks(
                 "due_date": str(t.get("due_date")) if t.get("due_date") else None,
                 "priority": t.get("priority", "medium"),
                 "category": t.get("category"),
-                "status": t.get("status", "pending")
+                "status": t.get("status", "pending"),
             }
             for t in tasks
         ]
 
         # Get upcoming vendor payments/deadlines
         upcoming_deadline = dt.now(timezone.utc) + timedelta(days=60)
-        vendor_deadlines = await mongo.db["scheduled_payments"].find({
-            "wedding_id": wedding_id,
-            "status": {"$in": ["scheduled", "pending"]},
-            "due_date": {"$lte": upcoming_deadline}
-        }).sort("due_date", 1).limit(10).to_list(length=10)
+        vendor_deadlines = (
+            await mongo.db["scheduled_payments"]
+            .find(
+                {
+                    "wedding_id": wedding_id,
+                    "status": {"$in": ["scheduled", "pending"]},
+                    "due_date": {"$lte": upcoming_deadline},
+                }
+            )
+            .sort("due_date", 1)
+            .limit(10)
+            .to_list(length=10)
+        )
 
         deadlines = [
             {
                 "vendor": p.get("vendor_name", "Vendor"),
                 "type": "payment",
                 "amount": p.get("amount", 0),
-                "due_date": str(p.get("due_date")) if p.get("due_date") else None
+                "due_date": str(p.get("due_date")) if p.get("due_date") else None,
             }
             for p in vendor_deadlines
         ]
@@ -1561,7 +1736,7 @@ async def prioritize_tasks(
             "guest_count": wedding.get("guest_count"),
             "current_date": dt.now(timezone.utc).strftime("%Y-%m-%d"),
             "pending_tasks": pending_tasks,
-            "vendor_deadlines": deadlines
+            "vendor_deadlines": deadlines,
         }
 
         prompt = "Analyze these wedding planning tasks and vendor deadlines. Prioritize them based on the wedding date, dependencies, and urgency. Identify what should be done this week."
@@ -1573,24 +1748,33 @@ async def prioritize_tasks(
             feature="task_prioritization",
             prompt=prompt,
             context=context,
-            force_refresh=force_refresh
+            force_refresh=force_refresh,
         )
 
         response = result["response"]
 
         return {
-            "prioritization": response if isinstance(response, dict) else {"raw": response},
+            "prioritization": response
+            if isinstance(response, dict)
+            else {"raw": response},
             "wedding_id": wedding_id,
             "days_until_wedding": days_until_wedding,
             "tasks_analyzed": len(pending_tasks),
             "cached": result["cached"],
             "credits_used": result["credits_used"],
-            "credits_remaining": result.get("credits_remaining")
+            "credits_remaining": result.get("credits_remaining"),
         }
 
-    except (InsufficientCreditsError, AIGenerationError, AIRateLimitError,
-            AIContentBlockedError, AIServiceUnavailableError, AIQuotaExceededError,
-            AITimeoutError, AIInvalidResponseError) as e:
+    except (
+        InsufficientCreditsError,
+        AIGenerationError,
+        AIRateLimitError,
+        AIContentBlockedError,
+        AIServiceUnavailableError,
+        AIQuotaExceededError,
+        AITimeoutError,
+        AIInvalidResponseError,
+    ) as e:
         handle_ai_error(e)
     except Exception as e:
         logger.error(f"Error prioritizing tasks: {str(e)}")
@@ -1601,6 +1785,7 @@ async def prioritize_tasks(
 # TIMELINE GENERATOR (AI-015)
 # =========================================================================
 
+
 class TimelineGeneratorRequest(BaseModel):
     wedding_id: str
     force_refresh: bool = False
@@ -1609,7 +1794,7 @@ class TimelineGeneratorRequest(BaseModel):
 @router.post("/generate-timeline")
 async def generate_timeline(
     request: TimelineGeneratorRequest,
-    current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
+    current_user: ExtendedAuthUser = Depends(require_admin_or_planner),
 ):
     """
     Generate a comprehensive wedding planning timeline.
@@ -1625,8 +1810,7 @@ async def generate_timeline(
         # Verify planner has access to this wedding
         if not await check_wedding_access(current_user, request.wedding_id):
             raise HTTPException(
-                status_code=403,
-                detail="You don't have access to this wedding"
+                status_code=403, detail="You don't have access to this wedding"
             )
 
         # Verify wedding exists
@@ -1638,20 +1822,25 @@ async def generate_timeline(
         if not wedding_date_str:
             raise HTTPException(
                 status_code=400,
-                detail="Wedding date is required to generate a timeline"
+                detail="Wedding date is required to generate a timeline",
             )
 
         # Calculate timeline parameters
         from datetime import datetime as dt, timezone
-        wedding_date = dt.strptime(wedding_date_str, "%Y-%m-%d").replace(tzinfo=timezone.utc)
+
+        wedding_date = dt.strptime(wedding_date_str, "%Y-%m-%d").replace(
+            tzinfo=timezone.utc
+        )
         current_date = dt.now(timezone.utc)
         days_until_wedding = (wedding_date - current_date).days
         months_until_wedding = days_until_wedding / 30
 
         # Get existing tasks to avoid duplicates in suggestions
-        existing_tasks = await mongo.db["tasks"].find({
-            "wedding_id": request.wedding_id
-        }).to_list(length=100)
+        existing_tasks = (
+            await mongo.db["tasks"]
+            .find({"wedding_id": request.wedding_id})
+            .to_list(length=100)
+        )
 
         existing_task_titles = [t.get("title", "").lower() for t in existing_tasks]
 
@@ -1668,7 +1857,7 @@ async def generate_timeline(
             "total_budget": wedding.get("total_budget"),
             "region": wedding.get("region") or wedding.get("venue"),
             "existing_tasks_count": len(existing_tasks),
-            "existing_task_samples": existing_task_titles[:10]  # First 10 for context
+            "existing_task_samples": existing_task_titles[:10],  # First 10 for context
         }
 
         prompt = f"Generate a wedding planning timeline for a {context['cultural_style']} wedding with {context['guest_count']} guests. The wedding is on {wedding.get('date')}, which is {days_until_wedding} days ({round(months_until_wedding, 1)} months) away. Create realistic milestones starting from today ({current_date.strftime('%Y-%m-%d')})."
@@ -1680,7 +1869,7 @@ async def generate_timeline(
             feature="timeline_generator",
             prompt=prompt,
             context=context,
-            force_refresh=request.force_refresh
+            force_refresh=request.force_refresh,
         )
 
         response = result["response"]
@@ -1692,12 +1881,19 @@ async def generate_timeline(
             "days_until_wedding": days_until_wedding,
             "cached": result["cached"],
             "credits_used": result["credits_used"],
-            "credits_remaining": result.get("credits_remaining")
+            "credits_remaining": result.get("credits_remaining"),
         }
 
-    except (InsufficientCreditsError, AIGenerationError, AIRateLimitError,
-            AIContentBlockedError, AIServiceUnavailableError, AIQuotaExceededError,
-            AITimeoutError, AIInvalidResponseError) as e:
+    except (
+        InsufficientCreditsError,
+        AIGenerationError,
+        AIRateLimitError,
+        AIContentBlockedError,
+        AIServiceUnavailableError,
+        AIQuotaExceededError,
+        AITimeoutError,
+        AIInvalidResponseError,
+    ) as e:
         handle_ai_error(e)
     except Exception as e:
         logger.error(f"Error generating timeline: {str(e)}")
@@ -1708,11 +1904,12 @@ async def generate_timeline(
 # PAYMENT FORECAST (AI-016)
 # =========================================================================
 
+
 @router.get("/weddings/{wedding_id}/payment-forecast")
 async def get_payment_forecast(
     wedding_id: str,
     force_refresh: bool = False,
-    current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
+    current_user: ExtendedAuthUser = Depends(require_admin_or_planner),
 ):
     """
     Get AI-powered payment forecast and cash flow analysis.
@@ -1731,8 +1928,7 @@ async def get_payment_forecast(
         # Verify planner has access to this wedding
         if not await check_wedding_access(current_user, wedding_id):
             raise HTTPException(
-                status_code=403,
-                detail="You don't have access to this wedding"
+                status_code=403, detail="You don't have access to this wedding"
             )
 
         # Verify wedding exists
@@ -1743,15 +1939,19 @@ async def get_payment_forecast(
         from datetime import datetime as dt, timezone
 
         # Get all scheduled payments
-        scheduled_payments = await mongo.db["scheduled_payments"].find({
-            "wedding_id": wedding_id
-        }).sort("due_date", 1).to_list(length=100)
+        scheduled_payments = (
+            await mongo.db["scheduled_payments"]
+            .find({"wedding_id": wedding_id})
+            .sort("due_date", 1)
+            .to_list(length=100)
+        )
 
         # Get paid payments for historical context
-        paid_payments = await mongo.db["payment_records"].find({
-            "wedding_id": wedding_id,
-            "status": "succeeded"
-        }).to_list(length=100)
+        paid_payments = (
+            await mongo.db["payment_records"]
+            .find({"wedding_id": wedding_id, "status": "succeeded"})
+            .to_list(length=100)
+        )
 
         # Format payments data
         now = dt.now(timezone.utc)
@@ -1764,16 +1964,22 @@ async def get_payment_forecast(
             if due_date and due_date < now and status not in ["paid", "completed"]:
                 status = "overdue"
 
-            payments_data.append({
-                "vendor": p.get("vendor_name", "Unknown Vendor"),
-                "amount": p.get("amount", 0),
-                "due_date": str(due_date) if due_date else None,
-                "status": status,
-                "description": p.get("description", "")
-            })
+            payments_data.append(
+                {
+                    "vendor": p.get("vendor_name", "Unknown Vendor"),
+                    "amount": p.get("amount", 0),
+                    "due_date": str(due_date) if due_date else None,
+                    "status": status,
+                    "description": p.get("description", ""),
+                }
+            )
 
         # Calculate totals
-        total_due = sum(p.get("amount", 0) for p in scheduled_payments if p.get("status") not in ["paid", "completed"])
+        total_due = sum(
+            p.get("amount", 0)
+            for p in scheduled_payments
+            if p.get("status") not in ["paid", "completed"]
+        )
         total_paid = sum(p.get("amount", 0) for p in paid_payments)
 
         # Build context
@@ -1786,7 +1992,7 @@ async def get_payment_forecast(
             "scheduled_payments": payments_data,
             "total_due": total_due,
             "total_paid": total_paid,
-            "payment_count": len(payments_data)
+            "payment_count": len(payments_data),
         }
 
         if not payments_data:
@@ -1800,13 +2006,13 @@ async def get_payment_forecast(
                         "total_remaining": 0,
                         "total_paid": total_paid,
                         "next_payment_date": None,
-                        "largest_upcoming": None
-                    }
+                        "largest_upcoming": None,
+                    },
                 },
                 "wedding_id": wedding_id,
                 "message": "No scheduled payments found",
                 "cached": False,
-                "credits_used": 0
+                "credits_used": 0,
             }
 
         prompt = "Analyze this wedding's payment schedule and provide a cash flow forecast. Identify any concerns, peak payment periods, and recommendations for managing payments."
@@ -1818,7 +2024,7 @@ async def get_payment_forecast(
             feature="payment_forecast",
             prompt=prompt,
             context=context,
-            force_refresh=force_refresh
+            force_refresh=force_refresh,
         )
 
         response = result["response"]
@@ -1829,21 +2035,31 @@ async def get_payment_forecast(
             "total_payments": len(payments_data),
             "cached": result["cached"],
             "credits_used": result["credits_used"],
-            "credits_remaining": result.get("credits_remaining")
+            "credits_remaining": result.get("credits_remaining"),
         }
 
-    except (InsufficientCreditsError, AIGenerationError, AIRateLimitError,
-            AIContentBlockedError, AIServiceUnavailableError, AIQuotaExceededError,
-            AITimeoutError, AIInvalidResponseError) as e:
+    except (
+        InsufficientCreditsError,
+        AIGenerationError,
+        AIRateLimitError,
+        AIContentBlockedError,
+        AIServiceUnavailableError,
+        AIQuotaExceededError,
+        AITimeoutError,
+        AIInvalidResponseError,
+    ) as e:
         handle_ai_error(e)
     except Exception as e:
         logger.error(f"Error generating payment forecast: {str(e)}")
-        raise HTTPException(status_code=500, detail="Failed to generate payment forecast")
+        raise HTTPException(
+            status_code=500, detail="Failed to generate payment forecast"
+        )
 
 
 # =========================================================================
 # VENDOR PRICE ANALYSIS (AI-018)
 # =========================================================================
+
 
 class VendorPriceAnalysisRequest(BaseModel):
     vendor_type: str  # photographer, caterer, florist, dj, venue, etc.
@@ -1858,7 +2074,7 @@ class VendorPriceAnalysisRequest(BaseModel):
 @router.post("/analyze-vendor-price")
 async def analyze_vendor_price(
     request: VendorPriceAnalysisRequest,
-    current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
+    current_user: ExtendedAuthUser = Depends(require_admin_or_planner),
 ):
     """
     Analyze if a vendor quote is fair for the region and service type.
@@ -1881,22 +2097,27 @@ async def analyze_vendor_price(
             "region": request.region or "USA",
             "wedding_style": request.wedding_style or "western",
             "guest_count": request.guest_count or 100,
-            "service_description": request.service_description
+            "service_description": request.service_description,
         }
 
         # Add wedding context if provided
         if request.wedding_id:
             if not await check_wedding_access(current_user, request.wedding_id):
                 raise HTTPException(
-                    status_code=403,
-                    detail="You don't have access to this wedding"
+                    status_code=403, detail="You don't have access to this wedding"
                 )
 
             wedding = await get_wedding_by_id(request.wedding_id)
             if wedding:
-                context["wedding_style"] = request.wedding_style or wedding.get("cultural_style", "western")
-                context["region"] = request.region or wedding.get("region") or wedding.get("venue")
-                context["guest_count"] = request.guest_count or wedding.get("guest_count", 100)
+                context["wedding_style"] = request.wedding_style or wedding.get(
+                    "cultural_style", "western"
+                )
+                context["region"] = (
+                    request.region or wedding.get("region") or wedding.get("venue")
+                )
+                context["guest_count"] = request.guest_count or wedding.get(
+                    "guest_count", 100
+                )
 
         prompt = f"Analyze this vendor quote: A {request.vendor_type} in {context['region']} is quoting ${request.quoted_price:,.2f} for a {context['wedding_style']} wedding with {context['guest_count']} guests."
 
@@ -1912,7 +2133,7 @@ async def analyze_vendor_price(
             feature="vendor_price_analysis",
             prompt=prompt,
             context=context,
-            force_refresh=False
+            force_refresh=False,
         )
 
         response = result["response"]
@@ -1923,12 +2144,19 @@ async def analyze_vendor_price(
             "quoted_price": request.quoted_price,
             "cached": result["cached"],
             "credits_used": result["credits_used"],
-            "credits_remaining": result.get("credits_remaining")
+            "credits_remaining": result.get("credits_remaining"),
         }
 
-    except (InsufficientCreditsError, AIGenerationError, AIRateLimitError,
-            AIContentBlockedError, AIServiceUnavailableError, AIQuotaExceededError,
-            AITimeoutError, AIInvalidResponseError) as e:
+    except (
+        InsufficientCreditsError,
+        AIGenerationError,
+        AIRateLimitError,
+        AIContentBlockedError,
+        AIServiceUnavailableError,
+        AIQuotaExceededError,
+        AITimeoutError,
+        AIInvalidResponseError,
+    ) as e:
         handle_ai_error(e)
     except Exception as e:
         logger.error(f"Error analyzing vendor price: {str(e)}")
@@ -1939,22 +2167,21 @@ async def analyze_vendor_price(
 # UTILITY ENDPOINTS
 # =========================================================================
 
+
 @router.get("/features")
 async def list_ai_features(
-    current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
+    current_user: ExtendedAuthUser = Depends(require_admin_or_planner),
 ):
     """
     List all available AI features with their credit costs.
     """
-    return {
-        "features": ai_service.list_features()
-    }
+    return {"features": ai_service.list_features()}
 
 
 @router.get("/credits")
 async def check_ai_credits(
     feature: Optional[str] = None,
-    current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
+    current_user: ExtendedAuthUser = Depends(require_admin_or_planner),
 ):
     """
     Check AI credit balance and feature availability.
@@ -1970,22 +2197,21 @@ async def check_ai_credits(
     else:
         # Return general credit info
         from app.services.subscription_service import SubscriptionService
+
         sub_service = SubscriptionService()
         result = await sub_service.check_usage_limits(
-            user_id=user_id,
-            resource_type="ai_credits",
-            requested_amount=0
+            user_id=user_id, resource_type="ai_credits", requested_amount=0
         )
         return {
             "credits_remaining": result.get("remaining", 0),
-            "credits_limit": result.get("limit", 0)
+            "credits_limit": result.get("limit", 0),
         }
 
 
 @router.get("/usage")
 async def get_ai_usage(
     period_days: int = 7,
-    current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
+    current_user: ExtendedAuthUser = Depends(require_admin_or_planner),
 ):
     """
     Get AI usage metrics for the current user.
@@ -1993,8 +2219,7 @@ async def get_ai_usage(
     user_id = str((current_user.user_data or {}).get("_id", ""))
 
     metrics = await ai_service.get_usage_metrics(
-        period_days=period_days,
-        tenant_id=user_id
+        period_days=period_days, tenant_id=user_id
     )
 
     return metrics
@@ -2004,8 +2229,10 @@ async def get_ai_usage(
 # INTERACTIVE AI CHAT (Conversational Assistant)
 # =========================================================================
 
+
 class PageContextModel(BaseModel):
     """Page context for enhanced AI responses based on current page."""
+
     page: str  # e.g., "contract_canvas", "budget", "guests"
     hint: str  # System hint for AI context
 
@@ -2013,8 +2240,12 @@ class PageContextModel(BaseModel):
 class ChatMessageRequest(BaseModel):
     message: str = Field(..., min_length=1, max_length=5000)
     wedding_id: Optional[str] = None
-    conversation_history: Optional[List[Dict[str, str]]] = None  # [{role: "user"/"assistant", content: "..."}]
-    page_context: Optional[PageContextModel] = None  # Current page context for enhanced responses
+    conversation_history: Optional[List[Dict[str, str]]] = (
+        None  # [{role: "user"/"assistant", content: "..."}]
+    )
+    page_context: Optional[PageContextModel] = (
+        None  # Current page context for enhanced responses
+    )
 
 
 class ChatResponse(BaseModel):
@@ -2027,7 +2258,7 @@ class ChatResponse(BaseModel):
 @router.post("/chat", response_model=ChatResponse)
 async def chat_with_ai(
     request: ChatMessageRequest,
-    current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
+    current_user: ExtendedAuthUser = Depends(require_admin_or_planner),
 ):
     """
     Interactive chat with the AI wedding planning assistant.
@@ -2045,8 +2276,8 @@ async def chat_with_ai(
             detail={
                 "error": "ai_not_configured",
                 "message": "AI service is not configured. Please contact the administrator.",
-                "hint": "GEMINI_API_KEY environment variable may be missing."
-            }
+                "hint": "GEMINI_API_KEY environment variable may be missing.",
+            },
         )
 
     try:
@@ -2055,14 +2286,14 @@ async def chat_with_ai(
         # Build context with wedding data if provided
         context: Dict[str, Any] = {
             "user_message": request.message,
-            "planner_email": current_user.email
+            "planner_email": current_user.email,
         }
 
         # Add page context for enhanced responses
         if request.page_context:
             context["page_context"] = {
                 "page": request.page_context.page,
-                "hint": request.page_context.hint
+                "hint": request.page_context.hint,
             }
 
         # Add conversation history for context
@@ -2075,8 +2306,7 @@ async def chat_with_ai(
             # Verify planner has access to this wedding
             if not await check_wedding_access(current_user, request.wedding_id):
                 raise HTTPException(
-                    status_code=403,
-                    detail="You don't have access to this wedding"
+                    status_code=403, detail="You don't have access to this wedding"
                 )
 
             wedding = await get_wedding_by_id(request.wedding_id)
@@ -2095,8 +2325,8 @@ async def chat_with_ai(
                         "total_budgeted": budget_data.get("total_budget", 0),
                         "total_spent": budget_data.get("total_spent", 0),
                         "remaining": budget_data.get("remaining", 0),
-                        "categories_count": len(budget_data.get("categories", []))
-                    }
+                        "categories_count": len(budget_data.get("categories", [])),
+                    },
                 }
 
         # Build the prompt with conversation context and page hint
@@ -2108,10 +2338,12 @@ async def chat_with_ai(
 
         # Add conversation history
         if request.conversation_history:
-            history_text = "\n".join([
-                f"{'User' if msg['role'] == 'user' else 'Assistant'}: {msg['content']}"
-                for msg in request.conversation_history[-10:]
-            ])
+            history_text = "\n".join(
+                [
+                    f"{'User' if msg['role'] == 'user' else 'Assistant'}: {msg['content']}"
+                    for msg in request.conversation_history[-10:]
+                ]
+            )
             prompt_parts.append(f"Previous conversation:\n{history_text}")
 
         # Add the user's message
@@ -2126,7 +2358,7 @@ async def chat_with_ai(
             feature="chat",
             prompt=prompt,
             context=context,
-            force_refresh=True  # Chat is never cached
+            force_refresh=True,  # Chat is never cached
         )
 
         # Extract response text
@@ -2140,12 +2372,19 @@ async def chat_with_ai(
             response=response_text,
             credits_used=result["credits_used"],
             credits_remaining=result.get("credits_remaining"),
-            warning=result.get("warning")
+            warning=result.get("warning"),
         )
 
-    except (InsufficientCreditsError, AIGenerationError, AIRateLimitError,
-            AIContentBlockedError, AIServiceUnavailableError, AIQuotaExceededError,
-            AITimeoutError, AIInvalidResponseError) as e:
+    except (
+        InsufficientCreditsError,
+        AIGenerationError,
+        AIRateLimitError,
+        AIContentBlockedError,
+        AIServiceUnavailableError,
+        AIQuotaExceededError,
+        AITimeoutError,
+        AIInvalidResponseError,
+    ) as e:
         handle_ai_error(e)
     except Exception as e:
         logger.error(f"Error in AI chat: {str(e)}")
@@ -2156,11 +2395,16 @@ async def chat_with_ai(
 # MESSAGE GENERATOR (JOA-151 / AI-008)
 # =========================================================================
 
+
 class GenerateMessageRequest(BaseModel):
-    message_type: str = Field(..., max_length=50)  # rsvp_reminder, save_the_date, thank_you, vendor_reminder, event_reminder, custom
+    message_type: str = Field(
+        ..., max_length=50
+    )  # rsvp_reminder, save_the_date, thank_you, vendor_reminder, event_reminder, custom
     wedding_id: str
     tone: str = Field("friendly", max_length=20)  # formal, friendly, casual
-    recipient_context: Optional[str] = Field(None, max_length=200)  # family, friend, vendor, etc.
+    recipient_context: Optional[str] = Field(
+        None, max_length=200
+    )  # family, friend, vendor, etc.
     custom_instructions: Optional[str] = Field(None, max_length=2000)
     couple_names: Optional[str] = Field(None, max_length=200)
     wedding_date: Optional[str] = None
@@ -2170,7 +2414,7 @@ class GenerateMessageRequest(BaseModel):
 @router.post("/generate-message")
 async def generate_message(
     request: GenerateMessageRequest,
-    current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
+    current_user: ExtendedAuthUser = Depends(require_admin_or_planner),
 ):
     """
     Generate a personalized wedding communication message.
@@ -2183,8 +2427,7 @@ async def generate_message(
         # Verify planner has access to this wedding
         if not await check_wedding_access(current_user, request.wedding_id):
             raise HTTPException(
-                status_code=403,
-                detail="You don't have access to this wedding"
+                status_code=403, detail="You don't have access to this wedding"
             )
 
         # Get wedding details for context
@@ -2194,10 +2437,12 @@ async def generate_message(
             "message_type": request.message_type,
             "tone": request.tone,
             "recipient_context": request.recipient_context,
-            "couple_names": request.couple_names or (wedding.get("couple_names") if wedding else None),
-            "wedding_date": request.wedding_date or (wedding.get("date") if wedding else None),
+            "couple_names": request.couple_names
+            or (wedding.get("couple_names") if wedding else None),
+            "wedding_date": request.wedding_date
+            or (wedding.get("date") if wedding else None),
             "event_name": request.event_name,
-            "custom_instructions": request.custom_instructions
+            "custom_instructions": request.custom_instructions,
         }
 
         prompt = f"Generate a {request.tone} {request.message_type} message"
@@ -2212,22 +2457,31 @@ async def generate_message(
             feature="message_generator",
             prompt=prompt,
             context=context,
-            force_refresh=True  # Messages should always be fresh
+            force_refresh=True,  # Messages should always be fresh
         )
 
         response = result["response"]
 
         return {
-            "message": response if isinstance(response, dict) else {"body": str(response)},
+            "message": response
+            if isinstance(response, dict)
+            else {"body": str(response)},
             "message_type": request.message_type,
             "tone": request.tone,
             "credits_used": result["credits_used"],
-            "credits_remaining": result.get("credits_remaining")
+            "credits_remaining": result.get("credits_remaining"),
         }
 
-    except (InsufficientCreditsError, AIGenerationError, AIRateLimitError,
-            AIContentBlockedError, AIServiceUnavailableError, AIQuotaExceededError,
-            AITimeoutError, AIInvalidResponseError) as e:
+    except (
+        InsufficientCreditsError,
+        AIGenerationError,
+        AIRateLimitError,
+        AIContentBlockedError,
+        AIServiceUnavailableError,
+        AIQuotaExceededError,
+        AITimeoutError,
+        AIInvalidResponseError,
+    ) as e:
         handle_ai_error(e)
     except Exception as e:
         logger.error(f"Error generating message: {str(e)}")
@@ -2238,10 +2492,15 @@ async def generate_message(
 # FORM QUESTIONS GENERATOR (JOA-153 / AI-010)
 # =========================================================================
 
+
 class GenerateFormQuestionsRequest(BaseModel):
-    form_type: str = Field(..., max_length=50)  # rsvp, dietary, song_requests, accommodation, transportation, custom
+    form_type: str = Field(
+        ..., max_length=50
+    )  # rsvp, dietary, song_requests, accommodation, transportation, custom
     wedding_id: str
-    cultural_style: Optional[str] = Field(None, max_length=100)  # nigerian, indian, jewish, western, etc.
+    cultural_style: Optional[str] = Field(
+        None, max_length=100
+    )  # nigerian, indian, jewish, western, etc.
     custom_context: Optional[str] = Field(None, max_length=2000)
     existing_questions: Optional[List[str]] = None  # To avoid duplicates
 
@@ -2249,7 +2508,7 @@ class GenerateFormQuestionsRequest(BaseModel):
 @router.post("/generate-form-questions")
 async def generate_form_questions(
     request: GenerateFormQuestionsRequest,
-    current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
+    current_user: ExtendedAuthUser = Depends(require_admin_or_planner),
 ):
     """
     Generate smart form questions based on form type and wedding context.
@@ -2262,8 +2521,7 @@ async def generate_form_questions(
         # Verify planner has access to this wedding
         if not await check_wedding_access(current_user, request.wedding_id):
             raise HTTPException(
-                status_code=403,
-                detail="You don't have access to this wedding"
+                status_code=403, detail="You don't have access to this wedding"
             )
 
         # Get wedding details for context
@@ -2271,12 +2529,13 @@ async def generate_form_questions(
 
         context = {
             "form_type": request.form_type,
-            "cultural_style": request.cultural_style or (wedding.get("cultural_style") if wedding else "western"),
+            "cultural_style": request.cultural_style
+            or (wedding.get("cultural_style") if wedding else "western"),
             "couple_names": wedding.get("couple_names") if wedding else None,
             "wedding_date": wedding.get("date") if wedding else None,
             "guest_count": wedding.get("guest_count") if wedding else None,
             "custom_context": request.custom_context,
-            "existing_questions": request.existing_questions
+            "existing_questions": request.existing_questions,
         }
 
         prompt = f"Generate {request.form_type} form questions"
@@ -2293,24 +2552,37 @@ async def generate_form_questions(
             feature="form_questions",
             prompt=prompt,
             context=context,
-            force_refresh=False  # Can cache form questions
+            force_refresh=False,  # Can cache form questions
         )
 
         response = result["response"]
 
         return {
-            "questions": response.get("questions", []) if isinstance(response, dict) else [],
-            "form_title": response.get("form_title") if isinstance(response, dict) else None,
-            "form_intro": response.get("form_intro") if isinstance(response, dict) else None,
+            "questions": response.get("questions", [])
+            if isinstance(response, dict)
+            else [],
+            "form_title": response.get("form_title")
+            if isinstance(response, dict)
+            else None,
+            "form_intro": response.get("form_intro")
+            if isinstance(response, dict)
+            else None,
             "form_type": request.form_type,
             "cached": result["cached"],
             "credits_used": result["credits_used"],
-            "credits_remaining": result.get("credits_remaining")
+            "credits_remaining": result.get("credits_remaining"),
         }
 
-    except (InsufficientCreditsError, AIGenerationError, AIRateLimitError,
-            AIContentBlockedError, AIServiceUnavailableError, AIQuotaExceededError,
-            AITimeoutError, AIInvalidResponseError) as e:
+    except (
+        InsufficientCreditsError,
+        AIGenerationError,
+        AIRateLimitError,
+        AIContentBlockedError,
+        AIServiceUnavailableError,
+        AIQuotaExceededError,
+        AITimeoutError,
+        AIInvalidResponseError,
+    ) as e:
         handle_ai_error(e)
     except Exception as e:
         logger.error(f"Error generating form questions: {str(e)}")
@@ -2321,9 +2593,10 @@ async def generate_form_questions(
 # AI HEALTH CHECK (Diagnostic Endpoint)
 # =========================================================================
 
+
 @router.get("/health")
 async def ai_health_check(
-    current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
+    current_user: ExtendedAuthUser = Depends(require_admin_or_planner),
 ):
     """
     Check AI service health and configuration status (A7).
@@ -2349,11 +2622,14 @@ async def ai_health_check(
     # Try a lightweight async API test if client is initialized
     if ai_service._client:
         try:
-            import asyncio
             start_time = time.monotonic()
             # Use the async client to avoid blocking the event loop
             models_response = await ai_service._client.aio.models.list()
-            models = [m async for m in models_response] if hasattr(models_response, '__aiter__') else list(models_response)
+            models = (
+                [m async for m in models_response]
+                if hasattr(models_response, "__aiter__")
+                else list(models_response)
+            )
             elapsed_ms = round((time.monotonic() - start_time) * 1000)
             status["api_connection"] = "ok"
             status["available_models"] = len(models)
@@ -2364,11 +2640,14 @@ async def ai_health_check(
             logger.error(f"AI health check - API connection error: {str(e)}")
     else:
         status["api_connection"] = "not_initialized"
-        status["api_error"] = "Gemini client not initialized. Check GEMINI_API_KEY environment variable."
+        status["api_error"] = (
+            "Gemini client not initialized. Check GEMINI_API_KEY environment variable."
+        )
 
     # Recent error metrics (A7 — health monitoring)
     try:
         from datetime import datetime, timedelta, timezone
+
         cutoff = datetime.now(timezone.utc) - timedelta(hours=24)
         total_recent = await mongo.db["ai_usage_log"].count_documents(
             {"created_at": {"$gte": cutoff}}
@@ -2379,7 +2658,9 @@ async def ai_health_check(
         status["last_24h"] = {
             "total_requests": total_recent,
             "errors": errors_recent,
-            "error_rate": round(errors_recent / total_recent * 100, 1) if total_recent > 0 else 0
+            "error_rate": round(errors_recent / total_recent * 100, 1)
+            if total_recent > 0
+            else 0,
         }
     except Exception:
         # ai_usage_log may not exist yet — non-critical

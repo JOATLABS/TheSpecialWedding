@@ -10,88 +10,133 @@ class ContractSettings(BaseModel):
     These override system defaults, allowing each planner to customize
     their contract workflow based on their business model.
     """
+
     token_expiry_days: int = Field(
         default=30,
         ge=7,
         le=90,
-        description="Days until contract access token expires (7-90)"
+        description="Days until contract access token expires (7-90)",
     )
     deposit_due_days: int = Field(
         default=7,
         ge=1,
         le=60,
-        description="Days after contract signing for deposit to be due (1-60)"
+        description="Days after contract signing for deposit to be due (1-60)",
     )
     payment_reminder_days: List[int] = Field(
-        default=[7, 3, 1],
-        description="Days before due date to send payment reminders"
+        default=[7, 3, 1], description="Days before due date to send payment reminders"
     )
     auto_followup_days: int = Field(
         default=3,
         ge=1,
         le=14,
-        description="Days after sending to auto-generate follow-up for unsigned contracts"
+        description="Days after sending to auto-generate follow-up for unsigned contracts",
     )
     default_currency: str = Field(
-        default="USD",
-        description="Default currency for contracts"
+        default="USD", description="Default currency for contracts"
     )
 
 
 class UserModel(BaseModel):
     """Extended user model supporting multiple roles"""
+
     id: str = Field(..., alias="_id")
     email: str = Field(..., description="User email")
     password_hash: str = Field(..., description="Hashed password")
-    role: str = Field(default="wedding_planner", description="User role: ROOT_ADMIN, wedding_planner, vendor")
+    role: str = Field(
+        default="wedding_planner",
+        description="User role: ROOT_ADMIN, wedding_planner, vendor",
+    )
     # Wedding planner specific fields
-    company_name: Optional[str] = Field(None, description="Wedding planning company name")
+    company_name: Optional[str] = Field(
+        None, description="Wedding planning company name"
+    )
     plan_id: Optional[str] = Field(None, description="Current subscription plan ID")
-    subscription_status: str = Field(default="trial", description="Subscription status: trial, active, cancelled")
-    trial_end_date: Optional[datetime] = Field(None, description="Trial expiration date")
-    trial_warning_sent: bool = Field(default=False, description="Whether trial expiration warning email was sent")
-    trial_expired_at: Optional[datetime] = Field(None, description="When the trial was expired by the system")
+    subscription_status: str = Field(
+        default="trial", description="Subscription status: trial, active, cancelled"
+    )
+    trial_end_date: Optional[datetime] = Field(
+        None, description="Trial expiration date"
+    )
+    trial_warning_sent: bool = Field(
+        default=False, description="Whether trial expiration warning email was sent"
+    )
+    trial_expired_at: Optional[datetime] = Field(
+        None, description="When the trial was expired by the system"
+    )
 
     # Registration metadata
-    registration_source: Optional[str] = Field(None, description="How the user signed up: public_signup, admin_invite, etc.")
+    registration_source: Optional[str] = Field(
+        None, description="How the user signed up: public_signup, admin_invite, etc."
+    )
 
     # Billing information
     stripe_customer_id: Optional[str] = Field(None, description="Stripe customer ID")
-    stripe_subscription_id: Optional[str] = Field(None, description="Stripe subscription ID")
-    stripe_connect_id: Optional[str] = Field(None, description="Stripe Connect Account ID for receiving payments")
+    stripe_subscription_id: Optional[str] = Field(
+        None, description="Stripe subscription ID"
+    )
+    stripe_connect_id: Optional[str] = Field(
+        None, description="Stripe Connect Account ID for receiving payments"
+    )
 
     # Wedding planner permissions and limits
     max_weddings: int = Field(default=1, description="Maximum weddings allowed")
-    ai_credits_remaining: int = Field(default=10, description="Remaining AI credits this month")
-    ai_credits_reset_date: Optional[datetime] = Field(None, description="When AI credits reset")
+    ai_credits_remaining: int = Field(
+        default=10, description="Remaining AI credits this month"
+    )
+    ai_credits_reset_date: Optional[datetime] = Field(
+        None, description="When AI credits reset"
+    )
 
     # Business preferences (planner-configurable)
     contract_settings: Optional[Dict[str, Any]] = Field(
         default=None,
-        description="Planner's contract preferences (token_expiry_days, deposit_due_days, etc.)"
+        description="Planner's contract preferences (token_expiry_days, deposit_due_days, etc.)",
     )
 
     # Team member fields (if role is team_member)
-    parent_planner_id: Optional[str] = Field(None, description="Owner planner's user ID (set when role=team_member)")
-    team_member_id: Optional[str] = Field(None, description="Reference to team_members collection doc ID")
+    parent_planner_id: Optional[str] = Field(
+        None, description="Owner planner's user ID (set when role=team_member)"
+    )
+    team_member_id: Optional[str] = Field(
+        None, description="Reference to team_members collection doc ID"
+    )
 
     # Vendor specific fields (if role is vendor)
-    assigned_wedding_ids: List[str] = Field(default_factory=list, description="Weddings this vendor has access to")
+    assigned_wedding_ids: List[str] = Field(
+        default_factory=list, description="Weddings this vendor has access to"
+    )
     service_type: Optional[str] = Field(None, description="Type of service for vendors")
-    created_by: Optional[str] = Field(None, description="Wedding planner who created this vendor")
+    created_by: Optional[str] = Field(
+        None, description="Wedding planner who created this vendor"
+    )
     # Profile
     first_name: Optional[str] = Field(None, description="User's first name")
     last_name: Optional[str] = Field(None, description="User's last name")
-    profile_image_url: Optional[str] = Field(None, description="S3/R2 URL for profile image")
-    timezone: Optional[str] = Field(default="America/Chicago", description="IANA timezone for display (e.g., 'America/Chicago', 'Africa/Lagos')")
+    profile_image_url: Optional[str] = Field(
+        None, description="S3/R2 URL for profile image"
+    )
+    timezone: Optional[str] = Field(
+        default="America/Chicago",
+        description="IANA timezone for display (e.g., 'America/Chicago', 'Africa/Lagos')",
+    )
 
     # SMS Support Configuration (for wedding planners)
-    support_phone: Optional[str] = Field(None, description="Phone number for guests to call when they need help (shown in HELP responses)")
+    support_phone: Optional[str] = Field(
+        None,
+        description="Phone number for guests to call when they need help (shown in HELP responses)",
+    )
 
     # Onboarding (for wedding planners)
-    onboarding_completed: bool = Field(default=False, description="Whether planner has completed onboarding tour")
-    onboarding_completed_at: Optional[datetime] = Field(None, description="When onboarding was completed")
-    onboarding_steps_completed: List[str] = Field(default_factory=list, description="List of completed onboarding step IDs")
+    onboarding_completed: bool = Field(
+        default=False, description="Whether planner has completed onboarding tour"
+    )
+    onboarding_completed_at: Optional[datetime] = Field(
+        None, description="When onboarding was completed"
+    )
+    onboarding_steps_completed: List[str] = Field(
+        default_factory=list, description="List of completed onboarding step IDs"
+    )
 
     # System fields
     is_active: bool = Field(default=True, description="Whether account is active")
@@ -111,18 +156,22 @@ class UserModel(BaseModel):
                 "plan_id": "plan_signature",
                 "subscription_status": "active",
                 "max_weddings": 5,
-                "ai_credits_remaining": 50
+                "ai_credits_remaining": 50,
             }
         }
+
 
 # Migration compatible: This extends functionality without breaking existing admin_users collection
 
 
 class AdminUserModel(BaseModel):
     """Legacy admin user model"""
+
     email: str = Field(..., description="Admin email")
     password_hash: str = Field(..., description="Hashed password")
-    role: str = Field(..., description="User role: ROOT_ADMIN, wedding_planner, or vendor")
+    role: str = Field(
+        ..., description="User role: ROOT_ADMIN, wedding_planner, or vendor"
+    )
     created_at: Optional[datetime] = Field(default_factory=datetime.utcnow)
 
     class Config:
@@ -130,7 +179,9 @@ class AdminUserModel(BaseModel):
             "example": {
                 "email": "thedeveloper@thespecialwedding.io",
                 "password_hash": "hashed_password_here",
-                "role": "wedding_planner"
+                "role": "wedding_planner",
             }
         }
+
+
 # Note: New user-related features should use UserModel going forward

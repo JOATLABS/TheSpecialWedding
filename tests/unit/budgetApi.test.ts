@@ -20,7 +20,10 @@ describe('budgetApi payments', () => {
     if (originalFetch) {
       globalThis.fetch = originalFetch;
     } else {
-      delete (globalThis as typeof globalThis & { fetch?: typeof fetch }).fetch;
+      Reflect.deleteProperty(
+        globalThis as typeof globalThis & { fetch?: typeof fetch },
+        'fetch'
+      );
     }
   });
 

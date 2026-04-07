@@ -3,7 +3,10 @@
 from fastapi import APIRouter, HTTPException, Request, Response
 from pydantic import BaseModel
 from app.services.otp_service import OTPService
-from app.dependencies.guest_access import get_guest_access_session, set_guest_access_session
+from app.dependencies.guest_access import (
+    get_guest_access_session,
+    set_guest_access_session,
+)
 import logging
 
 logger = logging.getLogger(__name__)
@@ -70,7 +73,9 @@ def _build_otp_success_response(result: dict) -> dict:
 
     if result.get("fallback_used"):
         response["fallback_used"] = True
-        response["message"] = "We couldn't text you, so we sent your code by email instead."
+        response["message"] = (
+            "We couldn't text you, so we sent your code by email instead."
+        )
 
     return response
 
@@ -101,8 +106,7 @@ async def send_otp_by_contact(payload: OTPRequestByContact):
     """Send OTP to a guest by their contact info (phone/email) and wedding_id."""
     try:
         result = await otp_service.send_otp_by_contact(
-            wedding_id=payload.wedding_id,
-            contact=payload.contact
+            wedding_id=payload.wedding_id, contact=payload.contact
         )
 
         if not result.get("success"):
@@ -113,7 +117,7 @@ async def send_otp_by_contact(payload: OTPRequestByContact):
         return {
             "success": True,
             "message": "OTP sent successfully",
-            "contact_type": result.get("contact_type", "unknown")
+            "contact_type": result.get("contact_type", "unknown"),
         }
     except HTTPException:
         raise
@@ -132,12 +136,14 @@ async def verify_otp_endpoint(payload: OTPVerify):
     return {
         "message": "OTP verified successfully",
         "guest": result.get("guest"),
-        "auth_method": result.get("auth_method", "phone_otp")
+        "auth_method": result.get("auth_method", "phone_otp"),
     }
 
 
 @router.post("/otp/verify/session", tags=["OTP"])
-async def verify_otp_for_guest_session(payload: OTPVerifySession, request: Request, response: Response):
+async def verify_otp_for_guest_session(
+    payload: OTPVerifySession, request: Request, response: Response
+):
     """Verify an OTP using the current guest access session cookie."""
     session = get_guest_access_session(request, require_guest=True)
     result = await otp_service.verify_otp_by_guest_id(session.guest_id, payload.otp)

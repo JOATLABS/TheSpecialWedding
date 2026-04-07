@@ -5,7 +5,7 @@ Provides sanitized error responses for production environment
 
 import logging
 import traceback
-from typing import Dict, Any, Optional
+from typing import Dict, Any
 from datetime import datetime, timezone
 from fastapi import Request, HTTPException
 from fastapi.responses import JSONResponse
@@ -15,6 +15,7 @@ import secrets
 # Configure secure logging
 secure_logger = logging.getLogger("wedding_security_errors")
 secure_logger.setLevel(logging.INFO)
+
 
 class SecureErrorHandler:
     """
@@ -50,7 +51,9 @@ class SecureErrorHandler:
         else:
             return self._handle_unexpected_exception(request, exc, error_id)
 
-    def _handle_wedding_app_exception(self, request: Request, exc: WeddingAppException, error_id: str) -> JSONResponse:
+    def _handle_wedding_app_exception(
+        self, request: Request, exc: WeddingAppException, error_id: str
+    ) -> JSONResponse:
         """Handle custom WeddingApp exceptions"""
 
         # Sanitize the error message
@@ -61,24 +64,27 @@ class SecureErrorHandler:
                 "code": exc.error_code,
                 "message": sanitized_message,
                 "timestamp": datetime.now(timezone.utc).isoformat() + "Z",
-                "error_id": error_id
+                "error_id": error_id,
             }
         }
 
         # Only add field information for validation errors (safe to expose)
-        if hasattr(exc, 'field') and exc.field and exc.error_code in ["VALIDATION_ERROR", "INVALID_INPUT"]:
+        if (
+            hasattr(exc, "field")
+            and exc.field
+            and exc.error_code in ["VALIDATION_ERROR", "INVALID_INPUT"]
+        ):
             error_response["error"]["field"] = self._sanitize_field_name(exc.field)
 
         # Add retry_after for rate limit errors
-        if hasattr(exc, 'retry_after'):
+        if hasattr(exc, "retry_after"):
             error_response["error"]["retry_after"] = exc.retry_after
 
-        return JSONResponse(
-            status_code=exc.status_code,
-            content=error_response
-        )
+        return JSONResponse(status_code=exc.status_code, content=error_response)
 
-    def _handle_http_exception(self, request: Request, exc: HTTPException, error_id: str) -> JSONResponse:
+    def _handle_http_exception(
+        self, request: Request, exc: HTTPException, error_id: str
+    ) -> JSONResponse:
         """Handle FastAPI HTTP exceptions"""
 
         # Map HTTP status codes to secure error messages
@@ -97,7 +103,7 @@ class SecureErrorHandler:
             500: "Internal server error",
             502: "Service temporarily unavailable",
             503: "Service temporarily unavailable",
-            504: "Request timeout"
+            504: "Request timeout",
         }
 
         status_code = exc.status_code
@@ -112,15 +118,14 @@ class SecureErrorHandler:
                 "code": self._get_error_code_from_status(status_code),
                 "message": secure_message,
                 "timestamp": datetime.now(timezone.utc).isoformat() + "Z",
-                "error_id": error_id
+                "error_id": error_id,
             }
         }
-        return JSONResponse(
-            status_code=status_code,
-            content=error_response
-        )
+        return JSONResponse(status_code=status_code, content=error_response)
 
-    def _handle_validation_errors(self, request: Request, details: list, error_id: str) -> JSONResponse:
+    def _handle_validation_errors(
+        self, request: Request, details: list, error_id: str
+    ) -> JSONResponse:
         """Handle Pydantic validation errors securely"""
 
         sanitized_errors = []
@@ -137,78 +142,85 @@ class SecureErrorHandler:
             error_type = error.get("type", "validation_error")
             message = self._get_validation_error_message(error_type)
 
-            sanitized_errors.append({
-                "field": self._sanitize_field_name(field),
-                "message": message,
-                "type": error_type
-            })
+            sanitized_errors.append(
+                {
+                    "field": self._sanitize_field_name(field),
+                    "message": message,
+                    "type": error_type,
+                }
+            )
         error_response = {
             "error": {
                 "code": "VALIDATION_ERROR",
                 "message": "Input validation failed",
                 "timestamp": datetime.now(timezone.utc).isoformat() + "Z",
                 "error_id": error_id,
-                "details": sanitized_errors
+                "details": sanitized_errors,
             }
         }
-        return JSONResponse(
-            status_code=422,
-            content=error_response
-        )
+        return JSONResponse(status_code=422, content=error_response)
 
-    def _handle_unexpected_exception(self, request: Request, exc: Exception, error_id: str) -> JSONResponse:
+    def _handle_unexpected_exception(
+        self, request: Request, exc: Exception, error_id: str
+    ) -> JSONResponse:
         """Handle unexpected exceptions without exposing system information"""
 
         # Log security event for unexpected errors
-        self._log_security_event("UNEXPECTED_ERROR", {
-            "error_id": error_id,
-            "exception_type": type(exc).__name__,
-            "path": str(request.url.path),
-            "method": request.method
-        })
+        self._log_security_event(
+            "UNEXPECTED_ERROR",
+            {
+                "error_id": error_id,
+                "exception_type": type(exc).__name__,
+                "path": str(request.url.path),
+                "method": request.method,
+            },
+        )
         error_response = {
             "error": {
                 "code": "INTERNAL_SERVER_ERROR",
                 "message": "An unexpected error occurred. Please try again later.",
                 "timestamp": datetime.now(timezone.utc).isoformat() + "Z",
-                "error_id": error_id
+                "error_id": error_id,
             }
         }
-        return JSONResponse(
-            status_code=500,
-            content=error_response
-        )
+        return JSONResponse(status_code=500, content=error_response)
+
     def _sanitize_error_message(self, message: str) -> str:
         """Sanitize error message to prevent information disclosure"""
         if not message:
             return "An error occurred"
         # Remove file paths, stack traces, and system information
         sensitive_patterns = [
-            r'/[\w/]+\.py',  # File paths
-            r'C:\\[\w\\]+\.py',  # Windows file paths
+            r"/[\w/]+\.py",  # File paths
+            r"C:\\[\w\\]+\.py",  # Windows file paths
             r'File ".*?"',  # Python file references
-            r'line \d+',  # Line numbers
-            r'Traceback.*?:',  # Stack trace headers
-            r'Error.*?:.*?\n',  # Error details with newlines
-            r'Exception.*?:',  # Exception details
-            r'mongodb://.*?@',  # Database URLs
-            r'postgres://.*?@',  # Database URLs
-            r'mysql://.*?@',  # Database URLs
-            r'redis://.*?@',  # Redis URLs
-            r'Database.*?error',  # Database error messages
-            r'Connection.*?refused',  # Connection errors
-            r'Permission denied',  # System permission errors
-            r'No such file or directory',  # File system errors
+            r"line \d+",  # Line numbers
+            r"Traceback.*?:",  # Stack trace headers
+            r"Error.*?:.*?\n",  # Error details with newlines
+            r"Exception.*?:",  # Exception details
+            r"mongodb://.*?@",  # Database URLs
+            r"postgres://.*?@",  # Database URLs
+            r"mysql://.*?@",  # Database URLs
+            r"redis://.*?@",  # Redis URLs
+            r"Database.*?error",  # Database error messages
+            r"Connection.*?refused",  # Connection errors
+            r"Permission denied",  # System permission errors
+            r"No such file or directory",  # File system errors
         ]
 
         import re
+
         sanitized = message
 
         for pattern in sensitive_patterns:
-            sanitized = re.sub(pattern, '[SYSTEM_INFO_REMOVED]', sanitized, flags=re.IGNORECASE)
+            sanitized = re.sub(
+                pattern, "[SYSTEM_INFO_REMOVED]", sanitized, flags=re.IGNORECASE
+            )
 
         # Remove any remaining file extensions and paths
-        sanitized = re.sub(r'\b[\w/\\]+\.(py|js|ts|sql|json)\b', '[FILE_REMOVED]', sanitized)
+        sanitized = re.sub(
+            r"\b[\w/\\]+\.(py|js|ts|sql|json)\b", "[FILE_REMOVED]", sanitized
+        )
 
         # Truncate very long messages
         if len(sanitized) > 200:
@@ -223,7 +235,8 @@ class SecureErrorHandler:
 
         # Only allow alphanumeric characters, dots, and underscores
         import re
-        sanitized = re.sub(r'[^a-zA-Z0-9._]', '', field)
+
+        sanitized = re.sub(r"[^a-zA-Z0-9._]", "", field)
 
         # Truncate long field names
         if len(sanitized) > 50:
@@ -252,7 +265,7 @@ class SecureErrorHandler:
             "datetime_parsing": "Invalid date/time format",
             "list_min_length": "List must have minimum required items",
             "list_max_length": "List has too many items",
-            "dict_key_required": "Required dictionary key missing"
+            "dict_key_required": "Required dictionary key missing",
         }
 
         return error_messages.get(error_type, "Invalid input provided")
@@ -275,7 +288,7 @@ class SecureErrorHandler:
             500: "INTERNAL_SERVER_ERROR",
             502: "BAD_GATEWAY",
             503: "SERVICE_UNAVAILABLE",
-            504: "GATEWAY_TIMEOUT"
+            504: "GATEWAY_TIMEOUT",
         }
 
         return status_to_code.get(status_code, "HTTP_ERROR")
@@ -298,7 +311,7 @@ class SecureErrorHandler:
                 "path": str(request.url.path),
                 "method": request.method,
                 "user_agent": request.headers.get("user-agent", "unknown"),
-                "client_ip": self._get_client_ip(request)
+                "client_ip": self._get_client_ip(request),
             }
 
             # Log the full traceback if in debug mode
@@ -314,25 +327,13 @@ class SecureErrorHandler:
     def _log_security_event(self, event_type: str, details: Dict[str, Any]):
         """Log security-related events"""
 
-        log_entry = {
-            "timestamp": datetime.now(timezone.utc).isoformat() + "Z",
-            "event_type": event_type,
-            "severity": "WARNING",
-            "details": details
-        }
-
         secure_logger.warning(f"Security Event: {event_type} - {details}")
 
     def _get_client_ip(self, request: Request) -> str:
         """Get client IP address safely"""
 
         # Try various headers for real IP
-        ip_headers = [
-            "X-Forwarded-For",
-            "X-Real-IP",
-            "X-Client-IP",
-            "CF-Connecting-IP"
-        ]
+        ip_headers = ["X-Forwarded-For", "X-Real-IP", "X-Client-IP", "CF-Connecting-IP"]
 
         for header in ip_headers:
             ip = request.headers.get(header)
@@ -340,7 +341,7 @@ class SecureErrorHandler:
                 # Take first IP if comma-separated
                 return ip.split(",")[0].strip()
         # Fallback to request client
-        return getattr(request.client, 'host', 'unknown')
+        return getattr(request.client, "host", "unknown")
 
 
 # Global secure error handler instance

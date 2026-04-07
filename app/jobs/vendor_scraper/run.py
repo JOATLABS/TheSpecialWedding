@@ -38,7 +38,9 @@ from app.jobs.vendor_scraper.website_enricher import enrich_from_website
 from app.jobs.vendor_scraper.logo_uploader import download_and_upload_logo
 
 logger = logging.getLogger(__name__)
-logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+logging.basicConfig(
+    level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s"
+)
 
 
 async def scrape_state(
@@ -67,7 +69,7 @@ async def scrape_state(
         # 1. Search Google Places
         places = await search_vendors(query)
         if not places:
-            logger.info(f"  → 0 results")
+            logger.info("  → 0 results")
             continue
 
         logger.info(f"  → {len(places)} results")
@@ -99,7 +101,9 @@ async def scrape_state(
 
                 # 4. Upsert into vendor_profiles
                 if dry_run:
-                    logger.info(f"  [DRY RUN] Would upsert: {place['business_name']} ({vendor_category})")
+                    logger.info(
+                        f"  [DRY RUN] Would upsert: {place['business_name']} ({vendor_category})"
+                    )
                     stats["skipped"] += 1
                 else:
                     result = await vendor_service.upsert_scraped_vendor(place)
@@ -115,7 +119,9 @@ async def scrape_state(
                         stats["updated"] += 1
 
             except Exception as e:
-                logger.error(f"  Error processing {place.get('business_name', '?')}: {e}")
+                logger.error(
+                    f"  Error processing {place.get('business_name', '?')}: {e}"
+                )
                 stats["errors"] += 1
 
         # Be polite — delay between queries
@@ -146,24 +152,28 @@ async def run_scraper(
         if states:
             states_lower = {x.lower() for x in states}
             state_list = [
-                s for s in all_states
-                if s[0].lower() in states_lower
-                or s[1].lower() in states_lower
+                s
+                for s in all_states
+                if s[0].lower() in states_lower or s[1].lower() in states_lower
             ]
             if not state_list:
                 logger.error(f"No matching states for: {states}")
-                logger.info(f"Available (from states.json): {[(s[0], s[1]) for s in all_states]}")
+                logger.info(
+                    f"Available (from states.json): {[(s[0], s[1]) for s in all_states]}"
+                )
                 return
 
         total_stats = {"inserted": 0, "updated": 0, "skipped": 0, "errors": 0}
         start_time = time.time()
 
-        logger.info(f"{'[DRY RUN] ' if dry_run else ''}Starting vendor scraper for {len(state_list)} states")
+        logger.info(
+            f"{'[DRY RUN] ' if dry_run else ''}Starting vendor scraper for {len(state_list)} states"
+        )
 
         for state, state_full, country in state_list:
-            logger.info(f"\n{'='*60}")
+            logger.info(f"\n{'=' * 60}")
             logger.info(f"Scraping: {state_full} ({state})")
-            logger.info(f"{'='*60}")
+            logger.info(f"{'=' * 60}")
 
             stats = await scrape_state(
                 state=state,
@@ -180,17 +190,19 @@ async def run_scraper(
             logger.info(f"State {state_full} done: {stats}")
 
         elapsed = time.time() - start_time
-        logger.info(f"\n{'='*60}")
+        logger.info(f"\n{'=' * 60}")
         logger.info(f"Scraper complete in {elapsed:.1f}s")
         logger.info(f"Total: {total_stats}")
-        logger.info(f"{'='*60}")
+        logger.info(f"{'=' * 60}")
 
     finally:
         mongo.close()
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Scrape wedding vendors from Google Places")
+    parser = argparse.ArgumentParser(
+        description="Scrape wedding vendors from Google Places"
+    )
     parser.add_argument(
         "--state",
         action="extend",
@@ -198,13 +210,19 @@ def main():
         dest="states",
         help="State(s) to scrape (abbrev or full name). Repeatable: --state OK TX",
     )
-    parser.add_argument("--categories", type=str, help="Comma-separated categories to scrape")
-    parser.add_argument("--dry-run", action="store_true", help="Search but don't write to DB")
+    parser.add_argument(
+        "--categories", type=str, help="Comma-separated categories to scrape"
+    )
+    parser.add_argument(
+        "--dry-run", action="store_true", help="Search but don't write to DB"
+    )
     args = parser.parse_args()
 
     categories = args.categories.split(",") if args.categories else None
 
-    asyncio.run(run_scraper(states=args.states, categories=categories, dry_run=args.dry_run))
+    asyncio.run(
+        run_scraper(states=args.states, categories=categories, dry_run=args.dry_run)
+    )
 
 
 if __name__ == "__main__":

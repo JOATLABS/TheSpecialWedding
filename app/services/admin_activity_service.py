@@ -20,6 +20,7 @@ logger = logging.getLogger(__name__)
 
 class AdminActivityTypes:
     """Activity type constants for admin actions"""
+
     # Invitation actions
     INVITATION_SENT = "invitation_sent"
     INVITATION_RESENT = "invitation_resent"
@@ -52,7 +53,7 @@ class AdminActivityService:
         message: str,
         entity_type: Optional[str] = None,
         entity_id: Optional[str] = None,
-        metadata: Optional[dict] = None
+        metadata: Optional[dict] = None,
     ) -> dict:
         """
         Create a new activity log entry.
@@ -76,7 +77,7 @@ class AdminActivityService:
                 "entity_id": entity_id,
                 "metadata": metadata or {},
                 "created_at": datetime.now(timezone.utc),
-                "is_read": False
+                "is_read": False,
             }
 
             result = await self.collection.insert_one(doc)
@@ -88,7 +89,7 @@ class AdminActivityService:
 
             return {
                 "id": str(result.inserted_id),
-                "message": "Activity logged successfully"
+                "message": "Activity logged successfully",
             }
 
         except HTTPException:
@@ -104,7 +105,7 @@ class AdminActivityService:
         limit: int = 50,
         action_type: Optional[str] = None,
         entity_type: Optional[str] = None,
-        admin_id: Optional[str] = None
+        admin_id: Optional[str] = None,
     ) -> dict:
         """
         Get paginated activity log.
@@ -132,37 +133,46 @@ class AdminActivityService:
             skip = (page - 1) * limit
             pages = (total + limit - 1) // limit if total > 0 else 0
 
-            cursor = self.collection.find(query).sort("created_at", -1).skip(skip).limit(limit)
+            cursor = (
+                self.collection.find(query)
+                .sort("created_at", -1)
+                .skip(skip)
+                .limit(limit)
+            )
             activities = []
 
             async for doc in cursor:
                 # Use defensive .get() access to prevent KeyError on malformed documents
                 doc_id = doc.get("_id", "")
                 created_at = doc.get("created_at")
-                activities.append({
-                    "_id": str(doc_id) if doc_id else "",
-                    "id": str(doc_id) if doc_id else "",
-                    "admin_id": doc.get("admin_id", ""),
-                    "action_type": doc.get("action_type", "unknown"),
-                    "title": doc.get("title", ""),
-                    "message": doc.get("message", ""),
-                    "entity_type": doc.get("entity_type"),
-                    "entity_id": doc.get("entity_id"),
-                    "metadata": doc.get("metadata", {}),
-                    "is_read": doc.get("is_read", False),
-                    "created_at": created_at.isoformat() if created_at else None
-                })
+                activities.append(
+                    {
+                        "_id": str(doc_id) if doc_id else "",
+                        "id": str(doc_id) if doc_id else "",
+                        "admin_id": doc.get("admin_id", ""),
+                        "action_type": doc.get("action_type", "unknown"),
+                        "title": doc.get("title", ""),
+                        "message": doc.get("message", ""),
+                        "entity_type": doc.get("entity_type"),
+                        "entity_id": doc.get("entity_id"),
+                        "metadata": doc.get("metadata", {}),
+                        "is_read": doc.get("is_read", False),
+                        "created_at": created_at.isoformat() if created_at else None,
+                    }
+                )
 
             return {
                 "activities": activities,
                 "total": total,
                 "page": page,
-                "pages": pages
+                "pages": pages,
             }
 
         except Exception as e:
             logger.error(f"Error getting activity log: {str(e)}", exc_info=True)
-            raise HTTPException(status_code=500, detail=f"Error retrieving activity log: {str(e)}")
+            raise HTTPException(
+                status_code=500, detail=f"Error retrieving activity log: {str(e)}"
+            )
 
     async def get_recent_activities(self, limit: int = 10) -> List[dict]:
         """
@@ -179,18 +189,20 @@ class AdminActivityService:
                 # Use defensive .get() access to prevent KeyError on malformed documents
                 doc_id = doc.get("_id", "")
                 created_at = doc.get("created_at")
-                activities.append({
-                    "_id": str(doc_id) if doc_id else "",
-                    "id": str(doc_id) if doc_id else "",
-                    "admin_id": doc.get("admin_id", ""),
-                    "action_type": doc.get("action_type", "unknown"),
-                    "title": doc.get("title", ""),
-                    "message": doc.get("message", ""),
-                    "entity_type": doc.get("entity_type"),
-                    "entity_id": doc.get("entity_id"),
-                    "metadata": doc.get("metadata", {}),
-                    "created_at": created_at.isoformat() if created_at else None
-                })
+                activities.append(
+                    {
+                        "_id": str(doc_id) if doc_id else "",
+                        "id": str(doc_id) if doc_id else "",
+                        "admin_id": doc.get("admin_id", ""),
+                        "action_type": doc.get("action_type", "unknown"),
+                        "title": doc.get("title", ""),
+                        "message": doc.get("message", ""),
+                        "entity_type": doc.get("entity_type"),
+                        "entity_id": doc.get("entity_id"),
+                        "metadata": doc.get("metadata", {}),
+                        "created_at": created_at.isoformat() if created_at else None,
+                    }
+                )
 
             return activities
 
@@ -206,7 +218,7 @@ class AdminActivityService:
         email: str,
         plan_name: str,
         trial_days: int,
-        invitation_id: Optional[str] = None
+        invitation_id: Optional[str] = None,
     ) -> dict:
         """Log when an invitation is sent to a new planner"""
         return await self.log_activity(
@@ -216,18 +228,11 @@ class AdminActivityService:
             message=f"Sent invitation to {email} with {trial_days}-day trial on {plan_name} plan",
             entity_type="invitation",
             entity_id=invitation_id,
-            metadata={
-                "email": email,
-                "plan_name": plan_name,
-                "trial_days": trial_days
-            }
+            metadata={"email": email, "plan_name": plan_name, "trial_days": trial_days},
         )
 
     async def log_invitation_resent(
-        self,
-        admin_id: str,
-        email: str,
-        invitation_id: Optional[str] = None
+        self, admin_id: str, email: str, invitation_id: Optional[str] = None
     ) -> dict:
         """Log when an invitation is resent"""
         return await self.log_activity(
@@ -237,7 +242,7 @@ class AdminActivityService:
             message=f"Resent invitation to {email}",
             entity_type="invitation",
             entity_id=invitation_id,
-            metadata={"email": email}
+            metadata={"email": email},
         )
 
     async def log_invitation_cancelled(
@@ -245,7 +250,7 @@ class AdminActivityService:
         admin_id: str,
         email: str,
         reason: Optional[str] = None,
-        invitation_id: Optional[str] = None
+        invitation_id: Optional[str] = None,
     ) -> dict:
         """Log when an invitation is cancelled"""
         msg = f"Cancelled invitation for {email}"
@@ -259,14 +264,11 @@ class AdminActivityService:
             message=msg,
             entity_type="invitation",
             entity_id=invitation_id,
-            metadata={"email": email, "reason": reason}
+            metadata={"email": email, "reason": reason},
         )
 
     async def log_invitation_completed(
-        self,
-        admin_id: str,
-        email: str,
-        invitation_id: Optional[str] = None
+        self, admin_id: str, email: str, invitation_id: Optional[str] = None
     ) -> dict:
         """Log when a planner completes their account setup from invitation"""
         return await self.log_activity(
@@ -276,7 +278,7 @@ class AdminActivityService:
             message=f"{email} completed account setup",
             entity_type="invitation",
             entity_id=invitation_id,
-            metadata={"email": email}
+            metadata={"email": email},
         )
 
     async def log_planner_suspended(
@@ -284,7 +286,7 @@ class AdminActivityService:
         admin_id: str,
         planner_email: str,
         reason: Optional[str] = None,
-        planner_id: Optional[str] = None
+        planner_id: Optional[str] = None,
     ) -> dict:
         """Log when a planner is suspended"""
         msg = f"Suspended planner {planner_email}"
@@ -298,14 +300,11 @@ class AdminActivityService:
             message=msg,
             entity_type="planner",
             entity_id=planner_id,
-            metadata={"email": planner_email, "reason": reason}
+            metadata={"email": planner_email, "reason": reason},
         )
 
     async def log_planner_activated(
-        self,
-        admin_id: str,
-        planner_email: str,
-        planner_id: Optional[str] = None
+        self, admin_id: str, planner_email: str, planner_id: Optional[str] = None
     ) -> dict:
         """Log when a planner is activated/unsuspended"""
         return await self.log_activity(
@@ -315,14 +314,11 @@ class AdminActivityService:
             message=f"Activated planner {planner_email}",
             entity_type="planner",
             entity_id=planner_id,
-            metadata={"email": planner_email}
+            metadata={"email": planner_email},
         )
 
     async def log_planner_deleted(
-        self,
-        admin_id: str,
-        planner_email: str,
-        planner_id: Optional[str] = None
+        self, admin_id: str, planner_email: str, planner_id: Optional[str] = None
     ) -> dict:
         """Log when a planner account is deleted"""
         return await self.log_activity(
@@ -332,7 +328,7 @@ class AdminActivityService:
             message=f"Deleted planner account {planner_email}",
             entity_type="planner",
             entity_id=planner_id,
-            metadata={"email": planner_email}
+            metadata={"email": planner_email},
         )
 
 

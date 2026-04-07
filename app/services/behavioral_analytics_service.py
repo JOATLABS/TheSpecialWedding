@@ -38,7 +38,9 @@ class BehavioralAnalyticsService:
     #  PUBLIC: Full behavioral dashboard payload
     # ──────────────────────────────────────────────
 
-    async def compile_behavioral_metrics(self, timeframe: str = "30d") -> Dict[str, Any]:
+    async def compile_behavioral_metrics(
+        self, timeframe: str = "30d"
+    ) -> Dict[str, Any]:
         """Return the full behavioral analytics payload."""
         cache_key = self._behavioral_metrics_cache_key(timeframe)
         cached_payload = await cache.get(cache_key)
@@ -47,7 +49,6 @@ class BehavioralAnalyticsService:
 
         period_days = self._resolve_timeframe(timeframe)
         now = datetime.now(timezone.utc)
-        period_start = now - timedelta(days=period_days)
 
         # Run all analyses concurrently
         wau_task = asyncio.create_task(self._compute_wau(now))
@@ -57,9 +58,20 @@ class BehavioralAnalyticsService:
         mrr_movement_task = asyncio.create_task(self._compute_mrr_movement(now))
         wow_task = asyncio.create_task(self._compute_wow_changes(now, period_days))
 
-        wau, activation, retention, engagement, mrr_movement, wow = await asyncio.gather(
-            wau_task, activation_task, retention_task,
-            engagement_task, mrr_movement_task, wow_task,
+        (
+            wau,
+            activation,
+            retention,
+            engagement,
+            mrr_movement,
+            wow,
+        ) = await asyncio.gather(
+            wau_task,
+            activation_task,
+            retention_task,
+            engagement_task,
+            mrr_movement_task,
+            wow_task,
         )
 
         payload = {
@@ -105,19 +117,25 @@ class BehavioralAnalyticsService:
 
         # Previous WAU: 7-14 days ago (for comparison)
         previous_wau_pipeline = [
-            {"$match": {"timestamp": {"$gte": fourteen_days_ago, "$lt": seven_days_ago}}},
+            {
+                "$match": {
+                    "timestamp": {"$gte": fourteen_days_ago, "$lt": seven_days_ago}
+                }
+            },
             {"$group": {"_id": "$actor_email"}},
             {"$count": "count"},
         ]
 
         # Also count users with last_login in the past 7 days as a floor
-        login_wau_task = asyncio.create_task(self._count_documents(
-            users_col,
-            {
-                "last_login": {"$gte": seven_days_ago},
-                "role": {"$in": ["wedding_planner", "team_member"]},
-            },
-        ))
+        login_wau_task = asyncio.create_task(
+            self._count_documents(
+                users_col,
+                {
+                    "last_login": {"$gte": seven_days_ago},
+                    "role": {"$in": ["wedding_planner", "team_member"]},
+                },
+            )
+        )
 
         current_docs = await self._safe_aggregate(activity_col, current_wau_pipeline)
         previous_docs = await self._safe_aggregate(activity_col, previous_wau_pipeline)
@@ -203,7 +221,9 @@ class BehavioralAnalyticsService:
             {"$match": {"assigned_planner_email": {"$in": planner_emails}}},
             {"$group": {"_id": "$assigned_planner_email"}},
         ]
-        planners_with_weddings_docs = await self._safe_aggregate(weddings_col, wedding_pipeline)
+        planners_with_weddings_docs = await self._safe_aggregate(
+            weddings_col, wedding_pipeline
+        )
         planners_with_weddings = {doc["_id"] for doc in planners_with_weddings_docs}
         created_wedding = len(planners_with_weddings)
 
@@ -211,10 +231,16 @@ class BehavioralAnalyticsService:
         # Find wedding_ids for these planners, then check for invited guests
         if planners_with_weddings:
             wedding_ids_pipeline = [
-                {"$match": {"assigned_planner_email": {"$in": list(planners_with_weddings)}}},
+                {
+                    "$match": {
+                        "assigned_planner_email": {"$in": list(planners_with_weddings)}
+                    }
+                },
                 {"$project": {"_id": 1, "assigned_planner_email": 1}},
             ]
-            wedding_docs = await self._safe_aggregate(weddings_col, wedding_ids_pipeline)
+            wedding_docs = await self._safe_aggregate(
+                weddings_col, wedding_ids_pipeline
+            )
 
             # Map wedding_id -> planner_email
             wedding_to_planner: Dict[str, str] = {}
@@ -229,7 +255,9 @@ class BehavioralAnalyticsService:
                 {"$match": {"wedding_id": {"$in": wedding_ids}, "invite_sent": True}},
                 {"$group": {"_id": "$wedding_id"}},
             ]
-            weddings_with_invites_docs = await self._safe_aggregate(guests_col, invited_pipeline)
+            weddings_with_invites_docs = await self._safe_aggregate(
+                guests_col, invited_pipeline
+            )
             planners_with_invites = {
                 wedding_to_planner[doc["_id"]]
                 for doc in weddings_with_invites_docs
@@ -248,7 +276,9 @@ class BehavioralAnalyticsService:
                 },
                 {"$group": {"_id": "$wedding_id"}},
             ]
-            weddings_with_rsvps_docs = await self._safe_aggregate(rsvps_col, rsvp_pipeline)
+            weddings_with_rsvps_docs = await self._safe_aggregate(
+                rsvps_col, rsvp_pipeline
+            )
             planners_with_rsvps = {
                 wedding_to_planner[doc["_id"]]
                 for doc in weddings_with_rsvps_docs
@@ -276,25 +306,35 @@ class BehavioralAnalyticsService:
                 {
                     "name": "Completed Onboarding",
                     "count": onboarded,
-                    "rate": round(onboarded / total_signups * 100, 1) if total_signups else 0.0,
+                    "rate": round(onboarded / total_signups * 100, 1)
+                    if total_signups
+                    else 0.0,
                 },
                 {
                     "name": "Created First Wedding",
                     "count": created_wedding,
-                    "rate": round(created_wedding / total_signups * 100, 1) if total_signups else 0.0,
+                    "rate": round(created_wedding / total_signups * 100, 1)
+                    if total_signups
+                    else 0.0,
                 },
                 {
                     "name": "Invited First Guest",
                     "count": invited_guests,
-                    "rate": round(invited_guests / total_signups * 100, 1) if total_signups else 0.0,
+                    "rate": round(invited_guests / total_signups * 100, 1)
+                    if total_signups
+                    else 0.0,
                 },
                 {
                     "name": "Received First RSVP",
                     "count": received_rsvp,
-                    "rate": round(received_rsvp / total_signups * 100, 1) if total_signups else 0.0,
+                    "rate": round(received_rsvp / total_signups * 100, 1)
+                    if total_signups
+                    else 0.0,
                 },
             ],
-            "conversion_rate": round(received_rsvp / total_signups * 100, 1) if total_signups else 0.0,
+            "conversion_rate": round(received_rsvp / total_signups * 100, 1)
+            if total_signups
+            else 0.0,
             "signups_90d": all_time_signups,
         }
 
@@ -337,11 +377,16 @@ class BehavioralAnalyticsService:
                     cohort_emails.append(email)
 
             if cohort_size == 0:
-                cohorts.append({
-                    "month": cohort_start.strftime("%Y-%m"),
-                    "cohort_size": 0,
-                    "d7": None, "d30": None, "d60": None, "d90": None,
-                })
+                cohorts.append(
+                    {
+                        "month": cohort_start.strftime("%Y-%m"),
+                        "cohort_size": 0,
+                        "d7": None,
+                        "d30": None,
+                        "d60": None,
+                        "d90": None,
+                    }
+                )
                 continue
 
             # For each retention window, check if user was active after that threshold
@@ -379,7 +424,9 @@ class BehavioralAnalyticsService:
                     },
                     {"$group": {"_id": "$actor_email"}},
                 ]
-                activity_docs = await self._safe_aggregate(activity_col, activity_pipeline)
+                activity_docs = await self._safe_aggregate(
+                    activity_col, activity_pipeline
+                )
                 activity_emails = {
                     doc["_id"] for doc in activity_docs if doc.get("_id")
                 }
@@ -389,11 +436,13 @@ class BehavioralAnalyticsService:
 
                 retention_data[label] = round(retained / cohort_size * 100, 1)
 
-            cohorts.append({
-                "month": cohort_start.strftime("%Y-%m"),
-                "cohort_size": cohort_size,
-                **retention_data,
-            })
+            cohorts.append(
+                {
+                    "month": cohort_start.strftime("%Y-%m"),
+                    "cohort_size": cohort_size,
+                    **retention_data,
+                }
+            )
 
         return {"cohorts": cohorts}
 
@@ -447,16 +496,28 @@ class BehavioralAnalyticsService:
         # occurred in the past 7 days
         active_engagement_pipeline = [
             {"$match": {"timestamp": {"$gte": seven_days_ago}}},
-            {"$match": {"type": {"$in": [
-                "rsvp_received", "rsvp_updated",
-                "guest_added", "guest_imported",
-                "email_sent", "sms_sent", "reminder_sent",
-            ]}}},
+            {
+                "$match": {
+                    "type": {
+                        "$in": [
+                            "rsvp_received",
+                            "rsvp_updated",
+                            "guest_added",
+                            "guest_imported",
+                            "email_sent",
+                            "sms_sent",
+                            "reminder_sent",
+                        ]
+                    }
+                }
+            },
             {"$group": {"_id": "$wedding_id"}},
             {"$match": {"_id": {"$ne": None}}},
             {"$count": "count"},
         ]
-        engagement_docs = await self._safe_aggregate(activity_col, active_engagement_pipeline)
+        engagement_docs = await self._safe_aggregate(
+            activity_col, active_engagement_pipeline
+        )
         active_engaged_weddings = engagement_docs[0]["count"] if engagement_docs else 0
 
         return {
@@ -464,7 +525,9 @@ class BehavioralAnalyticsService:
                 "current_7d": current_rsvps,
                 "previous_7d": previous_rsvps,
                 "change": rsvp_velocity_change,
-                "trend": "up" if rsvp_velocity_change > 0 else ("down" if rsvp_velocity_change < 0 else "flat"),
+                "trend": "up"
+                if rsvp_velocity_change > 0
+                else ("down" if rsvp_velocity_change < 0 else "flat"),
             },
             "platform_response_rate": platform_response_rate,
             "active_engaged_weddings": active_engaged_weddings,
@@ -492,7 +555,9 @@ class BehavioralAnalyticsService:
 
         # Build plan price lookup
         plans_lookup: Dict[str, Dict[str, float]] = {}
-        plans_cursor = plans_col.find({}, {"_id": 1, "price_monthly": 1, "price_yearly": 1})
+        plans_cursor = plans_col.find(
+            {}, {"_id": 1, "price_monthly": 1, "price_yearly": 1}
+        )
         async for plan in plans_cursor:
             pid = str(plan["_id"])
             plans_lookup[pid] = {
@@ -540,7 +605,9 @@ class BehavioralAnalyticsService:
             now,
         )
         trial_conversions = await self._count_documents(subs_col, conversion_query)
-        total_trials_in_period = await self._count_documents(subs_col, total_trials_query)
+        total_trials_in_period = await self._count_documents(
+            subs_col, total_trials_query
+        )
         trial_conversion_rate = (
             round(trial_conversions / total_trials_in_period * 100, 1)
             if total_trials_in_period > 0
@@ -556,7 +623,9 @@ class BehavioralAnalyticsService:
             "net_change": round(net_mrr_change, 2),
             "net_change_percent": round(
                 net_mrr_change / (current_mrr - net_mrr_change) * 100, 1
-            ) if (current_mrr - net_mrr_change) > 0 else 0.0,
+            )
+            if (current_mrr - net_mrr_change) > 0
+            else 0.0,
             "trial_conversions": trial_conversions,
             "trial_conversion_rate": trial_conversion_rate,
         }
@@ -568,15 +637,13 @@ class BehavioralAnalyticsService:
     #  Computes current vs previous period for key metrics
     #  to power ↑/↓ indicators on metric cards.
 
-    async def _compute_wow_changes(self, now: datetime, period_days: int) -> Dict[str, Any]:
+    async def _compute_wow_changes(
+        self, now: datetime, period_days: int
+    ) -> Dict[str, Any]:
         current_start = now - timedelta(days=period_days)
         previous_start = now - timedelta(days=period_days * 2)
 
         users_col = self._mongo.get_users_collection()
-        weddings_col = self._mongo.get_weddings_collection()
-        rsvps_col = self._mongo.get_rsvps_collection()
-        subs_col = self._mongo.db.get_collection("user_subscriptions")
-
         # New users: current period vs previous period
         current_new_users = await self._count_documents(
             users_col, {"created_at": {"$gte": current_start}}
@@ -594,7 +661,10 @@ class BehavioralAnalyticsService:
         )
         previous_weddings = await self._count_documents(
             activity_col,
-            {"type": "wedding_created", "timestamp": {"$gte": previous_start, "$lt": current_start}},
+            {
+                "type": "wedding_created",
+                "timestamp": {"$gte": previous_start, "$lt": current_start},
+            },
         )
 
         # New RSVPs
@@ -604,7 +674,10 @@ class BehavioralAnalyticsService:
         )
         previous_rsvps = await self._count_documents(
             activity_col,
-            {"type": "rsvp_received", "timestamp": {"$gte": previous_start, "$lt": current_start}},
+            {
+                "type": "rsvp_received",
+                "timestamp": {"$gte": previous_start, "$lt": current_start},
+            },
         )
 
         # Active users (last_login in period)
@@ -612,17 +685,24 @@ class BehavioralAnalyticsService:
             users_col, {"is_active": True, "last_login": {"$gte": current_start}}
         )
         previous_active = await self._count_documents(
-            users_col, {
+            users_col,
+            {
                 "is_active": True,
                 "last_login": {"$gte": previous_start, "$lt": current_start},
-            }
+            },
         )
 
         def _change(current: int, previous: int) -> Dict[str, Any]:
             delta = current - previous
             pct = round(delta / previous * 100, 1) if previous > 0 else 0.0
             trend = "up" if delta > 0 else ("down" if delta < 0 else "flat")
-            return {"current": current, "previous": previous, "change": delta, "change_percent": pct, "trend": trend}
+            return {
+                "current": current,
+                "previous": previous,
+                "change": delta,
+                "change_percent": pct,
+                "trend": trend,
+            }
 
         return {
             "new_users": _change(current_new_users, previous_new_users),
@@ -645,7 +725,9 @@ class BehavioralAnalyticsService:
         Includes: couple last activity, form completion status,
         RSVP velocity per wedding, and needs-attention flags.
         """
-        cache_key = self._planner_engagement_cache_key(planner_email, accessible_wedding_ids)
+        cache_key = self._planner_engagement_cache_key(
+            planner_email, accessible_wedding_ids
+        )
         cached_signals = await cache.get(cache_key)
         if isinstance(cached_signals, list):
             return cached_signals
@@ -685,7 +767,12 @@ class BehavioralAnalyticsService:
             [
                 {"$match": {"wedding_id": {"$in": wedding_ids}}},
                 {"$sort": {"timestamp": -1}},
-                {"$group": {"_id": "$wedding_id", "last_activity_at": {"$first": "$timestamp"}}},
+                {
+                    "$group": {
+                        "_id": "$wedding_id",
+                        "last_activity_at": {"$first": "$timestamp"},
+                    }
+                },
             ],
         )
         last_activity_map = {
@@ -789,21 +876,27 @@ class BehavioralAnalyticsService:
             if form_count > 0 and form_submissions < form_count:
                 needs_attention.append("pending_forms")
 
-            signals.append({
-                "wedding_id": wid,
-                "couple_names": wedding.get("couple_names", ""),
-                "wedding_date": wedding.get("date", ""),
-                "last_activity_at": self._serialize_datetime(last_activity_at),
-                "days_since_activity": (now - last_activity_at).days if last_activity_at else None,
-                "guest_count": guest_count,
-                "invited_count": invited_count,
-                "rsvp_count": rsvp_count,
-                "response_rate": round(rsvp_count / invited_count * 100, 1) if invited_count > 0 else 0.0,
-                "rsvps_last_7d": recent_rsvps,
-                "forms_total": form_count,
-                "forms_completed": min(form_submissions, form_count),
-                "needs_attention": needs_attention,
-            })
+            signals.append(
+                {
+                    "wedding_id": wid,
+                    "couple_names": wedding.get("couple_names", ""),
+                    "wedding_date": wedding.get("date", ""),
+                    "last_activity_at": self._serialize_datetime(last_activity_at),
+                    "days_since_activity": (now - last_activity_at).days
+                    if last_activity_at
+                    else None,
+                    "guest_count": guest_count,
+                    "invited_count": invited_count,
+                    "rsvp_count": rsvp_count,
+                    "response_rate": round(rsvp_count / invited_count * 100, 1)
+                    if invited_count > 0
+                    else 0.0,
+                    "rsvps_last_7d": recent_rsvps,
+                    "forms_total": form_count,
+                    "forms_completed": min(form_submissions, form_count),
+                    "needs_attention": needs_attention,
+                }
+            )
 
         await cache.set(cache_key, signals, expire=PLANNER_ENGAGEMENT_CACHE_TTL)
         return signals
@@ -824,8 +917,12 @@ class BehavioralAnalyticsService:
             async for doc in guests_col.find(
                 {"wedding_id": wedding_id, "invite_sent": True},
                 {
-                    "_id": 1, "name": 1, "email": 1, "phone": 1,
-                    "invite_sent_date": 1, "group_id": 1,
+                    "_id": 1,
+                    "name": 1,
+                    "email": 1,
+                    "phone": 1,
+                    "invite_sent_date": 1,
+                    "group_id": 1,
                 },
             )
         ]
@@ -853,19 +950,23 @@ class BehavioralAnalyticsService:
                 invite_date = self._as_datetime(guest.get("invite_sent_date"))
                 days_since = (now - invite_date).days if invite_date else None
 
-                non_responders.append({
-                    "guest_id": gid,
-                    "name": guest.get("name", ""),
-                    "email": guest.get("email"),
-                    "phone": guest.get("phone"),
-                    "invite_sent_date": self._serialize_datetime(invite_date),
-                    "days_since_invite": days_since,
-                    "group_id": guest.get("group_id"),
-                })
+                non_responders.append(
+                    {
+                        "guest_id": gid,
+                        "name": guest.get("name", ""),
+                        "email": guest.get("email"),
+                        "phone": guest.get("phone"),
+                        "invite_sent_date": self._serialize_datetime(invite_date),
+                        "days_since_invite": days_since,
+                        "group_id": guest.get("group_id"),
+                    }
+                )
 
         # Sort by days_since_invite descending (longest waiters first)
         non_responders.sort(
-            key=lambda x: x["days_since_invite"] if x["days_since_invite"] is not None else -1,
+            key=lambda x: (
+                x["days_since_invite"] if x["days_since_invite"] is not None else -1
+            ),
             reverse=True,
         )
 
@@ -884,8 +985,11 @@ class BehavioralAnalyticsService:
             async for doc in budget_col.find(
                 {"wedding_id": wedding_id},
                 {
-                    "name": 1, "budgeted_amount": 1, "actual_spent": 1,
-                    "payment_status": 1, "priority": 1,
+                    "name": 1,
+                    "budgeted_amount": 1,
+                    "actual_spent": 1,
+                    "payment_status": 1,
+                    "priority": 1,
                 },
             )
         ]
@@ -897,20 +1001,24 @@ class BehavioralAnalyticsService:
         for cat in categories:
             budgeted = float(cat.get("budgeted_amount", 0))
             spent = float(cat.get("actual_spent", 0))
-            pct_of_budget = round(budgeted / total_budgeted * 100, 1) if total_budgeted > 0 else 0.0
+            pct_of_budget = (
+                round(budgeted / total_budgeted * 100, 1) if total_budgeted > 0 else 0.0
+            )
             pct_spent = round(spent / budgeted * 100, 1) if budgeted > 0 else 0.0
 
-            breakdown.append({
-                "category_id": str(cat.get("_id", "")),
-                "name": cat.get("name", ""),
-                "budgeted": budgeted,
-                "spent": spent,
-                "remaining": round(budgeted - spent, 2),
-                "percent_of_total_budget": pct_of_budget,
-                "percent_spent": pct_spent,
-                "payment_status": cat.get("payment_status", "pending"),
-                "priority": cat.get("priority", 1),
-            })
+            breakdown.append(
+                {
+                    "category_id": str(cat.get("_id", "")),
+                    "name": cat.get("name", ""),
+                    "budgeted": budgeted,
+                    "spent": spent,
+                    "remaining": round(budgeted - spent, 2),
+                    "percent_of_total_budget": pct_of_budget,
+                    "percent_spent": pct_spent,
+                    "payment_status": cat.get("payment_status", "pending"),
+                    "priority": cat.get("priority", 1),
+                }
+            )
 
         # Sort by budgeted amount descending
         breakdown.sort(key=lambda x: x["budgeted"], reverse=True)
@@ -919,7 +1027,9 @@ class BehavioralAnalyticsService:
             "total_budgeted": round(total_budgeted, 2),
             "total_spent": round(total_spent, 2),
             "total_remaining": round(total_budgeted - total_spent, 2),
-            "percent_spent": round(total_spent / total_budgeted * 100, 1) if total_budgeted > 0 else 0.0,
+            "percent_spent": round(total_spent / total_budgeted * 100, 1)
+            if total_budgeted > 0
+            else 0.0,
             "categories": breakdown,
             "category_count": len(breakdown),
         }
@@ -971,7 +1081,11 @@ class BehavioralAnalyticsService:
             scope = "all"
         else:
             digest_source = "|".join(sorted(accessible_wedding_ids))
-            scope = hashlib.sha1(digest_source.encode("utf-8")).hexdigest() if digest_source else "none"
+            scope = (
+                hashlib.sha1(digest_source.encode("utf-8")).hexdigest()
+                if digest_source
+                else "none"
+            )
         return f"behavioral_analytics:v1:planner_signals:{scope_email}:{scope}"
 
     @classmethod

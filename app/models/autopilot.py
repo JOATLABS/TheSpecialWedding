@@ -4,8 +4,8 @@ Wedding Finance Autopilot Models
 Data models for Package, Contract, and ScheduledPayment entities.
 These models power the Package → Contract → Autopilot payment flow.
 """
+
 from datetime import datetime, date
-from decimal import Decimal
 from typing import List, Optional, Literal
 from pydantic import BaseModel, Field, field_serializer
 from app.models.base import MongoModel
@@ -16,8 +16,10 @@ from app.utils.pydantic_objectid import PyObjectId, generate_object_id
 # PACKAGE MODELS (WFA-101)
 # ============================================================================
 
+
 class PackageServiceItem(BaseModel):
     """A service included in a package."""
+
     name: str = Field(..., min_length=1, max_length=200)
     description: Optional[str] = Field(None, max_length=500)
     included: bool = True
@@ -25,8 +27,11 @@ class PackageServiceItem(BaseModel):
 
 class ScheduleItem(BaseModel):
     """A single payment in the schedule."""
+
     name: str = Field(..., min_length=1, max_length=100)
-    trigger: Literal["on_signing", "days_after_signing", "days_before_wedding", "fixed_date"]
+    trigger: Literal[
+        "on_signing", "days_after_signing", "days_before_wedding", "fixed_date"
+    ]
 
     # Trigger-specific fields
     days_after: Optional[int] = Field(None, ge=0)
@@ -37,11 +42,11 @@ class ScheduleItem(BaseModel):
     amount: Optional[float] = Field(None, ge=0)
     percentage: Optional[float] = Field(None, ge=0, le=100)
 
-    @field_serializer('amount', when_used='json')
+    @field_serializer("amount", when_used="json")
     def serialize_amount(self, value) -> Optional[float]:
         return float(value) if value is not None else None
 
-    @field_serializer('fixed_date', when_used='json')
+    @field_serializer("fixed_date", when_used="json")
     def serialize_fixed_date(self, value) -> Optional[str]:
         return value.isoformat() if value else None
 
@@ -53,6 +58,7 @@ class WeddingPackage(MongoModel):
     Packages define what services are offered and how payment is structured.
     They can be saved as templates and reused for multiple couples.
     """
+
     id: PyObjectId = Field(default_factory=generate_object_id, alias="_id")
     planner_id: str = Field(..., description="Planner's user ID")
 
@@ -80,7 +86,7 @@ class WeddingPackage(MongoModel):
     # Usage stats
     contracts_count: int = Field(default=0, ge=0)
 
-    @field_serializer('total_amount', when_used='always')
+    @field_serializer("total_amount", when_used="always")
     def serialize_total_amount(self, value) -> float:
         return float(value) if value else 0.0
 
@@ -89,8 +95,10 @@ class WeddingPackage(MongoModel):
 # CONTRACT MODELS (WFA-102)
 # ============================================================================
 
+
 class CoupleInfo(BaseModel):
     """Couple contact information."""
+
     partner1_name: str = Field(..., min_length=1, max_length=100)
     partner2_name: Optional[str] = Field(None, max_length=100)
     email: str = Field(..., max_length=254)
@@ -106,12 +114,13 @@ class CoupleInfo(BaseModel):
 
 class ContractSignature(BaseModel):
     """Digital signature record."""
+
     signed_by: str = Field(..., min_length=1, max_length=200)
     signed_at: datetime = Field(default_factory=datetime.utcnow)
     ip_address: str = Field(..., max_length=45)
     user_agent: str = Field(..., max_length=500)
 
-    @field_serializer('signed_at', when_used='json')
+    @field_serializer("signed_at", when_used="json")
     def serialize_signed_at(self, value) -> Optional[str]:
         return value.isoformat() if value else None
 
@@ -123,6 +132,7 @@ class Contract(MongoModel):
     Contracts are created from packages and track the signing process,
     payment method, and scheduled payments.
     """
+
     id: PyObjectId = Field(default_factory=generate_object_id, alias="_id")
     package_id: str = Field(..., description="Source package ID")
     planner_id: str = Field(..., description="Planner's user ID")
@@ -156,7 +166,9 @@ class Contract(MongoModel):
     document_url: Optional[str] = None
 
     # Status
-    status: Literal["draft", "sent", "viewed", "signed", "active", "completed", "cancelled"] = "draft"
+    status: Literal[
+        "draft", "sent", "viewed", "signed", "active", "completed", "cancelled"
+    ] = "draft"
 
     # Timestamps
     sent_at: Optional[datetime] = None
@@ -166,11 +178,18 @@ class Contract(MongoModel):
     cancelled_at: Optional[datetime] = None
     cancellation_reason: Optional[str] = None
 
-    @field_serializer('wedding_date', when_used='json')
+    @field_serializer("wedding_date", when_used="json")
     def serialize_wedding_date(self, value) -> Optional[str]:
         return value.isoformat() if value else None
 
-    @field_serializer('sent_at', 'viewed_at', 'signed_at', 'completed_at', 'cancelled_at', when_used='json')
+    @field_serializer(
+        "sent_at",
+        "viewed_at",
+        "signed_at",
+        "completed_at",
+        "cancelled_at",
+        when_used="json",
+    )
     def serialize_datetimes(self, value) -> Optional[str]:
         return value.isoformat() if value else None
 
@@ -179,6 +198,7 @@ class Contract(MongoModel):
 # SCHEDULED PAYMENT MODELS (WFA-103)
 # ============================================================================
 
+
 class ScheduledPayment(MongoModel):
     """
     An individual scheduled payment instance.
@@ -186,6 +206,7 @@ class ScheduledPayment(MongoModel):
     Created when a contract is signed. Each scheduled payment tracks
     its own status, retry attempts, and payment outcome.
     """
+
     id: PyObjectId = Field(default_factory=generate_object_id, alias="_id")
     contract_id: str = Field(..., description="Parent contract ID")
     planner_id: str = Field(..., description="Planner's user ID")
@@ -197,7 +218,9 @@ class ScheduledPayment(MongoModel):
     due_date: date
 
     # Execution status
-    status: Literal["scheduled", "processing", "succeeded", "failed", "cancelled", "paid_externally"] = "scheduled"
+    status: Literal[
+        "scheduled", "processing", "succeeded", "failed", "cancelled", "paid_externally"
+    ] = "scheduled"
     stripe_payment_intent_id: Optional[str] = None
 
     # Retry tracking
@@ -218,15 +241,21 @@ class ScheduledPayment(MongoModel):
     # Reminder tracking
     reminder_sent_at: Optional[datetime] = None
 
-    @field_serializer('amount', when_used='json')
+    @field_serializer("amount", when_used="json")
     def serialize_amount(self, value) -> float:
         return float(value) if value else 0.0
 
-    @field_serializer('due_date', when_used='json')
+    @field_serializer("due_date", when_used="json")
     def serialize_due_date(self, value) -> Optional[str]:
         return value.isoformat() if value else None
 
-    @field_serializer('last_attempt_at', 'next_retry_at', 'paid_at', 'reminder_sent_at', when_used='json')
+    @field_serializer(
+        "last_attempt_at",
+        "next_retry_at",
+        "paid_at",
+        "reminder_sent_at",
+        when_used="json",
+    )
     def serialize_datetimes(self, value) -> Optional[str]:
         return value.isoformat() if value else None
 
@@ -235,8 +264,10 @@ class ScheduledPayment(MongoModel):
 # AI MODELS (for WFA-201, WFA-202)
 # ============================================================================
 
+
 class AICache(BaseModel):
     """Cached AI response for deduplication and cost savings."""
+
     id: str = Field(..., alias="_id")  # ai:{feature}:{tenant_id}:{context_hash}
     feature: str = Field(..., description="AI feature name")
     tenant_id: str = Field(..., description="Wedding or Planner ID")
@@ -245,13 +276,14 @@ class AICache(BaseModel):
     expires_at: datetime
     hit_count: int = Field(default=0, ge=0)
 
-    @field_serializer('expires_at', when_used='json')
+    @field_serializer("expires_at", when_used="json")
     def serialize_expires_at(self, value) -> Optional[str]:
         return value.isoformat() if value else None
 
 
 class AIUsageLog(MongoModel):
     """AI usage audit log for tracking and billing."""
+
     id: PyObjectId = Field(default_factory=generate_object_id, alias="_id")
     user_id: str = Field(..., description="User who made the request")
     tenant_id: str = Field(..., description="Wedding or Planner ID")

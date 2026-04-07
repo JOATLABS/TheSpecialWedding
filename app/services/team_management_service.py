@@ -9,7 +9,6 @@ seat limit enforcement, and permission resolution.
 import secrets
 import string
 import logging
-import os
 import asyncio
 from datetime import datetime, timedelta, timezone
 from typing import Optional, List, Dict, Any
@@ -25,13 +24,13 @@ from app.services.email_service_resend import ResendEmailService
 from app.services.activity_log_service import activity_log_service
 from app.models.subscription import ACTIVE_SUBSCRIPTION_STATUSES
 from app.models.team_member import (
-    TeamMemberRole,
     TeamMemberStatus,
-    WeddingAccessType,
-    TeamPermissions,
     ROLE_PRESETS,
 )
-from app.dependencies.auth_extended import invalidate_team_cache, invalidate_team_cache_by_owner
+from app.dependencies.auth_extended import (
+    invalidate_team_cache,
+    invalidate_team_cache_by_owner,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -64,7 +63,10 @@ def _run_background(coro):
     _background_tasks.difference_update(done)
 
     if len(_background_tasks) >= _MAX_BACKGROUND_TASKS:
-        logger.warning("[TeamMgmt] Background task queue full (%d), dropping task", _MAX_BACKGROUND_TASKS)
+        logger.warning(
+            "[TeamMgmt] Background task queue full (%d), dropping task",
+            _MAX_BACKGROUND_TASKS,
+        )
         return
 
     task = asyncio.create_task(coro)
@@ -87,8 +89,7 @@ class TeamManagementService:
     def _generate_token(length: int = 48) -> str:
         """Generate a cryptographically secure URL-safe token"""
         return "".join(
-            secrets.choice(string.ascii_letters + string.digits)
-            for _ in range(length)
+            secrets.choice(string.ascii_letters + string.digits) for _ in range(length)
         )
 
     @staticmethod
@@ -105,28 +106,26 @@ class TeamManagementService:
         """
         if len(password) < 8:
             raise HTTPException(
-                status_code=400,
-                detail="Password must be at least 8 characters long"
+                status_code=400, detail="Password must be at least 8 characters long"
             )
         if not any(c.isupper() for c in password):
             raise HTTPException(
                 status_code=400,
-                detail="Password must contain at least one uppercase letter"
+                detail="Password must contain at least one uppercase letter",
             )
         if not any(c.islower() for c in password):
             raise HTTPException(
                 status_code=400,
-                detail="Password must contain at least one lowercase letter"
+                detail="Password must contain at least one lowercase letter",
             )
         if not any(c.isdigit() for c in password):
             raise HTTPException(
-                status_code=400,
-                detail="Password must contain at least one number"
+                status_code=400, detail="Password must contain at least one number"
             )
         if not any(c in "!@#$%^&*()_+-=[]{}|;:,.<>?" for c in password):
             raise HTTPException(
                 status_code=400,
-                detail="Password must contain at least one special character"
+                detail="Password must contain at least one special character",
             )
 
     @staticmethod
@@ -164,26 +163,28 @@ class TeamManagementService:
             )
 
         try:
-            oids = [to_object_id(wid, f"wedding_id[{i}]") for i, wid in enumerate(wedding_ids)]
+            oids = [
+                to_object_id(wid, f"wedding_id[{i}]")
+                for i, wid in enumerate(wedding_ids)
+            ]
         except HTTPException:
             raise
-        except Exception as e:
+        except Exception:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Invalid wedding ID format",
             )
 
         # Single $in query to check all weddings at once
-        count = await self.weddings_collection.count_documents({
-            "_id": {"$in": oids},
-            "assigned_planner_email": owner_email
-        })
+        count = await self.weddings_collection.count_documents(
+            {"_id": {"$in": oids}, "assigned_planner_email": owner_email}
+        )
 
         if count != len(oids):
             # Find which ones are invalid
             valid_docs = await self.weddings_collection.find(
                 {"_id": {"$in": oids}, "assigned_planner_email": owner_email},
-                {"_id": 1}
+                {"_id": 1},
             ).to_list(length=len(oids))
             valid_ids = {str(d["_id"]) for d in valid_docs}
             invalid = [wid for wid in wedding_ids if wid not in valid_ids]
@@ -196,14 +197,20 @@ class TeamManagementService:
         """Get the owner planner's current subscription plan (with staff_seats)"""
         # Find subscription
         subscription = await self.subscriptions_collection.find_one(
-            {"user_email": owner_email, "status": {"$in": list(ACTIVE_SUBSCRIPTION_STATUSES)}}
+            {
+                "user_email": owner_email,
+                "status": {"$in": list(ACTIVE_SUBSCRIPTION_STATUSES)},
+            }
         )
         if not subscription:
             # Fallback: lookup by user_id
             user = await self.users_collection.find_one({"email": owner_email})
             if user:
                 subscription = await self.subscriptions_collection.find_one(
-                    {"user_id": str(user["_id"]), "status": {"$in": list(ACTIVE_SUBSCRIPTION_STATUSES)}}
+                    {
+                        "user_id": str(user["_id"]),
+                        "status": {"$in": list(ACTIVE_SUBSCRIPTION_STATUSES)},
+                    }
                 )
         if not subscription:
             return None
@@ -213,7 +220,9 @@ class TeamManagementService:
         if plan_snapshot and "staff_seats" in plan_snapshot:
             return plan_snapshot
 
-        plan = await self.plans_collection.find_one({"_id": subscription.get("plan_id")})
+        plan = await self.plans_collection.find_one(
+            {"_id": subscription.get("plan_id")}
+        )
         return plan
 
     def _format_team_member(self, doc: dict) -> dict:
@@ -295,10 +304,12 @@ class TeamManagementService:
         total_seats = plan.get("staff_seats", 0) if plan else 0
 
         # Count non-removed members (pending + active count toward seats)
-        used_seats = await self.team_collection.count_documents({
-            "owner_id": owner_id,
-            "status": {"$in": ["pending", "active"]},
-        })
+        used_seats = await self.team_collection.count_documents(
+            {
+                "owner_id": owner_id,
+                "status": {"$in": ["pending", "active"]},
+            }
+        )
 
         return {
             "total_seats": total_seats,
@@ -432,10 +443,12 @@ class TeamManagementService:
         # 7. Post-insert seat enforcement (optimistic approach for race condition)
         # Count active + pending members AFTER insert. If we've exceeded the limit,
         # delete the just-inserted doc and raise an error. This handles concurrent requests.
-        used_seats = await self.team_collection.count_documents({
-            "owner_id": owner_id,
-            "status": {"$in": ["pending", "active"]},
-        })
+        used_seats = await self.team_collection.count_documents(
+            {
+                "owner_id": owner_id,
+                "status": {"$in": ["pending", "active"]},
+            }
+        )
         plan = await self._get_owner_plan(owner_email)
         total_seats = plan.get("staff_seats", 0) if plan else 0
 
@@ -449,7 +462,8 @@ class TeamManagementService:
                     "error": "seat_limit_reached",
                     "message": f"Your plan allows {total_seats} team members. All seats are currently filled.",
                     "total_seats": total_seats,
-                    "used_seats": used_seats - 1,  # Subtract 1 since we deleted our insert
+                    "used_seats": used_seats
+                    - 1,  # Subtract 1 since we deleted our insert
                     "upgrade_required": True,
                 },
             )
@@ -464,7 +478,9 @@ class TeamManagementService:
                 token=token,
             )
         except Exception as e:
-            logger.error("[TeamMgmt:invite] Failed to send team invite email: %s", str(e))
+            logger.error(
+                "[TeamMgmt:invite] Failed to send team invite email: %s", str(e)
+            )
             # Don't fail the invite — the planner can resend later
 
         logger.info(f"Team member invited: {email} by {owner_email} as {role}")
@@ -472,7 +488,10 @@ class TeamManagementService:
         # Log activity asynchronously (non-blocking)
         _run_background(
             activity_log_service.log_team_member_invited(
-                planner_email=owner_email, member_email=email, role=role, invited_by=owner_email
+                planner_email=owner_email,
+                member_email=email,
+                role=role,
+                invited_by=owner_email,
             )
         )
 
@@ -503,9 +522,7 @@ class TeamManagementService:
 
         # Build permissions list for the email
         enabled_perms = [
-            k.replace("_", " ").title()
-            for k, v in permissions.items()
-            if v
+            k.replace("_", " ").title() for k, v in permissions.items() if v
         ]
         perms_html = "".join(
             f'<span style="display:inline-block;background:#f0f4f8;padding:4px 10px;border-radius:6px;'
@@ -524,7 +541,7 @@ class TeamManagementService:
             <div style="background:#ffffff;border:1px solid #e2e8f0;border-radius:16px;padding:32px;">
                 <h2 style="margin:0 0 8px;font-size:20px;">You've been invited!</h2>
                 <p style="color:#64748b;margin:0 0 24px;">
-                    <strong>{company_name}</strong>{f' ({planner_name})' if planner_name else ''}
+                    <strong>{company_name}</strong>{f" ({planner_name})" if planner_name else ""}
                     has invited you to join their team as <strong>{role.title()}</strong>.
                 </p>
                 <div style="background:#f8fafc;border-radius:10px;padding:16px;margin-bottom:24px;">
@@ -558,17 +575,19 @@ class TeamManagementService:
 
     async def resend_invite(self, owner_id: str, team_member_id: str) -> dict:
         """Regenerate token and resend the invitation email"""
-        doc = await self.team_collection.find_one({
-            "_id": to_object_id(team_member_id, "team_member_id"),
-            "owner_id": owner_id,
-        })
+        doc = await self.team_collection.find_one(
+            {
+                "_id": to_object_id(team_member_id, "team_member_id"),
+                "owner_id": owner_id,
+            }
+        )
         if not doc:
             raise HTTPException(status_code=404, detail="Team member not found")
         if doc["status"] != TeamMemberStatus.PENDING.value:
             # P2-24: Use 409 CONFLICT instead of 400 BAD_REQUEST
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
-                detail="Can only resend invites for pending members"
+                detail="Can only resend invites for pending members",
             )
 
         # Generate new token
@@ -579,7 +598,8 @@ class TeamManagementService:
             {
                 "$set": {
                     "invite_token": new_token,
-                    "invite_token_expires_at": now + timedelta(days=INVITE_TOKEN_EXPIRY_DAYS),
+                    "invite_token_expires_at": now
+                    + timedelta(days=INVITE_TOKEN_EXPIRY_DAYS),
                     "updated_at": now,
                 }
             },
@@ -608,7 +628,9 @@ class TeamManagementService:
         """
         doc = await self.team_collection.find_one({"invite_token": token})
         if not doc:
-            raise HTTPException(status_code=404, detail="Invitation not found or already used")
+            raise HTTPException(
+                status_code=404, detail="Invitation not found or already used"
+            )
 
         # P2-26: Use timezone helper for cleaner, more maintainable logic
         expires_at = _ensure_utc(doc.get("invite_token_expires_at"))
@@ -621,7 +643,7 @@ class TeamManagementService:
                 {
                     "$set": {"updated_at": datetime.now(timezone.utc)},
                     "$unset": {"invite_token": "", "invite_token_expires_at": ""},
-                }
+                },
             )
 
         # Lookup planner company info
@@ -672,8 +694,12 @@ class TeamManagementService:
             # Either token doesn't exist, already used, or already being accepted
             existing = await self.team_collection.find_one({"invite_token": token})
             if existing and existing["status"] != TeamMemberStatus.PENDING.value:
-                raise HTTPException(status_code=400, detail="This invitation has already been accepted")
-            raise HTTPException(status_code=404, detail="Invitation not found or already used")
+                raise HTTPException(
+                    status_code=400, detail="This invitation has already been accepted"
+                )
+            raise HTTPException(
+                status_code=404, detail="Invitation not found or already used"
+            )
 
         created_user_object_id = None
         try:
@@ -686,17 +712,20 @@ class TeamManagementService:
                     await self._restore_pending_invite_lock(doc["_id"], now)
                     raise HTTPException(
                         status_code=400,
-                        detail="This invitation has expired. Please ask your team admin to resend it."
+                        detail="This invitation has expired. Please ask your team admin to resend it.",
                     )
 
             # Check if email already has an account
-            existing_user = await self.users_collection.find_one({"email": doc["email"]})
+            existing_user = await self.users_collection.find_one(
+                {"email": doc["email"]}
+            )
             if existing_user:
                 # Recover gracefully if a previous acceptance created the user
                 # but failed to finalize the team_members document.
                 if (
                     existing_user.get("role") == "team_member"
-                    and str(existing_user.get("team_member_id") or "") == str(doc["_id"])
+                    and str(existing_user.get("team_member_id") or "")
+                    == str(doc["_id"])
                     and existing_user.get("parent_planner_id") == doc["owner_id"]
                 ):
                     accepted_at = existing_user.get("created_at") or now
@@ -707,8 +736,10 @@ class TeamManagementService:
                         {"_id": doc["_id"]},
                         self._build_team_activation_update(
                             user_id=to_str_id(existing_user["_id"]),
-                            first_name=existing_user.get("first_name") or first_name.strip(),
-                            last_name=existing_user.get("last_name") or last_name.strip(),
+                            first_name=existing_user.get("first_name")
+                            or first_name.strip(),
+                            last_name=existing_user.get("last_name")
+                            or last_name.strip(),
                             accepted_at=accepted_at,
                         ),
                     )
@@ -717,12 +748,15 @@ class TeamManagementService:
                         f"Recovered partial team invite acceptance for {doc['email']} "
                         f"under owner {doc['owner_id']}"
                     )
-                    return {"success": True, "message": "Invitation accepted. You can now log in."}
+                    return {
+                        "success": True,
+                        "message": "Invitation accepted. You can now log in.",
+                    }
 
                 await self._restore_pending_invite_lock(doc["_id"], now)
                 raise HTTPException(
                     status_code=409,
-                    detail="An account with this email already exists. Please contact the team admin."
+                    detail="An account with this email already exists. Please contact the team admin.",
                 )
 
             # Validate password meets security policy
@@ -772,7 +806,9 @@ class TeamManagementService:
             # Log activity asynchronously (non-blocking)
             async def _log_acceptance():
                 try:
-                    owner = await self.users_collection.find_one({"_id": ObjectId(doc["owner_id"])})
+                    owner = await self.users_collection.find_one(
+                        {"_id": ObjectId(doc["owner_id"])}
+                    )
                     owner_email = owner.get("email", "") if owner else ""
                     await activity_log_service.log_team_member_accepted(
                         planner_email=owner_email,
@@ -780,16 +816,23 @@ class TeamManagementService:
                         member_name=f"{first_name} {last_name}",
                     )
                 except Exception as log_err:
-                    logger.warning("[TeamMgmt:accept] Activity log failed: %s", str(log_err))
+                    logger.warning(
+                        "[TeamMgmt:accept] Activity log failed: %s", str(log_err)
+                    )
 
             _run_background(_log_acceptance())
 
-            return {"success": True, "message": "Invitation accepted. You can now log in."}
+            return {
+                "success": True,
+                "message": "Invitation accepted. You can now log in.",
+            }
 
         except HTTPException:
             if created_user_object_id is not None:
                 try:
-                    await self.users_collection.delete_one({"_id": created_user_object_id})
+                    await self.users_collection.delete_one(
+                        {"_id": created_user_object_id}
+                    )
                 except Exception as rollback_error:
                     logger.error(
                         "[TeamMgmt:accept] Failed to roll back created team member user %s: %s",
@@ -801,7 +844,9 @@ class TeamManagementService:
         except Exception as e:
             if created_user_object_id is not None:
                 try:
-                    await self.users_collection.delete_one({"_id": created_user_object_id})
+                    await self.users_collection.delete_one(
+                        {"_id": created_user_object_id}
+                    )
                 except Exception as rollback_error:
                     logger.error(
                         "[TeamMgmt:accept] Failed to roll back created team member user %s: %s",
@@ -810,18 +855,31 @@ class TeamManagementService:
                     )
             # Unexpected error: rollback the transitional state
             await self._restore_pending_invite_lock(doc["_id"], now)
-            logger.error("[TeamMgmt:accept] Unexpected error during invite acceptance: %s", str(e))
-            raise HTTPException(status_code=500, detail="An error occurred while accepting the invitation. Please try again.")
+            logger.error(
+                "[TeamMgmt:accept] Unexpected error during invite acceptance: %s",
+                str(e),
+            )
+            raise HTTPException(
+                status_code=500,
+                detail="An error occurred while accepting the invitation. Please try again.",
+            )
 
     # ─── List / Get ───────────────────────────────────────────────────────
 
-    async def list_team_members(self, owner_id: str, skip: int = 0, limit: int = 50) -> dict:
+    async def list_team_members(
+        self, owner_id: str, skip: int = 0, limit: int = 50
+    ) -> dict:
         """List team members for a planner with pagination"""
         # Get total count for pagination metadata
         total = await self.team_collection.count_documents({"owner_id": owner_id})
 
         # Fetch paginated results
-        cursor = self.team_collection.find({"owner_id": owner_id}).sort("created_at", -1).skip(skip).limit(limit)
+        cursor = (
+            self.team_collection.find({"owner_id": owner_id})
+            .sort("created_at", -1)
+            .skip(skip)
+            .limit(limit)
+        )
         results = []
         async for doc in cursor:
             results.append(self._format_team_member(doc))
@@ -835,10 +893,12 @@ class TeamManagementService:
 
     async def get_team_member(self, owner_id: str, team_member_id: str) -> dict:
         """Get a single team member by ID"""
-        doc = await self.team_collection.find_one({
-            "_id": to_object_id(team_member_id, "team_member_id"),
-            "owner_id": owner_id,
-        })
+        doc = await self.team_collection.find_one(
+            {
+                "_id": to_object_id(team_member_id, "team_member_id"),
+                "owner_id": owner_id,
+            }
+        )
         if not doc:
             raise HTTPException(status_code=404, detail="Team member not found")
         return self._format_team_member(doc)
@@ -857,18 +917,28 @@ class TeamManagementService:
         If role changes, permissions reset to the new role's preset
         (unless custom_permissions are also provided).
         """
-        doc = await self.team_collection.find_one({
-            "_id": to_object_id(team_member_id, "team_member_id"),
-            "owner_id": owner_id,
-        })
+        doc = await self.team_collection.find_one(
+            {
+                "_id": to_object_id(team_member_id, "team_member_id"),
+                "owner_id": owner_id,
+            }
+        )
         if not doc:
             raise HTTPException(status_code=404, detail="Team member not found")
 
         if doc["status"] == TeamMemberStatus.DEACTIVATED.value:
-            raise HTTPException(status_code=400, detail="Cannot update a deactivated team member. Reactivate first.")
+            raise HTTPException(
+                status_code=400,
+                detail="Cannot update a deactivated team member. Reactivate first.",
+            )
 
         # P2-23: Reject empty updates
-        meaningful_keys = {"role", "custom_permissions", "wedding_access", "assigned_wedding_ids"}
+        meaningful_keys = {
+            "role",
+            "custom_permissions",
+            "wedding_access",
+            "assigned_wedding_ids",
+        }
         if not any(k in updates for k in meaningful_keys):
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
@@ -934,7 +1004,7 @@ class TeamManagementService:
                 planner_email=owner_email,
                 member_email=doc["email"],
                 changes=set_fields,
-                updated_by=owner_email
+                updated_by=owner_email,
             )
         )
 
@@ -944,10 +1014,12 @@ class TeamManagementService:
 
     async def deactivate_team_member(self, owner_id: str, team_member_id: str) -> dict:
         """Soft-deactivate a team member (they can no longer log in)"""
-        doc = await self.team_collection.find_one({
-            "_id": to_object_id(team_member_id, "team_member_id"),
-            "owner_id": owner_id,
-        })
+        doc = await self.team_collection.find_one(
+            {
+                "_id": to_object_id(team_member_id, "team_member_id"),
+                "owner_id": owner_id,
+            }
+        )
         if not doc:
             raise HTTPException(status_code=404, detail="Team member not found")
         if doc["status"] == TeamMemberStatus.DEACTIVATED.value:
@@ -958,7 +1030,13 @@ class TeamManagementService:
         # Step 1: Update team_members collection
         await self.team_collection.update_one(
             {"_id": doc["_id"]},
-            {"$set": {"status": TeamMemberStatus.DEACTIVATED.value, "deactivated_at": now, "updated_at": now}},
+            {
+                "$set": {
+                    "status": TeamMemberStatus.DEACTIVATED.value,
+                    "deactivated_at": now,
+                    "updated_at": now,
+                }
+            },
         )
 
         # Step 2: Deactivate user account (with rollback on failure)
@@ -969,21 +1047,29 @@ class TeamManagementService:
                     {"$set": {"is_active": False, "updated_at": now}},
                 )
                 if result.modified_count == 0:
-                    logger.warning("[TeamMgmt:deactivate] User doc not found for user_id=%s, continuing", doc["user_id"])
+                    logger.warning(
+                        "[TeamMgmt:deactivate] User doc not found for user_id=%s, continuing",
+                        doc["user_id"],
+                    )
             except Exception as e:
                 # Rollback step 1
-                logger.error("[TeamMgmt:deactivate] Failed to deactivate user account, rolling back: %s", str(e))
+                logger.error(
+                    "[TeamMgmt:deactivate] Failed to deactivate user account, rolling back: %s",
+                    str(e),
+                )
                 await self.team_collection.update_one(
                     {"_id": doc["_id"]},
-                    {"$set": {
-                        "status": TeamMemberStatus.ACTIVE.value,
-                        "deactivated_at": None,
-                        "updated_at": now
-                    }},
+                    {
+                        "$set": {
+                            "status": TeamMemberStatus.ACTIVE.value,
+                            "deactivated_at": None,
+                            "updated_at": now,
+                        }
+                    },
                 )
                 raise HTTPException(
                     status_code=500,
-                    detail="Failed to fully deactivate team member. Please try again."
+                    detail="Failed to fully deactivate team member. Please try again.",
                 )
 
         # Invalidate cached permissions so changes take effect immediately
@@ -995,14 +1081,18 @@ class TeamManagementService:
         # Log activity asynchronously (non-blocking)
         async def _log_deactivation():
             try:
-                owner = await self.users_collection.find_one({"_id": to_object_id(owner_id, "owner_id")})
+                owner = await self.users_collection.find_one(
+                    {"_id": to_object_id(owner_id, "owner_id")}
+                )
                 await activity_log_service.log_team_member_deactivated(
                     planner_email=owner.get("email", "") if owner else "",
                     member_email=doc["email"],
                     deactivated_by=owner.get("email", "") if owner else "",
                 )
             except Exception as log_err:
-                logger.warning("[TeamMgmt:deactivate] Activity log failed: %s", str(log_err))
+                logger.warning(
+                    "[TeamMgmt:deactivate] Activity log failed: %s", str(log_err)
+                )
 
         _run_background(_log_deactivation())
 
@@ -1010,12 +1100,16 @@ class TeamManagementService:
         doc["deactivated_at"] = now
         return self._format_team_member(doc)
 
-    async def reactivate_team_member(self, owner_id: str, owner_email: str, team_member_id: str) -> dict:
+    async def reactivate_team_member(
+        self, owner_id: str, owner_email: str, team_member_id: str
+    ) -> dict:
         """Reactivate a previously deactivated team member"""
-        doc = await self.team_collection.find_one({
-            "_id": to_object_id(team_member_id, "team_member_id"),
-            "owner_id": owner_id,
-        })
+        doc = await self.team_collection.find_one(
+            {
+                "_id": to_object_id(team_member_id, "team_member_id"),
+                "owner_id": owner_id,
+            }
+        )
         if not doc:
             raise HTTPException(status_code=404, detail="Team member not found")
         if doc["status"] != TeamMemberStatus.DEACTIVATED.value:
@@ -1051,7 +1145,13 @@ class TeamManagementService:
         # Step 1: Update team_members collection
         await self.team_collection.update_one(
             {"_id": doc["_id"]},
-            {"$set": {"status": TeamMemberStatus.ACTIVE.value, "deactivated_at": None, "updated_at": now}},
+            {
+                "$set": {
+                    "status": TeamMemberStatus.ACTIVE.value,
+                    "deactivated_at": None,
+                    "updated_at": now,
+                }
+            },
         )
 
         # Step 2: Re-enable user account (with rollback on failure)
@@ -1062,21 +1162,29 @@ class TeamManagementService:
                     {"$set": {"is_active": True, "updated_at": now}},
                 )
                 if result.modified_count == 0:
-                    logger.warning("[TeamMgmt:reactivate] User doc not found for user_id=%s, continuing", doc["user_id"])
+                    logger.warning(
+                        "[TeamMgmt:reactivate] User doc not found for user_id=%s, continuing",
+                        doc["user_id"],
+                    )
             except Exception as e:
                 # Rollback step 1
-                logger.error("[TeamMgmt:reactivate] Failed to reactivate user account, rolling back: %s", str(e))
+                logger.error(
+                    "[TeamMgmt:reactivate] Failed to reactivate user account, rolling back: %s",
+                    str(e),
+                )
                 await self.team_collection.update_one(
                     {"_id": doc["_id"]},
-                    {"$set": {
-                        "status": TeamMemberStatus.DEACTIVATED.value,
-                        "deactivated_at": datetime.now(timezone.utc),
-                        "updated_at": now
-                    }},
+                    {
+                        "$set": {
+                            "status": TeamMemberStatus.DEACTIVATED.value,
+                            "deactivated_at": datetime.now(timezone.utc),
+                            "updated_at": now,
+                        }
+                    },
                 )
                 raise HTTPException(
                     status_code=500,
-                    detail="Failed to fully reactivate team member. Please try again."
+                    detail="Failed to fully reactivate team member. Please try again.",
                 )
 
         # Invalidate cached permissions so changes take effect immediately
@@ -1096,9 +1204,7 @@ class TeamManagementService:
         doc["status"] = TeamMemberStatus.ACTIVE.value
         doc["deactivated_at"] = None
 
-
         return self._format_team_member(doc)
-
 
     async def remove_team_member(self, owner_id: str, team_member_id: str) -> dict:
         """
@@ -1107,21 +1213,29 @@ class TeamManagementService:
         For accepted members: also deactivate (not delete) the user account
         to preserve activity log references.
         """
-        doc = await self.team_collection.find_one({
-            "_id": to_object_id(team_member_id, "team_member_id"),
-            "owner_id": owner_id,
-        })
+        doc = await self.team_collection.find_one(
+            {
+                "_id": to_object_id(team_member_id, "team_member_id"),
+                "owner_id": owner_id,
+            }
+        )
         if not doc:
             raise HTTPException(status_code=404, detail="Team member not found")
 
         now = datetime.now(timezone.utc)
-        
+
         # Step 1: Deactivate user account and clear team_member_id foreign key
         if doc.get("user_id"):
             try:
                 await self.users_collection.update_one(
                     {"_id": to_object_id(doc["user_id"], "user_id")},
-                    {"$set": {"is_active": False, "team_member_id": None, "updated_at": now}},
+                    {
+                        "$set": {
+                            "is_active": False,
+                            "team_member_id": None,
+                            "updated_at": now,
+                        }
+                    },
                 )
             except Exception as e:
                 logger.error("[TeamMgmt:remove] Failed to deactivate user: %s", str(e))
@@ -1132,44 +1246,66 @@ class TeamManagementService:
             await self.team_collection.delete_one({"_id": doc["_id"]})
         except Exception as e:
             # Rollback step 1: restore the user account and team_member_id
-            logger.error("[TeamMgmt:remove] Failed to delete team_members doc, rolling back: %s", str(e))
+            logger.error(
+                "[TeamMgmt:remove] Failed to delete team_members doc, rolling back: %s",
+                str(e),
+            )
             if doc.get("user_id"):
                 try:
                     await self.users_collection.update_one(
                         {"_id": to_object_id(doc["user_id"], "user_id")},
-                        {"$set": {"is_active": True, "team_member_id": str(doc["_id"]), "updated_at": now}},
+                        {
+                            "$set": {
+                                "is_active": True,
+                                "team_member_id": str(doc["_id"]),
+                                "updated_at": now,
+                            }
+                        },
                     )
                 except Exception as rollback_err:
-                    logger.error("[TeamMgmt:remove] Rollback failed: %s", str(rollback_err))
+                    logger.error(
+                        "[TeamMgmt:remove] Rollback failed: %s", str(rollback_err)
+                    )
             raise HTTPException(
                 status_code=500,
-                detail="Failed to fully remove team member. Please try again."
+                detail="Failed to fully remove team member. Please try again.",
             )
 
         # Invalidate cached permissions so changes take effect immediately
         invalidate_team_cache(str(doc["_id"]))
 
-        logger.info(f"Team member {team_member_id} ({doc['email']}) removed by owner {owner_id}")
+        logger.info(
+            f"Team member {team_member_id} ({doc['email']}) removed by owner {owner_id}"
+        )
 
         # Log activity asynchronously (non-blocking)
         async def _log_removal():
             try:
-                owner = await self.users_collection.find_one({"_id": to_object_id(owner_id, "owner_id")})
+                owner = await self.users_collection.find_one(
+                    {"_id": to_object_id(owner_id, "owner_id")}
+                )
                 await activity_log_service.log_team_member_removed(
                     planner_email=owner.get("email", "") if owner else "",
                     member_email=doc["email"],
                     removed_by=owner.get("email", "") if owner else "",
                 )
             except Exception as log_err:
-                logger.warning("[TeamMgmt:remove] Activity log failed: %s", str(log_err))
+                logger.warning(
+                    "[TeamMgmt:remove] Activity log failed: %s", str(log_err)
+                )
 
         _run_background(_log_removal())
 
-        return {"success": True, "message": f"Team member {doc['email']} has been removed."}
+        return {
+            "success": True,
+            "message": f"Team member {doc['email']} has been removed.",
+        }
 
     # ─── Bulk Deactivation / Reactivation ─────────────────────────────────
 
-    async def bulk_deactivate_by_owner(self, owner_id: str, reason: str = "owner_subscription_cancelled") -> dict:
+    async def bulk_deactivate_by_owner(
+        self, owner_id: str, reason: str = "owner_subscription_cancelled"
+    ) -> dict:
         """
         Bulk-deactivate all active team members belonging to an owner.
         Used when owner's subscription is cancelled or account is suspended.
@@ -1178,10 +1314,12 @@ class TeamManagementService:
         now = datetime.now(timezone.utc)
 
         # Find all active team members for this owner
-        team_members = await self.team_collection.find({
-            "owner_id": owner_id,
-            "status": TeamMemberStatus.ACTIVE.value,
-        }).to_list(length=None)
+        team_members = await self.team_collection.find(
+            {
+                "owner_id": owner_id,
+                "status": TeamMemberStatus.ACTIVE.value,
+            }
+        ).to_list(length=None)
 
         if not team_members:
             return {"deactivated_count": 0, "team_member_ids": []}
@@ -1191,7 +1329,7 @@ class TeamManagementService:
 
         # Step 1: Update team_members collection with bulk deactivation
         try:
-            result = await self.team_collection.update_many(
+            await self.team_collection.update_many(
                 {
                     "owner_id": owner_id,
                     "status": TeamMemberStatus.ACTIVE.value,
@@ -1206,22 +1344,31 @@ class TeamManagementService:
                 },
             )
         except Exception as e:
-            logger.error("[TeamMgmt:bulk_deactivate] Failed to update team_members: %s", str(e))
+            logger.error(
+                "[TeamMgmt:bulk_deactivate] Failed to update team_members: %s", str(e)
+            )
             raise HTTPException(
                 status_code=500,
-                detail="Failed to bulk deactivate team members. Please try again."
+                detail="Failed to bulk deactivate team members. Please try again.",
             )
 
         # Step 2: Deactivate user accounts (with rollback on failure)
         if user_ids:
             try:
                 await self.users_collection.update_many(
-                    {"_id": {"$in": [to_object_id(uid, "user_id") for uid in user_ids]}},
+                    {
+                        "_id": {
+                            "$in": [to_object_id(uid, "user_id") for uid in user_ids]
+                        }
+                    },
                     {"$set": {"is_active": False, "updated_at": now}},
                 )
             except Exception as e:
                 # Rollback step 1
-                logger.error("[TeamMgmt:bulk_deactivate] Failed to deactivate user accounts, rolling back: %s", str(e))
+                logger.error(
+                    "[TeamMgmt:bulk_deactivate] Failed to deactivate user accounts, rolling back: %s",
+                    str(e),
+                )
                 await self.team_collection.update_many(
                     {
                         "owner_id": owner_id,
@@ -1238,18 +1385,22 @@ class TeamManagementService:
                 )
                 raise HTTPException(
                     status_code=500,
-                    detail="Failed to fully deactivate team members. Please try again."
+                    detail="Failed to fully deactivate team members. Please try again.",
                 )
 
         # Invalidate cached permissions for all affected members
         invalidate_team_cache_by_owner(owner_id)
 
-        logger.info(f"Bulk deactivated {len(team_member_ids)} team members for owner {owner_id}, reason: {reason}")
+        logger.info(
+            f"Bulk deactivated {len(team_member_ids)} team members for owner {owner_id}, reason: {reason}"
+        )
 
         # Log activity asynchronously (non-blocking)
         async def _log_bulk_deactivation():
             try:
-                owner = await self.users_collection.find_one({"_id": to_object_id(owner_id, "owner_id")})
+                owner = await self.users_collection.find_one(
+                    {"_id": to_object_id(owner_id, "owner_id")}
+                )
                 member_count = len(team_member_ids)
                 await activity_log_service.log_activity(
                     action="bulk_team_deactivation",
@@ -1258,10 +1409,12 @@ class TeamManagementService:
                         "reason": reason,
                         "member_count": member_count,
                         "team_member_ids": team_member_ids,
-                    }
+                    },
                 )
             except Exception as log_err:
-                logger.warning("[TeamMgmt:bulk_deactivate] Activity log failed: %s", str(log_err))
+                logger.warning(
+                    "[TeamMgmt:bulk_deactivate] Activity log failed: %s", str(log_err)
+                )
 
         _run_background(_log_bulk_deactivation())
 
@@ -1279,10 +1432,12 @@ class TeamManagementService:
         now = datetime.now(timezone.utc)
 
         # Find all suspended_owner_cancelled team members for this owner
-        team_members = await self.team_collection.find({
-            "owner_id": owner_id,
-            "status": "suspended_owner_cancelled",
-        }).to_list(length=None)
+        team_members = await self.team_collection.find(
+            {
+                "owner_id": owner_id,
+                "status": "suspended_owner_cancelled",
+            }
+        ).to_list(length=None)
 
         if not team_members:
             return {"reactivated_count": 0, "team_member_ids": []}
@@ -1292,7 +1447,7 @@ class TeamManagementService:
 
         # Step 1: Update team_members collection with bulk reactivation
         try:
-            result = await self.team_collection.update_many(
+            await self.team_collection.update_many(
                 {
                     "owner_id": owner_id,
                     "status": "suspended_owner_cancelled",
@@ -1307,22 +1462,31 @@ class TeamManagementService:
                 },
             )
         except Exception as e:
-            logger.error("[TeamMgmt:bulk_reactivate] Failed to update team_members: %s", str(e))
+            logger.error(
+                "[TeamMgmt:bulk_reactivate] Failed to update team_members: %s", str(e)
+            )
             raise HTTPException(
                 status_code=500,
-                detail="Failed to bulk reactivate team members. Please try again."
+                detail="Failed to bulk reactivate team members. Please try again.",
             )
 
         # Step 2: Reactivate user accounts (with rollback on failure)
         if user_ids:
             try:
                 await self.users_collection.update_many(
-                    {"_id": {"$in": [to_object_id(uid, "user_id") for uid in user_ids]}},
+                    {
+                        "_id": {
+                            "$in": [to_object_id(uid, "user_id") for uid in user_ids]
+                        }
+                    },
                     {"$set": {"is_active": True, "updated_at": now}},
                 )
             except Exception as e:
                 # Rollback step 1
-                logger.error("[TeamMgmt:bulk_reactivate] Failed to reactivate user accounts, rolling back: %s", str(e))
+                logger.error(
+                    "[TeamMgmt:bulk_reactivate] Failed to reactivate user accounts, rolling back: %s",
+                    str(e),
+                )
                 await self.team_collection.update_many(
                     {
                         "owner_id": owner_id,
@@ -1339,18 +1503,22 @@ class TeamManagementService:
                 )
                 raise HTTPException(
                     status_code=500,
-                    detail="Failed to fully reactivate team members. Please try again."
+                    detail="Failed to fully reactivate team members. Please try again.",
                 )
 
         # Invalidate cached permissions for all affected members
         invalidate_team_cache_by_owner(owner_id)
 
-        logger.info(f"Bulk reactivated {len(team_member_ids)} team members for owner {owner_id}")
+        logger.info(
+            f"Bulk reactivated {len(team_member_ids)} team members for owner {owner_id}"
+        )
 
         # Log activity asynchronously (non-blocking)
         async def _log_bulk_reactivation():
             try:
-                owner = await self.users_collection.find_one({"_id": to_object_id(owner_id, "owner_id")})
+                owner = await self.users_collection.find_one(
+                    {"_id": to_object_id(owner_id, "owner_id")}
+                )
                 member_count = len(team_member_ids)
                 await activity_log_service.log_activity(
                     action="bulk_team_reactivation",
@@ -1358,10 +1526,12 @@ class TeamManagementService:
                     details={
                         "member_count": member_count,
                         "team_member_ids": team_member_ids,
-                    }
+                    },
                 )
             except Exception as log_err:
-                logger.warning("[TeamMgmt:bulk_reactivate] Activity log failed: %s", str(log_err))
+                logger.warning(
+                    "[TeamMgmt:bulk_reactivate] Activity log failed: %s", str(log_err)
+                )
 
         _run_background(_log_bulk_reactivation())
 
@@ -1378,10 +1548,12 @@ class TeamManagementService:
         Returns None if the user is not a team member.
         Called by auth middleware on every request from a team_member.
         """
-        doc = await self.team_collection.find_one({
-            "user_id": user_id,
-            "status": TeamMemberStatus.ACTIVE.value,
-        })
+        doc = await self.team_collection.find_one(
+            {
+                "user_id": user_id,
+                "status": TeamMemberStatus.ACTIVE.value,
+            }
+        )
         if not doc:
             return None
 

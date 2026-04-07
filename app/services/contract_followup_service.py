@@ -4,6 +4,7 @@ Contract Follow-up Service
 Handles AI-drafted follow-up emails for unsigned contracts.
 Integrates with cron jobs to check for stale contracts.
 """
+
 from typing import Dict, Any, List, Optional
 from datetime import datetime, timedelta, timezone
 import logging
@@ -28,10 +29,7 @@ class ContractFollowupService:
         self.users = mongo.db["users"]
         self.weddings = mongo.db["weddings"]
 
-    async def check_unsigned_contracts(
-        self,
-        days_threshold: int = 3
-    ) -> List[Dict]:
+    async def check_unsigned_contracts(self, days_threshold: int = 3) -> List[Dict]:
         """
         Find contracts that have been sent but not signed after threshold days.
 
@@ -49,15 +47,15 @@ class ContractFollowupService:
                 "status": {"$in": ["sent", "viewed"]},
                 "sent_at": {"$lte": cutoff_date},
                 # Exclude contracts that already have a pending follow-up draft
-                "_id": {
-                    "$nin": await self._get_contracts_with_pending_drafts()
-                }
+                "_id": {"$nin": await self._get_contracts_with_pending_drafts()},
             }
 
             cursor = self.contracts.find(query).limit(50)
             contracts = await cursor.to_list(length=50)
 
-            logger.info(f"Found {len(contracts)} unsigned contracts older than {days_threshold} days")
+            logger.info(
+                f"Found {len(contracts)} unsigned contracts older than {days_threshold} days"
+            )
             return contracts
 
         except Exception as e:
@@ -68,8 +66,7 @@ class ContractFollowupService:
         """Get contract IDs that already have pending follow-up drafts."""
         try:
             cursor = self.followup_drafts.find(
-                {"status": "pending"},
-                {"contract_id": 1}
+                {"status": "pending"}, {"contract_id": 1}
             )
             drafts = await cursor.to_list(length=None)
             return [ObjectId(d["contract_id"]) for d in drafts if d.get("contract_id")]
@@ -81,7 +78,7 @@ class ContractFollowupService:
         self,
         contract: Dict,
         prefetched_wedding: Optional[Dict] = None,
-        prefetched_planner: Optional[Dict] = None
+        prefetched_planner: Optional[Dict] = None,
     ) -> Optional[Dict]:
         """
         Generate an AI-drafted follow-up email for an unsigned contract.
@@ -121,7 +118,9 @@ class ContractFollowupService:
 
             # Calculate days since sent for urgency context
             sent_at = contract.get("sent_at")
-            days_since_sent = (datetime.now(timezone.utc) - sent_at).days if sent_at else 0
+            days_since_sent = (
+                (datetime.now(timezone.utc) - sent_at).days if sent_at else 0
+            )
 
             context = {
                 "couple_name": couple.get("name", ""),
@@ -132,11 +131,15 @@ class ContractFollowupService:
                 "days_since_sent": days_since_sent,
                 "viewed": contract.get("status") == "viewed",
                 "viewed_at": contract.get("viewed_at"),
-                "wedding_date": contract.get("wedding_date") or (wedding.get("wedding_date") if wedding else None),
-                "planner_name": planner.get("business_name") or planner.get("name", "Your Wedding Planner"),
+                "wedding_date": contract.get("wedding_date")
+                or (wedding.get("wedding_date") if wedding else None),
+                "planner_name": planner.get("business_name")
+                or planner.get("name", "Your Wedding Planner"),
                 # Enhanced wedding context
                 "venue_name": wedding.get("venue", {}).get("name") if wedding else None,
-                "venue_location": wedding.get("venue", {}).get("location") if wedding else None,
+                "venue_location": wedding.get("venue", {}).get("location")
+                if wedding
+                else None,
                 "cultural_style": wedding.get("cultural_style") if wedding else None,
                 "guest_count": wedding.get("guest_count") if wedding else None,
                 "wedding_title": wedding.get("title") if wedding else None,
@@ -172,7 +175,7 @@ class ContractFollowupService:
                     tenant_id=str(contract.get("_id")),
                     feature="email_draft",
                     prompt=prompt,
-                    context=context
+                    context=context,
                 )
 
                 email_content = result.get("response", {})
@@ -190,14 +193,14 @@ class ContractFollowupService:
 
                 email_text = f"""Hi {couple_display},
 
-I hope this message finds you well! I wanted to follow up on the wedding planning agreement I sent over for {package.get('name', 'your wedding package')}.
+I hope this message finds you well! I wanted to follow up on the wedding planning agreement I sent over for {package.get("name", "your wedding package")}.
 
 I understand you might have questions or want to discuss some details before signing. Please don't hesitate to reach out - I'm here to help make this process as smooth as possible for you.
 
 Looking forward to hearing from you!
 
 Warm regards,
-{planner.get('business_name') or planner.get('name', 'Your Wedding Planner')}"""
+{planner.get("business_name") or planner.get("name", "Your Wedding Planner")}"""
 
             # Create draft record
             draft = {
@@ -211,7 +214,9 @@ Warm regards,
                 "created_at": datetime.now(timezone.utc),
                 "updated_at": datetime.now(timezone.utc),
                 "ai_generated": True,
-                "credits_used": result.get("credits_used", 0) if 'result' in dir() else 0
+                "credits_used": result.get("credits_used", 0)
+                if "result" in dir()
+                else 0,
             }
 
             result = await self.followup_drafts.insert_one(draft)
@@ -245,7 +250,7 @@ Warm regards,
                 "total_found": len(contracts),
                 "drafts_created": 0,
                 "errors": 0,
-                "processed_at": datetime.now(timezone.utc).isoformat()
+                "processed_at": datetime.now(timezone.utc).isoformat(),
             }
 
             if not contracts:
@@ -253,14 +258,10 @@ Warm regards,
 
             # Batch fetch all weddings and planners to avoid N+1 queries
             wedding_ids = [
-                ObjectId(c.get("wedding_id"))
-                for c in contracts
-                if c.get("wedding_id")
+                ObjectId(c.get("wedding_id")) for c in contracts if c.get("wedding_id")
             ]
             planner_ids = [
-                ObjectId(c.get("planner_id"))
-                for c in contracts
-                if c.get("planner_id")
+                ObjectId(c.get("planner_id")) for c in contracts if c.get("planner_id")
             ]
 
             # Fetch all weddings in one query
@@ -277,7 +278,9 @@ Warm regards,
                 planners = await cursor.to_list(length=None)
                 planners_map = {str(p["_id"]): p for p in planners}
 
-            logger.info(f"Batch loaded {len(weddings_map)} weddings, {len(planners_map)} planners")
+            logger.info(
+                f"Batch loaded {len(weddings_map)} weddings, {len(planners_map)} planners"
+            )
 
             for contract in contracts:
                 try:
@@ -286,9 +289,7 @@ Warm regards,
                     planner = planners_map.get(contract.get("planner_id"))
 
                     draft = await self.generate_followup_draft(
-                        contract,
-                        prefetched_wedding=wedding,
-                        prefetched_planner=planner
+                        contract, prefetched_wedding=wedding, prefetched_planner=planner
                     )
                     if draft:
                         results["drafts_created"] += 1
@@ -296,7 +297,9 @@ Warm regards,
                         # Notify planner (optional - could be email or in-app notification)
                         await self._notify_planner_of_draft(contract, draft)
                 except Exception as e:
-                    logger.error(f"Error processing contract {contract.get('_id')}: {str(e)}")
+                    logger.error(
+                        f"Error processing contract {contract.get('_id')}: {str(e)}"
+                    )
                     results["errors"] += 1
 
             logger.info(f"Follow-up processing complete: {results}")
@@ -311,7 +314,9 @@ Warm regards,
         try:
             # For now, just log. Could integrate with notification system.
             planner_id = contract.get("planner_id")
-            logger.info(f"Follow-up draft ready for planner {planner_id}, contract {contract.get('_id')}")
+            logger.info(
+                f"Follow-up draft ready for planner {planner_id}, contract {contract.get('_id')}"
+            )
 
             # Optionally send email notification
             # from app.services.contract_email_service import contract_email_service
@@ -331,10 +336,9 @@ Warm regards,
             List of pending draft dicts
         """
         try:
-            cursor = self.followup_drafts.find({
-                "planner_id": planner_id,
-                "status": "pending"
-            }).sort("created_at", -1)
+            cursor = self.followup_drafts.find(
+                {"planner_id": planner_id, "status": "pending"}
+            ).sort("created_at", -1)
 
             drafts = await cursor.to_list(length=50)
 
@@ -350,10 +354,7 @@ Warm regards,
             return []
 
     async def update_draft(
-        self,
-        draft_id: str,
-        planner_id: str,
-        updates: Dict
+        self, draft_id: str, planner_id: str, updates: Dict
     ) -> Optional[Dict]:
         """
         Update a follow-up draft (edit content, mark as sent/dismissed).
@@ -368,19 +369,13 @@ Warm regards,
         """
         try:
             allowed_fields = ["body", "subject", "status"]
-            update_data = {
-                k: v for k, v in updates.items()
-                if k in allowed_fields
-            }
+            update_data = {k: v for k, v in updates.items() if k in allowed_fields}
             update_data["updated_at"] = datetime.now(timezone.utc)
 
             result = await self.followup_drafts.find_one_and_update(
-                {
-                    "_id": ObjectId(draft_id),
-                    "planner_id": planner_id
-                },
+                {"_id": ObjectId(draft_id), "planner_id": planner_id},
                 {"$set": update_data},
-                return_document=True
+                return_document=True,
             )
 
             if result:
@@ -393,11 +388,7 @@ Warm regards,
             logger.error(f"Failed to update draft: {str(e)}")
             return None
 
-    async def send_draft(
-        self,
-        draft_id: str,
-        planner_id: str
-    ) -> bool:
+    async def send_draft(self, draft_id: str, planner_id: str) -> bool:
         """
         Send a follow-up draft as an actual email.
 
@@ -410,14 +401,17 @@ Warm regards,
         """
         try:
             import resend
+
             resend.api_key = settings.resend_api_key
 
             # Get draft
-            draft = await self.followup_drafts.find_one({
-                "_id": ObjectId(draft_id),
-                "planner_id": planner_id,
-                "status": "pending"
-            })
+            draft = await self.followup_drafts.find_one(
+                {
+                    "_id": ObjectId(draft_id),
+                    "planner_id": planner_id,
+                    "status": "pending",
+                }
+            )
 
             if not draft:
                 logger.error(f"Draft not found or not pending: {draft_id}")
@@ -425,16 +419,22 @@ Warm regards,
 
             # Get planner for from name
             planner = await self.users.find_one({"_id": ObjectId(planner_id)})
-            planner_name = planner.get("business_name") or planner.get("name", "Wedding Planner") if planner else "Wedding Planner"
+            planner_name = (
+                planner.get("business_name") or planner.get("name", "Wedding Planner")
+                if planner
+                else "Wedding Planner"
+            )
 
             # Send email
-            response = resend.Emails.send({
-                "from": f"{planner_name} via The Special Wedding <{settings.resend_from_email}>",
-                "to": [draft.get("couple_email")],
-                "subject": draft.get("subject"),
-                "text": draft.get("body"),
-                "reply_to": planner.get("email") if planner else None
-            })
+            resend.Emails.send(
+                {
+                    "from": f"{planner_name} via The Special Wedding <{settings.resend_from_email}>",
+                    "to": [draft.get("couple_email")],
+                    "subject": draft.get("subject"),
+                    "text": draft.get("body"),
+                    "reply_to": planner.get("email") if planner else None,
+                }
+            )
 
             # Mark as sent
             await self.followup_drafts.update_one(
@@ -443,9 +443,9 @@ Warm regards,
                     "$set": {
                         "status": "sent",
                         "sent_at": datetime.now(timezone.utc),
-                        "updated_at": datetime.now(timezone.utc)
+                        "updated_at": datetime.now(timezone.utc),
                     }
-                }
+                },
             )
 
             logger.info(f"Follow-up email sent for draft {draft_id}")

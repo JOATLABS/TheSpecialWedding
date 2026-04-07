@@ -58,6 +58,7 @@ async def migrate():
             if user_id:
                 try:
                     from bson import ObjectId
+
                     user = await users_col.find_one(
                         {"_id": ObjectId(user_id)}, {"email": 1}
                     )
@@ -65,9 +66,7 @@ async def migrate():
                         updates["user_email"] = user["email"]
                     else:
                         # Try matching by string ID (some old records)
-                        user = await users_col.find_one(
-                            {"_id": user_id}, {"email": 1}
-                        )
+                        user = await users_col.find_one({"_id": user_id}, {"email": 1})
                         if user:
                             updates["user_email"] = user["email"]
                 except Exception:
@@ -91,10 +90,7 @@ async def migrate():
 
         if updates:
             updates["updated_at"] = datetime.now(timezone.utc)
-            await subs_col.update_one(
-                {"_id": sub["_id"]},
-                {"$set": updates}
-            )
+            await subs_col.update_one({"_id": sub["_id"]}, {"$set": updates})
             subs_patched += 1
         else:
             subs_skipped += 1
@@ -110,7 +106,7 @@ async def migrate():
             "role": "wedding_planner",
             "trial_warning_sent": {"$exists": False},
         },
-        {"$set": {"trial_warning_sent": False}}
+        {"$set": {"trial_warning_sent": False}},
     )
     print(f"   trial_warning_sent added to {result1.modified_count} users")
 
@@ -119,7 +115,7 @@ async def migrate():
         {
             "registration_source": {"$exists": False},
         },
-        {"$set": {"registration_source": "legacy"}}
+        {"$set": {"registration_source": "legacy"}},
     )
     print(f"   registration_source added to {result2.modified_count} users")
 

@@ -4,6 +4,7 @@ Guest Export Service
 Generates QR codes for RSVP links, guest list PDFs, and bulk QR code ZIP files.
 Used by planners for physical invitations and printable guest lists.
 """
+
 from typing import List, Dict, Optional
 from html import escape
 from datetime import datetime, timezone
@@ -66,7 +67,9 @@ class GuestExportService:
             return buffer.getvalue()
 
         except ImportError:
-            logger.error("qrcode or pillow not installed. Run: pip install qrcode[pil] pillow")
+            logger.error(
+                "qrcode or pillow not installed. Run: pip install qrcode[pil] pillow"
+            )
             raise
         except Exception as e:
             logger.error(f"Failed to generate QR code: {str(e)}")
@@ -108,16 +111,10 @@ class GuestExportService:
         else:
             status = "Pending"
 
-        return {
-            **guest,
-            "rsvp_status": status,
-            "dietary": rsvp.get("dietary", "")
-        }
+        return {**guest, "rsvp_status": status, "dietary": rsvp.get("dietary", "")}
 
     async def generate_guest_list_pdf(
-        self,
-        wedding_id: str,
-        wedding_name: str = "Wedding"
+        self, wedding_id: str, wedding_name: str = "Wedding"
     ) -> bytes:
         """
         Generate a PDF of the guest list table.
@@ -138,9 +135,9 @@ class GuestExportService:
             ).to_list(length=None)
 
             # Fetch all RSVPs for the wedding
-            rsvps = await self.rsvp_collection.find(
-                {"wedding_id": wedding_id}
-            ).to_list(length=None)
+            rsvps = await self.rsvp_collection.find({"wedding_id": wedding_id}).to_list(
+                length=None
+            )
 
             # Create RSVP lookup map
             rsvp_map = {str(r.get("guest_id", "")): r for r in rsvps}
@@ -289,7 +286,7 @@ class GuestExportService:
             <body>
                 <div class="header">
                     <h1>{wedding_name} - Guest List</h1>
-                    <p>Generated on {datetime.now(timezone.utc).strftime('%B %d, %Y at %H:%M UTC')}</p>
+                    <p>Generated on {datetime.now(timezone.utc).strftime("%B %d, %Y at %H:%M UTC")}</p>
                 </div>
 
                 <table>
@@ -344,11 +341,7 @@ class GuestExportService:
             logger.error(f"Failed to generate guest list PDF: {str(e)}")
             raise
 
-    async def generate_guests_qr_zip(
-        self,
-        guests: List[Dict],
-        slug: str
-    ) -> bytes:
+    async def generate_guests_qr_zip(self, guests: List[Dict], slug: str) -> bytes:
         """
         Generate a ZIP file containing QR codes for multiple guests.
 
@@ -362,11 +355,13 @@ class GuestExportService:
         try:
             buffer = BytesIO()
 
-            with zipfile.ZipFile(buffer, 'w', zipfile.ZIP_DEFLATED) as zf:
+            with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as zf:
                 for guest in guests:
                     token = guest.get("token")
                     if not token:
-                        logger.warning(f"Guest {guest.get('name')} has no token, skipping")
+                        logger.warning(
+                            f"Guest {guest.get('name')} has no token, skipping"
+                        )
                         continue
 
                     # Build URL and generate QR
@@ -375,7 +370,9 @@ class GuestExportService:
 
                     # Create safe filename
                     name = guest.get("name", "Unknown")
-                    safe_name = "".join(c if c.isalnum() or c in " -_" else "_" for c in name)
+                    safe_name = "".join(
+                        c if c.isalnum() or c in " -_" else "_" for c in name
+                    )
                     safe_name = safe_name.replace(" ", "_")[:50]
 
                     # Add short token suffix for uniqueness
@@ -417,8 +414,8 @@ class GuestExportService:
             escaped_upload_url = escape(upload_url)
             close_label = (
                 upload_closes_at.astimezone(timezone.utc).strftime("%B %d, %Y")
-                if upload_closes_at else
-                "After the celebration"
+                if upload_closes_at
+                else "After the celebration"
             )
             qr_base64 = base64.b64encode(qr_png_bytes).decode("ascii")
 
@@ -606,9 +603,7 @@ class GuestExportService:
             raise
 
     async def get_single_guest_qr(
-        self,
-        guest_id: str,
-        wedding_id: str
+        self, guest_id: str, wedding_id: str
     ) -> Optional[tuple]:
         """
         Get QR code for a single guest.
@@ -623,10 +618,9 @@ class GuestExportService:
         from bson import ObjectId
 
         try:
-            guest = await self.guest_collection.find_one({
-                "_id": ObjectId(guest_id),
-                "wedding_id": wedding_id
-            })
+            guest = await self.guest_collection.find_one(
+                {"_id": ObjectId(guest_id), "wedding_id": wedding_id}
+            )
 
             if not guest:
                 return None

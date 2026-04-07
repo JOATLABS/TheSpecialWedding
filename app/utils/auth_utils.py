@@ -59,7 +59,12 @@ def verify_token(token: str):
         raise ValueError("Invalid token")
 
 
-def set_auth_cookie(response: Response, cookie_name: str, token: str, max_age: int = ACCESS_TOKEN_COOKIE_MAX_AGE) -> None:
+def set_auth_cookie(
+    response: Response,
+    cookie_name: str,
+    token: str,
+    max_age: int = ACCESS_TOKEN_COOKIE_MAX_AGE,
+) -> None:
     response.set_cookie(
         key=cookie_name,
         value=token,

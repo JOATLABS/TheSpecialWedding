@@ -13,9 +13,7 @@ class Settings:
     SECRET_KEY: Optional[str] = os.getenv("SECRET_KEY")
     API_KEY: Optional[str] = os.getenv("API_KEY")
     PLATFORM_METRICS_TOKEN: Optional[str] = (
-        os.getenv("PLATFORM_METRICS_TOKEN")
-        or os.getenv("API_TOKEN")
-        or API_KEY
+        os.getenv("PLATFORM_METRICS_TOKEN") or os.getenv("API_TOKEN") or API_KEY
     )
 
     # ==================== URL Configuration ====================

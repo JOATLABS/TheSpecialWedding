@@ -19,6 +19,7 @@ from bson import ObjectId
 
 class PlannerNotificationTypes:
     """Notification type constants with Final type annotations for proper Literal inference"""
+
     FORM_SUBMISSION: Final[Literal["form_submission"]] = "form_submission"
     RSVP_UPDATE: Final[Literal["rsvp_update"]] = "rsvp_update"
     GUEST_MESSAGE: Final[Literal["guest_message"]] = "guest_message"
@@ -28,7 +29,9 @@ class PlannerNotificationTypes:
     VENDOR_RESPONSE: Final[Literal["vendor_response"]] = "vendor_response"
     REMINDER: Final[Literal["reminder"]] = "reminder"
     SYSTEM: Final[Literal["system"]] = "system"
-    SUPPORT_TICKET_RESPONSE: Final[Literal["support_ticket_response"]] = "support_ticket_response"
+    SUPPORT_TICKET_RESPONSE: Final[Literal["support_ticket_response"]] = (
+        "support_ticket_response"
+    )
     DELIVERY_FAILURE: Final[Literal["delivery_failure"]] = "delivery_failure"
     BULK_SEND_SUMMARY: Final[Literal["bulk_send_summary"]] = "bulk_send_summary"
     # Sprint 3: Couple portal notification types
@@ -56,18 +59,23 @@ NotificationType = Literal[
 
 class PlannerNotificationCreate(BaseModel):
     """Model for creating a planner activity notification"""
+
     planner_id: str = Field(..., description="The planner's user ID or email")
     wedding_id: Optional[str] = Field(None, description="Associated wedding ID")
     type: NotificationType = Field(..., description="Notification type")
     title: str = Field(..., min_length=1, max_length=200)
     message: str = Field(..., min_length=1, max_length=1000)
-    metadata: Optional[dict] = Field(default_factory=lambda: {}, description="Additional context (guest name, form type, amount, etc.)")
+    metadata: Optional[dict] = Field(
+        default_factory=lambda: {},
+        description="Additional context (guest name, form type, amount, etc.)",
+    )
     priority: Literal["low", "medium", "high"] = Field(default="medium")
     action_url: Optional[str] = Field(None, description="Deep link to relevant page")
 
 
 class PlannerNotificationResponse(BaseModel):
     """Response model for planner notification"""
+
     id: str
     planner_id: str
     wedding_id: Optional[str]
@@ -94,7 +102,7 @@ def create_notification_document(
     wedding_id: Optional[str] = None,
     metadata: Optional[dict] = None,
     priority: str = "medium",
-    action_url: Optional[str] = None
+    action_url: Optional[str] = None,
 ) -> dict:
     """
     Create a notification document for MongoDB insertion.
@@ -121,5 +129,5 @@ def create_notification_document(
         "action_url": action_url,
         "is_read": False,
         "created_at": datetime.now(timezone.utc),
-        "read_at": None
+        "read_at": None,
     }

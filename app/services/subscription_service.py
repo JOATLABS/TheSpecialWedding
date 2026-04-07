@@ -4,8 +4,7 @@ from app.core.database import mongo
 from app.services.stripe_service import stripe_service
 from typing import List, Optional
 from datetime import datetime, timedelta, timezone
-from bson import ObjectId
-from app.utils.id_utils import to_object_id, to_str_id
+from app.utils.id_utils import to_object_id
 
 logger = logging.getLogger(__name__)
 
@@ -29,7 +28,9 @@ class SubscriptionService:
             # Check if plan ID already exists
             existing = await self.plans_collection.find_one({"_id": plan_data["_id"]})
             if existing:
-                raise HTTPException(status_code=400, detail="Plan with this name already exists")
+                raise HTTPException(
+                    status_code=400, detail="Plan with this name already exists"
+                )
 
             # Sync to Stripe first
             try:
@@ -38,15 +39,22 @@ class SubscriptionService:
             except Exception as e:
                 # Log but don't block creation if stripe fails?
                 # Better to fail so we don't have inconsistent state
-                raise HTTPException(status_code=500, detail=f"Failed to sync plan to Stripe: {str(e)}")
+                raise HTTPException(
+                    status_code=500, detail=f"Failed to sync plan to Stripe: {str(e)}"
+                )
 
             await self.plans_collection.insert_one(plan_data)
-            return {"message": "Subscription plan created successfully", "plan_id": plan_data["_id"]}
+            return {
+                "message": "Subscription plan created successfully",
+                "plan_id": plan_data["_id"],
+            }
 
         except HTTPException:
             raise
         except Exception as e:
-            raise HTTPException(status_code=500, detail=f"Error creating subscription plan: {str(e)}")
+            raise HTTPException(
+                status_code=500, detail=f"Error creating subscription plan: {str(e)}"
+            )
 
     async def list_plans(self, include_inactive: bool = False) -> List[dict]:
         """List all subscription plans"""
@@ -59,19 +67,25 @@ class SubscriptionService:
             plans.sort(key=lambda p: p.get("sort_order", p.get("display_order", 999)))
             return plans
         except Exception as e:
-            raise HTTPException(status_code=500, detail=f"Error listing plans: {str(e)}")
+            raise HTTPException(
+                status_code=500, detail=f"Error listing plans: {str(e)}"
+            )
 
     async def get_plan(self, plan_id: str) -> dict:
         """Get subscription plan by ID"""
         try:
             plan = await self.plans_collection.find_one({"_id": plan_id})
             if not plan:
-                raise HTTPException(status_code=404, detail="Subscription plan not found")
+                raise HTTPException(
+                    status_code=404, detail="Subscription plan not found"
+                )
             return plan
         except HTTPException:
             raise
         except Exception as e:
-            raise HTTPException(status_code=500, detail=f"Error retrieving plan: {str(e)}")
+            raise HTTPException(
+                status_code=500, detail=f"Error retrieving plan: {str(e)}"
+            )
 
     async def update_plan(self, plan_id: str, update_data: dict) -> dict:
         """Update subscription plan"""
@@ -86,7 +100,9 @@ class SubscriptionService:
             # Retrieve existing plan to merge with update data for Stripe sync
             existing_plan = await self.plans_collection.find_one({"_id": plan_id})
             if not existing_plan:
-                raise HTTPException(status_code=404, detail="Subscription plan not found")
+                raise HTTPException(
+                    status_code=404, detail="Subscription plan not found"
+                )
 
             merged_plan = {**existing_plan, **update_data}
 
@@ -95,11 +111,12 @@ class SubscriptionService:
                 stripe_data = stripe_service.sync_plan_to_stripe(merged_plan)
                 update_data.update(stripe_data)
             except Exception as e:
-                raise HTTPException(status_code=500, detail=f"Failed to sync plan to Stripe: {str(e)}")
+                raise HTTPException(
+                    status_code=500, detail=f"Failed to sync plan to Stripe: {str(e)}"
+                )
 
             await self.plans_collection.update_one(
-                {"_id": plan_id},
-                {"$set": update_data}
+                {"_id": plan_id}, {"$set": update_data}
             )
 
             return {"message": "Subscription plan updated successfully"}
@@ -107,27 +124,30 @@ class SubscriptionService:
         except HTTPException:
             raise
         except Exception as e:
-            raise HTTPException(status_code=500, detail=f"Error updating plan: {str(e)}")
+            raise HTTPException(
+                status_code=500, detail=f"Error updating plan: {str(e)}"
+            )
 
     async def delete_plan(self, plan_id: str) -> dict:
         """Delete subscription plan (only if no active subscriptions)"""
         try:
             # Check if any users have active subscriptions to this plan
-            active_subs = await self.subscriptions_collection.count_documents({
-                "plan_id": plan_id,
-                "status": {"$in": ["active", "trial"]}
-            })
+            active_subs = await self.subscriptions_collection.count_documents(
+                {"plan_id": plan_id, "status": {"$in": ["active", "trial"]}}
+            )
 
             if active_subs > 0:
                 raise HTTPException(
                     status_code=400,
-                    detail=f"Cannot delete plan: {active_subs} active subscriptions exist"
+                    detail=f"Cannot delete plan: {active_subs} active subscriptions exist",
                 )
 
             # Get the plan first to retrieve Stripe product ID
             plan = await self.plans_collection.find_one({"_id": plan_id})
             if not plan:
-                raise HTTPException(status_code=404, detail="Subscription plan not found")
+                raise HTTPException(
+                    status_code=404, detail="Subscription plan not found"
+                )
 
             # Archive the Stripe product (deactivate, don't delete)
             stripe_product_id = plan.get("stripe_product_id")
@@ -136,29 +156,46 @@ class SubscriptionService:
                     stripe_service.archive_stripe_product(stripe_product_id)
                 except Exception as e:
                     # Log but don't block deletion - Stripe sync can be fixed manually
-                    logger.warning(f"Failed to archive Stripe product {stripe_product_id}: {e}")
+                    logger.warning(
+                        f"Failed to archive Stripe product {stripe_product_id}: {e}"
+                    )
 
             result = await self.plans_collection.delete_one({"_id": plan_id})
 
             if result.deleted_count == 0:
-                raise HTTPException(status_code=404, detail="Subscription plan not found")
+                raise HTTPException(
+                    status_code=404, detail="Subscription plan not found"
+                )
 
-            return {"message": "Subscription plan deleted successfully", "stripe_archived": bool(stripe_product_id)}
+            return {
+                "message": "Subscription plan deleted successfully",
+                "stripe_archived": bool(stripe_product_id),
+            }
 
         except HTTPException:
             raise
         except Exception as e:
-            raise HTTPException(status_code=500, detail=f"Error deleting plan: {str(e)}")
+            raise HTTPException(
+                status_code=500, detail=f"Error deleting plan: {str(e)}"
+            )
 
     # User Subscription Management
-    async def assign_subscription(self, user_id: str, plan_id: str, billing_interval: str = "monthly",
-                                  trial_days: int = 0, creator_email: str = "",
-                                  existing_stripe_subscription_id: str = None,
-                                  existing_stripe_customer_id: str = None) -> dict:
+    async def assign_subscription(
+        self,
+        user_id: str,
+        plan_id: str,
+        billing_interval: str = "monthly",
+        trial_days: int = 0,
+        creator_email: str = "",
+        existing_stripe_subscription_id: str = None,
+        existing_stripe_customer_id: str = None,
+    ) -> dict:
         """Assign subscription plan to user"""
         try:
             # Verify user exists
-            user = await self.users_collection.find_one({"_id": to_object_id(user_id, "user_id")})
+            user = await self.users_collection.find_one(
+                {"_id": to_object_id(user_id, "user_id")}
+            )
             if not user:
                 raise HTTPException(status_code=404, detail="User not found")
 
@@ -166,13 +203,14 @@ class SubscriptionService:
             plan = await self.get_plan(plan_id)
 
             # Check if user already has an active subscription
-            existing_sub = await self.subscriptions_collection.find_one({
-                "user_id": user_id,
-                "status": {"$in": ["active", "trial"]}
-            })
+            existing_sub = await self.subscriptions_collection.find_one(
+                {"user_id": user_id, "status": {"$in": ["active", "trial"]}}
+            )
 
             if existing_sub:
-                raise HTTPException(status_code=400, detail="User already has an active subscription")
+                raise HTTPException(
+                    status_code=400, detail="User already has an active subscription"
+                )
 
             # Create subscription
             now = datetime.now(timezone.utc)
@@ -215,13 +253,17 @@ class SubscriptionService:
                 # Stripe subscription already exists — just ensure we have the customer ID
                 if not stripe_customer_id:
                     try:
-                        stripe_customer_id = await stripe_service.get_or_create_customer(
-                            user_id=user_id,
-                            email=user["email"],
-                            name=user.get("full_name") or user.get("email")
+                        stripe_customer_id = (
+                            await stripe_service.get_or_create_customer(
+                                user_id=user_id,
+                                email=user["email"],
+                                name=user.get("full_name") or user.get("email"),
+                            )
                         )
                     except Exception as e:
-                        logger.warning(f"Could not resolve Stripe customer for existing sub: {e}")
+                        logger.warning(
+                            f"Could not resolve Stripe customer for existing sub: {e}"
+                        )
                 logger.info(
                     f"Using existing Stripe subscription {stripe_subscription_id} "
                     f"for user {user_id} (skipped duplicate creation)"
@@ -232,11 +274,12 @@ class SubscriptionService:
                     stripe_customer_id = await stripe_service.get_or_create_customer(
                         user_id=user_id,
                         email=user["email"],
-                        name=user.get("full_name") or user.get("email")
+                        name=user.get("full_name") or user.get("email"),
                     )
 
                     if stripe_customer_id:
                         import stripe as stripe_lib
+
                         sub_params = {
                             "customer": stripe_customer_id,
                             "items": [{"price": stripe_price_id}],
@@ -280,11 +323,11 @@ class SubscriptionService:
                     "weddings_count": 0,
                     "ai_credits_used_month": 0,
                     "storage_used_gb": 0,
-                    "staff_seats_used": 0
+                    "staff_seats_used": 0,
                 },
                 "created_at": now,
                 "updated_at": now,
-                "created_by": creator_email
+                "created_by": creator_email,
             }
 
             await self.subscriptions_collection.insert_one(subscription_data)
@@ -307,30 +350,32 @@ class SubscriptionService:
                 user_updates["trial_warning_sent"] = False
 
             await self.users_collection.update_one(
-                {"_id": to_object_id(user_id, "user_id")},
-                {"$set": user_updates}
+                {"_id": to_object_id(user_id, "user_id")}, {"$set": user_updates}
             )
             return {
                 "message": "Subscription assigned successfully",
                 "subscription_id": subscription_data["_id"],
                 "status": subscription_data["status"],
-                "trial_end_date": subscription_data.get("trial_end_date")
+                "trial_end_date": subscription_data.get("trial_end_date"),
             }
         except HTTPException:
             raise
         except Exception as e:
-            raise HTTPException(status_code=500, detail=f"Error assigning subscription: {str(e)}")
+            raise HTTPException(
+                status_code=500, detail=f"Error assigning subscription: {str(e)}"
+            )
 
     async def get_user_subscription(self, user_id: str) -> Optional[dict]:
         """Get user's current subscription"""
         try:
-            subscription = await self.subscriptions_collection.find_one({
-                "user_id": user_id,
-                "status": {"$in": ["active", "trial"]}
-            })
+            subscription = await self.subscriptions_collection.find_one(
+                {"user_id": user_id, "status": {"$in": ["active", "trial"]}}
+            )
             return subscription
         except Exception as e:
-            raise HTTPException(status_code=500, detail=f"Error retrieving subscription: {str(e)}")
+            raise HTTPException(
+                status_code=500, detail=f"Error retrieving subscription: {str(e)}"
+            )
 
     async def cancel_subscription(self, user_id: str, reason: str = "") -> dict:
         """Cancel user subscription in both local DB and Stripe, with cleanup orchestration"""
@@ -343,10 +388,14 @@ class SubscriptionService:
             )
 
             if not subscription:
-                raise HTTPException(status_code=404, detail="No active subscription found")
+                raise HTTPException(
+                    status_code=404, detail="No active subscription found"
+                )
 
             # Fetch user document for email and other data
-            user = await self.users_collection.find_one({"_id": to_object_id(user_id, "user_id")})
+            user = await self.users_collection.find_one(
+                {"_id": to_object_id(user_id, "user_id")}
+            )
             if not user:
                 raise HTTPException(status_code=404, detail="User not found")
 
@@ -357,19 +406,21 @@ class SubscriptionService:
             if stripe_sub_id:
                 try:
                     import stripe
+
                     stripe.Subscription.cancel(stripe_sub_id)
-                    logger.info(f"Cancelled Stripe subscription {stripe_sub_id} for user {user_id}")
+                    logger.info(
+                        f"Cancelled Stripe subscription {stripe_sub_id} for user {user_id}"
+                    )
                 except Exception as e:
-                    logger.error(f"Failed to cancel Stripe subscription {stripe_sub_id}: {str(e)}")
+                    logger.error(
+                        f"Failed to cancel Stripe subscription {stripe_sub_id}: {str(e)}"
+                    )
                     # Still proceed with local cancellation to avoid inconsistent state
 
             # Update local subscription with optimistic locking
             subscription_version = subscription.get("version", 1)
             result = await self.subscriptions_collection.update_one(
-                {
-                    "_id": subscription["_id"],
-                    "version": subscription_version
-                },
+                {"_id": subscription["_id"], "version": subscription_version},
                 {
                     "$set": {
                         "status": "cancelled",
@@ -377,10 +428,10 @@ class SubscriptionService:
                         "updated_at": now,
                         "cancellation_reason": reason,
                         "cancellation_cleanup_completed": True,
-                        "cancellation_cleanup_at": now
+                        "cancellation_cleanup_at": now,
                     },
-                    "$inc": {"version": 1}
-                }
+                    "$inc": {"version": 1},
+                },
             )
 
             if result.matched_count == 0:
@@ -392,11 +443,13 @@ class SubscriptionService:
             # Update user status and set is_active to False
             await self.users_collection.update_one(
                 {"_id": to_object_id(user_id, "user_id")},
-                {"$set": {
-                    "subscription_status": "cancelled",
-                    "is_active": False,
-                    "updated_at": now
-                }}
+                {
+                    "$set": {
+                        "subscription_status": "cancelled",
+                        "is_active": False,
+                        "updated_at": now,
+                    }
+                },
             )
 
             logger.info(f"Core cancellation complete for user {user_id}")
@@ -407,46 +460,72 @@ class SubscriptionService:
                 "data_suspended": {},
                 "payments_paused": {},
                 "email_sent": False,
-                "couples_notified": 0
+                "couples_notified": 0,
             }
 
             # Phase 1: Deactivate team members
             try:
                 from app.services.team_management_service import TeamManagementService
+
                 team_service = TeamManagementService()
-                team_result = await team_service.bulk_deactivate_by_owner(user_id, "owner_subscription_cancelled")
-                cleanup_results["team_members_deactivated"] = team_result.get("deactivated_count", 0)
-                logger.info(f"Deactivated team members for user {user_id}: {team_result}")
+                team_result = await team_service.bulk_deactivate_by_owner(
+                    user_id, "owner_subscription_cancelled"
+                )
+                cleanup_results["team_members_deactivated"] = team_result.get(
+                    "deactivated_count", 0
+                )
+                logger.info(
+                    f"Deactivated team members for user {user_id}: {team_result}"
+                )
             except Exception as e:
-                logger.warning(f"Failed to deactivate team members for user {user_id}: {str(e)}")
+                logger.warning(
+                    f"Failed to deactivate team members for user {user_id}: {str(e)}"
+                )
 
             # Phase 2: Suspend planner data
             try:
                 from app.services.cascade_delete_service import cascade_delete_service
-                suspend_result = await cascade_delete_service.suspend_planner_data(user_id, user_email)
+
+                suspend_result = await cascade_delete_service.suspend_planner_data(
+                    user_id, user_email
+                )
                 cleanup_results["data_suspended"] = suspend_result
-                logger.info(f"Suspended planner data for user {user_id}: {suspend_result}")
+                logger.info(
+                    f"Suspended planner data for user {user_id}: {suspend_result}"
+                )
             except Exception as e:
-                logger.warning(f"Failed to suspend planner data for user {user_id}: {str(e)}")
+                logger.warning(
+                    f"Failed to suspend planner data for user {user_id}: {str(e)}"
+                )
 
             # Phase 3: Pause couple payments
             try:
                 from app.services.package_service import package_service
-                payments_result = await package_service.pause_planner_payment_links(user_id, user_email)
+
+                payments_result = await package_service.pause_planner_payment_links(
+                    user_id, user_email
+                )
                 cleanup_results["payments_paused"] = payments_result
-                logger.info(f"Paused payment links for user {user_id}: {payments_result}")
+                logger.info(
+                    f"Paused payment links for user {user_id}: {payments_result}"
+                )
             except Exception as e:
-                logger.warning(f"Failed to pause payment links for user {user_id}: {str(e)}")
+                logger.warning(
+                    f"Failed to pause payment links for user {user_id}: {str(e)}"
+                )
 
             # Phase 4: Send cancellation email to planner
             try:
                 from app.services.email_service_resend import ResendEmailService
+
                 email_service = ResendEmailService()
                 email_sent = await email_service.send_subscription_cancelled_email(user)
                 cleanup_results["email_sent"] = email_sent
                 logger.info(f"Sent cancellation email to user {user_id}: {email_sent}")
             except Exception as e:
-                logger.warning(f"Failed to send cancellation email to user {user_id}: {str(e)}")
+                logger.warning(
+                    f"Failed to send cancellation email to user {user_id}: {str(e)}"
+                )
 
             # Phase 5: Notify affected couples
             # Couples are stored in the `couple_users` collection with a `planner_id`
@@ -465,7 +544,9 @@ class SubscriptionService:
                     couples_notified = 0
 
                     # Build a wedding lookup map for the notification template
-                    wedding_ids = list({c.get("wedding_id") for c in couples if c.get("wedding_id")})
+                    wedding_ids = list(
+                        {c.get("wedding_id") for c in couples if c.get("wedding_id")}
+                    )
                     weddings_list = await self.weddings_collection.find(
                         {"_id": {"$in": wedding_ids}}
                     ).to_list(length=10000)
@@ -475,9 +556,7 @@ class SubscriptionService:
                         try:
                             wedding = weddings_map.get(couple.get("wedding_id"), {})
                             couple_notification_sent = await email_service.send_planner_cancelled_couple_notification(
-                                couple=couple,
-                                planner=user,
-                                wedding=wedding
+                                couple=couple, planner=user, wedding=wedding
                             )
                             if couple_notification_sent:
                                 couples_notified += 1
@@ -487,22 +566,28 @@ class SubscriptionService:
                             )
 
                     cleanup_results["couples_notified"] = couples_notified
-                    logger.info(f"Notified {couples_notified} couples about planner {user_id} cancellation")
+                    logger.info(
+                        f"Notified {couples_notified} couples about planner {user_id} cancellation"
+                    )
             except Exception as e:
                 logger.warning(f"Failed to notify couples for user {user_id}: {str(e)}")
 
             return {
                 "message": "Subscription cancelled successfully",
-                "cleanup": cleanup_results
+                "cleanup": cleanup_results,
             }
 
         except HTTPException:
             raise
         except Exception as e:
-            raise HTTPException(status_code=500, detail=f"Error cancelling subscription: {str(e)}")
+            raise HTTPException(
+                status_code=500, detail=f"Error cancelling subscription: {str(e)}"
+            )
 
     # Usage Tracking
-    async def initialize_usage_tracking(self, user_id: str, subscription_id: str) -> dict:
+    async def initialize_usage_tracking(
+        self, user_id: str, subscription_id: str
+    ) -> dict:
         """Initialize usage tracking for a new subscription"""
         try:
             now = datetime.now(timezone.utc)
@@ -522,42 +607,47 @@ class SubscriptionService:
                 "staff_seats_used": 0,
                 "current_month": current_month,
                 "credits_reset_date": credits_reset,
-                "last_updated": now
+                "last_updated": now,
             }
             # Use upsert to avoid duplicates
             await self.usage_collection.update_one(
-                {"_id": usage_data["_id"]},
-                {"$set": usage_data},
-                upsert=True
+                {"_id": usage_data["_id"]}, {"$set": usage_data}, upsert=True
             )
 
             return usage_data
 
         except Exception as e:
-            raise HTTPException(status_code=500, detail=f"Error initializing usage tracking: {str(e)}")
+            raise HTTPException(
+                status_code=500, detail=f"Error initializing usage tracking: {str(e)}"
+            )
 
     async def get_usage_stats(self, user_id: str) -> dict:
         """Get current usage statistics for user"""
         try:
             current_month = datetime.now(timezone.utc).strftime("%Y-%m")
-            usage = await self.usage_collection.find_one({
-                "user_id": user_id,
-                "current_month": current_month
-            })
+            usage = await self.usage_collection.find_one(
+                {"user_id": user_id, "current_month": current_month}
+            )
             if not usage:
                 # Initialize if doesn't exist
                 subscription = await self.get_user_subscription(user_id)
                 if subscription:
-                    usage = await self.initialize_usage_tracking(user_id, subscription["_id"])
+                    usage = await self.initialize_usage_tracking(
+                        user_id, subscription["_id"]
+                    )
                 else:
                     return {"error": "No active subscription found"}
 
             return usage
 
         except Exception as e:
-            raise HTTPException(status_code=500, detail=f"Error retrieving usage stats: {str(e)}")
+            raise HTTPException(
+                status_code=500, detail=f"Error retrieving usage stats: {str(e)}"
+            )
 
-    async def check_usage_limits(self, user_id: str, resource_type: str, requested_amount: int = 1) -> dict:
+    async def check_usage_limits(
+        self, user_id: str, resource_type: str, requested_amount: int = 1
+    ) -> dict:
         """Check if user can use more of a resource without exceeding limits
 
         Uses plan_snapshot (grandfathered limits) if available, falls back to current plan for
@@ -566,7 +656,9 @@ class SubscriptionService:
         try:
             subscription = await self.get_user_subscription(user_id)
             if not subscription:
-                raise HTTPException(status_code=403, detail="No active subscription found")
+                raise HTTPException(
+                    status_code=403, detail="No active subscription found"
+                )
 
             # Use grandfathered plan_snapshot if available, otherwise fetch current plan
             # This ensures users keep the limits they signed up for even if plan changes
@@ -588,7 +680,7 @@ class SubscriptionService:
                         "allowed": False,
                         "current_usage": current,
                         "limit": limit,
-                        "message": f"Wedding limit exceeded. Plan allows {limit} weddings, you have {current}"
+                        "message": f"Wedding limit exceeded. Plan allows {limit} weddings, you have {current}",
                     }
             elif resource_type == "ai_credits":
                 current = usage.get("ai_credits_used_month", 0)
@@ -600,14 +692,14 @@ class SubscriptionService:
                         "current_usage": current,
                         "limit": limit,
                         "remaining": remaining,
-                        "message": f"AI credits limit exceeded. Plan allows {limit} credits per month, you have used {current}"
+                        "message": f"AI credits limit exceeded. Plan allows {limit} credits per month, you have used {current}",
                     }
                 # Return early with remaining and limit for ai_credits
                 return {
                     "allowed": True,
                     "current_usage": current,
                     "limit": limit,
-                    "remaining": remaining
+                    "remaining": remaining,
                 }
 
             elif resource_type == "staff_seats":
@@ -618,17 +710,24 @@ class SubscriptionService:
                         "allowed": False,
                         "current_usage": current,
                         "limit": limit,
-                        "message": f"Staff seats limit exceeded. Plan allows {limit} staff accounts"
+                        "message": f"Staff seats limit exceeded. Plan allows {limit} staff accounts",
                     }
 
-            return {"allowed": True, "current_usage": usage.get(f"{resource_type}_used", 0)}
+            return {
+                "allowed": True,
+                "current_usage": usage.get(f"{resource_type}_used", 0),
+            }
 
         except HTTPException:
             raise
         except Exception as e:
-            raise HTTPException(status_code=500, detail=f"Error checking usage limits: {str(e)}")
+            raise HTTPException(
+                status_code=500, detail=f"Error checking usage limits: {str(e)}"
+            )
 
-    async def increment_usage(self, user_id: str, resource_type: str, amount: int = 1) -> dict:
+    async def increment_usage(
+        self, user_id: str, resource_type: str, amount: int = 1
+    ) -> dict:
         """Increment usage for a specific resource"""
         try:
             current_month = datetime.now(timezone.utc).strftime("%Y-%m")
@@ -636,11 +735,13 @@ class SubscriptionService:
             field_mapping = {
                 "weddings": "weddings_count",
                 "ai_credits": "ai_credits_used_month",
-                "staff_seats": "staff_seats_used"
+                "staff_seats": "staff_seats_used",
             }
 
             if resource_type not in field_mapping:
-                raise HTTPException(status_code=400, detail=f"Invalid resource type: {resource_type}")
+                raise HTTPException(
+                    status_code=400, detail=f"Invalid resource type: {resource_type}"
+                )
 
             field_name = field_mapping[resource_type]
 
@@ -648,19 +749,23 @@ class SubscriptionService:
                 {"user_id": user_id, "current_month": current_month},
                 {
                     "$inc": {field_name: amount},
-                    "$set": {"last_updated": datetime.now(timezone.utc)}
-                }
+                    "$set": {"last_updated": datetime.now(timezone.utc)},
+                },
             )
 
             if result.matched_count == 0:
-                raise HTTPException(status_code=404, detail="Usage tracking record not found")
+                raise HTTPException(
+                    status_code=404, detail="Usage tracking record not found"
+                )
 
             return {"message": f"Usage incremented: {resource_type} +{amount}"}
 
         except HTTPException:
             raise
         except Exception as e:
-            raise HTTPException(status_code=500, detail=f"Error incrementing usage: {str(e)}")
+            raise HTTPException(
+                status_code=500, detail=f"Error incrementing usage: {str(e)}"
+            )
 
     async def reset_monthly_usage(self, user_id: str) -> dict:
         """Reset monthly usage counters (called on subscription renewal)"""
@@ -675,7 +780,9 @@ class SubscriptionService:
 
             subscription = await self.get_user_subscription(user_id)
             if not subscription:
-                raise HTTPException(status_code=404, detail="No active subscription found")
+                raise HTTPException(
+                    status_code=404, detail="No active subscription found"
+                )
 
             # Create new usage tracking record for the new month
             new_usage_id = f"usage_{user_id}_{current_month}"
@@ -690,12 +797,10 @@ class SubscriptionService:
                 "staff_seats_used": 0,
                 "current_month": current_month,
                 "credits_reset_date": next_reset,
-                "last_updated": now
+                "last_updated": now,
             }
             await self.usage_collection.update_one(
-                {"_id": new_usage_id},
-                {"$set": usage_data},
-                upsert=True
+                {"_id": new_usage_id}, {"$set": usage_data}, upsert=True
             )
 
             return {"message": "Monthly usage counters reset successfully"}
@@ -703,7 +808,9 @@ class SubscriptionService:
         except HTTPException:
             raise
         except Exception as e:
-            raise HTTPException(status_code=500, detail=f"Error resetting monthly usage: {str(e)}")
+            raise HTTPException(
+                status_code=500, detail=f"Error resetting monthly usage: {str(e)}"
+            )
 
     # Analytics and Reporting
     async def get_subscription_analytics(self) -> dict:
@@ -712,7 +819,9 @@ class SubscriptionService:
             # Total subscriptions by status
             status_counts = {}
             for status in ["trial", "active", "cancelled", "expired", "suspended"]:
-                count = await self.subscriptions_collection.count_documents({"status": status})
+                count = await self.subscriptions_collection.count_documents(
+                    {"status": status}
+                )
                 status_counts[status] = count
 
             # Archived count (separate dimension - archived subs keep their original status)
@@ -722,7 +831,7 @@ class SubscriptionService:
             # Total subscriptions by plan
             plan_pipeline = [
                 {"$group": {"_id": "$plan_id", "count": {"$sum": 1}}},
-                {"$sort": {"count": -1}}
+                {"$sort": {"count": -1}},
             ]
             plan_counts_cursor = self.subscriptions_collection.aggregate(plan_pipeline)
             # Plan aggregation should have one doc per plan, cap at 500
@@ -731,9 +840,9 @@ class SubscriptionService:
             # For yearly subscriptions, we calculate the monthly equivalent (price_yearly / 12)
             # Safety cap: process active subscriptions in batches to avoid memory overload
             MAX_ACTIVE_SUBS = 100000
-            active_subs = await self.subscriptions_collection.find({
-                "status": "active"
-            }).to_list(length=MAX_ACTIVE_SUBS)
+            active_subs = await self.subscriptions_collection.find(
+                {"status": "active"}
+            ).to_list(length=MAX_ACTIVE_SUBS)
 
             mrr = 0
             mrr_from_monthly = 0
@@ -770,14 +879,18 @@ class SubscriptionService:
                     "from_monthly_billing": round(mrr_from_monthly, 2),
                     "from_yearly_billing": round(mrr_from_yearly, 2),
                     "monthly_subscribers": monthly_sub_count,
-                    "yearly_subscribers": yearly_sub_count
+                    "yearly_subscribers": yearly_sub_count,
                 },
-                "generated_at": datetime.now(timezone.utc)
+                "generated_at": datetime.now(timezone.utc),
             }
         except Exception as e:
-            raise HTTPException(status_code=500, detail=f"Error generating analytics: {str(e)}")
+            raise HTTPException(
+                status_code=500, detail=f"Error generating analytics: {str(e)}"
+            )
 
-    async def list_all_subscriptions(self, status_filter: Optional[str] = None) -> List[dict]:
+    async def list_all_subscriptions(
+        self, status_filter: Optional[str] = None
+    ) -> List[dict]:
         """List all user subscriptions with details (ROOT_ADMIN only)"""
         try:
             # Build query
@@ -792,7 +905,9 @@ class SubscriptionService:
 
             # Fetch all subscriptions (safety cap: admin view limited to 50k subscriptions)
             MAX_LIST_SUBSCRIPTIONS = 50000
-            subscriptions = await self.subscriptions_collection.find(query).to_list(length=MAX_LIST_SUBSCRIPTIONS)
+            subscriptions = await self.subscriptions_collection.find(query).to_list(
+                length=MAX_LIST_SUBSCRIPTIONS
+            )
 
             # Build lookup maps for plans and users
             # Safety cap: typically <500 plans and <10k users
@@ -828,13 +943,17 @@ class SubscriptionService:
                     "_id": str(sub.get("_id", "")),
                     "user_id": user_id,
                     "user_email": user.get("email", sub.get("user_email", "")),
-                    "company_name": user.get("company_name", sub.get("company_name", "")),
+                    "company_name": user.get(
+                        "company_name", sub.get("company_name", "")
+                    ),
                     "plan_id": plan_id,
                     "plan_name": plan.get("name", sub.get("plan_name", "Unknown Plan")),
                     "status": sub.get("status", "unknown"),
                     "billing_interval": billing_interval,
                     "amount": amount,
-                    "current_period_start": format_date(sub.get("current_period_start")),
+                    "current_period_start": format_date(
+                        sub.get("current_period_start")
+                    ),
                     "current_period_end": format_date(sub.get("current_period_end")),
                     "created_at": format_date(sub.get("created_at")),
                 }
@@ -842,7 +961,9 @@ class SubscriptionService:
 
             return formatted_subscriptions
         except Exception as e:
-            raise HTTPException(status_code=500, detail=f"Error listing subscriptions: {str(e)}")
+            raise HTTPException(
+                status_code=500, detail=f"Error listing subscriptions: {str(e)}"
+            )
 
 
 # Singleton instance

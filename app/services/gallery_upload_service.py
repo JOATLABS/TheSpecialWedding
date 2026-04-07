@@ -22,7 +22,7 @@ ALLOWED_GALLERY_TYPES = {
     "image/gif",
     "image/webp",
     "video/mp4",
-    "video/quicktime"
+    "video/quicktime",
 }
 
 # Get MEDIA_DOMAIN from environment - no fallback
@@ -32,10 +32,10 @@ if not _raw_media_domain:
     MEDIA_DOMAIN = None
 else:
     # Ensure MEDIA_DOMAIN has https:// protocol
-    if _raw_media_domain.startswith(('http://', 'https://')):
-        MEDIA_DOMAIN = _raw_media_domain.rstrip('/')
+    if _raw_media_domain.startswith(("http://", "https://")):
+        MEDIA_DOMAIN = _raw_media_domain.rstrip("/")
     else:
-        MEDIA_DOMAIN = f"https://{_raw_media_domain}".rstrip('/')
+        MEDIA_DOMAIN = f"https://{_raw_media_domain}".rstrip("/")
 
 
 class GalleryUploadService:
@@ -46,7 +46,7 @@ class GalleryUploadService:
             endpoint_url=os.getenv("S3_ENDPOINT_URL"),
             aws_access_key_id=os.getenv("S3_ACCESS_KEY_ID"),
             aws_secret_access_key=os.getenv("S3_SECRET_ACCESS_KEY"),
-            config=Config(signature_version='s3v4'),
+            config=Config(signature_version="s3v4"),
         )
 
     @staticmethod
@@ -100,7 +100,9 @@ class GalleryUploadService:
     ) -> list[str]:
         prefixes: list[str] = []
         if planner_scope:
-            prefixes.append(cls.build_wedding_storage_prefix(folder, wedding_slug, planner_scope))
+            prefixes.append(
+                cls.build_wedding_storage_prefix(folder, wedding_slug, planner_scope)
+            )
         prefixes.append(cls.build_wedding_storage_prefix(folder, wedding_slug))
         return prefixes
 
@@ -114,8 +116,12 @@ class GalleryUploadService:
         timestamp: Optional[str] = None,
     ) -> str:
         safe_filename = os.path.basename(str(filename))
-        safe_timestamp = timestamp or datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')
-        prefix = cls.build_wedding_storage_prefix(folder, wedding_slug, planner_scope).rstrip("/")
+        safe_timestamp = timestamp or datetime.now(timezone.utc).strftime(
+            "%Y%m%d_%H%M%S"
+        )
+        prefix = cls.build_wedding_storage_prefix(
+            folder, wedding_slug, planner_scope
+        ).rstrip("/")
         return f"{prefix}/{safe_timestamp}_{safe_filename}"
 
     @classmethod
@@ -180,7 +186,9 @@ class GalleryUploadService:
 
         for group in file_groups:
             for entry in group:
-                identity = self.build_legacy_storage_identity(entry["key"]) or entry["key"]
+                identity = (
+                    self.build_legacy_storage_identity(entry["key"]) or entry["key"]
+                )
                 if identity in seen:
                     continue
                 seen.add(identity)
@@ -188,7 +196,9 @@ class GalleryUploadService:
 
         return sorted(
             merged,
-            key=lambda item: self.build_legacy_storage_identity(item["key"]) or item["key"],
+            key=lambda item: (
+                self.build_legacy_storage_identity(item["key"]) or item["key"]
+            ),
             reverse=True,
         )
 
@@ -217,11 +227,13 @@ class GalleryUploadService:
             url = self.s3.generate_presigned_url(
                 ClientMethod="put_object",
                 Params={"Bucket": self.bucket_name, "Key": key},
-                ExpiresIn=expires_in
+                ExpiresIn=expires_in,
             )
             return {"upload_url": url, "key": key}
         except ClientError as e:
-            raise HTTPException(status_code=500, detail=f"Error creating upload URL: {str(e)}")
+            raise HTTPException(
+                status_code=500, detail=f"Error creating upload URL: {str(e)}"
+            )
 
     def create_presigned_url_with_wedding(
         self,
@@ -242,38 +254,44 @@ class GalleryUploadService:
             url = self.s3.generate_presigned_url(
                 ClientMethod="put_object",
                 Params={"Bucket": self.bucket_name, "Key": key},
-                ExpiresIn=expires_in
+                ExpiresIn=expires_in,
             )
             return {"upload_url": url, "key": key}
         except ClientError as e:
-            raise HTTPException(status_code=500, detail=f"Error creating upload URL: {str(e)}")
+            raise HTTPException(
+                status_code=500, detail=f"Error creating upload URL: {str(e)}"
+            )
 
     def get_file_url(self, key: str):
         try:
             url = self.s3.generate_presigned_url(
                 ClientMethod="get_object",
                 Params={"Bucket": self.bucket_name, "Key": key},
-                ExpiresIn=3600
+                ExpiresIn=3600,
             )
             return {"file_url": url}
         except ClientError as e:
-            raise HTTPException(status_code=500, detail=f"Error generating file URL: {str(e)}")
+            raise HTTPException(
+                status_code=500, detail=f"Error generating file URL: {str(e)}"
+            )
 
     def delete_file(self, key: str):
         try:
             self.s3.delete_object(Bucket=self.bucket_name, Key=key)
             return {"message": "File deleted successfully"}
         except ClientError as e:
-            error_code = e.response.get('Error', {}).get('Code', 'Unknown')
+            error_code = e.response.get("Error", {}).get("Code", "Unknown")
             logger.error(f"S3 delete error ({error_code}): {str(e)}")
-            raise HTTPException(status_code=500, detail=f"Error deleting file: {str(e)}")
+            raise HTTPException(
+                status_code=500, detail=f"Error deleting file: {str(e)}"
+            )
 
     def _format_listed_objects(self, objects):
         return [
             {
                 "key": obj["Key"],
                 "url": f"{MEDIA_DOMAIN}/{obj['Key']}" if MEDIA_DOMAIN else obj["Key"],
-                "size": obj.get("Size", 0)
+                "size": obj.get("Size", 0),
             }
             for obj in objects
         ]
@@ -302,9 +320,11 @@ class GalleryUploadService:
                 "has_more": response.get("IsTruncated", False),
             }
         except ClientError as e:
-            error_code = e.response.get('Error', {}).get('Code', 'Unknown')
+            error_code = e.response.get("Error", {}).get("Code", "Unknown")
             logger.error(f"S3 list error ({error_code}): {str(e)}")
-            raise HTTPException(status_code=500, detail=f"Error listing files: {str(e)}")
+            raise HTTPException(
+                status_code=500, detail=f"Error listing files: {str(e)}"
+            )
 
     def list_uploaded_files(self, prefix: str = "gallery/"):
         try:
@@ -330,9 +350,11 @@ class GalleryUploadService:
 
             return sorted(files, key=lambda x: x["key"], reverse=True)
         except ClientError as e:
-            error_code = e.response.get('Error', {}).get('Code', 'Unknown')
+            error_code = e.response.get("Error", {}).get("Code", "Unknown")
             logger.error(f"S3 list error ({error_code}): {str(e)}")
-            raise HTTPException(status_code=500, detail=f"Error listing files: {str(e)}")
+            raise HTTPException(
+                status_code=500, detail=f"Error listing files: {str(e)}"
+            )
 
     def list_wedding_files(
         self,
@@ -371,7 +393,9 @@ class GalleryUploadService:
                 limit=limit,
                 cursor=raw_cursor,
             )
-            legacy_page["next_cursor"] = self._encode_scoped_cursor("legacy", legacy_page.get("next_cursor"))
+            legacy_page["next_cursor"] = self._encode_scoped_cursor(
+                "legacy", legacy_page.get("next_cursor")
+            )
             return legacy_page
 
         primary_page = self.list_uploaded_files_page(
@@ -379,7 +403,9 @@ class GalleryUploadService:
             limit=limit,
             cursor=raw_cursor,
         )
-        primary_page["next_cursor"] = self._encode_scoped_cursor("primary", primary_page.get("next_cursor"))
+        primary_page["next_cursor"] = self._encode_scoped_cursor(
+            "primary", primary_page.get("next_cursor")
+        )
 
         if primary_page["has_more"] or not fallback_prefix:
             return primary_page
@@ -400,7 +426,9 @@ class GalleryUploadService:
             )
 
             for item in legacy_page["items"]:
-                identity = self.build_legacy_storage_identity(item["key"]) or item["key"]
+                identity = (
+                    self.build_legacy_storage_identity(item["key"]) or item["key"]
+                )
                 if identity in seen:
                     continue
                 seen.add(identity)
@@ -415,7 +443,9 @@ class GalleryUploadService:
 
         return {
             "items": combined_items,
-            "next_cursor": self._encode_scoped_cursor("legacy", legacy_cursor) if legacy_has_more else None,
+            "next_cursor": self._encode_scoped_cursor("legacy", legacy_cursor)
+            if legacy_has_more
+            else None,
             "has_more": legacy_has_more,
         }
 
@@ -450,7 +480,9 @@ class GalleryUploadService:
         except HTTPException:
             raise
         except Exception as e:
-            raise HTTPException(status_code=500, detail=f"Error generating QR code: {str(e)}")
+            raise HTTPException(
+                status_code=500, detail=f"Error generating QR code: {str(e)}"
+            )
 
     def upload_file_direct(
         self,
@@ -464,7 +496,7 @@ class GalleryUploadService:
             if file.content_type not in ALLOWED_GALLERY_TYPES:
                 raise HTTPException(
                     status_code=400,
-                    detail=f"File type '{file.content_type}' not allowed. Allowed types: {', '.join(sorted(ALLOWED_GALLERY_TYPES))}"
+                    detail=f"File type '{file.content_type}' not allowed. Allowed types: {', '.join(sorted(ALLOWED_GALLERY_TYPES))}",
                 )
 
             key = self.build_wedding_storage_key(
@@ -479,9 +511,11 @@ class GalleryUploadService:
         except HTTPException:
             raise
         except ClientError as e:
-            error_code = e.response.get('Error', {}).get('Code', 'Unknown')
+            error_code = e.response.get("Error", {}).get("Code", "Unknown")
             logger.error(f"S3 upload error ({error_code}): {str(e)}")
-            raise HTTPException(status_code=500, detail=f"Error uploading file: {str(e)}")
+            raise HTTPException(
+                status_code=500, detail=f"Error uploading file: {str(e)}"
+            )
 
 
 # =============================================================================
@@ -509,24 +543,28 @@ MAX_BLOG_IMAGE_SIZE_BYTES = 5 * 1024 * 1024  # 5 MB
 # Get BLOG_MEDIA_DOMAIN from environment
 _raw_blog_media_domain = os.getenv("BLOG_MEDIA_DOMAIN")
 if not _raw_blog_media_domain:
-    logger.warning("BLOG_MEDIA_DOMAIN environment variable is not set — falling back to AD_MEDIA_DOMAIN for blog assets")
+    logger.warning(
+        "BLOG_MEDIA_DOMAIN environment variable is not set — falling back to AD_MEDIA_DOMAIN for blog assets"
+    )
     BLOG_MEDIA_DOMAIN = None  # Will be set after AD_MEDIA_DOMAIN is resolved
 else:
-    if _raw_blog_media_domain.startswith(('http://', 'https://')):
-        BLOG_MEDIA_DOMAIN = _raw_blog_media_domain.rstrip('/')
+    if _raw_blog_media_domain.startswith(("http://", "https://")):
+        BLOG_MEDIA_DOMAIN = _raw_blog_media_domain.rstrip("/")
     else:
-        BLOG_MEDIA_DOMAIN = f"https://{_raw_blog_media_domain}".rstrip('/')
+        BLOG_MEDIA_DOMAIN = f"https://{_raw_blog_media_domain}".rstrip("/")
 
 # Get AD_MEDIA_DOMAIN from environment
 _raw_ad_media_domain = os.getenv("AD_MEDIA_DOMAIN")
 if not _raw_ad_media_domain:
-    logger.warning("AD_MEDIA_DOMAIN environment variable is not set — falling back to MEDIA_DOMAIN for ad assets")
+    logger.warning(
+        "AD_MEDIA_DOMAIN environment variable is not set — falling back to MEDIA_DOMAIN for ad assets"
+    )
     AD_MEDIA_DOMAIN = MEDIA_DOMAIN
 else:
-    if _raw_ad_media_domain.startswith(('http://', 'https://')):
-        AD_MEDIA_DOMAIN = _raw_ad_media_domain.rstrip('/')
+    if _raw_ad_media_domain.startswith(("http://", "https://")):
+        AD_MEDIA_DOMAIN = _raw_ad_media_domain.rstrip("/")
     else:
-        AD_MEDIA_DOMAIN = f"https://{_raw_ad_media_domain}".rstrip('/')
+        AD_MEDIA_DOMAIN = f"https://{_raw_ad_media_domain}".rstrip("/")
 
 
 class AdUploadService:
@@ -548,7 +586,7 @@ class AdUploadService:
             endpoint_url=os.getenv("S3_ENDPOINT_URL"),
             aws_access_key_id=os.getenv("S3_ACCESS_KEY_ID"),
             aws_secret_access_key=os.getenv("S3_SECRET_ACCESS_KEY"),
-            config=Config(signature_version='s3v4'),
+            config=Config(signature_version="s3v4"),
         )
 
     def create_presigned_upload_url(
@@ -562,11 +600,11 @@ class AdUploadService:
         if content_type not in ALLOWED_AD_TYPES:
             raise HTTPException(
                 status_code=400,
-                detail=f"File type '{content_type}' not allowed for ad images. Allowed: {', '.join(sorted(ALLOWED_AD_TYPES))}"
+                detail=f"File type '{content_type}' not allowed for ad images. Allowed: {', '.join(sorted(ALLOWED_AD_TYPES))}",
             )
 
         try:
-            timestamp = datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')
+            timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
             safe_filename = os.path.basename(filename)
             key = f"ads/{vendor_id}/{timestamp}_{safe_filename}"
 
@@ -585,7 +623,9 @@ class AdUploadService:
             return {"upload_url": url, "key": key, "cdn_url": cdn_url}
         except ClientError as e:
             logger.error(f"Ad presigned URL error: {str(e)}")
-            raise HTTPException(status_code=500, detail=f"Error creating ad upload URL: {str(e)}")
+            raise HTTPException(
+                status_code=500, detail=f"Error creating ad upload URL: {str(e)}"
+            )
 
     def delete_ad_file(self, key: str):
         """Delete an ad creative file from the ad bucket."""
@@ -593,31 +633,37 @@ class AdUploadService:
             self.s3.delete_object(Bucket=self.bucket_name, Key=key)
             return {"message": "Ad file deleted successfully"}
         except ClientError as e:
-            error_code = e.response.get('Error', {}).get('Code', 'Unknown')
+            error_code = e.response.get("Error", {}).get("Code", "Unknown")
             logger.error(f"Ad S3 delete error ({error_code}): {str(e)}")
-            raise HTTPException(status_code=500, detail=f"Error deleting ad file: {str(e)}")
+            raise HTTPException(
+                status_code=500, detail=f"Error deleting ad file: {str(e)}"
+            )
 
     def list_vendor_ad_files(self, vendor_id: str) -> list:
         """List all ad creative files for a specific vendor."""
         try:
             prefix = f"ads/{vendor_id}/"
             response = self.s3.list_objects_v2(Bucket=self.bucket_name, Prefix=prefix)
-            if 'Contents' not in response:
+            if "Contents" not in response:
                 return []
 
             files = [
                 {
                     "key": obj["Key"],
-                    "url": f"{AD_MEDIA_DOMAIN}/{obj['Key']}" if AD_MEDIA_DOMAIN else obj["Key"],
+                    "url": f"{AD_MEDIA_DOMAIN}/{obj['Key']}"
+                    if AD_MEDIA_DOMAIN
+                    else obj["Key"],
                     "size": obj.get("Size", 0),
                 }
                 for obj in response["Contents"]
             ]
             return sorted(files, key=lambda x: x["key"], reverse=True)
         except ClientError as e:
-            error_code = e.response.get('Error', {}).get('Code', 'Unknown')
+            error_code = e.response.get("Error", {}).get("Code", "Unknown")
             logger.error(f"Ad S3 list error ({error_code}): {str(e)}")
-            raise HTTPException(status_code=500, detail=f"Error listing ad files: {str(e)}")
+            raise HTTPException(
+                status_code=500, detail=f"Error listing ad files: {str(e)}"
+            )
 
 
 class BlogUploadService:
@@ -636,7 +682,7 @@ class BlogUploadService:
             endpoint_url=os.getenv("S3_ENDPOINT_URL"),
             aws_access_key_id=os.getenv("S3_ACCESS_KEY_ID"),
             aws_secret_access_key=os.getenv("S3_SECRET_ACCESS_KEY"),
-            config=Config(signature_version='s3v4'),
+            config=Config(signature_version="s3v4"),
         )
 
     def _get_cdn_domain(self):
@@ -644,16 +690,26 @@ class BlogUploadService:
         if BLOG_MEDIA_DOMAIN:
             return BLOG_MEDIA_DOMAIN
         if AD_MEDIA_DOMAIN:
-            logger.warning("BLOG_MEDIA_DOMAIN not set — falling back to AD_MEDIA_DOMAIN for blog assets")
+            logger.warning(
+                "BLOG_MEDIA_DOMAIN not set — falling back to AD_MEDIA_DOMAIN for blog assets"
+            )
             return AD_MEDIA_DOMAIN
         if MEDIA_DOMAIN:
-            logger.warning("BLOG_MEDIA_DOMAIN not set — falling back to MEDIA_DOMAIN for blog assets")
+            logger.warning(
+                "BLOG_MEDIA_DOMAIN not set — falling back to MEDIA_DOMAIN for blog assets"
+            )
             return MEDIA_DOMAIN
-        logger.warning("No CDN domain configured for blog assets — URLs will use raw keys instead")
+        logger.warning(
+            "No CDN domain configured for blog assets — URLs will use raw keys instead"
+        )
         return None
 
     def create_presigned_upload_url(
-        self, filename: str, folder: str = "blog", content_type: str = "image/jpeg", expires_in: int = 300
+        self,
+        filename: str,
+        folder: str = "blog",
+        content_type: str = "image/jpeg",
+        expires_in: int = 300,
     ) -> dict:
         """
         Generate a presigned PUT URL for the blog bucket.
@@ -663,11 +719,11 @@ class BlogUploadService:
         if content_type not in ALLOWED_BLOG_IMAGE_TYPES:
             raise HTTPException(
                 status_code=400,
-                detail=f"File type '{content_type}' not allowed. Allowed: {', '.join(sorted(ALLOWED_BLOG_IMAGE_TYPES))}"
+                detail=f"File type '{content_type}' not allowed. Allowed: {', '.join(sorted(ALLOWED_BLOG_IMAGE_TYPES))}",
             )
 
         try:
-            timestamp = datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')
+            timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
             safe_filename = os.path.basename(filename)
             key = f"{folder}/{timestamp}_{safe_filename}"
 
@@ -687,7 +743,9 @@ class BlogUploadService:
             return {"upload_url": url, "key": key, "cdn_url": cdn_url}
         except ClientError as e:
             logger.error(f"Blog presigned URL error: {str(e)}")
-            raise HTTPException(status_code=500, detail=f"Error creating blog upload URL: {str(e)}")
+            raise HTTPException(
+                status_code=500, detail=f"Error creating blog upload URL: {str(e)}"
+            )
 
     def delete_blog_file(self, key: str):
         """Delete a blog image from the blog bucket."""
@@ -695,6 +753,8 @@ class BlogUploadService:
             self.s3.delete_object(Bucket=self.bucket_name, Key=key)
             return {"message": "Blog file deleted successfully"}
         except ClientError as e:
-            error_code = e.response.get('Error', {}).get('Code', 'Unknown')
+            error_code = e.response.get("Error", {}).get("Code", "Unknown")
             logger.error(f"Blog S3 delete error ({error_code}): {str(e)}")
-            raise HTTPException(status_code=500, detail=f"Error deleting blog file: {str(e)}")
+            raise HTTPException(
+                status_code=500, detail=f"Error deleting blog file: {str(e)}"
+            )

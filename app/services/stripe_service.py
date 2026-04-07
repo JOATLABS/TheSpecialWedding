@@ -47,12 +47,11 @@ class StripeService:
         if not settings.stripe_enabled:
             raise HTTPException(
                 status_code=503,
-                detail="Stripe payment processing is currently disabled"
+                detail="Stripe payment processing is currently disabled",
             )
         if not settings.stripe_secret_key:
             raise HTTPException(
-                status_code=500,
-                detail="Stripe configuration error: Missing secret key"
+                status_code=500, detail="Stripe configuration error: Missing secret key"
             )
 
     def _get_billing_sender(self) -> Dict[str, Optional[str]]:
@@ -64,7 +63,9 @@ class StripeService:
 
     # ==================== CUSTOMER MANAGEMENT ====================
 
-    async def get_or_create_customer(self, user_id: str, email: str, name: Optional[str] = None) -> str:
+    async def get_or_create_customer(
+        self, user_id: str, email: str, name: Optional[str] = None
+    ) -> str:
         """
         Get existing Stripe customer ID or create a new customer
 
@@ -80,7 +81,9 @@ class StripeService:
 
         try:
             # Check if customer already exists in our database
-            customer_record = await self.stripe_customers_collection.find_one({"user_id": user_id})
+            customer_record = await self.stripe_customers_collection.find_one(
+                {"user_id": user_id}
+            )
 
             if customer_record and customer_record.get("stripe_customer_id"):
                 # Verify customer exists in Stripe
@@ -89,13 +92,13 @@ class StripeService:
                     return customer_record["stripe_customer_id"]
                 except InvalidRequestError:
                     # Customer doesn't exist in Stripe, create new one
-                    logger.warning(f"Stripe customer {customer_record['stripe_customer_id']} not found, creating new")
+                    logger.warning(
+                        f"Stripe customer {customer_record['stripe_customer_id']} not found, creating new"
+                    )
 
             # Create new Stripe customer
             customer = stripe.Customer.create(
-                email=email,
-                name=name or email,
-                metadata={"user_id": user_id}
+                email=email, name=name or email, metadata={"user_id": user_id}
             )
 
             # Save customer ID to database — rollback Stripe customer on failure
@@ -108,14 +111,16 @@ class StripeService:
                             "stripe_customer_id": customer.id,
                             "email": email,
                             "created_at": datetime.now(timezone.utc),
-                            "updated_at": datetime.now(timezone.utc)
+                            "updated_at": datetime.now(timezone.utc),
                         }
                     },
-                    upsert=True
+                    upsert=True,
                 )
             except Exception as db_err:
                 # MongoDB write failed — delete the orphaned Stripe customer
-                logger.error(f"MongoDB save failed after Stripe customer creation, rolling back: {db_err}")
+                logger.error(
+                    f"MongoDB save failed after Stripe customer creation, rolling back: {db_err}"
+                )
                 try:
                     stripe.Customer.delete(customer.id)
                     logger.info(f"Rolled back orphaned Stripe customer {customer.id}")
@@ -126,7 +131,7 @@ class StripeService:
                     )
                 raise HTTPException(
                     status_code=500,
-                    detail="Failed to save payment profile. Please try again."
+                    detail="Failed to save payment profile. Please try again.",
                 )
 
             logger.info(f"Created Stripe customer {customer.id} for user {user_id}")
@@ -134,12 +139,16 @@ class StripeService:
 
         except StripeError as e:
             logger.error(f"Stripe error creating customer: {str(e)}")
-            raise HTTPException(status_code=500, detail=f"Payment service error: {str(e)}")
+            raise HTTPException(
+                status_code=500, detail=f"Payment service error: {str(e)}"
+            )
         except HTTPException:
             raise  # Re-raise HTTPExceptions from the MongoDB rollback block
         except Exception as e:
             logger.error(f"Error creating Stripe customer: {str(e)}")
-            raise HTTPException(status_code=500, detail=f"Error creating customer: {str(e)}")
+            raise HTTPException(
+                status_code=500, detail=f"Error creating customer: {str(e)}"
+            )
 
     # ==================== CHECKOUT SESSION ====================
 
@@ -166,7 +175,7 @@ class StripeService:
             if is_metered and meter_event_name and not meter_id:
                 try:
                     # List meters to find matching event name
-                    meters = stripe.billing.Meter.list(status='active')
+                    meters = stripe.billing.Meter.list(status="active")
                     for meter in meters.data:
                         if meter.event_name == meter_event_name:
                             meter_id = meter.id
@@ -177,7 +186,7 @@ class StripeService:
             if is_metered and not meter_id:
                 raise HTTPException(
                     status_code=400,
-                    detail=f"Metered plan '{plan.get('_id')}' requires a valid Stripe meter_id or meter_event_name"
+                    detail=f"Metered plan '{plan.get('_id')}' requires a valid Stripe meter_id or meter_event_name",
                 )
 
             # 1. Create or Update Product
@@ -185,7 +194,7 @@ class StripeService:
                 product = stripe.Product.create(
                     name=plan["name"],
                     description=plan.get("description", ""),
-                    metadata={"plan_id": plan["_id"]}
+                    metadata={"plan_id": plan["_id"]},
                 )
                 product_id = product.id
             else:
@@ -195,14 +204,14 @@ class StripeService:
                         product_id,
                         name=plan["name"],
                         description=plan.get("description", ""),
-                        metadata={"plan_id": plan["_id"]}
+                        metadata={"plan_id": plan["_id"]},
                     )
                 except InvalidRequestError:
                     # Product might have been deleted in Stripe
                     product = stripe.Product.create(
                         name=plan["name"],
                         description=plan.get("description", ""),
-                        metadata={"plan_id": plan["_id"]}
+                        metadata={"plan_id": plan["_id"]},
                     )
                     product_id = product.id
 
@@ -233,19 +242,21 @@ class StripeService:
 
                         # Check basic fields
                         matches = (
-                            price.unit_amount == amount_cents and
-                            price.currency == "usd" and
-                            price.recurring and
-                            price.recurring.interval == interval
+                            price.unit_amount == amount_cents
+                            and price.currency == "usd"
+                            and price.recurring
+                            and price.recurring.interval == interval
                         )
 
                         # Check metered config
                         if matches and is_metered and price.recurring:
-                            matches = (price.recurring.usage_type == "metered")
+                            matches = price.recurring.usage_type == "metered"
                             if meter_id:
-                                matches = matches and (getattr(price.recurring, "meter", None) == meter_id)
+                                matches = matches and (
+                                    getattr(price.recurring, "meter", None) == meter_id
+                                )
                         elif matches and not is_metered and price.recurring:
-                            matches = (price.recurring.usage_type != "metered")
+                            matches = price.recurring.usage_type != "metered"
 
                         if matches:
                             return current_price_id
@@ -259,7 +270,7 @@ class StripeService:
                     "unit_amount": amount_cents,
                     "currency": "usd",
                     "recurring": expected_recurring,
-                    "nickname": f"{plan['name']} {interval.title()}"
+                    "nickname": f"{plan['name']} {interval.title()}",
                 }
 
                 if is_metered and meter_id:
@@ -272,19 +283,27 @@ class StripeService:
                 if current_price_id:
                     try:
                         stripe.Price.modify(current_price_id, active=False)
-                        logger.info(f"Deactivated old price {current_price_id} after creating new price {new_price.id}")
+                        logger.info(
+                            f"Deactivated old price {current_price_id} after creating new price {new_price.id}"
+                        )
                     except StripeError as e:
-                        logger.warning(f"Could not deactivate old price {current_price_id}: {e}")
+                        logger.warning(
+                            f"Could not deactivate old price {current_price_id}: {e}"
+                        )
 
                 return new_price.id
 
-            new_price_id_monthly = ensure_price(price_id_monthly, plan.get("price_monthly"), "month")
-            new_price_id_yearly = ensure_price(price_id_yearly, plan.get("price_yearly"), "year")
+            new_price_id_monthly = ensure_price(
+                price_id_monthly, plan.get("price_monthly"), "month"
+            )
+            new_price_id_yearly = ensure_price(
+                price_id_yearly, plan.get("price_yearly"), "year"
+            )
 
             result = {
                 "stripe_product_id": product_id,
                 "stripe_price_id_monthly": new_price_id_monthly,
-                "stripe_price_id_yearly": new_price_id_yearly
+                "stripe_price_id_yearly": new_price_id_yearly,
             }
 
             # If we found a meter_id and it wasn't in the plan, return it so we can update the DB
@@ -323,18 +342,22 @@ class StripeService:
 
         except InvalidRequestError as e:
             # Product might not exist in Stripe
-            logger.warning(f"Could not archive Stripe product {stripe_product_id}: {str(e)}")
+            logger.warning(
+                f"Could not archive Stripe product {stripe_product_id}: {str(e)}"
+            )
             return False
         except StripeError as e:
             logger.error(f"Stripe error archiving product: {str(e)}")
-            raise HTTPException(status_code=500, detail=f"Stripe Archive Error: {str(e)}")
+            raise HTTPException(
+                status_code=500, detail=f"Stripe Archive Error: {str(e)}"
+            )
 
     def report_meter_event(
         self,
         event_name: str,
         payload: Dict[str, Any],
         timestamp: Optional[datetime] = None,
-        identifier: Optional[str] = None
+        identifier: Optional[str] = None,
     ) -> Dict[str, Any]:
         """
         Send a usage event to Stripe Billing Meter.
@@ -361,7 +384,7 @@ class StripeService:
             meter_params: Dict[str, Any] = {
                 "event_name": event_name,
                 "payload": payload,
-                "timestamp": int(timestamp.timestamp())
+                "timestamp": int(timestamp.timestamp()),
             }
 
             # Add idempotency identifier if provided - prevents duplicate billing on retries
@@ -373,9 +396,15 @@ class StripeService:
         except StripeError as e:
             error_msg = str(e)
             # Duplicate identifier = already recorded (this is success, not error)
-            if "identifier" in error_msg.lower() and ("already" in error_msg.lower() or "duplicate" in error_msg.lower()):
+            if "identifier" in error_msg.lower() and (
+                "already" in error_msg.lower() or "duplicate" in error_msg.lower()
+            ):
                 logger.info(f"Meter event already recorded (idempotent): {identifier}")
-                return {"status": "success", "event_id": identifier, "already_recorded": True}
+                return {
+                    "status": "success",
+                    "event_id": identifier,
+                    "already_recorded": True,
+                }
             logger.error(f"Stripe error reporting usage: {error_msg}")
             return {"status": "error", "message": error_msg}
 
@@ -386,7 +415,7 @@ class StripeService:
         billing_interval: str = "monthly",
         success_url: Optional[str] = None,
         cancel_url: Optional[str] = None,
-        trial_days: Optional[int] = None
+        trial_days: Optional[int] = None,
     ) -> Dict[str, Any]:
         """
         Create a Stripe Checkout Session for subscription signup
@@ -413,10 +442,14 @@ class StripeService:
             # Get subscription plan
             plan = await self.plans_collection.find_one({"_id": plan_id})
             if not plan:
-                raise HTTPException(status_code=404, detail="Subscription plan not found")
+                raise HTTPException(
+                    status_code=404, detail="Subscription plan not found"
+                )
 
             if not plan.get("is_active", True):
-                raise HTTPException(status_code=400, detail="Subscription plan is not currently active")
+                raise HTTPException(
+                    status_code=400, detail="Subscription plan is not currently active"
+                )
 
             # Metered flag for downstream usage (quantity rules)
             is_metered = plan.get("is_metered", False)
@@ -435,7 +468,7 @@ class StripeService:
             customer_id = await self.get_or_create_customer(
                 user_id=user_id,
                 email=user["email"],
-                name=user.get("full_name") or user.get("email")
+                name=user.get("full_name") or user.get("email"),
             )
 
             # Determine price based on billing interval
@@ -444,19 +477,23 @@ class StripeService:
 
             # If Stripe IDs are missing, sync them now
             if not stripe_price_id:
-                logger.info(f"Stripe price ID missing for plan {plan_id}, syncing now...")
+                logger.info(
+                    f"Stripe price ID missing for plan {plan_id}, syncing now..."
+                )
                 sync_result = self.sync_plan_to_stripe(plan)
 
                 # Update plan in DB with new IDs
                 await self.plans_collection.update_one(
-                    {"_id": plan_id},
-                    {"$set": sync_result}
+                    {"_id": plan_id}, {"$set": sync_result}
                 )
 
                 stripe_price_id = sync_result.get(price_id_field)
 
             if not stripe_price_id:
-                raise HTTPException(status_code=500, detail=f"Failed to resolve Stripe price for {billing_interval} billing")
+                raise HTTPException(
+                    status_code=500,
+                    detail=f"Failed to resolve Stripe price for {billing_interval} billing",
+                )
 
             # Default URLs if not provided
             if not success_url:
@@ -509,10 +546,7 @@ class StripeService:
                 allow_promotion_codes=True,
                 billing_address_collection="auto",
                 payment_method_collection="always",
-                customer_update={
-                    "address": "auto",
-                    "name": "auto"
-                }
+                customer_update={"address": "auto", "name": "auto"},
             )
 
             # Save session reference — guard against concurrent checkouts.
@@ -528,7 +562,7 @@ class StripeService:
                         {"stripe_checkout_session_id": {"$exists": False}},
                         {"stripe_checkout_created_at": {"$exists": False}},
                         {"stripe_checkout_created_at": {"$lt": active_window}},
-                    ]
+                    ],
                 },
                 {
                     "$set": {
@@ -545,14 +579,17 @@ class StripeService:
                         "user_email": user["email"],
                         "start_date": datetime.now(timezone.utc),
                         "created_by": "system:public_signup",
-                    }
+                    },
                 },
                 upsert=True,
                 return_document=True,
             )
 
             # If the stored session_id differs, a concurrent request won the race
-            if result and result.get("stripe_checkout_session_id") != checkout_session.id:
+            if (
+                result
+                and result.get("stripe_checkout_session_id") != checkout_session.id
+            ):
                 logger.warning(
                     f"Concurrent checkout detected for user {user_id}. "
                     f"Active session: {result.get('stripe_checkout_session_id')}"
@@ -564,26 +601,32 @@ class StripeService:
                     pass  # best-effort cleanup
                 raise HTTPException(
                     status_code=409,
-                    detail="A checkout session is already in progress. Please complete or wait for it to expire before trying again."
+                    detail="A checkout session is already in progress. Please complete or wait for it to expire before trying again.",
                 )
 
-            logger.info(f"Created checkout session {checkout_session.id} for user {user_id}")
+            logger.info(
+                f"Created checkout session {checkout_session.id} for user {user_id}"
+            )
 
             return {
                 "session_id": checkout_session.id,
                 "url": checkout_session.url,
                 "customer_id": customer_id,
-                "expires_at": checkout_session.expires_at
+                "expires_at": checkout_session.expires_at,
             }
 
         except HTTPException:
             raise
         except StripeError as e:
             logger.error(f"Stripe error creating checkout session: {str(e)}")
-            raise HTTPException(status_code=500, detail=f"Payment service error: {str(e)}")
+            raise HTTPException(
+                status_code=500, detail=f"Payment service error: {str(e)}"
+            )
         except Exception as e:
             logger.error(f"Error creating checkout session: {str(e)}")
-            raise HTTPException(status_code=500, detail=f"Error creating checkout session: {str(e)}")
+            raise HTTPException(
+                status_code=500, detail=f"Error creating checkout session: {str(e)}"
+            )
 
     def _parse_timestamp(self, timestamp: Optional[int]) -> Optional[datetime]:
         """Convert Stripe timestamps to timezone-aware UTC datetimes."""
@@ -603,7 +646,9 @@ class StripeService:
 
         mapped = normalize_subscription_status(stripe_status)
         if mapped is None:
-            logger.warning(f"Unknown Stripe subscription status '{stripe_status}', defaulting to ACTIVE")
+            logger.warning(
+                f"Unknown Stripe subscription status '{stripe_status}', defaulting to ACTIVE"
+            )
             return SubscriptionStatus.ACTIVE.value
         return mapped
 
@@ -613,7 +658,7 @@ class StripeService:
         subscription: Optional[Dict[str, Any]],
         customer_id: Optional[str] = None,
         plan_id: Optional[str] = None,
-        extra_updates: Optional[Dict[str, Any]] = None
+        extra_updates: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         """Persist subscription details so MongoDB mirrors Stripe's lifecycle."""
 
@@ -628,28 +673,50 @@ class StripeService:
         # the current Stripe price on the subscription items.
         try:
             items_data = subscription.get("items", {})
-            items_list = items_data.get("data", []) if isinstance(items_data, dict) else (items_data.data if hasattr(items_data, "data") else [])
+            items_list = (
+                items_data.get("data", [])
+                if isinstance(items_data, dict)
+                else (items_data.data if hasattr(items_data, "data") else [])
+            )
             if items_list:
-                first_item = items_list[0] if isinstance(items_list[0], dict) else (items_list[0].to_dict() if hasattr(items_list[0], "to_dict") else {})
-                current_price_id = first_item.get("price", {}).get("id") if isinstance(first_item.get("price"), dict) else first_item.get("price")
+                first_item = (
+                    items_list[0]
+                    if isinstance(items_list[0], dict)
+                    else (
+                        items_list[0].to_dict()
+                        if hasattr(items_list[0], "to_dict")
+                        else {}
+                    )
+                )
+                current_price_id = (
+                    first_item.get("price", {}).get("id")
+                    if isinstance(first_item.get("price"), dict)
+                    else first_item.get("price")
+                )
                 if current_price_id:
                     # Look up which platform plan owns this Stripe price
-                    matched_plan = await self.plans_collection.find_one({
-                        "$or": [
-                            {"stripe_price_id_monthly": current_price_id},
-                            {"stripe_price_id_yearly": current_price_id},
-                        ]
-                    })
+                    matched_plan = await self.plans_collection.find_one(
+                        {
+                            "$or": [
+                                {"stripe_price_id_monthly": current_price_id},
+                                {"stripe_price_id_yearly": current_price_id},
+                            ]
+                        }
+                    )
                     if matched_plan:
                         resolved_plan_id = matched_plan["_id"]
                         if resolved_plan_id != plan_id:
-                            logger.info(f"Plan change detected via Stripe price: {plan_id} → {resolved_plan_id} (price: {current_price_id})")
+                            logger.info(
+                                f"Plan change detected via Stripe price: {plan_id} → {resolved_plan_id} (price: {current_price_id})"
+                            )
                             plan_id = resolved_plan_id
         except Exception as e:
             logger.warning(f"Could not resolve plan from Stripe price: {e}")
 
         if not user_id:
             user_id = subscription.get("metadata", {}).get("user_id")
+
+        stripe_subscription_id = subscription.get("id")
 
         # Fallback: if user_id still missing (e.g. Portal-initiated changes
         # where metadata may be empty), look it up from existing subscription
@@ -678,8 +745,12 @@ class StripeService:
 
         # Stripe API v13+: current_period_start/end moved to subscription items.
         # Try top-level first (legacy/older API), then fall back to first item.
-        current_period_start = self._parse_timestamp(subscription.get("current_period_start"))
-        current_period_end = self._parse_timestamp(subscription.get("current_period_end"))
+        current_period_start = self._parse_timestamp(
+            subscription.get("current_period_start")
+        )
+        current_period_end = self._parse_timestamp(
+            subscription.get("current_period_end")
+        )
 
         if not current_period_start or not current_period_end:
             items_data = subscription.get("items", {})
@@ -691,13 +762,25 @@ class StripeService:
                 items_list = []
 
             if items_list:
-                first_item = items_list[0] if isinstance(items_list[0], dict) else items_list[0].to_dict() if hasattr(items_list[0], 'to_dict') else {}
-                current_period_start = current_period_start or self._parse_timestamp(first_item.get("current_period_start"))
-                current_period_end = current_period_end or self._parse_timestamp(first_item.get("current_period_end"))
+                first_item = (
+                    items_list[0]
+                    if isinstance(items_list[0], dict)
+                    else items_list[0].to_dict()
+                    if hasattr(items_list[0], "to_dict")
+                    else {}
+                )
+                current_period_start = current_period_start or self._parse_timestamp(
+                    first_item.get("current_period_start")
+                )
+                current_period_end = current_period_end or self._parse_timestamp(
+                    first_item.get("current_period_end")
+                )
 
         # Final fallback: use start_date or now
         if not current_period_start:
-            current_period_start = self._parse_timestamp(subscription.get("start_date")) or now
+            current_period_start = (
+                self._parse_timestamp(subscription.get("start_date")) or now
+            )
         if not current_period_end:
             current_period_end = now
 
@@ -748,7 +831,10 @@ class StripeService:
             query["user_id"] = user_id
 
         if not query:
-            raise HTTPException(status_code=500, detail="Unable to associate Stripe subscription with local record")
+            raise HTTPException(
+                status_code=500,
+                detail="Unable to associate Stripe subscription with local record",
+            )
 
         update_document: Dict[str, Any] = {"$set": subscription_updates}
 
@@ -761,7 +847,10 @@ class StripeService:
             set_on_insert["user_id"] = user_id
         if plan_id and "plan_id" not in subscription_updates:
             set_on_insert["plan_id"] = plan_id
-        if stripe_subscription_id and "stripe_subscription_id" not in subscription_updates:
+        if (
+            stripe_subscription_id
+            and "stripe_subscription_id" not in subscription_updates
+        ):
             set_on_insert["stripe_subscription_id"] = stripe_subscription_id
 
         # Ensure required schema fields are populated on first insert
@@ -784,10 +873,16 @@ class StripeService:
         if user_id:
             user_doc = await self.users_collection.find_one(
                 {"_id": ObjectId(user_id)},
-                {"registration_source": 1, "email_verified": 1}
+                {"registration_source": 1, "email_verified": 1},
             )
-            is_public_signup = user_doc.get("registration_source") == "public_signup" if user_doc else False
-            is_email_verified = bool(user_doc.get("email_verified")) if user_doc else False
+            is_public_signup = (
+                user_doc.get("registration_source") == "public_signup"
+                if user_doc
+                else False
+            )
+            is_email_verified = (
+                bool(user_doc.get("email_verified")) if user_doc else False
+            )
 
             user_updates: Dict[str, Any] = {
                 "subscription_status": internal_status,
@@ -815,7 +910,10 @@ class StripeService:
             # verification for public signups. Keep those accounts blocked until
             # the verification link is used, while still removing the pending
             # signup TTL so a paid account is not reaped.
-            if internal_status in (SubscriptionStatus.ACTIVE.value, SubscriptionStatus.TRIAL.value):
+            if internal_status in (
+                SubscriptionStatus.ACTIVE.value,
+                SubscriptionStatus.TRIAL.value,
+            ):
                 if not is_public_signup or is_email_verified:
                     user_updates["is_active"] = True
                 unset_fields["pending_expires_at"] = ""
@@ -842,7 +940,11 @@ class StripeService:
         except Exception as txn_err:
             # Standalone MongoDB (no replica set) doesn't support transactions.
             # Fall back to sequential writes with a warning.
-            if "transaction" in str(txn_err).lower() or "replica" in str(txn_err).lower() or "topology" in str(txn_err).lower():
+            if (
+                "transaction" in str(txn_err).lower()
+                or "replica" in str(txn_err).lower()
+                or "topology" in str(txn_err).lower()
+            ):
                 logger.warning(
                     "MongoDB transactions not supported (standalone mode). "
                     "Falling back to sequential writes for subscription sync."
@@ -865,7 +967,9 @@ class StripeService:
                         f"matched={user_result.matched_count}, modified={user_result.modified_count}"
                     )
             else:
-                logger.error(f"Unexpected error in subscription sync transaction: {str(txn_err)}")
+                logger.error(
+                    f"Unexpected error in subscription sync transaction: {str(txn_err)}"
+                )
                 raise
 
         # ── Reactivation detection ──────────────────────────────────
@@ -888,7 +992,9 @@ class StripeService:
             logger.info(
                 "Subscription reactivation detected for user %s: %s → %s. "
                 "Triggering reactivation cleanup.",
-                user_id, previous_status, internal_status,
+                user_id,
+                previous_status,
+                internal_status,
             )
             try:
                 await self._handle_reactivation_cleanup(user_id)
@@ -896,7 +1002,8 @@ class StripeService:
                 # Fire-and-forget: don't block the sync on reactivation failure
                 logger.error(
                     "Reactivation cleanup failed for user %s: %s",
-                    user_id, str(reactivation_err),
+                    user_id,
+                    str(reactivation_err),
                 )
 
         return {
@@ -928,10 +1035,12 @@ class StripeService:
                     "user_id": user_id,
                     "cancellation_cleanup_completed": True,
                 },
-                {"$set": {
-                    "reactivation_cleanup_in_progress": True,
-                    "reactivation_cleanup_started_at": datetime.now(timezone.utc),
-                }},
+                {
+                    "$set": {
+                        "reactivation_cleanup_in_progress": True,
+                        "reactivation_cleanup_started_at": datetime.now(timezone.utc),
+                    }
+                },
                 return_document=False,
             )
             if claim is None:
@@ -942,12 +1051,18 @@ class StripeService:
                 )
                 return
         except Exception as e:
-            logger.warning("[Reactivation] Could not claim reactivation for user %s: %s", user_id, str(e))
+            logger.warning(
+                "[Reactivation] Could not claim reactivation for user %s: %s",
+                user_id,
+                str(e),
+            )
             # Proceed anyway — duplicate reactivation is less harmful than skipped reactivation
 
         user = await self.users_collection.find_one({"_id": ObjectId(user_id)})
         if not user:
-            logger.warning("[Reactivation] User %s not found, skipping cleanup", user_id)
+            logger.warning(
+                "[Reactivation] User %s not found, skipping cleanup", user_id
+            )
             return
 
         user_email = user.get("email", "")
@@ -955,42 +1070,60 @@ class StripeService:
         # Phase 1: Reactivate team members
         try:
             from app.services.team_management_service import TeamManagementService
+
             team_service = TeamManagementService()
             team_result = await team_service.bulk_reactivate_by_owner(owner_id=user_id)
             logger.info(
                 "[Reactivation] Phase 1 complete: reactivated %d team members for user %s",
-                team_result.get("reactivated_count", 0), user_id,
+                team_result.get("reactivated_count", 0),
+                user_id,
             )
         except Exception as e:
-            logger.error("[Reactivation] Phase 1 (team reactivation) failed for user %s: %s", user_id, str(e))
+            logger.error(
+                "[Reactivation] Phase 1 (team reactivation) failed for user %s: %s",
+                user_id,
+                str(e),
+            )
 
         # Phase 2: Unsuspend planner data
         try:
             from app.services.cascade_delete_service import CascadeDeleteService
+
             cascade_service = CascadeDeleteService()
             data_result = await cascade_service.unsuspend_planner_data(
                 planner_id=user_id, planner_email=user_email
             )
             logger.info(
                 "[Reactivation] Phase 2 complete: unsuspended data for user %s — %s",
-                user_id, str(data_result),
+                user_id,
+                str(data_result),
             )
         except Exception as e:
-            logger.error("[Reactivation] Phase 2 (data unsuspend) failed for user %s: %s", user_id, str(e))
+            logger.error(
+                "[Reactivation] Phase 2 (data unsuspend) failed for user %s: %s",
+                user_id,
+                str(e),
+            )
 
         # Phase 3: Resume payment links & scheduled payments
         try:
             from app.services.package_service import PackageService
+
             package_service = PackageService()
             payment_result = await package_service.resume_planner_payment_links(
                 planner_id=user_id, planner_email=user_email
             )
             logger.info(
                 "[Reactivation] Phase 3 complete: resumed payments for user %s — %s",
-                user_id, str(payment_result),
+                user_id,
+                str(payment_result),
             )
         except Exception as e:
-            logger.error("[Reactivation] Phase 3 (payment resume) failed for user %s: %s", user_id, str(e))
+            logger.error(
+                "[Reactivation] Phase 3 (payment resume) failed for user %s: %s",
+                user_id,
+                str(e),
+            )
 
         # Phase 4: Clear the cancellation and reactivation-in-progress flags
         try:
@@ -1008,9 +1141,16 @@ class StripeService:
                     },
                 },
             )
-            logger.info("[Reactivation] Phase 4 complete: cleared cancellation flags for user %s", user_id)
+            logger.info(
+                "[Reactivation] Phase 4 complete: cleared cancellation flags for user %s",
+                user_id,
+            )
         except Exception as e:
-            logger.error("[Reactivation] Phase 4 (clear flags) failed for user %s: %s", user_id, str(e))
+            logger.error(
+                "[Reactivation] Phase 4 (clear flags) failed for user %s: %s",
+                user_id,
+                str(e),
+            )
 
         logger.info("[Reactivation] All phases complete for user %s", user_id)
 
@@ -1019,7 +1159,7 @@ class StripeService:
     async def change_subscription_billing_interval(
         self,
         user_id: str,
-        new_billing_interval: str  # "monthly" or "yearly"
+        new_billing_interval: str,  # "monthly" or "yearly"
     ) -> Dict[str, Any]:
         """
         Change a user's subscription billing interval (monthly <-> yearly).
@@ -1036,31 +1176,40 @@ class StripeService:
         self._ensure_stripe_enabled()
 
         if new_billing_interval not in ("monthly", "yearly"):
-            raise HTTPException(status_code=400, detail="Billing interval must be 'monthly' or 'yearly'")
+            raise HTTPException(
+                status_code=400, detail="Billing interval must be 'monthly' or 'yearly'"
+            )
 
         try:
             # Get current subscription
-            subscription = await self.subscriptions_collection.find_one({
-                "user_id": user_id,
-                "status": {"$in": ["active", "trial"]}
-            })
+            subscription = await self.subscriptions_collection.find_one(
+                {"user_id": user_id, "status": {"$in": ["active", "trial"]}}
+            )
 
             if not subscription:
-                raise HTTPException(status_code=404, detail="No active subscription found")
+                raise HTTPException(
+                    status_code=404, detail="No active subscription found"
+                )
 
             stripe_subscription_id = subscription.get("stripe_subscription_id")
             if not stripe_subscription_id:
-                raise HTTPException(status_code=400, detail="Subscription not linked to Stripe")
+                raise HTTPException(
+                    status_code=400, detail="Subscription not linked to Stripe"
+                )
 
             current_interval = subscription.get("billing_interval", "monthly")
             if current_interval == new_billing_interval:
-                raise HTTPException(status_code=400, detail=f"Already on {new_billing_interval} billing")
+                raise HTTPException(
+                    status_code=400, detail=f"Already on {new_billing_interval} billing"
+                )
 
             # Get the plan to find the new price ID
             plan_id = subscription.get("plan_id")
             plan = await self.plans_collection.find_one({"_id": plan_id})
             if not plan:
-                raise HTTPException(status_code=404, detail="Subscription plan not found")
+                raise HTTPException(
+                    status_code=404, detail="Subscription plan not found"
+                )
 
             # Get the new price ID (field format: stripe_price_id_monthly / stripe_price_id_yearly)
             new_price_field = f"stripe_price_id_{new_billing_interval}"
@@ -1069,14 +1218,16 @@ class StripeService:
             if not new_price_id:
                 raise HTTPException(
                     status_code=400,
-                    detail=f"No {new_billing_interval} pricing available for this plan"
+                    detail=f"No {new_billing_interval} pricing available for this plan",
                 )
 
             # Retrieve current Stripe subscription to get item ID
             stripe_sub = stripe.Subscription.retrieve(stripe_subscription_id)
 
             if not stripe_sub.get("items") or not stripe_sub["items"].get("data"):
-                raise HTTPException(status_code=500, detail="Unable to retrieve subscription items")
+                raise HTTPException(
+                    status_code=500, detail="Unable to retrieve subscription items"
+                )
 
             subscription_item_id = stripe_sub["items"]["data"][0]["id"]
 
@@ -1084,16 +1235,18 @@ class StripeService:
             # proration_behavior: 'create_prorations' applies credit/charge for unused time
             updated_stripe_sub = stripe.Subscription.modify(
                 stripe_subscription_id,
-                items=[{
-                    "id": subscription_item_id,
-                    "price": new_price_id,
-                }],
+                items=[
+                    {
+                        "id": subscription_item_id,
+                        "price": new_price_id,
+                    }
+                ],
                 proration_behavior="create_prorations",
                 metadata={
                     "billing_interval": new_billing_interval,
                     "changed_from": current_interval,
-                    "changed_at": datetime.now(timezone.utc).isoformat()
-                }
+                    "changed_at": datetime.now(timezone.utc).isoformat(),
+                },
             )
 
             # Use Stripe's actual period dates instead of naive calculation
@@ -1115,7 +1268,7 @@ class StripeService:
                         "current_period_end": period_end,
                         "updated_at": now,
                     }
-                }
+                },
             )
 
             logger.info(
@@ -1129,17 +1282,21 @@ class StripeService:
                 "new_interval": new_billing_interval,
                 "stripe_subscription_id": stripe_subscription_id,
                 "new_period_end": period_end.isoformat(),
-                "proration_applied": True
+                "proration_applied": True,
             }
 
         except StripeError as e:
             logger.error(f"Stripe error changing billing interval: {str(e)}")
-            raise HTTPException(status_code=500, detail=f"Payment service error: {str(e)}")
+            raise HTTPException(
+                status_code=500, detail=f"Payment service error: {str(e)}"
+            )
         except HTTPException:
             raise
         except Exception as e:
             logger.error(f"Error changing billing interval: {str(e)}")
-            raise HTTPException(status_code=500, detail=f"Failed to change billing interval: {str(e)}")
+            raise HTTPException(
+                status_code=500, detail=f"Failed to change billing interval: {str(e)}"
+            )
 
     # ==================== CUSTOMER PORTAL ====================
 
@@ -1147,7 +1304,7 @@ class StripeService:
         self,
         user_id: str,
         return_url: Optional[str] = None,
-        flow_type: Optional[str] = None
+        flow_type: Optional[str] = None,
     ) -> Dict[str, str]:
         """
         Create a Stripe Customer Portal session for subscription management
@@ -1164,7 +1321,9 @@ class StripeService:
 
         try:
             # Get Stripe customer ID
-            customer_record = await self.stripe_customers_collection.find_one({"user_id": user_id})
+            customer_record = await self.stripe_customers_collection.find_one(
+                {"user_id": user_id}
+            )
             if not customer_record or not customer_record.get("stripe_customer_id"):
                 raise HTTPException(status_code=404, detail="Stripe customer not found")
 
@@ -1182,49 +1341,57 @@ class StripeService:
 
             # Add flow_data for specific flows
             if flow_type == "payment_method_update":
-                portal_params["flow_data"] = {
-                    "type": "payment_method_update"
-                }
+                portal_params["flow_data"] = {"type": "payment_method_update"}
             elif flow_type == "subscription_update":
                 # Get the current subscription to specify which one to update
-                subscription = await self.subscriptions_collection.find_one({"user_id": user_id})
+                subscription = await self.subscriptions_collection.find_one(
+                    {"user_id": user_id}
+                )
                 if subscription and subscription.get("stripe_subscription_id"):
                     portal_params["flow_data"] = {
                         "type": "subscription_update",
                         "subscription_update": {
                             "subscription": subscription["stripe_subscription_id"]
-                        }
+                        },
                     }
             elif flow_type == "subscription_cancel":
                 # Direct to subscription cancellation flow
-                subscription = await self.subscriptions_collection.find_one({"user_id": user_id})
+                subscription = await self.subscriptions_collection.find_one(
+                    {"user_id": user_id}
+                )
                 if subscription and subscription.get("stripe_subscription_id"):
                     portal_params["flow_data"] = {
                         "type": "subscription_cancel",
                         "subscription_cancel": {
                             "subscription": subscription["stripe_subscription_id"]
-                        }
+                        },
                     }
 
             # Create portal session
             portal_session = stripe.billing_portal.Session.create(**portal_params)
 
-            logger.info(f"Created portal session for user {user_id} with flow_type={flow_type}")
+            logger.info(
+                f"Created portal session for user {user_id} with flow_type={flow_type}"
+            )
 
-            return {
-                "url": portal_session.url
-            }
+            return {"url": portal_session.url}
 
         except StripeError as e:
             logger.error(f"Stripe error creating portal session: {str(e)}")
-            raise HTTPException(status_code=500, detail=f"Payment service error: {str(e)}")
+            raise HTTPException(
+                status_code=500, detail=f"Payment service error: {str(e)}"
+            )
         except Exception as e:
             logger.error(f"Error creating portal session: {str(e)}")
-            raise HTTPException(status_code=500, detail=f"Error creating portal session: {str(e)}")
+            raise HTTPException(
+                status_code=500, detail=f"Error creating portal session: {str(e)}"
+            )
 
     # ==================== WEBHOOK HANDLING ====================
 
-    async def handle_webhook_event(self, payload: bytes, signature: str) -> Dict[str, Any]:
+    async def handle_webhook_event(
+        self, payload: bytes, signature: str
+    ) -> Dict[str, Any]:
         """
         Handle Stripe webhook events
 
@@ -1259,16 +1426,30 @@ class StripeService:
             # allowed to re-enter so Stripe retries succeed.
             # Ref: https://dev.to/aniefon_umanah_ac5f21311c/building-reliable-stripe-subscriptions-in-nestjs-webhook-idempotency-and-optimistic-locking-3o91
             if event_id:
-                existing = await mongo.db["stripe_webhook_events"].find_one({"event_id": event_id})
+                existing = await mongo.db["stripe_webhook_events"].find_one(
+                    {"event_id": event_id}
+                )
                 if existing and existing.get("status") == "processed":
-                    logger.info(f"Skipping duplicate webhook event: {event_id} ({event_type})")
-                    return {"status": "already_processed", "event_id": event_id, "event_type": event_type}
+                    logger.info(
+                        f"Skipping duplicate webhook event: {event_id} ({event_type})"
+                    )
+                    return {
+                        "status": "already_processed",
+                        "event_id": event_id,
+                        "event_type": event_type,
+                    }
 
                 # Legacy events (pre-status-tracking) have no "status" field.
                 # Treat them as already processed to maintain backward compat.
                 if existing and "status" not in existing:
-                    logger.info(f"Skipping legacy webhook event (no status field): {event_id} ({event_type})")
-                    return {"status": "already_processed", "event_id": event_id, "event_type": event_type}
+                    logger.info(
+                        f"Skipping legacy webhook event (no status field): {event_id} ({event_type})"
+                    )
+                    return {
+                        "status": "already_processed",
+                        "event_id": event_id,
+                        "event_type": event_type,
+                    }
 
                 if not existing:
                     # Record event as being processed (with status lifecycle).
@@ -1276,18 +1457,26 @@ class StripeService:
                     # condition where two identical webhooks arrive simultaneously
                     # and both pass the find_one check above.
                     try:
-                        await mongo.db["stripe_webhook_events"].insert_one({
-                            "event_id": event_id,
-                            "event_type": event_type,
-                            "status": "processing",
-                            "error_message": None,
-                            "created_at": datetime.now(timezone.utc),
-                            "processed_at": None,
-                        })
+                        await mongo.db["stripe_webhook_events"].insert_one(
+                            {
+                                "event_id": event_id,
+                                "event_type": event_type,
+                                "status": "processing",
+                                "error_message": None,
+                                "created_at": datetime.now(timezone.utc),
+                                "processed_at": None,
+                            }
+                        )
                     except DuplicateKeyError:
                         # Another concurrent request already claimed this event
-                        logger.info(f"Concurrent duplicate insert for event {event_id}, skipping")
-                        return {"status": "already_processed", "event_id": event_id, "event_type": event_type}
+                        logger.info(
+                            f"Concurrent duplicate insert for event {event_id}, skipping"
+                        )
+                        return {
+                            "status": "already_processed",
+                            "event_id": event_id,
+                            "event_type": event_type,
+                        }
                 else:
                     # Re-processing a previously failed/stuck event
                     await mongo.db["stripe_webhook_events"].update_one(
@@ -1335,7 +1524,9 @@ class StripeService:
                     result = await self._handle_price_changed(data)
                 elif event_type in ("plan.created", "plan.updated"):
                     # Legacy Stripe plan events map to price/product - acknowledge them
-                    logger.info(f"Acknowledged legacy plan event: {event_type} for {data.get('id')}")
+                    logger.info(
+                        f"Acknowledged legacy plan event: {event_type} for {data.get('id')}"
+                    )
                     result = {"status": "acknowledged", "event_type": event_type}
                 else:
                     logger.info(f"Unhandled event type: {event_type}")
@@ -1347,13 +1538,17 @@ class StripeService:
                     try:
                         await mongo.db["stripe_webhook_events"].update_one(
                             {"event_id": event_id},
-                            {"$set": {
-                                "status": "failed",
-                                "error_message": str(handler_err)[:2000],
-                            }},
+                            {
+                                "$set": {
+                                    "status": "failed",
+                                    "error_message": str(handler_err)[:2000],
+                                }
+                            },
                         )
                     except Exception as update_err:
-                        logger.error(f"Failed to mark event {event_id} as failed: {update_err}")
+                        logger.error(
+                            f"Failed to mark event {event_id} as failed: {update_err}"
+                        )
                 raise
 
             # ── Mark event as successfully processed ──────────────
@@ -1363,14 +1558,18 @@ class StripeService:
                 try:
                     await mongo.db["stripe_webhook_events"].update_one(
                         {"event_id": event_id},
-                        {"$set": {
-                            "status": "processed",
-                            "processed_at": datetime.now(timezone.utc),
-                        }},
+                        {
+                            "$set": {
+                                "status": "processed",
+                                "processed_at": datetime.now(timezone.utc),
+                            }
+                        },
                     )
                 except Exception as update_err:
                     # Handler succeeded — don't crash on status bookkeeping failure
-                    logger.error(f"Failed to mark event {event_id} as processed: {update_err}")
+                    logger.error(
+                        f"Failed to mark event {event_id} as processed: {update_err}"
+                    )
 
             return result
 
@@ -1380,10 +1579,16 @@ class StripeService:
         except HTTPException:
             raise
         except Exception as e:
-            logger.error(f"Error processing webhook event {event_type}: {str(e)}", exc_info=True)
-            raise HTTPException(status_code=500, detail=f"Webhook processing error: {str(e)}")
+            logger.error(
+                f"Error processing webhook event {event_type}: {str(e)}", exc_info=True
+            )
+            raise HTTPException(
+                status_code=500, detail=f"Webhook processing error: {str(e)}"
+            )
 
-    async def _handle_checkout_completed(self, session: Dict[str, Any]) -> Dict[str, Any]:
+    async def _handle_checkout_completed(
+        self, session: Dict[str, Any]
+    ) -> Dict[str, Any]:
         """Handle successful checkout session completion"""
         user_id = session.get("metadata", {}).get("user_id")
         plan_id = session.get("metadata", {}).get("plan_id")
@@ -1394,22 +1599,37 @@ class StripeService:
         if (not user_id or not plan_id) and subscription_id:
             try:
                 sub_obj = stripe.Subscription.retrieve(subscription_id)
-                sub_meta = sub_obj.get("metadata", {}) if isinstance(sub_obj, dict) else dict(getattr(sub_obj, "metadata", {}))
+                sub_meta = (
+                    sub_obj.get("metadata", {})
+                    if isinstance(sub_obj, dict)
+                    else dict(getattr(sub_obj, "metadata", {}))
+                )
                 user_id = user_id or sub_meta.get("user_id")
                 plan_id = plan_id or sub_meta.get("plan_id")
-                logger.info(f"Retrieved metadata from subscription: user_id={user_id}, plan_id={plan_id}")
+                logger.info(
+                    f"Retrieved metadata from subscription: user_id={user_id}, plan_id={plan_id}"
+                )
             except Exception as e:
-                logger.error(f"Failed to retrieve subscription metadata fallback: {str(e)}")
+                logger.error(
+                    f"Failed to retrieve subscription metadata fallback: {str(e)}"
+                )
 
         if not user_id or not plan_id:
             logger.error("Missing metadata in checkout session and subscription")
-            return {"status": "error", "message": "Missing user_id or plan_id metadata in checkout session"}
+            return {
+                "status": "error",
+                "message": "Missing user_id or plan_id metadata in checkout session",
+            }
 
         # Verify user still exists before syncing subscription
         try:
-            user_exists = await self.users_collection.find_one({"_id": ObjectId(user_id)}, {"_id": 1})
+            user_exists = await self.users_collection.find_one(
+                {"_id": ObjectId(user_id)}, {"_id": 1}
+            )
             if not user_exists:
-                logger.error(f"User {user_id} not found during checkout completion — may have been deleted")
+                logger.error(
+                    f"User {user_id} not found during checkout completion — may have been deleted"
+                )
                 return {"status": "error", "message": f"User {user_id} not found"}
         except Exception as e:
             logger.error(f"Error verifying user {user_id}: {str(e)}")
@@ -1421,7 +1641,9 @@ class StripeService:
             try:
                 subscription = stripe.Subscription.retrieve(subscription_id)
             except StripeError as e:
-                logger.error(f"Unable to retrieve subscription {subscription_id}: {str(e)}")
+                logger.error(
+                    f"Unable to retrieve subscription {subscription_id}: {str(e)}"
+                )
 
         # Build plan snapshot for grandfathering before syncing
         plan_snapshot = None
@@ -1465,16 +1687,21 @@ class StripeService:
         # Initialize usage tracking for the new subscription
         try:
             from app.services.subscription_service import SubscriptionService
+
             sub_service = SubscriptionService()
-            local_sub = await self.subscriptions_collection.find_one({
-                "user_id": user_id,
-                "stripe_subscription_id": subscription_id,
-            })
+            local_sub = await self.subscriptions_collection.find_one(
+                {
+                    "user_id": user_id,
+                    "stripe_subscription_id": subscription_id,
+                }
+            )
             if local_sub:
                 await sub_service.initialize_usage_tracking(user_id, local_sub["_id"])
                 logger.info(f"Initialized usage tracking for user {user_id}")
         except Exception as e:
-            logger.error(f"Failed to initialize usage tracking for user {user_id}: {str(e)}")
+            logger.error(
+                f"Failed to initialize usage tracking for user {user_id}: {str(e)}"
+            )
 
         try:
             await self._send_checkout_completion_notification(
@@ -1484,48 +1711,60 @@ class StripeService:
                 subscription=subscription,
             )
         except Exception as e:
-            logger.error(f"Failed to send checkout completion notification for user {user_id}: {str(e)}")
+            logger.error(
+                f"Failed to send checkout completion notification for user {user_id}: {str(e)}"
+            )
 
         logger.info(
             "Checkout completed for user %s, subscription %s (status: %s)",
             user_id,
             subscription_id,
-            sync_result.get("stripe_status") or sync_result.get("status")
+            sync_result.get("stripe_status") or sync_result.get("status"),
         )
-        return {"status": "success", "user_id": user_id, "subscription_id": subscription_id}
+        return {
+            "status": "success",
+            "user_id": user_id,
+            "subscription_id": subscription_id,
+        }
 
-    async def _handle_subscription_created(self, subscription: Dict[str, Any]) -> Dict[str, Any]:
+    async def _handle_subscription_created(
+        self, subscription: Dict[str, Any]
+    ) -> Dict[str, Any]:
         """Handle new subscription creation"""
         result = await self._sync_subscription_state(
             user_id=subscription.get("metadata", {}).get("user_id"),
             subscription=subscription,
-            customer_id=subscription.get("customer")
+            customer_id=subscription.get("customer"),
         )
 
         logger.info(
             "Subscription %s created (user=%s, status=%s)",
             subscription.get("id"),
             result.get("user_id"),
-            result.get("stripe_status") or result.get("status")
+            result.get("stripe_status") or result.get("status"),
         )
         return {"status": "success", "user_id": result.get("user_id")}
 
-    async def _handle_subscription_updated(self, subscription: Dict[str, Any]) -> Dict[str, Any]:
+    async def _handle_subscription_updated(
+        self, subscription: Dict[str, Any]
+    ) -> Dict[str, Any]:
         """Handle subscription updates"""
         result = await self._sync_subscription_state(
             user_id=subscription.get("metadata", {}).get("user_id"),
             subscription=subscription,
-            customer_id=subscription.get("customer")
+            customer_id=subscription.get("customer"),
         )
 
         logger.info(
             "Subscription %s updated (status=%s)",
             subscription.get("id"),
-            result.get("stripe_status") or result.get("status")
+            result.get("stripe_status") or result.get("status"),
         )
         return {"status": "success", "subscription_id": subscription.get("id")}
 
-    async def _handle_subscription_deleted(self, subscription: Dict[str, Any]) -> Dict[str, Any]:
+    async def _handle_subscription_deleted(
+        self, subscription: Dict[str, Any]
+    ) -> Dict[str, Any]:
         """Handle subscription cancellation/deletion with cleanup orchestration"""
         stripe_sub_id = subscription["id"]
         now = datetime.now(timezone.utc)
@@ -1538,15 +1777,11 @@ class StripeService:
             extra_updates={
                 "status": SubscriptionStatus.CANCELLED.value,
                 "cancelled_at": now,
-            }
+            },
         )
 
         user_id = result.get("user_id")
-        logger.info(
-            "Subscription %s cancelled (user=%s)",
-            stripe_sub_id,
-            user_id
-        )
+        logger.info("Subscription %s cancelled (user=%s)", stripe_sub_id, user_id)
 
         # Atomic guard: claim cleanup ownership using findOneAndUpdate.
         # This prevents a race where two concurrent webhooks both pass a
@@ -1558,31 +1793,43 @@ class StripeService:
                     "stripe_subscription_id": stripe_sub_id,
                     "cancellation_cleanup_completed": {"$ne": True},
                 },
-                {"$set": {
-                    "cancellation_cleanup_completed": True,
-                    "cancellation_cleanup_at": now,
-                }},
+                {
+                    "$set": {
+                        "cancellation_cleanup_completed": True,
+                        "cancellation_cleanup_at": now,
+                    }
+                },
                 return_document=False,  # return the ORIGINAL (pre-update) document
             )
             if claim_result is None:
                 # Either the doc doesn't exist or it was already claimed
-                logger.info(f"Cleanup already performed for subscription {stripe_sub_id}, skipping")
+                logger.info(
+                    f"Cleanup already performed for subscription {stripe_sub_id}, skipping"
+                )
                 return {"status": "success", "subscription_id": stripe_sub_id}
         except Exception as e:
-            logger.warning(f"Failed to claim cleanup for subscription {stripe_sub_id}: {str(e)}")
+            logger.warning(
+                f"Failed to claim cleanup for subscription {stripe_sub_id}: {str(e)}"
+            )
             # If we can't claim, err on the side of running cleanup
             # (duplicate cleanup is less harmful than skipped cleanup)
 
         # If we don't have user_id, we can't proceed with cleanup
         if not user_id:
-            logger.warning(f"No user_id found for subscription {stripe_sub_id}, skipping cleanup")
+            logger.warning(
+                f"No user_id found for subscription {stripe_sub_id}, skipping cleanup"
+            )
             return {"status": "success", "subscription_id": stripe_sub_id}
 
         # Fetch user document for email and other data
         try:
-            user = await self.users_collection.find_one({"_id": to_object_id(user_id, "user_id")})
+            user = await self.users_collection.find_one(
+                {"_id": to_object_id(user_id, "user_id")}
+            )
             if not user:
-                logger.warning(f"User {user_id} not found for subscription {stripe_sub_id}, skipping cleanup")
+                logger.warning(
+                    f"User {user_id} not found for subscription {stripe_sub_id}, skipping cleanup"
+                )
                 return {"status": "success", "subscription_id": stripe_sub_id}
             user_email = user.get("email", "")
         except Exception as e:
@@ -1592,36 +1839,54 @@ class StripeService:
         # Phase 1: Deactivate team members
         try:
             from app.services.team_management_service import TeamManagementService
+
             team_service = TeamManagementService()
-            team_result = await team_service.bulk_deactivate_by_owner(user_id, "webhook_subscription_cancelled")
+            team_result = await team_service.bulk_deactivate_by_owner(
+                user_id, "webhook_subscription_cancelled"
+            )
             logger.info(f"Deactivated team members for user {user_id}: {team_result}")
         except Exception as e:
-            logger.warning(f"Failed to deactivate team members for user {user_id}: {str(e)}")
+            logger.warning(
+                f"Failed to deactivate team members for user {user_id}: {str(e)}"
+            )
 
         # Phase 2: Suspend planner data
         try:
             from app.services.cascade_delete_service import cascade_delete_service
-            suspend_result = await cascade_delete_service.suspend_planner_data(user_id, user_email)
+
+            suspend_result = await cascade_delete_service.suspend_planner_data(
+                user_id, user_email
+            )
             logger.info(f"Suspended planner data for user {user_id}: {suspend_result}")
         except Exception as e:
-            logger.warning(f"Failed to suspend planner data for user {user_id}: {str(e)}")
+            logger.warning(
+                f"Failed to suspend planner data for user {user_id}: {str(e)}"
+            )
 
         # Phase 3: Pause couple payments
         try:
             from app.services.package_service import package_service
-            payments_result = await package_service.pause_planner_payment_links(user_id, user_email)
+
+            payments_result = await package_service.pause_planner_payment_links(
+                user_id, user_email
+            )
             logger.info(f"Paused payment links for user {user_id}: {payments_result}")
         except Exception as e:
-            logger.warning(f"Failed to pause payment links for user {user_id}: {str(e)}")
+            logger.warning(
+                f"Failed to pause payment links for user {user_id}: {str(e)}"
+            )
 
         # Phase 4: Send cancellation email to planner
         try:
             from app.services.email_service_resend import ResendEmailService
+
             email_service = ResendEmailService()
             email_sent = await email_service.send_subscription_cancelled_email(user)
             logger.info(f"Sent cancellation email to user {user_id}: {email_sent}")
         except Exception as e:
-            logger.warning(f"Failed to send cancellation email to user {user_id}: {str(e)}")
+            logger.warning(
+                f"Failed to send cancellation email to user {user_id}: {str(e)}"
+            )
 
         # Phase 5: Notify affected couples
         # Couples are stored in `couple_users` collection with `planner_id` field (indexed).
@@ -1637,7 +1902,9 @@ class StripeService:
                 email_service = ResendEmailService()
 
                 # Build wedding lookup map for notification template
-                wedding_ids = list({c.get("wedding_id") for c in couples if c.get("wedding_id")})
+                wedding_ids = list(
+                    {c.get("wedding_id") for c in couples if c.get("wedding_id")}
+                )
                 weddings_list = await self.weddings_collection.find(
                     {"_id": {"$in": wedding_ids}}
                 ).to_list(length=10000)
@@ -1647,12 +1914,12 @@ class StripeService:
                     try:
                         wedding = weddings_map.get(couple.get("wedding_id"), {})
                         couple_notification_sent = await email_service.send_planner_cancelled_couple_notification(
-                            couple=couple,
-                            planner=user,
-                            wedding=wedding
+                            couple=couple, planner=user, wedding=wedding
                         )
                         if couple_notification_sent:
-                            logger.info(f"Notified couple {couple.get('email')} about planner {user_id} cancellation")
+                            logger.info(
+                                f"Notified couple {couple.get('email')} about planner {user_id} cancellation"
+                            )
                     except Exception as e:
                         logger.warning(
                             f"Failed to notify couple {couple.get('email')} for wedding {couple.get('wedding_id')}: {str(e)}"
@@ -1668,25 +1935,27 @@ class StripeService:
 
         return {"status": "success", "subscription_id": stripe_sub_id}
 
-    async def _handle_subscription_trial_will_end(self, subscription: Dict[str, Any]) -> Dict[str, Any]:
+    async def _handle_subscription_trial_will_end(
+        self, subscription: Dict[str, Any]
+    ) -> Dict[str, Any]:
         """Record trial end reminders for alignment with internal notifications."""
         result = await self._sync_subscription_state(
             user_id=subscription.get("metadata", {}).get("user_id"),
             subscription=subscription,
             customer_id=subscription.get("customer"),
-            extra_updates={
-                "trial_will_end_notified_at": datetime.now(timezone.utc)
-            }
+            extra_updates={"trial_will_end_notified_at": datetime.now(timezone.utc)},
         )
 
         logger.info(
             "Trial will end soon for subscription %s (user=%s)",
             subscription.get("id"),
-            result.get("user_id")
+            result.get("user_id"),
         )
         return {"status": "success", "subscription_id": subscription.get("id")}
 
-    async def _handle_customer_updated(self, customer: Dict[str, Any]) -> Dict[str, Any]:
+    async def _handle_customer_updated(
+        self, customer: Dict[str, Any]
+    ) -> Dict[str, Any]:
         """Handle customer.updated - sync email/name changes from Stripe back to our DB."""
         try:
             customer_id = customer.get("id")
@@ -1704,12 +1973,13 @@ class StripeService:
                 update_fields["name"] = new_name
 
             result = await self.stripe_customers_collection.update_one(
-                {"stripe_customer_id": customer_id},
-                {"$set": update_fields}
+                {"stripe_customer_id": customer_id}, {"$set": update_fields}
             )
 
             if result.modified_count > 0:
-                logger.info(f"Customer {customer_id} details synced (email={new_email})")
+                logger.info(
+                    f"Customer {customer_id} details synced (email={new_email})"
+                )
             else:
                 logger.debug(f"No local record found for Stripe customer {customer_id}")
 
@@ -1733,15 +2003,21 @@ class StripeService:
                 # Update local plan's active status to match Stripe
                 result = await self.plans_collection.update_one(
                     {"_id": plan_id, "stripe_product_id": product_id},
-                    {"$set": {
-                        "is_active": is_active,
-                        "updated_at": datetime.now(timezone.utc)
-                    }}
+                    {
+                        "$set": {
+                            "is_active": is_active,
+                            "updated_at": datetime.now(timezone.utc),
+                        }
+                    },
                 )
                 if result.modified_count > 0:
-                    logger.info(f"Plan {plan_id} synced from Stripe product {product_id} (active={is_active})")
+                    logger.info(
+                        f"Plan {plan_id} synced from Stripe product {product_id} (active={is_active})"
+                    )
             else:
-                logger.debug(f"Product {product_id} has no plan_id metadata, skipping local sync")
+                logger.debug(
+                    f"Product {product_id} has no plan_id metadata, skipping local sync"
+                )
 
             return {"status": "success", "product_id": product_id}
 
@@ -1784,32 +2060,46 @@ class StripeService:
             result = await self.subscriptions_collection.update_one(
                 {
                     "stripe_checkout_session_id": session_id,
-                    "status": {"$in": ["pending", "pending_payment", SubscriptionStatus.PENDING_CHECKOUT.value]}
+                    "status": {
+                        "$in": [
+                            "pending",
+                            "pending_payment",
+                            SubscriptionStatus.PENDING_CHECKOUT.value,
+                        ]
+                    },
                 },
-                {"$set": {
-                    "status": SubscriptionStatus.EXPIRED.value,
-                    "updated_at": datetime.now(timezone.utc),
-                    "expired_reason": "checkout_session_expired"
-                }}
+                {
+                    "$set": {
+                        "status": SubscriptionStatus.EXPIRED.value,
+                        "updated_at": datetime.now(timezone.utc),
+                        "expired_reason": "checkout_session_expired",
+                    }
+                },
             )
             if result.modified_count > 0:
-                logger.info(f"Marked pending subscription as expired for session {session_id}")
+                logger.info(
+                    f"Marked pending subscription as expired for session {session_id}"
+                )
 
         # Sync user status to "expired" to match subscription record
         if user_id:
             user = await self.users_collection.find_one({"_id": ObjectId(user_id)})
-            if user and normalize_subscription_status(user.get("subscription_status")) in (
+            if user and normalize_subscription_status(
+                user.get("subscription_status")
+            ) in (
                 SubscriptionStatus.PENDING_PAYMENT.value,
                 SubscriptionStatus.PENDING_CHECKOUT.value,
                 "pending",
             ):
                 await self.users_collection.update_one(
                     {"_id": ObjectId(user_id)},
-                    {"$set": {
-                        "subscription_status": SubscriptionStatus.EXPIRED.value,
-                        "checkout_expired_at": datetime.now(timezone.utc),
-                        "updated_at": datetime.now(timezone.utc),
-                    }}
+                    {
+                        "$set": {
+                            "subscription_status": SubscriptionStatus.EXPIRED.value,
+                            "checkout_expired_at": datetime.now(timezone.utc),
+                            "updated_at": datetime.now(timezone.utc),
+                        }
+                    },
                 )
 
         # Check if this Stripe customer has any active subscriptions
@@ -1826,7 +2116,9 @@ class StripeService:
                     )
                     logger.info(f"Cleaned up orphaned Stripe customer {customer_id}")
             except StripeError as e:
-                logger.warning(f"Could not clean up Stripe customer {customer_id}: {str(e)}")
+                logger.warning(
+                    f"Could not clean up Stripe customer {customer_id}: {str(e)}"
+                )
 
         return {"status": "processed", "session_id": session_id}
 
@@ -1845,7 +2137,9 @@ class StripeService:
         try:
             subscription = stripe.Subscription.retrieve(subscription_id)
         except StripeError as e:
-            logger.error(f"Unable to refresh subscription {subscription_id} during invoice.paid: {str(e)}")
+            logger.error(
+                f"Unable to refresh subscription {subscription_id} during invoice.paid: {str(e)}"
+            )
 
         if subscription:
             await self._sync_subscription_state(
@@ -1855,16 +2149,18 @@ class StripeService:
                 extra_updates={
                     "payment_status": "paid",
                     "last_payment_date": datetime.now(timezone.utc),
-                }
+                },
             )
         else:
             await self.subscriptions_collection.update_one(
                 {"stripe_subscription_id": subscription_id},
-                {"$set": {
-                    "payment_status": "paid",
-                    "last_payment_date": datetime.now(timezone.utc),
-                    "updated_at": datetime.now(timezone.utc)
-                }}
+                {
+                    "$set": {
+                        "payment_status": "paid",
+                        "last_payment_date": datetime.now(timezone.utc),
+                        "updated_at": datetime.now(timezone.utc),
+                    }
+                },
             )
 
         logger.info(f"Invoice paid for subscription {subscription_id}")
@@ -1875,14 +2171,18 @@ class StripeService:
                 "Skipping invoice.paid payment notification for initial subscription invoice %s; checkout.session.completed owns the activation message",
                 invoice.get("id"),
             )
-            return {"status": "success", "subscription_id": subscription_id, "notification_skipped": True}
+            return {
+                "status": "success",
+                "subscription_id": subscription_id,
+                "notification_skipped": True,
+            }
 
         # Send payment success notification (best-effort, don't fail webhook)
         try:
             await self._send_payment_notification(
                 subscription_id=subscription_id,
                 notification_type="payment_success",
-                invoice=invoice
+                invoice=invoice,
             )
         except Exception as e:
             logger.error(f"Failed to send payment success notification: {str(e)}")
@@ -1906,11 +2206,13 @@ class StripeService:
         # Update the billing period record
         update_result = await mongo.db["vendor_ad_billing"].update_many(
             {"stripe_invoice_id": invoice_id},
-            {"$set": {
-                "payment_status": "paid",
-                "paid_at": now,
-                "updated_at": now,
-            }}
+            {
+                "$set": {
+                    "payment_status": "paid",
+                    "paid_at": now,
+                    "updated_at": now,
+                }
+            },
         )
 
         # Also update all lead charges associated with this invoice's line items
@@ -1922,10 +2224,12 @@ class StripeService:
                     "charge_status": "charged",
                     "stripe_invoice_item_id": {"$ne": None},
                 },
-                {"$set": {
-                    "charge_status": "paid",
-                    "updated_at": now,
-                }}
+                {
+                    "$set": {
+                        "charge_status": "paid",
+                        "updated_at": now,
+                    }
+                },
             )
 
         logger.info(
@@ -1935,7 +2239,9 @@ class StripeService:
 
         return {"status": "success", "invoice_id": invoice_id, "platform": "ads"}
 
-    async def _handle_invoice_payment_failed(self, invoice: Dict[str, Any]) -> Dict[str, Any]:
+    async def _handle_invoice_payment_failed(
+        self, invoice: Dict[str, Any]
+    ) -> Dict[str, Any]:
         """Handle failed invoice payment"""
         # Check if this is an ad billing invoice
         metadata = invoice.get("metadata", {})
@@ -1950,7 +2256,9 @@ class StripeService:
         try:
             subscription = stripe.Subscription.retrieve(subscription_id)
         except StripeError as e:
-            logger.error(f"Unable to refresh subscription {subscription_id} during invoice.payment_failed: {str(e)}")
+            logger.error(
+                f"Unable to refresh subscription {subscription_id} during invoice.payment_failed: {str(e)}"
+            )
 
         if subscription:
             await self._sync_subscription_state(
@@ -1960,16 +2268,18 @@ class StripeService:
                 extra_updates={
                     "payment_status": "past_due",
                     "last_payment_attempt": datetime.now(timezone.utc),
-                }
+                },
             )
         else:
             await self.subscriptions_collection.update_one(
                 {"stripe_subscription_id": subscription_id},
-                {"$set": {
-                    "payment_status": "past_due",
-                    "last_payment_attempt": datetime.now(timezone.utc),
-                    "updated_at": datetime.now(timezone.utc)
-                }}
+                {
+                    "$set": {
+                        "payment_status": "past_due",
+                        "last_payment_attempt": datetime.now(timezone.utc),
+                        "updated_at": datetime.now(timezone.utc),
+                    }
+                },
             )
 
         logger.warning(f"Invoice payment failed for subscription {subscription_id}")
@@ -1979,14 +2289,16 @@ class StripeService:
             await self._send_payment_notification(
                 subscription_id=subscription_id,
                 notification_type="payment_failed",
-                invoice=invoice
+                invoice=invoice,
             )
         except Exception as e:
             logger.error(f"Failed to send payment failure notification: {str(e)}")
 
         return {"status": "success", "subscription_id": subscription_id}
 
-    async def _handle_ad_invoice_payment_failed(self, invoice: Dict[str, Any]) -> Dict[str, Any]:
+    async def _handle_ad_invoice_payment_failed(
+        self, invoice: Dict[str, Any]
+    ) -> Dict[str, Any]:
         """
         Handle failed payment of an ad billing invoice.
 
@@ -2003,11 +2315,13 @@ class StripeService:
         # Update billing period record
         update_result = await mongo.db["vendor_ad_billing"].update_many(
             {"stripe_invoice_id": invoice_id},
-            {"$set": {
-                "payment_status": "payment_failed",
-                "last_payment_attempt": now,
-                "updated_at": now,
-            }}
+            {
+                "$set": {
+                    "payment_status": "payment_failed",
+                    "last_payment_attempt": now,
+                    "updated_at": now,
+                }
+            },
         )
 
         logger.warning(
@@ -2018,20 +2332,23 @@ class StripeService:
         # Create admin notification for failed ad payment
         try:
             from app.services.config_validator import _create_root_admin_notification
+
             await _create_root_admin_notification(
                 title="Ad Billing Payment Failed",
                 message=(
                     f"Stripe invoice {invoice_id} payment failed for vendor {vendor_id}. "
                     f"Campaign: {campaign_id}. Stripe will retry automatically."
                 ),
-                priority="high"
+                priority="high",
             )
         except Exception as e:
             logger.error(f"Failed to notify admin of ad payment failure: {e}")
 
         return {"status": "success", "invoice_id": invoice_id, "platform": "ads"}
 
-    async def _handle_invoice_finalized(self, invoice: Dict[str, Any]) -> Dict[str, Any]:
+    async def _handle_invoice_finalized(
+        self, invoice: Dict[str, Any]
+    ) -> Dict[str, Any]:
         """
         Handle invoice.finalized event.
 
@@ -2043,7 +2360,6 @@ class StripeService:
 
         if metadata.get("platform") == "thespecialwedding_ads":
             vendor_id = metadata.get("vendor_id", "")
-            campaign_id = metadata.get("campaign_id", "")
             now = datetime.now(timezone.utc)
 
             # Update billing records that match this vendor/campaign and are still pending
@@ -2052,11 +2368,13 @@ class StripeService:
                     "stripe_invoice_id": invoice_id,
                     "payment_status": {"$in": ["pending", "invoiced"]},
                 },
-                {"$set": {
-                    "payment_status": "invoiced",
-                    "stripe_invoice_id": invoice_id,
-                    "updated_at": now,
-                }}
+                {
+                    "$set": {
+                        "payment_status": "invoiced",
+                        "stripe_invoice_id": invoice_id,
+                        "updated_at": now,
+                    }
+                },
             )
 
             logger.info(
@@ -2069,7 +2387,9 @@ class StripeService:
         logger.info(f"Invoice finalized: {invoice_id}")
         return {"status": "acknowledged", "event_type": "invoice.finalized"}
 
-    async def _handle_payment_intent_succeeded(self, payment_intent: Dict[str, Any]) -> Dict[str, Any]:
+    async def _handle_payment_intent_succeeded(
+        self, payment_intent: Dict[str, Any]
+    ) -> Dict[str, Any]:
         """
         Handle successful payment intent - updates payment_requests collection
         for couple payments created by planners, and handles autopilot scheduled payments.
@@ -2086,14 +2406,26 @@ class StripeService:
         # Check if this is a contract/autopilot payment
         metadata = payment_intent.get("metadata", {})
         payment_type = metadata.get("payment_type")
-        if payment_type in {"scheduled", "deposit"} or metadata.get("scheduled_payment_id") or metadata.get("payment_id"):
+        if (
+            payment_type in {"scheduled", "deposit"}
+            or metadata.get("scheduled_payment_id")
+            or metadata.get("payment_id")
+        ):
             from app.services.autopilot_service import autopilot_service
+
             await autopilot_service.handle_payment_succeeded(
-                payment_intent_id=payment_intent_id,
-                receipt_url=receipt_url
+                payment_intent_id=payment_intent_id, receipt_url=receipt_url
             )
-            logger.info("Contract payment %s succeeded (type=%s)", payment_intent_id, payment_type or "unknown")
-            return {"status": "success", "payment_intent_id": payment_intent_id, "type": payment_type or "contract"}
+            logger.info(
+                "Contract payment %s succeeded (type=%s)",
+                payment_intent_id,
+                payment_type or "unknown",
+            )
+            return {
+                "status": "success",
+                "payment_intent_id": payment_intent_id,
+                "type": payment_type or "contract",
+            }
 
         # Update payment request status in our collection
         payment_requests_collection = mongo.db["payment_requests"]
@@ -2105,9 +2437,11 @@ class StripeService:
                     "paid_at": datetime.now(timezone.utc),
                     "updated_at": datetime.now(timezone.utc),
                     "amount_received": payment_intent.get("amount_received", 0) / 100,
-                    "payment_method_type": payment_intent.get("payment_method_types", [None])[0]
+                    "payment_method_type": payment_intent.get(
+                        "payment_method_types", [None]
+                    )[0],
                 }
-            }
+            },
         )
 
         if result.modified_count > 0:
@@ -2118,7 +2452,7 @@ class StripeService:
                 await self._notify_planner_payment_received(
                     payment_intent_id=payment_intent_id,
                     amount=payment_intent.get("amount_received", 0) / 100,
-                    payer_name=metadata.get("customer_name", "Customer")
+                    payer_name=metadata.get("customer_name", "Customer"),
                 )
             except Exception as e:
                 logger.error(f"Failed to notify planner of payment: {str(e)}")
@@ -2126,10 +2460,14 @@ class StripeService:
             return {"status": "success", "payment_intent_id": payment_intent_id}
         else:
             # This payment intent might not be from our payment requests (could be subscription)
-            logger.debug(f"No payment request found for {payment_intent_id} - may be a subscription payment")
+            logger.debug(
+                f"No payment request found for {payment_intent_id} - may be a subscription payment"
+            )
             return {"status": "ignored", "reason": "not_a_payment_request"}
 
-    async def _handle_payment_intent_failed(self, payment_intent: Dict[str, Any]) -> Dict[str, Any]:
+    async def _handle_payment_intent_failed(
+        self, payment_intent: Dict[str, Any]
+    ) -> Dict[str, Any]:
         """
         Handle failed payment intent - handles autopilot scheduled payment failures
         with retry logic.
@@ -2146,12 +2484,17 @@ class StripeService:
         # Check if this is a contract/autopilot payment
         metadata = payment_intent.get("metadata", {})
         payment_type = metadata.get("payment_type")
-        if payment_type in {"scheduled", "deposit"} or metadata.get("scheduled_payment_id") or metadata.get("payment_id"):
+        if (
+            payment_type in {"scheduled", "deposit"}
+            or metadata.get("scheduled_payment_id")
+            or metadata.get("payment_id")
+        ):
             from app.services.autopilot_service import autopilot_service
+
             await autopilot_service.handle_payment_failed(
                 payment_intent_id=payment_intent_id,
                 error_code=error_code,
-                error_message=error_message
+                error_message=error_message,
             )
             logger.info(
                 "Contract payment %s failed (type=%s): %s",
@@ -2159,7 +2502,11 @@ class StripeService:
                 payment_type or "unknown",
                 error_message,
             )
-            return {"status": "handled", "payment_intent_id": payment_intent_id, "type": payment_type or "contract"}
+            return {
+                "status": "handled",
+                "payment_intent_id": payment_intent_id,
+                "type": payment_type or "contract",
+            }
 
         # Update payment request status for non-autopilot payments
         payment_requests_collection = mongo.db["payment_requests"]
@@ -2170,9 +2517,9 @@ class StripeService:
                     "status": "failed",
                     "failure_reason": error_message,
                     "failure_code": error_code,
-                    "updated_at": datetime.now(timezone.utc)
+                    "updated_at": datetime.now(timezone.utc),
                 }
-            }
+            },
         )
 
         if result.modified_count > 0:
@@ -2204,9 +2551,9 @@ class StripeService:
                     "stripe_connect_payouts_enabled": payouts_enabled,
                     "stripe_connect_details_submitted": details_submitted,
                     "stripe_connect_updated_at": datetime.now(timezone.utc),
-                    "updated_at": datetime.now(timezone.utc)
+                    "updated_at": datetime.now(timezone.utc),
                 }
-            }
+            },
         )
 
         if result.modified_count > 0:
@@ -2218,7 +2565,7 @@ class StripeService:
                 "status": "success",
                 "account_id": account_id,
                 "charges_enabled": charges_enabled,
-                "payouts_enabled": payouts_enabled
+                "payouts_enabled": payouts_enabled,
             }
         else:
             logger.warning(f"No user found with stripe_connect_id: {account_id}")
@@ -2230,7 +2577,7 @@ class StripeService:
         self,
         subscription_id: str,
         notification_type: str,
-        invoice: Optional[Dict[str, Any]] = None
+        invoice: Optional[Dict[str, Any]] = None,
     ) -> None:
         """
         Send payment notification to the subscription owner.
@@ -2243,12 +2590,14 @@ class StripeService:
         """
         try:
             # Find the subscription and user
-            subscription = await self.subscriptions_collection.find_one({
-                "stripe_subscription_id": subscription_id
-            })
+            subscription = await self.subscriptions_collection.find_one(
+                {"stripe_subscription_id": subscription_id}
+            )
 
             if not subscription:
-                logger.warning(f"No subscription found for notification: {subscription_id}")
+                logger.warning(
+                    f"No subscription found for notification: {subscription_id}"
+                )
                 return
 
             user_id = subscription.get("user_id")
@@ -2268,16 +2617,24 @@ class StripeService:
                 return
 
             user_email = user.get("email")
-            user_name = user.get("first_name") or user.get("company_name") or user_email.split("@")[0]
+            user_name = (
+                user.get("first_name")
+                or user.get("company_name")
+                or user_email.split("@")[0]
+            )
 
             # Get plan details
             plan = None
             if subscription.get("plan_id"):
                 try:
                     if ObjectId.is_valid(subscription["plan_id"]):
-                        plan = await self.plans_collection.find_one({"_id": ObjectId(subscription["plan_id"])})
+                        plan = await self.plans_collection.find_one(
+                            {"_id": ObjectId(subscription["plan_id"])}
+                        )
                     else:
-                        plan = await self.plans_collection.find_one({"_id": subscription["plan_id"]})
+                        plan = await self.plans_collection.find_one(
+                            {"_id": subscription["plan_id"]}
+                        )
                 except Exception:
                     pass
 
@@ -2294,7 +2651,7 @@ class StripeService:
                 notification_type=notification_type,
                 plan_name=plan_name,
                 amount=amount,
-                currency=currency
+                currency=currency,
             )
 
             # Prepare email content
@@ -2306,7 +2663,7 @@ class StripeService:
                     amount=amount,
                     currency=currency,
                     invoice_date=datetime.now(timezone.utc).strftime("%B %d, %Y"),
-                    invoice_pdf=invoice.get("invoice_pdf") if invoice else None
+                    invoice_pdf=invoice.get("invoice_pdf") if invoice else None,
                 )
             else:  # payment_failed
                 subject = "Payment Failed - Action Required"
@@ -2314,12 +2671,14 @@ class StripeService:
                     user_name=user_name,
                     plan_name=plan_name,
                     amount=amount,
-                    currency=currency
+                    currency=currency,
                 )
 
             # Send the email
             if not getattr(self.email_service, "configured", False):
-                logger.warning("Email service not configured, skipping email notification")
+                logger.warning(
+                    "Email service not configured, skipping email notification"
+                )
                 return
 
             result = await self.email_service.send_email(
@@ -2331,13 +2690,20 @@ class StripeService:
             )
 
             if result.get("success"):
-                logger.info(f"Payment notification sent to {user_email} for {notification_type}")
+                logger.info(
+                    f"Payment notification sent to {user_email} for {notification_type}"
+                )
             else:
-                logger.error(f"Failed to send payment notification: {result.get('error')}")
+                logger.error(
+                    f"Failed to send payment notification: {result.get('error')}"
+                )
 
             # Send push notification (non-blocking, separate from email)
             try:
-                from app.services.planner_notification_service import PlannerNotificationService
+                from app.services.planner_notification_service import (
+                    PlannerNotificationService,
+                )
+
                 pns = PlannerNotificationService()
                 if notification_type == "payment_failed":
                     await pns._send_push_notification(
@@ -2349,7 +2715,9 @@ class StripeService:
                     )
                 # payment_success push is already wired via notify_payment_received
             except Exception as push_err:
-                logger.warning(f"Push notification for {notification_type} failed: {push_err}")
+                logger.warning(
+                    f"Push notification for {notification_type} failed: {push_err}"
+                )
 
         except Exception as e:
             # Don't fail the webhook if notification fails
@@ -2370,7 +2738,9 @@ class StripeService:
 
         user = await self.users_collection.find_one({"_id": ObjectId(user_id)})
         if not user or not user.get("email"):
-            logger.warning(f"Skipping checkout completion notification; user {user_id} not found")
+            logger.warning(
+                f"Skipping checkout completion notification; user {user_id} not found"
+            )
             return
 
         plan = None
@@ -2381,7 +2751,11 @@ class StripeService:
 
         plan_name = plan.get("name", "Subscription") if plan else "Subscription"
         user_email = user["email"]
-        user_name = user.get("first_name") or user.get("company_name") or user_email.split("@")[0]
+        user_name = (
+            user.get("first_name")
+            or user.get("company_name")
+            or user_email.split("@")[0]
+        )
         amount = (session.get("amount_total") or 0) / 100
         currency = (session.get("currency") or "usd").upper()
         billing_url = f"{settings.frontend_url}/admin/planner/billing"
@@ -2404,7 +2778,9 @@ class StripeService:
             </div>
             """
             notification_title = "Free Trial Active"
-            notification_message = f"Your {plan_name} trial is active through {trial_end_label}."
+            notification_message = (
+                f"Your {plan_name} trial is active through {trial_end_label}."
+            )
         else:
             subject = f"{plan_name} Subscription Activated"
             html_content = f"""
@@ -2421,36 +2797,42 @@ class StripeService:
             </div>
             """
             notification_title = "Subscription Active"
-            notification_message = f"Your {plan_name} subscription is active and ready to use."
+            notification_message = (
+                f"Your {plan_name} subscription is active and ready to use."
+            )
 
-        await mongo.db["notifications"].insert_one({
-            "_id": ObjectId(),
-            "title": notification_title,
-            "message": notification_message,
-            "type": "billing",
-            "target_audience": "specific_user",
-            "user_id": user_id,
-            "user_email": user_email,
-            "created_by": "system",
-            "created_at": datetime.now(timezone.utc),
-            "updated_at": datetime.now(timezone.utc),
-            "expiry_date": None,
-            "is_dismissible": True,
-            "priority": "low",
-            "status": "active",
-            "read_by": [],
-            "dismissed_by": [],
-            "metadata": {
-                "notification_type": "subscription_activation",
-                "plan_name": plan_name,
-                "amount": amount,
-                "currency": currency,
-                "stripe_subscription_id": session.get("subscription"),
-            },
-        })
+        await mongo.db["notifications"].insert_one(
+            {
+                "_id": ObjectId(),
+                "title": notification_title,
+                "message": notification_message,
+                "type": "billing",
+                "target_audience": "specific_user",
+                "user_id": user_id,
+                "user_email": user_email,
+                "created_by": "system",
+                "created_at": datetime.now(timezone.utc),
+                "updated_at": datetime.now(timezone.utc),
+                "expiry_date": None,
+                "is_dismissible": True,
+                "priority": "low",
+                "status": "active",
+                "read_by": [],
+                "dismissed_by": [],
+                "metadata": {
+                    "notification_type": "subscription_activation",
+                    "plan_name": plan_name,
+                    "amount": amount,
+                    "currency": currency,
+                    "stripe_subscription_id": session.get("subscription"),
+                },
+            }
+        )
 
         if not getattr(self.email_service, "configured", False):
-            logger.warning("Email service not configured, skipping checkout completion email notification")
+            logger.warning(
+                "Email service not configured, skipping checkout completion email notification"
+            )
             return
 
         result = await self.email_service.send_email(
@@ -2464,7 +2846,9 @@ class StripeService:
         if result.get("success"):
             logger.info(f"Checkout completion email sent to {user_email}")
         else:
-            logger.error(f"Failed to send checkout completion email to {user_email}: {result.get('error')}")
+            logger.error(
+                f"Failed to send checkout completion email to {user_email}: {result.get('error')}"
+            )
 
     async def _create_in_app_notification(
         self,
@@ -2473,7 +2857,7 @@ class StripeService:
         notification_type: str,
         plan_name: str,
         amount: float,
-        currency: str
+        currency: str,
     ) -> None:
         """
         Create an in-app notification that appears in the notification bell.
@@ -2511,8 +2895,8 @@ class StripeService:
                         "notification_type": "payment_success",
                         "amount": amount,
                         "currency": currency,
-                        "plan_name": plan_name
-                    }
+                        "plan_name": plan_name,
+                    },
                 }
             else:  # payment_failed
                 notification = {
@@ -2537,29 +2921,28 @@ class StripeService:
                         "amount": amount,
                         "currency": currency,
                         "plan_name": plan_name,
-                        "action_url": "/admin/planner/billing"
-                    }
+                        "action_url": "/admin/planner/billing",
+                    },
                 }
 
             await notifications_collection.insert_one(notification)
-            logger.info(f"Created in-app {notification_type} notification for user {user_email}")
+            logger.info(
+                f"Created in-app {notification_type} notification for user {user_email}"
+            )
 
         except Exception as e:
             logger.error(f"Error creating in-app notification: {str(e)}")
 
     async def _notify_planner_payment_received(
-        self,
-        payment_intent_id: str,
-        amount: float,
-        payer_name: str
+        self, payment_intent_id: str, amount: float, payer_name: str
     ):
         """Notify planner about a received payment from couple/vendor"""
         try:
             # Get the payment request to find the wedding and planner
             payment_requests_collection = mongo.db["payment_requests"]
-            payment_request = await payment_requests_collection.find_one({
-                "payment_intent_id": payment_intent_id
-            })
+            payment_request = await payment_requests_collection.find_one(
+                {"payment_intent_id": payment_intent_id}
+            )
 
             if not payment_request:
                 logger.debug(f"No payment request found for {payment_intent_id}")
@@ -2580,14 +2963,16 @@ class StripeService:
                 return
 
             # Import here to avoid circular imports
-            from app.services.planner_notification_service import planner_notification_service
+            from app.services.planner_notification_service import (
+                planner_notification_service,
+            )
 
             await planner_notification_service.notify_payment_received(
                 planner_id=planner_email,
                 wedding_id=wedding_id or "",
                 amount=amount,
                 payer_name=payer_name,
-                payment_id=payment_intent_id
+                payment_id=payment_intent_id,
             )
             logger.info(f"Payment notification sent to planner {planner_email}")
 
@@ -2602,7 +2987,7 @@ class StripeService:
         amount: float,
         currency: str,
         invoice_date: str,
-        invoice_pdf: Optional[str] = None
+        invoice_pdf: Optional[str] = None,
     ) -> str:
         """Render payment success email HTML"""
         download_section = ""
@@ -2615,7 +3000,7 @@ class StripeService:
                 </tr>
             '''
 
-        return f'''
+        return f"""
         <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color:#f8fafc;padding:40px 0;">
           <tr>
             <td align="center" style="padding:0 16px;">
@@ -2669,14 +3054,10 @@ class StripeService:
             </td>
           </tr>
         </table>
-        '''
+        """
 
     def _render_payment_failed_email(
-        self,
-        user_name: str,
-        plan_name: str,
-        amount: float,
-        currency: str
+        self, user_name: str, plan_name: str, amount: float, currency: str
     ) -> str:
         """Render payment failed email HTML"""
         return f'''
@@ -2710,7 +3091,7 @@ class StripeService:
                     <table role="presentation" cellpadding="0" cellspacing="0" style="margin:0 auto;">
                       <tr>
                         <td style="background:#2563eb;border-radius:8px;">
-                          <a href="{settings.frontend_url or ''}/admin/planner/billing" style="display:inline-block;padding:14px 28px;color:#ffffff;text-decoration:none;font-size:14px;font-weight:500;">Update Payment Method</a>
+                          <a href="{settings.frontend_url or ""}/admin/planner/billing" style="display:inline-block;padding:14px 28px;color:#ffffff;text-decoration:none;font-size:14px;font-weight:500;">Update Payment Method</a>
                         </td>
                       </tr>
                     </table>
@@ -2732,7 +3113,9 @@ class StripeService:
 
     # ==================== CONNECT / MARKETPLACE ====================
 
-    async def create_connected_account(self, user_id: str, email: str, country: str = "US") -> str:
+    async def create_connected_account(
+        self, user_id: str, email: str, country: str = "US"
+    ) -> str:
         """
         Create a Stripe Express connected account for a user (Planner or Vendor).
 
@@ -2760,23 +3143,34 @@ class StripeService:
                     "card_payments": {"requested": True},
                     "transfers": {"requested": True},
                 },
-                metadata={"user_id": user_id}
+                metadata={"user_id": user_id},
             )
 
             # Save account ID to user record
             await self.users_collection.update_one(
                 {"_id": ObjectId(user_id)},
-                {"$set": {"stripe_connect_id": account.id, "updated_at": datetime.now(timezone.utc)}}
+                {
+                    "$set": {
+                        "stripe_connect_id": account.id,
+                        "updated_at": datetime.now(timezone.utc),
+                    }
+                },
             )
 
-            logger.info(f"Created Stripe connected account {account.id} for user {user_id}")
+            logger.info(
+                f"Created Stripe connected account {account.id} for user {user_id}"
+            )
             return account.id
 
         except StripeError as e:
             logger.error(f"Stripe error creating connected account: {str(e)}")
-            raise HTTPException(status_code=500, detail=f"Stripe Connect error: {str(e)}")
+            raise HTTPException(
+                status_code=500, detail=f"Stripe Connect error: {str(e)}"
+            )
 
-    def create_account_link(self, account_id: str, refresh_url: str, return_url: str) -> str:
+    def create_account_link(
+        self, account_id: str, refresh_url: str, return_url: str
+    ) -> str:
         """
         Create an onboarding link for a connected account.
         """
@@ -2792,7 +3186,9 @@ class StripeService:
             return account_link.url
         except StripeError as e:
             logger.error(f"Stripe error creating account link: {str(e)}")
-            raise HTTPException(status_code=500, detail=f"Stripe Connect error: {str(e)}")
+            raise HTTPException(
+                status_code=500, detail=f"Stripe Connect error: {str(e)}"
+            )
 
     def get_account_status(self, account_id: str) -> Dict[str, Any]:
         """Check if a connected account is fully onboarded."""
@@ -2808,7 +3204,9 @@ class StripeService:
             }
         except StripeError as e:
             logger.error(f"Stripe error retrieving account: {str(e)}")
-            raise HTTPException(status_code=500, detail=f"Stripe Connect error: {str(e)}")
+            raise HTTPException(
+                status_code=500, detail=f"Stripe Connect error: {str(e)}"
+            )
 
     # ==================== PAYMENT COLLECTION FOR COUPLES ====================
 
@@ -2819,7 +3217,7 @@ class StripeService:
         wedding_id: Optional[str] = None,
         description: Optional[str] = None,
         metadata: Optional[Dict[str, Any]] = None,
-        destination_account_id: Optional[str] = None
+        destination_account_id: Optional[str] = None,
     ) -> Dict[str, Any]:
         """
         Create a payment intent for collecting payment from couples.
@@ -2843,30 +3241,34 @@ class StripeService:
             # If destination provided, use transfer_data to route funds
             # The platform acts as the merchant of record but funds go to the destination
             if destination_account_id:
-                create_kwargs["transfer_data"] = {
-                    "destination": destination_account_id
-                }
+                create_kwargs["transfer_data"] = {"destination": destination_account_id}
                 # Optional: Add application_fee_amount here if the platform takes a cut
                 # create_kwargs["application_fee_amount"] = int(amount * 100 * 0.01) # 1% fee
 
             payment_intent = stripe.PaymentIntent.create(**create_kwargs)
 
-            logger.info(f"Created payment intent {payment_intent.id} for amount {amount}")
+            logger.info(
+                f"Created payment intent {payment_intent.id} for amount {amount}"
+            )
 
             return {
                 "payment_intent_id": payment_intent.id,
                 "client_secret": payment_intent.client_secret,
                 "amount": amount,
                 "currency": currency,
-                "status": payment_intent.status
+                "status": payment_intent.status,
             }
 
         except StripeError as e:
             logger.error(f"Stripe error creating payment intent: {str(e)}")
-            raise HTTPException(status_code=500, detail=f"Payment service error: {str(e)}")
+            raise HTTPException(
+                status_code=500, detail=f"Payment service error: {str(e)}"
+            )
         except Exception as e:
             logger.error(f"Error creating payment intent: {str(e)}")
-            raise HTTPException(status_code=500, detail=f"Error creating payment intent: {str(e)}")
+            raise HTTPException(
+                status_code=500, detail=f"Error creating payment intent: {str(e)}"
+            )
 
     async def create_vendor_payment_intent(
         self,
@@ -2874,7 +3276,7 @@ class StripeService:
         vendor_connect_id: str,
         amount: float,
         currency: str = "usd",
-        description: Optional[str] = None
+        description: Optional[str] = None,
     ) -> Dict[str, Any]:
         """
         Create a payment intent for a Planner to pay a Vendor.
@@ -2884,23 +3286,25 @@ class StripeService:
 
         try:
             # Ensure sender has a customer ID
-            user = await self.users_collection.find_one({"_id": ObjectId(sender_user_id)})
+            user = await self.users_collection.find_one(
+                {"_id": ObjectId(sender_user_id)}
+            )
             if not user:
                 raise HTTPException(status_code=404, detail="User not found")
 
-            customer_id = await self.get_or_create_customer(sender_user_id, user["email"], user.get("full_name"))
+            customer_id = await self.get_or_create_customer(
+                sender_user_id, user["email"], user.get("full_name")
+            )
 
             payment_intent = stripe.PaymentIntent.create(
                 amount=int(amount * 100),
                 currency=currency.lower(),
                 customer=customer_id,
                 description=description or "Payment to vendor",
-                transfer_data={
-                    "destination": vendor_connect_id
-                },
+                transfer_data={"destination": vendor_connect_id},
                 metadata={
                     "sender_user_id": sender_user_id,
-                    "vendor_connect_id": vendor_connect_id
+                    "vendor_connect_id": vendor_connect_id,
                 },
                 automatic_payment_methods={"enabled": True},
             )
@@ -2910,12 +3314,14 @@ class StripeService:
                 "client_secret": payment_intent.client_secret,
                 "amount": amount,
                 "currency": currency,
-                "status": payment_intent.status
+                "status": payment_intent.status,
             }
 
         except StripeError as e:
             logger.error(f"Stripe error creating vendor payment: {str(e)}")
-            raise HTTPException(status_code=500, detail=f"Payment service error: {str(e)}")
+            raise HTTPException(
+                status_code=500, detail=f"Payment service error: {str(e)}"
+            )
 
 
 # Create singleton instance

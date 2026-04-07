@@ -8,15 +8,13 @@ Standard Response Format:
   Error: {success: false, message: "...", errors?: [...]}
   Paginated: {success: true, data: [...], meta: {total, page, per_page, ...}}
 """
-from typing import Any, Optional, Dict, List
+
+from typing import Any, Dict, List
 from fastapi.responses import JSONResponse
 
 
 def success_response(
-    data: Any = None,
-    message: str = None,
-    meta: Dict = None,
-    status_code: int = 200
+    data: Any = None, message: str = None, meta: Dict = None, status_code: int = 200
 ) -> JSONResponse:
     """
     Standard success response envelope.
@@ -41,9 +39,7 @@ def success_response(
 
 
 def error_response(
-    message: str,
-    errors: List[Dict] = None,
-    status_code: int = 400
+    message: str, errors: List[Dict] = None, status_code: int = 400
 ) -> JSONResponse:
     """
     Standard error response envelope.
@@ -63,11 +59,7 @@ def error_response(
 
 
 def paginated_response(
-    data: List,
-    total: int,
-    page: int = 1,
-    per_page: int = 20,
-    status_code: int = 200
+    data: List, total: int, page: int = 1, per_page: int = 20, status_code: int = 200
 ) -> JSONResponse:
     """
     Standard paginated response.
@@ -95,15 +87,13 @@ def paginated_response(
                 "total_pages": total_pages,
                 "has_next": page < total_pages,
                 "has_prev": page > 1,
-            }
-        }
+            },
+        },
     )
 
 
 def dict_response(
-    data: Dict = None,
-    message: str = None,
-    status_code: int = 200
+    data: Dict = None, message: str = None, status_code: int = 200
 ) -> Dict:
     """
     Return a dictionary response (for compatibility with direct returns).

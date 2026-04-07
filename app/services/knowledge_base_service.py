@@ -2,6 +2,7 @@
 Knowledge Base Service for Community-Driven Documentation
 Handles CRUD operations, search, and feedback for KB articles
 """
+
 from fastapi import HTTPException
 from app.core.database import mongo
 from typing import Dict, Optional, Any, List
@@ -33,7 +34,7 @@ class KnowledgeBaseService:
         article_data: KnowledgeBaseArticleCreateModel,
         author_email: str,
         author_id: str,
-        author_name: str
+        author_name: str,
     ) -> dict:
         """Create a new KB article"""
         try:
@@ -59,7 +60,9 @@ class KnowledgeBaseService:
                 "content": article_data.content,
                 "excerpt": article_data.excerpt,
                 "category": article_data.category,
-                "tags": [tag.lower().strip() for tag in article_data.tags if tag.strip()][:10],
+                "tags": [
+                    tag.lower().strip() for tag in article_data.tags if tag.strip()
+                ][:10],
                 "status": article_data.status,
                 "is_official": False,  # Only ROOT_ADMIN can set this later
                 "featured": False,
@@ -90,34 +93,40 @@ class KnowledgeBaseService:
             # Log activity
             try:
                 activity_logs_collection = mongo.db["activity_logs"]
-                await activity_logs_collection.insert_one({
-                    "type": "kb_article_created",
-                    "message": f"Knowledge Base article created: {article_data.title[:50]}",
-                    "timestamp": datetime.now(timezone.utc),
-                    "created_at": datetime.now(timezone.utc),
-                    "planner_email": author_email,
-                    "actor_email": author_email,
-                    "metadata": {
-                        "article_id": str(result.inserted_id),
-                        "slug": slug,
-                        "category": article_data.category
+                await activity_logs_collection.insert_one(
+                    {
+                        "type": "kb_article_created",
+                        "message": f"Knowledge Base article created: {article_data.title[:50]}",
+                        "timestamp": datetime.now(timezone.utc),
+                        "created_at": datetime.now(timezone.utc),
+                        "planner_email": author_email,
+                        "actor_email": author_email,
+                        "metadata": {
+                            "article_id": str(result.inserted_id),
+                            "slug": slug,
+                            "category": article_data.category,
+                        },
                     }
-                })
+                )
             except Exception as activity_error:
-                logger.error(f"Failed to log activity for article creation: {str(activity_error)}")
+                logger.error(
+                    f"Failed to log activity for article creation: {str(activity_error)}"
+                )
 
             return {
                 "id": str(result.inserted_id),
                 "slug": slug,
                 "message": "Article created successfully",
-                "created_at": article["created_at"]
+                "created_at": article["created_at"],
             }
 
         except HTTPException:
             raise
         except Exception as e:
             logger.error(f"Error creating article: {str(e)}")
-            raise HTTPException(status_code=500, detail=f"Error creating article: {str(e)}")
+            raise HTTPException(
+                status_code=500, detail=f"Error creating article: {str(e)}"
+            )
 
     async def get_articles(
         self,
@@ -127,7 +136,7 @@ class KnowledgeBaseService:
         search: Optional[str] = None,
         status: Optional[str] = "published",
         featured_only: bool = False,
-        official_only: bool = False
+        official_only: bool = False,
     ) -> dict:
         """Get articles with filtering and pagination"""
         try:
@@ -137,7 +146,10 @@ class KnowledgeBaseService:
             if status is not None:
                 if status not in KB_STATUSES:
                     allowed_statuses = ", ".join(KB_STATUSES)
-                    raise HTTPException(status_code=400, detail=f"Status must be one of: {allowed_statuses}")
+                    raise HTTPException(
+                        status_code=400,
+                        detail=f"Status must be one of: {allowed_statuses}",
+                    )
                 query["status"] = status
 
             if category and category != "all":
@@ -156,7 +168,7 @@ class KnowledgeBaseService:
                     {"title": search_regex},
                     {"excerpt": search_regex},
                     {"tags": search_regex},
-                    {"content": search_regex}
+                    {"content": search_regex},
                 ]
 
             # Count total documents
@@ -167,15 +179,19 @@ class KnowledgeBaseService:
             pages = max(1, (total + limit - 1) // limit)
 
             # Get articles sorted by featured first, then by order, then by date
-            cursor = self.articles_collection.find(
-                query,
-                {"content": 0, "feedback": 0}
-            ).sort([
-                ("featured", -1),
-                ("is_official", -1),
-                ("order", 1),
-                ("created_at", -1)
-            ]).skip(skip).limit(limit)
+            cursor = (
+                self.articles_collection.find(query, {"content": 0, "feedback": 0})
+                .sort(
+                    [
+                        ("featured", -1),
+                        ("is_official", -1),
+                        ("order", 1),
+                        ("created_at", -1),
+                    ]
+                )
+                .skip(skip)
+                .limit(limit)
+            )
 
             articles = []
             async for article in cursor:
@@ -189,12 +205,14 @@ class KnowledgeBaseService:
                 "total": total,
                 "page": page,
                 "pages": pages,
-                "limit": limit
+                "limit": limit,
             }
 
         except Exception as e:
             logger.error(f"Error getting articles: {str(e)}")
-            raise HTTPException(status_code=500, detail=f"Error retrieving articles: {str(e)}")
+            raise HTTPException(
+                status_code=500, detail=f"Error retrieving articles: {str(e)}"
+            )
 
     async def get_article_by_slug(self, slug: str, increment_view: bool = True) -> dict:
         """Get article by slug"""
@@ -207,8 +225,7 @@ class KnowledgeBaseService:
             # Increment view count
             if increment_view and article.get("status") == "published":
                 await self.articles_collection.update_one(
-                    {"_id": article["_id"]},
-                    {"$inc": {"view_count": 1}}
+                    {"_id": article["_id"]}, {"$inc": {"view_count": 1}}
                 )
                 article["view_count"] = article.get("view_count", 0) + 1
 
@@ -218,7 +235,12 @@ class KnowledgeBaseService:
             # Get author info
             author = await self.users_collection.find_one(
                 {"email": article["author_email"]},
-                {"first_name": 1, "last_name": 1, "company_name": 1, "profile_image_url": 1}
+                {
+                    "first_name": 1,
+                    "last_name": 1,
+                    "company_name": 1,
+                    "profile_image_url": 1,
+                },
             )
             if author:
                 article["author_info"] = {
@@ -226,7 +248,7 @@ class KnowledgeBaseService:
                     "first_name": author.get("first_name"),
                     "last_name": author.get("last_name"),
                     "company_name": author.get("company_name"),
-                    "profile_image_url": author.get("profile_image_url")
+                    "profile_image_url": author.get("profile_image_url"),
                 }
 
             return article
@@ -235,7 +257,9 @@ class KnowledgeBaseService:
             raise
         except Exception as e:
             logger.error(f"Error getting article by slug: {str(e)}")
-            raise HTTPException(status_code=500, detail=f"Error retrieving article: {str(e)}")
+            raise HTTPException(
+                status_code=500, detail=f"Error retrieving article: {str(e)}"
+            )
 
     async def get_article_by_id(self, article_id: str) -> dict:
         """Get article by ID"""
@@ -259,13 +283,15 @@ class KnowledgeBaseService:
             raise
         except Exception as e:
             logger.error(f"Error getting article by ID: {str(e)}")
-            raise HTTPException(status_code=500, detail=f"Error retrieving article: {str(e)}")
+            raise HTTPException(
+                status_code=500, detail=f"Error retrieving article: {str(e)}"
+            )
 
     async def update_article(
         self,
         article_id: str,
         update_data: KnowledgeBaseArticleUpdateModel,
-        current_user
+        current_user,
     ) -> dict:
         """Update an article"""
         try:
@@ -283,10 +309,14 @@ class KnowledgeBaseService:
             is_admin = current_user.role == "ROOT_ADMIN"
 
             if not is_author and not is_admin:
-                raise HTTPException(status_code=403, detail="You can only edit your own articles")
+                raise HTTPException(
+                    status_code=403, detail="You can only edit your own articles"
+                )
 
             # Prepare update dict (only non-None values)
-            update_dict = {k: v for k, v in update_data.model_dump().items() if v is not None}
+            update_dict = {
+                k: v for k, v in update_data.model_dump().items() if v is not None
+            }
 
             if not update_dict:
                 raise HTTPException(status_code=400, detail="No fields to update")
@@ -294,7 +324,9 @@ class KnowledgeBaseService:
             # Recalculate reading time if content changed
             if "content" in update_dict:
                 word_count = len(update_dict["content"].split())
-                update_dict["estimated_read_minutes"] = max(1, math.ceil(word_count / 200))
+                update_dict["estimated_read_minutes"] = max(
+                    1, math.ceil(word_count / 200)
+                )
 
             # Update slug if title changed
             if "title" in update_dict:
@@ -303,7 +335,9 @@ class KnowledgeBaseService:
                     # Check if new slug is unique
                     counter = 1
                     base_slug = new_slug
-                    while await self.articles_collection.find_one({"slug": new_slug, "_id": {"$ne": obj_id}}):
+                    while await self.articles_collection.find_one(
+                        {"slug": new_slug, "_id": {"$ne": obj_id}}
+                    ):
                         new_slug = f"{base_slug}-{counter}"
                         counter += 1
                     update_dict["slug"] = new_slug
@@ -312,26 +346,29 @@ class KnowledgeBaseService:
             update_dict["updated_by"] = current_user.email
 
             result = await self.articles_collection.update_one(
-                {"_id": obj_id},
-                {"$set": update_dict}
+                {"_id": obj_id}, {"$set": update_dict}
             )
 
             if result.matched_count == 0:
                 raise HTTPException(status_code=404, detail="Article not found")
 
-            logger.info(f"KB article '{existing['title']}' updated by {current_user.email}")
+            logger.info(
+                f"KB article '{existing['title']}' updated by {current_user.email}"
+            )
 
             return {
                 "message": "Article updated successfully",
                 "slug": update_dict.get("slug", existing["slug"]),
-                "updated_fields": list(update_dict.keys())
+                "updated_fields": list(update_dict.keys()),
             }
 
         except HTTPException:
             raise
         except Exception as e:
             logger.error(f"Error updating article: {str(e)}")
-            raise HTTPException(status_code=500, detail=f"Error updating article: {str(e)}")
+            raise HTTPException(
+                status_code=500, detail=f"Error updating article: {str(e)}"
+            )
 
     async def delete_article(self, article_id: str, current_user) -> dict:
         """Delete an article"""
@@ -350,14 +387,18 @@ class KnowledgeBaseService:
             is_admin = current_user.role == "ROOT_ADMIN"
 
             if not is_author and not is_admin:
-                raise HTTPException(status_code=403, detail="You can only delete your own articles")
+                raise HTTPException(
+                    status_code=403, detail="You can only delete your own articles"
+                )
 
             result = await self.articles_collection.delete_one({"_id": obj_id})
 
             if result.deleted_count == 0:
                 raise HTTPException(status_code=400, detail="Failed to delete article")
 
-            logger.info(f"KB article '{existing['title']}' deleted by {current_user.email}")
+            logger.info(
+                f"KB article '{existing['title']}' deleted by {current_user.email}"
+            )
 
             return {"message": "Article deleted successfully"}
 
@@ -365,14 +406,16 @@ class KnowledgeBaseService:
             raise
         except Exception as e:
             logger.error(f"Error deleting article: {str(e)}")
-            raise HTTPException(status_code=500, detail=f"Error deleting article: {str(e)}")
+            raise HTTPException(
+                status_code=500, detail=f"Error deleting article: {str(e)}"
+            )
 
     async def submit_feedback(
         self,
         article_id: str,
         helpful: bool,
         user_email: str,
-        comment: Optional[str] = None
+        comment: Optional[str] = None,
     ) -> dict:
         """Submit feedback for an article"""
         try:
@@ -387,8 +430,12 @@ class KnowledgeBaseService:
 
             # Check if user already submitted feedback
             existing_feedback = next(
-                (f for f in article.get("feedback", []) if f["user_email"] == user_email),
-                None
+                (
+                    f
+                    for f in article.get("feedback", [])
+                    if f["user_email"] == user_email
+                ),
+                None,
             )
 
             if existing_feedback:
@@ -409,10 +456,10 @@ class KnowledgeBaseService:
                         "$set": {
                             "feedback.$.helpful": helpful,
                             "feedback.$.feedback_at": datetime.now(timezone.utc),
-                            "feedback.$.comment": comment
+                            "feedback.$.comment": comment,
                         },
-                        "$inc": inc_update if inc_update else {}
-                    }
+                        "$inc": inc_update if inc_update else {},
+                    },
                 )
             else:
                 # Add new feedback
@@ -420,35 +467,36 @@ class KnowledgeBaseService:
                     "user_email": user_email,
                     "helpful": helpful,
                     "feedback_at": datetime.now(timezone.utc),
-                    "comment": comment
+                    "comment": comment,
                 }
 
                 inc_field = "helpful_count" if helpful else "not_helpful_count"
 
                 await self.articles_collection.update_one(
                     {"_id": obj_id},
-                    {
-                        "$push": {"feedback": feedback_entry},
-                        "$inc": {inc_field: 1}
-                    }
+                    {"$push": {"feedback": feedback_entry}, "$inc": {inc_field: 1}},
                 )
 
-            return {
-                "message": "Feedback submitted successfully",
-                "helpful": helpful
-            }
+            return {"message": "Feedback submitted successfully", "helpful": helpful}
 
         except HTTPException:
             raise
         except Exception as e:
             logger.error(f"Error submitting feedback: {str(e)}")
-            raise HTTPException(status_code=500, detail=f"Error submitting feedback: {str(e)}")
+            raise HTTPException(
+                status_code=500, detail=f"Error submitting feedback: {str(e)}"
+            )
 
-    async def mark_official(self, article_id: str, is_official: bool, current_user) -> dict:
+    async def mark_official(
+        self, article_id: str, is_official: bool, current_user
+    ) -> dict:
         """Mark article as official (ROOT_ADMIN only)"""
         try:
             if current_user.role != "ROOT_ADMIN":
-                raise HTTPException(status_code=403, detail="Only ROOT_ADMIN can mark articles as official")
+                raise HTTPException(
+                    status_code=403,
+                    detail="Only ROOT_ADMIN can mark articles as official",
+                )
 
             try:
                 obj_id = ObjectId(article_id)
@@ -461,9 +509,9 @@ class KnowledgeBaseService:
                     "$set": {
                         "is_official": is_official,
                         "updated_at": datetime.now(timezone.utc),
-                        "updated_by": current_user.email
+                        "updated_by": current_user.email,
                     }
-                }
+                },
             )
 
             if result.matched_count == 0:
@@ -471,14 +519,16 @@ class KnowledgeBaseService:
 
             return {
                 "message": f"Article marked as {'official' if is_official else 'community'}",
-                "is_official": is_official
+                "is_official": is_official,
             }
 
         except HTTPException:
             raise
         except Exception as e:
             logger.error(f"Error marking article as official: {str(e)}")
-            raise HTTPException(status_code=500, detail=f"Error updating article: {str(e)}")
+            raise HTTPException(
+                status_code=500, detail=f"Error updating article: {str(e)}"
+            )
 
     async def get_categories_with_counts(self, status: str = "published") -> dict:
         """Get all categories with article counts"""
@@ -486,42 +536,47 @@ class KnowledgeBaseService:
             pipeline = [
                 {"$match": {"status": status}},
                 {"$group": {"_id": "$category", "count": {"$sum": 1}}},
-                {"$sort": {"_id": 1}}
+                {"$sort": {"_id": 1}},
             ]
 
-            results = [doc async for doc in self.articles_collection.aggregate(pipeline)]
+            results = [
+                doc async for doc in self.articles_collection.aggregate(pipeline)
+            ]
 
             # Build category list with display names
             categories = []
             for category_id in KB_CATEGORIES:
-                count = next((r["count"] for r in results if r["_id"] == category_id), 0)
-                categories.append({
-                    "category": category_id,
-                    "display_name": CATEGORY_DISPLAY_NAMES.get(category_id, category_id.title()),
-                    "article_count": count
-                })
+                count = next(
+                    (r["count"] for r in results if r["_id"] == category_id), 0
+                )
+                categories.append(
+                    {
+                        "category": category_id,
+                        "display_name": CATEGORY_DISPLAY_NAMES.get(
+                            category_id, category_id.title()
+                        ),
+                        "article_count": count,
+                    }
+                )
 
             # Calculate total
             total_count = sum(int(c["article_count"]) for c in categories)
 
-            return {
-                "categories": categories,
-                "total_articles": total_count
-            }
+            return {"categories": categories, "total_articles": total_count}
 
         except Exception as e:
             logger.error(f"Error getting categories: {str(e)}")
-            raise HTTPException(status_code=500, detail=f"Error retrieving categories: {str(e)}")
+            raise HTTPException(
+                status_code=500, detail=f"Error retrieving categories: {str(e)}"
+            )
 
-    async def search_articles(
-        self,
-        query: str,
-        limit: int = 20
-    ) -> dict:
+    async def search_articles(self, query: str, limit: int = 20) -> dict:
         """Full-text search across articles"""
         try:
             if not query or len(query) < 2:
-                raise HTTPException(status_code=400, detail="Search query must be at least 2 characters")
+                raise HTTPException(
+                    status_code=400, detail="Search query must be at least 2 characters"
+                )
 
             search_regex = {"$regex": re.escape(query), "$options": "i"}
 
@@ -532,18 +587,18 @@ class KnowledgeBaseService:
                     {"title": search_regex},
                     {"excerpt": search_regex},
                     {"tags": search_regex},
-                    {"content": search_regex}
-                ]
+                    {"content": search_regex},
+                ],
             }
 
-            cursor = self.articles_collection.find(
-                search_query,
-                {"content": 0, "feedback": 0}  # Exclude large fields
-            ).sort([
-                ("is_official", -1),
-                ("helpful_count", -1),
-                ("view_count", -1)
-            ]).limit(limit)
+            cursor = (
+                self.articles_collection.find(
+                    search_query,
+                    {"content": 0, "feedback": 0},  # Exclude large fields
+                )
+                .sort([("is_official", -1), ("helpful_count", -1), ("view_count", -1)])
+                .limit(limit)
+            )
 
             articles = []
             async for article in cursor:
@@ -551,23 +606,18 @@ class KnowledgeBaseService:
                 article["_id"] = str(article["_id"])
                 articles.append(article)
 
-            return {
-                "articles": articles,
-                "total": len(articles),
-                "query": query
-            }
+            return {"articles": articles, "total": len(articles), "query": query}
 
         except HTTPException:
             raise
         except Exception as e:
             logger.error(f"Error searching articles: {str(e)}")
-            raise HTTPException(status_code=500, detail=f"Error searching articles: {str(e)}")
+            raise HTTPException(
+                status_code=500, detail=f"Error searching articles: {str(e)}"
+            )
 
     async def get_my_articles(
-        self,
-        author_email: str,
-        page: int = 1,
-        limit: int = 20
+        self, author_email: str, page: int = 1, limit: int = 20
     ) -> dict:
         """Get articles created by specific user"""
         try:
@@ -577,10 +627,12 @@ class KnowledgeBaseService:
             skip = (page - 1) * limit
             pages = max(1, (total + limit - 1) // limit)
 
-            cursor = self.articles_collection.find(
-                query,
-                {"content": 0, "feedback": 0}
-            ).sort("created_at", -1).skip(skip).limit(limit)
+            cursor = (
+                self.articles_collection.find(query, {"content": 0, "feedback": 0})
+                .sort("created_at", -1)
+                .skip(skip)
+                .limit(limit)
+            )
 
             articles = []
             async for article in cursor:
@@ -588,22 +640,15 @@ class KnowledgeBaseService:
                 article["_id"] = str(article["_id"])
                 articles.append(article)
 
-            return {
-                "articles": articles,
-                "total": total,
-                "page": page,
-                "pages": pages
-            }
+            return {"articles": articles, "total": total, "page": page, "pages": pages}
 
         except Exception as e:
             logger.error(f"Error getting user articles: {str(e)}")
-            raise HTTPException(status_code=500, detail=f"Error retrieving articles: {str(e)}")
+            raise HTTPException(
+                status_code=500, detail=f"Error retrieving articles: {str(e)}"
+            )
 
-    async def get_related_articles(
-        self,
-        article_id: str,
-        limit: int = 5
-    ) -> List[dict]:
+    async def get_related_articles(self, article_id: str, limit: int = 5) -> List[dict]:
         """Get related articles based on category and tags"""
         try:
             article = await self.get_article_by_id(article_id)
@@ -614,17 +659,15 @@ class KnowledgeBaseService:
                 "status": "published",
                 "$or": [
                     {"category": article["category"]},
-                    {"tags": {"$in": article.get("tags", [])}}
-                ]
+                    {"tags": {"$in": article.get("tags", [])}},
+                ],
             }
 
-            cursor = self.articles_collection.find(
-                query,
-                {"content": 0, "feedback": 0}
-            ).sort([
-                ("helpful_count", -1),
-                ("view_count", -1)
-            ]).limit(limit)
+            cursor = (
+                self.articles_collection.find(query, {"content": 0, "feedback": 0})
+                .sort([("helpful_count", -1), ("view_count", -1)])
+                .limit(limit)
+            )
 
             articles = []
             async for related in cursor:
@@ -639,6 +682,7 @@ class KnowledgeBaseService:
         except Exception as e:
             logger.error(f"Error getting related articles: {str(e)}")
             return []
+
 
 # Singleton instance
 knowledge_base_service = KnowledgeBaseService()

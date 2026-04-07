@@ -4,7 +4,12 @@ import csv
 from fastapi import UploadFile, HTTPException
 from app.core.database import mongo
 from app.utils.token_generator import generate_token
-from app.utils.contact_sanitizer import sanitize_phone, sanitize_email, validate_phone_format, validate_email_format
+from app.utils.contact_sanitizer import (
+    sanitize_phone,
+    sanitize_email,
+    validate_phone_format,
+    validate_email_format,
+)
 from datetime import datetime, timezone
 
 
@@ -13,10 +18,10 @@ class GuestImportService:
         self.collection = mongo.get_guest_collection()
 
     async def import_csv(self, file: UploadFile, wedding_id: str):
-        if not file.filename or not file.filename.endswith('.csv'):
+        if not file.filename or not file.filename.endswith(".csv"):
             raise HTTPException(status_code=400, detail="File must be a CSV")
 
-        decoded = file.file.read().decode('utf-8').splitlines()
+        decoded = file.file.read().decode("utf-8").splitlines()
         reader = csv.DictReader(decoded)
 
         success = 0
@@ -29,7 +34,11 @@ class GuestImportService:
             email = row.get("email", None)
             role = row.get("role", "guest")
             plus_one_allowed = row.get("plus_one_allowed", "false").lower() == "true"
-            number_of_plus_ones_allowed = int(row.get("number_of_plus_ones_allowed", "0")) if row.get("number_of_plus_ones_allowed", "").isdigit() else 0
+            number_of_plus_ones_allowed = (
+                int(row.get("number_of_plus_ones_allowed", "0"))
+                if row.get("number_of_plus_ones_allowed", "").isdigit()
+                else 0
+            )
             group_id = row.get("group_id", None)
 
             if not name or len(name.strip()) < 2:
@@ -75,7 +84,7 @@ class GuestImportService:
                 "sms_opt_in": True,  # Default to opted-in, guest can opt-out later
                 "email_opt_in": True,  # Default to opted-in, guest can opt-out later
                 "created_at": datetime.now(timezone.utc),
-                "updated_at": datetime.now(timezone.utc)
+                "updated_at": datetime.now(timezone.utc),
             }
 
             try:

@@ -6,13 +6,15 @@ Used by:
 - GET /planner/activity-log
 - GET /planner/weddings
 """
+
 from pydantic import BaseModel, Field
 from typing import List, Optional, Any, Dict
-from app.models.wedding import EventModel, PrivacySettingsModel
+from app.models.wedding import PrivacySettingsModel
 
 
 class RSVPStatsModel(BaseModel):
     """RSVP statistics for a single wedding."""
+
     confirmed: int = Field(default=0, ge=0)
     declined: int = Field(default=0, ge=0)
     pending: int = Field(default=0, ge=0)
@@ -22,6 +24,7 @@ class RSVPStatsModel(BaseModel):
 
 class WeddingMetricsModel(BaseModel):
     """Metrics for a single wedding in the planner dashboard."""
+
     id: str
     couple_names: str = ""
     date: str = ""
@@ -37,30 +40,51 @@ class WeddingMetricsModel(BaseModel):
 
 class MetricsSummaryModel(BaseModel):
     """Aggregated summary statistics across all weddings."""
+
     total_weddings: int = 0
     active_weddings: int = 0
     upcoming_weddings: int = 0
     past_weddings: int = 0
     total_guests: int = 0
-    total_plus_ones_allowed: int = Field(default=0, ge=0, description="Sum of number_of_plus_ones_allowed across all guests")
-    total_plus_ones_submitted: int = Field(default=0, ge=0, description="Actual plus-ones submitted")
+    total_plus_ones_allowed: int = Field(
+        default=0,
+        ge=0,
+        description="Sum of number_of_plus_ones_allowed across all guests",
+    )
+    total_plus_ones_submitted: int = Field(
+        default=0, ge=0, description="Actual plus-ones submitted"
+    )
     confirmed_rsvps: int = 0
-    confirmed_plus_ones_allowed: int = Field(default=0, ge=0, description="Plus-ones allowed for confirmed guests")
-    confirmed_plus_ones_submitted: int = Field(default=0, ge=0, description="Plus-ones submitted by confirmed guests")
+    confirmed_plus_ones_allowed: int = Field(
+        default=0, ge=0, description="Plus-ones allowed for confirmed guests"
+    )
+    confirmed_plus_ones_submitted: int = Field(
+        default=0, ge=0, description="Plus-ones submitted by confirmed guests"
+    )
     pending_rsvps: int = 0
-    pending_plus_ones_allowed: int = Field(default=0, ge=0, description="Plus-ones allowed for pending guests")
+    pending_plus_ones_allowed: int = Field(
+        default=0, ge=0, description="Plus-ones allowed for pending guests"
+    )
     declined_rsvps: int = 0
 
 
 class RevenueMetricsModel(BaseModel):
     """Revenue metrics calculated from subscription data."""
-    monthly_bookings: int = Field(default=0, ge=0, description="New weddings booked this month")
-    total_revenue: float = Field(default=0.0, ge=0.0, description="Total monthly revenue in USD")
-    average_wedding_value: float = Field(default=0.0, ge=0.0, description="Average revenue per wedding in USD")
+
+    monthly_bookings: int = Field(
+        default=0, ge=0, description="New weddings booked this month"
+    )
+    total_revenue: float = Field(
+        default=0.0, ge=0.0, description="Total monthly revenue in USD"
+    )
+    average_wedding_value: float = Field(
+        default=0.0, ge=0.0, description="Average revenue per wedding in USD"
+    )
 
 
 class ActivityItemModel(BaseModel):
     """Single activity entry in the activity log."""
+
     id: str
     type: str = "info"
     message: str = ""
@@ -71,6 +95,7 @@ class ActivityItemModel(BaseModel):
 
 class PlannerMetricsResponse(BaseModel):
     """Response model for GET /planner/metrics."""
+
     summary: MetricsSummaryModel = Field(default_factory=MetricsSummaryModel)
     weddings: List[WeddingMetricsModel] = Field(default_factory=list)
     recent_activity: List[ActivityItemModel] = Field(default_factory=list)
@@ -79,6 +104,7 @@ class PlannerMetricsResponse(BaseModel):
 
 class ActivityLogResponse(BaseModel):
     """Response model for GET /planner/activity-log."""
+
     activities: List[ActivityItemModel] = Field(default_factory=list)
     total: int = 0
     page: int = Field(default=1, ge=1, description="Current page number")
@@ -88,6 +114,7 @@ class ActivityLogResponse(BaseModel):
 
 class PlannerWeddingModel(BaseModel):
     """Wedding data for GET /planner/weddings."""
+
     id: str = Field(..., serialization_alias="_id")
     couple_names: str = ""
     date: str = ""
@@ -107,12 +134,14 @@ class PlannerWeddingModel(BaseModel):
     faqs: List[Any] = Field(default_factory=list)
     our_story: Optional[Dict[str, Any]] = None
     wedding_party: List[Any] = Field(default_factory=list)
-    featured_image: Optional[str] = Field(None, description="S3 key for the featured background image")
+    featured_image: Optional[str] = Field(
+        None, description="S3 key for the featured background image"
+    )
 
     class Config:
         populate_by_name = True
 
     def model_dump(self, **kwargs):
         """Override to use _id in output."""
-        kwargs.setdefault('by_alias', True)
+        kwargs.setdefault("by_alias", True)
         return super().model_dump(**kwargs)

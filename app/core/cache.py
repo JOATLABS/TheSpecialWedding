@@ -1,6 +1,7 @@
 """
 Redis caching layer for performance optimization
 """
+
 import json
 import pickle
 from typing import Any, Optional, Union
@@ -37,7 +38,7 @@ class CacheManager:
                 retry_on_timeout=True,
                 socket_connect_timeout=5,
                 socket_timeout=5,
-                decode_responses=False  # We'll handle encoding ourselves
+                decode_responses=False,  # We'll handle encoding ourselves
             )
 
             self.redis_client = redis.Redis(connection_pool=pool)
@@ -50,22 +51,25 @@ class CacheManager:
             logger.error(f"Failed to connect to Redis: {str(e)}")
             self.enabled = False
             self.redis_client = None
+
     async def disconnect(self):
         """Disconnect from Redis"""
         if self.redis_client:
             await self.redis_client.close()
             logger.info("Disconnected from Redis")
+
     def _serialize_value(self, value: Any) -> bytes:
         """Serialize value for storage"""
         if isinstance(value, (str, int, float, bool)):
-            return json.dumps(value).encode('utf-8')
+            return json.dumps(value).encode("utf-8")
         else:
             return pickle.dumps(value)
+
     def _deserialize_value(self, value: bytes) -> Any:
         """Deserialize value from storage"""
         try:
             # Try JSON first (for simple types)
-            return json.loads(value.decode('utf-8'))
+            return json.loads(value.decode("utf-8"))
         except (json.JSONDecodeError, UnicodeDecodeError):
             # Fall back to pickle for complex objects
             return pickle.loads(value)
@@ -106,10 +110,7 @@ class CacheManager:
             return default
 
     async def set(
-        self,
-        key: str,
-        value: Any,
-        expire: Optional[Union[int, timedelta]] = None
+        self, key: str, value: Any, expire: Optional[Union[int, timedelta]] = None
     ) -> bool:
         """
         Set value in cache
@@ -267,7 +268,9 @@ class CacheManager:
 
         try:
             prefixed_key = self._get_key_with_prefix(key)
-            result = await self.redis_client.eval(release_script, 1, prefixed_key, value)
+            result = await self.redis_client.eval(
+                release_script, 1, prefixed_key, value
+            )
             return bool(result)
         except Exception as e:
             logger.warning(f"Cache lock release failed for key {key}: {str(e)}")
@@ -353,7 +356,7 @@ class CacheManager:
         func,
         expire: Optional[Union[int, timedelta]] = None,
         *args,
-        **kwargs
+        **kwargs,
     ) -> Any:
         """
         Get value from cache or set it by calling the function
@@ -375,7 +378,7 @@ class CacheManager:
         # Cache miss - compute value
         try:
             if callable(func):
-                if hasattr(func, '__call__') and hasattr(func, '__await__'):
+                if hasattr(func, "__call__") and hasattr(func, "__await__"):
                     # Async function
                     value = await func(*args, **kwargs)
                 else:
@@ -408,16 +411,14 @@ async def close_cache():
 
 
 # Convenience functions
-async def cached(
-    key: str,
-    expire: Union[int, timedelta] = timedelta(minutes=15)
-):
+async def cached(key: str, expire: Union[int, timedelta] = timedelta(minutes=15)):
     """
     Decorator for caching function results
     Args:
         key: Cache key template (can use {arg_name} for formatting)
         expire: Cache expiration time
     """
+
     def decorator(func):
         async def wrapper(*args, **kwargs):
             # Format cache key with function arguments
@@ -426,14 +427,10 @@ async def cached(
             except (KeyError, IndexError):
                 # If formatting fails, use base key with function name
                 formatted_key = f"{func.__name__}:{key}"
-            return await cache.get_or_set(
-                formatted_key,
-                func,
-                expire,
-                *args,
-                **kwargs
-            )
+            return await cache.get_or_set(formatted_key, func, expire, *args, **kwargs)
+
         return wrapper
+
     return decorator
 
 

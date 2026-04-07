@@ -14,7 +14,7 @@ import asyncio
 import logging
 import time
 from datetime import datetime, timezone, timedelta
-from typing import Any, Dict, Optional, List
+from typing import Any, Dict, Optional
 
 from motor.motor_asyncio import AsyncIOMotorDatabase
 
@@ -33,6 +33,7 @@ def invalidate_config_cache():
     global _config_cache, _config_cache_ts
     _config_cache = None
     _config_cache_ts = 0.0
+
 
 # Default config values — used when no config document exists yet
 DEFAULT_CONFIG = {
@@ -109,7 +110,9 @@ class AdPlatformConfigService:
 
         return doc
 
-    async def update_config(self, updates: Dict[str, Any], admin_email: str) -> Dict[str, Any]:
+    async def update_config(
+        self, updates: Dict[str, Any], admin_email: str
+    ) -> Dict[str, Any]:
         """
         Partially update platform config. Only provided (non-None) fields are updated.
         Returns the updated config.
@@ -128,7 +131,9 @@ class AdPlatformConfigService:
             upsert=True,
         )
 
-        logger.info(f"Platform config updated by {admin_email}: {list(clean_updates.keys())}")
+        logger.info(
+            f"Platform config updated by {admin_email}: {list(clean_updates.keys())}"
+        )
         invalidate_config_cache()
         return await self.get_config(bypass_cache=True)
 
@@ -162,9 +167,16 @@ class AdPlatformConfigService:
 
         # Collection doc counts
         collections = [
-            "ad_campaigns", "ad_creatives", "ad_events", "ad_leads",
-            "campaign_day_stats", "placement_day_stats", "ad_fraud_signals",
-            "ad_lead_charges", "vendor_ad_billing", "planner_ad_preferences",
+            "ad_campaigns",
+            "ad_creatives",
+            "ad_events",
+            "ad_leads",
+            "campaign_day_stats",
+            "placement_day_stats",
+            "ad_fraud_signals",
+            "ad_lead_charges",
+            "vendor_ad_billing",
+            "planner_ad_preferences",
         ]
         collection_stats = {}
         for col_name in collections:

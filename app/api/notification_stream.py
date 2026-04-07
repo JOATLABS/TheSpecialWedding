@@ -86,7 +86,7 @@ async def _event_stream(user_email: str, user_role: str, request: Request):
 
             except asyncio.TimeoutError:
                 # No events — send heartbeat to keep connection alive
-                yield f": heartbeat\n\n"
+                yield ": heartbeat\n\n"
 
     except asyncio.CancelledError:
         pass

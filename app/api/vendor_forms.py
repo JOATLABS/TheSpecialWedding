@@ -15,21 +15,26 @@ router = APIRouter()
 email_service = ResendEmailService()
 
 
-def _build_public_vendor_form_link(base_url: str, form_id: str, access_token: str) -> str:
+def _build_public_vendor_form_link(
+    base_url: str, form_id: str, access_token: str
+) -> str:
     normalized_base = base_url.rstrip("/")
     return f"{normalized_base}/vendor-form/{form_id}/{access_token}"
 
 
 class VendorFormSubmission(BaseModel):
     """Pydantic model for vendor form submission data"""
-    submission_data: Dict[str, Any] = Field(..., description="Form field responses keyed by field ID")
+
+    submission_data: Dict[str, Any] = Field(
+        ..., description="Form field responses keyed by field ID"
+    )
 
     class Config:
         json_schema_extra = {
             "example": {
                 "submission_data": {
                     "vendor_experience": "10 years",
-                    "pricing_info": "Starting at $2000"
+                    "pricing_info": "Starting at $2000",
                 }
             }
         }
@@ -43,7 +48,9 @@ class VendorFormService:
 
     def generate_form_token(self) -> str:
         """Generate a secure token for vendor form access"""
-        return ''.join(secrets.choice(string.ascii_letters + string.digits) for _ in range(32))
+        return "".join(
+            secrets.choice(string.ascii_letters + string.digits) for _ in range(32)
+        )
 
     async def create_vendor_form(self, form_data: dict, created_by: str) -> dict:
         """Create a new vendor form"""
@@ -57,32 +64,36 @@ class VendorFormService:
                 "updated_at": datetime.now(timezone.utc),
                 "sent_at": None,
                 "submitted_at": None,
-                "submission_data": None
+                "submission_data": None,
             }
 
             result = await self.vendor_forms_collection.insert_one(vendor_form)
             vendor_form["_id"] = str(result.inserted_id)
 
-            return {"message": "Vendor form created successfully", "form_id": str(result.inserted_id)}
+            return {
+                "message": "Vendor form created successfully",
+                "form_id": str(result.inserted_id),
+            }
         except Exception as e:
             logging.error(f"Error creating vendor form: {str(e)}")
-            raise HTTPException(status_code=500, detail=f"Failed to create vendor form: {str(e)}")
- 
+            raise HTTPException(
+                status_code=500, detail=f"Failed to create vendor form: {str(e)}"
+            )
+
     async def get_vendor_forms_for_planner(self, planner_email: str) -> List[dict]:
         """Get all vendor forms for a specific planner"""
         try:
             # Get planner's weddings (safety cap: typical planner has <500 weddings)
             MAX_WEDDINGS = 1000
             planner_weddings = await self.weddings_collection.find(
-                {"assigned_planner_email": planner_email},
-                {"_id": 1}
+                {"assigned_planner_email": planner_email}, {"_id": 1}
             ).to_list(length=MAX_WEDDINGS)
             wedding_ids = [str(w["_id"]) for w in planner_weddings]
             # Get vendor forms for these weddings (safety cap: ~10 forms per wedding)
             MAX_VENDOR_FORMS = 5000
-            vendor_forms = await self.vendor_forms_collection.find({
-                "wedding_id": {"$in": wedding_ids}
-            }).to_list(length=MAX_VENDOR_FORMS)
+            vendor_forms = await self.vendor_forms_collection.find(
+                {"wedding_id": {"$in": wedding_ids}}
+            ).to_list(length=MAX_VENDOR_FORMS)
 
             # Convert ObjectId to string
             for form in vendor_forms:
@@ -91,14 +102,18 @@ class VendorFormService:
             return vendor_forms
         except Exception as e:
             logging.error(f"Error fetching vendor forms: {str(e)}")
-            raise HTTPException(status_code=500, detail=f"Failed to fetch vendor forms: {str(e)}")
+            raise HTTPException(
+                status_code=500, detail=f"Failed to fetch vendor forms: {str(e)}"
+            )
 
     async def get_all_vendor_forms(self) -> List[dict]:
         """Get all vendor forms (ROOT_ADMIN only)"""
         try:
             # Safety cap: limit admin view to 10k forms (can paginate if needed)
             MAX_ADMIN_FORMS = 10000
-            vendor_forms = await self.vendor_forms_collection.find().to_list(length=MAX_ADMIN_FORMS)
+            vendor_forms = await self.vendor_forms_collection.find().to_list(
+                length=MAX_ADMIN_FORMS
+            )
 
             # Convert ObjectId to string
             for form in vendor_forms:
@@ -107,22 +122,30 @@ class VendorFormService:
             return vendor_forms
         except Exception as e:
             logging.error(f"Error fetching all vendor forms: {str(e)}")
-            raise HTTPException(status_code=500, detail=f"Failed to fetch vendor forms: {str(e)}")
+            raise HTTPException(
+                status_code=500, detail=f"Failed to fetch vendor forms: {str(e)}"
+            )
 
     async def send_vendor_form(self, form_id: str, planner_email: str) -> dict:
         """Send vendor form via email"""
         try:
             # Get the form
-            form = await self.vendor_forms_collection.find_one({"_id": ObjectId(form_id)})
+            form = await self.vendor_forms_collection.find_one(
+                {"_id": ObjectId(form_id)}
+            )
             if not form:
                 raise HTTPException(status_code=404, detail="Vendor form not found")
             # Get wedding details
-            wedding = await self.weddings_collection.find_one({"_id": ObjectId(form["wedding_id"])})
+            wedding = await self.weddings_collection.find_one(
+                {"_id": ObjectId(form["wedding_id"])}
+            )
             if not wedding:
                 raise HTTPException(status_code=404, detail="Wedding not found")
             # Generate form link
             base_url = os.getenv("FRONTEND_URL", "")  # Update with your frontend URL
-            form_link = _build_public_vendor_form_link(base_url, form_id, form["access_token"])
+            form_link = _build_public_vendor_form_link(
+                base_url, form_id, form["access_token"]
+            )
 
             # Prepare email content
             # Prepare email content
@@ -147,16 +170,16 @@ class VendorFormService:
                     </div>
 
                     <div class="content">
-                        <p>Dear {form['vendor_name']},</p>
+                        <p>Dear {form["vendor_name"]},</p>
 
                         <p>We hope this email finds you well. We are reaching out regarding wedding services for one of our couples.</p>
 
                         <div class="wedding-details">
                             <h3>Wedding Details:</h3>
-                            <p><strong>Couple:</strong> {wedding['couple_names']}</p>
-                            <p><strong>Wedding Date:</strong> {wedding['date']}</p>
-                            <p><strong>Service Required:</strong> {form['vendor_type'].replace('_', ' ').title()}</p>
-                            <p><strong>Form:</strong> {form['form_name']}</p>
+                            <p><strong>Couple:</strong> {wedding["couple_names"]}</p>
+                            <p><strong>Wedding Date:</strong> {wedding["date"]}</p>
+                            <p><strong>Service Required:</strong> {form["vendor_type"].replace("_", " ").title()}</p>
+                            <p><strong>Form:</strong> {form["form_name"]}</p>
                         </div>
 
                         <p>We would love to learn more about your services and get a quote for this special day. Please click the link below to access our vendor information form:</p>
@@ -196,7 +219,7 @@ class VendorFormService:
                 to_email=form["vendor_email"],
                 subject=email_subject,
                 html_content=email_html,
-                from_name="Wedding Planning Team"
+                from_name="Wedding Planning Team",
             )
             if email_result.get("success"):
                 # Update form status
@@ -206,9 +229,9 @@ class VendorFormService:
                         "$set": {
                             "status": "sent",
                             "sent_at": datetime.now(timezone.utc),
-                            "updated_at": datetime.now(timezone.utc)
+                            "updated_at": datetime.now(timezone.utc),
                         }
-                    }
+                    },
                 )
 
                 return {"message": "Vendor form sent successfully", "email_sent": True}
@@ -219,20 +242,26 @@ class VendorFormService:
             raise
         except Exception as e:
             logging.error(f"Error sending vendor form: {str(e)}")
-            raise HTTPException(status_code=500, detail=f"Failed to send vendor form: {str(e)}")
+            raise HTTPException(
+                status_code=500, detail=f"Failed to send vendor form: {str(e)}"
+            )
 
 
 vendor_service = VendorFormService()
 
 
 @router.post("/vendor-forms", tags=["Vendor Management"])
-async def create_vendor_form(form_data: dict, current_user: ExtendedAuthUser = Depends(require_admin_or_planner)):
+async def create_vendor_form(
+    form_data: dict, current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
+):
     """Create a new vendor form"""
     return await vendor_service.create_vendor_form(form_data, current_user.email)
 
 
 @router.get("/vendor-forms", tags=["Vendor Management"])
-async def get_vendor_forms(current_user: ExtendedAuthUser = Depends(require_admin_or_planner)):
+async def get_vendor_forms(
+    current_user: ExtendedAuthUser = Depends(require_admin_or_planner),
+):
     """Get vendor forms - planners see only their forms, ROOT_ADMIN sees all"""
     if current_user.is_root_admin:
         return await vendor_service.get_all_vendor_forms()
@@ -241,16 +270,22 @@ async def get_vendor_forms(current_user: ExtendedAuthUser = Depends(require_admi
 
 
 @router.post("/vendor-forms/{form_id}/send", tags=["Vendor Management"])
-async def send_vendor_form(form_id: str, current_user: ExtendedAuthUser = Depends(require_admin_or_planner)):
+async def send_vendor_form(
+    form_id: str, current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
+):
     """Send vendor form via email"""
     return await vendor_service.send_vendor_form(form_id, current_user.email)
 
 
 @router.get("/vendor-forms/{form_id}", tags=["Vendor Management"])
-async def get_vendor_form(form_id: str, current_user: ExtendedAuthUser = Depends(require_admin_or_planner)):
+async def get_vendor_form(
+    form_id: str, current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
+):
     """Get a specific vendor form"""
     try:
-        form = await vendor_service.vendor_forms_collection.find_one({"_id": ObjectId(form_id)})
+        form = await vendor_service.vendor_forms_collection.find_one(
+            {"_id": ObjectId(form_id)}
+        )
         if not form:
             raise HTTPException(status_code=404, detail="Vendor form not found")
         form["_id"] = str(form["_id"])
@@ -262,16 +297,19 @@ async def get_vendor_form(form_id: str, current_user: ExtendedAuthUser = Depends
 # Public endpoint for vendors to access forms
 async def _get_vendor_form_public_payload(form_id: str, token: str) -> dict:
     try:
-        form = await vendor_service.vendor_forms_collection.find_one({
-            "_id": ObjectId(form_id),
-            "access_token": token
-        })
+        form = await vendor_service.vendor_forms_collection.find_one(
+            {"_id": ObjectId(form_id), "access_token": token}
+        )
 
         if not form:
-            raise HTTPException(status_code=404, detail="Form not found or invalid token")
+            raise HTTPException(
+                status_code=404, detail="Form not found or invalid token"
+            )
 
         # Get wedding details
-        wedding = await vendor_service.weddings_collection.find_one({"_id": ObjectId(form["wedding_id"])})
+        wedding = await vendor_service.weddings_collection.find_one(
+            {"_id": ObjectId(form["wedding_id"])}
+        )
 
         # Return form data without sensitive information
         return {
@@ -283,8 +321,8 @@ async def _get_vendor_form_public_payload(form_id: str, token: str) -> dict:
             "status": form["status"],
             "wedding": {
                 "couple_names": wedding["couple_names"] if wedding else "Unknown",
-                "date": wedding["date"] if wedding else "Unknown"
-            }
+                "date": wedding["date"] if wedding else "Unknown",
+            },
         }
     except HTTPException:
         raise
@@ -302,29 +340,40 @@ async def get_vendor_form_public(form_id: str, token: str):
     return await _get_vendor_form_public_payload(form_id, token)
 
 
-@router.get("/vendor-form/{form_id}/public", tags=["Public Vendor Form"], include_in_schema=False)
-async def get_vendor_form_public_legacy(form_id: str, token: str = Query(..., description="Access token for vendor form")):
+@router.get(
+    "/vendor-form/{form_id}/public",
+    tags=["Public Vendor Form"],
+    include_in_schema=False,
+)
+async def get_vendor_form_public_legacy(
+    form_id: str, token: str = Query(..., description="Access token for vendor form")
+):
     """Backward-compatible query-token access for already-issued links."""
     return await _get_vendor_form_public_payload(form_id, token)
 
 
-async def _submit_vendor_form_payload(form_id: str, token: str, submission: VendorFormSubmission | None) -> dict:
+async def _submit_vendor_form_payload(
+    form_id: str, token: str, submission: VendorFormSubmission | None
+) -> dict:
     try:
         # Validate submission data
         if not submission:
             raise ValueError("Submission data is required")
         submission_data = submission.submission_data
         # Verify form and token
-        form = await vendor_service.vendor_forms_collection.find_one({
-            "_id": ObjectId(form_id),
-            "access_token": token
-        })
+        form = await vendor_service.vendor_forms_collection.find_one(
+            {"_id": ObjectId(form_id), "access_token": token}
+        )
 
         if not form:
-            raise HTTPException(status_code=404, detail="Form not found or invalid token")
+            raise HTTPException(
+                status_code=404, detail="Form not found or invalid token"
+            )
 
         if form["status"] == "submitted":
-            raise HTTPException(status_code=400, detail="Form has already been submitted")
+            raise HTTPException(
+                status_code=400, detail="Form has already been submitted"
+            )
 
         # Save submission
         submission_record = {
@@ -334,10 +383,12 @@ async def _submit_vendor_form_payload(form_id: str, token: str, submission: Vend
             "wedding_id": form["wedding_id"],
             "submission_data": submission_data,
             "submitted_at": datetime.now(timezone.utc),
-            "status": "submitted"
+            "status": "submitted",
         }
 
-        result = await vendor_service.vendor_submissions_collection.insert_one(submission_record)
+        result = await vendor_service.vendor_submissions_collection.insert_one(
+            submission_record
+        )
 
         # Update form status
         await vendor_service.vendor_forms_collection.update_one(
@@ -347,16 +398,24 @@ async def _submit_vendor_form_payload(form_id: str, token: str, submission: Vend
                     "status": "submitted",
                     "submitted_at": datetime.now(timezone.utc),
                     "submission_data": submission_data,
-                    "updated_at": datetime.now(timezone.utc)
+                    "updated_at": datetime.now(timezone.utc),
                 }
-            }
+            },
         )
         # Send notification email to planner
         try:
-            wedding = await vendor_service.weddings_collection.find_one({"_id": ObjectId(form["wedding_id"])})
-            planner_email = wedding.get("assigned_planner_email") if wedding else form.get("created_by")
+            wedding = await vendor_service.weddings_collection.find_one(
+                {"_id": ObjectId(form["wedding_id"])}
+            )
+            planner_email = (
+                wedding.get("assigned_planner_email")
+                if wedding
+                else form.get("created_by")
+            )
             if planner_email:
-                notification_subject = f"Vendor Submission Received - {form['vendor_name']}"
+                notification_subject = (
+                    f"Vendor Submission Received - {form['vendor_name']}"
+                )
                 base_url = os.getenv("FRONTEND_URL", "").rstrip("/")
                 dashboard_url = f"{base_url}/admin/vendors"
 
@@ -370,12 +429,12 @@ async def _submit_vendor_form_payload(form_id: str, token: str, submission: Vend
 
                         <div style="background: #f3f4f6; padding: 15px; border-radius: 6px; margin: 20px 0;">
                             <h3>Submission Details:</h3>
-                            <p><strong>Vendor:</strong> {form['vendor_name']}</p>
-                            <p><strong>Email:</strong> {form['vendor_email']}</p>
-                            <p><strong>Service Type:</strong> {form['vendor_type'].replace('_', ' ').title()}</p>
-                            <p><strong>Wedding:</strong> {wedding['couple_names'] if wedding else 'Unknown'}</p>
-                            <p><strong>Form:</strong> {form['form_name']}</p>
-                            <p><strong>Submitted:</strong> {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S')} UTC</p>
+                            <p><strong>Vendor:</strong> {form["vendor_name"]}</p>
+                            <p><strong>Email:</strong> {form["vendor_email"]}</p>
+                            <p><strong>Service Type:</strong> {form["vendor_type"].replace("_", " ").title()}</p>
+                            <p><strong>Wedding:</strong> {wedding["couple_names"] if wedding else "Unknown"}</p>
+                            <p><strong>Form:</strong> {form["form_name"]}</p>
+                            <p><strong>Submitted:</strong> {datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")} UTC</p>
                         </div>
 
                         <p>Please log in to your dashboard to review the vendor's submission and take appropriate action.</p>
@@ -394,28 +453,36 @@ async def _submit_vendor_form_payload(form_id: str, token: str, submission: Vend
                     to_email=planner_email,
                     subject=notification_subject,
                     html_content=notification_html,
-                    from_name="Wedding Platform"
+                    from_name="Wedding Platform",
                 )
 
                 # Send push notification to planner
                 try:
-                    from app.services.planner_notification_service import planner_notification_service
+                    from app.services.planner_notification_service import (
+                        planner_notification_service,
+                    )
+
                     await planner_notification_service.notify_vendor_response(
                         planner_id=planner_email,
                         wedding_id=form["wedding_id"],
                         vendor_name=form["vendor_name"],
                         response_type=f"submitted {form['form_name']}",
-                        vendor_id=str(result.inserted_id)
+                        vendor_id=str(result.inserted_id),
                     )
                 except Exception as push_error:
-                    logging.warning(f"Failed to send push notification: {str(push_error)}")
+                    logging.warning(
+                        f"Failed to send push notification: {str(push_error)}"
+                    )
                     # Continue even if push notification fails
 
         except Exception as e:
             logging.error(f"Failed to send notification email: {str(e)}")
             # Continue even if notification fails
 
-        return {"message": "Form submitted successfully", "submission_id": str(result.inserted_id)}
+        return {
+            "message": "Form submitted successfully",
+            "submission_id": str(result.inserted_id),
+        }
 
     except HTTPException:
         raise
@@ -428,12 +495,18 @@ async def _submit_vendor_form_payload(form_id: str, token: str, submission: Vend
 
 
 @router.post("/vendor-form/{form_id}/submit/{token}", tags=["Public Vendor Form"])
-async def submit_vendor_form(form_id: str, token: str, submission: VendorFormSubmission | None = None):
+async def submit_vendor_form(
+    form_id: str, token: str, submission: VendorFormSubmission | None = None
+):
     """Submit vendor form using the canonical path-token route."""
     return await _submit_vendor_form_payload(form_id, token, submission)
 
 
-@router.post("/vendor-form/{form_id}/submit", tags=["Public Vendor Form"], include_in_schema=False)
+@router.post(
+    "/vendor-form/{form_id}/submit",
+    tags=["Public Vendor Form"],
+    include_in_schema=False,
+)
 async def submit_vendor_form_legacy(
     form_id: str,
     token: str = Query(..., description="Access token for vendor form"),

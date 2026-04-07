@@ -15,17 +15,31 @@ wedding_service = WeddingService()
 class VerifiedGalleryRequest(BaseModel):
     wedding_slug: str = Field(..., description="Wedding slug")
     token: Optional[str] = Field(None, description="Guest invitation token")
-    name: Optional[str] = Field(None, description="Guest name for verification fallback")
-    phone: Optional[str] = Field(None, description="Guest phone for verification fallback")
-    email: Optional[str] = Field(None, description="Guest email for verification fallback")
-    password: Optional[str] = Field(None, description="Wedding password if password protected")
+    name: Optional[str] = Field(
+        None, description="Guest name for verification fallback"
+    )
+    phone: Optional[str] = Field(
+        None, description="Guest phone for verification fallback"
+    )
+    email: Optional[str] = Field(
+        None, description="Guest email for verification fallback"
+    )
+    password: Optional[str] = Field(
+        None, description="Wedding password if password protected"
+    )
     otp_code: Optional[str] = Field(None, description="OTP verification code")
-    contact: Optional[str] = Field(None, description="Contact used for OTP verification")
+    contact: Optional[str] = Field(
+        None, description="Contact used for OTP verification"
+    )
     limit: int = Field(default=60, ge=1, le=100, description="Maximum files to return")
-    cursor: Optional[str] = Field(None, description="Continuation cursor from the previous page")
+    cursor: Optional[str] = Field(
+        None, description="Continuation cursor from the previous page"
+    )
 
 
-async def _list_gallery_page_for_wedding(wedding_slug: str, limit: int, cursor: Optional[str]):
+async def _list_gallery_page_for_wedding(
+    wedding_slug: str, limit: int, cursor: Optional[str]
+):
     wedding = await wedding_service.get_wedding_by_slug(wedding_slug)
     planner_scope = gallery_service.get_planner_scope_from_wedding(wedding)
     return gallery_service.list_wedding_files_page(
@@ -59,8 +73,9 @@ async def public_gallery(
 
     raise HTTPException(
         status_code=403,
-        detail="Gallery access requires guest verification. Use /gallery/verified endpoint with proper authentication."
+        detail="Gallery access requires guest verification. Use /gallery/verified endpoint with proper authentication.",
     )
+
 
 # New secure gallery endpoint
 @router.post("/gallery/verified", tags=["Guest"])
@@ -70,8 +85,19 @@ async def verified_gallery(request: VerifiedGalleryRequest, http_request: Reques
 
     verification_service = GuestVerificationService()
     if request.token:
-        result = await verification_service.get_rsvp_access_by_token(request.wedding_slug, request.token)
-    elif any([request.name, request.phone, request.email, request.password, request.otp_code, request.contact]):
+        result = await verification_service.get_rsvp_access_by_token(
+            request.wedding_slug, request.token
+        )
+    elif any(
+        [
+            request.name,
+            request.phone,
+            request.email,
+            request.password,
+            request.otp_code,
+            request.contact,
+        ]
+    ):
         verification_data = {
             "name": request.name,
             "phone": request.phone,
@@ -102,6 +128,7 @@ async def verified_gallery(request: VerifiedGalleryRequest, http_request: Reques
         request.limit,
         request.cursor,
     )
+
 
 # Public QR Code Generator
 @router.get("/invite/qr", tags=["Guest"])

@@ -25,20 +25,22 @@ TEXT_SEARCH_URL = "https://places.googleapis.com/v1/places:searchText"
 PHOTO_URL_TEMPLATE = "https://places.googleapis.com/v1/{photo_name}/media"
 
 # Fields we request (controls billing — only request what we need)
-FIELD_MASK = ",".join([
-    "places.id",
-    "places.displayName",
-    "places.formattedAddress",
-    "places.nationalPhoneNumber",
-    "places.internationalPhoneNumber",
-    "places.websiteUri",
-    "places.rating",
-    "places.userRatingCount",
-    "places.photos",
-    "places.addressComponents",
-    "places.location",
-    "places.priceLevel",
-])
+FIELD_MASK = ",".join(
+    [
+        "places.id",
+        "places.displayName",
+        "places.formattedAddress",
+        "places.nationalPhoneNumber",
+        "places.internationalPhoneNumber",
+        "places.websiteUri",
+        "places.rating",
+        "places.userRatingCount",
+        "places.photos",
+        "places.addressComponents",
+        "places.location",
+        "places.priceLevel",
+    ]
+)
 
 
 async def search_vendors(query: str, max_results: int = 20) -> List[Dict]:
@@ -85,7 +87,9 @@ async def search_vendors(query: str, max_results: int = 20) -> List[Dict]:
         return results
 
     except httpx.HTTPStatusError as e:
-        logger.error(f"Google Places API error ({e.response.status_code}): {e.response.text[:300]}")
+        logger.error(
+            f"Google Places API error ({e.response.status_code}): {e.response.text[:300]}"
+        )
         return []
     except Exception as e:
         logger.error(f"Google Places search failed for '{query}': {e}")
@@ -118,7 +122,8 @@ def _normalize_place(place: Dict) -> Optional[Dict]:
         "state": address_parts.get("state"),
         "country": address_parts.get("country", "US"),
         "postal_code": address_parts.get("postal_code"),
-        "phone": place.get("nationalPhoneNumber") or place.get("internationalPhoneNumber"),
+        "phone": place.get("nationalPhoneNumber")
+        or place.get("internationalPhoneNumber"),
         "website": place.get("websiteUri"),
         "google_rating": place.get("rating"),
         "google_rating_count": place.get("userRatingCount"),

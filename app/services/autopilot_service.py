@@ -4,6 +4,7 @@ Autopilot Payment Service
 Handles automatic payment processing, scheduling, retries, and notifications.
 This is the core engine for the Wedding Finance Autopilot feature.
 """
+
 from typing import Dict, Any, List, Optional
 from datetime import datetime, date, timedelta, timezone
 from decimal import Decimal
@@ -43,49 +44,58 @@ class AutopilotService:
         """Return a display-safe couple name from canonical or legacy fields."""
         couple = couple or {}
         partner1 = (couple.get("partner1_name") or couple.get("name") or "").strip()
-        partner2 = (couple.get("partner2_name") or couple.get("partner_name") or "").strip()
+        partner2 = (
+            couple.get("partner2_name") or couple.get("partner_name") or ""
+        ).strip()
         if partner1 and partner2:
             return f"{partner1} & {partner2}"
         return partner1 or partner2 or "there"
 
-    async def _get_contract_by_id(self, contract_id: Optional[str]) -> Optional[Dict[str, Any]]:
+    async def _get_contract_by_id(
+        self, contract_id: Optional[str]
+    ) -> Optional[Dict[str, Any]]:
         """Load a contract regardless of whether the ID is stored as an ObjectId or a string."""
         if not contract_id:
             return None
 
         if ObjectId.is_valid(str(contract_id)):
-            contract = await self.contracts.find_one({"_id": ObjectId(str(contract_id))})
+            contract = await self.contracts.find_one(
+                {"_id": ObjectId(str(contract_id))}
+            )
             if contract:
                 return contract
 
         return await self.contracts.find_one({"_id": contract_id})
 
-    async def _find_payment_by_payment_intent(self, payment_intent_id: str) -> Optional[Dict[str, Any]]:
+    async def _find_payment_by_payment_intent(
+        self, payment_intent_id: str
+    ) -> Optional[Dict[str, Any]]:
         """Resolve a scheduled payment from a PaymentIntent ID or its Stripe metadata."""
-        payment = await self.scheduled_payments.find_one({
-            "stripe_payment_intent_id": payment_intent_id
-        })
+        payment = await self.scheduled_payments.find_one(
+            {"stripe_payment_intent_id": payment_intent_id}
+        )
         if payment:
             return payment
 
         import stripe
+
         stripe.api_key = settings.stripe_secret_key
 
         payment_intent = stripe.PaymentIntent.retrieve(payment_intent_id)
         metadata = payment_intent.metadata or {}
-        scheduled_payment_id = metadata.get("scheduled_payment_id") or metadata.get("payment_id")
+        scheduled_payment_id = metadata.get("scheduled_payment_id") or metadata.get(
+            "payment_id"
+        )
 
         if scheduled_payment_id and ObjectId.is_valid(str(scheduled_payment_id)):
-            return await self.scheduled_payments.find_one({
-                "_id": ObjectId(str(scheduled_payment_id))
-            })
+            return await self.scheduled_payments.find_one(
+                {"_id": ObjectId(str(scheduled_payment_id))}
+            )
 
         return None
 
     async def _handle_post_payment_success(
-        self,
-        payment: Dict[str, Any],
-        receipt_url: Optional[str] = None
+        self, payment: Dict[str, Any], receipt_url: Optional[str] = None
     ):
         """Notify the couple and planner after a real successful charge."""
         contract = await self._get_contract_by_id(payment.get("contract_id"))
@@ -97,7 +107,9 @@ class AutopilotService:
             return
 
         from app.services.contract_email_service import contract_email_service
-        from app.services.planner_notification_service import planner_notification_service
+        from app.services.planner_notification_service import (
+            planner_notification_service,
+        )
 
         payment_for_email = {**payment}
         if receipt_url and not payment_for_email.get("receipt_url"):
@@ -141,7 +153,7 @@ class AutopilotService:
         payment_schedule: List[Dict],
         total_amount: Decimal,
         signing_date: datetime,
-        wedding_date: Optional[date] = None
+        wedding_date: Optional[date] = None,
     ) -> List[Dict]:
         """
         Calculate concrete payment due dates from schedule configuration.
@@ -174,17 +186,19 @@ class AutopilotService:
                 wedding_date=wedding_date,
                 days_after=item.get("days_after"),
                 days_before=item.get("days_before"),
-                fixed_date=item.get("fixed_date")
+                fixed_date=item.get("fixed_date"),
             )
 
             if due_date:
-                calculated.append({
-                    "name": item.get("name", "Payment"),
-                    "amount": float(amount),
-                    "due_date": due_date,
-                    "trigger": trigger,
-                    "percentage": item.get("percentage")
-                })
+                calculated.append(
+                    {
+                        "name": item.get("name", "Payment"),
+                        "amount": float(amount),
+                        "due_date": due_date,
+                        "trigger": trigger,
+                        "percentage": item.get("percentage"),
+                    }
+                )
 
         # Sort by due date
         calculated.sort(key=lambda x: x["due_date"])
@@ -197,15 +211,23 @@ class AutopilotService:
         wedding_date: Optional[date],
         days_after: Optional[int],
         days_before: Optional[int],
-        fixed_date: Optional[str]
+        fixed_date: Optional[str],
     ) -> Optional[date]:
         """Calculate payment due date based on trigger type."""
 
         if trigger == "on_signing":
-            return signing_date.date() if isinstance(signing_date, datetime) else signing_date
+            return (
+                signing_date.date()
+                if isinstance(signing_date, datetime)
+                else signing_date
+            )
 
         elif trigger == "days_after_signing" and days_after is not None:
-            base = signing_date.date() if isinstance(signing_date, datetime) else signing_date
+            base = (
+                signing_date.date()
+                if isinstance(signing_date, datetime)
+                else signing_date
+            )
             return base + timedelta(days=days_after)
 
         elif trigger == "days_before_wedding" and days_before is not None:
@@ -215,7 +237,11 @@ class AutopilotService:
                 return wedding_date - timedelta(days=days_before)
             else:
                 # Fallback: 90 days from signing
-                base = signing_date.date() if isinstance(signing_date, datetime) else signing_date
+                base = (
+                    signing_date.date()
+                    if isinstance(signing_date, datetime)
+                    else signing_date
+                )
                 return base + timedelta(days=90)
 
         elif trigger == "fixed_date" and fixed_date:
@@ -245,10 +271,7 @@ class AutopilotService:
         # Convert to datetime for MongoDB query
         as_of_datetime = datetime.combine(as_of_date, datetime.max.time())
 
-        query = {
-            "status": "scheduled",
-            "due_date": {"$lte": as_of_datetime}
-        }
+        query = {"status": "scheduled", "due_date": {"$lte": as_of_datetime}}
 
         cursor = self.scheduled_payments.find(query).sort("due_date", 1)
         payments = await cursor.to_list(length=100)
@@ -263,6 +286,7 @@ class AutopilotService:
             Summary of processing results
         """
         import stripe
+
         stripe.api_key = settings.stripe_secret_key
 
         due_payments = await self.get_due_payments()
@@ -273,7 +297,7 @@ class AutopilotService:
             "failed": 0,
             "skipped": 0,
             "errors": [],
-            "processed_at": datetime.now(timezone.utc).isoformat()
+            "processed_at": datetime.now(timezone.utc).isoformat(),
         }
 
         for payment in due_payments:
@@ -287,10 +311,9 @@ class AutopilotService:
                     results["failed"] += 1
 
             except Exception as e:
-                results["errors"].append({
-                    "payment_id": payment.get("id"),
-                    "error": str(e)
-                })
+                results["errors"].append(
+                    {"payment_id": payment.get("id"), "error": str(e)}
+                )
                 logger.error(f"Error processing payment {payment.get('id')}: {str(e)}")
 
         logger.info(f"Payment processing complete: {results}")
@@ -299,6 +322,7 @@ class AutopilotService:
     async def _process_single_payment(self, payment: Dict) -> Dict[str, Any]:
         """Process a single scheduled payment."""
         import stripe
+
         stripe.api_key = settings.stripe_secret_key
 
         payment_id = payment.get("id")
@@ -336,9 +360,14 @@ class AutopilotService:
             update_result = await self.scheduled_payments.update_one(
                 {
                     "_id": ObjectId(payment_id),
-                    "status": "scheduled"  # Only process if still in scheduled state
+                    "status": "scheduled",  # Only process if still in scheduled state
                 },
-                {"$set": {"status": "processing", "updated_at": datetime.now(timezone.utc)}}
+                {
+                    "$set": {
+                        "status": "processing",
+                        "updated_at": datetime.now(timezone.utc),
+                    }
+                },
             )
 
             # Skip if another process already grabbed this payment
@@ -363,9 +392,9 @@ class AutopilotService:
                     "contract_id": contract_id,
                     "scheduled_payment_id": payment_id,
                     "payment_type": "scheduled",
-                    "attempt_count": str(attempt_count)
+                    "attempt_count": str(attempt_count),
                 },
-                "idempotency_key": idempotency_key
+                "idempotency_key": idempotency_key,
             }
 
             if destination_account:
@@ -379,7 +408,9 @@ class AutopilotService:
                 await self.record_payment_success(
                     payment_id=payment_id,
                     payment_intent_id=payment_intent.id,
-                    receipt_url=payment_intent.charges.data[0].receipt_url if payment_intent.charges.data else None
+                    receipt_url=payment_intent.charges.data[0].receipt_url
+                    if payment_intent.charges.data
+                    else None,
                 )
                 return {"success": True, "payment_intent_id": payment_intent.id}
 
@@ -391,33 +422,26 @@ class AutopilotService:
                         "$set": {
                             "status": "processing",
                             "stripe_payment_intent_id": payment_intent.id,
-                            "updated_at": datetime.now(timezone.utc)
+                            "updated_at": datetime.now(timezone.utc),
                         }
-                    }
+                    },
                 )
                 return {"success": False, "status": payment_intent.status}
 
         except stripe.error.CardError as e:
             await self._handle_payment_failure(
-                payment_id=payment_id,
-                error_code=e.code,
-                error_message=e.user_message
+                payment_id=payment_id, error_code=e.code, error_message=e.user_message
             )
             return {"success": False, "error": e.user_message}
 
         except Exception as e:
             await self._handle_payment_failure(
-                payment_id=payment_id,
-                error_code="unknown",
-                error_message=str(e)
+                payment_id=payment_id, error_code="unknown", error_message=str(e)
             )
             return {"success": False, "error": str(e)}
 
     async def _mark_payment_succeeded(
-        self,
-        payment_id: str,
-        payment_intent_id: str,
-        receipt_url: Optional[str] = None
+        self, payment_id: str, payment_intent_id: str, receipt_url: Optional[str] = None
     ) -> Dict[str, Any]:
         """Mark a payment as succeeded and report whether this is the first successful finalization."""
         # Get payment first for budget sync
@@ -428,23 +452,23 @@ class AutopilotService:
         already_completed = payment.get("status") in {"succeeded", "paid_externally"}
         set_updates = {
             "stripe_payment_intent_id": payment_intent_id,
-            "updated_at": datetime.now(timezone.utc)
+            "updated_at": datetime.now(timezone.utc),
         }
         if receipt_url:
             set_updates["receipt_url"] = receipt_url
 
         if not already_completed:
-            set_updates.update({
-                "status": "succeeded",
-                "paid_at": datetime.now(timezone.utc)
-            })
+            set_updates.update(
+                {"status": "succeeded", "paid_at": datetime.now(timezone.utc)}
+            )
 
         await self.scheduled_payments.update_one(
-            {"_id": ObjectId(payment_id)},
-            {"$set": set_updates}
+            {"_id": ObjectId(payment_id)}, {"$set": set_updates}
         )
 
-        updated_payment = await self.scheduled_payments.find_one({"_id": ObjectId(payment_id)})
+        updated_payment = await self.scheduled_payments.find_one(
+            {"_id": ObjectId(payment_id)}
+        )
 
         if already_completed:
             return {"payment": updated_payment, "first_success": False}
@@ -453,7 +477,7 @@ class AutopilotService:
         await self._log_payment_event(
             payment_id=payment_id,
             event_type="payment_succeeded",
-            details={"payment_intent_id": payment_intent_id}
+            details={"payment_intent_id": payment_intent_id},
         )
 
         logger.info(f"Payment {payment_id} succeeded: {payment_intent_id}")
@@ -465,16 +489,13 @@ class AutopilotService:
         return {"payment": updated_payment, "first_success": True}
 
     async def record_payment_success(
-        self,
-        payment_id: str,
-        payment_intent_id: str,
-        receipt_url: Optional[str] = None
+        self, payment_id: str, payment_intent_id: str, receipt_url: Optional[str] = None
     ) -> Dict[str, Any]:
         """Finalize a successful charge exactly once and send follow-up notifications."""
         result = await self._mark_payment_succeeded(
             payment_id=payment_id,
             payment_intent_id=payment_intent_id,
-            receipt_url=receipt_url
+            receipt_url=receipt_url,
         )
 
         payment = result.get("payment")
@@ -496,11 +517,14 @@ class AutopilotService:
 
             wedding_id = contract.get("wedding_id")
             if not wedding_id:
-                logger.info(f"Contract {contract_id} not linked to a wedding, skipping budget sync")
+                logger.info(
+                    f"Contract {contract_id} not linked to a wedding, skipping budget sync"
+                )
                 return
 
             # Import budget service
             from app.services.budget_service import BudgetService
+
             budget_service = BudgetService()
 
             await budget_service.record_contract_payment(
@@ -509,7 +533,7 @@ class AutopilotService:
                 payment_name=payment.get("name", "Contract Payment"),
                 amount=float(payment.get("amount", 0)),
                 category_name="Wedding Planner",
-                payment_method="card"
+                payment_method="card",
             )
 
             logger.info(f"Synced payment to budget for wedding {wedding_id}")
@@ -539,7 +563,7 @@ class AutopilotService:
         query = {
             "status": "scheduled",
             "due_date": {"$gte": start, "$lte": end},
-            "reminder_sent_at": {"$exists": False}  # Haven't sent reminder yet
+            "reminder_sent_at": {"$exists": False},  # Haven't sent reminder yet
         }
 
         cursor = self.scheduled_payments.find(query)
@@ -563,7 +587,7 @@ class AutopilotService:
             "total_found": len(upcoming),
             "reminders_sent": 0,
             "errors": 0,
-            "processed_at": datetime.now(timezone.utc).isoformat()
+            "processed_at": datetime.now(timezone.utc).isoformat(),
         }
 
         for payment in upcoming:
@@ -573,7 +597,9 @@ class AutopilotService:
                     results["reminders_sent"] += 1
             except Exception as e:
                 results["errors"] += 1
-                logger.error(f"Failed to send reminder for payment {payment.get('id')}: {str(e)}")
+                logger.error(
+                    f"Failed to send reminder for payment {payment.get('id')}: {str(e)}"
+                )
 
         logger.info(f"Payment reminders complete: {results}")
         return results
@@ -582,6 +608,7 @@ class AutopilotService:
         """Send a single payment reminder."""
         try:
             import resend
+
             resend.api_key = settings.resend_api_key
 
             contract_id = payment.get("contract_id")
@@ -611,7 +638,7 @@ class AutopilotService:
                 <p>Hi {self._resolve_couple_display_name(couple)},</p>
                 <p>This is a friendly reminder that your scheduled payment is coming up:</p>
                 <div style="background: #f8fafc; padding: 20px; border-radius: 8px; margin: 20px 0;">
-                    <p style="margin: 0;"><strong>Payment:</strong> {payment.get('name', 'Scheduled Payment')}</p>
+                    <p style="margin: 0;"><strong>Payment:</strong> {payment.get("name", "Scheduled Payment")}</p>
                     <p style="margin: 10px 0 0;"><strong>Amount:</strong> ${amount:,.2f}</p>
                     <p style="margin: 10px 0 0;"><strong>Due Date:</strong> {formatted_date}</p>
                 </div>
@@ -624,17 +651,19 @@ class AutopilotService:
             </html>
             """
 
-            resend.Emails.send({
-                "from": f"{settings.resend_from_name} <{settings.resend_from_email}>",
-                "to": [couple_email],
-                "subject": f"Payment Reminder: ${amount:,.2f} due {formatted_date}",
-                "html": html_content
-            })
+            resend.Emails.send(
+                {
+                    "from": f"{settings.resend_from_name} <{settings.resend_from_email}>",
+                    "to": [couple_email],
+                    "subject": f"Payment Reminder: ${amount:,.2f} due {formatted_date}",
+                    "html": html_content,
+                }
+            )
 
             # Mark reminder as sent
             await self.scheduled_payments.update_one(
                 {"_id": ObjectId(payment.get("id"))},
-                {"$set": {"reminder_sent_at": datetime.now(timezone.utc)}}
+                {"$set": {"reminder_sent_at": datetime.now(timezone.utc)}},
             )
 
             return True
@@ -648,10 +677,7 @@ class AutopilotService:
     # =========================================================================
 
     async def _handle_payment_failure(
-        self,
-        payment_id: str,
-        error_code: str,
-        error_message: str
+        self, payment_id: str, error_code: str, error_message: str
     ):
         """Handle a failed payment with retry scheduling."""
         payment = await self.scheduled_payments.find_one({"_id": ObjectId(payment_id)})
@@ -675,12 +701,14 @@ class AutopilotService:
                         "failure_reason": error_message,
                         "failure_code": error_code,
                         "next_retry_at": next_retry,
-                        "updated_at": datetime.now(timezone.utc)
+                        "updated_at": datetime.now(timezone.utc),
                     }
-                }
+                },
             )
 
-            logger.info(f"Payment {payment_id} failed (attempt {attempt_count}), retry scheduled for {next_retry}")
+            logger.info(
+                f"Payment {payment_id} failed (attempt {attempt_count}), retry scheduled for {next_retry}"
+            )
         else:
             # Max retries reached - mark as failed permanently
             await self.scheduled_payments.update_one(
@@ -692,15 +720,17 @@ class AutopilotService:
                         "failure_reason": error_message,
                         "failure_code": error_code,
                         "max_retries_reached": True,
-                        "updated_at": datetime.now(timezone.utc)
+                        "updated_at": datetime.now(timezone.utc),
                     }
-                }
+                },
             )
 
             # Notify planner of manual intervention needed
             await self._notify_planner_of_failure(payment)
 
-            logger.warning(f"Payment {payment_id} failed after {MAX_RETRY_ATTEMPTS} attempts")
+            logger.warning(
+                f"Payment {payment_id} failed after {MAX_RETRY_ATTEMPTS} attempts"
+            )
 
         # Log failure
         await self._log_payment_event(
@@ -709,8 +739,8 @@ class AutopilotService:
             details={
                 "error_code": error_code,
                 "error_message": error_message,
-                "attempt_count": new_attempt_count
-            }
+                "attempt_count": new_attempt_count,
+            },
         )
 
     async def get_payments_for_retry(self) -> List[Dict]:
@@ -720,7 +750,7 @@ class AutopilotService:
         query = {
             "status": "failed",
             "next_retry_at": {"$lte": now},
-            "max_retries_reached": {"$ne": True}
+            "max_retries_reached": {"$ne": True},
         }
 
         cursor = self.scheduled_payments.find(query)
@@ -737,7 +767,7 @@ class AutopilotService:
             "retried": 0,
             "succeeded": 0,
             "failed": 0,
-            "processed_at": datetime.now(timezone.utc).isoformat()
+            "processed_at": datetime.now(timezone.utc).isoformat(),
         }
 
         for payment in payments_to_retry:
@@ -746,14 +776,21 @@ class AutopilotService:
             update_result = await self.scheduled_payments.update_one(
                 {
                     "_id": ObjectId(payment.get("id")),
-                    "status": "failed"  # Only update if still in failed state
+                    "status": "failed",  # Only update if still in failed state
                 },
-                {"$set": {"status": "scheduled", "updated_at": datetime.now(timezone.utc)}}
+                {
+                    "$set": {
+                        "status": "scheduled",
+                        "updated_at": datetime.now(timezone.utc),
+                    }
+                },
             )
 
             # Skip if another process already grabbed this payment
             if update_result.modified_count == 0:
-                logger.info(f"Payment {payment.get('id')} already being processed, skipping")
+                logger.info(
+                    f"Payment {payment.get('id')} already being processed, skipping"
+                )
                 continue
 
             result = await self._process_single_payment(payment)
@@ -771,6 +808,7 @@ class AutopilotService:
         """Notify planner when payment fails after max retries."""
         try:
             import resend
+
             resend.api_key = settings.resend_api_key
 
             contract_id = payment.get("contract_id")
@@ -798,9 +836,9 @@ class AutopilotService:
                 <p>A scheduled payment has failed after multiple retry attempts and requires manual intervention.</p>
                 <div style="background: #fef2f2; padding: 20px; border-radius: 8px; margin: 20px 0; border-left: 4px solid #ef4444;">
                     <p style="margin: 0;"><strong>Couple:</strong> {self._resolve_couple_display_name(couple)}</p>
-                    <p style="margin: 10px 0 0;"><strong>Payment:</strong> {payment.get('name', 'Scheduled Payment')}</p>
+                    <p style="margin: 10px 0 0;"><strong>Payment:</strong> {payment.get("name", "Scheduled Payment")}</p>
                     <p style="margin: 10px 0 0;"><strong>Amount:</strong> ${amount:,.2f}</p>
-                    <p style="margin: 10px 0 0;"><strong>Failure Reason:</strong> {payment.get('failure_reason', 'Unknown')}</p>
+                    <p style="margin: 10px 0 0;"><strong>Failure Reason:</strong> {payment.get("failure_reason", "Unknown")}</p>
                 </div>
                 <p>Please contact the couple to resolve the payment issue.</p>
                 <a href="{settings.frontend_url}/admin/contracts" style="display: inline-block; background: #6366f1; color: white; padding: 12px 24px; text-decoration: none; border-radius: 8px; margin-top: 10px;">
@@ -810,12 +848,14 @@ class AutopilotService:
             </html>
             """
 
-            resend.Emails.send({
-                "from": f"{settings.resend_from_name} <{settings.resend_from_email}>",
-                "to": [planner.get("email")],
-                "subject": f"⚠️ Payment Failed - {self._resolve_couple_display_name(couple)}",
-                "html": html_content
-            })
+            resend.Emails.send(
+                {
+                    "from": f"{settings.resend_from_name} <{settings.resend_from_email}>",
+                    "to": [planner.get("email")],
+                    "subject": f"⚠️ Payment Failed - {self._resolve_couple_display_name(couple)}",
+                    "html": html_content,
+                }
+            )
 
         except Exception as e:
             logger.error(f"Failed to notify planner: {str(e)}")
@@ -825,9 +865,7 @@ class AutopilotService:
     # =========================================================================
 
     async def handle_payment_succeeded(
-        self,
-        payment_intent_id: str,
-        receipt_url: Optional[str] = None
+        self, payment_intent_id: str, receipt_url: Optional[str] = None
     ) -> bool:
         """
         Handle payment_intent.succeeded webhook.
@@ -843,13 +881,15 @@ class AutopilotService:
             payment = await self._find_payment_by_payment_intent(payment_intent_id)
 
             if not payment:
-                logger.warning(f"No scheduled payment found for PI: {payment_intent_id}")
+                logger.warning(
+                    f"No scheduled payment found for PI: {payment_intent_id}"
+                )
                 return False
 
             await self.record_payment_success(
                 payment_id=str(payment["_id"]),
                 payment_intent_id=payment_intent_id,
-                receipt_url=receipt_url
+                receipt_url=receipt_url,
             )
 
             return True
@@ -859,10 +899,7 @@ class AutopilotService:
             return False
 
     async def handle_payment_failed(
-        self,
-        payment_intent_id: str,
-        error_code: str,
-        error_message: str
+        self, payment_intent_id: str, error_code: str, error_message: str
     ) -> bool:
         """
         Handle payment_intent.payment_failed webhook.
@@ -879,13 +916,15 @@ class AutopilotService:
             payment = await self._find_payment_by_payment_intent(payment_intent_id)
 
             if not payment:
-                logger.warning(f"No scheduled payment found for failed PI: {payment_intent_id}")
+                logger.warning(
+                    f"No scheduled payment found for failed PI: {payment_intent_id}"
+                )
                 return False
 
             await self._handle_payment_failure(
                 payment_id=str(payment["_id"]),
                 error_code=error_code,
-                error_message=error_message
+                error_message=error_message,
             )
 
             # Send failure notification to couple
@@ -897,10 +936,13 @@ class AutopilotService:
             logger.error(f"Error handling payment failed: {str(e)}")
             return False
 
-    async def _send_payment_failure_notification(self, payment: Dict, error_message: str):
+    async def _send_payment_failure_notification(
+        self, payment: Dict, error_message: str
+    ):
         """Send payment failure notification to couple."""
         try:
             import resend
+
             resend.api_key = settings.resend_api_key
 
             contract_id = payment.get("contract_id")
@@ -925,7 +967,7 @@ class AutopilotService:
                 <p>Hi {self._resolve_couple_display_name(couple)},</p>
                 <p>We were unable to process your scheduled payment.</p>
                 <div style="background: #fef2f2; padding: 20px; border-radius: 8px; margin: 20px 0;">
-                    <p style="margin: 0;"><strong>Payment:</strong> {payment.get('name', 'Scheduled Payment')}</p>
+                    <p style="margin: 0;"><strong>Payment:</strong> {payment.get("name", "Scheduled Payment")}</p>
                     <p style="margin: 10px 0 0;"><strong>Amount:</strong> ${amount:,.2f}</p>
                     <p style="margin: 10px 0 0;"><strong>Reason:</strong> {error_message}</p>
                 </div>
@@ -934,12 +976,14 @@ class AutopilotService:
             </html>
             """
 
-            resend.Emails.send({
-                "from": f"{settings.resend_from_name} <{settings.resend_from_email}>",
-                "to": [couple_email],
-                "subject": "Payment Issue - Action Required",
-                "html": html_content
-            })
+            resend.Emails.send(
+                {
+                    "from": f"{settings.resend_from_name} <{settings.resend_from_email}>",
+                    "to": [couple_email],
+                    "subject": "Payment Issue - Action Required",
+                    "html": html_content,
+                }
+            )
 
         except Exception as e:
             logger.error(f"Failed to send failure notification: {str(e)}")
@@ -976,7 +1020,7 @@ class AutopilotService:
             query = {
                 "contract_id": contract_id,
                 "trigger": "days_before_wedding",
-                "status": {"$in": ["scheduled", "pending"]}
+                "status": {"$in": ["scheduled", "pending"]},
             }
 
             cursor = self.scheduled_payments.find(query)
@@ -1004,11 +1048,13 @@ class AutopilotService:
                     {"_id": payment["_id"]},
                     {
                         "$set": {
-                            "due_date": datetime.combine(new_due_date, datetime.min.time()),
+                            "due_date": datetime.combine(
+                                new_due_date, datetime.min.time()
+                            ),
                             "updated_at": datetime.now(timezone.utc),
-                            "recalculated_at": datetime.now(timezone.utc)
+                            "recalculated_at": datetime.now(timezone.utc),
                         }
-                    }
+                    },
                 )
                 updated_count += 1
 
@@ -1017,7 +1063,7 @@ class AutopilotService:
                 "contract_id": contract_id,
                 "wedding_date": str(wedding_date),
                 "payments_updated": updated_count,
-                "past_due_warnings": past_due_count
+                "past_due_warnings": past_due_count,
             }
 
             # If any payments are now past due, notify planner
@@ -1031,10 +1077,13 @@ class AutopilotService:
             logger.error(f"Error recalculating schedule: {str(e)}")
             return {"success": False, "error": str(e)}
 
-    async def _notify_planner_of_schedule_change(self, contract: Dict, past_due_count: int):
+    async def _notify_planner_of_schedule_change(
+        self, contract: Dict, past_due_count: int
+    ):
         """Notify planner when schedule recalculation results in past-due payments."""
         try:
             import resend
+
             resend.api_key = settings.resend_api_key
 
             planner_id = contract.get("planner_id")
@@ -1064,12 +1113,14 @@ class AutopilotService:
             </html>
             """
 
-            resend.Emails.send({
-                "from": f"{settings.resend_from_name} <{settings.resend_from_email}>",
-                "to": [planner.get("email")],
-                "subject": f"⚠️ Payment Schedule Updated - {self._resolve_couple_display_name(couple)}",
-                "html": html_content
-            })
+            resend.Emails.send(
+                {
+                    "from": f"{settings.resend_from_name} <{settings.resend_from_email}>",
+                    "to": [planner.get("email")],
+                    "subject": f"⚠️ Payment Schedule Updated - {self._resolve_couple_display_name(couple)}",
+                    "html": html_content,
+                }
+            )
 
         except Exception as e:
             logger.error(f"Failed to notify planner of schedule change: {str(e)}")
@@ -1097,10 +1148,16 @@ class AutopilotService:
             # Get payment history for this contract
             history = []
             if contract_id:
-                cursor = self.scheduled_payments.find({
-                    "contract_id": contract_id,
-                    "status": {"$in": ["succeeded", "failed"]}
-                }).sort("updated_at", -1).limit(10)
+                cursor = (
+                    self.scheduled_payments.find(
+                        {
+                            "contract_id": contract_id,
+                            "status": {"$in": ["succeeded", "failed"]},
+                        }
+                    )
+                    .sort("updated_at", -1)
+                    .limit(10)
+                )
                 history = await cursor.to_list(length=10)
 
             context = {
@@ -1110,17 +1167,17 @@ class AutopilotService:
                     "failure_code": payment.get("failure_code"),
                     "failure_reason": payment.get("failure_reason"),
                     "attempt_count": payment.get("attempt_count", 1),
-                    "last_attempt": str(payment.get("updated_at"))
+                    "last_attempt": str(payment.get("updated_at")),
                 },
                 "history": [
                     {
                         "status": p.get("status"),
                         "amount": p.get("amount"),
-                        "date": str(p.get("paid_at") or p.get("updated_at"))
+                        "date": str(p.get("paid_at") or p.get("updated_at")),
                     }
                     for p in history
                 ],
-                "current_date": datetime.now(timezone.utc).isoformat()
+                "current_date": datetime.now(timezone.utc).isoformat(),
             }
 
             # Call AI service (no credits - internal feature)
@@ -1128,7 +1185,7 @@ class AutopilotService:
                 feature_name="payment_retry_timing",
                 context=context,
                 user_id="system",  # Internal system call
-                skip_credit_check=True
+                skip_credit_check=True,
             )
 
             return result
@@ -1138,7 +1195,7 @@ class AutopilotService:
             return {
                 "success": False,
                 "error": str(e),
-                "fallback": "using_default_backoff"
+                "fallback": "using_default_backoff",
             }
 
     async def predict_payment_success(self, payment: Dict) -> Dict[str, Any]:
@@ -1155,7 +1212,11 @@ class AutopilotService:
             from app.services.ai_service import ai_service
 
             contract_id = payment.get("contract_id")
-            contract = await self.contracts.find_one({"_id": ObjectId(contract_id)}) if contract_id else None
+            contract = (
+                await self.contracts.find_one({"_id": ObjectId(contract_id)})
+                if contract_id
+                else None
+            )
 
             # Get payment method age
             card_added = contract.get("card_added_at") if contract else None
@@ -1168,10 +1229,16 @@ class AutopilotService:
             # Get payment history
             history = []
             if contract_id:
-                cursor = self.scheduled_payments.find({
-                    "contract_id": contract_id,
-                    "status": {"$in": ["succeeded", "failed"]}
-                }).sort("updated_at", -1).limit(10)
+                cursor = (
+                    self.scheduled_payments.find(
+                        {
+                            "contract_id": contract_id,
+                            "status": {"$in": ["succeeded", "failed"]},
+                        }
+                    )
+                    .sort("updated_at", -1)
+                    .limit(10)
+                )
                 history = await cursor.to_list(length=10)
 
             successful = len([p for p in history if p.get("status") == "succeeded"])
@@ -1181,19 +1248,21 @@ class AutopilotService:
                 "payment": {
                     "amount": payment.get("amount"),
                     "due_date": str(payment.get("due_date")),
-                    "name": payment.get("name")
+                    "name": payment.get("name"),
                 },
                 "card_info": {
                     "days_since_added": days_since_card_added,
                     "card_brand": contract.get("card_brand") if contract else None,
-                    "card_last4": contract.get("card_last4") if contract else None
+                    "card_last4": contract.get("card_last4") if contract else None,
                 },
                 "history_summary": {
                     "successful_payments": successful,
                     "failed_payments": failed,
-                    "success_rate": round(successful / max(successful + failed, 1) * 100, 1)
+                    "success_rate": round(
+                        successful / max(successful + failed, 1) * 100, 1
+                    ),
                 },
-                "current_date": datetime.now(timezone.utc).isoformat()
+                "current_date": datetime.now(timezone.utc).isoformat(),
             }
 
             # Call AI service (no credits - internal feature)
@@ -1201,7 +1270,7 @@ class AutopilotService:
                 feature_name="payment_success_prediction",
                 context=context,
                 user_id="system",
-                skip_credit_check=True
+                skip_credit_check=True,
             )
 
             return result
@@ -1211,7 +1280,7 @@ class AutopilotService:
             return {
                 "success": False,
                 "error": str(e),
-                "fallback": "assuming_medium_risk"
+                "fallback": "assuming_medium_risk",
             }
 
     async def get_payment_risk_assessment(self, payment_id: str) -> Dict[str, Any]:
@@ -1221,7 +1290,9 @@ class AutopilotService:
         Combines AI prediction with historical analysis.
         """
         try:
-            payment = await self.scheduled_payments.find_one({"_id": ObjectId(payment_id)})
+            payment = await self.scheduled_payments.find_one(
+                {"_id": ObjectId(payment_id)}
+            )
             if not payment:
                 return {"success": False, "error": "Payment not found"}
 
@@ -1236,17 +1307,13 @@ class AutopilotService:
                             "ai_risk_assessment": {
                                 "probability": prediction.get("success_probability"),
                                 "risk_level": prediction.get("risk_level"),
-                                "assessed_at": datetime.now(timezone.utc)
+                                "assessed_at": datetime.now(timezone.utc),
                             }
                         }
-                    }
+                    },
                 )
 
-            return {
-                "success": True,
-                "payment_id": payment_id,
-                "prediction": prediction
-            }
+            return {"success": True, "payment_id": payment_id, "prediction": prediction}
 
         except Exception as e:
             logger.error(f"Error getting risk assessment: {str(e)}")
@@ -1256,20 +1323,17 @@ class AutopilotService:
     # UTILITY METHODS
     # =========================================================================
 
-    async def _log_payment_event(
-        self,
-        payment_id: str,
-        event_type: str,
-        details: Dict
-    ):
+    async def _log_payment_event(self, payment_id: str, event_type: str, details: Dict):
         """Log a payment event for auditing."""
         try:
-            await self.payment_logs.insert_one({
-                "payment_id": payment_id,
-                "event_type": event_type,
-                "details": details,
-                "created_at": datetime.now(timezone.utc)
-            })
+            await self.payment_logs.insert_one(
+                {
+                    "payment_id": payment_id,
+                    "event_type": event_type,
+                    "details": details,
+                    "created_at": datetime.now(timezone.utc),
+                }
+            )
         except Exception as e:
             logger.error(f"Failed to log payment event: {str(e)}")
 
@@ -1286,7 +1350,14 @@ class AutopilotService:
         if "amount" in serialized:
             serialized["amount"] = float(serialized["amount"])
 
-        for date_field in ["due_date", "paid_at", "reminder_sent_at", "next_retry_at", "created_at", "updated_at"]:
+        for date_field in [
+            "due_date",
+            "paid_at",
+            "reminder_sent_at",
+            "next_retry_at",
+            "created_at",
+            "updated_at",
+        ]:
             if date_field in serialized and serialized[date_field]:
                 if hasattr(serialized[date_field], "isoformat"):
                     serialized[date_field] = serialized[date_field].isoformat()

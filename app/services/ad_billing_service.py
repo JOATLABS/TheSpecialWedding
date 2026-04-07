@@ -23,7 +23,6 @@ from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 from bson import ObjectId
-from bson.errors import InvalidId
 
 logger = logging.getLogger(__name__)
 
@@ -48,8 +47,8 @@ class AdBillingService:
     """
 
     # ── Default CPL pricing (used when campaign doesn't specify) ──
-    DEFAULT_CPL_QUOTE_REQUEST = 10.00   # USD per quote request lead
-    DEFAULT_CPL_DIRECTORY_ADD = 3.00    # USD per directory add lead
+    DEFAULT_CPL_QUOTE_REQUEST = 10.00  # USD per quote request lead
+    DEFAULT_CPL_DIRECTORY_ADD = 3.00  # USD per directory add lead
 
     def __init__(self, db, stripe_service=None):
         self.db = db
@@ -77,10 +76,12 @@ class AdBillingService:
         # Vendor-level check
         vendor_id = campaign.get("vendor_id")
         if vendor_id:
-            vendor_override = await self.vendor_free_tier.find_one({
-                "vendor_id": vendor_id,
-                "is_free": True,
-            })
+            vendor_override = await self.vendor_free_tier.find_one(
+                {
+                    "vendor_id": vendor_id,
+                    "is_free": True,
+                }
+            )
             if vendor_override:
                 # Check expiry
                 expires = vendor_override.get("expires_at")
@@ -127,9 +128,13 @@ class AdBillingService:
         if is_free:
             charge_amount = 0.0
         elif lead_type == "quote_request":
-            charge_amount = campaign.get("cpl_quote_request", self.DEFAULT_CPL_QUOTE_REQUEST)
+            charge_amount = campaign.get(
+                "cpl_quote_request", self.DEFAULT_CPL_QUOTE_REQUEST
+            )
         elif lead_type == "add_to_directory":
-            charge_amount = campaign.get("cpl_directory_add", self.DEFAULT_CPL_DIRECTORY_ADD)
+            charge_amount = campaign.get(
+                "cpl_directory_add", self.DEFAULT_CPL_DIRECTORY_ADD
+            )
         else:
             charge_amount = 0.0
 
@@ -158,7 +163,7 @@ class AdBillingService:
         budget_status = "ok"
         if not is_free and charge_amount > 0:
             # Update budget_consumed on campaign
-            update_result = await self.campaigns.update_one(
+            await self.campaigns.update_one(
                 {"_id": campaign["_id"]},
                 {
                     "$inc": {"budget_consumed": charge_amount},
@@ -243,7 +248,9 @@ class AdBillingService:
                         "$set": {
                             "status": "paused",
                             "metadata.paused_reason": "budget_exhausted",
-                            "metadata.paused_at": datetime.now(timezone.utc).isoformat(),
+                            "metadata.paused_at": datetime.now(
+                                timezone.utc
+                            ).isoformat(),
                             "updated_at": datetime.now(timezone.utc),
                         }
                     },
@@ -255,11 +262,16 @@ class AdBillingService:
 
                 # Notify vendor (in-portal + email + push)
                 try:
-                    from app.services.vendor_notification_service import VendorNotificationService
+                    from app.services.vendor_notification_service import (
+                        VendorNotificationService,
+                    )
+
                     vns = VendorNotificationService()
                     await vns.notify_vendor_budget_exhausted(
                         vendor_email=campaign.get("vendor_email", ""),
-                        campaign_name=campaign.get("campaign_name", str(campaign["_id"])),
+                        campaign_name=campaign.get(
+                            "campaign_name", str(campaign["_id"])
+                        ),
                         budget_consumed=budget_consumed,
                         total_budget=total_budget,
                     )
@@ -320,7 +332,10 @@ class AdBillingService:
 
             # Create Stripe invoice item
             import stripe
-            lead_label = "Quote Request" if lead_type == "quote_request" else "Directory Add"
+
+            lead_label = (
+                "Quote Request" if lead_type == "quote_request" else "Directory Add"
+            )
             invoice_item = stripe.InvoiceItem.create(
                 customer=stripe_customer_id,
                 amount=int(charge_amount * 100),  # Stripe uses cents
@@ -369,7 +384,8 @@ class AdBillingService:
             period_end = period_start.replace(month=now.month + 1)
 
         lead_inc_field = (
-            "quote_request_leads" if lead_type == "quote_request"
+            "quote_request_leads"
+            if lead_type == "quote_request"
             else "directory_add_leads"
         )
 
@@ -428,7 +444,7 @@ class AdBillingService:
         vendor_email = vendor.get("email", "") if vendor else ""
         vendor_name = vendor.get("company_name", vendor_email) if vendor else ""
 
-        result = await self.vendor_free_tier.update_one(
+        await self.vendor_free_tier.update_one(
             {"vendor_id": vendor_id},
             {
                 "$set": {
@@ -492,7 +508,9 @@ class AdBillingService:
 
     # ─── Query Methods ────────────────────────────────────────────
 
-    async def get_vendor_free_tier_status(self, vendor_id: str) -> Optional[Dict[str, Any]]:
+    async def get_vendor_free_tier_status(
+        self, vendor_id: str
+    ) -> Optional[Dict[str, Any]]:
         """Check if a vendor has free tier enabled."""
         doc = await self.vendor_free_tier.find_one({"vendor_id": vendor_id})
         if not doc:
@@ -514,10 +532,7 @@ class AdBillingService:
             query["vendor_id"] = vendor_id
 
         cursor = (
-            self.lead_charges.find(query)
-            .sort("created_at", -1)
-            .skip(skip)
-            .limit(limit)
+            self.lead_charges.find(query).sort("created_at", -1).skip(skip).limit(limit)
         )
         return [_serialize(doc) async for doc in cursor]
 
@@ -525,23 +540,25 @@ class AdBillingService:
         """Get billing summary for a specific campaign."""
         pipeline = [
             {"$match": {"campaign_id": campaign_id}},
-            {"$group": {
-                "_id": None,
-                "total_charges": {"$sum": "$charge_amount"},
-                "total_leads": {"$sum": 1},
-                "quote_requests": {
-                    "$sum": {"$cond": [{"$eq": ["$lead_type", "quote_request"]}, 1, 0]}
-                },
-                "directory_adds": {
-                    "$sum": {"$cond": [{"$eq": ["$lead_type", "add_to_directory"]}, 1, 0]}
-                },
-                "free_leads": {
-                    "$sum": {"$cond": ["$is_free_tier", 1, 0]}
-                },
-                "paid_leads": {
-                    "$sum": {"$cond": ["$is_free_tier", 0, 1]}
-                },
-            }},
+            {
+                "$group": {
+                    "_id": None,
+                    "total_charges": {"$sum": "$charge_amount"},
+                    "total_leads": {"$sum": 1},
+                    "quote_requests": {
+                        "$sum": {
+                            "$cond": [{"$eq": ["$lead_type", "quote_request"]}, 1, 0]
+                        }
+                    },
+                    "directory_adds": {
+                        "$sum": {
+                            "$cond": [{"$eq": ["$lead_type", "add_to_directory"]}, 1, 0]
+                        }
+                    },
+                    "free_leads": {"$sum": {"$cond": ["$is_free_tier", 1, 0]}},
+                    "paid_leads": {"$sum": {"$cond": ["$is_free_tier", 0, 1]}},
+                }
+            },
         ]
         results = await self.lead_charges.aggregate(pipeline).to_list(1)
         if results:
@@ -589,11 +606,15 @@ class AdBillingService:
         now = datetime.now(timezone.utc)
         period_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
 
-        pending_billing = self.billing.find({
-            "payment_status": "pending",
-            "total_spend": {"$gt": 0},
-            "billing_period_start": {"$lt": period_start},  # Only finalize past periods
-        })
+        pending_billing = self.billing.find(
+            {
+                "payment_status": "pending",
+                "total_spend": {"$gt": 0},
+                "billing_period_start": {
+                    "$lt": period_start
+                },  # Only finalize past periods
+            }
+        )
 
         invoices_created = 0
         errors = []
@@ -602,9 +623,9 @@ class AdBillingService:
             try:
                 # Get Stripe customer
                 stripe_customers = self.db["stripe_customers"]
-                customer_doc = await stripe_customers.find_one({
-                    "user_id": bill["vendor_id"]
-                })
+                customer_doc = await stripe_customers.find_one(
+                    {"user_id": bill["vendor_id"]}
+                )
                 if not customer_doc:
                     continue
 
@@ -643,7 +664,9 @@ class AdBillingService:
                 )
 
                 invoices_created += 1
-                logger.info(f"Invoice {invoice.id} created for vendor {bill['vendor_id']}")
+                logger.info(
+                    f"Invoice {invoice.id} created for vendor {bill['vendor_id']}"
+                )
 
             except Exception as e:
                 errors.append({"vendor_id": bill.get("vendor_id"), "error": str(e)})

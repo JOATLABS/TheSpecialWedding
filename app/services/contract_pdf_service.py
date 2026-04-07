@@ -4,10 +4,10 @@ Contract PDF Service
 Generates PDF snapshots of signed contracts using WeasyPrint.
 Uploads to cloud storage (R2/S3) and returns the document URL.
 """
+
 from typing import Dict, Any, Optional
 from datetime import datetime, timezone
 import logging
-import io
 from app.core.settings import settings
 from app.core.database import mongo
 from app.utils.payment_schedule import build_effective_payment_schedule
@@ -30,7 +30,9 @@ class ContractPDFService:
     @staticmethod
     def _resolve_couple_display(couple: Dict[str, Any]) -> str:
         primary = (couple.get("partner1_name") or couple.get("name") or "").strip()
-        secondary = (couple.get("partner2_name") or couple.get("partner_name") or "").strip()
+        secondary = (
+            couple.get("partner2_name") or couple.get("partner_name") or ""
+        ).strip()
         if secondary:
             return f"{primary} & {secondary}"
         return primary or "N/A"
@@ -40,12 +42,13 @@ class ContractPDFService:
         if self._s3_client is None:
             try:
                 import boto3
+
                 self._s3_client = boto3.client(
-                    's3',
+                    "s3",
                     endpoint_url=settings.s3_endpoint_url,
                     aws_access_key_id=settings.s3_access_key_id,
                     aws_secret_access_key=settings.s3_secret_access_key,
-                    region_name='auto'
+                    region_name="auto",
                 )
             except Exception as e:
                 logger.error(f"Failed to create S3 client: {str(e)}")
@@ -70,7 +73,9 @@ class ContractPDFService:
                 try:
                     date_val = datetime.fromisoformat(date_val.replace("Z", "+00:00"))
                 except Exception as e:
-                    logger.warning(f"Failed to parse date string: {date_val}, error: {e}")
+                    logger.warning(
+                        f"Failed to parse date string: {date_val}, error: {e}"
+                    )
                     return date_val
             return date_val.strftime("%B %d, %Y")
 
@@ -85,8 +90,8 @@ class ContractPDFService:
                 <div class="service-item">
                     <span class="checkmark">✓</span>
                     <div>
-                        <strong>{service.get('name', 'Service')}</strong>
-                        {f"<br><small>{service.get('description')}</small>" if service.get('description') else ""}
+                        <strong>{service.get("name", "Service")}</strong>
+                        {f"<br><small>{service.get('description')}</small>" if service.get("description") else ""}
                     </div>
                 </div>
                 """
@@ -94,18 +99,20 @@ class ContractPDFService:
         # Build payment schedule
         schedule_html = ""
         for i, payment in enumerate(build_effective_payment_schedule(package), 1):
-            amount = payment.get("amount") or (total * payment.get("percentage", 0) / 100)
+            amount = payment.get("amount") or (
+                total * payment.get("percentage", 0) / 100
+            )
             trigger = payment.get("trigger", "")
             trigger_label = {
                 "on_signing": "Due on signing",
                 "days_after_signing": f"{payment.get('days_after', 0)} days after signing",
                 "days_before_wedding": f"{payment.get('days_before', 0)} days before wedding",
-                "fixed_date": "Fixed date"
+                "fixed_date": "Fixed date",
             }.get(trigger, trigger)
 
             schedule_html += f"""
             <tr>
-                <td>{payment.get('name', f'Payment {i}')}</td>
+                <td>{payment.get("name", f"Payment {i}")}</td>
                 <td>{trigger_label}</td>
                 <td style="text-align: right;">${amount:,.2f}</td>
             </tr>
@@ -117,21 +124,21 @@ class ContractPDFService:
             terms_html += f"""
             <div class="term-section">
                 <h4>Cancellation Policy</h4>
-                <p>{package.get('cancellation_policy')}</p>
+                <p>{package.get("cancellation_policy")}</p>
             </div>
             """
         if package.get("late_payment_policy"):
             terms_html += f"""
             <div class="term-section">
                 <h4>Late Payment Policy</h4>
-                <p>{package.get('late_payment_policy')}</p>
+                <p>{package.get("late_payment_policy")}</p>
             </div>
             """
         if package.get("custom_terms"):
             terms_html += f"""
             <div class="term-section">
                 <h4>Additional Terms</h4>
-                <p>{package.get('custom_terms')}</p>
+                <p>{package.get("custom_terms")}</p>
             </div>
             """
 
@@ -284,7 +291,7 @@ class ContractPDFService:
         </head>
         <body>
             <div class="header">
-                <h1>{package.get('name', 'Wedding Planning Agreement')}</h1>
+                <h1>{package.get("name", "Wedding Planning Agreement")}</h1>
                 <p>Wedding Planning Agreement</p>
             </div>
 
@@ -293,17 +300,23 @@ class ContractPDFService:
                 <div class="info-grid">
                     <div class="info-row">
                         <div class="info-label">Client</div>
-                        <div class="info-value">{self._resolve_couple_display(couple)}</div>
+                        <div class="info-value">{
+            self._resolve_couple_display(couple)
+        }</div>
                     </div>
                     <div class="info-row">
                         <div class="info-label">Email</div>
-                        <div class="info-value">{couple.get('email', 'N/A')}</div>
+                        <div class="info-value">{couple.get("email", "N/A")}</div>
                     </div>
                     <div class="info-row">
                         <div class="info-label">Wedding Date</div>
                         <div class="info-value">{wedding_date}</div>
                     </div>
-                    {f'<div class="info-row"><div class="info-label">Venue</div><div class="info-value">{contract.get("venue")}</div></div>' if contract.get("venue") else ""}
+                    {
+            f'<div class="info-row"><div class="info-label">Venue</div><div class="info-value">{contract.get("venue")}</div></div>'
+            if contract.get("venue")
+            else ""
+        }
                 </div>
             </div>
 
@@ -312,14 +325,19 @@ class ContractPDFService:
                 <div class="amount">${total:,.2f} {currency}</div>
             </div>
 
-            {f'''
+            {
+            f'''
             <div class="section">
                 <h2>Services Included</h2>
                 {services_html}
             </div>
-            ''' if services_html else ""}
+            '''
+            if services_html
+            else ""
+        }
 
-            {f'''
+            {
+            f'''
             <div class="section">
                 <h2>Payment Schedule</h2>
                 <table>
@@ -335,27 +353,40 @@ class ContractPDFService:
                     </tbody>
                 </table>
             </div>
-            ''' if schedule_html else ""}
+            '''
+            if schedule_html
+            else ""
+        }
 
-            {f'''
+            {
+            f'''
             <div class="section">
                 <h2>Terms & Conditions</h2>
                 {terms_html}
             </div>
-            ''' if terms_html else ""}
+            '''
+            if terms_html
+            else ""
+        }
 
             <div class="signature-box">
                 <h3>Digital Signature</h3>
-                <div class="signature-name">{signature.get('signed_by', 'N/A')}</div>
+                <div class="signature-name">{signature.get("signed_by", "N/A")}</div>
                 <div class="signature-meta">
                     Signed on {signed_at}
-                    {f"<br>IP: {signature.get('ip_address')}" if signature.get('ip_address') else ""}
+                    {
+            f"<br>IP: {signature.get('ip_address')}"
+            if signature.get("ip_address")
+            else ""
+        }
                 </div>
             </div>
 
             <div class="footer">
                 <p>This document was digitally signed and is legally binding.</p>
-                <p>Contract ID: {contract.get('id', 'N/A')} | Generated: {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M UTC')}</p>
+                <p>Contract ID: {contract.get("id", "N/A")} | Generated: {
+            datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+        }</p>
             </div>
         </body>
         </html>
@@ -392,7 +423,7 @@ class ContractPDFService:
                 "package_snapshot": contract.get("package_snapshot", {}),
                 "signature": contract.get("signature", {}),
                 "signed_at": contract.get("signed_at"),
-                "status": contract.get("status")
+                "status": contract.get("status"),
             }
 
             # Generate HTML and convert to PDF
@@ -407,14 +438,16 @@ class ContractPDFService:
                 Bucket=settings.s3_bucket_name,
                 Key=filename,
                 Body=pdf_bytes,
-                ContentType='application/pdf'
+                ContentType="application/pdf",
             )
 
             # Build the URL
             if settings.media_domain:
                 document_url = f"https://{settings.media_domain}/{filename}"
             else:
-                document_url = f"{settings.s3_endpoint_url}/{settings.s3_bucket_name}/{filename}"
+                document_url = (
+                    f"{settings.s3_endpoint_url}/{settings.s3_bucket_name}/{filename}"
+                )
 
             # Update contract with document URL
             await self.contracts.update_one(
@@ -422,9 +455,9 @@ class ContractPDFService:
                 {
                     "$set": {
                         "document_url": document_url,
-                        "updated_at": datetime.now(timezone.utc)
+                        "updated_at": datetime.now(timezone.utc),
                     }
-                }
+                },
             )
 
             logger.info(f"Generated PDF for contract {contract_id}: {document_url}")
@@ -432,7 +465,9 @@ class ContractPDFService:
 
         except ImportError:
             # C14: Fallback — store the HTML as a signed document instead of PDF
-            logger.warning("WeasyPrint not installed. Falling back to HTML document storage.")
+            logger.warning(
+                "WeasyPrint not installed. Falling back to HTML document storage."
+            )
             try:
                 from bson import ObjectId
 
@@ -446,7 +481,7 @@ class ContractPDFService:
                         "package_snapshot": contract.get("package_snapshot", {}),
                         "signature": contract.get("signature", {}),
                         "signed_at": contract.get("signed_at"),
-                        "status": contract.get("status")
+                        "status": contract.get("status"),
                     }
                     html_content = self._generate_html(contract_data)
                     html_bytes = html_content.encode("utf-8")
@@ -457,7 +492,7 @@ class ContractPDFService:
                         Bucket=settings.s3_bucket_name,
                         Key=filename,
                         Body=html_bytes,
-                        ContentType='text/html'
+                        ContentType="text/html",
                     )
 
                     if settings.media_domain:
@@ -467,12 +502,21 @@ class ContractPDFService:
 
                     await self.contracts.update_one(
                         {"_id": ObjectId(contract_id)},
-                        {"$set": {"document_url": document_url, "updated_at": datetime.now(timezone.utc)}}
+                        {
+                            "$set": {
+                                "document_url": document_url,
+                                "updated_at": datetime.now(timezone.utc),
+                            }
+                        },
                     )
-                    logger.info(f"Stored HTML fallback for contract {contract_id}: {document_url}")
+                    logger.info(
+                        f"Stored HTML fallback for contract {contract_id}: {document_url}"
+                    )
                     return document_url
             except Exception as fallback_err:
-                logger.error(f"HTML fallback also failed for contract {contract_id}: {str(fallback_err)}")
+                logger.error(
+                    f"HTML fallback also failed for contract {contract_id}: {str(fallback_err)}"
+                )
             return None
         except Exception as e:
             logger.error(f"Failed to generate PDF for contract {contract_id}: {str(e)}")

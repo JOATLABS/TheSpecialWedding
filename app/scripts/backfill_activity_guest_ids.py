@@ -20,12 +20,9 @@ Usage:
 import asyncio
 import argparse
 import logging
-import sys
-from datetime import datetime, timezone
 from collections import defaultdict
 
 from motor.motor_asyncio import AsyncIOMotorClient
-from bson import ObjectId
 from app.core.config import settings
 
 logging.basicConfig(
@@ -57,10 +54,7 @@ async def build_guest_lookup(db) -> dict:
     name to avoid incorrect matches. A warning is logged.
     """
     guests_col = db["guests"]
-    cursor = guests_col.find(
-        {},
-        {"_id": 1, "name": 1, "wedding_id": 1, "email": 1}
-    )
+    cursor = guests_col.find({}, {"_id": 1, "name": 1, "wedding_id": 1, "email": 1})
 
     # Temporary: (wedding_id, name_lower) -> [guest_id, ...]
     name_map: dict[tuple, list[str]] = defaultdict(list)
@@ -87,12 +81,16 @@ async def build_guest_lookup(db) -> dict:
             ambiguous += 1
             logger.warning(
                 "Ambiguous name match skipped: wedding=%s name='%s' (%d guests)",
-                key[0], key[1], len(ids),
+                key[0],
+                key[1],
+                len(ids),
             )
 
     logger.info(
         "Guest lookup built: %d unique name matches, %d ambiguous skipped, %d email entries",
-        len(lookup), ambiguous, len(email_map),
+        len(lookup),
+        ambiguous,
+        len(email_map),
     )
     return lookup, email_map
 
@@ -146,7 +144,7 @@ async def run_migration(apply: bool = False, verbose: bool = False):
             {"metadata.guest_id": {"$exists": False}},
             {"metadata.guest_id": None},
             {"metadata.guest_id": ""},
-        ]
+        ],
     }
 
     total = await activity_col.count_documents(query)
@@ -175,14 +173,17 @@ async def run_migration(apply: bool = False, verbose: bool = False):
             if verbose:
                 logger.info(
                     "  MATCH: activity=%s type=%s -> guest_id=%s",
-                    activity["_id"], activity.get("type"), guest_id,
+                    activity["_id"],
+                    activity.get("type"),
+                    guest_id,
                 )
             if apply:
                 from pymongo import UpdateOne
+
                 bulk_ops.append(
                     UpdateOne(
                         {"_id": activity["_id"]},
-                        {"$set": {"metadata.guest_id": guest_id}}
+                        {"$set": {"metadata.guest_id": guest_id}},
                     )
                 )
 
@@ -201,7 +202,8 @@ async def run_migration(apply: bool = False, verbose: bool = False):
                 meta = activity.get("metadata") or {}
                 logger.info(
                     "  NO MATCH: activity=%s type=%s wedding=%s name='%s'",
-                    activity["_id"], activity.get("type"),
+                    activity["_id"],
+                    activity.get("type"),
                     activity.get("wedding_id", "?"),
                     meta.get("guest_name") or meta.get("recipient_name") or "?",
                 )

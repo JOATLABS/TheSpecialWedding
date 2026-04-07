@@ -36,7 +36,7 @@ async def _event_stream(couple_email: str, request: Request):
                 if event["type"] == "data-change":
                     yield f"event: data-change\ndata: {json.dumps(event['data'])}\n\n"
             except asyncio.TimeoutError:
-                yield f": heartbeat\n\n"
+                yield ": heartbeat\n\n"
     except asyncio.CancelledError:
         pass
     finally:

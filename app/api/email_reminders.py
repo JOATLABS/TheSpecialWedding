@@ -2,7 +2,13 @@
 
 from fastapi import APIRouter, HTTPException, Depends, Query, Form, UploadFile, File
 from app.services.email_service_resend import ResendEmailService
-from app.dependencies.auth_extended import require_wedding_planner_only, ExtendedAuthUser, check_wedding_access, require_admin_or_planner, enforce_team_permission
+from app.dependencies.auth_extended import (
+    require_wedding_planner_only,
+    ExtendedAuthUser,
+    check_wedding_access,
+    require_admin_or_planner,
+    enforce_team_permission,
+)
 from app.services.wedding_service import WeddingService
 from app.core.config import settings
 from app.utils.response import dict_response
@@ -50,12 +56,17 @@ def get_email_status():
             "available": email_available,
             "provider": "resend",
         },
-        message="Email service configured and ready" if email_available else "Email service not configured (RESEND_API_KEY missing)"
+        message="Email service configured and ready"
+        if email_available
+        else "Email service not configured (RESEND_API_KEY missing)",
     )
 
 
 @router.post("/email/send-invites", tags=["Admin"])
-async def send_email_invites(payload: EmailInviteModel, current_user: ExtendedAuthUser = Depends(require_wedding_planner_only)):
+async def send_email_invites(
+    payload: EmailInviteModel,
+    current_user: ExtendedAuthUser = Depends(require_wedding_planner_only),
+):
     """Send RSVP invitation emails (JSON endpoint)"""
     enforce_team_permission(current_user, "send_rsvp")
     if not email_available or email_service is None:
@@ -73,12 +84,14 @@ async def send_email_invites(payload: EmailInviteModel, current_user: ExtendedAu
         wedding_slug=payload.wedding_slug,
         custom_html=payload.custom_html,
         custom_subject=payload.custom_subject,
-        attachments=[]
+        attachments=[],
     )
 
     # Broadcast invite status change so planner UI refreshes guest list
     await sse_manager.broadcast_data_change(
-        current_user.email, "invite", "created",
+        current_user.email,
+        "invite",
+        "created",
         wedding_id=wedding["_id"],
     )
 
@@ -91,7 +104,7 @@ async def send_email_invites_with_attachment(
     custom_subject: Optional[str] = Form(None),
     custom_html: Optional[str] = Form(None),
     attachment: UploadFile = File(...),
-    current_user: ExtendedAuthUser = Depends(require_wedding_planner_only)
+    current_user: ExtendedAuthUser = Depends(require_wedding_planner_only),
 ):
     """Send RSVP invitation emails with attachment (multipart/form-data endpoint)"""
     enforce_team_permission(current_user, "send_rsvp")
@@ -110,23 +123,29 @@ async def send_email_invites_with_attachment(
     attachments = []
     try:
         content = await attachment.read()
-        attachments.append({
-            "filename": attachment.filename,
-            "content": base64.b64encode(content).decode('utf-8')
-        })
+        attachments.append(
+            {
+                "filename": attachment.filename,
+                "content": base64.b64encode(content).decode("utf-8"),
+            }
+        )
     except Exception as e:
-        raise HTTPException(status_code=400, detail=f"Failed to process attachment: {str(e)}")
+        raise HTTPException(
+            status_code=400, detail=f"Failed to process attachment: {str(e)}"
+        )
 
     result = await email_service.send_rsvp_invitations(
         wedding_slug=wedding_slug,
         custom_html=custom_html,
         custom_subject=custom_subject,
-        attachments=attachments
+        attachments=attachments,
     )
 
     # Broadcast invite status change so planner UI refreshes guest list
     await sse_manager.broadcast_data_change(
-        current_user.email, "invite", "created",
+        current_user.email,
+        "invite",
+        "created",
         wedding_id=wedding["_id"],
     )
 
@@ -134,7 +153,10 @@ async def send_email_invites_with_attachment(
 
 
 @router.post("/email/send-reminders", tags=["Admin"])
-async def send_email_reminders(payload: EmailReminderModel, current_user: ExtendedAuthUser = Depends(require_admin_or_planner)):
+async def send_email_reminders(
+    payload: EmailReminderModel,
+    current_user: ExtendedAuthUser = Depends(require_admin_or_planner),
+):
     """Send event reminder emails"""
     enforce_team_permission(current_user, "send_reminders")
     if not email_available or email_service is None:
@@ -153,7 +175,7 @@ async def send_email_reminders(payload: EmailReminderModel, current_user: Extend
         event_type=payload.event_type,
         custom_html=payload.custom_html,
         custom_subject=payload.custom_subject,
-        target_group=payload.target_group
+        target_group=payload.target_group,
     )
 
     return result
@@ -171,7 +193,7 @@ class IndividualEmailReminderModel(BaseModel):
 @router.post("/email/send-reminder-individual", tags=["Admin"])
 async def send_individual_email_reminder(
     payload: IndividualEmailReminderModel,
-    current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
+    current_user: ExtendedAuthUser = Depends(require_admin_or_planner),
 ):
     """Send an email reminder to a specific guest (used for guests without phone numbers)."""
     enforce_team_permission(current_user, "send_reminders")
@@ -180,6 +202,7 @@ async def send_individual_email_reminder(
 
     # Get wedding and verify access
     from app.core.database import mongo
+
     wedding = await mongo.db["weddings"].find_one({"slug": payload.wedding_slug})
     if not wedding:
         raise HTTPException(status_code=404, detail="Wedding not found")
@@ -232,29 +255,45 @@ async def send_individual_email_reminder(
             subject=subject,
             html_content=html_content,
             wedding_id=str(wedding["_id"]),
-            email_type="individual_reminder"
+            email_type="individual_reminder",
         )
 
         if result.get("success"):
             # Mark guest as having received an invite if not already set
             guest_collection = mongo.get_guest_collection()
-            guest = await guest_collection.find_one({"token": payload.guest_token, "wedding_id": wedding["_id"]})
+            guest = await guest_collection.find_one(
+                {"token": payload.guest_token, "wedding_id": wedding["_id"]}
+            )
             if guest and not guest.get("invite_sent"):
                 from datetime import datetime, timezone
+
                 await guest_collection.update_one(
                     {"_id": guest["_id"]},
-                    {"$set": {"invite_sent": True, "invite_sent_date": datetime.now(timezone.utc)}}
+                    {
+                        "$set": {
+                            "invite_sent": True,
+                            "invite_sent_date": datetime.now(timezone.utc),
+                        }
+                    },
                 )
-                logger.info(f"Set invite_sent=True for guest {payload.guest_name} (email reminder)")
+                logger.info(
+                    f"Set invite_sent=True for guest {payload.guest_name} (email reminder)"
+                )
 
             # Broadcast invite status change
             await sse_manager.broadcast_data_change(
-                current_user.email, "invite", "created",
+                current_user.email,
+                "invite",
+                "created",
                 wedding_id=str(wedding["_id"]),
             )
             return {"sent": 1, "success": True}
         else:
-            return {"sent": 0, "success": False, "error": result.get("error", "Unknown error")}
+            return {
+                "sent": 0,
+                "success": False,
+                "error": result.get("error", "Unknown error"),
+            }
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to send email: {str(e)}")
@@ -264,7 +303,7 @@ async def send_individual_email_reminder(
 async def get_email_logs(
     current_user: ExtendedAuthUser = Depends(require_admin_or_planner),
     wedding_id: Optional[str] = Query(None, description="Filter by wedding ID"),
-    limit: int = Query(100, description="Number of logs to return")
+    limit: int = Query(100, description="Number of logs to return"),
 ):
     """Get email send logs - filtered by wedding for planners"""
     if not email_available or email_service is None:
@@ -278,11 +317,11 @@ async def get_email_logs(
     # Wedding planners can only see logs for their assigned weddings
     if current_user.is_wedding_planner:
         from app.core.database import mongo
+
         # Get weddings assigned to this planner (safety cap: typical planner has <1k weddings)
         MAX_PLANNER_WEDDINGS = 1000
         weddings_cursor = mongo.db["weddings"].find(
-            {"assigned_planner_email": current_user.email},
-            {"_id": 1}
+            {"assigned_planner_email": current_user.email}, {"_id": 1}
         )
         weddings = await weddings_cursor.to_list(length=MAX_PLANNER_WEDDINGS)
         wedding_ids = [w["_id"] for w in weddings]
@@ -294,10 +333,14 @@ async def get_email_logs(
         if wedding_id:
             if wedding_id not in wedding_ids:
                 return {"logs": [], "count": 0}
-            logs = await email_service.get_email_logs(wedding_id=wedding_id, limit=limit)
+            logs = await email_service.get_email_logs(
+                wedding_id=wedding_id, limit=limit
+            )
         else:
             # Get logs for all planner's weddings
-            logs = await email_service.get_email_logs_for_weddings(wedding_ids=wedding_ids, limit=limit)
+            logs = await email_service.get_email_logs_for_weddings(
+                wedding_ids=wedding_ids, limit=limit
+            )
 
         return {"logs": logs, "count": len(logs)}
 
@@ -309,7 +352,7 @@ def preview_invitation_email(
     current_user: ExtendedAuthUser = Depends(require_admin_or_planner),
     guest_name: str = Query("John Doe", description="Guest name for preview"),
     couple_names: str = Query("Jane & John", description="Couple names"),
-    wedding_date: str = Query("2024-12-25", description="Wedding date")
+    wedding_date: str = Query("2024-12-25", description="Wedding date"),
 ):
     """Preview the default invitation email template"""
     if not email_available or email_service is None:
@@ -320,7 +363,7 @@ def preview_invitation_email(
         guest_name=guest_name,
         couple_names=couple_names,
         wedding_date=wedding_date,
-        rsvp_url=f"{frontend_url}/wedding/invite/preview-token" if frontend_url else ""
+        rsvp_url=f"{frontend_url}/wedding/invite/preview-token" if frontend_url else "",
     )
 
     return {"html": html}
@@ -335,24 +378,20 @@ def preview_reminder_email(
     venue_name: str = Query("Grand Ballroom", description="Venue name"),
     location: str = Query("123 Main St, City", description="Location"),
     time: str = Query("3:00 PM", description="Event time"),
-    couple_names: str = Query("Jane & John", description="Couple names")
+    couple_names: str = Query("Jane & John", description="Couple names"),
 ):
     """Preview the default reminder email template"""
     if not email_available or email_service is None:
         raise HTTPException(status_code=503, detail="Email service not configured")
 
-    event_details = {
-        "venue_name": venue_name,
-        "location": location,
-        "time": time
-    }
+    event_details = {"venue_name": venue_name, "location": location, "time": time}
 
     html = email_service._generate_default_reminder_html(
         guest_name=guest_name,
         event_type=event_type,
         event_date=event_date,
         event_details=event_details,
-        couple_names=couple_names
+        couple_names=couple_names,
     )
 
     return {"html": html}

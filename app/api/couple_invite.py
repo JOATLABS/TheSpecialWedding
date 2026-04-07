@@ -3,13 +3,17 @@ Couple Invitation API (Planner-side)
 
 Endpoints for planners to invite couples to the portal.
 """
+
 from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel, Field
 from typing import Optional
 from datetime import datetime, timezone, timedelta
 from app.core.database import mongo
 from app.dependencies.auth_extended import (
-    ExtendedAuthUser, require_team_or_planner, enforce_team_permission, check_wedding_access
+    ExtendedAuthUser,
+    require_team_or_planner,
+    enforce_team_permission,
+    check_wedding_access,
 )
 from bson import ObjectId
 import secrets
@@ -21,6 +25,7 @@ router = APIRouter()
 
 class InviteCoupleRequest(BaseModel):
     """Request to invite a couple to the portal."""
+
     email: str = Field(..., max_length=254)
     partner1_name: str = Field(..., min_length=1, max_length=100)
     partner2_name: Optional[str] = Field(None, max_length=100)
@@ -30,13 +35,14 @@ class InviteCoupleRequest(BaseModel):
 
 class ResendInviteRequest(BaseModel):
     """Request to resend invitation to a couple."""
+
     couple_id: str = Field(...)
 
 
 @router.post("/couple-portal/invite", tags=["Couple Portal"])
 async def invite_couple(
     data: InviteCoupleRequest,
-    current_user: ExtendedAuthUser = Depends(require_team_or_planner)
+    current_user: ExtendedAuthUser = Depends(require_team_or_planner),
 ):
     """
     Invite a couple to the wedding portal.
@@ -46,16 +52,20 @@ async def invite_couple(
 
     # Verify wedding access
     if not await check_wedding_access(current_user, data.wedding_id):
-        raise HTTPException(status_code=403, detail="You don't have access to this wedding")
+        raise HTTPException(
+            status_code=403, detail="You don't have access to this wedding"
+        )
 
     # Check if couple already exists for this wedding
-    existing = await mongo.db["couple_users"].find_one({
-        "email": data.email.lower().strip(),
-        "wedding_id": data.wedding_id
-    })
+    existing = await mongo.db["couple_users"].find_one(
+        {"email": data.email.lower().strip(), "wedding_id": data.wedding_id}
+    )
 
     if existing and existing.get("setup_completed"):
-        raise HTTPException(status_code=400, detail="This couple already has an active portal account for this wedding.")
+        raise HTTPException(
+            status_code=400,
+            detail="This couple already has an active portal account for this wedding.",
+        )
 
     # Get wedding details for the email
     wedding = await mongo.get_weddings_collection().find_one({"_id": data.wedding_id})
@@ -66,7 +76,9 @@ async def invite_couple(
     planner_id = str((current_user.user_data or {}).get("_id") or current_user.email)
     planner_name = f"{(current_user.user_data or {}).get('first_name', '')} {(current_user.user_data or {}).get('last_name', '')}".strip()
     if not planner_name:
-        planner_name = (current_user.user_data or {}).get("company_name", current_user.email)
+        planner_name = (current_user.user_data or {}).get(
+            "company_name", current_user.email
+        )
 
     # Generate invite token
     invite_token = secrets.token_urlsafe(48)
@@ -94,14 +106,16 @@ async def invite_couple(
         # Update existing record with new invite token
         await mongo.db["couple_users"].update_one(
             {"_id": existing["_id"]},
-            {"$set": {
-                "invite_token": invite_token,
-                "invite_token_expires": invite_expires,
-                "partner1_name": data.partner1_name,
-                "partner2_name": data.partner2_name,
-                "phone": data.phone,
-                "updated_at": datetime.now(timezone.utc)
-            }}
+            {
+                "$set": {
+                    "invite_token": invite_token,
+                    "invite_token_expires": invite_expires,
+                    "partner1_name": data.partner1_name,
+                    "partner2_name": data.partner2_name,
+                    "phone": data.phone,
+                    "updated_at": datetime.now(timezone.utc),
+                }
+            },
         )
         couple_id = str(existing["_id"])
     else:
@@ -111,17 +125,22 @@ async def invite_couple(
     # Also update the wedding to track the couple link
     await mongo.get_weddings_collection().update_one(
         {"_id": data.wedding_id},
-        {"$set": {
-            "couple_portal_email": data.email.lower().strip(),
-            "couple_portal_enabled": True,
-            "couple_portal_invited_at": datetime.now(timezone.utc),
-            "updated_by": current_user.email
-        }}
+        {
+            "$set": {
+                "couple_portal_email": data.email.lower().strip(),
+                "couple_portal_enabled": True,
+                "couple_portal_invited_at": datetime.now(timezone.utc),
+                "updated_by": current_user.email,
+            }
+        },
     )
 
     # Send invitation email
     from app.core.settings import settings
-    frontend_url = getattr(settings, 'frontend_url', None) or "https://thespecialwedding.io"
+
+    frontend_url = (
+        getattr(settings, "frontend_url", None) or "https://thespecialwedding.io"
+    )
     normalized_frontend_url = frontend_url.rstrip("/")
     setup_link = f"{normalized_frontend_url}/couple/setup/{invite_token}"
 
@@ -162,7 +181,7 @@ async def invite_couple(
         <hr style="border: none; border-top: 1px solid #e0e0e0; margin: 30px 0;" />
 
         <p style="color: #999; font-size: 12px; text-align: center;">
-            Wedding: {wedding.get('couple_names', 'Your Wedding')}<br/>
+            Wedding: {wedding.get("couple_names", "Your Wedding")}<br/>
             Planner: {planner_name} ({current_user.email})
         </p>
     </div>
@@ -170,11 +189,12 @@ async def invite_couple(
 
     try:
         from app.services.email_service_resend import ResendEmailService
+
         _email_svc = ResendEmailService()
         await _email_svc.send_email(
             to_email=data.email.lower().strip(),
             subject=f"You're Invited to Your Wedding Portal - {wedding.get('couple_names', 'Your Wedding')}",
-            html_content=html_content
+            html_content=html_content,
         )
         email_sent = True
     except Exception as e:
@@ -186,14 +206,14 @@ async def invite_couple(
         "couple_id": couple_id,
         "email_sent": email_sent,
         "setup_link": setup_link,  # Return for planner to share manually if email fails
-        "invite_expires": invite_expires.isoformat()
+        "invite_expires": invite_expires.isoformat(),
     }
 
 
 @router.post("/couple-portal/resend-invite", tags=["Couple Portal"])
 async def resend_invite(
     data: ResendInviteRequest,
-    current_user: ExtendedAuthUser = Depends(require_team_or_planner)
+    current_user: ExtendedAuthUser = Depends(require_team_or_planner),
 ):
     """Resend the invitation email to a couple."""
     enforce_team_permission(current_user, "manage_contracts")
@@ -204,10 +224,14 @@ async def resend_invite(
 
     # Verify planner has access to this wedding
     if not await check_wedding_access(current_user, couple["wedding_id"]):
-        raise HTTPException(status_code=403, detail="You don't have access to this wedding")
+        raise HTTPException(
+            status_code=403, detail="You don't have access to this wedding"
+        )
 
     if couple.get("setup_completed"):
-        raise HTTPException(status_code=400, detail="Couple has already set up their account")
+        raise HTTPException(
+            status_code=400, detail="Couple has already set up their account"
+        )
 
     # Generate new token
     invite_token = secrets.token_urlsafe(48)
@@ -215,26 +239,33 @@ async def resend_invite(
 
     await mongo.db["couple_users"].update_one(
         {"_id": couple["_id"]},
-        {"$set": {
-            "invite_token": invite_token,
-            "invite_token_expires": invite_expires,
-            "updated_at": datetime.now(timezone.utc)
-        }}
+        {
+            "$set": {
+                "invite_token": invite_token,
+                "invite_token_expires": invite_expires,
+                "updated_at": datetime.now(timezone.utc),
+            }
+        },
     )
 
     from app.core.settings import settings
-    frontend_url = getattr(settings, 'frontend_url', None) or "https://thespecialwedding.io"
+
+    frontend_url = (
+        getattr(settings, "frontend_url", None) or "https://thespecialwedding.io"
+    )
     normalized_frontend_url = frontend_url.rstrip("/")
     setup_link = f"{normalized_frontend_url}/couple/setup/{invite_token}"
 
     # Send email (reuse same template logic)
     try:
         from app.services.email_service_resend import ResendEmailService
+
         _email_svc = ResendEmailService()
-        wedding = await mongo.get_weddings_collection().find_one({"_id": couple["wedding_id"]})
         planner_name = f"{(current_user.user_data or {}).get('first_name', '')} {(current_user.user_data or {}).get('last_name', '')}".strip()
         if not planner_name:
-            planner_name = (current_user.user_data or {}).get("company_name", current_user.email)
+            planner_name = (current_user.user_data or {}).get(
+                "company_name", current_user.email
+            )
 
         couple_name = couple.get("partner1_name", "")
         if couple.get("partner2_name"):
@@ -264,8 +295,8 @@ async def resend_invite(
 
         await _email_svc.send_email(
             to_email=couple["email"],
-            subject=f"Reminder: Set Up Your Wedding Portal",
-            html_content=html_content
+            subject="Reminder: Set Up Your Wedding Portal",
+            html_content=html_content,
         )
         email_sent = True
     except Exception as e:
@@ -275,14 +306,14 @@ async def resend_invite(
     return {
         "message": "Invitation resent",
         "email_sent": email_sent,
-        "setup_link": setup_link
+        "setup_link": setup_link,
     }
 
 
 @router.get("/couple-portal/couples", tags=["Couple Portal"])
 async def list_couples(
     wedding_id: Optional[str] = None,
-    current_user: ExtendedAuthUser = Depends(require_team_or_planner)
+    current_user: ExtendedAuthUser = Depends(require_team_or_planner),
 ):
     """List all couples for the planner's weddings."""
     planner_id = str((current_user.user_data or {}).get("_id") or current_user.email)
@@ -293,17 +324,25 @@ async def list_couples(
 
     couples = []
     async for couple in mongo.db["couple_users"].find(query).sort("created_at", -1):
-        couple_id = str(couple["_id"]) if isinstance(couple["_id"], ObjectId) else couple["_id"]
-        couples.append({
-            "id": couple_id,
-            "email": couple["email"],
-            "partner1_name": couple.get("partner1_name"),
-            "partner2_name": couple.get("partner2_name"),
-            "wedding_id": couple.get("wedding_id"),
-            "is_active": couple.get("is_active", False),
-            "setup_completed": couple.get("setup_completed", False),
-            "last_login": couple.get("last_login").isoformat() if couple.get("last_login") else None,
-            "created_at": couple.get("created_at").isoformat() if couple.get("created_at") else None
-        })
+        couple_id = (
+            str(couple["_id"]) if isinstance(couple["_id"], ObjectId) else couple["_id"]
+        )
+        couples.append(
+            {
+                "id": couple_id,
+                "email": couple["email"],
+                "partner1_name": couple.get("partner1_name"),
+                "partner2_name": couple.get("partner2_name"),
+                "wedding_id": couple.get("wedding_id"),
+                "is_active": couple.get("is_active", False),
+                "setup_completed": couple.get("setup_completed", False),
+                "last_login": couple.get("last_login").isoformat()
+                if couple.get("last_login")
+                else None,
+                "created_at": couple.get("created_at").isoformat()
+                if couple.get("created_at")
+                else None,
+            }
+        )
 
     return {"couples": couples, "count": len(couples)}

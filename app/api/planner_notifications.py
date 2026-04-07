@@ -23,7 +23,7 @@ async def get_planner_activity_notifications(
     unread_only: bool = Query(False, description="Show only unread notifications"),
     wedding_id: Optional[str] = Query(None, description="Filter by wedding ID"),
     notification_type: Optional[str] = Query(None, description="Filter by type"),
-    current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
+    current_user: ExtendedAuthUser = Depends(require_admin_or_planner),
 ):
     """
     Get activity notifications for the current planner.
@@ -42,13 +42,13 @@ async def get_planner_activity_notifications(
         limit=limit,
         unread_only=unread_only,
         wedding_id=wedding_id,
-        notification_type=notification_type
+        notification_type=notification_type,
     )
 
 
 @router.get("/planner/activity-notifications/count", tags=["Planner Notifications"])
 async def get_planner_activity_notification_count(
-    current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
+    current_user: ExtendedAuthUser = Depends(require_admin_or_planner),
 ):
     """Get activity notification counts for the current planner"""
     return await planner_notification_service.get_notification_count(
@@ -56,39 +56,41 @@ async def get_planner_activity_notification_count(
     )
 
 
-@router.put("/planner/activity-notifications/{notification_id}/read", tags=["Planner Notifications"])
+@router.put(
+    "/planner/activity-notifications/{notification_id}/read",
+    tags=["Planner Notifications"],
+)
 async def mark_activity_notification_read(
     notification_id: str,
-    current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
+    current_user: ExtendedAuthUser = Depends(require_admin_or_planner),
 ):
     """Mark an activity notification as read"""
     return await planner_notification_service.mark_as_read(
-        notification_id=notification_id,
-        planner_id=current_user.email
+        notification_id=notification_id, planner_id=current_user.email
     )
 
 
 @router.put("/planner/activity-notifications/read-all", tags=["Planner Notifications"])
 async def mark_all_activity_notifications_read(
     wedding_id: Optional[str] = Query(None, description="Filter by wedding ID"),
-    current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
+    current_user: ExtendedAuthUser = Depends(require_admin_or_planner),
 ):
     """Mark all activity notifications as read for the current planner"""
     return await planner_notification_service.mark_all_as_read(
-        planner_id=current_user.email,
-        wedding_id=wedding_id
+        planner_id=current_user.email, wedding_id=wedding_id
     )
 
 
-@router.delete("/planner/activity-notifications/{notification_id}", tags=["Planner Notifications"])
+@router.delete(
+    "/planner/activity-notifications/{notification_id}", tags=["Planner Notifications"]
+)
 async def delete_activity_notification(
     notification_id: str,
-    current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
+    current_user: ExtendedAuthUser = Depends(require_admin_or_planner),
 ):
     """Delete an activity notification"""
     return await planner_notification_service.delete_notification(
-        notification_id=notification_id,
-        planner_id=current_user.email
+        notification_id=notification_id, planner_id=current_user.email
     )
 
 
@@ -96,9 +98,10 @@ async def delete_activity_notification(
 # Note: Main Web Push endpoints are in /admin/web-push/*
 # These are convenience aliases for the planner notification context
 
+
 @router.get("/planner/push-status", tags=["Planner Notifications"])
 async def get_push_status(
-    current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
+    current_user: ExtendedAuthUser = Depends(require_admin_or_planner),
 ):
     """
     Get push notification status for the current planner.
@@ -114,16 +117,18 @@ async def get_push_status(
         "enabled": web_push_service.enabled,
         "subscribed": is_subscribed,
         "message": (
-            "Push notifications active" if is_subscribed
-            else "Not subscribed - enable in Account Settings" if web_push_service.enabled
+            "Push notifications active"
+            if is_subscribed
+            else "Not subscribed - enable in Account Settings"
+            if web_push_service.enabled
             else "Push notifications not configured on server"
-        )
+        ),
     }
 
 
 @router.post("/planner/push-test", tags=["Planner Notifications"])
 async def send_test_push_notification(
-    current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
+    current_user: ExtendedAuthUser = Depends(require_admin_or_planner),
 ):
     """
     Send a test push notification to verify your subscription is working.
@@ -135,7 +140,7 @@ async def send_test_push_notification(
     if not web_push_service.enabled:
         return {
             "success": False,
-            "message": "Push notifications are not configured on this server"
+            "message": "Push notifications are not configured on this server",
         }
 
     result = await web_push_service.send_notification(
@@ -143,10 +148,12 @@ async def send_test_push_notification(
         title="Test Notification",
         body="Push notifications are working!",
         url="/admin/planner",
-        tag="test-notification"
+        tag="test-notification",
     )
 
     return {
         "success": result.get("success", False),
-        "message": f"Test notification sent to {result.get('sent', 0)} device(s)!" if result.get("success") else result.get("error", "No active subscriptions found")
+        "message": f"Test notification sent to {result.get('sent', 0)} device(s)!"
+        if result.get("success")
+        else result.get("error", "No active subscriptions found"),
     }

@@ -3,6 +3,7 @@ Shared rate limiter for public FastAPI endpoints.
 Uses Redis when available so limits hold across replicas, with an
 in-memory fallback for local/dev environments without Redis.
 """
+
 import time
 import logging
 from typing import Deque, Dict, Tuple
@@ -33,7 +34,9 @@ class RateLimiter:
         self.max_ips_tracked = max_ips_tracked
         self.ip_requests: Dict[str, Deque[float]] = {}
 
-    def _cleanup_old_requests(self, request_queue: Deque[float], current_time: float) -> None:
+    def _cleanup_old_requests(
+        self, request_queue: Deque[float], current_time: float
+    ) -> None:
         while request_queue and current_time - request_queue[0] > self.window_seconds:
             request_queue.popleft()
 
@@ -47,7 +50,9 @@ class RateLimiter:
             for ip, _ in sorted_ips[: max(1, len(sorted_ips) // 10)]:
                 del self.ip_requests[ip]
 
-    async def _check_redis_limit(self, client_ip: str, limit: int) -> Tuple[bool, int, int]:
+    async def _check_redis_limit(
+        self, client_ip: str, limit: int
+    ) -> Tuple[bool, int, int]:
         key = CacheKeys.rate_limit(client_ip, self.bucket_name)
         current_count = await cache.increment(key, expire=self.window_seconds)
         if current_count is None:

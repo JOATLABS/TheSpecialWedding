@@ -4,13 +4,13 @@ Couple Portal Service
 Aggregates wedding data for the couple's portal view.
 Sprint 3: Adds email digest generation for unread updates, messages, payments.
 """
+
 import asyncio
 from datetime import datetime, timezone, timedelta
 from typing import Optional, Dict, Any, List
 from app.core.database import mongo
 from app.core.cache import cache, CacheKeys
 from app.services.guest_media_service import guest_media_service
-from bson import ObjectId
 import logging
 
 logger = logging.getLogger(__name__)
@@ -31,12 +31,16 @@ class CouplePortalService:
             return [event for event, is_attending in attending.items() if is_attending]
         return []
 
-    async def get_portal_dashboard(self, wedding_id: str, couple_email: str) -> Dict[str, Any]:
+    async def get_portal_dashboard(
+        self, wedding_id: str, couple_email: str
+    ) -> Dict[str, Any]:
         """
         Get complete portal dashboard data for a couple.
         Aggregates wedding info, guest stats, budget summary, events, and planner info.
         """
-        cache_key = CacheKeys.couple_portal_dashboard(str(wedding_id), couple_email.strip().lower())
+        cache_key = CacheKeys.couple_portal_dashboard(
+            str(wedding_id), couple_email.strip().lower()
+        )
         cached_dashboard = await cache.get(cache_key)
         if cached_dashboard is not None:
             return cached_dashboard
@@ -75,7 +79,15 @@ class CouplePortalService:
             else asyncio.sleep(0, result=None)
         )
 
-        planner, guest_stats, budget_summary, contract_info, shared_forms, updates, memories_summary = await asyncio.gather(
+        (
+            planner,
+            guest_stats,
+            budget_summary,
+            contract_info,
+            shared_forms,
+            updates,
+            memories_summary,
+        ) = await asyncio.gather(
             planner_task,
             self._get_guest_stats(wedding),
             self._get_budget_summary(wedding_id),
@@ -108,12 +120,18 @@ class CouplePortalService:
                 "faqs": wedding.get("faqs", []),
             },
             "planner": {
-                "name": f"{planner.get('first_name', '')} {planner.get('last_name', '')}".strip() if planner else None,
+                "name": f"{planner.get('first_name', '')} {planner.get('last_name', '')}".strip()
+                if planner
+                else None,
                 "company": planner.get("company_name") if planner else None,
                 "email": planner_email,
                 "phone": planner.get("support_phone") if planner else None,
-                "profile_image_url": planner.get("profile_image_url") if planner else None,
-            } if planner else None,
+                "profile_image_url": planner.get("profile_image_url")
+                if planner
+                else None,
+            }
+            if planner
+            else None,
             "guest_stats": guest_stats,
             "budget_summary": budget_summary,
             "contract": contract_info,
@@ -176,14 +194,22 @@ class CouplePortalService:
 
             responded = len(responded_guest_ids)
             pending = sum(
-                1 for guest in guests
-                if guest.get("invite_sent") and str(guest["_id"]) not in responded_guest_ids
+                1
+                for guest in guests
+                if guest.get("invite_sent")
+                and str(guest["_id"]) not in responded_guest_ids
             )
             not_invited = sum(
-                1 for guest in guests
-                if not guest.get("invite_sent") and str(guest["_id"]) not in responded_guest_ids
+                1
+                for guest in guests
+                if not guest.get("invite_sent")
+                and str(guest["_id"]) not in responded_guest_ids
             )
-            response_rate = min(100.0, round((responded / invited) * 100, 1)) if invited > 0 else 0.0
+            response_rate = (
+                min(100.0, round((responded / invited) * 100, 1))
+                if invited > 0
+                else 0.0
+            )
 
             configured_events = wedding.get("events", []) or []
             ordered_event_types: List[str] = []
@@ -254,40 +280,53 @@ class CouplePortalService:
             categories = await categories_cursor.to_list(length=500)
 
             wedding_total_budget = wedding.get("total_budget", 0) if wedding else 0
-            categories_total_budget = sum(category.get("budgeted_amount", 0) or 0 for category in categories)
-            total_budget = wedding_total_budget if wedding_total_budget > 0 else categories_total_budget
-            total_spent = sum(category.get("actual_spent", 0) or 0 for category in categories)
+            categories_total_budget = sum(
+                category.get("budgeted_amount", 0) or 0 for category in categories
+            )
+            total_budget = (
+                wedding_total_budget
+                if wedding_total_budget > 0
+                else categories_total_budget
+            )
+            total_spent = sum(
+                category.get("actual_spent", 0) or 0 for category in categories
+            )
 
             return {
                 "total_budget": total_budget,
                 "total_spent": total_spent,
-                "remaining": total_budget - total_spent
+                "remaining": total_budget - total_spent,
             }
         except Exception as e:
             logger.error(f"Error getting budget summary for wedding {wedding_id}: {e}")
             return {"total_budget": 0, "total_spent": 0, "remaining": 0}
 
-    async def _get_contract_info(self, wedding_id: str, couple_email: str) -> Optional[Dict]:
+    async def _get_contract_info(
+        self, wedding_id: str, couple_email: str
+    ) -> Optional[Dict]:
         """Get contract and payment information for the couple."""
         try:
-            contract = await mongo.db["contracts"].find_one({
-                "wedding_id": wedding_id,
-                "couple.email": couple_email
-            }, {
-                "status": 1,
-                "package_name": 1,
-                "signed_at": 1,
-                "payments": 1,
-            })
-
-            if not contract:
-                # Try finding by wedding_id only
-                contract = await mongo.db["contracts"].find_one({"wedding_id": wedding_id}, {
+            contract = await mongo.db["contracts"].find_one(
+                {"wedding_id": wedding_id, "couple.email": couple_email},
+                {
                     "status": 1,
                     "package_name": 1,
                     "signed_at": 1,
                     "payments": 1,
-                })
+                },
+            )
+
+            if not contract:
+                # Try finding by wedding_id only
+                contract = await mongo.db["contracts"].find_one(
+                    {"wedding_id": wedding_id},
+                    {
+                        "status": 1,
+                        "package_name": 1,
+                        "signed_at": 1,
+                        "payments": 1,
+                    },
+                )
 
             if not contract:
                 return None
@@ -295,30 +334,36 @@ class CouplePortalService:
             # Get payments
             payments = []
             for p in contract.get("payments", []):
-                payments.append({
-                    "id": p.get("id"),
-                    "name": p.get("name"),
-                    "amount": p.get("amount"),
-                    "currency": p.get("currency", "usd"),
-                    "due_date": p.get("due_date"),
-                    "status": p.get("status"),
-                    "paid_at": p.get("paid_at"),
-                })
+                payments.append(
+                    {
+                        "id": p.get("id"),
+                        "name": p.get("name"),
+                        "amount": p.get("amount"),
+                        "currency": p.get("currency", "usd"),
+                        "due_date": p.get("due_date"),
+                        "status": p.get("status"),
+                        "paid_at": p.get("paid_at"),
+                    }
+                )
 
             total_amount = sum(p.get("amount", 0) for p in payments)
-            paid_amount = sum(p.get("amount", 0) for p in payments if p.get("status") == "succeeded")
+            paid_amount = sum(
+                p.get("amount", 0) for p in payments if p.get("status") == "succeeded"
+            )
 
             return {
                 "id": str(contract["_id"]),
                 "status": contract.get("status"),
                 "package_name": contract.get("package_name"),
-                "signed_at": contract.get("signed_at").isoformat() if contract.get("signed_at") else None,
+                "signed_at": contract.get("signed_at").isoformat()
+                if contract.get("signed_at")
+                else None,
                 "payments": payments,
                 "summary": {
                     "total_amount": total_amount,
                     "paid_amount": paid_amount,
-                    "remaining": total_amount - paid_amount
-                }
+                    "remaining": total_amount - paid_amount,
+                },
             }
         except Exception as e:
             logger.error(f"Error getting contract info for wedding {wedding_id}: {e}")
@@ -330,28 +375,34 @@ class CouplePortalService:
             # Collect all shared forms first
             form_list = []
             form_ids = []
-            async for form in mongo.db["forms"].find({
-                "wedding_id": wedding_id,
-                "$or": [
-                    {"shared_with_couple": True},
-                    {"target_audience": "couple"},
-                    {"couple_email": couple_email}
-                ]
-            }, {
-                "title": 1,
-                "description": 1,
-                "created_at": 1,
-            }).sort("created_at", -1):
+            async for form in (
+                mongo.db["forms"]
+                .find(
+                    {
+                        "wedding_id": wedding_id,
+                        "$or": [
+                            {"shared_with_couple": True},
+                            {"target_audience": "couple"},
+                            {"couple_email": couple_email},
+                        ],
+                    },
+                    {
+                        "title": 1,
+                        "description": 1,
+                        "created_at": 1,
+                    },
+                )
+                .sort("created_at", -1)
+            ):
                 form_list.append(form)
                 form_ids.append(str(form["_id"]))
 
             # Batch-fetch all submissions for these forms in a single query (fixes N+1)
             submissions_lookup = {}
             if form_ids:
-                async for sub in mongo.db["form_submissions"].find({
-                    "form_id": {"$in": form_ids},
-                    "submitted_by": couple_email
-                }):
+                async for sub in mongo.db["form_submissions"].find(
+                    {"form_id": {"$in": form_ids}, "submitted_by": couple_email}
+                ):
                     submissions_lookup[sub["form_id"]] = sub
 
             # Build response
@@ -359,14 +410,20 @@ class CouplePortalService:
             for form in form_list:
                 fid = str(form["_id"])
                 submission = submissions_lookup.get(fid)
-                forms.append({
-                    "id": fid,
-                    "title": form.get("title"),
-                    "description": form.get("description"),
-                    "status": "submitted" if submission else "pending",
-                    "submitted_at": submission.get("submitted_at").isoformat() if submission and submission.get("submitted_at") else None,
-                    "created_at": form.get("created_at").isoformat() if form.get("created_at") else None
-                })
+                forms.append(
+                    {
+                        "id": fid,
+                        "title": form.get("title"),
+                        "description": form.get("description"),
+                        "status": "submitted" if submission else "pending",
+                        "submitted_at": submission.get("submitted_at").isoformat()
+                        if submission and submission.get("submitted_at")
+                        else None,
+                        "created_at": form.get("created_at").isoformat()
+                        if form.get("created_at")
+                        else None,
+                    }
+                )
 
             return forms
         except Exception as e:
@@ -377,36 +434,52 @@ class CouplePortalService:
         """Get planner updates/milestones for the couple."""
         try:
             updates = []
-            async for update in mongo.db["couple_updates"].find({
-                "wedding_id": wedding_id
-            }, {
-                "type": 1,
-                "title": 1,
-                "content": 1,
-                "category": 1,
-                "attachments": 1,
-                "is_milestone": 1,
-                "created_at": 1,
-                "created_by_name": 1,
-            }).sort("created_at", -1).limit(50):
-                updates.append({
-                    "id": str(update["_id"]),
-                    "type": update.get("type", "update"),  # update, milestone, announcement
-                    "title": update.get("title"),
-                    "content": update.get("content"),
-                    "category": update.get("category"),  # venue, catering, decor, timeline, etc.
-                    "attachments": update.get("attachments", []),
-                    "is_milestone": update.get("is_milestone", False),
-                    "created_at": update.get("created_at").isoformat() if update.get("created_at") else None,
-                    "created_by": update.get("created_by_name"),
-                })
+            async for update in (
+                mongo.db["couple_updates"]
+                .find(
+                    {"wedding_id": wedding_id},
+                    {
+                        "type": 1,
+                        "title": 1,
+                        "content": 1,
+                        "category": 1,
+                        "attachments": 1,
+                        "is_milestone": 1,
+                        "created_at": 1,
+                        "created_by_name": 1,
+                    },
+                )
+                .sort("created_at", -1)
+                .limit(50)
+            ):
+                updates.append(
+                    {
+                        "id": str(update["_id"]),
+                        "type": update.get(
+                            "type", "update"
+                        ),  # update, milestone, announcement
+                        "title": update.get("title"),
+                        "content": update.get("content"),
+                        "category": update.get(
+                            "category"
+                        ),  # venue, catering, decor, timeline, etc.
+                        "attachments": update.get("attachments", []),
+                        "is_milestone": update.get("is_milestone", False),
+                        "created_at": update.get("created_at").isoformat()
+                        if update.get("created_at")
+                        else None,
+                        "created_by": update.get("created_by_name"),
+                    }
+                )
 
             return updates
         except Exception as e:
             logger.error(f"Error getting updates for wedding {wedding_id}: {e}")
             return []
 
-    async def get_contract_for_couple(self, wedding_id: str, couple_email: str) -> Optional[Dict]:
+    async def get_contract_for_couple(
+        self, wedding_id: str, couple_email: str
+    ) -> Optional[Dict]:
         """
         Get full contract details for the couple portal.
         Returns payment info, sections, and timestamps — all read-only for the couple.
@@ -414,13 +487,17 @@ class CouplePortalService:
         """
         try:
             # Find contract scoped to this wedding (same query pattern as _get_contract_info)
-            contract = await mongo.db["contracts"].find_one({
-                "wedding_id": wedding_id,
-                "$or": [
-                    {"couple.email": couple_email},
-                    {"wedding_id": wedding_id}  # fallback for contracts without couple.email
-                ]
-            })
+            contract = await mongo.db["contracts"].find_one(
+                {
+                    "wedding_id": wedding_id,
+                    "$or": [
+                        {"couple.email": couple_email},
+                        {
+                            "wedding_id": wedding_id
+                        },  # fallback for contracts without couple.email
+                    ],
+                }
+            )
 
             if not contract:
                 return None
@@ -428,26 +505,32 @@ class CouplePortalService:
             # Build payments summary
             payments = []
             for p in contract.get("payments", []):
-                payments.append({
-                    "id": p.get("id"),
-                    "name": p.get("name"),
-                    "amount": p.get("amount"),
-                    "currency": p.get("currency", "usd"),
-                    "due_date": p.get("due_date"),
-                    "status": p.get("status"),
-                    "paid_at": p.get("paid_at"),
-                })
+                payments.append(
+                    {
+                        "id": p.get("id"),
+                        "name": p.get("name"),
+                        "amount": p.get("amount"),
+                        "currency": p.get("currency", "usd"),
+                        "due_date": p.get("due_date"),
+                        "status": p.get("status"),
+                        "paid_at": p.get("paid_at"),
+                    }
+                )
 
             total_amount = sum(p.get("amount", 0) for p in payments)
-            paid_amount = sum(p.get("amount", 0) for p in payments if p.get("status") == "succeeded")
+            paid_amount = sum(
+                p.get("amount", 0) for p in payments if p.get("status") == "succeeded"
+            )
 
             # Extract sections (terms, scope, etc.) — safe for couple to read
             sections = []
             for section in contract.get("custom_sections", []):
-                sections.append({
-                    "title": section.get("title"),
-                    "content": section.get("content"),
-                })
+                sections.append(
+                    {
+                        "title": section.get("title"),
+                        "content": section.get("content"),
+                    }
+                )
 
             return {
                 "id": str(contract["_id"]),
@@ -455,20 +538,30 @@ class CouplePortalService:
                 "package_name": contract.get("package_name"),
                 "couple_name": contract.get("couple", {}).get("name"),
                 "couple_email": contract.get("couple", {}).get("email"),
-                "signed_at": contract.get("signed_at").isoformat() if contract.get("signed_at") else None,
-                "created_at": contract.get("created_at").isoformat() if contract.get("created_at") else None,
-                "sent_at": contract.get("sent_at").isoformat() if contract.get("sent_at") else None,
-                "viewed_at": contract.get("viewed_at").isoformat() if contract.get("viewed_at") else None,
+                "signed_at": contract.get("signed_at").isoformat()
+                if contract.get("signed_at")
+                else None,
+                "created_at": contract.get("created_at").isoformat()
+                if contract.get("created_at")
+                else None,
+                "sent_at": contract.get("sent_at").isoformat()
+                if contract.get("sent_at")
+                else None,
+                "viewed_at": contract.get("viewed_at").isoformat()
+                if contract.get("viewed_at")
+                else None,
                 "sections": sections,
                 "payments": payments,
                 "summary": {
                     "total_amount": total_amount,
                     "paid_amount": paid_amount,
                     "remaining": total_amount - paid_amount,
-                }
+                },
             }
         except Exception as e:
-            logger.error(f"Error getting contract details for wedding {wedding_id}: {e}")
+            logger.error(
+                f"Error getting contract details for wedding {wedding_id}: {e}"
+            )
             return None
 
     async def archive_wedding_data(self, wedding_id: str) -> Dict[str, Any]:
@@ -478,7 +571,9 @@ class CouplePortalService:
         Preserves couple login but marks as archived.
         """
         try:
-            wedding = await mongo.get_weddings_collection().find_one({"_id": wedding_id})
+            wedding = await mongo.get_weddings_collection().find_one(
+                {"_id": wedding_id}
+            )
             if not wedding:
                 return {"error": "Wedding not found"}
 
@@ -510,7 +605,9 @@ class CouplePortalService:
             form_submissions = []
             form_ids = [f["_id"] for f in forms]
             if form_ids:
-                async for fs in mongo.db["form_submissions"].find({"form_id": {"$in": form_ids}}):
+                async for fs in mongo.db["form_submissions"].find(
+                    {"form_id": {"$in": form_ids}}
+                ):
                     fs["_id"] = str(fs["_id"])
                     form_submissions.append(fs)
 
@@ -551,13 +648,17 @@ class CouplePortalService:
             # Mark couple accounts as archived (keep login working but show archived state)
             await mongo.db["couple_users"].update_many(
                 {"wedding_id": wedding_id},
-                {"$set": {
-                    "wedding_archived": True,
-                    "archived_at": datetime.now(timezone.utc)
-                }}
+                {
+                    "$set": {
+                        "wedding_archived": True,
+                        "archived_at": datetime.now(timezone.utc),
+                    }
+                },
             )
 
-            logger.info(f"Wedding {wedding_id} archived successfully: {str(result.inserted_id)}")
+            logger.info(
+                f"Wedding {wedding_id} archived successfully: {str(result.inserted_id)}"
+            )
 
             return {
                 "archive_id": str(result.inserted_id),
@@ -570,12 +671,13 @@ class CouplePortalService:
             logger.error(f"Error archiving wedding {wedding_id}: {e}")
             raise
 
-
     # =========================================================================
     # SPRINT 3: EMAIL DIGEST
     # =========================================================================
 
-    async def generate_couple_digest(self, couple_email: str, wedding_id: str, since: datetime) -> Optional[Dict]:
+    async def generate_couple_digest(
+        self, couple_email: str, wedding_id: str, since: datetime
+    ) -> Optional[Dict]:
         """
         Generate digest data for a couple: unread messages, new updates, upcoming payments.
         Returns None if there's nothing new to report.
@@ -583,23 +685,36 @@ class CouplePortalService:
         """
         try:
             # 1. Unread messages from planner
-            unread_messages = await mongo.db["couple_messages"].count_documents({
-                "wedding_id": wedding_id,
-                "sender_role": "planner",
-                "read_by_couple": False,
-            })
+            unread_messages = await mongo.db["couple_messages"].count_documents(
+                {
+                    "wedding_id": wedding_id,
+                    "sender_role": "planner",
+                    "read_by_couple": False,
+                }
+            )
 
             # 2. New updates since last digest
             new_updates = []
-            async for update in mongo.db["couple_updates"].find({
-                "wedding_id": wedding_id,
-                "created_at": {"$gte": since},
-            }).sort("created_at", -1).limit(5):
-                new_updates.append({
-                    "title": update.get("title"),
-                    "content": update.get("content", "")[:150],
-                    "created_at": update.get("created_at").isoformat() if update.get("created_at") else None,
-                })
+            async for update in (
+                mongo.db["couple_updates"]
+                .find(
+                    {
+                        "wedding_id": wedding_id,
+                        "created_at": {"$gte": since},
+                    }
+                )
+                .sort("created_at", -1)
+                .limit(5)
+            ):
+                new_updates.append(
+                    {
+                        "title": update.get("title"),
+                        "content": update.get("content", "")[:150],
+                        "created_at": update.get("created_at").isoformat()
+                        if update.get("created_at")
+                        else None,
+                    }
+                )
 
             # 3. Upcoming payments (due in next 14 days)
             upcoming_payments = []
@@ -612,40 +727,57 @@ class CouplePortalService:
                         due_date_str = p.get("due_date")
                         if due_date_str:
                             try:
-                                due_date = datetime.fromisoformat(due_date_str.replace("Z", "+00:00")) if isinstance(due_date_str, str) else due_date_str
+                                due_date = (
+                                    datetime.fromisoformat(
+                                        due_date_str.replace("Z", "+00:00")
+                                    )
+                                    if isinstance(due_date_str, str)
+                                    else due_date_str
+                                )
                                 if now <= due_date <= cutoff:
-                                    upcoming_payments.append({
-                                        "name": p.get("name"),
-                                        "amount": p.get("amount"),
-                                        "due_date": due_date_str,
-                                    })
+                                    upcoming_payments.append(
+                                        {
+                                            "name": p.get("name"),
+                                            "amount": p.get("amount"),
+                                            "due_date": due_date_str,
+                                        }
+                                    )
                             except (ValueError, TypeError):
                                 pass
 
             # 4. Pending forms
             pending_forms_count = 0
             form_ids = []
-            async for form in mongo.db["forms"].find({
-                "wedding_id": wedding_id,
-                "$or": [
-                    {"shared_with_couple": True},
-                    {"target_audience": "couple"},
-                    {"couple_email": couple_email},
-                ]
-            }):
+            async for form in mongo.db["forms"].find(
+                {
+                    "wedding_id": wedding_id,
+                    "$or": [
+                        {"shared_with_couple": True},
+                        {"target_audience": "couple"},
+                        {"couple_email": couple_email},
+                    ],
+                }
+            ):
                 form_ids.append(str(form["_id"]))
 
             if form_ids:
                 submitted_ids = set()
-                async for sub in mongo.db["form_submissions"].find({
-                    "form_id": {"$in": form_ids},
-                    "submitted_by": couple_email,
-                }):
+                async for sub in mongo.db["form_submissions"].find(
+                    {
+                        "form_id": {"$in": form_ids},
+                        "submitted_by": couple_email,
+                    }
+                ):
                     submitted_ids.add(sub["form_id"])
                 pending_forms_count = len(form_ids) - len(submitted_ids)
 
             # If nothing to report, return None
-            if unread_messages == 0 and len(new_updates) == 0 and len(upcoming_payments) == 0 and pending_forms_count == 0:
+            if (
+                unread_messages == 0
+                and len(new_updates) == 0
+                and len(upcoming_payments) == 0
+                and pending_forms_count == 0
+            ):
                 return None
 
             return {
@@ -666,13 +798,19 @@ class CouplePortalService:
         """
         try:
             from app.services.email_service_resend import ResendEmailService
+
             email_service = ResendEmailService()
             from app.core.settings import settings
 
-            frontend_url = getattr(settings, 'frontend_url', None) or "https://thespecialwedding.io"
+            frontend_url = (
+                getattr(settings, "frontend_url", None)
+                or "https://thespecialwedding.io"
+            )
             couple_name = couple_doc.get("partner1_name", "")
             if couple_doc.get("partner2_name"):
-                couple_name = f"{couple_doc['partner1_name']} & {couple_doc['partner2_name']}"
+                couple_name = (
+                    f"{couple_doc['partner1_name']} & {couple_doc['partner2_name']}"
+                )
 
             # Build digest sections
             sections_html = ""
@@ -680,7 +818,7 @@ class CouplePortalService:
             if digest["unread_messages"] > 0:
                 sections_html += f"""
                 <div style="margin-bottom: 20px; padding: 16px; background: #f0f7ff; border-radius: 8px;">
-                    <h3 style="color: #1e3a5f; margin: 0 0 8px 0; font-size: 16px;">💬 {digest['unread_messages']} Unread Message{'s' if digest['unread_messages'] > 1 else ''}</h3>
+                    <h3 style="color: #1e3a5f; margin: 0 0 8px 0; font-size: 16px;">💬 {digest["unread_messages"]} Unread Message{"s" if digest["unread_messages"] > 1 else ""}</h3>
                     <p style="color: #555; margin: 0; font-size: 14px;">Your planner sent you a message. Check your portal to read it.</p>
                 </div>
                 """
@@ -691,7 +829,7 @@ class CouplePortalService:
                     updates_list += f'<li style="margin-bottom: 8px;"><strong>{update["title"]}</strong></li>'
                 sections_html += f"""
                 <div style="margin-bottom: 20px; padding: 16px; background: #f8f6f3; border-radius: 8px;">
-                    <h3 style="color: #1e3a5f; margin: 0 0 8px 0; font-size: 16px;">📋 {digest['new_updates_count']} New Update{'s' if digest['new_updates_count'] > 1 else ''}</h3>
+                    <h3 style="color: #1e3a5f; margin: 0 0 8px 0; font-size: 16px;">📋 {digest["new_updates_count"]} New Update{"s" if digest["new_updates_count"] > 1 else ""}</h3>
                     <ul style="color: #555; font-size: 14px; padding-left: 20px; margin: 0;">{updates_list}</ul>
                 </div>
                 """
@@ -702,7 +840,7 @@ class CouplePortalService:
                     payment_list += f'<li style="margin-bottom: 8px;">{p["name"]}: ${p["amount"]:,.0f} due {p["due_date"]}</li>'
                 sections_html += f"""
                 <div style="margin-bottom: 20px; padding: 16px; background: #fff8e6; border-radius: 8px;">
-                    <h3 style="color: #1e3a5f; margin: 0 0 8px 0; font-size: 16px;">💰 Upcoming Payment{'s' if len(digest['upcoming_payments']) > 1 else ''}</h3>
+                    <h3 style="color: #1e3a5f; margin: 0 0 8px 0; font-size: 16px;">💰 Upcoming Payment{"s" if len(digest["upcoming_payments"]) > 1 else ""}</h3>
                     <ul style="color: #555; font-size: 14px; padding-left: 20px; margin: 0;">{payment_list}</ul>
                 </div>
                 """
@@ -710,7 +848,7 @@ class CouplePortalService:
             if digest["pending_forms_count"] > 0:
                 sections_html += f"""
                 <div style="margin-bottom: 20px; padding: 16px; background: #f5f0eb; border-radius: 8px;">
-                    <h3 style="color: #1e3a5f; margin: 0 0 8px 0; font-size: 16px;">📝 {digest['pending_forms_count']} Form{'s' if digest['pending_forms_count'] > 1 else ''} Pending</h3>
+                    <h3 style="color: #1e3a5f; margin: 0 0 8px 0; font-size: 16px;">📝 {digest["pending_forms_count"]} Form{"s" if digest["pending_forms_count"] > 1 else ""} Pending</h3>
                     <p style="color: #555; margin: 0; font-size: 14px;">Your planner has forms waiting for your response.</p>
                 </div>
                 """
@@ -723,7 +861,7 @@ class CouplePortalService:
                 </div>
 
                 <p style="color: #333; font-size: 16px; line-height: 1.6;">
-                    Hi {couple_name or 'there'}, here's what's new with your wedding:
+                    Hi {couple_name or "there"}, here's what's new with your wedding:
                 </p>
 
                 {sections_html}
@@ -753,7 +891,9 @@ class CouplePortalService:
             return True
 
         except Exception as e:
-            logger.error(f"Failed to send couple digest email to {couple_doc.get('email')}: {e}")
+            logger.error(
+                f"Failed to send couple digest email to {couple_doc.get('email')}: {e}"
+            )
             return False
 
 

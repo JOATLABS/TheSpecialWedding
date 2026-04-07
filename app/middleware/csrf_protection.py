@@ -1,6 +1,7 @@
 """
 CSRF Protection Middleware
 """
+
 from fastapi import Request
 from fastapi.responses import JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
@@ -15,6 +16,7 @@ class CSRFProtectionMiddleware(BaseHTTPMiddleware):
     """
     CSRF Protection using Double Submit Cookie pattern
     """
+
     def __init__(
         self,
         app,
@@ -22,7 +24,7 @@ class CSRFProtectionMiddleware(BaseHTTPMiddleware):
         cookie_name: str = "csrf_token",
         header_name: str = "X-CSRF-Token",
         safe_methods: Optional[list] = None,
-        exclude_paths: Optional[list] = None
+        exclude_paths: Optional[list] = None,
     ):
         super().__init__(app)
         self.secret_key = secret_key
@@ -30,22 +32,25 @@ class CSRFProtectionMiddleware(BaseHTTPMiddleware):
         self.header_name = header_name
         self.safe_methods = safe_methods or ["GET", "HEAD", "OPTIONS", "TRACE"]
         self.exclude_paths = exclude_paths or [
-            "/health", "/docs", "/openapi.json", "/admin/token",
+            "/health",
+            "/docs",
+            "/openapi.json",
+            "/admin/token",
             "/weddings/verify-guest-access",  # Guest verification endpoints
-            "/weddings/privacy-info",         # Public privacy info
-            "/weddings/guest-access",         # Token-based access
-            "/stripe/",                       # Stripe endpoints use signatures
-            "/api/stripe/",                   # Stripe alias endpoints use signatures
-            "/rsvp/",                         # RSVP endpoints use token auth
-            "/admin/auth",                    # Auth endpoints
-            "/public/",                       # Public endpoints
-            "/otp/",                          # OTP endpoints use phone verification
-            "/forgot-password",               # Password recovery (email-based)
-            "/reset-password",                # Password reset (uses reset token)
-            "/setup/",                        # Account setup (uses invitation token)
-            "/signup",                        # User registration
-            "/contact",                       # Contact forms (public)
-            "/planner-onboarding/unsubscribe"  # Token-authenticated unsubscribe
+            "/weddings/privacy-info",  # Public privacy info
+            "/weddings/guest-access",  # Token-based access
+            "/stripe/",  # Stripe endpoints use signatures
+            "/api/stripe/",  # Stripe alias endpoints use signatures
+            "/rsvp/",  # RSVP endpoints use token auth
+            "/admin/auth",  # Auth endpoints
+            "/public/",  # Public endpoints
+            "/otp/",  # OTP endpoints use phone verification
+            "/forgot-password",  # Password recovery (email-based)
+            "/reset-password",  # Password reset (uses reset token)
+            "/setup/",  # Account setup (uses invitation token)
+            "/signup",  # User registration
+            "/contact",  # Contact forms (public)
+            "/planner-onboarding/unsubscribe",  # Token-authenticated unsubscribe
         ]
 
         # Store tokens with expiration
@@ -71,8 +76,7 @@ class CSRFProtectionMiddleware(BaseHTTPMiddleware):
         """Remove expired tokens from store"""
         current_time = time.time()
         expired_tokens = [
-            token for token, expiry in self.token_store.items()
-            if expiry < current_time
+            token for token, expiry in self.token_store.items() if expiry < current_time
         ]
         for token in expired_tokens:
             del self.token_store[token]
@@ -143,7 +147,7 @@ class CSRFProtectionMiddleware(BaseHTTPMiddleware):
                     httponly=False,  # JavaScript needs to read this
                     samesite="strict",
                     secure=True,  # Only over HTTPS in production
-                    max_age=self.token_lifetime
+                    max_age=self.token_lifetime,
                 )
                 response.set_cookie(
                     key="session_id",
@@ -151,7 +155,7 @@ class CSRFProtectionMiddleware(BaseHTTPMiddleware):
                     httponly=True,
                     samesite="strict",
                     secure=True,
-                    max_age=86400  # 24 hours
+                    max_age=86400,  # 24 hours
                 )
             return response
 
@@ -162,14 +166,13 @@ class CSRFProtectionMiddleware(BaseHTTPMiddleware):
         if not cookie_token or not header_token:
             return JSONResponse(
                 status_code=403,
-                content={"detail": "CSRF token missing in request header or cookie"}
+                content={"detail": "CSRF token missing in request header or cookie"},
             )
 
         # Verify CSRF token
         if not self._verify_csrf_token(cookie_token, header_token):
             return JSONResponse(
-                status_code=403,
-                content={"detail": "Invalid CSRF token"}
+                status_code=403, content={"detail": "Invalid CSRF token"}
             )
 
         # Token is valid, continue with request

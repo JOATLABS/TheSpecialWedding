@@ -2,6 +2,7 @@
 Base model classes and utilities for Pydantic v2 models.
 Provides common functionality and optimizations for all models.
 """
+
 from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 from pydantic import BaseModel, ConfigDict, Field, field_serializer
@@ -13,30 +14,29 @@ class TimestampedModel(BaseModel):
     Base model with automatic timestamp management.
     Provides created_at and updated_at fields for all models.
     """
+
     created_at: datetime = Field(
         default_factory=lambda: datetime.now(timezone.utc),
-        description="Record creation timestamp"
+        description="Record creation timestamp",
     )
     updated_at: datetime = Field(
         default_factory=lambda: datetime.now(timezone.utc),
-        description="Record last update timestamp"
+        description="Record last update timestamp",
     )
 
     model_config = ConfigDict(
         # Performance optimizations
-        validate_assignment=True,        # Validate on field assignment
-        use_enum_values=True,           # Use enum values directly
-        str_strip_whitespace=True,      # Auto-strip string whitespace
-        populate_by_name=True,          # Support field aliases
-        arbitrary_types_allowed=True,   # Allow custom types like ObjectId
-
+        validate_assignment=True,  # Validate on field assignment
+        use_enum_values=True,  # Use enum values directly
+        str_strip_whitespace=True,  # Auto-strip string whitespace
+        populate_by_name=True,  # Support field aliases
+        arbitrary_types_allowed=True,  # Allow custom types like ObjectId
         # JSON serialization optimizations
-        ser_json_timedelta='iso8601',   # Serialize timedeltas as ISO format
-        ser_json_bytes='base64',        # Serialize bytes as base64
-
+        ser_json_timedelta="iso8601",  # Serialize timedeltas as ISO format
+        ser_json_bytes="base64",  # Serialize bytes as base64
         # Validation optimizations
-        extra='ignore',                 # Ignore extra fields for performance
-        frozen=False                    # Allow mutations for better performance
+        extra="ignore",  # Ignore extra fields for performance
+        frozen=False,  # Allow mutations for better performance
     )
 
     def refresh_updated_at(self):
@@ -49,7 +49,7 @@ class TimestampedModel(BaseModel):
         delta = datetime.now(timezone.utc) - self.created_at
         return delta.total_seconds() / 60
 
-    @field_serializer('created_at', 'updated_at', when_used='json')
+    @field_serializer("created_at", "updated_at", when_used="json")
     def serialize_datetime(self, dt: datetime) -> str:
         """Serialize datetime fields to ISO format for JSON."""
         return dt.isoformat()
@@ -60,13 +60,12 @@ class MongoModel(TimestampedModel):
     Base model for MongoDB documents with ObjectId support.
     Extends TimestampedModel with MongoDB-specific functionality.
     """
+
     id: PyObjectId = Field(
-        default_factory=generate_object_id,
-        alias="_id",
-        description="MongoDB ObjectId"
+        default_factory=generate_object_id, alias="_id", description="MongoDB ObjectId"
     )
 
-    @field_serializer('id', when_used='json')
+    @field_serializer("id", when_used="json")
     def serialize_id(self, value: PyObjectId) -> str:
         """Serialize ObjectId to string for JSON output."""
         return str(value)
@@ -92,14 +91,15 @@ class WeddingRelatedModel(MongoModel):
     Base model for entities related to a specific wedding.
     Provides common wedding_id field and related functionality.
     """
+
     wedding_id: str = Field(
         ...,
         description="ID of the wedding this record belongs to",
         min_length=24,  # MongoDB ObjectId length
-        max_length=24
+        max_length=24,
     )
 
-    @field_serializer('wedding_id', when_used='json')
+    @field_serializer("wedding_id", when_used="json")
     def serialize_wedding_id(self, value: str) -> str:
         """Ensure wedding_id is always a string."""
         return str(value)
@@ -110,15 +110,16 @@ class UserRelatedModel(MongoModel):
     Base model for entities related to a specific user.
     Provides common user identification fields.
     """
+
     created_by: str = Field(
         ...,
         description="Email of the user who created this record",
-        max_length=254  # RFC 5321 email length limit
+        max_length=254,  # RFC 5321 email length limit
     )
     updated_by: Optional[str] = Field(
         None,
         description="Email of the user who last updated this record",
-        max_length=254
+        max_length=254,
     )
 
     def mark_updated_by(self, user_email: str):
@@ -132,20 +133,21 @@ class ValidatedModel(BaseModel):
     Enhanced base model with additional validation and security features.
     Use for models requiring strict input validation and security.
     """
+
     model_config = ConfigDict(
         # Strict validation for security
         validate_assignment=True,
-        strict=False,               # Allow type coercion
+        strict=False,  # Allow type coercion
         str_strip_whitespace=True,  # Auto-strip whitespace
-        str_to_lower=False,         # Don't auto-lowercase
-        str_to_upper=False,         # Don't auto-uppercase
+        str_to_lower=False,  # Don't auto-lowercase
+        str_to_upper=False,  # Don't auto-uppercase
         # Security settings
-        extra='forbid',             # Reject extra fields for security
-        frozen=False,               # Allow updates
-        populate_by_name=True,      # Support aliases
+        extra="forbid",  # Reject extra fields for security
+        frozen=False,  # Allow updates
+        populate_by_name=True,  # Support aliases
         # Performance settings
         use_enum_values=True,
-        arbitrary_types_allowed=True
+        arbitrary_types_allowed=True,
     )
 
     def model_dump_safe(self, exclude_sensitive: bool = True) -> Dict[str, Any]:
@@ -156,7 +158,7 @@ class ValidatedModel(BaseModel):
         exclude_fields: set[str] = set()
         if exclude_sensitive:
             # Add common sensitive fields
-            sensitive_fields: set[str] = getattr(self, '_sensitive_fields', set())
+            sensitive_fields: set[str] = getattr(self, "_sensitive_fields", set())
             exclude_fields.update(sensitive_fields)
 
         return self.model_dump(exclude=exclude_fields)
@@ -168,13 +170,15 @@ class ValidatedModel(BaseModel):
         Override in subclasses to provide model-specific examples.
         """
         try:
-            return cls.model_json_schema().get('example', {})
+            return cls.model_json_schema().get("example", {})
         except Exception:
             return {}
 
 
 # Utility functions for common model operations
-def create_model_example_schema(model_class: type[BaseModel], example_data: Dict[str, Any]) -> Dict[str, Any]:
+def create_model_example_schema(
+    model_class: type[BaseModel], example_data: Dict[str, Any]
+) -> Dict[str, Any]:
     """
     Create a JSON schema with example data for a model class.
 
@@ -186,11 +190,13 @@ def create_model_example_schema(model_class: type[BaseModel], example_data: Dict
         JSON schema with example included
     """
     schema = model_class.model_json_schema()
-    schema['example'] = example_data
+    schema["example"] = example_data
     return schema
 
 
-def validate_multiple_models(models_data: list[tuple[type[BaseModel], Dict[str, Any]]]) -> list[BaseModel]:
+def validate_multiple_models(
+    models_data: list[tuple[type[BaseModel], Dict[str, Any]]],
+) -> list[BaseModel]:
     """
     Validate multiple models at once.
 

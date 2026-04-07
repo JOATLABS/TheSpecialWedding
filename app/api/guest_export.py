@@ -6,15 +6,18 @@ Endpoints for exporting guest data:
 - Guest list PDF
 - Bulk QR codes (ZIP)
 """
+
 from fastapi import APIRouter, HTTPException, Depends, Query, Response
-from fastapi.responses import StreamingResponse
-from app.dependencies.auth_extended import require_wedding_planner_only, ExtendedAuthUser, check_wedding_access, enforce_team_permission
+from app.dependencies.auth_extended import (
+    require_wedding_planner_only,
+    ExtendedAuthUser,
+    check_wedding_access,
+)
 from app.services.guest_export_service import guest_export_service
 from app.core.database import mongo
 from bson import ObjectId
 from pydantic import BaseModel
-from typing import List, Optional
-from io import BytesIO
+from typing import List
 import logging
 
 logger = logging.getLogger(__name__)
@@ -24,6 +27,7 @@ router = APIRouter()
 
 class QRExportRequest(BaseModel):
     """Request model for bulk QR export"""
+
     guest_ids: List[str] = []  # Empty list means all guests
     wedding_id: str
 
@@ -32,7 +36,7 @@ class QRExportRequest(BaseModel):
 async def get_guest_qr(
     guest_id: str,
     wedding_id: str = Query(..., description="Wedding ID for verification"),
-    current_user: ExtendedAuthUser = Depends(require_wedding_planner_only)
+    current_user: ExtendedAuthUser = Depends(require_wedding_planner_only),
 ):
     """
     Get QR code PNG for a single guest.
@@ -55,8 +59,8 @@ async def get_guest_qr(
         media_type="image/png",
         headers={
             "Content-Disposition": f"inline; filename={filename}",
-            "Cache-Control": "private, max-age=3600"
-        }
+            "Cache-Control": "private, max-age=3600",
+        },
     )
 
 
@@ -64,7 +68,7 @@ async def get_guest_qr(
 async def download_guest_qr(
     guest_id: str,
     wedding_id: str = Query(..., description="Wedding ID for verification"),
-    current_user: ExtendedAuthUser = Depends(require_wedding_planner_only)
+    current_user: ExtendedAuthUser = Depends(require_wedding_planner_only),
 ):
     """
     Download QR code PNG for a single guest.
@@ -85,16 +89,14 @@ async def download_guest_qr(
     return Response(
         content=qr_bytes,
         media_type="image/png",
-        headers={
-            "Content-Disposition": f"attachment; filename={filename}"
-        }
+        headers={"Content-Disposition": f"attachment; filename={filename}"},
     )
 
 
 @router.get("/guests/export/pdf", tags=["Guest Export"])
 async def export_guest_list_pdf(
     wedding_id: str = Query(..., description="Wedding ID"),
-    current_user: ExtendedAuthUser = Depends(require_wedding_planner_only)
+    current_user: ExtendedAuthUser = Depends(require_wedding_planner_only),
 ):
     """
     Export guest list as a printable PDF.
@@ -108,32 +110,33 @@ async def export_guest_list_pdf(
 
     try:
         # Get wedding name for the PDF header (handle both string and ObjectId formats)
-        wedding_oid = ObjectId(wedding_id) if ObjectId.is_valid(wedding_id) else wedding_id
+        wedding_oid = (
+            ObjectId(wedding_id) if ObjectId.is_valid(wedding_id) else wedding_id
+        )
         wedding = await mongo.db["weddings"].find_one({"_id": wedding_oid})
         wedding_name = wedding.get("couple_names", "Wedding") if wedding else "Wedding"
 
         pdf_bytes = await guest_export_service.generate_guest_list_pdf(
-            wedding_id=wedding_id,
-            wedding_name=wedding_name
+            wedding_id=wedding_id, wedding_name=wedding_name
         )
 
         # Create safe filename
-        safe_name = "".join(c if c.isalnum() or c in " -_" else "_" for c in wedding_name)
+        safe_name = "".join(
+            c if c.isalnum() or c in " -_" else "_" for c in wedding_name
+        )
         filename = f"{safe_name}_guest_list.pdf"
 
         return Response(
             content=pdf_bytes,
             media_type="application/pdf",
-            headers={
-                "Content-Disposition": f"attachment; filename={filename}"
-            }
+            headers={"Content-Disposition": f"attachment; filename={filename}"},
         )
 
     except ImportError as e:
         logger.error(f"PDF generation dependency missing: {str(e)}")
         raise HTTPException(
             status_code=503,
-            detail="PDF generation not available. WeasyPrint may not be installed."
+            detail="PDF generation not available. WeasyPrint may not be installed.",
         )
     except Exception as e:
         logger.error(f"Failed to generate guest list PDF: {str(e)}")
@@ -143,7 +146,7 @@ async def export_guest_list_pdf(
 @router.post("/guests/export/qr-zip", tags=["Guest Export"])
 async def export_qr_codes_zip(
     request: QRExportRequest,
-    current_user: ExtendedAuthUser = Depends(require_wedding_planner_only)
+    current_user: ExtendedAuthUser = Depends(require_wedding_planner_only),
 ):
     """
     Export QR codes as a ZIP file.
@@ -168,22 +171,23 @@ async def export_qr_codes_zip(
 
         slug = wedding.get("slug", "")
         if not slug:
-            raise HTTPException(status_code=400, detail="Wedding has no slug configured")
+            raise HTTPException(
+                status_code=400, detail="Wedding has no slug configured"
+            )
 
         # Get guests (higher cap for exports since users may have large guest lists)
         MAX_GUESTS_EXPORT = 10000
         if request.guest_ids:
             # Specific guests
             guest_object_ids = [ObjectId(gid) for gid in request.guest_ids]
-            guests = await guest_collection.find({
-                "_id": {"$in": guest_object_ids},
-                "wedding_id": request.wedding_id
-            }).to_list(length=MAX_GUESTS_EXPORT)
+            guests = await guest_collection.find(
+                {"_id": {"$in": guest_object_ids}, "wedding_id": request.wedding_id}
+            ).to_list(length=MAX_GUESTS_EXPORT)
         else:
             # All guests for the wedding
-            guests = await guest_collection.find({
-                "wedding_id": request.wedding_id
-            }).to_list(length=MAX_GUESTS_EXPORT)
+            guests = await guest_collection.find(
+                {"wedding_id": request.wedding_id}
+            ).to_list(length=MAX_GUESTS_EXPORT)
 
         if not guests:
             raise HTTPException(status_code=404, detail="No guests found")
@@ -191,26 +195,28 @@ async def export_qr_codes_zip(
         # Convert guests to dict format expected by service
         guests_list = []
         for guest in guests:
-            guests_list.append({
-                "id": str(guest["_id"]),
-                "name": guest.get("name", "Unknown"),
-                "token": guest.get("token", "")
-            })
+            guests_list.append(
+                {
+                    "id": str(guest["_id"]),
+                    "name": guest.get("name", "Unknown"),
+                    "token": guest.get("token", ""),
+                }
+            )
 
         # Generate ZIP
         zip_bytes = await guest_export_service.generate_guests_qr_zip(guests_list, slug)
 
         # Create filename
         wedding_name = wedding.get("couple_names", "Wedding")
-        safe_name = "".join(c if c.isalnum() or c in " -_" else "_" for c in wedding_name)
+        safe_name = "".join(
+            c if c.isalnum() or c in " -_" else "_" for c in wedding_name
+        )
         filename = f"{safe_name}_qr_codes.zip"
 
         return Response(
             content=zip_bytes,
             media_type="application/zip",
-            headers={
-                "Content-Disposition": f"attachment; filename={filename}"
-            }
+            headers={"Content-Disposition": f"attachment; filename={filename}"},
         )
 
     except HTTPException:

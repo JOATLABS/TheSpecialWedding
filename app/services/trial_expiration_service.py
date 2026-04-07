@@ -26,7 +26,7 @@ class TrialExpirationService:
             "default_trial_days": 30,
             "trial_warning_days": 7,
             "auto_expire_trials": True,
-            "allow_multiple_trials": False
+            "allow_multiple_trials": False,
         }
 
     async def check_and_expire_trials(self) -> dict:
@@ -41,11 +41,13 @@ class TrialExpirationService:
             expired_count = 0
 
             # Find users with expired trials using Motor async cursor
-            cursor = self.users_collection.find({
-                "subscription_status": "trial",
-                "trial_end_date": {"$lt": now},
-                "is_active": True
-            })
+            cursor = self.users_collection.find(
+                {
+                    "subscription_status": "trial",
+                    "trial_end_date": {"$lt": now},
+                    "is_active": True,
+                }
+            )
             expired_users = await cursor.to_list(length=None)
 
             for user in expired_users:
@@ -57,20 +59,24 @@ class TrialExpirationService:
                 # accounts should have is_active=False.
                 await self.users_collection.update_one(
                     {"_id": user["_id"]},
-                    {"$set": {
-                        "subscription_status": "expired",
-                        "trial_expired_at": now
-                    }}
+                    {
+                        "$set": {
+                            "subscription_status": "expired",
+                            "trial_expired_at": now,
+                        }
+                    },
                 )
 
                 # Also update the user_subscriptions collection to keep state consistent
                 await mongo.db["user_subscriptions"].update_one(
                     {"user_id": user_id, "status": {"$in": ["trial", "active"]}},
-                    {"$set": {
-                        "status": "expired",
-                        "updated_at": now,
-                        "trial_expired_at": now
-                    }}
+                    {
+                        "$set": {
+                            "status": "expired",
+                            "updated_at": now,
+                            "trial_expired_at": now,
+                        }
+                    },
                 )
 
                 # Send trial expired email — wrapped in try/except so a single
@@ -78,7 +84,9 @@ class TrialExpirationService:
                 try:
                     await self.send_trial_expired_email(user)
                 except Exception as email_err:
-                    logger.error(f"Failed to send expiration email to {user.get('email')}: {email_err}")
+                    logger.error(
+                        f"Failed to send expiration email to {user.get('email')}: {email_err}"
+                    )
 
                 expired_count += 1
 
@@ -87,7 +95,7 @@ class TrialExpirationService:
             return {
                 "message": "Trial expiration check completed",
                 "expired_trials": expired_count,
-                "checked_at": now.isoformat()
+                "checked_at": now.isoformat(),
             }
 
         except Exception as e:
@@ -113,13 +121,18 @@ class TrialExpirationService:
             early_warning_days = trial_settings.get("trial_warning_days", 7)
             early_warning_date = now + timedelta(days=early_warning_days)
 
-            cursor = self.users_collection.find({
-                "subscription_status": "trial",
-                "trial_end_date": {"$lte": early_warning_date, "$gt": now + timedelta(days=3)},
-                "trial_warning_sent": {"$ne": True},
-                "is_active": True,
-                "email_verified": True
-            })
+            cursor = self.users_collection.find(
+                {
+                    "subscription_status": "trial",
+                    "trial_end_date": {
+                        "$lte": early_warning_date,
+                        "$gt": now + timedelta(days=3),
+                    },
+                    "trial_warning_sent": {"$ne": True},
+                    "is_active": True,
+                    "email_verified": True,
+                }
+            )
             early_users = await cursor.to_list(length=None)
 
             for user in early_users:
@@ -127,7 +140,7 @@ class TrialExpirationService:
                 if await self.send_trial_warning_email(user, days_remaining):
                     await self.users_collection.update_one(
                         {"_id": user["_id"]},
-                        {"$set": {"trial_warning_sent": True, "warning_sent_at": now}}
+                        {"$set": {"trial_warning_sent": True, "warning_sent_at": now}},
                     )
                     warning_count += 1
                     logger.info(f"Sent 7-day trial warning to: {user['email']}")
@@ -135,12 +148,14 @@ class TrialExpirationService:
             # ── 3-day countdown (daily emails) ─────────────────────
             countdown_date = now + timedelta(days=3)
 
-            cursor = self.users_collection.find({
-                "subscription_status": "trial",
-                "trial_end_date": {"$lte": countdown_date, "$gt": now},
-                "is_active": True,
-                "email_verified": True
-            })
+            cursor = self.users_collection.find(
+                {
+                    "subscription_status": "trial",
+                    "trial_end_date": {"$lte": countdown_date, "$gt": now},
+                    "is_active": True,
+                    "email_verified": True,
+                }
+            )
             countdown_users = await cursor.to_list(length=None)
 
             for user in countdown_users:
@@ -150,8 +165,6 @@ class TrialExpirationService:
                 if days_remaining == 0:
                     target_day = 1  # Expiring today
 
-                last_sent_day = user.get("trial_countdown_last_day", 0)
-
                 # Simpler logic: target_day counts down 3→2→1
                 # We send if trial_countdown_last_day != target_day
                 if user.get("trial_countdown_last_day") == target_day:
@@ -160,25 +173,31 @@ class TrialExpirationService:
                 if await self.send_trial_warning_email(user, days_remaining):
                     await self.users_collection.update_one(
                         {"_id": user["_id"]},
-                        {"$set": {
-                            "trial_countdown_last_day": target_day,
-                            "trial_countdown_last_sent": now,
-                        }}
+                        {
+                            "$set": {
+                                "trial_countdown_last_day": target_day,
+                                "trial_countdown_last_sent": now,
+                            }
+                        },
                     )
                     warning_count += 1
-                    logger.info(f"Sent countdown email (day {target_day}, {days_remaining} days left) to: {user['email']}")
+                    logger.info(
+                        f"Sent countdown email (day {target_day}, {days_remaining} days left) to: {user['email']}"
+                    )
 
             return {
                 "message": "Trial warning check completed",
                 "warnings_sent": warning_count,
-                "checked_at": now.isoformat()
+                "checked_at": now.isoformat(),
             }
 
         except Exception as e:
             logger.error(f"Error in trial warning check: {str(e)}")
             return {"error": str(e)}
 
-    async def send_trial_warning_email(self, user: dict, days_remaining: int, max_retries: int = 2) -> bool:
+    async def send_trial_warning_email(
+        self, user: dict, days_remaining: int, max_retries: int = 2
+    ) -> bool:
         """Send trial warning email to user with retry logic.
 
         Args:
@@ -192,20 +211,22 @@ class TrialExpirationService:
         import asyncio
 
         if not self.email_service.configured:
-            logger.warning("Email service not configured — skipping trial warning email")
+            logger.warning(
+                "Email service not configured — skipping trial warning email"
+            )
             return False
 
         email = user.get("email")
         if not email:
-            logger.error(f"User {user.get('_id')} has no email address — skipping trial warning")
+            logger.error(
+                f"User {user.get('_id')} has no email address — skipping trial warning"
+            )
             return False
 
         first_name = user.get("first_name", "")
 
         html_content = self._generate_trial_warning_email_html(
-            email=email,
-            first_name=first_name,
-            days_remaining=days_remaining
+            email=email, first_name=first_name, days_remaining=days_remaining
         )
 
         subject = f"Your Special Wedding Trial Expires in {days_remaining} Day{'s' if days_remaining != 1 else ''}"
@@ -217,7 +238,7 @@ class TrialExpirationService:
                     subject=subject,
                     html_content=html_content,
                     from_name="Special Wedding Team",
-                    email_type="trial_warning"
+                    email_type="trial_warning",
                 )
 
                 if result.get("success", False):
@@ -254,8 +275,7 @@ class TrialExpirationService:
             first_name = user.get("first_name", "")
 
             html_content = self._generate_trial_expired_email_html(
-                email=email,
-                first_name=first_name
+                email=email, first_name=first_name
             )
 
             subject = "Your Special Wedding Trial Has Expired - Upgrade to Continue"
@@ -265,16 +285,20 @@ class TrialExpirationService:
                 subject=subject,
                 html_content=html_content,
                 from_name="Special Wedding Team",
-                email_type="trial_expired"
+                email_type="trial_expired",
             )
 
             return result.get("success", False)
 
         except Exception as e:
-            logger.error(f"Error sending trial expired email to {user.get('email', 'unknown')}: {str(e)}")
+            logger.error(
+                f"Error sending trial expired email to {user.get('email', 'unknown')}: {str(e)}"
+            )
             return False
 
-    def _generate_trial_warning_email_html(self, email: str, first_name: str, days_remaining: int) -> str:
+    def _generate_trial_warning_email_html(
+        self, email: str, first_name: str, days_remaining: int
+    ) -> str:
         """Generate trial warning email HTML"""
         return f"""
         <!DOCTYPE html>
@@ -302,8 +326,8 @@ class TrialExpirationService:
                     <p>Action Required</p>
                 </div>
                 <div class="content">
-                    <p>Hello{f' {first_name}' if first_name else ''}!</p>
-                    <p>This is a friendly reminder that your Special Wedding trial will expire in <strong>{days_remaining} day{'s' if days_remaining != 1 else ''}</strong>.</p>
+                    <p>Hello{f" {first_name}" if first_name else ""}!</p>
+                    <p>This is a friendly reminder that your Special Wedding trial will expire in <strong>{days_remaining} day{"s" if days_remaining != 1 else ""}</strong>.</p>
                     <div class="warning-card">
                         <h3 style="margin: 0 0 15px 0; color: #1e3a5f;">Trial Status:</h3>
                         <p style="margin: 8px 0;"><strong>Email:</strong> {email}</p>
@@ -314,7 +338,7 @@ class TrialExpirationService:
                     <p>To continue managing your weddings and accessing all features, please upgrade to a paid plan:</p>
 
                     <div class="button-container">
-                        <a href="{os.getenv('FRONTEND_URL')}/admin/billing" class="button">Upgrade Now</a>
+                        <a href="{os.getenv("FRONTEND_URL")}/admin/billing" class="button">Upgrade Now</a>
                     </div>
 
                     <p>If you have any questions about our plans or need assistance, please don't hesitate to contact our support team.</p>
@@ -357,7 +381,7 @@ class TrialExpirationService:
                     <p>Upgrade to Continue</p>
                 </div>
                 <div class="content">
-                    <p>Hello{f' {first_name}' if first_name else ''}!</p>
+                    <p>Hello{f" {first_name}" if first_name else ""}!</p>
                     <p>Your Special Wedding trial has expired. To continue accessing your wedding planning tools and data, please upgrade to a paid plan.</p>
                     <div class="expired-card">
                         <h3 style="margin: 0 0 15px 0; color: #1e3a5f;">Account Status:</h3>
@@ -373,7 +397,7 @@ class TrialExpirationService:
                     </ul>
 
                     <div class="button-container">
-                        <a href="{os.getenv('FRONTEND_URL')}/admin/billing" class="button">Choose Your Plan</a>
+                        <a href="{os.getenv("FRONTEND_URL")}/admin/billing" class="button">Choose Your Plan</a>
                     </div>
 
                     <p>Thank you for trying Special Wedding! We'd love to have you continue as a paid customer.</p>

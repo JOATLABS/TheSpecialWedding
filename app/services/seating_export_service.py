@@ -26,7 +26,7 @@ class SeatingExportService:
         wedding_id: str,
         wedding_name: str = "Wedding",
         layout_style: str = "visual",
-        paper_size: str = "poster"
+        paper_size: str = "poster",
     ) -> bytes:
         """
         Generate a printable seating chart PDF.
@@ -47,14 +47,14 @@ class SeatingExportService:
             raise
 
         # Fetch tables for wedding
-        tables = await self.tables_collection.find(
-            {"wedding_id": wedding_id}
-        ).to_list(length=None)
+        tables = await self.tables_collection.find({"wedding_id": wedding_id}).to_list(
+            length=None
+        )
 
         # Fetch guests for wedding
-        guests = await self.guests_collection.find(
-            {"wedding_id": wedding_id}
-        ).to_list(length=None)
+        guests = await self.guests_collection.find({"wedding_id": wedding_id}).to_list(
+            length=None
+        )
 
         # Build guest lookup by table_id (T5: normalize ObjectId → string consistently)
         guests_by_table: Dict[str, List[dict]] = {}
@@ -95,18 +95,25 @@ class SeatingExportService:
         guests_by_table: Dict[str, List[dict]],
         unseated_guests: List[dict],
         wedding_name: str,
-        paper_size: str = "poster"
+        paper_size: str = "poster",
     ) -> str:
         """Generate visual floor plan layout with positioned tables."""
 
         # Paper size configuration
-        page_sizes = {
-            "poster": "24in 18in landscape",
-            "tabloid": "11in 17in landscape"
-        }
+        page_sizes = {"poster": "24in 18in landscape", "tabloid": "11in 17in landscape"}
         font_scales = {
-            "poster": {"title": "36pt", "table": "14pt", "guest": "10pt", "small": "8pt"},
-            "tabloid": {"title": "24pt", "table": "11pt", "guest": "8pt", "small": "7pt"}
+            "poster": {
+                "title": "36pt",
+                "table": "14pt",
+                "guest": "10pt",
+                "small": "8pt",
+            },
+            "tabloid": {
+                "title": "24pt",
+                "table": "11pt",
+                "guest": "8pt",
+                "small": "7pt",
+            },
         }
         page_size = page_sizes.get(paper_size, page_sizes["poster"])
         fonts = font_scales.get(paper_size, font_scales["poster"])
@@ -258,7 +265,7 @@ class SeatingExportService:
 <body>
     <div class="header">
         <h1>{self._escape_html(wedding_name)}</h1>
-        <p class="subtitle">Seating Chart &bull; {datetime.now(timezone.utc).strftime('%B %d, %Y')}</p>
+        <p class="subtitle">Seating Chart &bull; {datetime.now(timezone.utc).strftime("%B %d, %Y")}</p>
     </div>
 
     <div class="canvas">
@@ -284,11 +291,7 @@ class SeatingExportService:
         return html
 
     def _render_table_card(
-        self,
-        table: dict,
-        guests: List[dict],
-        fonts: dict,
-        scale: float = 1.0
+        self, table: dict, guests: List[dict], fonts: dict, scale: float = 1.0
     ) -> str:
         """Render a single table as positioned HTML card."""
         x = int(table.get("x", 0) * scale)
@@ -307,27 +310,26 @@ class SeatingExportService:
 
         shape_class = "round" if shape == "round" else "rectangle"
 
-        return f'''
+        return f"""
         <div class="table-card {shape_class}" style="left: {x}px; top: {y}px;">
             <div class="table-name">{name}</div>
             <div class="guest-list">{guest_names if guest_names else '<em style="color: #94a3b8;">Empty</em>'}</div>
             <div class="capacity-info">{len(guests)}/{capacity} seats</div>
         </div>
-        '''
+        """
 
     def _render_unseated_section(self, unseated_guests: List[dict], fonts: dict) -> str:
         """Render list of unseated guests."""
         sorted_guests = sorted(unseated_guests, key=lambda g: g.get("name", "").lower())
         guest_names = ", ".join(
-            self._escape_html(g.get("name", "Guest"))
-            for g in sorted_guests
+            self._escape_html(g.get("name", "Guest")) for g in sorted_guests
         )
-        return f'''
+        return f"""
     <div class="unseated-section">
         <h3>Unseated Guests ({len(unseated_guests)})</h3>
         <p>{guest_names}</p>
     </div>
-        '''
+        """
 
     def _generate_list_layout(
         self,
@@ -335,15 +337,12 @@ class SeatingExportService:
         guests_by_table: Dict[str, List[dict]],
         unseated_guests: List[dict],
         wedding_name: str,
-        paper_size: str = "poster"
+        paper_size: str = "poster",
     ) -> str:
         """Generate table-by-table list format (alternative layout)."""
 
         # Paper size configuration
-        page_sizes = {
-            "poster": "letter landscape",
-            "tabloid": "letter portrait"
-        }
+        page_sizes = {"poster": "letter landscape", "tabloid": "letter portrait"}
         page_size = page_sizes.get(paper_size, "letter landscape")
 
         # Generate table sections
@@ -363,7 +362,7 @@ class SeatingExportService:
             if not guest_rows:
                 guest_rows = '<tr><td colspan="2" style="color: #94a3b8; font-style: italic;">No guests assigned</td></tr>'
 
-            tables_html += f'''
+            tables_html += f"""
             <div class="table-section">
                 <h3>{table_name} <span class="capacity">({len(table_guests)}/{capacity})</span></h3>
                 <table>
@@ -371,18 +370,20 @@ class SeatingExportService:
                     <tbody>{guest_rows}</tbody>
                 </table>
             </div>
-            '''
+            """
 
         # Unseated section
         unseated_html = ""
         if unseated_guests:
             rows = ""
-            for guest in sorted(unseated_guests, key=lambda g: g.get("name", "").lower()):
+            for guest in sorted(
+                unseated_guests, key=lambda g: g.get("name", "").lower()
+            ):
                 guest_name = self._escape_html(guest.get("name", "Guest"))
                 group_id = self._escape_html(guest.get("group_id", ""))
                 rows += f"<tr><td>{guest_name}</td><td>{group_id}</td></tr>"
 
-            unseated_html = f'''
+            unseated_html = f"""
             <div class="table-section unseated">
                 <h3>Unseated Guests <span class="capacity">({len(unseated_guests)})</span></h3>
                 <table>
@@ -390,7 +391,7 @@ class SeatingExportService:
                     <tbody>{rows}</tbody>
                 </table>
             </div>
-            '''
+            """
 
         html = f"""
 <!DOCTYPE html>
@@ -489,7 +490,7 @@ class SeatingExportService:
 <body>
     <div class="header">
         <h1>{self._escape_html(wedding_name)} - Seating List</h1>
-        <p>Generated on {datetime.now(timezone.utc).strftime('%B %d, %Y at %H:%M UTC')}</p>
+        <p>Generated on {datetime.now(timezone.utc).strftime("%B %d, %Y at %H:%M UTC")}</p>
     </div>
 
     <div class="tables-grid">

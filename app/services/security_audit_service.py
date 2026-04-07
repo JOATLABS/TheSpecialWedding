@@ -1,6 +1,7 @@
 """
 Security audit service for logging and monitoring security events
 """
+
 import logging
 import json
 import os
@@ -13,8 +14,10 @@ from app.core.settings import settings
 
 logger = logging.getLogger(__name__)
 
+
 class SecurityEventType(str, Enum):
     """Security event types for audit logging"""
+
     # Authentication events
     LOGIN_ATTEMPT = "login_attempt"
     LOGIN_SUCCESS = "login_success"
@@ -51,6 +54,7 @@ class SecurityEventType(str, Enum):
 
 class SecuritySeverity(str, Enum):
     """Security event severity levels"""
+
     LOW = "low"
     MEDIUM = "medium"
     HIGH = "high"
@@ -60,6 +64,7 @@ class SecuritySeverity(str, Enum):
 @dataclass
 class SecurityEvent:
     """Security event data structure"""
+
     event_type: SecurityEventType
     severity: SecuritySeverity
     user_email: Optional[str]
@@ -78,6 +83,7 @@ class SecurityEvent:
 
 class SecurityAuditService:
     """Service for security audit logging and monitoring"""
+
     def __init__(self):
         self.audit_collection = mongo.db["security_audit_logs"]
         self.enable_db_logging = True
@@ -98,7 +104,11 @@ class SecurityAuditService:
 
             normalized_path = os.path.abspath(self.log_file_path)
             for existing_handler in security_logger.handlers:
-                if isinstance(existing_handler, logging.FileHandler) and getattr(existing_handler, "baseFilename", None) == normalized_path:
+                if (
+                    isinstance(existing_handler, logging.FileHandler)
+                    and getattr(existing_handler, "baseFilename", None)
+                    == normalized_path
+                ):
                     return
 
             log_dir = os.path.dirname(normalized_path)
@@ -111,7 +121,7 @@ class SecurityAuditService:
 
             # Create formatter
             formatter = logging.Formatter(
-                '%(asctime)s - SECURITY - %(levelname)s - %(message)s'
+                "%(asctime)s - SECURITY - %(levelname)s - %(message)s"
             )
             handler.setFormatter(formatter)
 
@@ -136,7 +146,7 @@ class SecurityAuditService:
         error_message: Optional[str] = None,
         session_id: Optional[str] = None,
         wedding_id: Optional[str] = None,
-        form_id: Optional[str] = None
+        form_id: Optional[str] = None,
     ):
         """
         Log a security event
@@ -171,7 +181,7 @@ class SecurityAuditService:
                 error_message=error_message,
                 session_id=session_id,
                 wedding_id=wedding_id,
-                form_id=form_id
+                form_id=form_id,
             )
 
             # Log to database
@@ -194,8 +204,8 @@ class SecurityAuditService:
         try:
             event_doc = asdict(event)
             # Convert enum values to strings
-            event_doc['event_type'] = event.event_type.value
-            event_doc['severity'] = event.severity.value
+            event_doc["event_type"] = event.event_type.value
+            event_doc["severity"] = event.severity.value
 
             await self.audit_collection.insert_one(event_doc)
 
@@ -241,7 +251,7 @@ class SecurityAuditService:
         severity: Optional[SecuritySeverity] = None,
         user_email: Optional[str] = None,
         ip_address: Optional[str] = None,
-        limit: int = 100
+        limit: int = 100,
     ) -> List[Dict[str, Any]]:
         """
         Retrieve security events based on filters
@@ -250,36 +260,38 @@ class SecurityAuditService:
             query = {}
             # Date range filter
             if start_date or end_date:
-                query['timestamp'] = {}
+                query["timestamp"] = {}
                 if start_date:
-                    query['timestamp']['$gte'] = start_date
+                    query["timestamp"]["$gte"] = start_date
                 if end_date:
-                    query['timestamp']['$lte'] = end_date
+                    query["timestamp"]["$lte"] = end_date
 
             # Event type filter
             if event_types:
-                query['event_type'] = {'$in': [et.value for et in event_types]}
+                query["event_type"] = {"$in": [et.value for et in event_types]}
 
             # Severity filter
             if severity:
-                query['severity'] = severity.value
+                query["severity"] = severity.value
 
             # User filter
             if user_email:
-                query['user_email'] = user_email
+                query["user_email"] = user_email
 
             # IP filter
             if ip_address:
-                query['ip_address'] = ip_address
+                query["ip_address"] = ip_address
 
             # Execute query
-            cursor = self.audit_collection.find(query).sort('timestamp', -1).limit(limit)
+            cursor = (
+                self.audit_collection.find(query).sort("timestamp", -1).limit(limit)
+            )
             events = await cursor.to_list(length=limit)
 
             # Convert ObjectId to string
             for event in events:
-                if '_id' in event:
-                    event['_id'] = str(event['_id'])
+                if "_id" in event:
+                    event["_id"] = str(event["_id"])
 
             return events
 
@@ -288,9 +300,7 @@ class SecurityAuditService:
             return []
 
     async def get_security_summary(
-        self,
-        start_date: Optional[datetime] = None,
-        end_date: Optional[datetime] = None
+        self, start_date: Optional[datetime] = None, end_date: Optional[datetime] = None
     ) -> Dict[str, Any]:
         """
         Get security events summary
@@ -299,23 +309,20 @@ class SecurityAuditService:
             query = {}
             # Date range filter
             if start_date or end_date:
-                query['timestamp'] = {}
+                query["timestamp"] = {}
                 if start_date:
-                    query['timestamp']['$gte'] = start_date
+                    query["timestamp"]["$gte"] = start_date
                 if end_date:
-                    query['timestamp']['$lte'] = end_date
+                    query["timestamp"]["$lte"] = end_date
             # Aggregate statistics
             pipeline = [
-                {'$match': query},
+                {"$match": query},
                 {
-                    '$group': {
-                        '_id': {
-                            'event_type': '$event_type',
-                            'severity': '$severity'
-                        },
-                        'count': {'$sum': 1}
+                    "$group": {
+                        "_id": {"event_type": "$event_type", "severity": "$severity"},
+                        "count": {"$sum": 1},
                     }
-                }
+                },
             ]
 
             cursor = self.audit_collection.aggregate(pipeline)
@@ -323,32 +330,29 @@ class SecurityAuditService:
 
             # Process results
             summary = {
-                'total_events': 0,
-                'by_severity': {
-                    'critical': 0,
-                    'high': 0,
-                    'medium': 0,
-                    'low': 0
-                },
-                'by_event_type': {},
-                'failed_events': 0
+                "total_events": 0,
+                "by_severity": {"critical": 0, "high": 0, "medium": 0, "low": 0},
+                "by_event_type": {},
+                "failed_events": 0,
             }
             for result in results:
-                count = result['count']
-                event_type = result['_id']['event_type']
-                severity = result['_id']['severity']
+                count = result["count"]
+                event_type = result["_id"]["event_type"]
+                severity = result["_id"]["severity"]
 
-                summary['total_events'] += count
-                summary['by_severity'][severity] += count
+                summary["total_events"] += count
+                summary["by_severity"][severity] += count
 
-                if event_type not in summary['by_event_type']:
-                    summary['by_event_type'][event_type] = 0
-                summary['by_event_type'][event_type] += count
+                if event_type not in summary["by_event_type"]:
+                    summary["by_event_type"][event_type] = 0
+                summary["by_event_type"][event_type] += count
 
             # Get failed events count
             failed_query = dict(query)
-            failed_query['success'] = False
-            summary['failed_events'] = await self.audit_collection.count_documents(failed_query)
+            failed_query["success"] = False
+            summary["failed_events"] = await self.audit_collection.count_documents(
+                failed_query
+            )
 
             return summary
 
@@ -357,49 +361,56 @@ class SecurityAuditService:
             return {}
 
     async def detect_suspicious_activity(
-        self,
-        ip_address: str,
-        time_window_minutes: int = 60
+        self, ip_address: str, time_window_minutes: int = 60
     ) -> Dict[str, Any]:
         """
         Detect suspicious activity from an IP address
         """
         try:
-            cutoff_time = datetime.now(timezone.utc) - timedelta(minutes=time_window_minutes)
-            query = {
-                'ip_address': ip_address,
-                'timestamp': {'$gte': cutoff_time}
-            }
+            cutoff_time = datetime.now(timezone.utc) - timedelta(
+                minutes=time_window_minutes
+            )
+            query = {"ip_address": ip_address, "timestamp": {"$gte": cutoff_time}}
 
             cursor = self.audit_collection.find(query)
             events = await cursor.to_list(length=None)
 
             analysis = {
-                'ip_address': ip_address,
-                'time_window_minutes': time_window_minutes,
-                'total_events': len(events),
-                'failed_attempts': sum(1 for e in events if not e.get('success', True)),
-                'event_types': {},
-                'severity_levels': {},
-                'suspicious_indicators': []
+                "ip_address": ip_address,
+                "time_window_minutes": time_window_minutes,
+                "total_events": len(events),
+                "failed_attempts": sum(1 for e in events if not e.get("success", True)),
+                "event_types": {},
+                "severity_levels": {},
+                "suspicious_indicators": [],
             }
             # Analyze event patterns
             for event in events:
-                event_type = event.get('event_type', 'unknown')
-                severity = event.get('severity', 'low')
+                event_type = event.get("event_type", "unknown")
+                severity = event.get("severity", "low")
 
-                analysis['event_types'][event_type] = analysis['event_types'].get(event_type, 0) + 1
-                analysis['severity_levels'][severity] = analysis['severity_levels'].get(severity, 0) + 1
+                analysis["event_types"][event_type] = (
+                    analysis["event_types"].get(event_type, 0) + 1
+                )
+                analysis["severity_levels"][severity] = (
+                    analysis["severity_levels"].get(severity, 0) + 1
+                )
 
             # Detect suspicious patterns
-            if analysis['failed_attempts'] > 10:
-                analysis['suspicious_indicators'].append('High number of failed attempts')
+            if analysis["failed_attempts"] > 10:
+                analysis["suspicious_indicators"].append(
+                    "High number of failed attempts"
+                )
 
-            if analysis['total_events'] > 100:
-                analysis['suspicious_indicators'].append('Unusually high activity volume')
+            if analysis["total_events"] > 100:
+                analysis["suspicious_indicators"].append(
+                    "Unusually high activity volume"
+                )
 
-            if analysis['severity_levels'].get('critical', 0) > 0:
-                analysis['suspicious_indicators'].append('Critical security events detected')
+            if analysis["severity_levels"].get("critical", 0) > 0:
+                analysis["suspicious_indicators"].append(
+                    "Critical security events detected"
+                )
 
             return analysis
 

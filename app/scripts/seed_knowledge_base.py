@@ -7,6 +7,7 @@ Usage:
 
 Or call seed_knowledge_base() from app startup.
 """
+
 import asyncio
 from datetime import datetime, timezone
 from app.core.database import mongo
@@ -565,7 +566,15 @@ If you're not satisfied within the first 14 days of a paid subscription, contact
 Email us at support@thespecialwedding.io or use the in-app support chat.
 """,
         "category": "billing-subscription",
-        "tags": ["billing", "subscription", "trial", "upgrade", "payment", "plans", "stripe"],
+        "tags": [
+            "billing",
+            "subscription",
+            "trial",
+            "upgrade",
+            "payment",
+            "plans",
+            "stripe",
+        ],
         "is_official": True,
         "featured": True,
         "order": 1,
@@ -574,7 +583,10 @@ Email us at support@thespecialwedding.io or use the in-app support chat.
 ]
 
 
-async def seed_knowledge_base(admin_email: str = "root@thespecialwedding.io", admin_name: str = "TheSpecialWedding"):
+async def seed_knowledge_base(
+    admin_email: str = "root@thespecialwedding.io",
+    admin_name: str = "TheSpecialWedding",
+):
     """
     Seed the knowledge base with official platform documentation.
     Skips articles that already exist (by slug) to avoid duplicates.
@@ -612,7 +624,9 @@ async def seed_knowledge_base(admin_email: str = "root@thespecialwedding.io", ad
             "not_helpful_count": 0,
             "feedback": [],
             "order": article_data.get("order", 0),
-            "estimated_read_minutes": article_data.get("estimated_read_minutes", max(1, word_count // 200)),
+            "estimated_read_minutes": article_data.get(
+                "estimated_read_minutes", max(1, word_count // 200)
+            ),
             "card_image": article_data.get("card_image", None),
             "og_image": article_data.get("og_image", None),
             "created_at": now,
@@ -624,7 +638,9 @@ async def seed_knowledge_base(admin_email: str = "root@thespecialwedding.io", ad
         await collection.insert_one(doc)
         inserted += 1
 
-    print(f"KB Seed complete: {inserted} articles inserted, {skipped} skipped (already exist)")
+    print(
+        f"KB Seed complete: {inserted} articles inserted, {skipped} skipped (already exist)"
+    )
     return {"inserted": inserted, "skipped": skipped}
 
 

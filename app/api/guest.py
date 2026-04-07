@@ -5,13 +5,15 @@ import inspect
 from app.services.guest_service import GuestService
 from app.services.activity_log_service import activity_log_service
 from app.services.sse_manager import sse_manager
-from app.models.guest import UpdateGuestRequest, GuestModel, CreateGuestRequest
-from app.dependencies.auth_extended import require_wedding_planner_only, ExtendedAuthUser, check_wedding_access, enforce_team_permission
-from app.utils.token_generator import generate_token
-from app.utils.response import success_response, error_response, dict_response
-from app.utils.query_validation import (
-    validated_string_filter
+from app.models.guest import UpdateGuestRequest, CreateGuestRequest
+from app.dependencies.auth_extended import (
+    require_wedding_planner_only,
+    ExtendedAuthUser,
+    check_wedding_access,
+    enforce_team_permission,
 )
+from app.utils.response import dict_response
+from app.utils.query_validation import validated_string_filter
 from app.core.database import mongo
 from bson import ObjectId
 from bson.errors import InvalidId
@@ -28,19 +30,26 @@ guest_service = GuestService()
 # SEATING CONSTRAINT MODELS
 # =========================================================================
 
+
 class SeatingConstraintRequest(BaseModel):
     """Request to add or remove a seating constraint between two guests"""
+
     guest_id_1: str = Field(..., description="First guest ID")
     guest_id_2: str = Field(..., description="Second guest ID")
     constraint_type: Literal["must_sit_together", "must_sit_apart"] = Field(
         ..., description="Type of constraint"
     )
-    action: Literal["add", "remove"] = Field(..., description="Add or remove the constraint")
+    action: Literal["add", "remove"] = Field(
+        ..., description="Add or remove the constraint"
+    )
 
 
 class BulkSeatingConstraintRequest(BaseModel):
     """Bulk update seating constraints"""
-    constraints: List[SeatingConstraintRequest] = Field(..., description="List of constraints to apply")
+
+    constraints: List[SeatingConstraintRequest] = Field(
+        ..., description="List of constraints to apply"
+    )
 
 
 @router.get("/invite/{token}", tags=["Guest"])
@@ -59,7 +68,7 @@ async def search_guest(
     wedding_id: str = Query(..., description="Wedding ID to search within"),
     phone: Optional[str] = Query(None, description="Guest phone number"),
     name: Optional[str] = Query(None, description="Guest name"),
-    current_user: ExtendedAuthUser = Depends(require_wedding_planner_only)
+    current_user: ExtendedAuthUser = Depends(require_wedding_planner_only),
 ):
     """
     Search for a guest by phone or name within a specific wedding.
@@ -75,9 +84,7 @@ async def search_guest(
         name = validated_string_filter(name, max_length=100)
 
         return await guest_service.get_guest_by_phone_or_name(
-            phone=phone,
-            name=name,
-            wedding_id=wedding_id
+            phone=phone, name=name, wedding_id=wedding_id
         )
     except HTTPException as e:
         raise e
@@ -91,19 +98,25 @@ async def list_guests(
     wedding_id: str = Query(...),
     page: int = Query(1, ge=1, le=10000, description="Page number (1-indexed)"),
     limit: int = Query(50, ge=1, le=100, description="Number of guests per page"),
-    fetch_all: bool = Query(False, description="Return all matching guests without pagination"),
+    fetch_all: bool = Query(
+        False, description="Return all matching guests without pagination"
+    ),
     name: Optional[str] = Query(None, description="Filter by guest name"),
     email: Optional[str] = Query(None, description="Filter by guest email"),
     phone: Optional[str] = Query(None, description="Filter by guest phone"),
     group_id: Optional[str] = Query(None, description="Filter by guest group"),
     role: Optional[str] = Query(None, description="Filter by guest role"),
     rsvp_status: Optional[str] = Query(None, description="Filter by RSVP status"),
-    plus_one_status: Optional[str] = Query(None, description="Filter by plus-one status"),
-    phone_issue: Optional[str] = Query(None, description="Filter by phone/contact issue"),
+    plus_one_status: Optional[str] = Query(
+        None, description="Filter by plus-one status"
+    ),
+    phone_issue: Optional[str] = Query(
+        None, description="Filter by phone/contact issue"
+    ),
     sms_status: Optional[str] = Query(None, description="Filter by SMS opt-in status"),
     sort_field: Optional[str] = Query("name", description="Sort field"),
     sort_direction: Optional[str] = Query("asc", description="Sort direction"),
-    current_user: ExtendedAuthUser = Depends(require_wedding_planner_only)
+    current_user: ExtendedAuthUser = Depends(require_wedding_planner_only),
 ):
     # Check if user has access to this wedding
     if not await check_wedding_access(current_user, wedding_id):
@@ -130,13 +143,20 @@ async def list_guests(
             else "all"
         )
         validated_sms_status = (
-            sms_status
-            if sms_status in {"all", "opted_in", "opted_out"}
-            else "all"
+            sms_status if sms_status in {"all", "opted_in", "opted_out"} else "all"
         )
         validated_sort_field = (
             sort_field
-            if sort_field in {"name", "email", "phone", "role", "group_id", "rsvp_status", "plus_ones"}
+            if sort_field
+            in {
+                "name",
+                "email",
+                "phone",
+                "role",
+                "group_id",
+                "rsvp_status",
+                "plus_ones",
+            }
             else "name"
         )
         validated_sort_direction = "desc" if sort_direction == "desc" else "asc"
@@ -168,7 +188,7 @@ async def list_guests(
 async def update_guest(
     guest_id: str,
     update_data: UpdateGuestRequest,
-    current_user: ExtendedAuthUser = Depends(require_wedding_planner_only)
+    current_user: ExtendedAuthUser = Depends(require_wedding_planner_only),
 ):
     """Update guest information. Only updateable fields: name, phone, email, group_id, role, plus_one settings."""
     enforce_team_permission(current_user, "manage_guests")
@@ -191,26 +211,34 @@ async def update_guest(
                 planner_email=current_user.email,
                 guest_id=guest_id,
                 changes=update_dict,
-                updated_by=current_user.email
+                updated_by=current_user.email,
             )
         except Exception as log_err:
             logger.warning(f"Failed to log guest update activity: {log_err}")
 
         # Notify connected clients so they see the change instantly
         await sse_manager.broadcast_data_change(
-            current_user.email, "guest", "updated",
-            wedding_id=str(guest.get("wedding_id", "")), record_id=guest_id,
+            current_user.email,
+            "guest",
+            "updated",
+            wedding_id=str(guest.get("wedding_id", "")),
+            record_id=guest_id,
         )
 
         return result
     except HTTPException as e:
         raise e
     except Exception as err:
-        raise HTTPException(status_code=500, detail=f"Failed to update guest: {str(err)}")
+        raise HTTPException(
+            status_code=500, detail=f"Failed to update guest: {str(err)}"
+        )
 
 
 @router.delete("/guests/{guest_id}", tags=["Admin"])
-async def delete_guest(guest_id: str, current_user: ExtendedAuthUser = Depends(require_wedding_planner_only)):
+async def delete_guest(
+    guest_id: str,
+    current_user: ExtendedAuthUser = Depends(require_wedding_planner_only),
+):
     enforce_team_permission(current_user, "manage_guests")
     # Get guest to check wedding access
     guest = await guest_service.get_guest(guest_id)
@@ -228,14 +256,17 @@ async def delete_guest(guest_id: str, current_user: ExtendedAuthUser = Depends(r
                 guest_name=guest.get("name", "Unknown"),
                 planner_email=current_user.email,
                 guest_id=guest_id,
-                deleted_by=current_user.email
+                deleted_by=current_user.email,
             )
         except Exception as log_err:
             logger.warning(f"Failed to log guest delete activity: {log_err}")
 
         await sse_manager.broadcast_data_change(
-            current_user.email, "guest", "deleted",
-            wedding_id=str(guest.get("wedding_id", "")), record_id=guest_id,
+            current_user.email,
+            "guest",
+            "deleted",
+            wedding_id=str(guest.get("wedding_id", "")),
+            record_id=guest_id,
         )
 
         return result
@@ -250,7 +281,7 @@ async def delete_guest(guest_id: str, current_user: ExtendedAuthUser = Depends(r
 async def create_guest(
     guest_data: CreateGuestRequest,
     wedding_id: str = Query(...),
-    current_user: ExtendedAuthUser = Depends(require_wedding_planner_only)
+    current_user: ExtendedAuthUser = Depends(require_wedding_planner_only),
 ):
     """Create a single guest for a wedding."""
     enforce_team_permission(current_user, "manage_guests")
@@ -268,32 +299,40 @@ async def create_guest(
                 planner_email=current_user.email,
                 guest_id=result.get("id"),
                 guest_email=result.get("email"),
-                added_by=current_user.email
+                added_by=current_user.email,
             )
         except Exception as log_err:
             logger.warning(f"Failed to log guest create activity: {log_err}")
 
         await sse_manager.broadcast_data_change(
-            current_user.email, "guest", "created",
-            wedding_id=wedding_id, record_id=result.get("id"),
+            current_user.email,
+            "guest",
+            "created",
+            wedding_id=wedding_id,
+            record_id=result.get("id"),
         )
 
         return result
     except HTTPException as e:
         raise e
     except Exception as err:
-        raise HTTPException(status_code=500, detail=f"Failed to create guest: {str(err)}")
+        raise HTTPException(
+            status_code=500, detail=f"Failed to create guest: {str(err)}"
+        )
 
 
 # =========================================================================
 # GUEST ACTIVITY LOG
 # =========================================================================
 
+
 @router.get("/guests/{guest_id}/activity", tags=["Admin"])
 async def get_guest_activity(
     guest_id: str,
-    limit: int = Query(default=30, ge=1, le=100, description="Max number of activity entries"),
-    current_user: ExtendedAuthUser = Depends(require_wedding_planner_only)
+    limit: int = Query(
+        default=30, ge=1, le=100, description="Max number of activity entries"
+    ),
+    current_user: ExtendedAuthUser = Depends(require_wedding_planner_only),
 ):
     """
     Get activity log for a specific guest.
@@ -330,18 +369,35 @@ async def get_guest_activity(
 
         query = {
             "$and": [
-                {"$or": [
-                    {"wedding_id": wedding_id},
-                    {"wedding_id": ObjectId(wedding_id) if ObjectId.is_valid(wedding_id) else wedding_id},
-                ]},
-                {"$or": or_conditions}
+                {
+                    "$or": [
+                        {"wedding_id": wedding_id},
+                        {
+                            "wedding_id": ObjectId(wedding_id)
+                            if ObjectId.is_valid(wedding_id)
+                            else wedding_id
+                        },
+                    ]
+                },
+                {"$or": or_conditions},
             ]
         }
 
-        cursor = activity_collection.find(
-            query,
-            {"_id": 1, "type": 1, "message": 1, "timestamp": 1, "created_at": 1, "metadata": 1}
-        ).sort([("timestamp", -1), ("created_at", -1)]).limit(limit)
+        cursor = (
+            activity_collection.find(
+                query,
+                {
+                    "_id": 1,
+                    "type": 1,
+                    "message": 1,
+                    "timestamp": 1,
+                    "created_at": 1,
+                    "metadata": 1,
+                },
+            )
+            .sort([("timestamp", -1), ("created_at", -1)])
+            .limit(limit)
+        )
 
         # Bounded by the limit parameter already set by caller (max 100)
         activities_raw = await cursor.to_list(length=limit)
@@ -352,16 +408,19 @@ async def get_guest_activity(
             if hasattr(timestamp, "isoformat"):
                 timestamp = timestamp.isoformat()
 
-            activities.append({
-                "id": str(activity.get("_id")),
-                "type": activity.get("type", "info"),
-                "message": activity.get("message", ""),
-                "timestamp": timestamp or "",
-                "metadata": {
-                    k: v for k, v in (activity.get("metadata") or {}).items()
-                    if k not in ("guest_email",)  # Don't expose emails in response
-                },
-            })
+            activities.append(
+                {
+                    "id": str(activity.get("_id")),
+                    "type": activity.get("type", "info"),
+                    "message": activity.get("message", ""),
+                    "timestamp": timestamp or "",
+                    "metadata": {
+                        k: v
+                        for k, v in (activity.get("metadata") or {}).items()
+                        if k not in ("guest_email",)  # Don't expose emails in response
+                    },
+                }
+            )
 
         return dict_response(data={"activities": activities, "total": len(activities)})
 
@@ -376,11 +435,12 @@ async def get_guest_activity(
 # SEATING CONSTRAINTS MANAGEMENT
 # =========================================================================
 
+
 @router.post("/guests/seating-constraints", tags=["Admin"])
 async def update_seating_constraints(
     request: BulkSeatingConstraintRequest,
     wedding_id: str = Query(...),
-    current_user: ExtendedAuthUser = Depends(require_wedding_planner_only)
+    current_user: ExtendedAuthUser = Depends(require_wedding_planner_only),
 ):
     """
     Add or remove seating constraints between guests.
@@ -398,10 +458,7 @@ async def update_seating_constraints(
         raise HTTPException(status_code=403, detail="Access to this wedding denied")
 
     try:
-        results: dict[str, list[dict[str, Any]]] = {
-            "updated": [],
-            "errors": []
-        }
+        results: dict[str, list[dict[str, Any]]] = {"updated": [], "errors": []}
 
         guests_collection = mongo.db["guests"]
 
@@ -412,33 +469,37 @@ async def update_seating_constraints(
                     oid_1 = ObjectId(constraint.guest_id_1)
                     oid_2 = ObjectId(constraint.guest_id_2)
                 except InvalidId:
-                    results["errors"].append({
-                        "guest_ids": [constraint.guest_id_1, constraint.guest_id_2],
-                        "error": "Invalid guest ID format"
-                    })
+                    results["errors"].append(
+                        {
+                            "guest_ids": [constraint.guest_id_1, constraint.guest_id_2],
+                            "error": "Invalid guest ID format",
+                        }
+                    )
                     continue
 
                 # Verify both guests exist and belong to this wedding
-                guest1 = await guests_collection.find_one({
-                    "_id": oid_1,
-                    "wedding_id": wedding_id
-                })
-                guest2 = await guests_collection.find_one({
-                    "_id": oid_2,
-                    "wedding_id": wedding_id
-                })
+                guest1 = await guests_collection.find_one(
+                    {"_id": oid_1, "wedding_id": wedding_id}
+                )
+                guest2 = await guests_collection.find_one(
+                    {"_id": oid_2, "wedding_id": wedding_id}
+                )
 
                 if not guest1:
-                    results["errors"].append({
-                        "guest_id": constraint.guest_id_1,
-                        "error": "Guest not found in this wedding"
-                    })
+                    results["errors"].append(
+                        {
+                            "guest_id": constraint.guest_id_1,
+                            "error": "Guest not found in this wedding",
+                        }
+                    )
                     continue
                 if not guest2:
-                    results["errors"].append({
-                        "guest_id": constraint.guest_id_2,
-                        "error": "Guest not found in this wedding"
-                    })
+                    results["errors"].append(
+                        {
+                            "guest_id": constraint.guest_id_2,
+                            "error": "Guest not found in this wedding",
+                        }
+                    )
                     continue
 
                 # Determine which field to update
@@ -454,36 +515,36 @@ async def update_seating_constraints(
                 if constraint.action == "add":
                     # Add guest2 to guest1's constraint list and vice versa
                     await guests_collection.update_one(
-                        {"_id": oid_1},
-                        {"$addToSet": {field: id_str_2}}
+                        {"_id": oid_1}, {"$addToSet": {field: id_str_2}}
                     )
                     await guests_collection.update_one(
-                        {"_id": oid_2},
-                        {"$addToSet": {field: id_str_1}}
+                        {"_id": oid_2}, {"$addToSet": {field: id_str_1}}
                     )
                 else:  # remove
                     # Remove from both guests' lists
                     await guests_collection.update_one(
-                        {"_id": oid_1},
-                        {"$pull": {field: id_str_2}}
+                        {"_id": oid_1}, {"$pull": {field: id_str_2}}
                     )
                     await guests_collection.update_one(
-                        {"_id": oid_2},
-                        {"$pull": {field: id_str_1}}
+                        {"_id": oid_2}, {"$pull": {field: id_str_1}}
                     )
 
-                results["updated"].append({
-                    "guest_id_1": constraint.guest_id_1,
-                    "guest_id_2": constraint.guest_id_2,
-                    "constraint_type": constraint.constraint_type,
-                    "action": constraint.action
-                })
+                results["updated"].append(
+                    {
+                        "guest_id_1": constraint.guest_id_1,
+                        "guest_id_2": constraint.guest_id_2,
+                        "constraint_type": constraint.constraint_type,
+                        "action": constraint.action,
+                    }
+                )
 
             except Exception as e:
-                results["errors"].append({
-                    "guest_ids": [constraint.guest_id_1, constraint.guest_id_2],
-                    "error": str(e)
-                })
+                results["errors"].append(
+                    {
+                        "guest_ids": [constraint.guest_id_1, constraint.guest_id_2],
+                        "error": str(e),
+                    }
+                )
 
         # Log activity
         try:
@@ -495,8 +556,8 @@ async def update_seating_constraints(
                 metadata={
                     "updated_count": len(results["updated"]),
                     "error_count": len(results["errors"]),
-                    "updated_by": current_user.email
-                }
+                    "updated_by": current_user.email,
+                },
             )
         except Exception as log_err:
             logger.warning(f"Failed to log seating constraints activity: {log_err}")
@@ -505,20 +566,22 @@ async def update_seating_constraints(
             data={
                 "updated_count": len(results["updated"]),
                 "error_count": len(results["errors"]),
-                "details": results
+                "details": results,
             },
-            message="Seating constraints updated"
+            message="Seating constraints updated",
         )
 
     except Exception as err:
         logger.error(f"Failed to update seating constraints: {str(err)}")
-        raise HTTPException(status_code=500, detail=f"Failed to update seating constraints: {str(err)}")
+        raise HTTPException(
+            status_code=500, detail=f"Failed to update seating constraints: {str(err)}"
+        )
 
 
 @router.get("/guests/seating-constraints", tags=["Admin"])
 async def get_seating_constraints(
     wedding_id: str = Query(...),
-    current_user: ExtendedAuthUser = Depends(require_wedding_planner_only)
+    current_user: ExtendedAuthUser = Depends(require_wedding_planner_only),
 ):
     """
     Get all seating constraints for a wedding.
@@ -532,13 +595,15 @@ async def get_seating_constraints(
         guests_collection = mongo.db["guests"]
 
         # Find all guests with any seating constraints
-        cursor = guests_collection.find({
-            "wedding_id": wedding_id,
-            "$or": [
-                {"must_sit_with": {"$exists": True, "$ne": []}},
-                {"must_sit_apart": {"$exists": True, "$ne": []}}
-            ]
-        })
+        cursor = guests_collection.find(
+            {
+                "wedding_id": wedding_id,
+                "$or": [
+                    {"must_sit_with": {"$exists": True, "$ne": []}},
+                    {"must_sit_apart": {"$exists": True, "$ne": []}},
+                ],
+            }
+        )
 
         # Safety cap: most weddings have far fewer guests with constraints
         MAX_CONSTRAINED_GUESTS = 5000
@@ -578,10 +643,9 @@ async def get_seating_constraints(
                     missing_oids.append(ObjectId(mid))
                 except InvalidId:
                     pass
-            missing_cursor = guests_collection.find({
-                "_id": {"$in": missing_oids},
-                "wedding_id": wedding_id
-            })
+            missing_cursor = guests_collection.find(
+                {"_id": {"$in": missing_oids}, "wedding_id": wedding_id}
+            )
             # Already limited by size of missing_ids (max 5000 from above fetch)
             missing_guests = await missing_cursor.to_list(length=5000)
             for g in missing_guests:
@@ -592,7 +656,7 @@ async def get_seating_constraints(
             return [
                 {
                     "guest_1": {"id": p[0], "name": guest_names.get(p[0], "Unknown")},
-                    "guest_2": {"id": p[1], "name": guest_names.get(p[1], "Unknown")}
+                    "guest_2": {"id": p[1], "name": guest_names.get(p[1], "Unknown")},
                 }
                 for p in pairs
             ]
@@ -602,9 +666,11 @@ async def get_seating_constraints(
                 "must_sit_together": format_pairs(must_sit_together),
                 "must_sit_apart": format_pairs(must_sit_apart),
             },
-            message="Seating constraints retrieved"
+            message="Seating constraints retrieved",
         )
 
     except Exception as err:
         logger.error(f"Failed to get seating constraints: {str(err)}")
-        raise HTTPException(status_code=500, detail=f"Failed to get seating constraints: {str(err)}")
+        raise HTTPException(
+            status_code=500, detail=f"Failed to get seating constraints: {str(err)}"
+        )

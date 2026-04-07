@@ -45,7 +45,7 @@ TWILIO_ERROR_MESSAGES = {
     "21408": "Permission denied",
     "21610": "Attempt to send to unsubscribed recipient",
     "21612": "The 'To' number is not a valid phone number",
-    "21614": "Invalid mobile number"
+    "21614": "Invalid mobile number",
 }
 
 
@@ -61,7 +61,7 @@ async def verify_twilio_status_webhook():
 @router.post("/status", tags=["Webhooks"])
 async def handle_twilio_status_callback(
     request: Request,
-    x_twilio_signature: Optional[str] = Header(None, alias="X-Twilio-Signature")
+    x_twilio_signature: Optional[str] = Header(None, alias="X-Twilio-Signature"),
 ):
     """
     Handle Twilio StatusCallback events for SMS delivery tracking.
@@ -104,7 +104,9 @@ async def handle_twilio_status_callback(
             logger.warning(f"Missing required fields in Twilio callback: {data}")
             return {"status": "ignored", "reason": "Missing required fields"}
 
-        logger.info(f"Received Twilio status callback: SID={message_sid}, Status={message_status}")
+        logger.info(
+            f"Received Twilio status callback: SID={message_sid}, Status={message_status}"
+        )
 
         # Update the reminders_sent record
         log_collection = mongo.db["reminders_sent"]
@@ -115,33 +117,29 @@ async def handle_twilio_status_callback(
         status_event = {
             "status": message_status,
             "timestamp": now,
-            "error_code": int(error_code) if error_code else None
+            "error_code": int(error_code) if error_code else None,
         }
 
         # Prepare update operation
         update_data = {
             "$set": {
                 "delivery_status": message_status,
-                "delivery_status_updated_at": now
+                "delivery_status_updated_at": now,
             },
-            "$push": {
-                "delivery_events": status_event
-            }
+            "$push": {"delivery_events": status_event},
         }
 
         # Add error details if present
         if error_code:
             error_message = TWILIO_ERROR_MESSAGES.get(
-                str(error_code),
-                f"Unknown error (code: {error_code})"
+                str(error_code), f"Unknown error (code: {error_code})"
             )
             update_data["$set"]["error_code"] = int(error_code)
             update_data["$set"]["error_message"] = error_message
 
         # Find and update by message_sid
         result = await log_collection.update_one(
-            {"message_sid": message_sid},
-            update_data
+            {"message_sid": message_sid}, update_data
         )
 
         if result.matched_count == 0:
@@ -163,7 +161,7 @@ async def handle_twilio_status_callback(
         return {
             "status": "success",
             "message_sid": message_sid,
-            "delivery_status": message_status
+            "delivery_status": message_status,
         }
 
     except HTTPException:
@@ -205,6 +203,7 @@ def _get_public_webhook_url(request: Request) -> str:
         if base:
             # Strip any trailing path like /admin
             from urllib.parse import urlparse
+
             parsed = urlparse(base)
             origin = f"{parsed.scheme}://{parsed.netloc}"
             return origin + str(request.url.path)
@@ -214,9 +213,7 @@ def _get_public_webhook_url(request: Request) -> str:
 
 
 def _validate_twilio_signature(
-    request: Request,
-    signature: Optional[str],
-    params: dict
+    request: Request, signature: Optional[str], params: dict
 ) -> bool:
     """
     Validate Twilio webhook signature using RequestValidator.
@@ -227,7 +224,9 @@ def _validate_twilio_signature(
     auth_token = os.getenv("TWILIO_AUTH_TOKEN")
 
     if not auth_token:
-        logger.warning("TWILIO_AUTH_TOKEN not configured - skipping signature verification")
+        logger.warning(
+            "TWILIO_AUTH_TOKEN not configured - skipping signature verification"
+        )
         return True  # Allow in development, but log warning
 
     if not signature:
@@ -236,7 +235,9 @@ def _validate_twilio_signature(
         if environment == "production":
             logger.warning("No X-Twilio-Signature header present in production")
             return False
-        logger.warning("No X-Twilio-Signature header present - allowing in non-production")
+        logger.warning(
+            "No X-Twilio-Signature header present - allowing in non-production"
+        )
         return True
 
     try:
@@ -274,6 +275,7 @@ def _validate_twilio_signature(
 
 # ==================== DELIVERY FAILURE HANDLER ====================
 
+
 async def _handle_delivery_failure(
     message_sid: str,
     error_code: int,
@@ -298,7 +300,9 @@ async def _handle_delivery_failure(
     )
 
     category = classify_error(error_code)
-    error_message = TWILIO_ERROR_MESSAGES.get(str(error_code), f"Unknown error (code: {error_code})")
+    error_message = TWILIO_ERROR_MESSAGES.get(
+        str(error_code), f"Unknown error (code: {error_code})"
+    )
 
     # Look up the original log record to get guest_id and wedding_id
     log_record = await log_collection.find_one({"message_sid": message_sid})
@@ -309,24 +313,28 @@ async def _handle_delivery_failure(
         if is_account_level(error_code):
             # Critical: account suspended, permission denied, etc.
             # Log to errors collection for ROOT_ADMIN dashboard visibility
-            await mongo.db["errors"].insert_one({
-                "error_id": f"twilio_account_{error_code}_{message_sid}",
-                "error_type": "TwilioAccountError",
-                "message": f"Twilio account-level error: {error_message}",
-                "severity": "critical",
-                "timestamp": datetime.now(timezone.utc),
-                "acknowledged": False,
-                "context": {
-                    "error_code": error_code,
-                    "message_sid": message_sid,
-                    "to_number": to_number,
-                    "source": "twilio_status_callback",
+            await mongo.db["errors"].insert_one(
+                {
+                    "error_id": f"twilio_account_{error_code}_{message_sid}",
+                    "error_type": "TwilioAccountError",
+                    "message": f"Twilio account-level error: {error_message}",
+                    "severity": "critical",
+                    "timestamp": datetime.now(timezone.utc),
+                    "acknowledged": False,
+                    "context": {
+                        "error_code": error_code,
+                        "message_sid": message_sid,
+                        "to_number": to_number,
+                        "source": "twilio_status_callback",
+                    },
                 }
-            })
+            )
             logger.critical(f"ACCOUNT-LEVEL Twilio error {error_code}: {error_message}")
 
             # Email ROOT_ADMIN about account-level issue
-            await _notify_root_admin_twilio_error(error_code, error_message, message_sid)
+            await _notify_root_admin_twilio_error(
+                error_code, error_message, message_sid
+            )
 
         elif is_permanent_recipient(error_code):
             # Phone number is permanently unreachable — flag it
@@ -344,13 +352,17 @@ async def _handle_delivery_failure(
 
                 await guest_collection.update_one(
                     {"_id": guest_oid},
-                    {"$set": {
-                        "phone_status": phone_status,
-                        "phone_status_updated_at": datetime.now(timezone.utc),
-                        "phone_error": error_message,
-                    }}
+                    {
+                        "$set": {
+                            "phone_status": phone_status,
+                            "phone_status_updated_at": datetime.now(timezone.utc),
+                            "phone_error": error_message,
+                        }
+                    },
                 )
-                logger.info(f"Flagged guest {guest_id} phone_status={phone_status}: {error_message}")
+                logger.info(
+                    f"Flagged guest {guest_id} phone_status={phone_status}: {error_message}"
+                )
 
         elif is_compliance(error_code):
             # Recipient has opted out or is blocked
@@ -373,10 +385,11 @@ async def _handle_delivery_failure(
                     update_fields["sms_opt_out_reason"] = "carrier_violation"
 
                 await guest_collection.update_one(
-                    {"_id": guest_oid},
-                    {"$set": update_fields}
+                    {"_id": guest_oid}, {"$set": update_fields}
                 )
-                logger.info(f"Set sms_opt_in=False, phone_status=unsubscribed for guest {guest_id} due to Twilio {error_code}")
+                logger.info(
+                    f"Set sms_opt_in=False, phone_status=unsubscribed for guest {guest_id} due to Twilio {error_code}"
+                )
 
         elif should_retry(error_code):
             # Queue for retry (temporary error)
@@ -412,13 +425,18 @@ async def _handle_delivery_failure(
         logger.error(f"Error in delivery failure handler: {str(e)}")
 
 
-async def _notify_root_admin_twilio_error(error_code: int, error_message: str, message_sid: str):
+async def _notify_root_admin_twilio_error(
+    error_code: int, error_message: str, message_sid: str
+):
     """Email ROOT_ADMIN about an account-level Twilio error."""
     try:
         from app.services.email_service_resend import ResendEmailService
+
         email_service = ResendEmailService()
 
-        root_admin_email = os.getenv("ROOT_ADMIN_EMAIL", "thedeveloper@thespecialwedding.io")
+        root_admin_email = os.getenv(
+            "ROOT_ADMIN_EMAIL", "thedeveloper@thespecialwedding.io"
+        )
         subject = f"CRITICAL: Twilio Account Error ({error_code})"
 
         html_content = f"""
@@ -428,7 +446,7 @@ async def _notify_root_admin_twilio_error(error_code: int, error_message: str, m
                 <p><strong>Error Code:</strong> {error_code}</p>
                 <p><strong>Message:</strong> {error_message}</p>
                 <p><strong>Message SID:</strong> {message_sid}</p>
-                <p><strong>Time:</strong> {datetime.now(timezone.utc).strftime('%B %d, %Y at %I:%M %p UTC')}</p>
+                <p><strong>Time:</strong> {datetime.now(timezone.utc).strftime("%B %d, %Y at %I:%M %p UTC")}</p>
             </div>
             <p style="color: #dc2626; font-weight: bold;">
                 This error affects ALL SMS sends. Please check the Twilio dashboard immediately.
@@ -440,7 +458,7 @@ async def _notify_root_admin_twilio_error(error_code: int, error_message: str, m
             to_email=root_admin_email,
             subject=subject,
             html_content=html_content,
-            email_type="critical_alert"
+            email_type="critical_alert",
         )
         logger.info(f"ROOT_ADMIN alerted about Twilio error {error_code}")
     except Exception as e:
@@ -477,15 +495,18 @@ async def _attempt_email_fallback(
             return
 
         # Check if a fallback was already sent for this message
-        existing_fallback = await log_collection.find_one({
-            "message_sid": message_sid,
-            "fallback_channel": "email",
-        })
+        existing_fallback = await log_collection.find_one(
+            {
+                "message_sid": message_sid,
+                "fallback_channel": "email",
+            }
+        )
         if existing_fallback:
             return
 
         # Send the original message content via email
         from app.services.email_service_resend import ResendEmailService
+
         email_service = ResendEmailService()
 
         guest_name = guest.get("name", "Guest")
@@ -515,18 +536,22 @@ async def _attempt_email_fallback(
         fallback_status = "sent" if result.get("success") else "failed"
         await log_collection.update_one(
             {"message_sid": message_sid},
-            {"$set": {
-                "fallback_channel": "email",
-                "fallback_status": fallback_status,
-                "fallback_email": email,
-                "fallback_at": datetime.now(timezone.utc),
-            }}
+            {
+                "$set": {
+                    "fallback_channel": "email",
+                    "fallback_status": fallback_status,
+                    "fallback_email": email,
+                    "fallback_at": datetime.now(timezone.utc),
+                }
+            },
         )
 
         if result.get("success"):
             logger.info(f"Email fallback sent to {email} for failed SMS {message_sid}")
         else:
-            logger.warning(f"Email fallback also failed for {email}: {result.get('error')}")
+            logger.warning(
+                f"Email fallback also failed for {email}: {result.get('error')}"
+            )
 
     except Exception as e:
         logger.error(f"Error attempting email fallback for {message_sid}: {str(e)}")
@@ -544,22 +569,40 @@ async def _check_delivery_rate_alert():
         one_hour_ago = now - timedelta(hours=1)
 
         # Check if we already sent an alert in the last hour
-        recent_alert = await mongo.db["errors"].find_one({
-            "error_type": "SMSDeliveryRateDrop",
-            "timestamp": {"$gte": one_hour_ago}
-        })
+        recent_alert = await mongo.db["errors"].find_one(
+            {"error_type": "SMSDeliveryRateDrop", "timestamp": {"$gte": one_hour_ago}}
+        )
         if recent_alert:
             return  # Already alerted recently
 
         # Calculate delivery rate for the last hour
         pipeline = [
             {"$match": {"provider": "twilio", "sent_at": {"$gte": one_hour_ago}}},
-            {"$group": {
-                "_id": None,
-                "total": {"$sum": 1},
-                "delivered": {"$sum": {"$cond": [{"$eq": ["$delivery_status", "delivered"]}, 1, 0]}},
-                "failed": {"$sum": {"$cond": [{"$in": ["$delivery_status", ["failed", "undelivered"]]}, 1, 0]}},
-            }}
+            {
+                "$group": {
+                    "_id": None,
+                    "total": {"$sum": 1},
+                    "delivered": {
+                        "$sum": {
+                            "$cond": [{"$eq": ["$delivery_status", "delivered"]}, 1, 0]
+                        }
+                    },
+                    "failed": {
+                        "$sum": {
+                            "$cond": [
+                                {
+                                    "$in": [
+                                        "$delivery_status",
+                                        ["failed", "undelivered"],
+                                    ]
+                                },
+                                1,
+                                0,
+                            ]
+                        }
+                    },
+                }
+            },
         ]
 
         cursor = mongo.db["reminders_sent"].aggregate(pipeline)
@@ -598,14 +641,17 @@ async def _check_delivery_rate_alert():
                 "delivery_rate": round(delivery_rate, 1),
                 "threshold": threshold,
                 "source": "twilio_status_callback_monitor",
-            }
+            },
         }
         await mongo.db["errors"].insert_one(error_record)
 
         # Email ROOT_ADMIN
         from app.services.email_service_resend import ResendEmailService
+
         email_service = ResendEmailService()
-        root_admin_email = os.getenv("ROOT_ADMIN_EMAIL", "thedeveloper@thespecialwedding.io")
+        root_admin_email = os.getenv(
+            "ROOT_ADMIN_EMAIL", "thedeveloper@thespecialwedding.io"
+        )
 
         await email_service.send_email(
             to_email=root_admin_email,
@@ -621,20 +667,24 @@ async def _check_delivery_rate_alert():
                         <li>Delivered: {delivered}</li>
                         <li>Failed: {failed}</li>
                     </ul>
-                    <p><strong>Time:</strong> {now.strftime('%B %d, %Y at %I:%M %p UTC')}</p>
+                    <p><strong>Time:</strong> {now.strftime("%B %d, %Y at %I:%M %p UTC")}</p>
                 </div>
                 <p>Please check the platform metrics dashboard for details.</p>
             </div>
             """,
-            email_type="delivery_rate_alert"
+            email_type="delivery_rate_alert",
         )
-        logger.warning(f"ROOT_ADMIN alerted: SMS delivery rate dropped to {delivery_rate:.1f}%")
+        logger.warning(
+            f"ROOT_ADMIN alerted: SMS delivery rate dropped to {delivery_rate:.1f}%"
+        )
 
     except Exception as e:
         logger.error(f"Error checking delivery rate: {str(e)}")
 
 
-async def _queue_for_retry(message_sid: str, log_record: Optional[dict], error_code: int):
+async def _queue_for_retry(
+    message_sid: str, log_record: Optional[dict], error_code: int
+):
     """Queue a failed message for retry with exponential backoff."""
     from datetime import timedelta
 
@@ -677,9 +727,9 @@ async def _queue_for_retry(message_sid: str, log_record: Optional[dict], error_c
             },
             "$setOnInsert": {
                 "created_at": datetime.now(timezone.utc),
-            }
+            },
         },
-        upsert=True
+        upsert=True,
     )
     logger.info(f"Queued retry #{retry_count + 1} for {message_sid} at {retry_at}")
 
@@ -738,13 +788,18 @@ async def _notify_planner_delivery_failure(
         )
 
         await mongo.db["planner_notifications"].insert_one(notification)
-        logger.info(f"Planner notification created for delivery failure: {guest_name} ({to_number})")
+        logger.info(
+            f"Planner notification created for delivery failure: {guest_name} ({to_number})"
+        )
 
     except Exception as e:
-        logger.error(f"Failed to create planner delivery failure notification: {str(e)}")
+        logger.error(
+            f"Failed to create planner delivery failure notification: {str(e)}"
+        )
 
 
 # ==================== INCOMING MESSAGE WEBHOOK ====================
+
 
 @router.get("/incoming", tags=["Webhooks"])
 async def verify_twilio_incoming_webhook():
@@ -752,13 +807,16 @@ async def verify_twilio_incoming_webhook():
     Webhook verification endpoint for Twilio incoming messages.
     Returns 200 OK to confirm the endpoint is active.
     """
-    return {"status": "ok", "message": "Twilio incoming message webhook endpoint active"}
+    return {
+        "status": "ok",
+        "message": "Twilio incoming message webhook endpoint active",
+    }
 
 
 @router.post("/incoming", tags=["Webhooks"])
 async def handle_twilio_incoming_message(
     request: Request,
-    x_twilio_signature: Optional[str] = Header(None, alias="X-Twilio-Signature")
+    x_twilio_signature: Optional[str] = Header(None, alias="X-Twilio-Signature"),
 ):
     """
     Handle incoming SMS messages from Twilio.
@@ -802,13 +860,15 @@ async def handle_twilio_incoming_message(
         normalized_number = from_number.replace("+1", "").replace("+", "")
 
         # Find guest by phone number
-        guest = await guest_collection.find_one({
-            "$or": [
-                {"phone": from_number},
-                {"phone": normalized_number},
-                {"phone": f"1{normalized_number}"}
-            ]
-        })
+        guest = await guest_collection.find_one(
+            {
+                "$or": [
+                    {"phone": from_number},
+                    {"phone": normalized_number},
+                    {"phone": f"1{normalized_number}"},
+                ]
+            }
+        )
 
         # Get wedding name if guest found
         wedding_name = "the wedding"
@@ -825,13 +885,18 @@ async def handle_twilio_incoming_message(
                 assigned_planner_email = wedding.get("assigned_planner_email")
 
                 if assigned_planner_email:
-                    planner = await mongo.get_users_collection().find_one({"email": assigned_planner_email})
+                    planner = await mongo.get_users_collection().find_one(
+                        {"email": assigned_planner_email}
+                    )
                     if planner:
-                        planner_name = planner.get("company_name") or planner.get("email")
+                        planner_name = planner.get("company_name") or planner.get(
+                            "email"
+                        )
                         planner_support_phone = planner.get("support_phone")
 
         # Import Twilio SMS service for sending responses
         from app.services.sms_service import SMSService
+
         sms_service = SMSService()
 
         # Handle STOP messages (opt-out)
@@ -841,23 +906,29 @@ async def handle_twilio_incoming_message(
                     "$or": [
                         {"phone": from_number},
                         {"phone": normalized_number},
-                        {"phone": f"1{normalized_number}"}
+                        {"phone": f"1{normalized_number}"},
                     ]
                 },
                 {
                     "$set": {
                         "sms_opt_in": False,
-                        "sms_opt_out_date": datetime.now(timezone.utc)
+                        "sms_opt_out_date": datetime.now(timezone.utc),
                     }
-                }
+                },
             )
-            logger.info(f"Opted out {result.modified_count} guests with phone {from_number}")
+            logger.info(
+                f"Opted out {result.modified_count} guests with phone {from_number}"
+            )
 
             # Send confirmation
             confirmation_msg = f"You have been unsubscribed from {wedding_name} SMS notifications. Reply START to resubscribe."
             sms_service.send_sms(from_number, confirmation_msg)
 
-            return {"status": "ok", "action": "opt_out", "modified": result.modified_count}
+            return {
+                "status": "ok",
+                "action": "opt_out",
+                "modified": result.modified_count,
+            }
 
         # Handle START messages (opt-in)
         elif body in ["START", "UNSTOP", "YES", "SUBSCRIBE"]:
@@ -866,26 +937,30 @@ async def handle_twilio_incoming_message(
                     "$or": [
                         {"phone": from_number},
                         {"phone": normalized_number},
-                        {"phone": f"1{normalized_number}"}
+                        {"phone": f"1{normalized_number}"},
                     ]
                 },
                 {
                     "$set": {
                         "sms_opt_in": True,
-                        "sms_opt_in_date": datetime.now(timezone.utc)
+                        "sms_opt_in_date": datetime.now(timezone.utc),
                     },
-                    "$unset": {
-                        "sms_opt_out_date": ""
-                    }
-                }
+                    "$unset": {"sms_opt_out_date": ""},
+                },
             )
-            logger.info(f"Re-subscribed {result.modified_count} guests with phone {from_number}")
+            logger.info(
+                f"Re-subscribed {result.modified_count} guests with phone {from_number}"
+            )
 
             # Send welcome message
             welcome_msg = f"Welcome back! You're subscribed to reminders for {wedding_name}. Reply STOP to opt out. Msg&data rates may apply."
             sms_service.send_sms(from_number, welcome_msg)
 
-            return {"status": "ok", "action": "opt_in", "modified": result.modified_count}
+            return {
+                "status": "ok",
+                "action": "opt_in",
+                "modified": result.modified_count,
+            }
 
         # Handle HELP messages
         elif body in ["HELP", "INFO"]:
@@ -912,11 +987,15 @@ async def handle_twilio_incoming_message(
                     "message_sid": message_sid,
                     "is_read": False,
                     "priority": "high",
-                    "type": "help_request"
+                    "type": "help_request",
                 }
                 await mongo.db["support_tickets"].insert_one(help_ticket)
-                await _notify_planner_help_request(help_ticket, assigned_planner_email, wedding_name)
-                logger.info(f"HELP request from {from_number} - planner {assigned_planner_email} notified")
+                await _notify_planner_help_request(
+                    help_ticket, assigned_planner_email, wedding_name
+                )
+                logger.info(
+                    f"HELP request from {from_number} - planner {assigned_planner_email} notified"
+                )
 
             return {"status": "ok", "action": "help"}
 
@@ -937,13 +1016,17 @@ async def handle_twilio_incoming_message(
                 "provider": "twilio",
                 "message_sid": message_sid,
                 "is_read": False,
-                "priority": "medium"
+                "priority": "medium",
             }
             await mongo.db["support_tickets"].insert_one(support_ticket)
-            logger.info(f"Support ticket created from {from_number} for planner {assigned_planner_email}")
+            logger.info(
+                f"Support ticket created from {from_number} for planner {assigned_planner_email}"
+            )
 
             # Send acknowledgment
-            contact_info = f"your wedding planner at {planner_name}" if planner_name else "us"
+            contact_info = (
+                f"your wedding planner at {planner_name}" if planner_name else "us"
+            )
             if planner_support_phone:
                 support_msg = f"Thanks for your message! {contact_info.capitalize()} will respond soon. For urgent matters, call {planner_support_phone}."
             else:
@@ -952,7 +1035,9 @@ async def handle_twilio_incoming_message(
 
             # Notify wedding planner
             if assigned_planner_email:
-                await _notify_planner_support_ticket(support_ticket, assigned_planner_email)
+                await _notify_planner_support_ticket(
+                    support_ticket, assigned_planner_email
+                )
             else:
                 await _notify_root_admin_support_ticket(support_ticket)
 
@@ -962,6 +1047,7 @@ async def handle_twilio_incoming_message(
         raise
     except Exception as e:
         import traceback
+
         logger.error(f"Error processing Twilio incoming message: {str(e)}")
         logger.error(f"Traceback: {traceback.format_exc()}")
         # Return 200 to prevent Twilio retries for unrecoverable errors
@@ -970,11 +1056,13 @@ async def handle_twilio_incoming_message(
 
 # ==================== HELPER FUNCTIONS ====================
 
+
 async def _notify_planner_support_ticket(ticket: dict, planner_email: str):
     """Send email notification to wedding planner about new support ticket"""
     try:
         from app.services.email_service_resend import ResendEmailService
         from app.core.config import settings
+
         email_service = ResendEmailService()
 
         frontend_url = settings.get_required_url("FRONTEND_URL")
@@ -985,13 +1073,13 @@ async def _notify_planner_support_ticket(ticket: dict, planner_email: str):
             <h2 style="color: #2c3e50;">New Message from Guest</h2>
 
             <div style="background-color: #f8f9fa; padding: 20px; border-radius: 8px; margin: 20px 0;">
-                <p><strong>Wedding:</strong> {ticket['wedding_name']}</p>
-                <p><strong>From:</strong> {ticket['phone']}</p>
-                <p><strong>Received:</strong> {ticket['created_at'].strftime('%B %d, %Y at %I:%M %p UTC')}</p>
+                <p><strong>Wedding:</strong> {ticket["wedding_name"]}</p>
+                <p><strong>From:</strong> {ticket["phone"]}</p>
+                <p><strong>Received:</strong> {ticket["created_at"].strftime("%B %d, %Y at %I:%M %p UTC")}</p>
             </div>
 
             <div style="background-color: #fff; padding: 20px; border-left: 4px solid #2c3e50; margin: 20px 0;">
-                <p style="margin: 0;"><em>"{ticket['message']}"</em></p>
+                <p style="margin: 0;"><em>"{ticket["message"]}"</em></p>
             </div>
 
             <p>Please respond to your guest as soon as possible.</p>
@@ -1006,7 +1094,7 @@ async def _notify_planner_support_ticket(ticket: dict, planner_email: str):
             <hr style="border: none; border-top: 1px solid #ddd; margin: 20px 0;">
 
             <p style="color: #666; font-size: 12px;">
-                This notification was sent because you are the wedding planner for {ticket['wedding_name']}.
+                This notification was sent because you are the wedding planner for {ticket["wedding_name"]}.
             </p>
         </div>
         """
@@ -1015,8 +1103,8 @@ async def _notify_planner_support_ticket(ticket: dict, planner_email: str):
             to_email=planner_email,
             subject=subject,
             html_content=html_content,
-            wedding_id=ticket.get('wedding_id'),
-            email_type="support_notification"
+            wedding_id=ticket.get("wedding_id"),
+            email_type="support_notification",
         )
         logger.info(f"Email notification sent to planner {planner_email}")
     except Exception as e:
@@ -1029,7 +1117,9 @@ async def _notify_root_admin_support_ticket(ticket: dict):
     Logs to errors collection so it appears in the platform monitoring dashboard.
     """
     try:
-        root_admin_email = os.getenv("ROOT_ADMIN_EMAIL", "thedeveloper@thespecialwedding.io")
+        root_admin_email = os.getenv(
+            "ROOT_ADMIN_EMAIL", "thedeveloper@thespecialwedding.io"
+        )
 
         # Log to errors collection for dashboard visibility
         error_record = {
@@ -1040,12 +1130,12 @@ async def _notify_root_admin_support_ticket(ticket: dict):
             "timestamp": datetime.now(timezone.utc),
             "acknowledged": False,
             "context": {
-                "phone": ticket['phone'],
-                "wedding_name": ticket.get('wedding_name'),
-                "wedding_id": ticket.get('wedding_id'),
-                "sms_message": ticket['message'],
-                "source": "twilio_incoming_sms"
-            }
+                "phone": ticket["phone"],
+                "wedding_name": ticket.get("wedding_name"),
+                "wedding_id": ticket.get("wedding_id"),
+                "sms_message": ticket["message"],
+                "source": "twilio_incoming_sms",
+            },
         }
         await mongo.db["errors"].insert_one(error_record)
         logger.info("Unassigned ticket logged to errors collection")
@@ -1057,11 +1147,14 @@ async def _notify_root_admin_support_ticket(ticket: dict):
         logger.error(f"Failed to send ROOT_ADMIN notification: {str(e)}")
 
 
-async def _notify_planner_help_request(ticket: dict, planner_email: str, wedding_name: str):
+async def _notify_planner_help_request(
+    ticket: dict, planner_email: str, wedding_name: str
+):
     """Send email notification to wedding planner about a HELP request"""
     try:
         from app.services.email_service_resend import ResendEmailService
         from app.core.config import settings
+
         email_service = ResendEmailService()
 
         frontend_url = settings.get_required_url("FRONTEND_URL")
@@ -1074,8 +1167,8 @@ async def _notify_planner_help_request(ticket: dict, planner_email: str, wedding
             <div style="background-color: #fef2f2; padding: 20px; border-radius: 8px; margin: 20px 0; border: 1px solid #fecaca;">
                 <p><strong>A guest has texted HELP and may need assistance.</strong></p>
                 <p><strong>Wedding:</strong> {wedding_name}</p>
-                <p><strong>From:</strong> {ticket['phone']}</p>
-                <p><strong>Received:</strong> {ticket['created_at'].strftime('%B %d, %Y at %I:%M %p UTC')}</p>
+                <p><strong>From:</strong> {ticket["phone"]}</p>
+                <p><strong>Received:</strong> {ticket["created_at"].strftime("%B %d, %Y at %I:%M %p UTC")}</p>
             </div>
 
             <div style="background-color: #f8f9fa; padding: 20px; border-radius: 8px; margin: 20px 0;">
@@ -1102,8 +1195,8 @@ async def _notify_planner_help_request(ticket: dict, planner_email: str, wedding
             to_email=planner_email,
             subject=subject,
             html_content=html_content,
-            wedding_id=ticket.get('wedding_id'),
-            email_type="help_request_notification"
+            wedding_id=ticket.get("wedding_id"),
+            email_type="help_request_notification",
         )
         logger.info(f"HELP request notification sent to planner {planner_email}")
     except Exception as e:
