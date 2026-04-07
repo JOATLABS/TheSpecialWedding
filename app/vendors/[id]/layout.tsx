@@ -47,14 +47,15 @@ export async function generateMetadata({
   if (!vendor) {
     return {
       title: 'Vendor Profile',
-      description: 'View this wedding vendor\u2019s services, pricing, portfolio, and contact details.',
+      description: 'View wedding vendor services, pricing, portfolio, and contact details on The Special Wedding.',
+      robots: { index: false, follow: true },
       metadataBase: new URL('https://thespecialwedding.io'),
       alternates: {
         canonical: `/vendors/${id}`,
       },
       openGraph: {
         title: 'Vendor Profile | The Special Wedding',
-        description: 'View this wedding vendor\u2019s services, pricing, portfolio, and contact details.',
+        description: 'View wedding vendor services, pricing, portfolio, and contact details on The Special Wedding.',
         url: canonicalUrl,
         type: 'website',
         images: [
@@ -70,7 +71,7 @@ export async function generateMetadata({
         card: 'summary_large_image',
         site: '@thespecialwedding',
         title: 'Vendor Profile | The Special Wedding',
-        description: 'View this wedding vendor\u2019s services, pricing, portfolio, and contact details.',
+        description: 'View wedding vendor services, pricing, portfolio, and contact details on The Special Wedding.',
         images: [dynamicOgImage],
       },
     };
@@ -89,6 +90,7 @@ export async function generateMetadata({
   return {
     title,
     description,
+    robots: { index: true, follow: true },
     metadataBase: new URL('https://thespecialwedding.io'),
     alternates: {
       canonical: `/vendors/${id}`,

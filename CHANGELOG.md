@@ -14,6 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - **Communications inbox wedding-context handoff** (`/app/admin/communications/components/CommunicationsInboxView.tsx`, `/app/admin/communications/components/CommunicationsRemindersView.tsx`) — Fixed the new communications workspace dropping planners back to `All Weddings` when they moved from a wedding-scoped communications tab into `Inbox`. Reminders now persist the selected wedding into the URL as `?wedding_id=...`, and the inbox view now hydrates and preserves that query param instead of stripping it during its initial render/validation cycle.
+- **Living QA docs aligned to communications navigation** (`/docs/testing/deployment-browser-e2e-runbook.md`, `/docs/TESTING_CHECKLIST_v2.28.0.md`, `/docs/testing/comprehensive-inventory.md`) — Updated the operational runbook and testing references to use the canonical `/admin/communications/*` planner routes, documented that `/admin/inbox` and `/admin/reminders` are now legacy redirects, and annotated the historical interactive inventory so stale route ownership references do not mislead future QA or implementation work.
 
 ## [2.28.6] - 2026-04-07
 

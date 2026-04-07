@@ -7,6 +7,23 @@ Generated: Thu Sep 18 05:40:31 PM CDT 2025
 - Files with interactive elements: 64
 - Total interactive elements: 1687
 
+## CURRENT ROUTE OWNERSHIP NOTE (2026-04-07)
+
+This inventory snapshot predates the planner communications IA refactor. The current canonical planner messaging surfaces live under:
+
+- `app/admin/communications/inbox/page.tsx`
+- `app/admin/communications/invites/page.tsx`
+- `app/admin/communications/reminders/page.tsx`
+- `app/admin/communications/individual/page.tsx`
+- `app/admin/communications/history/page.tsx`
+- `app/admin/communications/components/CommunicationsInboxView.tsx`
+- `app/admin/communications/components/CommunicationsRemindersView.tsx`
+
+Legacy planner routes remain only as wrappers or redirects:
+
+- `app/admin/inbox/page.tsx`
+- `app/admin/reminders/page.tsx`
+
 ## PRIORITY 1: UI COMPONENT LIBRARY
 
 ### Base Components (`app/components/ui/`)
@@ -62,6 +79,7 @@ Generated: Thu Sep 18 05:40:31 PM CDT 2025
   - File: `app/admin/weddings/[id]/page.tsx`
 - **reminders/page**: 104 elements
   - File: `app/admin/reminders/page.tsx`
+  - Note: legacy planner route reference from the pre-communications snapshot; canonical runtime ownership now lives under `app/admin/communications/*`
 - **guests/page**: 84 elements
   - File: `app/admin/guests/page.tsx`
 - **weddings/page**: 81 elements
@@ -136,7 +154,7 @@ Generated: Thu Sep 18 05:40:31 PM CDT 2025
 
 app/admin/saas/page.tsx: 123 elements
 app/admin/weddings/[id]/page.tsx: 120 elements
-app/admin/reminders/page.tsx: 104 elements
+app/admin/reminders/page.tsx: 104 elements (legacy route snapshot; canonical runtime ownership now lives under app/admin/communications/*)
 app/admin/guests/page.tsx: 84 elements
 app/admin/weddings/page.tsx: 81 elements
 app/admin/budget/quotes/page.tsx: 68 elements

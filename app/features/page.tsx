@@ -179,7 +179,7 @@ export default function FeaturesPage() {
               <tr className="border-t border-white/10">
                 <td className="px-5 py-4 text-sm font-semibold text-white">Starting price</td>
                 <td className="text-center px-4 py-4 text-sm font-semibold text-wedding-rose">$29/mo</td>
-                <td className="text-center px-4 py-4 text-sm text-slate-400">$29/mo</td>
+                <td className="text-center px-4 py-4 text-sm text-slate-400">$29/mo<span className="block text-[10px] text-slate-500">(billed annually)</span></td>
                 <td className="text-center px-4 py-4 text-sm text-slate-400">$49.99/mo</td>
                 <td className="text-center px-4 py-4 text-sm text-slate-400">$149/mo</td>
               </tr>
