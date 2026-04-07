@@ -1,7 +1,6 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { useRouter } from 'next/navigation';
 import { getApiBaseUrl } from '@/utils/env';
 import { toast } from 'sonner';
 import { Heart, Loader2 } from 'lucide-react';
@@ -77,7 +76,6 @@ function WelcomeShowcase() {
 }
 
 export default function CoupleLoginPage() {
-  const router = useRouter();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -118,7 +116,7 @@ export default function CoupleLoginPage() {
 
       clearLegacyCoupleStorage();
       toast.success('Welcome back!');
-      router.push('/couple/dashboard');
+      window.location.assign('/couple/dashboard');
     } catch {
       setError('Something went wrong. Please try again.');
     } finally {

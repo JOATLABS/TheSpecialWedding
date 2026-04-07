@@ -15,7 +15,8 @@ export type SSEResource =
   | 'budget'
   | 'table'
   | 'invite'
-  | 'checkin';
+  | 'checkin'
+  | 'couple_message';
 
 export interface DataChangeEvent {
   resource: SSEResource | '__reconnected__';
