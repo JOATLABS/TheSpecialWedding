@@ -82,6 +82,7 @@ from app.api.web_push import router as web_push_router
 from app.api.knowledge_base import router as knowledge_base_router
 from app.api.vendor_contract_public import router as vendor_contract_public_router
 from app.api.notification_stream import router as notification_stream_router
+from app.api.couple_notification_stream import router as couple_notification_stream_router
 from app.api.team_management import router as team_management_router
 from app.api.inbound_emails import router as inbound_emails_router
 
@@ -593,7 +594,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 class SSEGzipBypassMiddleware(BaseHTTPMiddleware):
     """Prevent GZip from buffering SSE responses by removing Accept-Encoding."""
     async def dispatch(self, request: Request, call_next):
-        if request.url.path.endswith("/notifications/stream"):
+        if request.url.path.endswith("/notifications/stream") or request.url.path.endswith("/couple/notifications/stream"):
             # Mutate scope so downstream middleware sees no Accept-Encoding
             headers = dict(request.scope["headers"])
             headers.pop(b"accept-encoding", None)
@@ -683,6 +684,7 @@ app.include_router(blog_router, tags=["Blog"])  # Public blog + admin blog endpo
 # Couple Portal routes (public - couple auth is handled at route level)
 app.include_router(couple_auth_router, tags=["Couple Auth"])  # Couple login, setup, verify invite
 app.include_router(couple_portal_router, tags=["Couple Portal"])  # Couple dashboard, forms, updates
+app.include_router(couple_notification_stream_router, tags=["Couple Notifications SSE"])
 app.include_router(couple_analytics_router, prefix="/couple", tags=["Couple Portal Analytics"])  # Couple-auth behavioral analytics
 app.include_router(guest_memories_router, tags=["Guest Memories"])  # Public upload + couple memories endpoints
 

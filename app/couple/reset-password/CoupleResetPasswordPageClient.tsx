@@ -1,7 +1,6 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { Heart, Lock, Loader2, ArrowLeft, AlertCircle } from 'lucide-react';
 import { toast } from 'sonner';
@@ -10,7 +9,6 @@ import { clearLegacyCoupleStorage } from '@/couple/lib/auth';
 import { getApiBaseUrl } from '@/utils/env';
 
 export default function CoupleResetPasswordPageClient({ initialToken }: { initialToken: string | null }) {
-  const router = useRouter();
   const token = initialToken ?? '';
 
   const [password, setPassword] = useState('');
@@ -71,7 +69,7 @@ export default function CoupleResetPasswordPageClient({ initialToken }: { initia
       if (res.ok) {
         clearLegacyCoupleStorage();
         toast.success('Password reset successfully!');
-        router.push('/couple/dashboard');
+        window.location.assign('/couple/dashboard');
       } else {
         toast.error(data.detail || 'Failed to reset password');
       }

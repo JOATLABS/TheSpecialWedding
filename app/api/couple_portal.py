@@ -15,12 +15,13 @@ Sprint 6: Registry CRUD, FAQ CRUD, QR code, push notifications
 from fastapi import APIRouter, HTTPException, Request, Query, Depends, Path
 from fastapi.responses import Response
 from pydantic import BaseModel, Field
-from typing import Optional, List
+from typing import Optional, List, Any
 from datetime import datetime, timezone
 from app.core.database import mongo
 from app.services.couple_portal_service import couple_portal_service
 from app.services.guest_export_service import guest_export_service
 from app.services.web_push_service import web_push_service
+from app.services.sse_manager import sse_manager
 from app.dependencies.auth_extended import (
     ExtendedAuthUser,
     require_team_or_planner,
@@ -29,6 +30,7 @@ from app.dependencies.auth_extended import (
     get_accessible_wedding_ids,
 )
 from app.dependencies.couple_auth import require_couple_auth
+from app.utils.couple_realtime import couple_sse_channel
 from bson import ObjectId
 from bson.errors import InvalidId
 import uuid
@@ -626,7 +628,7 @@ async def _notify_planner_of_note(couple: dict, wedding: dict, title: str, text:
             title=f"{couple_name}: {title}",
             message=preview,
             wedding_id=couple.get("wedding_id"),
-            action_url=f"/admin/couple-portal?wedding_id={couple.get('wedding_id')}",
+            action_url=f"/admin/communications/inbox?wedding_id={couple.get('wedding_id')}&conversation=couple",
         )
     except Exception as e:
         logger.error(f"Failed to notify planner of couple note: {e}")
@@ -852,8 +854,6 @@ async def _broadcast_couple_message_change(
     extra_planner_emails: Optional[List[str]] = None,
 ) -> None:
     """Broadcast couple-message updates to relevant planner/team/couple clients."""
-    from app.services.sse_manager import sse_manager
-
     recipients = await _get_message_broadcast_recipients(wedding_id)
     if extra_planner_emails:
         recipients.update(email for email in extra_planner_emails if email)
@@ -868,12 +868,15 @@ async def _broadcast_couple_message_change(
         )
 
     if include_couple_email:
-        await sse_manager.broadcast_data_change(
-            include_couple_email,
-            resource="couple_message",
-            action=action,
-            wedding_id=wedding_id,
-            record_id=record_id,
+        await sse_manager.broadcast_to_user(
+            couple_sse_channel(include_couple_email),
+            "data-change",
+            {
+                "resource": "couple_message",
+                "action": action,
+                "wedding_id": wedding_id,
+                "record_id": record_id,
+            },
         )
 
 
@@ -901,7 +904,7 @@ async def _get_accessible_couple_wedding_ids(
         query = {"assigned_planner_email": owner_email}
         accessible_ids = get_accessible_wedding_ids(current_user)
         if accessible_ids is not None:
-          query["_id"] = {"$in": [_normalize_query_id(value) for value in accessible_ids]}
+            query["_id"] = {"$in": [_normalize_query_id(value) for value in accessible_ids]}
     else:
         return []
 
@@ -957,10 +960,22 @@ async def couple_send_message(
                 title=f"New message from {couple_name or couple['email']}",
                 message=preview,
                 wedding_id=wedding_id,
-                action_url=f"/admin/couple-portal?wedding_id={wedding_id}&tab=messages",
+                action_url=f"/admin/communications/inbox?wedding_id={wedding_id}&conversation=couple",
             )
     except Exception as e:
         logger.error(f"Failed to notify planner of couple message: {e}")
+
+    try:
+        planner_targets = [couple.get("planner_email")] if couple.get("planner_email") else None
+        await _broadcast_couple_message_change(
+            wedding_id,
+            action="created",
+            record_id=str(result.inserted_id),
+            include_couple_email=couple["email"],
+            extra_planner_emails=planner_targets,
+        )
+    except Exception as exc:
+        logger.warning(f"Failed to broadcast couple message change: {exc}")
 
     return {
         "message": "Message sent",
@@ -979,12 +994,6 @@ async def couple_get_messages(
     if not wedding_id:
         raise HTTPException(status_code=404, detail="No wedding linked to this account")
 
-    # Mark unread planner messages as read by couple (before fetching, to avoid race)
-    await mongo.db["couple_messages"].update_many(
-        {"wedding_id": wedding_id, "sender_role": "planner", "read_by_couple": False},
-        {"$set": {"read_by_couple": True}}
-    )
-
     query: dict = {"wedding_id": wedding_id}
     if before:
         try:
@@ -999,6 +1008,7 @@ async def couple_get_messages(
             "sender_role": msg.get("sender_role"),
             "sender_name": msg.get("sender_name"),
             "content": msg.get("content"),
+            "read_by_couple": msg.get("read_by_couple", False),
             "read_by_planner": msg.get("read_by_planner", False),
             "created_at": msg.get("created_at").isoformat() if msg.get("created_at") else None,
         })
@@ -1007,6 +1017,31 @@ async def couple_get_messages(
     messages.reverse()
 
     return {"messages": messages, "count": len(messages)}
+
+
+@router.post("/couple/portal/messages/read", tags=["Couple Portal - Messages"])
+async def couple_mark_messages_read(couple: dict = Depends(require_couple_auth)):
+    """Mark planner messages as read for the authenticated couple."""
+    wedding_id = couple.get("wedding_id")
+    if not wedding_id:
+        raise HTTPException(status_code=404, detail="No wedding linked to this account")
+
+    result = await mongo.db["couple_messages"].update_many(
+        {"wedding_id": wedding_id, "sender_role": "planner", "read_by_couple": False},
+        {"$set": {"read_by_couple": True}},
+    )
+
+    if result.modified_count > 0:
+        try:
+            await _broadcast_couple_message_change(
+                wedding_id,
+                action="updated",
+                include_couple_email=couple["email"],
+            )
+        except Exception as exc:
+            logger.warning(f"Failed to broadcast couple read-state change: {exc}")
+
+    return {"marked_read": result.modified_count}
 
 
 @router.get("/couple/portal/messages/unread-count", tags=["Couple Portal - Messages"])
@@ -1037,6 +1072,13 @@ async def planner_send_message(
     if not await check_wedding_access(current_user, data.wedding_id):
         raise HTTPException(status_code=403, detail="You don't have access to this wedding")
 
+    couple_doc = await mongo.db["couple_users"].find_one(
+        {"wedding_id": data.wedding_id},
+        {"email": 1, "wedding_archived": 1, "is_active": 1, "setup_completed": 1},
+    )
+    if couple_doc and couple_doc.get("wedding_archived"):
+        raise HTTPException(status_code=403, detail="Messaging is disabled for archived weddings")
+
     planner_name = f"{(current_user.user_data or {}).get('first_name', '')} {(current_user.user_data or {}).get('last_name', '')}".strip()
     if not planner_name:
         planner_name = (current_user.user_data or {}).get("company_name", current_user.email)
@@ -1053,6 +1095,25 @@ async def planner_send_message(
     }
 
     result = await mongo.db["couple_messages"].insert_one(message_doc)
+
+    planner_targets = [current_user.email]
+    if current_user.is_team_member and current_user.team_owner_email:
+        planner_targets.append(current_user.team_owner_email)
+
+    try:
+        await _broadcast_couple_message_change(
+            data.wedding_id,
+            action="created",
+            record_id=str(result.inserted_id),
+            include_couple_email=(
+                couple_doc.get("email")
+                if couple_doc and couple_doc.get("is_active") and couple_doc.get("setup_completed")
+                else None
+            ),
+            extra_planner_emails=planner_targets,
+        )
+    except Exception as exc:
+        logger.warning(f"Failed to broadcast planner message change: {exc}")
 
     logger.info(f"Planner {current_user.email} sent message for wedding {data.wedding_id}")
 
@@ -1074,12 +1135,6 @@ async def planner_get_messages(
 
     if not await check_wedding_access(current_user, wedding_id):
         raise HTTPException(status_code=403, detail="You don't have access to this wedding")
-
-    # Mark unread couple messages as read by planner (before fetching, to avoid race)
-    await mongo.db["couple_messages"].update_many(
-        {"wedding_id": wedding_id, "sender_role": "couple", "read_by_planner": False},
-        {"$set": {"read_by_planner": True}}
-    )
 
     query: dict = {"wedding_id": wedding_id}
     if before:
@@ -1104,12 +1159,47 @@ async def planner_get_messages(
     return {"messages": messages, "count": len(messages)}
 
 
+@router.post("/couple-portal/messages/read", tags=["Couple Portal - Messages"])
+async def planner_mark_messages_read(
+    data: PlannerMarkMessagesReadRequest,
+    current_user: ExtendedAuthUser = Depends(require_team_or_planner),
+):
+    """Mark couple messages as read for a planner-accessible wedding conversation."""
+    enforce_team_permission(current_user, "manage_contracts")
+
+    if not await check_wedding_access(current_user, data.wedding_id):
+        raise HTTPException(status_code=403, detail="You don't have access to this wedding")
+
+    result = await mongo.db["couple_messages"].update_many(
+        {"wedding_id": data.wedding_id, "sender_role": "couple", "read_by_planner": False},
+        {"$set": {"read_by_planner": True}},
+    )
+
+    planner_targets = [current_user.email]
+    if current_user.is_team_member and current_user.team_owner_email:
+        planner_targets.append(current_user.team_owner_email)
+
+    if result.modified_count > 0:
+        try:
+            await _broadcast_couple_message_change(
+                data.wedding_id,
+                action="updated",
+                extra_planner_emails=planner_targets,
+            )
+        except Exception as exc:
+            logger.warning(f"Failed to broadcast planner read-state change: {exc}")
+
+    return {"marked_read": result.modified_count}
+
+
 @router.get("/couple-portal/messages/unread-count", tags=["Couple Portal - Messages"])
 async def planner_unread_count(
     wedding_id: str = Query(...),
     current_user: ExtendedAuthUser = Depends(require_team_or_planner)
 ):
     """Get count of unread messages from the couple for a specific wedding."""
+    enforce_team_permission(current_user, "manage_contracts")
+
     if not await check_wedding_access(current_user, wedding_id):
         raise HTTPException(status_code=403, detail="You don't have access to this wedding")
 
@@ -1119,6 +1209,90 @@ async def planner_unread_count(
         "read_by_planner": False,
     })
     return {"unread_count": count}
+
+
+@router.get("/couple-portal/conversations", tags=["Couple Portal - Messages"])
+async def planner_list_conversations(
+    wedding_id: Optional[str] = Query(None),
+    current_user: ExtendedAuthUser = Depends(require_team_or_planner),
+):
+    """List couple conversation summaries for weddings the current user can access."""
+    enforce_team_permission(current_user, "manage_contracts")
+
+    accessible_wedding_ids = await _get_accessible_couple_wedding_ids(current_user, wedding_id=wedding_id)
+    if not accessible_wedding_ids:
+        return {"conversations": [], "count": 0}
+
+    couples = await mongo.db["couple_users"].find(
+        {
+            "wedding_id": {"$in": accessible_wedding_ids},
+            "is_active": True,
+            "setup_completed": True,
+            "wedding_archived": {"$ne": True},
+        },
+        {
+            "email": 1,
+            "partner1_name": 1,
+            "partner2_name": 1,
+            "wedding_id": 1,
+            "last_login": 1,
+            "created_at": 1,
+        },
+    ).to_list(length=None)
+
+    if not couples:
+        return {"conversations": [], "count": 0}
+
+    summaries = await mongo.db["couple_messages"].aggregate([
+        {"$match": {"wedding_id": {"$in": accessible_wedding_ids}}},
+        {"$sort": {"created_at": -1, "_id": -1}},
+        {"$group": {
+            "_id": "$wedding_id",
+            "last_message_at": {"$first": "$created_at"},
+            "last_message_preview": {"$first": "$content"},
+            "last_sender_role": {"$first": "$sender_role"},
+            "unread_count": {
+                "$sum": {
+                    "$cond": [
+                        {
+                            "$and": [
+                                {"$eq": ["$sender_role", "couple"]},
+                                {"$eq": ["$read_by_planner", False]},
+                            ]
+                        },
+                        1,
+                        0,
+                    ]
+                }
+            },
+        }},
+    ]).to_list(length=None)
+
+    summary_map = {summary["_id"]: summary for summary in summaries}
+    conversations = []
+
+    for couple in couples:
+        summary = summary_map.get(couple["wedding_id"], {})
+        conversations.append({
+            "id": str(couple["_id"]) if isinstance(couple["_id"], ObjectId) else couple["_id"],
+            "email": couple["email"],
+            "partner1_name": couple.get("partner1_name"),
+            "partner2_name": couple.get("partner2_name"),
+            "wedding_id": couple.get("wedding_id"),
+            "last_login": couple.get("last_login").isoformat() if couple.get("last_login") else None,
+            "created_at": couple.get("created_at").isoformat() if couple.get("created_at") else None,
+            "last_message_at": summary.get("last_message_at").isoformat() if summary.get("last_message_at") else None,
+            "last_message_preview": summary.get("last_message_preview"),
+            "last_sender_role": summary.get("last_sender_role"),
+            "unread_count": summary.get("unread_count", 0),
+        })
+
+    conversations.sort(
+        key=lambda convo: convo.get("last_message_at") or convo.get("last_login") or convo.get("created_at") or "",
+        reverse=True,
+    )
+
+    return {"conversations": conversations, "count": len(conversations)}
 
 
 # ============================================================================

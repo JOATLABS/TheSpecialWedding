@@ -1,7 +1,6 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { useRouter } from 'next/navigation';
 import { Heart, Lock, Loader2, CheckCircle, XCircle, ArrowRight, Eye, EyeOff } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -27,7 +26,6 @@ const isPasswordValid = (validation: PasswordValidation): boolean =>
   validation.minLength && validation.hasUppercase && validation.hasLowercase && validation.hasNumber;
 
 export default function CoupleSetupPageClient({ initialToken }: { initialToken: string | null }) {
-  const router = useRouter();
   const token = initialToken;
 
   const [verifying, setVerifying] = useState(true);
@@ -100,7 +98,7 @@ export default function CoupleSetupPageClient({ initialToken }: { initialToken: 
 
       clearLegacyCoupleStorage();
       toast.success('Account setup complete! Welcome!');
-      router.push('/couple/dashboard');
+      window.location.assign('/couple/dashboard');
     } catch {
       toast.error('Something went wrong. Please try again.');
     } finally {

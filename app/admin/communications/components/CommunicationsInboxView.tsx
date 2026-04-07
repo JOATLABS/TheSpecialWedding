@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { useAdmin } from '@/contexts/AdminContext';
+import { useSSE } from '@/hooks/useSSE';
 import { formatDate } from '@/utils/dateFormat';
 import {
   Mail,
@@ -57,16 +58,18 @@ interface InboxResponse {
   unread_count: number;
 }
 
-interface CoupleUser {
+interface CoupleConversationSummary {
   id: string;
   email: string;
   partner1_name?: string;
   partner2_name?: string;
   wedding_id: string;
-  is_active: boolean;
-  setup_completed: boolean;
   last_login?: string;
   created_at?: string;
+  last_message_at?: string;
+  last_message_preview?: string;
+  last_sender_role?: string;
+  unread_count: number;
 }
 
 interface CoupleMessage {
@@ -100,19 +103,25 @@ interface InboxItem {
   wedding_label?: string;
   // type-specific data
   email?: InboundEmail;
-  couple?: CoupleUser;
+  couple?: CoupleConversationSummary;
   unread_count?: number;
 }
 
 // ==================== MAIN PAGE ====================
 
 export default function CommunicationsInboxView() {
-  const { token } = useAdmin();
+  const { token, userProfile } = useAdmin();
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const baseUrl = getApiBaseUrl();
   const requestedWeddingId = searchParams.get('wedding_id') || 'all';
+  const requestedConversation = searchParams.get('conversation');
+  const canAccessCoupleMessages = Boolean(
+    userProfile?.is_root_admin ||
+    userProfile?.is_wedding_planner ||
+    userProfile?.team_permissions?.manage_contracts
+  );
 
   // ---- Weddings for filter ----
   const [weddings, setWeddings] = useState<Wedding[]>([]);
@@ -130,9 +139,8 @@ export default function CommunicationsInboxView() {
   const [filterUnread, setFilterUnread] = useState(false);
 
   // ---- Couple conversations state ----
-  const [couples, setCouples] = useState<CoupleUser[]>([]);
-  const [coupleUnreads, setCoupleUnreads] = useState<Record<string, number>>({});
-  const [couplesLoading, setCouplesLoading] = useState(true);
+  const [coupleConversations, setCoupleConversations] = useState<CoupleConversationSummary[]>([]);
+  const [conversationsLoading, setConversationsLoading] = useState(true);
 
   // ---- Selected conversation ----
   const [selectedItem, setSelectedItem] = useState<InboxItem | null>(null);
@@ -268,47 +276,65 @@ export default function CommunicationsInboxView() {
     }
   }, [token, baseUrl, page, filterUnread]);
 
-  const fetchCouples = useCallback(async () => {
-    if (!token) return;
+  const markCoupleConversationRead = useCallback(async (weddingId: string) => {
+    if (!token || !canAccessCoupleMessages) return;
+
     try {
-      setCouplesLoading(true);
-      const response = await fetch(`${baseUrl}/admin/couple-portal/couples`, {
+      await fetch(`${baseUrl}/couple-portal/messages/read`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ wedding_id: weddingId }),
+      });
+      setCoupleConversations((prev) =>
+        prev.map((conversation) =>
+          conversation.wedding_id === weddingId
+            ? { ...conversation, unread_count: 0 }
+            : conversation
+        )
+      );
+    } catch (error) {
+      console.error('Failed to mark couple conversation as read:', error);
+    }
+  }, [baseUrl, canAccessCoupleMessages, token]);
+
+  const fetchCoupleConversations = useCallback(async () => {
+    if (!token) return;
+    if (!canAccessCoupleMessages) {
+      setCoupleConversations([]);
+      setConversationsLoading(false);
+      return;
+    }
+
+    try {
+      setConversationsLoading(true);
+      const params = new URLSearchParams();
+      if (selectedWeddingId !== 'all') {
+        params.set('wedding_id', selectedWeddingId);
+      }
+
+      const response = await fetch(`${baseUrl}/couple-portal/conversations?${params.toString()}`, {
         headers: { Authorization: `Bearer ${token}` }
       });
 
       if (response.ok) {
         const data = await response.json();
-        const coupleList: CoupleUser[] = data.couples || [];
-        setCouples(coupleList);
-
-        // Fetch unread counts for each couple's wedding
-        const unreads: Record<string, number> = {};
-        for (const couple of coupleList) {
-          try {
-            const ucResp = await fetch(
-              `${baseUrl}/couple-portal/messages/unread-count?wedding_id=${couple.wedding_id}`,
-              { headers: { Authorization: `Bearer ${token}` } }
-            );
-            if (ucResp.ok) {
-              const ucData = await ucResp.json();
-              unreads[couple.wedding_id] = ucData.unread_count || 0;
-            }
-          } catch { /* ignore */ }
-        }
-        setCoupleUnreads(unreads);
+        setCoupleConversations(data.conversations || []);
       }
     } catch (error) {
-      console.error('Failed to fetch couples:', error);
+      console.error('Failed to fetch couple conversations:', error);
     } finally {
-      setCouplesLoading(false);
+      setConversationsLoading(false);
     }
-  }, [token, baseUrl]);
+  }, [token, baseUrl, canAccessCoupleMessages, selectedWeddingId]);
 
   useEffect(() => { fetchWeddings(); }, [fetchWeddings]);
   useEffect(() => { fetchEmails(); }, [fetchEmails]);
-  useEffect(() => { fetchCouples(); }, [fetchCouples]);
+  useEffect(() => { fetchCoupleConversations(); }, [fetchCoupleConversations]);
 
-  const fetchEmailDetail = async (emailId: string) => {
+  const fetchEmailDetail = useCallback(async (emailId: string) => {
     if (!token) return;
     try {
       setDetailLoading(true);
@@ -324,9 +350,9 @@ export default function CommunicationsInboxView() {
     } finally {
       setDetailLoading(false);
     }
-  };
+  }, [baseUrl, token]);
 
-  const fetchCoupleMessages = async (weddingId: string) => {
+  const fetchCoupleMessages = useCallback(async (weddingId: string, options?: { markRead?: boolean }) => {
     if (!token) return;
     try {
       setDetailLoading(true);
@@ -337,14 +363,16 @@ export default function CommunicationsInboxView() {
       if (response.ok) {
         const data = await response.json();
         setCoupleMessages(data.messages || []);
-        setCoupleUnreads(prev => ({ ...prev, [weddingId]: 0 }));
+        if (options?.markRead) {
+          await markCoupleConversationRead(weddingId);
+        }
       }
     } catch (error) {
       console.error('Failed to fetch couple messages:', error);
     } finally {
       setDetailLoading(false);
     }
-  };
+  }, [baseUrl, markCoupleConversationRead, token]);
 
   // Auto-scroll to bottom for couple chat
   useEffect(() => {
@@ -382,22 +410,25 @@ export default function CommunicationsInboxView() {
       });
     }
 
-    for (const couple of couples) {
-      const coupleName = [couple.partner1_name, couple.partner2_name]
+    for (const conversation of coupleConversations) {
+      const coupleName = [conversation.partner1_name, conversation.partner2_name]
         .filter(Boolean)
-        .join(' & ') || couple.email;
-      const unread = coupleUnreads[couple.wedding_id] || 0;
+        .join(' & ') || conversation.email;
+      const unread = conversation.unread_count || 0;
+      const preview = conversation.last_message_preview
+        ? `${conversation.last_sender_role === 'planner' ? 'You: ' : ''}${conversation.last_message_preview}`
+        : 'Couple conversation';
 
       items.push({
-        id: `couple_${couple.id}`,
+        id: `couple_${conversation.id}`,
         type: 'couple',
         name: coupleName,
-        preview: unread > 0 ? `${unread} new message${unread > 1 ? 's' : ''}` : 'Couple conversation',
+        preview,
         is_read: unread === 0,
-        created_at: couple.last_login || couple.created_at || '',
-        wedding_id: couple.wedding_id,
-        wedding_label: getWeddingLabel(couple.wedding_id),
-        couple,
+        created_at: conversation.last_message_at || conversation.last_login || conversation.created_at || '',
+        wedding_id: conversation.wedding_id,
+        wedding_label: getWeddingLabel(conversation.wedding_id),
+        couple: conversation,
         unread_count: unread,
       });
     }
@@ -413,7 +444,7 @@ export default function CommunicationsInboxView() {
     });
 
     return items;
-  }, [emails, couples, coupleUnreads, getWeddingLabel]);
+  }, [coupleConversations, emails, getWeddingLabel]);
 
   const allItems = buildUnifiedList();
 
@@ -427,16 +458,33 @@ export default function CommunicationsInboxView() {
     ? inboxItems.filter(item => !item.is_read)
     : inboxItems;
 
-  const loading = emailLoading || couplesLoading;
-  const totalUnread = unreadCount + Object.values(coupleUnreads).reduce((a, b) => a + b, 0);
+  const loading = emailLoading || conversationsLoading;
+  const totalUnread = unreadCount + coupleConversations.reduce((totalUnreadCount, conversation) => totalUnreadCount + (conversation.unread_count || 0), 0);
 
   const selectedWeddingLabel = selectedWeddingId === 'all'
     ? 'All Weddings'
     : getWeddingLabel(selectedWeddingId) || selectedWeddingId;
 
+  useSSE({
+    resources: ['couple_message'],
+    weddingId: selectedWeddingId === 'all' ? null : selectedWeddingId,
+    enabled: canAccessCoupleMessages,
+    onDataChange: (event) => {
+      void fetchCoupleConversations();
+
+      if (selectedItem?.type !== 'couple' || !selectedItem.couple) {
+        return;
+      }
+
+      if (event.resource === '__reconnected__' || event.wedding_id === selectedItem.couple.wedding_id) {
+        void fetchCoupleMessages(selectedItem.couple.wedding_id, { markRead: true });
+      }
+    },
+  });
+
   // ==================== ACTIONS ====================
 
-  const handleSelectItem = async (item: InboxItem) => {
+  const handleSelectItem = useCallback(async (item: InboxItem) => {
     setSelectedItem(item);
     setShowReply(false);
     setReplyText('');
@@ -453,9 +501,9 @@ export default function CommunicationsInboxView() {
         setUnreadCount(prev => Math.max(0, prev - 1));
       }
     } else if (item.type === 'couple' && item.couple) {
-      await fetchCoupleMessages(item.couple.wedding_id);
+      await fetchCoupleMessages(item.couple.wedding_id, { markRead: true });
     }
-  };
+  }, [fetchCoupleMessages, fetchEmailDetail]);
 
   const handleMarkAllRead = async () => {
     if (!token) return;
@@ -540,8 +588,24 @@ export default function CommunicationsInboxView() {
 
   const handleRefresh = () => {
     fetchEmails();
-    fetchCouples();
+    fetchCoupleConversations();
+    if (selectedItem?.type === 'couple' && selectedItem.couple) {
+      void fetchCoupleMessages(selectedItem.couple.wedding_id, { markRead: true });
+    } else if (selectedItem?.type === 'email' && selectedItem.email) {
+      void fetchEmailDetail(selectedItem.email.id);
+    }
   };
+
+  useEffect(() => {
+    if (loading) return;
+    if (requestedConversation !== 'couple' || requestedWeddingId === 'all') return;
+    const targetConversation = filteredItems.find(
+      (item) => item.type === 'couple' && item.wedding_id === requestedWeddingId
+    );
+    if (!targetConversation) return;
+    if (selectedItem?.id === targetConversation.id) return;
+    void handleSelectItem(targetConversation);
+  }, [filteredItems, handleSelectItem, loading, requestedConversation, requestedWeddingId, selectedItem?.id]);
 
   // ==================== DETAIL RENDERERS ====================
 
@@ -837,7 +901,7 @@ export default function CommunicationsInboxView() {
                 className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm bg-white text-gray-600 hover:bg-gray-100 dark:bg-slate-800 dark:text-gray-400 transition"
               >
                 <CheckCheck size={14} />
-                Mark all read
+                Mark emails read
               </button>
             )}
 

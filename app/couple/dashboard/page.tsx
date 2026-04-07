@@ -7,6 +7,7 @@ import CoupleSidebar, { type CoupleSection } from '../components/CoupleSidebar';
 import CoupleTopHeader from '../components/CoupleTopHeader';
 import CoupleOnboardingModal from '../components/CoupleOnboardingModal';
 import CoupleMemoriesSection from '../components/CoupleMemoriesSection';
+import { useCoupleSSE } from '@/couple/hooks/useCoupleSSE';
 import PageHeader from '@/components/ui/PageHeader';
 import MessageBubble from '@/components/ui/MessageBubble';
 import ChatInput from '@/components/ui/ChatInput';
@@ -254,18 +255,13 @@ export default function CoupleDashboardPage() {
   const [data, setData] = useState<DashboardData | null>(null);
   const [activeSection, setActiveSection] = useState<CoupleSection>('dashboard');
   const [unreadMessages, setUnreadMessages] = useState(0);
+  const [messageRefreshSignal, setMessageRefreshSignal] = useState(0);
   const [isOnboardingOpen, setIsOnboardingOpen] = useState(false);
   const [hasUserDismissedOnboarding, setHasUserDismissedOnboarding] = useState(false);
 
   // Sidebar state
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [isMobile, setIsMobile] = useState(false);
-  const handleMessageSent = useCallback(() => {
-    setUnreadMessages(0);
-  }, []);
-  const handleMessagesRead = useCallback(() => {
-    setUnreadMessages(0);
-  }, []);
 
   useEffect(() => {
     const handleResize = () => {
@@ -278,6 +274,26 @@ export default function CoupleDashboardPage() {
     window.addEventListener('resize', handleResize);
     return () => window.removeEventListener('resize', handleResize);
   }, []);
+
+  const fetchUnreadMessageCount = useCallback(async () => {
+    try {
+      const unreadRes = await coupleFetch('/couple/portal/messages/unread-count');
+      if (unreadRes.ok) {
+        const unreadData = await unreadRes.json();
+        setUnreadMessages(unreadData.unread_count || 0);
+      }
+    } catch {
+      /* non-critical */
+    }
+  }, []);
+
+  const handleMessageSent = useCallback(() => {
+    void fetchUnreadMessageCount();
+  }, [fetchUnreadMessageCount]);
+
+  const handleMessagesRead = useCallback(() => {
+    void fetchUnreadMessageCount();
+  }, [fetchUnreadMessageCount]);
 
   const fetchDashboard = useCallback(async () => {
     try {
@@ -299,13 +315,7 @@ export default function CoupleDashboardPage() {
       setData(dashboardData);
 
       // Fetch unread message count
-      try {
-        const unreadRes = await coupleFetch('/couple/portal/messages/unread-count');
-        if (unreadRes.ok) {
-          const unreadData = await unreadRes.json();
-          setUnreadMessages(unreadData.unread_count || 0);
-        }
-      } catch { /* non-critical */ }
+      await fetchUnreadMessageCount();
 
       if (!hasUserDismissedOnboarding) {
         try {
@@ -324,11 +334,21 @@ export default function CoupleDashboardPage() {
     } finally {
       setLoading(false);
     }
-  }, [hasUserDismissedOnboarding, router]);
+  }, [fetchUnreadMessageCount, hasUserDismissedOnboarding, router]);
 
   useEffect(() => {
     fetchDashboard();
   }, [fetchDashboard]);
+
+  useCoupleSSE({
+    resources: ['couple_message'],
+    weddingId: data?.wedding?.id ?? null,
+    enabled: Boolean(data?.wedding?.id),
+    onDataChange: () => {
+      void fetchUnreadMessageCount();
+      setMessageRefreshSignal((current) => current + 1);
+    },
+  });
 
   // Register service worker for PWA + push
   useEffect(() => {
@@ -434,6 +454,7 @@ export default function CoupleDashboardPage() {
               updates={data.updates || []}
               onMessageSent={handleMessageSent}
               onMessagesRead={handleMessagesRead}
+              messageRefreshSignal={messageRefreshSignal}
               archived={!!data.archived}
             />
           )}
@@ -1594,14 +1615,16 @@ interface MessageItem {
   sender_role: 'couple' | 'planner';
   sender_name: string;
   content: string;
+  read_by_couple: boolean;
   read_by_planner: boolean;
   created_at?: string;
 }
 
-function InboxSection({ updates, onMessageSent, onMessagesRead, archived = false }: {
+function InboxSection({ updates, onMessageSent, onMessagesRead, messageRefreshSignal, archived = false }: {
   updates: UpdateItem[];
   onMessageSent: () => void;
   onMessagesRead: () => void;
+  messageRefreshSignal: number;
   archived?: boolean;
 }) {
   const [messages, setMessages] = useState<MessageItem[]>([]);
@@ -1614,24 +1637,59 @@ function InboxSection({ updates, onMessageSent, onMessagesRead, archived = false
     if (node) node.scrollIntoView({ behavior: 'smooth' });
   }, []);
 
-  const fetchMessages = useCallback(async () => {
+  const markMessagesRead = useCallback(async () => {
+    try {
+      const res = await coupleFetch('/couple/portal/messages/read', {
+        method: 'POST',
+      });
+      if (res.ok) {
+        setMessages((prev) =>
+          prev.map((message) =>
+            message.sender_role === 'planner'
+              ? { ...message, read_by_couple: true }
+              : message
+          )
+        );
+        onMessagesRead();
+      }
+    } catch {
+      // Non-critical: the thread will still render and unread counts can be recovered on refresh.
+    }
+  }, [onMessagesRead]);
+
+  const fetchMessages = useCallback(async (options?: { markRead?: boolean }) => {
     try {
       const res = await coupleFetch('/couple/portal/messages?limit=100', {
         cache: 'no-store',
       });
       if (res.ok) {
         const data = await res.json();
-        setMessages(data.messages || []);
-        onMessagesRead();
+        const nextMessages: MessageItem[] = data.messages || [];
+        setMessages(nextMessages);
+
+        if (
+          options?.markRead &&
+          nextMessages.some((message) => message.sender_role === 'planner' && !message.read_by_couple)
+        ) {
+          await markMessagesRead();
+        } else if (options?.markRead) {
+          onMessagesRead();
+        }
       }
     } catch {
       toast.error('Could not load messages. Please try again.');
     } finally {
       setMsgLoading(false);
     }
-  }, [onMessagesRead]);
+  }, [markMessagesRead, onMessagesRead]);
 
   useEffect(() => { fetchMessages(); }, [fetchMessages]);
+
+  useEffect(() => {
+    if (messageRefreshSignal === 0) return;
+    setMsgLoading(true);
+    void fetchMessages({ markRead: showChat });
+  }, [fetchMessages, messageRefreshSignal, showChat]);
 
   const handleSend = async () => {
     if (!newMessage.trim() || sending) return;
@@ -1656,10 +1714,20 @@ function InboxSection({ updates, onMessageSent, onMessagesRead, archived = false
     }
   };
 
-  const handleRefresh = () => { setMsgLoading(true); fetchMessages(); };
+  const handleRefresh = () => {
+    setMsgLoading(true);
+    void fetchMessages({ markRead: showChat });
+  };
+
+  const handleOpenConversation = async () => {
+    setShowChat(true);
+    setMobileShowDetail(true);
+    setMsgLoading(true);
+    await fetchMessages({ markRead: true });
+  };
 
   const lastMessage = messages.length > 0 ? messages[messages.length - 1] : null;
-  const unreadCount = messages.filter(m => m.sender_role === 'planner' && !m.read_by_planner).length;
+  const unreadCount = messages.filter((message) => message.sender_role === 'planner' && !message.read_by_couple).length;
   const conversationPreview = lastMessage
     ? `${lastMessage.sender_role === 'couple' ? 'You' : lastMessage.sender_name}: ${lastMessage.content}`
     : 'Start a conversation with your planner';
@@ -1702,7 +1770,7 @@ function InboxSection({ updates, onMessageSent, onMessagesRead, archived = false
             timestamp={lastMessage?.created_at ? new Date(lastMessage.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : ''}
             unreadCount={unreadCount > 0 ? unreadCount : undefined}
             accentColor="indigo"
-            onClick={() => { setShowChat(true); setMobileShowDetail(true); }}
+            onClick={() => { void handleOpenConversation(); }}
           />
         }
         detailContent={
