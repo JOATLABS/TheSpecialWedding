@@ -19,6 +19,7 @@ from typing import Optional
 from datetime import datetime, timezone
 
 from app.services.task_reminder_service import task_reminder_service
+from app.services.planner_onboarding_email_service import planner_onboarding_email_service
 
 logger = logging.getLogger(__name__)
 
@@ -119,4 +120,33 @@ async def scheduler_health():
         "status": "healthy",
         "scheduler_configured": scheduler_configured,
         "timestamp": datetime.now(timezone.utc).isoformat()
+    }
+
+
+@router.post("/planner-onboarding-emails", tags=["Scheduler"])
+async def process_planner_onboarding_emails(
+    background_tasks: BackgroundTasks,
+    x_scheduler_key: Optional[str] = Header(None),
+    dry_run: bool = Query(False, description="If true, report what would be sent without sending"),
+    sync: bool = Query(False, description="If true, run synchronously and return results"),
+):
+    """
+    Process the wedding planner onboarding email sequence.
+
+    This endpoint is intended for a daily scheduler and sends due onboarding
+    emails at day 1, 3, 5, 8, and 12 after the day-0 welcome email.
+    """
+    verify_scheduler_key(x_scheduler_key)
+
+    if sync:
+        return await planner_onboarding_email_service.process_due_emails(dry_run=dry_run)
+
+    background_tasks.add_task(
+        planner_onboarding_email_service.process_due_emails,
+        dry_run=dry_run,
+    )
+    return {
+        "status": "accepted",
+        "message": "Planner onboarding email processing started in background",
+        "timestamp": datetime.now(timezone.utc).isoformat(),
     }

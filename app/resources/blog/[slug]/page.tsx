@@ -4,6 +4,7 @@ import { notFound } from 'next/navigation';
 import type { ReactNode } from 'react';
 import { blogPosts, type BlogPostKey } from '../data';
 import SaasNav from '@/components/saas/SaasNav';
+import BreadcrumbSchema from '@/components/seo/BreadcrumbSchema';
 import { getMarketingBlogCategory } from '@/data/blogCategories';
 import BlogArticleContent from './BlogArticleContent';
 import { fetchArticleFromAPI } from '../serverApi';
@@ -99,6 +100,13 @@ export default async function BlogPostPage({
   return (
     <main className="min-h-screen bg-slate-950 text-white">
       <SaasNav />
+      <BreadcrumbSchema
+        items={[
+          { name: 'Home', href: '/' },
+          { name: 'Resources', href: '/resources' },
+          { name: article.title, href: `/resources/blog/${slug}` },
+        ]}
+      />
       <script
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
@@ -187,12 +195,9 @@ export async function generateMetadata({
     };
   }
 
-  const ogImages = article.ogImage
-    ? [{ url: article.ogImage, width: 1200, height: 630, alt: article.title }]
-    : undefined;
-
   const canonicalUrl = `https://thespecialwedding.io/resources/blog/${slug}`;
   const metadataTitle = article.metaTitle || article.title;
+  const dynamicOgImage = `/api/og?type=blog&slug=${encodeURIComponent(slug)}`;
 
   return {
     title: `${metadataTitle} | The Special Wedding Blog`,
@@ -206,13 +211,21 @@ export async function generateMetadata({
       url: canonicalUrl,
       type: 'article',
       publishedTime: article.date,
-      images: ogImages,
+      images: [
+        {
+          url: dynamicOgImage,
+          width: 1200,
+          height: 630,
+          alt: article.title,
+        },
+      ],
     },
     twitter: {
-      card: article.ogImage ? 'summary_large_image' : 'summary',
+      card: 'summary_large_image',
+      site: '@thespecialwedding',
       title: metadataTitle,
       description: article.ogDescription,
-      images: article.ogImage ? [article.ogImage] : undefined,
+      images: [dynamicOgImage],
     },
   };
 }

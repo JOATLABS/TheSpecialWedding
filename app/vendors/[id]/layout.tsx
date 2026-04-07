@@ -1,4 +1,5 @@
 import type { Metadata } from 'next';
+import BreadcrumbSchema from '@/components/seo/BreadcrumbSchema';
 import { getApiBaseUrl } from '@/utils/env';
 
 interface VendorMeta {
@@ -40,11 +41,38 @@ export async function generateMetadata({
 }): Promise<Metadata> {
   const { id } = await params;
   const vendor = await fetchVendorMeta(id);
+  const canonicalUrl = `https://thespecialwedding.io/vendors/${id}`;
+  const dynamicOgImage = `/api/og?type=vendor&id=${encodeURIComponent(id)}`;
 
   if (!vendor) {
     return {
       title: 'Vendor Profile',
       description: 'View this wedding vendor\u2019s services, pricing, portfolio, and contact details.',
+      metadataBase: new URL('https://thespecialwedding.io'),
+      alternates: {
+        canonical: `/vendors/${id}`,
+      },
+      openGraph: {
+        title: 'Vendor Profile | The Special Wedding',
+        description: 'View this wedding vendor\u2019s services, pricing, portfolio, and contact details.',
+        url: canonicalUrl,
+        type: 'website',
+        images: [
+          {
+            url: dynamicOgImage,
+            width: 1200,
+            height: 630,
+            alt: 'The Special Wedding vendor profile',
+          },
+        ],
+      },
+      twitter: {
+        card: 'summary_large_image',
+        site: '@thespecialwedding',
+        title: 'Vendor Profile | The Special Wedding',
+        description: 'View this wedding vendor\u2019s services, pricing, portfolio, and contact details.',
+        images: [dynamicOgImage],
+      },
     };
   }
 
@@ -61,17 +89,54 @@ export async function generateMetadata({
   return {
     title,
     description,
+    metadataBase: new URL('https://thespecialwedding.io'),
+    alternates: {
+      canonical: `/vendors/${id}`,
+    },
     openGraph: {
       title: `${title} | The Special Wedding`,
       description,
+      url: canonicalUrl,
+      type: 'website',
+      images: [
+        {
+          url: dynamicOgImage,
+          width: 1200,
+          height: 630,
+          alt: `${title} | The Special Wedding`,
+        },
+      ],
+    },
+    twitter: {
+      card: 'summary_large_image',
+      site: '@thespecialwedding',
+      title: `${title} | The Special Wedding`,
+      description,
+      images: [dynamicOgImage],
     },
   };
 }
 
-export default function VendorProfileLayout({
+export default async function VendorProfileLayout({
   children,
+  params,
 }: {
   children: React.ReactNode;
+  params: Promise<{ id: string }>;
 }) {
-  return <>{children}</>;
+  const { id } = await params;
+  const vendor = await fetchVendorMeta(id);
+
+  return (
+    <>
+      <BreadcrumbSchema
+        items={[
+          { name: 'Home', href: '/' },
+          { name: 'Vendors', href: '/vendors' },
+          { name: vendor?.business_name || 'Vendor Profile', href: `/vendors/${id}` },
+        ]}
+      />
+      {children}
+    </>
+  );
 }

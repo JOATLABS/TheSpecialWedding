@@ -10,6 +10,7 @@ import logging
 from app.utils.auth_utils import get_password_hash, verify_password
 from app.utils.serializers import serialize_mongo_doc
 from app.services.email_service_resend import ResendEmailService
+from app.services.planner_onboarding_email_service import planner_onboarding_email_service
 from app.core.events import event_bus, EventFactory
 
 
@@ -1013,23 +1014,11 @@ class UserManagementService:
                     }
                 }
             )
-            # Send welcome email after successful verification
+            # Start the planner onboarding sequence immediately after verification.
             if self.email_service.configured:
-                html_content = self._generate_welcome_email_html(
-                    email=user["email"],
-                    first_name=user.get("first_name", ""),
-                    role=user.get("role", "wedding_planner"),
-                    company_name=user.get("company_name", "")
-                )
-
-                subject = "Welcome to Special Wedding - Your Account is Ready!"
-
-                await self.email_service.send_email(
-                    to_email=user["email"],
-                    subject=subject,
-                    html_content=html_content,
-                    from_name="Special Wedding Team",
-                    email_type="welcome_email"
+                await planner_onboarding_email_service.start_sequence(
+                    user_id=str(user["_id"]),
+                    user={**user, "email_verified": True, "is_active": True},
                 )
             return {
                 "message": "Email verified successfully! Your account is now active. You can log in.",

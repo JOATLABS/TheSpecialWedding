@@ -5,6 +5,30 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.28.4] - 2026-04-06
+
+### Added
+
+- **Dynamic OG image rendering for blog posts and vendor profiles** (`/app/api/og/route.tsx`, `/app/lib/og-utils.ts`) — Added an Edge `next/og` image route that renders source-aware cards for `/resources/blog/[slug]` and `/vendors/[id]`, using live article and vendor data with branded fallbacks when upstream records are unavailable.
+- **Comparison content hub and competitor landing pages** (`/app/compare/layout.tsx`, `/app/compare/page.tsx`, `/app/compare/data.ts`, `/app/compare/[competitor]/page.tsx`) — Added a dedicated `/compare` hub plus source-qualified HoneyBook and Aisle Planner comparison pages with SEO metadata, structured data, and April 6, 2026 source-review framing.
+- **Planner onboarding unsubscribe page** (`/app/unsubscribe/planner-onboarding/page.tsx`, `/app/unsubscribe/planner-onboarding/PlannerOnboardingUnsubscribeClient.tsx`) — Added a public frontend confirmation page for planner onboarding email opt-out so unsubscribe links resolve through the public web app instead of requiring a direct API-domain guess inside email templates.
+- **Competitor verification research record** (`/docs/research/competitor-comparison-april-2026.md`) — Added a source-backed verification matrix covering the public features comparison rows and pricing references for HoneyBook, Aisle Planner, and Planning Pod.
+- **Planner onboarding email sequence service** (`/app/services/planner_onboarding_email_service.py`) — Added a backend-managed planner onboarding sequence with day 0, 1, 3, 5, 8, and 12 emails, state tracking, skip/exit conditions, and claim-based duplicate-send protection.
+- **Planner onboarding sequence tests** (`/tests/backend/test_planner_onboarding_email_service.py`) — Added targeted backend coverage for welcome send, day-1 send, day-1 skip, and Signature-plan exit behavior.
+
+### Changed
+
+- **Marketing copy and comparison framing** (`/app/page.tsx`, `/app/features/page.tsx`) — Reworked hero copy to lead with AI, the Couple Portal, and SMS reminders; standardized the public feature name to `Service Packages`; varied repeated CTA text; updated the public comparison table to use conservative source-backed pricing and an explicit April 2026 qualifier.
+- **Comparison evidence traceability** (`/app/compare/[competitor]/page.tsx`, `/app/compare/evidence.ts`) — Inlined the public source ledger, row-level confidence labels, and official evidence URLs for the HoneyBook and Aisle Planner comparison pages so the publishable pages now expose the same traceability model as the research doc.
+- **SEO metadata coverage for marketing, vendors, and blog content** (`/app/layout.tsx`, `/app/vendors/layout.tsx`, `/app/vendors/[id]/layout.tsx`, `/app/resources/blog/[slug]/page.tsx`, `/app/components/seo/BreadcrumbSchema.tsx`) — Added root-level Google/Bing verification hooks and Twitter `site` metadata, canonical URLs for `/vendors` and vendor profiles, breadcrumb JSON-LD for nested pages, and dynamic Twitter/Open Graph image references for blog articles and vendor profiles.
+- **Planner email verification flow** (`/app/services/user_management_service.py`) — Replaced the one-off post-verification welcome email hook with sequence start logic for eligible wedding planners.
+
+### Fixed
+
+- **PWA manifest launch target** (`/public/manifest.json`) — Reset the manifest `start_url` from the couple dashboard path to `/` so install/open behavior no longer drops users into a planner-only route by default.
+- **Scheduler coverage for onboarding emails** (`/app/api/scheduler_jobs.py`) — Added a scheduler endpoint for daily planner onboarding processing so the sequence runs through the existing authenticated cron pattern instead of relying on manual sends.
+- **First-class planner onboarding unsubscribe behavior** (`/app/services/planner_onboarding_email_service.py`, `/app/api/user_management.py`, `/tests/backend/test_planner_onboarding_email_service.py`, `/.gitignore`) — Added sequence-scoped unsubscribe tokens, public status/confirm endpoints, explicit unsubscribe links in onboarding email footers, immediate sequence exit on opt-out, and versioned backend tests for the opt-out path.
+
 ## [2.28.3] - 2026-04-06
 
 ### Fixed

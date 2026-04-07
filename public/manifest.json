@@ -2,7 +2,7 @@
   "name": "The Special Wedding — Couple Portal",
   "short_name": "Wedding Portal",
   "description": "Your personal wedding planning portal — manage registry, FAQs, schedule, and more",
-  "start_url": "/couple/dashboard",
+  "start_url": "/",
   "scope": "/couple/",
   "display": "standalone",
   "orientation": "portrait",

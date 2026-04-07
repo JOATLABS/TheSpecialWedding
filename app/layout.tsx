@@ -12,6 +12,14 @@ export const metadata: Metadata = {
   keywords: ['wedding planner software', 'wedding planning business software', 'event planner CRM', 'wedding vendor management', 'guest management for planners', 'wedding seating chart tool', 'HoneyBook alternative', 'Aisle Planner alternative'],
   authors: [{ name: 'The Special Wedding' }],
   creator: 'The Special Wedding',
+  verification: {
+    google: process.env.GOOGLE_SITE_VERIFICATION,
+    other: process.env.BING_SITE_VERIFICATION
+      ? {
+          'msvalidate.01': process.env.BING_SITE_VERIFICATION,
+        }
+      : undefined,
+  },
   metadataBase: new URL('https://thespecialwedding.io'),
   alternates: {
     canonical: '/',
@@ -34,6 +42,7 @@ export const metadata: Metadata = {
   },
   twitter: {
     card: 'summary_large_image',
+    site: '@thespecialwedding',
     title: 'The Special Wedding — Software for Professional Wedding Planners',
     description: 'Guest management, RSVPs, seating, vendor CRM, and day-of execution in one platform built for professional planners. Start your free trial.',
     images: ['/og-image.png'],

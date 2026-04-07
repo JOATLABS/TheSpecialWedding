@@ -1,0 +1,332 @@
+import asyncio
+import os
+import sys
+from copy import deepcopy
+from datetime import datetime, timedelta, timezone
+from types import SimpleNamespace
+
+from bson import ObjectId
+
+PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+if PROJECT_ROOT not in sys.path:
+    sys.path.insert(0, PROJECT_ROOT)
+
+import app.services.planner_onboarding_email_service as onboarding_module
+
+
+def _matches(document, query):
+    for key, expected in query.items():
+        actual = document
+        for part in key.split("."):
+            if isinstance(actual, dict) and part in actual:
+                actual = actual[part]
+            else:
+                actual = None
+                break
+
+        if isinstance(expected, dict):
+            if "$exists" in expected:
+                exists = actual is not None
+                if exists != expected["$exists"]:
+                    return False
+            if "$in" in expected and actual not in expected["$in"]:
+                return False
+            continue
+
+        if actual != expected:
+            return False
+    return True
+
+
+class AsyncCursor:
+    def __init__(self, documents):
+        self.documents = [deepcopy(document) for document in documents]
+
+    def __aiter__(self):
+        self._iter = iter(self.documents)
+        return self
+
+    async def __anext__(self):
+        try:
+            return next(self._iter)
+        except StopIteration as exc:  # pragma: no cover - iterator protocol
+            raise StopAsyncIteration from exc
+
+
+class AsyncCollection:
+    def __init__(self, storage):
+        self.storage = storage
+
+    async def find_one(self, query, *_args, **_kwargs):
+        for document in self.storage:
+            if _matches(document, query):
+                return deepcopy(document)
+        return None
+
+    def find(self, query, *_args, **_kwargs):
+        return AsyncCursor([document for document in self.storage if _matches(document, query)])
+
+    async def update_one(self, query, update, *_args, **_kwargs):
+        for document in self.storage:
+            if _matches(document, query):
+                for key, value in update.get("$set", {}).items():
+                    target = document
+                    parts = key.split(".")
+                    for part in parts[:-1]:
+                        target = target.setdefault(part, {})
+                    target[parts[-1]] = value
+                return SimpleNamespace(modified_count=1)
+        return SimpleNamespace(modified_count=0)
+
+    async def count_documents(self, query):
+        return sum(1 for document in self.storage if _matches(document, query))
+
+
+class AsyncDatabase:
+    def __init__(self, storage_map):
+        self.storage_map = storage_map
+
+    def __getitem__(self, name):
+        self.storage_map.setdefault(name, [])
+        return AsyncCollection(self.storage_map[name])
+
+
+class FakeMongo:
+    def __init__(self, storage_map):
+        self.storage_map = storage_map
+        self.db = AsyncDatabase(storage_map)
+
+    def get_users_collection(self):
+        self.storage_map.setdefault("users", [])
+        return AsyncCollection(self.storage_map["users"])
+
+
+class DummyEmailService:
+    def __init__(self):
+        self.configured = True
+        self.sent = []
+
+    async def send_email(self, **kwargs):
+        self.sent.append(kwargs)
+        return {"success": True, "id": f"email_{len(self.sent)}"}
+
+
+def build_service(storage):
+    fake_mongo = FakeMongo(storage)
+    onboarding_module.mongo = fake_mongo
+    service = onboarding_module.PlannerOnboardingEmailService()
+    service.email_service = DummyEmailService()
+    return service
+
+
+def test_start_sequence_sends_welcome_and_persists_state():
+    user_id = ObjectId()
+    storage = {
+        "users": [
+            {
+                "_id": user_id,
+                "email": "planner@example.com",
+                "role": "wedding_planner",
+                "first_name": "Ava",
+                "company_name": "Ava Events",
+                "email_verified": True,
+                "is_active": True,
+                "created_at": datetime.now(timezone.utc),
+            }
+        ],
+        "weddings": [],
+        "team_members": [],
+        "user_subscriptions": [],
+    }
+    service = build_service(storage)
+
+    result = asyncio.run(service.start_sequence(str(user_id)))
+
+    assert result["started"] is True
+    assert len(service.email_service.sent) == 1
+    sent = service.email_service.sent[0]
+    assert sent["email_type"] == "planner_onboarding_day0_welcome"
+    user = storage["users"][0]
+    assert user["planner_onboarding_email"]["status"] == "active"
+    assert user["planner_onboarding_email"]["welcome_sent_at"] is not None
+
+
+def test_process_due_emails_sends_day_one_when_no_wedding_exists():
+    user_id = ObjectId()
+    started_at = datetime.now(timezone.utc) - timedelta(days=2)
+    storage = {
+        "users": [
+            {
+                "_id": user_id,
+                "email": "planner@example.com",
+                "role": "wedding_planner",
+                "first_name": "Ava",
+                "email_verified": True,
+                "is_active": True,
+                "created_at": started_at,
+                "planner_onboarding_email": {
+                    "status": "active",
+                    "started_at": started_at,
+                    "welcome_sent_at": started_at,
+                },
+            }
+        ],
+        "weddings": [],
+        "team_members": [],
+        "user_subscriptions": [],
+    }
+    service = build_service(storage)
+
+    result = asyncio.run(service.process_due_emails())
+
+    assert result["sent"] == 1
+    sent = service.email_service.sent[0]
+    assert sent["email_type"] == "planner_onboarding_day1_first_wedding"
+    state = storage["users"][0]["planner_onboarding_email"]
+    assert state["first_wedding_sent_at"] is not None
+    assert state.get("first_wedding_skipped_at") is None
+
+
+def test_process_due_emails_skips_day_one_when_wedding_already_exists():
+    user_id = ObjectId()
+    started_at = datetime.now(timezone.utc) - timedelta(days=2)
+    storage = {
+        "users": [
+            {
+                "_id": user_id,
+                "email": "planner@example.com",
+                "role": "wedding_planner",
+                "email_verified": True,
+                "is_active": True,
+                "created_at": started_at,
+                "planner_onboarding_email": {
+                    "status": "active",
+                    "started_at": started_at,
+                    "welcome_sent_at": started_at,
+                },
+            }
+        ],
+        "weddings": [{"_id": "wed_1", "assigned_planner_id": str(user_id)}],
+        "team_members": [],
+        "user_subscriptions": [],
+    }
+    service = build_service(storage)
+
+    result = asyncio.run(service.process_due_emails())
+
+    assert result["sent"] == 0
+    assert result["skipped"] == 1
+    assert service.email_service.sent == []
+    state = storage["users"][0]["planner_onboarding_email"]
+    assert state["first_wedding_skipped_at"] is not None
+    assert state["first_wedding_skip_reason"] == "wedding_already_created"
+
+
+def test_process_due_emails_exits_when_signature_is_active():
+    user_id = ObjectId()
+    started_at = datetime.now(timezone.utc) - timedelta(days=4)
+    storage = {
+        "users": [
+            {
+                "_id": user_id,
+                "email": "planner@example.com",
+                "role": "wedding_planner",
+                "first_name": "Ava",
+                "email_verified": True,
+                "is_active": True,
+                "created_at": started_at,
+                "planner_onboarding_email": {
+                    "status": "active",
+                    "started_at": started_at,
+                    "welcome_sent_at": started_at,
+                },
+            }
+        ],
+        "weddings": [],
+        "team_members": [],
+        "user_subscriptions": [
+            {
+                "_id": "sub_1",
+                "user_id": str(user_id),
+                "status": "active",
+                "plan_snapshot": {"plan_name": "Signature"},
+            }
+        ],
+    }
+    service = build_service(storage)
+
+    result = asyncio.run(service.process_due_emails())
+
+    assert result["sent"] == 1
+    assert result["exited"] == 1
+    sent = service.email_service.sent[0]
+    assert sent["email_type"] == "planner_onboarding_signature_exit"
+    state = storage["users"][0]["planner_onboarding_email"]
+    assert state["status"] == "exited"
+    assert state["exit_reason"] == "upgraded_to_signature"
+
+
+def test_start_sequence_generates_unsubscribe_token_and_footer_link():
+    user_id = ObjectId()
+    storage = {
+        "users": [
+            {
+                "_id": user_id,
+                "email": "planner@example.com",
+                "role": "wedding_planner",
+                "first_name": "Ava",
+                "email_verified": True,
+                "is_active": True,
+                "created_at": datetime.now(timezone.utc),
+            }
+        ],
+        "weddings": [],
+        "team_members": [],
+        "user_subscriptions": [],
+    }
+    service = build_service(storage)
+
+    asyncio.run(service.start_sequence(str(user_id)))
+
+    state = storage["users"][0]["planner_onboarding_email"]
+    assert state["unsubscribe_token"]
+    sent = service.email_service.sent[0]
+    assert "/unsubscribe/planner-onboarding?token=" in sent["html_content"]
+
+
+def test_unsubscribe_by_token_marks_sequence_exited():
+    user_id = ObjectId()
+    unsubscribe_token = "token_1234567890abcdefghijklmnop"
+    started_at = datetime.now(timezone.utc) - timedelta(days=1)
+    storage = {
+        "users": [
+            {
+                "_id": user_id,
+                "email": "planner@example.com",
+                "role": "wedding_planner",
+                "first_name": "Ava",
+                "email_verified": True,
+                "is_active": True,
+                "created_at": started_at,
+                "planner_onboarding_email": {
+                    "status": "active",
+                    "started_at": started_at,
+                    "welcome_sent_at": started_at,
+                    "unsubscribe_token": unsubscribe_token,
+                },
+            }
+        ],
+        "weddings": [],
+        "team_members": [],
+        "user_subscriptions": [],
+    }
+    service = build_service(storage)
+
+    result = asyncio.run(service.unsubscribe_by_token(unsubscribe_token))
+
+    assert result is not None
+    assert result["email"] == "p*****r@example.com"
+    state = storage["users"][0]["planner_onboarding_email"]
+    assert state["status"] == "exited"
+    assert state["exit_reason"] == "explicit_unsubscribe"
+    assert state["unsubscribed_at"] is not None
