@@ -48,6 +48,7 @@ class VendorNotificationService:
     def notification_service(self):
         if self._notification_service is None:
             from app.services.notification_service import NotificationService
+
             self._notification_service = NotificationService()
         return self._notification_service
 
@@ -55,14 +56,19 @@ class VendorNotificationService:
     def email_service(self):
         if self._email_service is None:
             from app.services.email_service_resend import ResendEmailService
+
             self._email_service = ResendEmailService()
         return self._email_service
 
     # ─── Helpers ────────────────────────────────────────────────────
 
     async def _create_notification(
-        self, title: str, message: str, notification_type: str,
-        target_audience: str, priority: str = "medium",
+        self,
+        title: str,
+        message: str,
+        notification_type: str,
+        target_audience: str,
+        priority: str = "medium",
         user_id: Optional[str] = None,
     ) -> None:
         """Delegate to NotificationService (handles in-portal + push + SSE)."""
@@ -83,7 +89,10 @@ class VendorNotificationService:
             logger.warning("NotificationService.create_notification failed: %s", e)
 
     async def _send_email(
-        self, to_email: str, subject: str, html_content: str,
+        self,
+        to_email: str,
+        subject: str,
+        html_content: str,
         email_type: str = "vendor_notification",
     ) -> None:
         """Send email (non-blocking, never raises)."""
@@ -102,8 +111,10 @@ class VendorNotificationService:
 
     @staticmethod
     def _render_vendor_email(
-        title: str, body_html: str,
-        cta_url: str = "", cta_text: str = "",
+        title: str,
+        body_html: str,
+        cta_url: str = "",
+        cta_text: str = "",
     ) -> str:
         """Dark-theme email matching the vendor portal style."""
         cta_block = ""
@@ -140,16 +151,20 @@ class VendorNotificationService:
     # ═══════════════════════════════════════════════════════════════════
 
     async def notify_vendor_campaign_approved(
-        self, vendor_email: str, campaign_name: str,
+        self,
+        vendor_email: str,
+        campaign_name: str,
     ) -> None:
         title = "Campaign Approved"
         message = f'Your campaign "{campaign_name}" has been approved and is now live!'
 
         await asyncio.gather(
             self._create_notification(
-                title=title, message=message,
+                title=title,
+                message=message,
                 notification_type="campaign_approved",
-                target_audience="advertising_vendors", user_id=vendor_email,
+                target_audience="advertising_vendors",
+                user_id=vendor_email,
                 priority="high",
             ),
             self._send_email(
@@ -158,14 +173,17 @@ class VendorNotificationService:
                 html_content=self._render_vendor_email(
                     title=title,
                     body_html=f"<p>{message}</p><p>Your ads are now visible to wedding planners.</p>",
-                    cta_url=f"{_PORTAL_URL}/campaigns", cta_text="View Campaign",
+                    cta_url=f"{_PORTAL_URL}/campaigns",
+                    cta_text="View Campaign",
                 ),
                 email_type="vendor_campaign_approved",
             ),
         )
 
     async def notify_vendor_campaign_rejected(
-        self, vendor_email: str, campaign_name: str,
+        self,
+        vendor_email: str,
+        campaign_name: str,
         reason: Optional[str] = None,
     ) -> None:
         title = "Campaign Rejected"
@@ -176,9 +194,11 @@ class VendorNotificationService:
 
         await asyncio.gather(
             self._create_notification(
-                title=title, message=message,
+                title=title,
+                message=message,
                 notification_type="campaign_rejected",
-                target_audience="advertising_vendors", user_id=vendor_email,
+                target_audience="advertising_vendors",
+                user_id=vendor_email,
                 priority="high",
             ),
             self._send_email(
@@ -187,14 +207,17 @@ class VendorNotificationService:
                 html_content=self._render_vendor_email(
                     title=title,
                     body_html=f'<p>Your campaign "{campaign_name}" was not approved.</p>{reason_html}<p>You can update and resubmit for review.</p>',
-                    cta_url=f"{_PORTAL_URL}/campaigns", cta_text="Edit Campaign",
+                    cta_url=f"{_PORTAL_URL}/campaigns",
+                    cta_text="Edit Campaign",
                 ),
                 email_type="vendor_campaign_rejected",
             ),
         )
 
     async def notify_vendor_campaign_changes_requested(
-        self, vendor_email: str, campaign_name: str,
+        self,
+        vendor_email: str,
+        campaign_name: str,
         notes: Optional[str] = None,
     ) -> None:
         title = "Changes Requested"
@@ -205,9 +228,11 @@ class VendorNotificationService:
 
         await asyncio.gather(
             self._create_notification(
-                title=title, message=message,
+                title=title,
+                message=message,
                 notification_type="campaign_changes_requested",
-                target_audience="advertising_vendors", user_id=vendor_email,
+                target_audience="advertising_vendors",
+                user_id=vendor_email,
                 priority="high",
             ),
             self._send_email(
@@ -216,15 +241,19 @@ class VendorNotificationService:
                 html_content=self._render_vendor_email(
                     title=title,
                     body_html=f'<p>Your campaign "{campaign_name}" needs changes before going live.</p>{notes_html}',
-                    cta_url=f"{_PORTAL_URL}/campaigns", cta_text="Update Campaign",
+                    cta_url=f"{_PORTAL_URL}/campaigns",
+                    cta_text="Update Campaign",
                 ),
                 email_type="vendor_campaign_changes_requested",
             ),
         )
 
     async def notify_vendor_new_lead(
-        self, vendor_email: str, planner_name: str,
-        lead_type: str, campaign_name: str = "",
+        self,
+        vendor_email: str,
+        planner_name: str,
+        lead_type: str,
+        campaign_name: str = "",
     ) -> None:
         if lead_type == "quote_request":
             title = "New Quote Request"
@@ -237,9 +266,11 @@ class VendorNotificationService:
 
         await asyncio.gather(
             self._create_notification(
-                title=title, message=msg,
+                title=title,
+                message=msg,
                 notification_type=f"lead_{lead_type}",
-                target_audience="advertising_vendors", user_id=vendor_email,
+                target_audience="advertising_vendors",
+                user_id=vendor_email,
                 priority="medium",
             ),
             self._send_email(
@@ -248,14 +279,17 @@ class VendorNotificationService:
                 html_content=self._render_vendor_email(
                     title=title,
                     body_html=f"<p>{msg}.</p><p>Check your portal for details.</p>",
-                    cta_url=f"{_PORTAL_URL}/analytics", cta_text="View Leads",
+                    cta_url=f"{_PORTAL_URL}/analytics",
+                    cta_text="View Leads",
                 ),
                 email_type=f"vendor_lead_{lead_type}",
             ),
         )
 
     async def notify_vendor_suspended(
-        self, vendor_email: str, reason: str = "",
+        self,
+        vendor_email: str,
+        reason: str = "",
     ) -> None:
         title = "Account Suspended"
         message = "Your vendor account has been suspended."
@@ -265,9 +299,11 @@ class VendorNotificationService:
 
         await asyncio.gather(
             self._create_notification(
-                title=title, message=message,
+                title=title,
+                message=message,
                 notification_type="vendor_suspended",
-                target_audience="advertising_vendors", user_id=vendor_email,
+                target_audience="advertising_vendors",
+                user_id=vendor_email,
                 priority="urgent",
             ),
             self._send_email(
@@ -287,9 +323,11 @@ class VendorNotificationService:
 
         await asyncio.gather(
             self._create_notification(
-                title=title, message=message,
+                title=title,
+                message=message,
                 notification_type="vendor_reactivated",
-                target_audience="advertising_vendors", user_id=vendor_email,
+                target_audience="advertising_vendors",
+                user_id=vendor_email,
                 priority="high",
             ),
             self._send_email(
@@ -298,24 +336,30 @@ class VendorNotificationService:
                 html_content=self._render_vendor_email(
                     title=title,
                     body_html="<p>Your vendor advertising account has been reactivated.</p><p>Your campaigns remain paused — sign in to resume them.</p>",
-                    cta_url=f"{_PORTAL_URL}/campaigns", cta_text="Go to Portal",
+                    cta_url=f"{_PORTAL_URL}/campaigns",
+                    cta_text="Go to Portal",
                 ),
                 email_type="vendor_account_reactivated",
             ),
         )
 
     async def notify_vendor_budget_exhausted(
-        self, vendor_email: str, campaign_name: str,
-        budget_consumed: float, total_budget: float,
+        self,
+        vendor_email: str,
+        campaign_name: str,
+        budget_consumed: float,
+        total_budget: float,
     ) -> None:
         title = "Campaign Budget Exhausted"
         message = f'Your campaign "{campaign_name}" has been auto-paused — budget ${budget_consumed:.2f} of ${total_budget:.2f} consumed.'
 
         await asyncio.gather(
             self._create_notification(
-                title=title, message=message,
+                title=title,
+                message=message,
                 notification_type="budget_exhausted",
-                target_audience="advertising_vendors", user_id=vendor_email,
+                target_audience="advertising_vendors",
+                user_id=vendor_email,
                 priority="high",
             ),
             self._send_email(
@@ -324,7 +368,8 @@ class VendorNotificationService:
                 html_content=self._render_vendor_email(
                     title=title,
                     body_html=f'<p>Your campaign "{campaign_name}" reached its budget cap and was auto-paused.</p><p><strong>Budget:</strong> ${budget_consumed:.2f} / ${total_budget:.2f}</p><p>Increase your budget or create a new campaign to continue.</p>',
-                    cta_url=f"{_PORTAL_URL}/campaigns", cta_text="Manage Campaign",
+                    cta_url=f"{_PORTAL_URL}/campaigns",
+                    cta_text="Manage Campaign",
                 ),
                 email_type="vendor_budget_exhausted",
             ),
@@ -335,7 +380,9 @@ class VendorNotificationService:
     # ═══════════════════════════════════════════════════════════════════
 
     async def notify_admin_new_vendor_signup(
-        self, business_name: str, vendor_email: str,
+        self,
+        business_name: str,
+        vendor_email: str,
     ) -> None:
         """New vendor signup — in-portal + push already handled by
         vendor_signup_service._notify_admin_new_signup() via NotificationService.
@@ -345,7 +392,10 @@ class VendorNotificationService:
         pass
 
     async def notify_admin_campaign_submitted(
-        self, vendor_name: str, campaign_name: str, campaign_id: str,
+        self,
+        vendor_name: str,
+        campaign_name: str,
+        campaign_id: str,
     ) -> None:
         """Campaign submitted for review → admin in-portal + push."""
         await self._create_notification(
@@ -357,7 +407,10 @@ class VendorNotificationService:
         )
 
     async def notify_admin_fraud_detected(
-        self, signal_type: str, planner_id: str, campaign_id: str,
+        self,
+        signal_type: str,
+        planner_id: str,
+        campaign_id: str,
     ) -> None:
         """Fraud detected → admin in-portal + push."""
         await self._create_notification(

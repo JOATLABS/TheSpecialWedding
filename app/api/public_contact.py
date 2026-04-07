@@ -30,11 +30,17 @@ class ContactSalesResponse(BaseModel):
     email_sent: bool
 
 
-@router.post("/contact", response_model=ContactSalesResponse, status_code=status.HTTP_201_CREATED)
-async def submit_contact_request(payload: ContactSalesRequest, background_tasks: BackgroundTasks) -> ContactSalesResponse:
+@router.post(
+    "/contact", response_model=ContactSalesResponse, status_code=status.HTTP_201_CREATED
+)
+async def submit_contact_request(
+    payload: ContactSalesRequest, background_tasks: BackgroundTasks
+) -> ContactSalesResponse:
     """Capture a sales inquiry, notify the root admin, and queue an email."""
 
-    root_admin_email = os.getenv("ROOT_ADMIN_EMAIL", "thedeveloper@thespecialwedding.io")
+    root_admin_email = os.getenv(
+        "ROOT_ADMIN_EMAIL", "thedeveloper@thespecialwedding.io"
+    )
     if not root_admin_email:
         logger.error("ROOT_ADMIN_EMAIL is not configured; cannot route sales inquiry.")
         raise HTTPException(status_code=500, detail="Sales contact is not configured.")
@@ -65,22 +71,32 @@ async def submit_contact_request(payload: ContactSalesRequest, background_tasks:
         "priority": "high",
     }
 
-    notification_result = await notification_service.create_notification(notification_data, created_by="saas_contact_form")
+    notification_result = await notification_service.create_notification(
+        notification_data, created_by="saas_contact_form"
+    )
 
     email_sent = False
     if getattr(email_service, "configured", False):
         subject = f"Sales inquiry · {payload.name}"
-        company_line = f"<p><strong>Company:</strong> {escape(payload.company)} </p>" if payload.company else ""
-        phone_line = f"<p><strong>Phone:</strong> {escape(payload.phone)} </p>" if payload.phone else ""
+        company_line = (
+            f"<p><strong>Company:</strong> {escape(payload.company)} </p>"
+            if payload.company
+            else ""
+        )
+        phone_line = (
+            f"<p><strong>Phone:</strong> {escape(payload.phone)} </p>"
+            if payload.phone
+            else ""
+        )
         html_content = (
             "<div style=\"font-family: 'Inter', sans-serif; color:#0f172a; line-height:1.6;\">"
-            f"<h2 style=\"margin:0 0 12px;\">New sales inquiry from {escape(payload.name)}</h2>"
+            f'<h2 style="margin:0 0 12px;">New sales inquiry from {escape(payload.name)}</h2>'
             f"<p><strong>Email:</strong> {escape(payload.email)}</p>"
             f"{company_line}"
             f"{phone_line}"
             f"<p><strong>Message</strong></p>"
-            f"<p style=\"white-space:pre-line; background:#f8fafc; padding:12px; border-radius:12px; border:1px solid #e2e8f0;\">{escape(payload.message)}</p>"
-            "<p style=\"margin-top:20px; font-size:13px; color:#475569;\">You can reply directly to this email to continue the conversation.</p>"
+            f'<p style="white-space:pre-line; background:#f8fafc; padding:12px; border-radius:12px; border:1px solid #e2e8f0;">{escape(payload.message)}</p>'
+            '<p style="margin-top:20px; font-size:13px; color:#475569;">You can reply directly to this email to continue the conversation.</p>'
             "</div>"
         )
 
@@ -95,10 +111,14 @@ async def submit_contact_request(payload: ContactSalesRequest, background_tasks:
         )
         email_sent = True
     else:
-        logger.warning("Resend email service not configured; skipping sales inquiry email dispatch.")
+        logger.warning(
+            "Resend email service not configured; skipping sales inquiry email dispatch."
+        )
 
     return ContactSalesResponse(
         message="Thanks! We received your request.",
-        notification_id=notification_result.get("id") if isinstance(notification_result, dict) else None,
+        notification_id=notification_result.get("id")
+        if isinstance(notification_result, dict)
+        else None,
         email_sent=email_sent,
     )

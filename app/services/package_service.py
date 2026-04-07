@@ -4,9 +4,9 @@ Package Service
 CRUD operations for wedding service packages.
 Handles package lifecycle from creation to sending to couples.
 """
+
 from typing import List, Dict, Optional, Any
 from datetime import datetime, timezone
-from decimal import Decimal
 import secrets
 import logging
 from bson import ObjectId
@@ -42,14 +42,18 @@ class PackageService:
         self.scheduled_payments = mongo.db["scheduled_payments"]
 
     @staticmethod
-    def _build_planner_snapshot(planner: Optional[Dict[str, Any]]) -> Dict[str, Optional[str]]:
+    def _build_planner_snapshot(
+        planner: Optional[Dict[str, Any]],
+    ) -> Dict[str, Optional[str]]:
         planner = planner or {}
         planner_name = (
             planner.get("company_name")
             or planner.get("business_name")
             or planner.get("name")
             or " ".join(
-                part for part in [planner.get("first_name"), planner.get("last_name")] if part
+                part
+                for part in [planner.get("first_name"), planner.get("last_name")]
+                if part
             ).strip()
             or planner.get("email")
             or "Your Wedding Planner"
@@ -81,10 +85,7 @@ class PackageService:
             if "total_amount" in package_data:
                 package_data["total_amount"] = float(package_data["total_amount"])
 
-            package = WeddingPackage(
-                planner_id=planner_id,
-                **package_data
-            )
+            package = WeddingPackage(planner_id=planner_id, **package_data)
 
             package_dict = package.model_dump(by_alias=True)
             # Ensure total_amount is float for BSON serialization
@@ -103,9 +104,7 @@ class PackageService:
             raise
 
     async def get_package(
-        self,
-        package_id: str,
-        planner_id: Optional[str] = None
+        self, package_id: str, planner_id: Optional[str] = None
     ) -> Optional[Dict]:
         """
         Get a package by ID.
@@ -135,7 +134,7 @@ class PackageService:
         include_templates: bool = False,
         status: Optional[str] = None,
         limit: int = 50,
-        skip: int = 0
+        skip: int = 0,
     ) -> List[Dict]:
         """
         List packages for a planner.
@@ -159,7 +158,9 @@ class PackageService:
             if status:
                 query["status"] = status
 
-            cursor = self.packages.find(query).sort("updated_at", -1).skip(skip).limit(limit)
+            cursor = (
+                self.packages.find(query).sort("updated_at", -1).skip(skip).limit(limit)
+            )
             packages = await cursor.to_list(length=limit)
 
             return [self._serialize_package(p) for p in packages]
@@ -169,10 +170,7 @@ class PackageService:
             raise
 
     async def update_package(
-        self,
-        package_id: str,
-        planner_id: str,
-        update_data: Dict
+        self, package_id: str, planner_id: str, update_data: Dict
     ) -> Dict:
         """
         Update an existing package.
@@ -187,17 +185,21 @@ class PackageService:
         """
         try:
             # Verify ownership
-            package = await self.packages.find_one({
-                "_id": ObjectId(package_id),
-                "planner_id": planner_id
-            })
+            package = await self.packages.find_one(
+                {"_id": ObjectId(package_id), "planner_id": planner_id}
+            )
 
             if not package:
                 raise ValueError("Package not found or access denied")
 
             # Restrict updates to non-draft packages
             if package.get("status") != "draft":
-                allowed_fields = {"status", "description", "custom_terms", "cancellation_policy"}
+                allowed_fields = {
+                    "status",
+                    "description",
+                    "custom_terms",
+                    "cancellation_policy",
+                }
                 update_keys = set(update_data.keys())
                 if not update_keys.issubset(allowed_fields):
                     raise ValueError(
@@ -211,8 +213,7 @@ class PackageService:
             update_data["updated_at"] = datetime.now(timezone.utc)
 
             await self.packages.update_one(
-                {"_id": ObjectId(package_id)},
-                {"$set": update_data}
+                {"_id": ObjectId(package_id)}, {"$set": update_data}
             )
 
             updated = await self.packages.find_one({"_id": ObjectId(package_id)})
@@ -235,10 +236,9 @@ class PackageService:
             True if deleted
         """
         try:
-            package = await self.packages.find_one({
-                "_id": ObjectId(package_id),
-                "planner_id": planner_id
-            })
+            package = await self.packages.find_one(
+                {"_id": ObjectId(package_id), "planner_id": planner_id}
+            )
 
             if not package:
                 raise ValueError("Package not found or access denied")
@@ -247,9 +247,13 @@ class PackageService:
                 raise ValueError("Only draft packages can be deleted")
 
             # Check for associated contracts
-            contract_count = await self.contracts.count_documents({"package_id": package_id})
+            contract_count = await self.contracts.count_documents(
+                {"package_id": package_id}
+            )
             if contract_count > 0:
-                raise ValueError(f"Cannot delete package with {contract_count} associated contracts")
+                raise ValueError(
+                    f"Cannot delete package with {contract_count} associated contracts"
+                )
 
             await self.packages.delete_one({"_id": ObjectId(package_id)})
             logger.info(f"Deleted package {package_id}")
@@ -264,7 +268,7 @@ class PackageService:
         package_id: str,
         planner_id: str,
         new_name: Optional[str] = None,
-        as_template: bool = True
+        as_template: bool = True,
     ) -> Dict:
         """
         Duplicate a package as a template.
@@ -279,17 +283,17 @@ class PackageService:
             New package dict
         """
         try:
-            package = await self.packages.find_one({
-                "_id": ObjectId(package_id),
-                "planner_id": planner_id
-            })
+            package = await self.packages.find_one(
+                {"_id": ObjectId(package_id), "planner_id": planner_id}
+            )
 
             if not package:
                 raise ValueError("Package not found or access denied")
 
             # Create new package data
             new_package_data = {
-                k: v for k, v in package.items()
+                k: v
+                for k, v in package.items()
                 if k not in ["_id", "created_at", "updated_at", "contracts_count"]
             }
             new_package_data["name"] = new_name or f"{package['name']} (Copy)"
@@ -309,7 +313,7 @@ class PackageService:
         planner_id: str,
         couple_data: Dict,
         wedding_date: Optional[str] = None,
-        wedding_id: Optional[str] = None
+        wedding_id: Optional[str] = None,
     ) -> Dict:
         """
         Send a package to a couple, creating a contract.
@@ -326,10 +330,9 @@ class PackageService:
         """
         try:
             # Get package
-            package = await self.packages.find_one({
-                "_id": ObjectId(package_id),
-                "planner_id": planner_id
-            })
+            package = await self.packages.find_one(
+                {"_id": ObjectId(package_id), "planner_id": planner_id}
+            )
 
             if not package:
                 raise ValueError("Package not found or access denied")
@@ -339,6 +342,7 @@ class PackageService:
 
             # Parse wedding date if provided
             from datetime import date as date_type
+
             parsed_wedding_date = None
             if wedding_date:
                 if isinstance(wedding_date, str):
@@ -352,7 +356,9 @@ class PackageService:
                 if wedding and not parsed_wedding_date and wedding.get("date"):
                     wedding_date_value = wedding.get("date")
                     if isinstance(wedding_date_value, str):
-                        parsed_wedding_date = date_type.fromisoformat(wedding_date_value)
+                        parsed_wedding_date = date_type.fromisoformat(
+                            wedding_date_value
+                        )
                     else:
                         parsed_wedding_date = wedding_date_value
 
@@ -383,7 +389,7 @@ class PackageService:
                 "payment_schedule": build_effective_payment_schedule(package),
                 "cancellation_policy": package.get("cancellation_policy", ""),
                 "late_payment_policy": package.get("late_payment_policy"),
-                "custom_terms": package.get("custom_terms")
+                "custom_terms": package.get("custom_terms"),
             }
 
             # Create contract
@@ -401,7 +407,7 @@ class PackageService:
                 planner_logo=planner_snapshot.get("planner_logo"),
                 package_snapshot=package_snapshot,
                 status="sent",
-                sent_at=datetime.now(timezone.utc)
+                sent_at=datetime.now(timezone.utc),
             )
 
             contract_dict = contract.model_dump(by_alias=True)
@@ -414,18 +420,21 @@ class PackageService:
 
             from app.services.contract_email_service import contract_email_service
 
-            email_sent = await contract_email_service.send_package_contract_email(serialized_contract)
+            email_sent = await contract_email_service.send_package_contract_email(
+                serialized_contract
+            )
             if not email_sent:
                 await self.contracts.delete_one({"_id": result.inserted_id})
                 raise RuntimeError("Failed to send contract email to the couple")
 
             # Increment package contracts count only after email succeeds
             await self.packages.update_one(
-                {"_id": ObjectId(package_id)},
-                {"$inc": {"contracts_count": 1}}
+                {"_id": ObjectId(package_id)}, {"$inc": {"contracts_count": 1}}
             )
 
-            logger.info(f"Created contract for package {package_id} sent to {couple.email}")
+            logger.info(
+                f"Created contract for package {package_id} sent to {couple.email}"
+            )
 
             return serialized_contract
 
@@ -447,9 +456,9 @@ class PackageService:
                     "$group": {
                         "_id": "$status",
                         "count": {"$sum": 1},
-                        "total_contracts": {"$sum": "$contracts_count"}
+                        "total_contracts": {"$sum": "$contracts_count"},
                     }
-                }
+                },
             ]
 
             stats = await self.packages.aggregate(pipeline).to_list(length=None)
@@ -457,7 +466,7 @@ class PackageService:
             return {
                 "by_status": {s["_id"]: s["count"] for s in stats},
                 "total_packages": sum(s["count"] for s in stats),
-                "total_contracts": sum(s["total_contracts"] for s in stats)
+                "total_contracts": sum(s["total_contracts"] for s in stats),
             }
 
         except Exception as e:
@@ -490,13 +499,19 @@ class PackageService:
             serialized["id"] = str(serialized["_id"])
             serialized["_id"] = str(serialized["_id"])
 
-        if "wedding_date" in serialized and serialized["wedding_date"] and hasattr(serialized["wedding_date"], "isoformat"):
+        if (
+            "wedding_date" in serialized
+            and serialized["wedding_date"]
+            and hasattr(serialized["wedding_date"], "isoformat")
+        ):
             serialized["wedding_date"] = serialized["wedding_date"].isoformat()
 
         couple = serialized.get("couple")
         if isinstance(couple, dict):
             partner1 = (couple.get("partner1_name") or couple.get("name") or "").strip()
-            partner2 = (couple.get("partner2_name") or couple.get("partner_name") or "").strip()
+            partner2 = (
+                couple.get("partner2_name") or couple.get("partner_name") or ""
+            ).strip()
             display_name = f"{partner1} & {partner2}" if partner2 else partner1
             normalized_couple = {
                 **couple,
@@ -510,7 +525,9 @@ class PackageService:
 
         return serialized
 
-    async def pause_planner_payment_links(self, planner_id: str, planner_email: str) -> Dict[str, Any]:
+    async def pause_planner_payment_links(
+        self, planner_id: str, planner_email: str
+    ) -> Dict[str, Any]:
         """
         Pause all active payment links AND scheduled payments for a planner
         when their subscription is cancelled.
@@ -545,7 +562,7 @@ class PackageService:
                 {
                     "created_by": planner_email,
                     "status": {"$in": ["draft", "sent", "viewed"]},
-                    "stripe_payment_link_id": {"$exists": True, "$ne": None}
+                    "stripe_payment_link_id": {"$exists": True, "$ne": None},
                 }
             ).to_list(length=10000)
 
@@ -556,39 +573,69 @@ class PackageService:
                     # (Stripe best practice: check state before mutating)
                     try:
                         pl_obj = stripe.PaymentLink.retrieve(stripe_pl_id)
-                        if not pl_obj.get("active", True) if isinstance(pl_obj, dict) else not getattr(pl_obj, "active", True):
-                            logger.info(f"PaymentLink {stripe_pl_id} already inactive, skipping")
+                        if (
+                            not pl_obj.get("active", True)
+                            if isinstance(pl_obj, dict)
+                            else not getattr(pl_obj, "active", True)
+                        ):
+                            logger.info(
+                                f"PaymentLink {stripe_pl_id} already inactive, skipping"
+                            )
                             links_deactivated += 1
                             continue
                     except stripe.error.StripeError as retrieve_err:
-                        logger.warning(f"Could not retrieve PaymentLink {stripe_pl_id}, attempting modify anyway: {retrieve_err}")
+                        logger.warning(
+                            f"Could not retrieve PaymentLink {stripe_pl_id}, attempting modify anyway: {retrieve_err}"
+                        )
 
                     stripe.PaymentLink.modify(stripe_pl_id, active=False)
                     links_deactivated += 1
                     logger.info(f"Deactivated Stripe PaymentLink {stripe_pl_id}")
                 except stripe.error.InvalidRequestError as e:
                     # Link may already be inactive or deleted — log and continue
-                    logger.warning(f"Stripe InvalidRequestError deactivating PaymentLink {stripe_pl_id}: {e}")
-                    errors.append({"payment_link_id": stripe_pl_id, "error": str(e), "recoverable": True})
+                    logger.warning(
+                        f"Stripe InvalidRequestError deactivating PaymentLink {stripe_pl_id}: {e}"
+                    )
+                    errors.append(
+                        {
+                            "payment_link_id": stripe_pl_id,
+                            "error": str(e),
+                            "recoverable": True,
+                        }
+                    )
                 except stripe.error.StripeError as e:
                     error_msg = f"Stripe API error deactivating PaymentLink {stripe_pl_id}: {str(e)}"
                     logger.warning(error_msg)
-                    errors.append({"payment_link_id": stripe_pl_id, "error": str(e), "recoverable": False})
+                    errors.append(
+                        {
+                            "payment_link_id": stripe_pl_id,
+                            "error": str(e),
+                            "recoverable": False,
+                        }
+                    )
                 except Exception as e:
                     error_msg = f"Unexpected error deactivating PaymentLink {stripe_pl_id}: {str(e)}"
                     logger.error(error_msg)
-                    errors.append({"payment_link_id": stripe_pl_id, "error": str(e), "recoverable": False})
+                    errors.append(
+                        {
+                            "payment_link_id": stripe_pl_id,
+                            "error": str(e),
+                            "recoverable": False,
+                        }
+                    )
 
             # Bulk-stamp all matched links as paused
             if active_links:
                 link_ids = [link["_id"] for link in active_links]
                 await payment_links_coll.update_many(
                     {"_id": {"$in": link_ids}},
-                    {"$set": {
-                        "payment_paused_at": now,
-                        "payment_paused_reason": "planner_subscription_cancelled",
-                        "updated_at": now,
-                    }}
+                    {
+                        "$set": {
+                            "payment_paused_at": now,
+                            "payment_paused_reason": "planner_subscription_cancelled",
+                            "updated_at": now,
+                        }
+                    },
                 )
 
             # ── Part 2: Pause scheduled payments (scheduled_payments collection) ──
@@ -598,22 +645,31 @@ class PackageService:
             scheduled_result = await self.scheduled_payments.update_many(
                 {
                     "planner_id": planner_id,
-                    "status": {"$in": ["scheduled", "processing"]}
+                    "status": {"$in": ["scheduled", "processing"]},
                 },
-                {"$set": {
-                    "payment_paused_at": now,
-                    "payment_paused_reason": "planner_subscription_cancelled",
-                }}
+                {
+                    "$set": {
+                        "payment_paused_at": now,
+                        "payment_paused_reason": "planner_subscription_cancelled",
+                    }
+                },
             )
             scheduled_paused = scheduled_result.modified_count
 
             # Gather affected contract IDs for reporting
             if scheduled_paused > 0:
                 paused_docs = await self.scheduled_payments.find(
-                    {"planner_id": planner_id, "payment_paused_reason": "planner_subscription_cancelled"},
-                    {"contract_id": 1}
+                    {
+                        "planner_id": planner_id,
+                        "payment_paused_reason": "planner_subscription_cancelled",
+                    },
+                    {"contract_id": 1},
                 ).to_list(length=10000)
-                contracts_paused = {doc.get("contract_id") for doc in paused_docs if doc.get("contract_id")}
+                contracts_paused = {
+                    doc.get("contract_id")
+                    for doc in paused_docs
+                    if doc.get("contract_id")
+                }
 
             logger.info(
                 f"Paused payments for planner {planner_id}: "
@@ -625,14 +681,16 @@ class PackageService:
                 "payment_links_deactivated": links_deactivated,
                 "scheduled_payments_paused": scheduled_paused,
                 "contracts_paused": len(contracts_paused),
-                "errors": errors
+                "errors": errors,
             }
 
         except Exception as e:
             logger.error(f"Failed to pause planner payment links: {str(e)}")
             raise
 
-    async def resume_planner_payment_links(self, planner_id: str, planner_email: str) -> Dict[str, Any]:
+    async def resume_planner_payment_links(
+        self, planner_id: str, planner_email: str
+    ) -> Dict[str, Any]:
         """
         Resume all paused payment links AND scheduled payments for a planner
         when their subscription is reactivated.
@@ -660,7 +718,7 @@ class PackageService:
                 {
                     "created_by": planner_email,
                     "payment_paused_reason": "planner_subscription_cancelled",
-                    "stripe_payment_link_id": {"$exists": True, "$ne": None}
+                    "stripe_payment_link_id": {"$exists": True, "$ne": None},
                 }
             ).to_list(length=10000)
 
@@ -670,27 +728,55 @@ class PackageService:
                     # Retrieve current state to avoid modifying already-active links
                     try:
                         pl_obj = stripe.PaymentLink.retrieve(stripe_pl_id)
-                        if pl_obj.get("active", False) if isinstance(pl_obj, dict) else getattr(pl_obj, "active", False):
-                            logger.info(f"PaymentLink {stripe_pl_id} already active, skipping")
+                        if (
+                            pl_obj.get("active", False)
+                            if isinstance(pl_obj, dict)
+                            else getattr(pl_obj, "active", False)
+                        ):
+                            logger.info(
+                                f"PaymentLink {stripe_pl_id} already active, skipping"
+                            )
                             links_reactivated += 1
                             continue
                     except stripe.error.StripeError as retrieve_err:
-                        logger.warning(f"Could not retrieve PaymentLink {stripe_pl_id}, attempting modify anyway: {retrieve_err}")
+                        logger.warning(
+                            f"Could not retrieve PaymentLink {stripe_pl_id}, attempting modify anyway: {retrieve_err}"
+                        )
 
                     stripe.PaymentLink.modify(stripe_pl_id, active=True)
                     links_reactivated += 1
                     logger.info(f"Reactivated Stripe PaymentLink {stripe_pl_id}")
                 except stripe.error.InvalidRequestError as e:
-                    logger.warning(f"Stripe InvalidRequestError reactivating PaymentLink {stripe_pl_id}: {e}")
-                    errors.append({"payment_link_id": stripe_pl_id, "error": str(e), "recoverable": True})
+                    logger.warning(
+                        f"Stripe InvalidRequestError reactivating PaymentLink {stripe_pl_id}: {e}"
+                    )
+                    errors.append(
+                        {
+                            "payment_link_id": stripe_pl_id,
+                            "error": str(e),
+                            "recoverable": True,
+                        }
+                    )
                 except stripe.error.StripeError as e:
                     error_msg = f"Stripe API error reactivating PaymentLink {stripe_pl_id}: {str(e)}"
                     logger.warning(error_msg)
-                    errors.append({"payment_link_id": stripe_pl_id, "error": str(e), "recoverable": False})
+                    errors.append(
+                        {
+                            "payment_link_id": stripe_pl_id,
+                            "error": str(e),
+                            "recoverable": False,
+                        }
+                    )
                 except Exception as e:
                     error_msg = f"Unexpected error reactivating PaymentLink {stripe_pl_id}: {str(e)}"
                     logger.error(error_msg)
-                    errors.append({"payment_link_id": stripe_pl_id, "error": str(e), "recoverable": False})
+                    errors.append(
+                        {
+                            "payment_link_id": stripe_pl_id,
+                            "error": str(e),
+                            "recoverable": False,
+                        }
+                    )
 
             # Clear pause fields from payment links
             if paused_links:
@@ -698,9 +784,12 @@ class PackageService:
                 await payment_links_coll.update_many(
                     {"_id": {"$in": link_ids}},
                     {
-                        "$unset": {"payment_paused_at": "", "payment_paused_reason": ""},
-                        "$set": {"updated_at": now}
-                    }
+                        "$unset": {
+                            "payment_paused_at": "",
+                            "payment_paused_reason": "",
+                        },
+                        "$set": {"updated_at": now},
+                    },
                 )
 
             # ── Part 2: Resume scheduled payments ──
@@ -711,7 +800,7 @@ class PackageService:
                 },
                 {
                     "$unset": {"payment_paused_at": "", "payment_paused_reason": ""},
-                }
+                },
             )
             scheduled_resumed = scheduled_result.modified_count
 
@@ -723,7 +812,7 @@ class PackageService:
             return {
                 "payment_links_reactivated": links_reactivated,
                 "scheduled_payments_resumed": scheduled_resumed,
-                "errors": errors
+                "errors": errors,
             }
 
         except Exception as e:

@@ -44,7 +44,9 @@ def sanitize_phone(phone: Optional[str]) -> Optional[str]:
     return f"+{digits_only}" if has_plus else digits_only
 
 
-def normalize_phone_e164(phone: Optional[str], default_country_code: str = "1") -> Optional[str]:
+def normalize_phone_e164(
+    phone: Optional[str], default_country_code: str = "1"
+) -> Optional[str]:
     """
     Sanitize and normalize a phone number to E.164 format for Twilio/Telnyx.
 
@@ -109,5 +111,5 @@ def validate_email_format(email: str) -> bool:
     if not email:
         return False
 
-    pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
+    pattern = r"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$"
     return bool(re.match(pattern, email))

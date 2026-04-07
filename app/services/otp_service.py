@@ -43,7 +43,9 @@ class OTPService:
             return None
 
         guest_response = guest.copy()
-        guest_response["id"] = str(guest_response.get("_id") or guest_response.get("id"))
+        guest_response["id"] = str(
+            guest_response.get("_id") or guest_response.get("id")
+        )
         guest_response.pop("_id", None)
         guest_response.pop("token", None)
         return guest_response
@@ -53,8 +55,7 @@ class OTPService:
         if not OTPService._indexes_initialized:
             try:
                 await self.otp_collection.create_index(
-                    [("expires_at", ASCENDING)],
-                    expireAfterSeconds=0
+                    [("expires_at", ASCENDING)], expireAfterSeconds=0
                 )
                 OTPService._indexes_initialized = True
                 logger.info("OTP TTL index created successfully")
@@ -73,7 +74,9 @@ class OTPService:
 
         # Delete any existing OTP for this guest first
         delete_result = await otp_collection.delete_many({"guest_id": guest_id})
-        logger.info(f"Deleted {delete_result.deleted_count} existing OTP(s) for guest_id: {guest_id}")
+        logger.info(
+            f"Deleted {delete_result.deleted_count} existing OTP(s) for guest_id: {guest_id}"
+        )
 
         # Insert new OTP document with contact_type for auth method tracking
         otp_doc = {
@@ -81,19 +84,25 @@ class OTPService:
             "otp": otp,
             "contact_type": contact_type,
             "expires_at": expires_at,
-            "created_at": datetime.now(timezone.utc)
+            "created_at": datetime.now(timezone.utc),
         }
         insert_result = await otp_collection.insert_one(otp_doc)
 
         if not insert_result.inserted_id:
-            raise Exception(f"Failed to insert OTP to database for guest_id: {guest_id}")
+            raise Exception(
+                f"Failed to insert OTP to database for guest_id: {guest_id}"
+            )
 
         # Verify by reading back
         saved_doc = await otp_collection.find_one({"_id": insert_result.inserted_id})
         if not saved_doc:
-            raise Exception(f"OTP inserted but cannot be read back for guest_id: {guest_id}")
+            raise Exception(
+                f"OTP inserted but cannot be read back for guest_id: {guest_id}"
+            )
 
-        logger.info(f"OTP saved successfully for guest_id: {guest_id}, doc_id: {insert_result.inserted_id}")
+        logger.info(
+            f"OTP saved successfully for guest_id: {guest_id}, doc_id: {insert_result.inserted_id}"
+        )
         return otp
 
     async def send_otp(self, guest_id: str) -> dict:
@@ -111,7 +120,11 @@ class OTPService:
         """
         if not ObjectId.is_valid(guest_id):
             logger.warning(f"Invalid ObjectId format: {guest_id}")
-            return {"success": False, "error": "Invalid guest ID format", "error_code": "invalid_input"}
+            return {
+                "success": False,
+                "error": "Invalid guest ID format",
+                "error_code": "invalid_input",
+            }
 
         # Ensure TTL index exists
         await self._ensure_indexes()
@@ -128,21 +141,31 @@ class OTPService:
                     logger.debug(f"Deleted expired OTP for guest_id: {guest_id}")
                 # Rate limit using settings.rate_limit_auth_period (default 60 seconds)
                 elif created_at:
-                    seconds_since_created = (datetime.now(timezone.utc) - created_at).total_seconds()
+                    seconds_since_created = (
+                        datetime.now(timezone.utc) - created_at
+                    ).total_seconds()
                     if seconds_since_created < settings.rate_limit_auth_period:
-                        remaining = int(settings.rate_limit_auth_period - seconds_since_created)
-                        logger.info(f"Rate limited OTP request for guest_id: {guest_id} (sent {seconds_since_created:.0f}s ago)")
+                        remaining = int(
+                            settings.rate_limit_auth_period - seconds_since_created
+                        )
+                        logger.info(
+                            f"Rate limited OTP request for guest_id: {guest_id} (sent {seconds_since_created:.0f}s ago)"
+                        )
                         return {
                             "success": False,
                             "error": f"Please wait {remaining} seconds before requesting another code",
                             "error_code": "rate_limited",
-                            "retry_after": remaining
+                            "retry_after": remaining,
                         }
 
         guest = await self.guest_collection.find_one({"_id": ObjectId(guest_id)})
         if not guest:
             logger.warning(f"Guest not found for guest_id: {guest_id}")
-            return {"success": False, "error": "Guest not found", "error_code": "guest_not_found"}
+            return {
+                "success": False,
+                "error": "Guest not found",
+                "error_code": "guest_not_found",
+            }
 
         # Check available contact methods
         has_phone = guest.get("phone") and guest.get("phone").strip()
@@ -153,7 +176,7 @@ class OTPService:
             return {
                 "success": False,
                 "error": "No contact method on file. Please contact the wedding planner.",
-                "error_code": "no_contact"
+                "error_code": "no_contact",
             }
 
         # Determine primary contact method for OTP record
@@ -163,7 +186,11 @@ class OTPService:
             otp = await self.generate_otp(guest_id, contact_type=primary_contact_type)
         except Exception as e:
             logger.error(f"Failed to save OTP for guest_id {guest_id}: {str(e)}")
-            return {"success": False, "error": "Failed to generate verification code. Please try again.", "error_code": "generation_failed"}
+            return {
+                "success": False,
+                "error": "Failed to generate verification code. Please try again.",
+                "error_code": "generation_failed",
+            }
 
         # Try phone first (preferred method)
         sms_error_code = None
@@ -171,21 +198,30 @@ class OTPService:
             message = f"Your verification code is: {otp}"
             result = self.twilio_service._send_sms(guest["phone"], message)
             status = result.get("status") if isinstance(result, dict) else result
-            sms_error_code = result.get("error_code") if isinstance(result, dict) else None
+            sms_error_code = (
+                result.get("error_code") if isinstance(result, dict) else None
+            )
 
             if status == "success":
-                return {"success": True, "contact_type": "phone", "fallback_used": False}
+                return {
+                    "success": True,
+                    "contact_type": "phone",
+                    "fallback_used": False,
+                }
             else:
-                logger.error(f"Failed to send OTP SMS to guest_id {guest_id}: {status} (error_code: {sms_error_code})")
+                logger.error(
+                    f"Failed to send OTP SMS to guest_id {guest_id}: {status} (error_code: {sms_error_code})"
+                )
 
                 # If SMS fails and we have email, try email fallback
                 if has_email:
-                    logger.info(f"SMS failed ({sms_error_code}), attempting email fallback for guest_id: {guest_id}")
+                    logger.info(
+                        f"SMS failed ({sms_error_code}), attempting email fallback for guest_id: {guest_id}"
+                    )
                     # Update OTP record with correct contact_type for fallback
                     otp_collection = mongo.db["otps"]
                     await otp_collection.update_one(
-                        {"guest_id": guest_id},
-                        {"$set": {"contact_type": "email"}}
+                        {"guest_id": guest_id}, {"$set": {"contact_type": "email"}}
                     )
                 else:
                     # No email fallback — return specific error based on SMS failure type
@@ -194,17 +230,22 @@ class OTPService:
                         "success": False,
                         "error": user_error,
                         "error_code": sms_error_code or "sms_failed",
-                        "retry_after": 30 if sms_error_code in ("rate_limited", "daily_limit", "service_unavailable") else None
+                        "retry_after": 30
+                        if sms_error_code
+                        in ("rate_limited", "daily_limit", "service_unavailable")
+                        else None,
                     }
 
         # Send via email (either as primary or fallback)
         if has_email:
-            html_content = self._generate_otp_email_html(otp, guest.get("name", "Guest"))
+            html_content = self._generate_otp_email_html(
+                otp, guest.get("name", "Guest")
+            )
             result = await self.email_service.send_email(
                 to_email=guest["email"],
                 subject="Your RSVP Verification Code",
                 html_content=html_content,
-                email_type="otp"
+                email_type="otp",
             )
             if result.get("success"):
                 fallback_used = has_phone and sms_error_code is not None
@@ -212,20 +253,22 @@ class OTPService:
                     "success": True,
                     "contact_type": "email",
                     "fallback_used": fallback_used,
-                    "sms_error_code": sms_error_code if fallback_used else None
+                    "sms_error_code": sms_error_code if fallback_used else None,
                 }
             else:
-                logger.error(f"Failed to send OTP email to guest_id {guest_id}: {result.get('error')}")
+                logger.error(
+                    f"Failed to send OTP email to guest_id {guest_id}: {result.get('error')}"
+                )
                 return {
                     "success": False,
                     "error": "We couldn't send your verification code by text or email. Please try again in a few minutes, or contact the wedding planner for help.",
-                    "error_code": "all_channels_failed"
+                    "error_code": "all_channels_failed",
                 }
 
         return {
             "success": False,
             "error": "We couldn't send your verification code. Please try again in a few minutes.",
-            "error_code": "send_failed"
+            "error_code": "send_failed",
         }
 
     @staticmethod
@@ -241,7 +284,10 @@ class OTPService:
             "not_configured": "Text messaging is not set up yet. Please contact the wedding planner for help.",
             "auth_error": "There's a configuration issue with our text service. The wedding planner has been notified.",
         }
-        return messages.get(error_code, "We couldn't send your verification code. Please try again in a few minutes.")
+        return messages.get(
+            error_code,
+            "We couldn't send your verification code. Please try again in a few minutes.",
+        )
 
     async def verify_otp(self, wedding_id: str, contact: str, otp_code: str) -> dict:
         """
@@ -250,49 +296,61 @@ class OTPService:
         """
         # Normalize phone number for comparison
         normalized_contact = contact.strip()
-        if normalized_contact.startswith('+'):
+        if normalized_contact.startswith("+"):
             # Also try without the + prefix
             contact_variants = [normalized_contact, normalized_contact[1:]]
             # Try with and without country code
-            if normalized_contact.startswith('+1'):
+            if normalized_contact.startswith("+1"):
                 contact_variants.append(normalized_contact[2:])
         else:
-            contact_variants = [normalized_contact, f'+{normalized_contact}', f'+1{normalized_contact}']
+            contact_variants = [
+                normalized_contact,
+                f"+{normalized_contact}",
+                f"+1{normalized_contact}",
+            ]
 
         # Find guest by contact (phone or email) and wedding_id
-        guest = await self.guest_collection.find_one({
-            "wedding_id": wedding_id,
-            "$or": [
-                {"phone": {"$in": contact_variants}},
-                {"email": normalized_contact}
-            ]
-        })
+        guest = await self.guest_collection.find_one(
+            {
+                "wedding_id": wedding_id,
+                "$or": [
+                    {"phone": {"$in": contact_variants}},
+                    {"email": normalized_contact},
+                ],
+            }
+        )
 
         if not guest:
-            logger.warning(f"Guest not found for contact: {contact} in wedding: {wedding_id}")
+            logger.warning(
+                f"Guest not found for contact: {contact} in wedding: {wedding_id}"
+            )
             return {"success": False, "error": "Guest not found"}
 
         guest_id = str(guest["_id"])
 
         # Verify OTP code (strip whitespace from input)
         otp_clean = otp_code.strip()
-        record = await self.otp_collection.find_one({
-            "guest_id": guest_id,
-            "otp": otp_clean,
-            "expires_at": {"$gt": datetime.now(timezone.utc)}
-        })
+        record = await self.otp_collection.find_one(
+            {
+                "guest_id": guest_id,
+                "otp": otp_clean,
+                "expires_at": {"$gt": datetime.now(timezone.utc)},
+            }
+        )
 
         if record:
             # OTP is valid, delete it
             await self.otp_collection.delete_one({"_id": record["_id"]})
 
             # Determine auth method
-            auth_method = "phone_otp" if guest.get("phone") in contact_variants else "email_otp"
+            auth_method = (
+                "phone_otp" if guest.get("phone") in contact_variants else "email_otp"
+            )
 
             return {
                 "success": True,
                 "guest": self._serialize_guest_response(guest),
-                "auth_method": auth_method
+                "auth_method": auth_method,
             }
 
         logger.warning(f"Invalid or expired OTP for guest: {guest_id}")
@@ -318,20 +376,26 @@ class OTPService:
         # First check if ANY OTP exists for this guest (for debugging)
         any_record = await otp_collection.find_one({"guest_id": guest_id})
         if any_record:
-            logger.info(f"Found OTP record for guest_id {guest_id}: otp={any_record.get('otp')}, expires_at={any_record.get('expires_at')}")
+            logger.info(
+                f"Found OTP record for guest_id {guest_id}: otp={any_record.get('otp')}, expires_at={any_record.get('expires_at')}"
+            )
         else:
             logger.warning(f"No OTP record found for guest_id: {guest_id}")
             return {"success": False, "error": "Invalid or expired OTP"}
 
         # Find valid OTP record
-        record = await otp_collection.find_one({
-            "guest_id": guest_id,
-            "otp": otp_clean,
-            "expires_at": {"$gt": datetime.now(timezone.utc)}
-        })
+        record = await otp_collection.find_one(
+            {
+                "guest_id": guest_id,
+                "otp": otp_clean,
+                "expires_at": {"$gt": datetime.now(timezone.utc)},
+            }
+        )
 
         if not record:
-            logger.warning(f"OTP verification failed for guest_id: {guest_id}, otp_provided: {otp_clean}")
+            logger.warning(
+                f"OTP verification failed for guest_id: {guest_id}, otp_provided: {otp_clean}"
+            )
             return {"success": False, "error": "Invalid or expired OTP"}
 
         # OTP is valid - delete it
@@ -351,7 +415,7 @@ class OTPService:
         return {
             "success": True,
             "guest": self._serialize_guest_response(guest),
-            "auth_method": auth_method
+            "auth_method": auth_method,
         }
 
     async def send_otp_by_contact(self, wedding_id: str, contact: str) -> dict:
@@ -363,24 +427,32 @@ class OTPService:
         """
         # Normalize phone number for comparison
         normalized_contact = contact.strip()
-        if normalized_contact.startswith('+'):
+        if normalized_contact.startswith("+"):
             contact_variants = [normalized_contact, normalized_contact[1:]]
-            if normalized_contact.startswith('+1'):
+            if normalized_contact.startswith("+1"):
                 contact_variants.append(normalized_contact[2:])
         else:
-            contact_variants = [normalized_contact, f'+{normalized_contact}', f'+1{normalized_contact}']
+            contact_variants = [
+                normalized_contact,
+                f"+{normalized_contact}",
+                f"+1{normalized_contact}",
+            ]
 
         # Find guest by contact (phone or email) and wedding_id
-        guest = await self.guest_collection.find_one({
-            "wedding_id": wedding_id,
-            "$or": [
-                {"phone": {"$in": contact_variants}},
-                {"email": normalized_contact}
-            ]
-        })
+        guest = await self.guest_collection.find_one(
+            {
+                "wedding_id": wedding_id,
+                "$or": [
+                    {"phone": {"$in": contact_variants}},
+                    {"email": normalized_contact},
+                ],
+            }
+        )
 
         if not guest:
-            logger.warning(f"Guest not found for contact: {contact} in wedding: {wedding_id}")
+            logger.warning(
+                f"Guest not found for contact: {contact} in wedding: {wedding_id}"
+            )
             return {"success": False, "error": "Guest not found for this wedding"}
 
         guest_id = str(guest["_id"])
@@ -400,15 +472,21 @@ class OTPService:
                     logger.debug(f"Deleted expired OTP for guest_id: {guest_id}")
                 # Rate limit using settings.rate_limit_auth_period (default 60 seconds)
                 elif created_at:
-                    seconds_since_created = (datetime.now(timezone.utc) - created_at).total_seconds()
+                    seconds_since_created = (
+                        datetime.now(timezone.utc) - created_at
+                    ).total_seconds()
                     if seconds_since_created < settings.rate_limit_auth_period:
-                        remaining = int(settings.rate_limit_auth_period - seconds_since_created)
-                        logger.info(f"Rate limited OTP request for guest_id: {guest_id} (sent {seconds_since_created:.0f}s ago)")
+                        remaining = int(
+                            settings.rate_limit_auth_period - seconds_since_created
+                        )
+                        logger.info(
+                            f"Rate limited OTP request for guest_id: {guest_id} (sent {seconds_since_created:.0f}s ago)"
+                        )
                         return {
                             "success": False,
                             "error": f"Please wait {remaining} seconds before requesting another code",
                             "error_code": "rate_limited",
-                            "retry_after": remaining
+                            "retry_after": remaining,
                         }
 
         # Determine contact type for OTP record
@@ -425,37 +503,51 @@ class OTPService:
         if is_phone_contact:
             # Send via SMS
             phone = guest.get("phone")
-            if not phone.startswith('+'):
+            if not phone.startswith("+"):
                 phone = f"+1{phone}"
 
             result = self.twilio_service._send_sms(phone, message)
             status = result.get("status") if isinstance(result, dict) else result
-            sms_error_code = result.get("error_code") if isinstance(result, dict) else None
+            sms_error_code = (
+                result.get("error_code") if isinstance(result, dict) else None
+            )
             if status == "success":
-                return {"success": True, "contact_type": "phone", "fallback_used": False}
+                return {
+                    "success": True,
+                    "contact_type": "phone",
+                    "fallback_used": False,
+                }
             else:
                 user_error = self._get_user_friendly_sms_error(sms_error_code)
                 return {
                     "success": False,
                     "error": user_error,
                     "error_code": sms_error_code or "sms_failed",
-                    "retry_after": 30 if sms_error_code in ("rate_limited", "daily_limit", "service_unavailable") else None
+                    "retry_after": 30
+                    if sms_error_code
+                    in ("rate_limited", "daily_limit", "service_unavailable")
+                    else None,
                 }
 
         elif guest.get("email") == normalized_contact:
             # Send via email
-            html_content = self._generate_otp_email_html(otp, guest.get("name", "Guest"))
+            html_content = self._generate_otp_email_html(
+                otp, guest.get("name", "Guest")
+            )
             result = await self.email_service.send_email(
                 to_email=normalized_contact,
                 subject="Your RSVP Verification Code",
                 html_content=html_content,
-                email_type="otp"
+                email_type="otp",
             )
             if result.get("success"):
                 return {"success": True, "contact_type": "email"}
             else:
                 logger.error(f"Failed to send OTP email: {result.get('error')}")
-                return {"success": False, "error": f"Failed to send email: {result.get('error')}"}
+                return {
+                    "success": False,
+                    "error": f"Failed to send email: {result.get('error')}",
+                }
 
         return {"success": False, "error": "No valid contact method found"}
 

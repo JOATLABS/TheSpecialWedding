@@ -17,9 +17,9 @@ Auth: wedding_planner role or root admin.
 """
 
 import logging
-from typing import Any, Dict, List, Optional
+from typing import Optional
 
-from fastapi import APIRouter, Body, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 
 from app.dependencies.auth_extended import (
@@ -38,6 +38,7 @@ router = APIRouter(prefix="/planner/ads", tags=["Planner Ad Interactions"])
 # REQUEST / RESPONSE MODELS
 # ═════════════════════════════════════════════════════════════════════════
 
+
 class AddToDirectoryRequest(BaseModel):
     campaign_id: str = Field(..., description="Campaign to add from")
     click_id: Optional[str] = Field(None, description="Attribution click ID")
@@ -53,21 +54,32 @@ class WeddingContext(BaseModel):
 
 class RequestQuoteRequest(BaseModel):
     campaign_id: str = Field(..., description="Campaign to request quote from")
-    message: str = Field(..., min_length=1, max_length=2000, description="Quote request message")
-    wedding_id: Optional[str] = Field(None, description="Wedding to associate quote with")
-    wedding_context: Optional[WeddingContext] = Field(None, description="Wedding details for context")
+    message: str = Field(
+        ..., min_length=1, max_length=2000, description="Quote request message"
+    )
+    wedding_id: Optional[str] = Field(
+        None, description="Wedding to associate quote with"
+    )
+    wedding_context: Optional[WeddingContext] = Field(
+        None, description="Wedding details for context"
+    )
     click_id: Optional[str] = Field(None, description="Attribution click ID")
-    auto_add_to_directory: bool = Field(True, description="Auto-add vendor to directory")
+    auto_add_to_directory: bool = Field(
+        True, description="Auto-add vendor to directory"
+    )
 
 
 class DraftQuoteRequest(BaseModel):
     campaign_id: str = Field(..., description="Campaign to draft quote for")
-    wedding_context: Optional[WeddingContext] = Field(None, description="Wedding details for context")
+    wedding_context: Optional[WeddingContext] = Field(
+        None, description="Wedding details for context"
+    )
 
 
 # ═════════════════════════════════════════════════════════════════════════
 # DEPENDENCY INJECTION
 # ═════════════════════════════════════════════════════════════════════════
+
 
 def get_planner_ad_interaction_service() -> PlannerAdInteractionService:
     """Get planner ad interaction service instance."""
@@ -75,6 +87,7 @@ def get_planner_ad_interaction_service() -> PlannerAdInteractionService:
     email_service = None
     try:
         from app.services.email_service_resend import ResendEmailService
+
         email_service = ResendEmailService(mongo.db)
     except Exception:
         logger.warning("Email service unavailable; quote emails will be skipped")
@@ -84,6 +97,7 @@ def get_planner_ad_interaction_service() -> PlannerAdInteractionService:
     try:
         from app.services.ad_billing_service import AdBillingService
         from app.services.stripe_service import StripeService
+
         stripe_svc = StripeService(mongo.db)
         billing_service = AdBillingService(mongo.db, stripe_service=stripe_svc)
     except Exception:
@@ -93,17 +107,23 @@ def get_planner_ad_interaction_service() -> PlannerAdInteractionService:
     fraud_detection_service = None
     try:
         from app.services.ad_fraud_detection_service import AdFraudDetectionService
+
         fraud_detection_service = AdFraudDetectionService(mongo.db)
     except Exception:
-        logger.warning("Fraud detection service unavailable; fraud checks will be skipped")
+        logger.warning(
+            "Fraud detection service unavailable; fraud checks will be skipped"
+        )
 
     # Auction service — bid-based ranking for sponsored cards
     auction_service = None
     try:
         from app.services.ad_auction_service import AdAuctionService
+
         auction_service = AdAuctionService(mongo.db)
     except Exception:
-        logger.warning("Auction service unavailable; falling back to quality_score sort")
+        logger.warning(
+            "Auction service unavailable; falling back to quality_score sort"
+        )
 
     return PlannerAdInteractionService(
         mongo.db,
@@ -135,6 +155,7 @@ async def require_ads_enabled() -> bool:
     """
     try:
         from app.services.ad_platform_config_service import AdPlatformConfigService
+
         config_service = AdPlatformConfigService(mongo.db)
         config = await config_service.get_config()  # uses TTL cache
         if not config.get("ads_enabled", True):
@@ -175,10 +196,13 @@ def _get_planner_name(user: ExtendedAuthUser) -> str:
 # ENDPOINTS
 # ═════════════════════════════════════════════════════════════════════════
 
+
 @router.get("/sponsored-cards")
 async def get_sponsored_cards(
     location: Optional[str] = Query(None, description="Planner location for targeting"),
-    categories: Optional[str] = Query(None, description="Comma-separated vendor categories"),
+    categories: Optional[str] = Query(
+        None, description="Comma-separated vendor categories"
+    ),
     limit: int = Query(3, ge=1, le=10, description="Max cards to return"),
     current_user: ExtendedAuthUser = Depends(require_planner_or_admin),
     service: PlannerAdInteractionService = Depends(get_planner_ad_interaction_service),
@@ -346,7 +370,11 @@ async def draft_quote(
 
     # Call AI service
     try:
-        from app.services.ai_service import ai_service, AIGenerationError, InsufficientCreditsError
+        from app.services.ai_service import (
+            ai_service,
+            AIGenerationError,
+            InsufficientCreditsError,
+        )
         import json
 
         result = await ai_service.generate(

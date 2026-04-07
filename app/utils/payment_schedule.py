@@ -3,7 +3,9 @@ from __future__ import annotations
 from typing import Any, Dict, List
 
 
-def build_effective_payment_schedule(package_snapshot: Dict[str, Any] | None) -> List[Dict[str, Any]]:
+def build_effective_payment_schedule(
+    package_snapshot: Dict[str, Any] | None,
+) -> List[Dict[str, Any]]:
     """Return the schedule couples should see and contracts should execute.
 
     An empty schedule does not mean "no payment" for a paid package. It means
@@ -19,8 +21,10 @@ def build_effective_payment_schedule(package_snapshot: Dict[str, Any] | None) ->
     if total_amount <= 0:
         return []
 
-    return [{
-        "name": "Full Payment",
-        "trigger": "on_signing",
-        "amount": total_amount,
-    }]
+    return [
+        {
+            "name": "Full Payment",
+            "trigger": "on_signing",
+            "amount": total_amount,
+        }
+    ]

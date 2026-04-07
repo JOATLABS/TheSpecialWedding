@@ -12,10 +12,12 @@ import logging
 
 logger = logging.getLogger(__name__)
 
+
 class RateLimitMiddleware(BaseHTTPMiddleware):
     """
     Rate limiting middleware using Redis (preferred) or sliding window algorithm (fallback)
     """
+
     def __init__(
         self,
         app,
@@ -69,10 +71,26 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         normalized_path = self._normalize_path(path)
 
         exact_auth_limits = {
-            "/admin/token/refresh": ("admin_token_refresh", max(self.auth_calls * 2, 20), 60),
-            "/admin/token": ("admin_login_identity", self.login_principal_calls, self.login_period),
-            "/admin/login": ("admin_login_page", self.login_ip_calls, self.login_period),
-            "/couple/login": ("couple_login_identity", self.login_principal_calls, self.login_period),
+            "/admin/token/refresh": (
+                "admin_token_refresh",
+                max(self.auth_calls * 2, 20),
+                60,
+            ),
+            "/admin/token": (
+                "admin_login_identity",
+                self.login_principal_calls,
+                self.login_period,
+            ),
+            "/admin/login": (
+                "admin_login_page",
+                self.login_ip_calls,
+                self.login_period,
+            ),
+            "/couple/login": (
+                "couple_login_identity",
+                self.login_principal_calls,
+                self.login_period,
+            ),
             "/couple/setup-password": ("couple_setup_password", 5, 60),
             "/public/register": ("public_register", 3, 60),
             "/api/v1/vendors/signup": ("vendor_signup", 3, 60),
@@ -82,8 +100,16 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
             "/couple/forgot-password": ("password_reset", 3, 60),
             "/verify-email": ("verify_email", self.auth_calls, self.auth_period),
             "/setup/complete": ("setup_complete", self.auth_calls, self.auth_period),
-            "/weddings/verify-guest-access": ("guest_access", self.auth_calls, self.auth_period),
-            "/api/v1/vendors/change-password": ("vendor_change_password", self.auth_calls, self.auth_period),
+            "/weddings/verify-guest-access": (
+                "guest_access",
+                self.auth_calls,
+                self.auth_period,
+            ),
+            "/api/v1/vendors/change-password": (
+                "vendor_change_password",
+                self.auth_calls,
+                self.auth_period,
+            ),
         }
 
         if normalized_path in exact_auth_limits:
@@ -93,13 +119,31 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         prefix_limits = (
             # Dynamic guest verification paths must not fall through into the
             # generic API bucket or they will compete with unrelated traffic.
-            ("/weddings/verify-guest-access/", "guest_access", self.auth_calls, self.auth_period, True),
+            (
+                "/weddings/verify-guest-access/",
+                "guest_access",
+                self.auth_calls,
+                self.auth_period,
+                True,
+            ),
             # Separate public wedding metadata and gallery reads from
             # authenticated planner/couple APIs so guest traffic cannot starve
             # internal dashboards behind the same source IP.
-            ("/weddings/privacy-info/", "public_wedding_metadata", self.calls, self.period, False),
+            (
+                "/weddings/privacy-info/",
+                "public_wedding_metadata",
+                self.calls,
+                self.period,
+                False,
+            ),
             ("/gallery", "public_gallery", self.calls, self.period, False),
-            ("/weddings/guest-access/", "guest_access_session", self.calls, self.period, False),
+            (
+                "/weddings/guest-access/",
+                "guest_access_session",
+                self.calls,
+                self.period,
+                False,
+            ),
             ("/admin/", "admin_api", self.calls, self.period, False),
             ("/couple/", "couple_api", self.calls, self.period, False),
         )
@@ -113,11 +157,17 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
 
         return "api", self.calls, self.period, False
 
-    def _get_additional_rate_limit_configs(self, path: str) -> list[tuple[str, int, int, bool]]:
+    def _get_additional_rate_limit_configs(
+        self, path: str
+    ) -> list[tuple[str, int, int, bool]]:
         normalized_path = self._normalize_path(path)
         login_ip_limits = {
-            "/admin/token": [("admin_login_ip", self.login_ip_calls, self.login_period, True)],
-            "/couple/login": [("couple_login_ip", self.login_ip_calls, self.login_period, True)],
+            "/admin/token": [
+                ("admin_login_ip", self.login_ip_calls, self.login_period, True)
+            ],
+            "/couple/login": [
+                ("couple_login_ip", self.login_ip_calls, self.login_period, True)
+            ],
         }
         return login_ip_limits.get(normalized_path, [])
 
@@ -160,7 +210,9 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         normalized = email.strip().lower()
         return normalized or None
 
-    async def _get_bucket_subject(self, request: Request, bucket: str, client_ip: str) -> str:
+    async def _get_bucket_subject(
+        self, request: Request, bucket: str, client_ip: str
+    ) -> str:
         if not self._uses_login_identity(bucket):
             return client_ip
 
@@ -176,7 +228,9 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         while request_queue and current_time - request_queue[0] > period:
             request_queue.popleft()
 
-    async def _check_redis_limit(self, subject: str, bucket: str, limit: int, period: int) -> tuple[bool, int, int]:
+    async def _check_redis_limit(
+        self, subject: str, bucket: str, limit: int, period: int
+    ) -> tuple[bool, int, int]:
         """
         Check rate limit using Redis.
         Returns: (is_limited, remaining, reset_time)
@@ -187,9 +241,11 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
             # Simple fixed window implementation
             # INCR returns the new value
             if not cache.redis_client:
-                 # Should not happen if check passed, but safety first
-                 async with self.lock:
-                    return await self._check_memory_limit(subject, bucket, limit, period)
+                # Should not happen if check passed, but safety first
+                async with self.lock:
+                    return await self._check_memory_limit(
+                        subject, bucket, limit, period
+                    )
 
             current_count = await cache.redis_client.incr(key)
 
@@ -211,7 +267,9 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
             async with self.lock:
                 return await self._check_memory_limit(subject, bucket, limit, period)
 
-    async def _check_memory_limit(self, subject: str, bucket: str, limit: int, period: int) -> tuple[bool, int, int]:
+    async def _check_memory_limit(
+        self, subject: str, bucket: str, limit: int, period: int
+    ) -> tuple[bool, int, int]:
         """
         Check rate limit using in-memory sliding window.
         Returns: (is_limited, remaining, reset_time)
@@ -227,7 +285,7 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         # Check limit
         current_count = len(request_queue)
         if current_count >= limit:
-            reset_time = int(time.time()) + period # Approximate
+            reset_time = int(time.time()) + period  # Approximate
             return True, 0, reset_time
 
         # Add new request
@@ -253,7 +311,9 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
             return await call_next(request)
 
         client_ip = self._get_client_ip(request)
-        primary_bucket, primary_limit, primary_period, _ = self._get_rate_limit_config(request.url.path)
+        primary_bucket, primary_limit, primary_period, _ = self._get_rate_limit_config(
+            request.url.path
+        )
         rate_limit_targets = [
             (
                 primary_bucket,
@@ -262,7 +322,12 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
                 await self._get_bucket_subject(request, primary_bucket, client_ip),
             )
         ]
-        for extra_bucket, extra_limit, extra_period, _ in self._get_additional_rate_limit_configs(request.url.path):
+        for (
+            extra_bucket,
+            extra_limit,
+            extra_period,
+            _,
+        ) in self._get_additional_rate_limit_configs(request.url.path):
             rate_limit_targets.append(
                 (
                     extra_bucket,
@@ -277,10 +342,14 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
 
         for bucket, limit, period, subject in rate_limit_targets:
             if cache.enabled and cache.redis_client:
-                is_limited, remaining, reset_time = await self._check_redis_limit(subject, bucket, limit, period)
+                is_limited, remaining, reset_time = await self._check_redis_limit(
+                    subject, bucket, limit, period
+                )
             else:
                 async with self.lock:
-                    is_limited, remaining, reset_time = await self._check_memory_limit(subject, bucket, limit, period)
+                    is_limited, remaining, reset_time = await self._check_memory_limit(
+                        subject, bucket, limit, period
+                    )
 
             if header_remaining is None or remaining < header_remaining:
                 header_remaining = remaining
@@ -292,7 +361,7 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
                     status_code=429,
                     content={
                         "error": "Rate limit exceeded",
-                        "message": f"Too many requests. Try again later.",
+                        "message": "Too many requests. Try again later.",
                         "retry_after": retry_after,
                     },
                 )
@@ -305,7 +374,11 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         response = await call_next(request)
 
         # Add rate limit headers to response
-        response.headers["X-RateLimit-Remaining"] = str(header_remaining if header_remaining is not None else 0)
-        response.headers["X-RateLimit-Reset"] = str(header_reset if header_reset is not None else int(time.time()))
+        response.headers["X-RateLimit-Remaining"] = str(
+            header_remaining if header_remaining is not None else 0
+        )
+        response.headers["X-RateLimit-Reset"] = str(
+            header_reset if header_reset is not None else int(time.time())
+        )
 
         return response

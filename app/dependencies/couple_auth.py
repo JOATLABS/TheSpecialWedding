@@ -4,6 +4,7 @@ Couple Authentication Dependency
 Shared FastAPI dependency for authenticating couple portal requests.
 Used by couple_portal.py and couple_auth.py endpoints.
 """
+
 from fastapi import HTTPException, Request
 from app.core.database import mongo
 from app.utils.auth_utils import verify_token
@@ -42,7 +43,9 @@ async def require_couple_auth(request: Request) -> dict:
     if role != "couple":
         raise HTTPException(status_code=403, detail="Couple access required")
 
-    couple = await mongo.db["couple_users"].find_one({"email": email, "is_active": True})
+    couple = await mongo.db["couple_users"].find_one(
+        {"email": email, "is_active": True}
+    )
     if not couple:
         raise HTTPException(status_code=404, detail="Couple account not found")
 

@@ -18,7 +18,7 @@ import logging
 import secrets
 import string
 from datetime import datetime, timedelta, timezone
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict
 
 from bson import ObjectId
 from fastapi import HTTPException
@@ -93,6 +93,7 @@ def check_profile_completeness(vendor_doc: dict) -> Dict[str, Any]:
 
 
 # ─── Service Class ─────────────────────────────────────────────────────
+
 
 class VendorSignupService:
     """Manages the full vendor signup → approval → onboarding lifecycle."""
@@ -218,7 +219,9 @@ class VendorSignupService:
 
         if auto_approve:
             # Auto-approve: generate temp password immediately
-            await self._approve_vendor(vendor_id, email, admin_email="system_auto_approve")
+            await self._approve_vendor(
+                vendor_id, email, admin_email="system_auto_approve"
+            )
             return {
                 "status": "approved",
                 "message": (
@@ -243,9 +246,7 @@ class VendorSignupService:
 
     # ─── Admin Approval Workflow ───────────────────────────────────
 
-    async def approve_vendor(
-        self, vendor_id: str, admin_email: str
-    ) -> Dict[str, Any]:
+    async def approve_vendor(self, vendor_id: str, admin_email: str) -> Dict[str, Any]:
         """
         Admin approves a pending vendor.
 
@@ -255,7 +256,9 @@ class VendorSignupService:
         if not vendor:
             raise HTTPException(status_code=404, detail="Vendor not found")
         if vendor.get("role") != "advertising_vendor":
-            raise HTTPException(status_code=400, detail="User is not an advertising vendor")
+            raise HTTPException(
+                status_code=400, detail="User is not an advertising vendor"
+            )
         if vendor.get("vendor_account_status") == "active":
             raise HTTPException(status_code=400, detail="Vendor is already active")
 
@@ -288,9 +291,7 @@ class VendorSignupService:
         # Send temp password email
         await self._send_approval_email(vendor_email, temp_password)
 
-        logger.info(
-            f"Vendor {vendor_id} ({vendor_email}) approved by {admin_email}"
-        )
+        logger.info(f"Vendor {vendor_id} ({vendor_email}) approved by {admin_email}")
         return {
             "vendor_id": vendor_id,
             "email": vendor_email,
@@ -308,7 +309,9 @@ class VendorSignupService:
         if not vendor:
             raise HTTPException(status_code=404, detail="Vendor not found")
         if vendor.get("role") != "advertising_vendor":
-            raise HTTPException(status_code=400, detail="User is not an advertising vendor")
+            raise HTTPException(
+                status_code=400, detail="User is not an advertising vendor"
+            )
         if vendor.get("vendor_account_status") == "suspended":
             raise HTTPException(status_code=400, detail="Vendor is already suspended")
 
@@ -346,7 +349,10 @@ class VendorSignupService:
 
         # Notify vendor (in-portal + email + push)
         try:
-            from app.services.vendor_notification_service import VendorNotificationService
+            from app.services.vendor_notification_service import (
+                VendorNotificationService,
+            )
+
             vns = VendorNotificationService()
             await vns.notify_vendor_suspended(vendor["email"], reason)
         except Exception as e:
@@ -392,7 +398,10 @@ class VendorSignupService:
 
         # Notify vendor (in-portal + email + push)
         try:
-            from app.services.vendor_notification_service import VendorNotificationService
+            from app.services.vendor_notification_service import (
+                VendorNotificationService,
+            )
+
             vns = VendorNotificationService()
             await vns.notify_vendor_reactivated(vendor["email"])
         except Exception as e:
@@ -423,7 +432,9 @@ class VendorSignupService:
 
         # Verify temp password
         if not vendor.get("password_hash"):
-            raise HTTPException(status_code=400, detail="No password set for this account")
+            raise HTTPException(
+                status_code=400, detail="No password set for this account"
+            )
 
         if not verify_password(temp_password, vendor["password_hash"]):
             raise HTTPException(status_code=400, detail="Current password is incorrect")

@@ -6,12 +6,13 @@ Implements comprehensive path validation and sanitization for secure file operat
 import os
 import re
 import logging
-from typing import Optional, Tuple, List
+from typing import Optional, Tuple
 from pathlib import Path
 import unicodedata
 
 # Configure logging
 path_logger = logging.getLogger("wedding_path_security")
+
 
 class PathValidator:
     """
@@ -25,65 +26,115 @@ class PathValidator:
     - File extension validation
     - Path length limits
     """
+
     def __init__(self):
         # Security configuration
         self.max_path_length = 260  # Windows MAX_PATH limit
         self.max_filename_length = 255  # Most filesystems limit
         self.blocked_patterns = [
             # Directory traversal patterns
-            r'\.\./', r'\.\.\\', r'%2e%2e%2f', r'%2e%2e%5c',
-            r'%252e%252e%252f', r'%252e%252e%255c', r'..%2f', r'..%5c',
-            r'%2e%2e/', r'\.\./\.\./\.\./\.\./\.\./\.\./\.\.',
+            r"\.\./",
+            r"\.\.\\",
+            r"%2e%2e%2f",
+            r"%2e%2e%5c",
+            r"%252e%252e%252f",
+            r"%252e%252e%255c",
+            r"..%2f",
+            r"..%5c",
+            r"%2e%2e/",
+            r"\.\./\.\./\.\./\.\./\.\./\.\./\.\.",
             # System file patterns
-            r'/etc/passwd', r'/etc/shadow', r'/proc/', r'/sys/',
-            r'C:\\Windows\\', r'C:\\Users\\', r'C:\\Program Files',
-            r'\\Windows\\', r'\\Users\\', r'\\Program Files',
-
+            r"/etc/passwd",
+            r"/etc/shadow",
+            r"/proc/",
+            r"/sys/",
+            r"C:\\Windows\\",
+            r"C:\\Users\\",
+            r"C:\\Program Files",
+            r"\\Windows\\",
+            r"\\Users\\",
+            r"\\Program Files",
             # Device files (Unix/Linux)
-            r'/dev/', r'/proc/', r'/sys/', r'/tmp/',
-
+            r"/dev/",
+            r"/proc/",
+            r"/sys/",
+            r"/tmp/",
             # Hidden files and directories
-            r'/\\.', r'\\\\.', r'^\\.',
-
+            r"/\\.",
+            r"\\\\.",
+            r"^\\.",
             # Null bytes and control characters
-            r'\\x00', r'%00', r'\\0', r'\\u0000',
-
+            r"\\x00",
+            r"%00",
+            r"\\0",
+            r"\\u0000",
             # Command injection attempts
-            r'\|', r';', r'&', r'\$\(', r'`',
-
+            r"\|",
+            r";",
+            r"&",
+            r"\$\(",
+            r"`",
             # Script injection
-            r'<script', r'javascript:', r'vbscript:',
-
+            r"<script",
+            r"javascript:",
+            r"vbscript:",
             # File inclusion attempts
-            r'php://', r'file://', r'data://', r'expect://',
-            r'zip://', r'ftp://', r'http://', r'https://'
+            r"php://",
+            r"file://",
+            r"data://",
+            r"expect://",
+            r"zip://",
+            r"ftp://",
+            r"http://",
+            r"https://",
         ]
 
         # Allowed file extensions for uploads
         self.allowed_extensions = {
-            'image': ['.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp', '.svg'],
-            'document': ['.pdf', '.doc', '.docx', '.txt', '.rtf'],
-            'archive': ['.zip', '.tar', '.gz'],
-            'video': ['.mp4', '.avi', '.mov', '.mkv', '.webm'],
-            'audio': ['.mp3', '.wav', '.ogg', '.m4a']
+            "image": [".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp", ".svg"],
+            "document": [".pdf", ".doc", ".docx", ".txt", ".rtf"],
+            "archive": [".zip", ".tar", ".gz"],
+            "video": [".mp4", ".avi", ".mov", ".mkv", ".webm"],
+            "audio": [".mp3", ".wav", ".ogg", ".m4a"],
         }
         # Blocked file extensions
         self.blocked_extensions = [
-            '.exe', '.bat', '.cmd', '.com', '.pif', '.scr', '.vbs', '.js',
-            '.jar', '.jsp', '.php', '.asp', '.aspx', '.py', '.pl', '.rb',
-            '.sh', '.bash', '.ps1', '.psm1', '.dll', '.so', '.dylib'
+            ".exe",
+            ".bat",
+            ".cmd",
+            ".com",
+            ".pif",
+            ".scr",
+            ".vbs",
+            ".js",
+            ".jar",
+            ".jsp",
+            ".php",
+            ".asp",
+            ".aspx",
+            ".py",
+            ".pl",
+            ".rb",
+            ".sh",
+            ".bash",
+            ".ps1",
+            ".psm1",
+            ".dll",
+            ".so",
+            ".dylib",
         ]
         # Safe base directories (must be absolute paths)
         self.safe_base_dirs = [
-            '/app/uploads/',
-            '/app/static/',
-            '/app/media/',
-            '/var/wedding_uploads/',
-            '/tmp/wedding_temp/'
+            "/app/uploads/",
+            "/app/static/",
+            "/app/media/",
+            "/var/wedding_uploads/",
+            "/tmp/wedding_temp/",
         ]
 
-    def validate_path(self, path: str, base_dir: Optional[str] = None,
-                     file_type: Optional[str] = None) -> Tuple[bool, Optional[str], str]:
+    def validate_path(
+        self, path: str, base_dir: Optional[str] = None, file_type: Optional[str] = None
+    ) -> Tuple[bool, Optional[str], str]:
         """
         Validate and sanitize a file path.
 
@@ -104,10 +155,14 @@ class PathValidator:
             # 1. Length validation
             if len(path) > self.max_path_length:
                 path_logger.warning(f"Path too long: {len(path)} chars")
-                return False, None, f"Path too long (max {self.max_path_length} characters)"
+                return (
+                    False,
+                    None,
+                    f"Path too long (max {self.max_path_length} characters)",
+                )
             # 2. Unicode normalization to prevent bypass attempts
             try:
-                normalized_path = unicodedata.normalize('NFKC', path)
+                normalized_path = unicodedata.normalize("NFKC", path)
             except UnicodeError:
                 return False, None, "Invalid Unicode characters in path"
 
@@ -160,7 +215,7 @@ class PathValidator:
             # Multiple rounds of decoding to catch double-encoding
             decoded = path
             for _ in range(3):  # Max 3 rounds to prevent infinite loops
-                new_decoded = urllib.parse.unquote(decoded, errors='ignore')
+                new_decoded = urllib.parse.unquote(decoded, errors="ignore")
                 if new_decoded == decoded:
                     break
                 decoded = new_decoded
@@ -181,7 +236,7 @@ class PathValidator:
                     return True
             except re.error:
                 # If regex fails, check for literal string
-                if pattern.replace('\\', '') in path_lower:
+                if pattern.replace("\\", "") in path_lower:
                     return True
 
         return False
@@ -198,15 +253,17 @@ class PathValidator:
                 resolved = path_obj.resolve()
             else:
                 # Make relative paths absolute by joining with safe base
-                resolved = Path('/safe_root').joinpath(path_obj).resolve()
+                resolved = Path("/safe_root").joinpath(path_obj).resolve()
 
             return str(resolved)
 
-        except (OSError, ValueError, RuntimeError) as e:
+        except (OSError, ValueError, RuntimeError):
             # If path resolution fails, fall back to manual normalization
             return os.path.normpath(os.path.abspath(path))
 
-    def _check_directory_traversal(self, canonical_path: str, base_dir: Optional[str]) -> bool:
+    def _check_directory_traversal(
+        self, canonical_path: str, base_dir: Optional[str]
+    ) -> bool:
         """Check for directory traversal attempts"""
 
         if not base_dir:
@@ -215,17 +272,30 @@ class PathValidator:
                 if canonical_path.startswith(safe_dir):
                     return True
             # If no safe base directory matches, allow only if within reasonable bounds
-            return not any(danger in canonical_path.lower() for danger in [
-                '/etc/', '/proc/', '/sys/', '/dev/', '/root/', '/home/',
-                '\\windows\\', '\\users\\', '\\program files'
-            ])
+            return not any(
+                danger in canonical_path.lower()
+                for danger in [
+                    "/etc/",
+                    "/proc/",
+                    "/sys/",
+                    "/dev/",
+                    "/root/",
+                    "/home/",
+                    "\\windows\\",
+                    "\\users\\",
+                    "\\program files",
+                ]
+            )
 
         # Canonicalize base directory
         try:
             canonical_base = os.path.abspath(os.path.normpath(base_dir))
 
             # Ensure canonical_path is within base_dir
-            return canonical_path.startswith(canonical_base + os.sep) or canonical_path == canonical_base
+            return (
+                canonical_path.startswith(canonical_base + os.sep)
+                or canonical_path == canonical_base
+            )
 
         except Exception:
             return False
@@ -249,7 +319,7 @@ class PathValidator:
     def _validate_filename(self, filename: str) -> bool:
         """Validate filename for security"""
 
-        if not filename or filename in ['.', '..']:
+        if not filename or filename in [".", ".."]:
             return False
 
         # Check filename length
@@ -257,30 +327,51 @@ class PathValidator:
             return False
 
         # Check for control characters and other dangerous characters
-        dangerous_chars = ['<', '>', ':', '"', '|', '?', '*', '\0', '\n', '\r', '\t']
+        dangerous_chars = ["<", ">", ":", '"', "|", "?", "*", "\0", "\n", "\r", "\t"]
         if any(char in filename for char in dangerous_chars):
             return False
         # Check for reserved names on Windows
         reserved_names = [
-            'CON', 'PRN', 'AUX', 'NUL',
-            'COM1', 'COM2', 'COM3', 'COM4', 'COM5', 'COM6', 'COM7', 'COM8', 'COM9',
-            'LPT1', 'LPT2', 'LPT3', 'LPT4', 'LPT5', 'LPT6', 'LPT7', 'LPT8', 'LPT9'
+            "CON",
+            "PRN",
+            "AUX",
+            "NUL",
+            "COM1",
+            "COM2",
+            "COM3",
+            "COM4",
+            "COM5",
+            "COM6",
+            "COM7",
+            "COM8",
+            "COM9",
+            "LPT1",
+            "LPT2",
+            "LPT3",
+            "LPT4",
+            "LPT5",
+            "LPT6",
+            "LPT7",
+            "LPT8",
+            "LPT9",
         ]
         name_without_ext = os.path.splitext(filename)[0].upper()
         if name_without_ext in reserved_names:
             return False
 
         # Check for leading/trailing spaces or periods
-        if filename != filename.strip(' .'):
+        if filename != filename.strip(" ."):
             return False
 
         return True
 
-    def _final_security_check(self, canonical_path: str, base_dir: Optional[str]) -> bool:
+    def _final_security_check(
+        self, canonical_path: str, base_dir: Optional[str]
+    ) -> bool:
         """Perform final security validation"""
 
         # Check path doesn't contain null bytes
-        if '\0' in canonical_path:
+        if "\0" in canonical_path:
             return False
 
         # Check path doesn't contain control characters
@@ -289,8 +380,15 @@ class PathValidator:
 
         # Check path doesn't access system directories
         system_dirs = [
-            '/etc/', '/proc/', '/sys/', '/dev/', '/boot/', '/root/',
-            'C:\\Windows\\', 'C:\\Program Files\\', 'C:\\Users\\Administrator'
+            "/etc/",
+            "/proc/",
+            "/sys/",
+            "/dev/",
+            "/boot/",
+            "/root/",
+            "C:\\Windows\\",
+            "C:\\Program Files\\",
+            "C:\\Users\\Administrator",
         ]
         canonical_lower = canonical_path.lower()
         for system_dir in system_dirs:
@@ -307,19 +405,33 @@ class PathValidator:
 
         # Unicode normalization
         try:
-            filename = unicodedata.normalize('NFKC', filename)
+            filename = unicodedata.normalize("NFKC", filename)
         except UnicodeError:
             filename = "invalid_unicode_filename"
 
         # Replace dangerous characters
-        dangerous_chars = ['<', '>', ':', '"', '|', '?', '*', '/', '\\', '\0', '\n', '\r', '\t']
+        dangerous_chars = [
+            "<",
+            ">",
+            ":",
+            '"',
+            "|",
+            "?",
+            "*",
+            "/",
+            "\\",
+            "\0",
+            "\n",
+            "\r",
+            "\t",
+        ]
         sanitized = filename
 
         for char in dangerous_chars:
-            sanitized = sanitized.replace(char, '_')
+            sanitized = sanitized.replace(char, "_")
 
         # Remove leading/trailing spaces and periods
-        sanitized = sanitized.strip(' .')
+        sanitized = sanitized.strip(" .")
 
         # Ensure it's not empty after sanitization
         if not sanitized:
@@ -333,8 +445,9 @@ class PathValidator:
 
         return sanitized
 
-    def get_safe_upload_path(self, base_upload_dir: str, filename: str,
-                           user_id: str = "anonymous") -> Tuple[bool, Optional[str], str]:
+    def get_safe_upload_path(
+        self, base_upload_dir: str, filename: str, user_id: str = "anonymous"
+    ) -> Tuple[bool, Optional[str], str]:
         """
         Generate a safe upload path for files.
 
@@ -352,7 +465,7 @@ class PathValidator:
             safe_filename = self.sanitize_filename(filename)
 
             # Create user-specific subdirectory
-            safe_user_id = re.sub(r'[^\w\-_]', '_', str(user_id))[:50]
+            safe_user_id = re.sub(r"[^\w\-_]", "_", str(user_id))[:50]
 
             # Create path structure
             upload_path = os.path.join(base_upload_dir, safe_user_id, safe_filename)

@@ -342,7 +342,7 @@ async def create_subscription_indexes():
             [("archived_at", ASCENDING)],
             name="idx_subscription_archived_ttl",
             expireAfterSeconds=180 * 24 * 60 * 60,  # 180 days
-            partialFilterExpression={"archived_at": {"$exists": True}}
+            partialFilterExpression={"archived_at": {"$exists": True}},
         )
         logger.info("Created TTL index: idx_subscription_archived_ttl (180 days)")
 
@@ -356,15 +356,15 @@ async def create_subscription_indexes():
             expireAfterSeconds=30 * 24 * 60 * 60,  # 30 days
             partialFilterExpression={
                 "status": "expired",
-                "expired_reason": "checkout_session_expired"
-            }
+                "expired_reason": "checkout_session_expired",
+            },
         )
         logger.info("Created TTL index: idx_abandoned_checkout_ttl (30 days)")
 
         # Regular index for archival job query performance
         await subs_collection.create_index(
             [("status", ASCENDING), ("cancelled_at", ASCENDING)],
-            name="idx_status_cancelled_at"
+            name="idx_status_cancelled_at",
         )
         logger.info("Created index: idx_status_cancelled_at")
 
@@ -395,8 +395,8 @@ async def create_user_indexes():
             expireAfterSeconds=0,
             partialFilterExpression={
                 "subscription_status": "pending_payment",
-                "pending_expires_at": {"$exists": True}
-            }
+                "pending_expires_at": {"$exists": True},
+            },
         )
         logger.info("Created TTL index: idx_pending_payment_ttl (pending signups)")
 
@@ -534,29 +534,28 @@ async def create_admin_activity_log_indexes():
     try:
         # 1. Created at sorting (most common query)
         await collection.create_index(
-            [("created_at", DESCENDING)],
-            name="idx_admin_activity_created"
+            [("created_at", DESCENDING)], name="idx_admin_activity_created"
         )
         logger.info("Created index: idx_admin_activity_created")
 
         # 2. Action type filter + created_at
         await collection.create_index(
             [("action_type", ASCENDING), ("created_at", DESCENDING)],
-            name="idx_action_type_created"
+            name="idx_action_type_created",
         )
         logger.info("Created index: idx_action_type_created")
 
         # 3. Entity type filter + created_at
         await collection.create_index(
             [("entity_type", ASCENDING), ("created_at", DESCENDING)],
-            name="idx_entity_type_created"
+            name="idx_entity_type_created",
         )
         logger.info("Created index: idx_entity_type_created")
 
         # 4. Admin ID filter + created_at
         await collection.create_index(
             [("admin_id", ASCENDING), ("created_at", DESCENDING)],
-            name="idx_admin_id_created"
+            name="idx_admin_id_created",
         )
         logger.info("Created index: idx_admin_id_created")
 
@@ -564,7 +563,7 @@ async def create_admin_activity_log_indexes():
         await collection.create_index(
             [("created_at", ASCENDING)],
             name="idx_admin_activity_ttl",
-            expireAfterSeconds=90 * 24 * 60 * 60  # 90 days
+            expireAfterSeconds=90 * 24 * 60 * 60,  # 90 days
         )
         logger.info("Created TTL index: idx_admin_activity_ttl (90 days)")
 
@@ -590,49 +589,50 @@ async def create_activity_logs_indexes():
     try:
         # 1. Timestamp sorting (most common query)
         await collection.create_index(
-            [("timestamp", DESCENDING)],
-            name="idx_activity_timestamp"
+            [("timestamp", DESCENDING)], name="idx_activity_timestamp"
         )
         logger.info("Created index: idx_activity_timestamp")
 
         # 2. Created_at fallback sorting
         await collection.create_index(
-            [("created_at", DESCENDING)],
-            name="idx_activity_created_at"
+            [("created_at", DESCENDING)], name="idx_activity_created_at"
         )
         logger.info("Created index: idx_activity_created_at")
 
         # 3. Wedding ID + timestamp
         await collection.create_index(
             [("wedding_id", ASCENDING), ("timestamp", DESCENDING)],
-            name="idx_wedding_timestamp"
+            name="idx_wedding_timestamp",
         )
         logger.info("Created index: idx_wedding_timestamp")
 
         # 4. Planner email + timestamp
         await collection.create_index(
             [("planner_email", ASCENDING), ("timestamp", DESCENDING)],
-            name="idx_planner_timestamp"
+            name="idx_planner_timestamp",
         )
         logger.info("Created index: idx_planner_timestamp")
 
         # 5. Actor email + timestamp
         await collection.create_index(
             [("actor_email", ASCENDING), ("timestamp", DESCENDING)],
-            name="idx_actor_timestamp"
+            name="idx_actor_timestamp",
         )
         logger.info("Created index: idx_actor_timestamp")
 
         # 6. Activity type + timestamp
         await collection.create_index(
-            [("type", ASCENDING), ("timestamp", DESCENDING)],
-            name="idx_type_timestamp"
+            [("type", ASCENDING), ("timestamp", DESCENDING)], name="idx_type_timestamp"
         )
         logger.info("Created index: idx_type_timestamp")
 
         # 7. Wedding ID + metadata.guest_id (for guest-specific activity filtering)
         await collection.create_index(
-            [("wedding_id", ASCENDING), ("metadata.guest_id", ASCENDING), ("timestamp", DESCENDING)],
+            [
+                ("wedding_id", ASCENDING),
+                ("metadata.guest_id", ASCENDING),
+                ("timestamp", DESCENDING),
+            ],
             name="idx_wedding_guest_timestamp",
             sparse=True,
         )
@@ -642,7 +642,7 @@ async def create_activity_logs_indexes():
         await collection.create_index(
             [("timestamp", ASCENDING)],
             name="idx_activity_logs_ttl",
-            expireAfterSeconds=90 * 24 * 60 * 60  # 90 days
+            expireAfterSeconds=90 * 24 * 60 * 60,  # 90 days
         )
         logger.info("Created TTL index: idx_activity_logs_ttl (90 days)")
 
@@ -668,22 +668,20 @@ async def create_audit_logs_indexes():
     try:
         # 1. Timestamp sorting
         await collection.create_index(
-            [("timestamp", DESCENDING)],
-            name="idx_audit_timestamp"
+            [("timestamp", DESCENDING)], name="idx_audit_timestamp"
         )
         logger.info("Created index: idx_audit_timestamp")
 
         # 2. Response status + timestamp (for error filtering)
         await collection.create_index(
             [("response_status", ASCENDING), ("timestamp", DESCENDING)],
-            name="idx_status_timestamp"
+            name="idx_status_timestamp",
         )
         logger.info("Created index: idx_status_timestamp")
 
         # 3. Path + timestamp (for endpoint analysis)
         await collection.create_index(
-            [("path", ASCENDING), ("timestamp", DESCENDING)],
-            name="idx_path_timestamp"
+            [("path", ASCENDING), ("timestamp", DESCENDING)], name="idx_path_timestamp"
         )
         logger.info("Created index: idx_path_timestamp")
 
@@ -691,7 +689,7 @@ async def create_audit_logs_indexes():
         await collection.create_index(
             [("timestamp", ASCENDING)],
             name="idx_audit_logs_ttl",
-            expireAfterSeconds=30 * 24 * 60 * 60  # 30 days
+            expireAfterSeconds=30 * 24 * 60 * 60,  # 30 days
         )
         logger.info("Created TTL index: idx_audit_logs_ttl (30 days)")
 
@@ -712,22 +710,21 @@ async def create_security_audit_logs_indexes():
     try:
         # 1. Timestamp sorting
         await collection.create_index(
-            [("timestamp", DESCENDING)],
-            name="idx_security_timestamp"
+            [("timestamp", DESCENDING)], name="idx_security_timestamp"
         )
         logger.info("Created index: idx_security_timestamp")
 
         # 2. Event type + timestamp
         await collection.create_index(
             [("event_type", ASCENDING), ("timestamp", DESCENDING)],
-            name="idx_event_type_timestamp"
+            name="idx_event_type_timestamp",
         )
         logger.info("Created index: idx_event_type_timestamp")
 
         # 3. Severity + timestamp
         await collection.create_index(
             [("severity", ASCENDING), ("timestamp", DESCENDING)],
-            name="idx_severity_timestamp"
+            name="idx_severity_timestamp",
         )
         logger.info("Created index: idx_severity_timestamp")
 
@@ -735,7 +732,7 @@ async def create_security_audit_logs_indexes():
         await collection.create_index(
             [("timestamp", ASCENDING)],
             name="idx_security_audit_logs_ttl",
-            expireAfterSeconds=180 * 24 * 60 * 60  # 180 days
+            expireAfterSeconds=180 * 24 * 60 * 60,  # 180 days
         )
         logger.info("Created TTL index: idx_security_audit_logs_ttl (180 days)")
 
@@ -760,7 +757,9 @@ async def create_errors_indexes():
                 await collection.drop_index(old_index_name)
                 logger.info(f"Dropped old conflicting index: {old_index_name}")
             except Exception as e:
-                logger.debug(f"Index {old_index_name} doesn't exist or couldn't be dropped: {e}")
+                logger.debug(
+                    f"Index {old_index_name} doesn't exist or couldn't be dropped: {e}"
+                )
                 pass  # Index doesn't exist, that's fine
 
         # 1. TTL index on timestamp - also serves as the timestamp sorting index
@@ -770,30 +769,27 @@ async def create_errors_indexes():
         await collection.create_index(
             [("timestamp", ASCENDING)],
             name="idx_errors_timestamp_ttl",
-            expireAfterSeconds=30 * 24 * 60 * 60  # 30 days
+            expireAfterSeconds=30 * 24 * 60 * 60,  # 30 days
         )
         logger.info("Created TTL index: idx_errors_timestamp_ttl (30 days)")
 
         # 2. Error ID lookup
         await collection.create_index(
-            [("error_id", ASCENDING)],
-            name="idx_error_id",
-            unique=True,
-            sparse=True
+            [("error_id", ASCENDING)], name="idx_error_id", unique=True, sparse=True
         )
         logger.info("Created index: idx_error_id")
 
         # 3. Acknowledged status + timestamp (for cleanup queries)
         await collection.create_index(
             [("acknowledged", ASCENDING), ("timestamp", DESCENDING)],
-            name="idx_acknowledged_timestamp"
+            name="idx_acknowledged_timestamp",
         )
         logger.info("Created index: idx_acknowledged_timestamp")
 
         # 4. Severity + timestamp
         await collection.create_index(
             [("severity", ASCENDING), ("timestamp", DESCENDING)],
-            name="idx_errors_severity_timestamp"
+            name="idx_errors_severity_timestamp",
         )
         logger.info("Created index: idx_errors_severity_timestamp")
 
@@ -820,37 +816,47 @@ async def create_kb_articles_indexes():
     try:
         # 1. Unique slug index (for URL lookup)
         await collection.create_index(
-            [("slug", ASCENDING)],
-            name="idx_slug_unique",
-            unique=True
+            [("slug", ASCENDING)], name="idx_slug_unique", unique=True
         )
         logger.info("Created index: idx_slug_unique")
 
         # 2. Category + status + created_at (main listing query)
         await collection.create_index(
-            [("status", ASCENDING), ("category", ASCENDING), ("created_at", DESCENDING)],
-            name="idx_status_category_created"
+            [
+                ("status", ASCENDING),
+                ("category", ASCENDING),
+                ("created_at", DESCENDING),
+            ],
+            name="idx_status_category_created",
         )
         logger.info("Created index: idx_status_category_created")
 
         # 3. Author's articles (my articles)
         await collection.create_index(
-            [("created_by", ASCENDING), ("status", ASCENDING), ("created_at", DESCENDING)],
-            name="idx_author_status_created"
+            [
+                ("created_by", ASCENDING),
+                ("status", ASCENDING),
+                ("created_at", DESCENDING),
+            ],
+            name="idx_author_status_created",
         )
         logger.info("Created index: idx_author_status_created")
 
         # 4. Featured articles
         await collection.create_index(
-            [("status", ASCENDING), ("featured", DESCENDING), ("created_at", DESCENDING)],
-            name="idx_featured_articles"
+            [
+                ("status", ASCENDING),
+                ("featured", DESCENDING),
+                ("created_at", DESCENDING),
+            ],
+            name="idx_featured_articles",
         )
         logger.info("Created index: idx_featured_articles")
 
         # 5. Official platform docs
         await collection.create_index(
             [("status", ASCENDING), ("is_official", DESCENDING), ("order", ASCENDING)],
-            name="idx_official_docs"
+            name="idx_official_docs",
         )
         logger.info("Created index: idx_official_docs")
 
@@ -859,14 +865,14 @@ async def create_kb_articles_indexes():
             [("title", TEXT), ("content", TEXT), ("excerpt", TEXT)],
             name="idx_kb_text_search",
             default_language="english",
-            weights={"title": 10, "excerpt": 5, "content": 1}
+            weights={"title": 10, "excerpt": 5, "content": 1},
         )
         logger.info("Created index: idx_kb_text_search (full-text search)")
 
         # 7. View count for popular articles
         await collection.create_index(
             [("status", ASCENDING), ("view_count", DESCENDING)],
-            name="idx_popular_articles"
+            name="idx_popular_articles",
         )
         logger.info("Created index: idx_popular_articles")
 
@@ -894,23 +900,29 @@ async def create_blog_articles_indexes():
     try:
         # 1. Unique slug index (for URL lookup)
         await collection.create_index(
-            [("slug", ASCENDING)],
-            name="idx_blog_slug_unique",
-            unique=True
+            [("slug", ASCENDING)], name="idx_blog_slug_unique", unique=True
         )
         logger.info("Created index: idx_blog_slug_unique")
 
         # 2. Status + category + created_at (main listing query)
         await collection.create_index(
-            [("status", ASCENDING), ("category", ASCENDING), ("created_at", DESCENDING)],
-            name="idx_blog_status_category_created"
+            [
+                ("status", ASCENDING),
+                ("category", ASCENDING),
+                ("created_at", DESCENDING),
+            ],
+            name="idx_blog_status_category_created",
         )
         logger.info("Created index: idx_blog_status_category_created")
 
         # 3. Featured articles
         await collection.create_index(
-            [("status", ASCENDING), ("featured", DESCENDING), ("created_at", DESCENDING)],
-            name="idx_blog_featured_articles"
+            [
+                ("status", ASCENDING),
+                ("featured", DESCENDING),
+                ("created_at", DESCENDING),
+            ],
+            name="idx_blog_featured_articles",
         )
         logger.info("Created index: idx_blog_featured_articles")
 
@@ -919,21 +931,21 @@ async def create_blog_articles_indexes():
             [("title", TEXT), ("content", TEXT), ("excerpt", TEXT)],
             name="idx_blog_text_search",
             default_language="english",
-            weights={"title": 10, "excerpt": 5, "content": 1}
+            weights={"title": 10, "excerpt": 5, "content": 1},
         )
         logger.info("Created index: idx_blog_text_search (full-text search)")
 
         # 5. View count for popular articles
         await collection.create_index(
             [("status", ASCENDING), ("view_count", DESCENDING)],
-            name="idx_blog_popular_articles"
+            name="idx_blog_popular_articles",
         )
         logger.info("Created index: idx_blog_popular_articles")
 
         # 6. Published date sorting (public listing)
         await collection.create_index(
             [("status", ASCENDING), ("published_at", DESCENDING)],
-            name="idx_blog_published_at"
+            name="idx_blog_published_at",
         )
         logger.info("Created index: idx_blog_published_at")
 
@@ -958,16 +970,14 @@ async def create_invitation_indexes():
     try:
         # 1. Token lookup (unique, for signup flow)
         await collection.create_index(
-            [("token", ASCENDING)],
-            name="idx_invitation_token",
-            unique=True
+            [("token", ASCENDING)], name="idx_invitation_token", unique=True
         )
         logger.info("Created index: idx_invitation_token")
 
         # 2. Email lookup (check existing invitations)
         await collection.create_index(
             [("email", ASCENDING), ("created_at", DESCENDING)],
-            name="idx_invitation_email_created"
+            name="idx_invitation_email_created",
         )
         logger.info("Created index: idx_invitation_email_created")
 
@@ -978,9 +988,11 @@ async def create_invitation_indexes():
             [("expires_at", ASCENDING)],
             name="idx_invitation_expires_ttl",
             expireAfterSeconds=7 * 24 * 60 * 60,  # 7 days grace after expires_at
-            partialFilterExpression={"status": "pending"}
+            partialFilterExpression={"status": "pending"},
         )
-        logger.info("Created TTL index: idx_invitation_expires_ttl (7 days grace, pending only)")
+        logger.info(
+            "Created TTL index: idx_invitation_expires_ttl (7 days grace, pending only)"
+        )
 
         logger.info("All invitation indexes created successfully")
         return True
@@ -1029,7 +1041,11 @@ async def create_team_member_indexes():
 
         # 4. Owner listing sorted by status + created (team management page)
         await collection.create_index(
-            [("owner_id", ASCENDING), ("status", ASCENDING), ("created_at", DESCENDING)],
+            [
+                ("owner_id", ASCENDING),
+                ("status", ASCENDING),
+                ("created_at", DESCENDING),
+            ],
             name="idx_owner_status_created",
         )
         logger.info("Created index: idx_owner_status_created")
@@ -1038,7 +1054,7 @@ async def create_team_member_indexes():
         await collection.create_index(
             [("user_id", ASCENDING), ("status", ASCENDING)],
             name="idx_user_id_status",
-            sparse=True
+            sparse=True,
         )
         logger.info("Created index: idx_user_id_status")
 
@@ -1340,8 +1356,12 @@ async def create_campaign_platform_indexes():
             name="idx_campaigns_status_submitted",
         )
         await campaigns.create_index(
-            [("status", ASCENDING), ("target_categories", ASCENDING),
-             ("start_date", ASCENDING), ("end_date", ASCENDING)],
+            [
+                ("status", ASCENDING),
+                ("target_categories", ASCENDING),
+                ("start_date", ASCENDING),
+                ("end_date", ASCENDING),
+            ],
             name="idx_campaigns_serving_eligibility",
         )
         await campaigns.create_index(
@@ -1462,8 +1482,11 @@ async def create_campaign_platform_indexes():
     ad_events = mongo.db["ad_events"]
     try:
         await ad_events.create_index(
-            [("campaign_id", ASCENDING), ("event_type", ASCENDING),
-             ("created_at", DESCENDING)],
+            [
+                ("campaign_id", ASCENDING),
+                ("event_type", ASCENDING),
+                ("created_at", DESCENDING),
+            ],
             name="idx_ad_events_campaign_type_date",
             sparse=True,
         )
@@ -1477,8 +1500,12 @@ async def create_campaign_platform_indexes():
         # Fraud detection + event dedup: event_type + campaign + planner + time
         # Field order matches dedup query in planner_ad_interaction_service._is_duplicate_event
         await ad_events.create_index(
-            [("event_type", ASCENDING), ("campaign_id", ASCENDING),
-             ("planner_id", ASCENDING), ("created_at", DESCENDING)],
+            [
+                ("event_type", ASCENDING),
+                ("campaign_id", ASCENDING),
+                ("planner_id", ASCENDING),
+                ("created_at", DESCENDING),
+            ],
             name="idx_ad_events_dedup_fraud",
         )
         # Session anomaly detection
@@ -1521,7 +1548,9 @@ async def create_campaign_platform_indexes():
         "partialFilterExpression": {"source_campaign_id": {"$type": "string"}},
     }
     existing_vendor_profile_indexes = await vendor_profiles.index_information()
-    existing_sponsored_dedup = existing_vendor_profile_indexes.get("idx_sponsored_ad_dedup")
+    existing_sponsored_dedup = existing_vendor_profile_indexes.get(
+        "idx_sponsored_ad_dedup"
+    )
 
     if existing_sponsored_dedup:
         existing_key = existing_sponsored_dedup.get("key")
@@ -1531,7 +1560,8 @@ async def create_campaign_platform_indexes():
         if (
             existing_key != desired_vendor_profile_index["key"]
             or existing_unique != desired_vendor_profile_index["unique"]
-            or existing_partial != desired_vendor_profile_index["partialFilterExpression"]
+            or existing_partial
+            != desired_vendor_profile_index["partialFilterExpression"]
         ):
             await vendor_profiles.drop_index("idx_sponsored_ad_dedup")
             logger.info("Dropped stale idx_sponsored_ad_dedup index on vendor_profiles")
@@ -1558,7 +1588,11 @@ async def create_campaign_platform_indexes():
 
         # Compound index for scraper name+city+category dedup
         await vendor_profiles.create_index(
-            [("business_name", ASCENDING), ("city", ASCENDING), ("service_category", ASCENDING)],
+            [
+                ("business_name", ASCENDING),
+                ("city", ASCENDING),
+                ("service_category", ASCENDING),
+            ],
             name="idx_vendor_name_city_category",
         )
         logger.info("Created index: idx_vendor_name_city_category")
@@ -1709,7 +1743,7 @@ async def create_couple_portal_indexes():
             [("email", ASCENDING), ("wedding_id", ASCENDING)],
             unique=True,
             name="idx_couple_email_wedding",
-            background=True
+            background=True,
         )
 
         # Invite token lookup (used during setup flow)
@@ -1717,21 +1751,19 @@ async def create_couple_portal_indexes():
             [("invite_token", ASCENDING)],
             name="idx_couple_invite_token",
             sparse=True,
-            background=True
+            background=True,
         )
 
         # List couples by planner (planner management page)
         await couple_users.create_index(
             [("planner_id", ASCENDING), ("created_at", DESCENDING)],
             name="idx_couple_planner_created",
-            background=True
+            background=True,
         )
 
         # List couples by wedding (portal service lookups)
         await couple_users.create_index(
-            [("wedding_id", ASCENDING)],
-            name="idx_couple_wedding",
-            background=True
+            [("wedding_id", ASCENDING)], name="idx_couple_wedding", background=True
         )
 
         couple_updates = mongo.db["couple_updates"]
@@ -1740,7 +1772,7 @@ async def create_couple_portal_indexes():
         await couple_updates.create_index(
             [("wedding_id", ASCENDING), ("created_at", DESCENDING)],
             name="idx_updates_wedding_created",
-            background=True
+            background=True,
         )
 
         archived_weddings = mongo.db["archived_weddings"]
@@ -1750,7 +1782,7 @@ async def create_couple_portal_indexes():
             [("original_wedding_id", ASCENDING)],
             unique=True,
             name="idx_archived_original_id",
-            background=True
+            background=True,
         )
 
         # Sprint 3: Password reset token lookup
@@ -1758,7 +1790,7 @@ async def create_couple_portal_indexes():
             [("password_reset_token", ASCENDING)],
             name="idx_couple_reset_token",
             sparse=True,
-            background=True
+            background=True,
         )
 
         # Sprint 3: couple_messages collection
@@ -1768,19 +1800,27 @@ async def create_couple_portal_indexes():
         await couple_messages.create_index(
             [("wedding_id", ASCENDING), ("_id", DESCENDING)],
             name="idx_messages_wedding_id",
-            background=True
+            background=True,
         )
 
         # Unread count queries (couple checking planner messages, planner checking couple messages)
         await couple_messages.create_index(
-            [("wedding_id", ASCENDING), ("sender_role", ASCENDING), ("read_by_couple", ASCENDING)],
+            [
+                ("wedding_id", ASCENDING),
+                ("sender_role", ASCENDING),
+                ("read_by_couple", ASCENDING),
+            ],
             name="idx_messages_unread_couple",
-            background=True
+            background=True,
         )
         await couple_messages.create_index(
-            [("wedding_id", ASCENDING), ("sender_role", ASCENDING), ("read_by_planner", ASCENDING)],
+            [
+                ("wedding_id", ASCENDING),
+                ("sender_role", ASCENDING),
+                ("read_by_planner", ASCENDING),
+            ],
             name="idx_messages_unread_planner",
-            background=True
+            background=True,
         )
 
         # Sprint 4: custom_form_templates collection
@@ -1789,18 +1829,25 @@ async def create_couple_portal_indexes():
         await custom_templates.create_index(
             [("planner_email", ASCENDING), ("created_at", DESCENDING)],
             name="idx_custom_templates_planner",
-            background=True
+            background=True,
         )
 
         # Sprint 5: planner_tasks meeting queries
         planner_tasks = mongo.get_planner_tasks_collection()
         await planner_tasks.create_index(
-            [("wedding_id", ASCENDING), ("category", ASCENDING), ("planner_email", ASCENDING), ("start_date", ASCENDING)],
+            [
+                ("wedding_id", ASCENDING),
+                ("category", ASCENDING),
+                ("planner_email", ASCENDING),
+                ("start_date", ASCENDING),
+            ],
             name="idx_planner_tasks_meeting_lookup",
-            background=True
+            background=True,
         )
 
-        logger.info("Couple portal indexes created/verified (couple_users, couple_updates, couple_messages, archived_weddings, custom_form_templates, planner_tasks)")
+        logger.info(
+            "Couple portal indexes created/verified (couple_users, couple_updates, couple_messages, archived_weddings, custom_form_templates, planner_tasks)"
+        )
 
     except Exception as e:
         logger.error(f"Error creating couple portal indexes: {e}")
@@ -1823,17 +1870,29 @@ async def create_guest_media_indexes():
             background=True,
         )
         await guest_media_assets.create_index(
-            [("wedding_id", ASCENDING), ("review_status", ASCENDING), ("uploaded_at", DESCENDING)],
+            [
+                ("wedding_id", ASCENDING),
+                ("review_status", ASCENDING),
+                ("uploaded_at", DESCENDING),
+            ],
             name="idx_guest_media_review_queue",
             background=True,
         )
         await guest_media_assets.create_index(
-            [("wedding_id", ASCENDING), ("media_type", ASCENDING), ("uploaded_at", DESCENDING)],
+            [
+                ("wedding_id", ASCENDING),
+                ("media_type", ASCENDING),
+                ("uploaded_at", DESCENDING),
+            ],
             name="idx_guest_media_media_type",
             background=True,
         )
         await guest_media_assets.create_index(
-            [("wedding_id", ASCENDING), ("event_type", ASCENDING), ("uploaded_at", DESCENDING)],
+            [
+                ("wedding_id", ASCENDING),
+                ("event_type", ASCENDING),
+                ("uploaded_at", DESCENDING),
+            ],
             name="idx_guest_media_event_type",
             background=True,
         )
@@ -1855,12 +1914,20 @@ async def create_guest_media_indexes():
             background=True,
         )
         await guest_media_assets.create_index(
-            [("wedding_id", ASCENDING), ("uploader_name", ASCENDING), ("uploaded_at", DESCENDING)],
+            [
+                ("wedding_id", ASCENDING),
+                ("uploader_name", ASCENDING),
+                ("uploaded_at", DESCENDING),
+            ],
             name="idx_guest_media_uploader",
             background=True,
         )
         await guest_media_assets.create_index(
-            [("wedding_id", ASCENDING), ("upload_status", ASCENDING), ("created_at", DESCENDING)],
+            [
+                ("wedding_id", ASCENDING),
+                ("upload_status", ASCENDING),
+                ("created_at", DESCENDING),
+            ],
             name="idx_guest_media_upload_status",
             background=True,
         )
@@ -1896,7 +1963,9 @@ async def create_all_indexes():
         await create_user_indexes()
         await create_reminders_sent_indexes()  # SMS delivery tracking
         await create_payment_indexes()
-        await create_admin_activity_log_indexes() # Activity/Audit logging indexes with TTL for auto-pruning
+        await (
+            create_admin_activity_log_indexes()
+        )  # Activity/Audit logging indexes with TTL for auto-pruning
         await create_activity_logs_indexes()
         await create_audit_logs_indexes()
         await create_security_audit_logs_indexes()

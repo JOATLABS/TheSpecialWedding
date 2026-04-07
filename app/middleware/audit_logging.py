@@ -1,6 +1,7 @@
 """
 Audit Logging Middleware for security and compliance
 """
+
 from fastapi import Request
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import Response
@@ -29,7 +30,10 @@ def _ensure_audit_file_handler(log_file_path: str) -> None:
     normalized_path = os.path.abspath(log_file_path)
 
     for handler in audit_logger.handlers:
-        if isinstance(handler, logging.FileHandler) and getattr(handler, "baseFilename", None) == normalized_path:
+        if (
+            isinstance(handler, logging.FileHandler)
+            and getattr(handler, "baseFilename", None) == normalized_path
+        ):
             return
 
     log_dir = os.path.dirname(normalized_path)
@@ -40,8 +44,7 @@ def _ensure_audit_file_handler(log_file_path: str) -> None:
     file_handler.setLevel(logging.INFO)
     file_handler.setFormatter(
         logging.Formatter(
-            '%(asctime)s - %(levelname)s - %(message)s',
-            datefmt='%Y-%m-%d %H:%M:%S'
+            "%(asctime)s - %(levelname)s - %(message)s", datefmt="%Y-%m-%d %H:%M:%S"
         )
     )
     audit_logger.addHandler(file_handler)
@@ -51,13 +54,14 @@ class AuditLoggingMiddleware(BaseHTTPMiddleware):
     """
     Audit logging middleware for tracking security-relevant events
     """
+
     def __init__(
         self,
         app,
         log_to_db: bool = True,
         log_to_file: bool = True,
         sensitive_paths: list[str] | None = None,
-        excluded_paths: list[str] | None = None
+        excluded_paths: list[str] | None = None,
     ):
         super().__init__(app)
         self.log_to_db = log_to_db
@@ -66,7 +70,7 @@ class AuditLoggingMiddleware(BaseHTTPMiddleware):
             "/admin/",
             "/api/auth/",
             "/api/users/",
-            "/api/subscription/"
+            "/api/subscription/",
         ]
         self.excluded_paths = excluded_paths or [
             "/health",
@@ -105,7 +109,9 @@ class AuditLoggingMiddleware(BaseHTTPMiddleware):
         if forwarded:
             ip_address = forwarded.split(",")[0].strip()
         else:
-            ip_address = request.headers.get("X-Real-IP") or (request.client.host if request.client else "unknown")
+            ip_address = request.headers.get("X-Real-IP") or (
+                request.client.host if request.client else "unknown"
+            )
 
         # Get user agent
         user_agent = request.headers.get("User-Agent", "Unknown")
@@ -144,8 +150,15 @@ class AuditLoggingMiddleware(BaseHTTPMiddleware):
         if isinstance(data, dict):
             sanitized = {}
             sensitive_keys = [
-                "password", "token", "secret", "api_key", "credit_card",
-                "ssn", "social_security", "bank_account", "private_key"
+                "password",
+                "token",
+                "secret",
+                "api_key",
+                "credit_card",
+                "ssn",
+                "social_security",
+                "bank_account",
+                "private_key",
             ]
             for key, value in data.items():
                 if any(sensitive in key.lower() for sensitive in sensitive_keys):
@@ -161,19 +174,22 @@ class AuditLoggingMiddleware(BaseHTTPMiddleware):
             return [self._sanitize_data(item) for item in data]
         else:
             return data
+
     def _create_audit_entry(
         self,
         request_info: Dict[str, Any],
         response_status: int,
         response_time: float,
         user_id: Optional[str] = None,
-        error_message: Optional[str] = None
+        error_message: Optional[str] = None,
     ) -> Dict[str, Any]:
         """Create audit log entry"""
         return {
             "timestamp": datetime.now(timezone.utc),
             "request_id": request_info["request_id"],
-            "event_type": self._determine_event_type(request_info["method"], request_info["path"]),
+            "event_type": self._determine_event_type(
+                request_info["method"], request_info["path"]
+            ),
             "user_id": user_id or request_info.get("user_email"),
             "user_email": request_info.get("user_email"),
             "user_role": request_info.get("user_role"),
@@ -189,8 +205,9 @@ class AuditLoggingMiddleware(BaseHTTPMiddleware):
             "response_time_ms": round(response_time * 1000, 2),
             "success": 200 <= response_status < 400,
             "error_message": error_message,
-            "session_hash": self._generate_session_hash(request_info)
+            "session_hash": self._generate_session_hash(request_info),
         }
+
     def _determine_event_type(self, method: str, path: str) -> str:
         """Determine the type of event for categorization"""
         if "login" in path or "token" in path:
@@ -211,6 +228,7 @@ class AuditLoggingMiddleware(BaseHTTPMiddleware):
             return "data_access"
         else:
             return "other"
+
     def _generate_session_hash(self, request_info: Dict[str, Any]) -> str:
         """Generate a session hash for correlating requests"""
         session_data = f"{request_info['ip_address']}:{request_info['user_agent']}"
@@ -270,9 +288,7 @@ class AuditLoggingMiddleware(BaseHTTPMiddleware):
             response_time = time.time() - start_time
             # Create audit entry
             audit_entry = self._create_audit_entry(
-                request_info,
-                response.status_code,
-                response_time
+                request_info, response.status_code, response_time
             )
 
             # Log to database (async)
@@ -291,10 +307,7 @@ class AuditLoggingMiddleware(BaseHTTPMiddleware):
 
             # Create error audit entry
             audit_entry = self._create_audit_entry(
-                request_info,
-                500,
-                response_time,
-                error_message=str(e)
+                request_info, 500, response_time, error_message=str(e)
             )
 
             # Log error
@@ -321,35 +334,41 @@ class AuditEventLogger:
         email: str,
         success: bool,
         ip_address: str,
-        error_message: Optional[str] = None
+        error_message: Optional[str] = None,
     ):
         """Log login attempt"""
-        await self.audit_collection.insert_one({
-            "timestamp": datetime.now(timezone.utc),
-            "event_type": "login_attempt",
-            "email": email,
-            "success": success,
-            "ip_address": ip_address,
-            "error_message": error_message
-        })
+        await self.audit_collection.insert_one(
+            {
+                "timestamp": datetime.now(timezone.utc),
+                "event_type": "login_attempt",
+                "email": email,
+                "success": success,
+                "ip_address": ip_address,
+                "error_message": error_message,
+            }
+        )
+
     async def log_data_access(
         self,
         user_id: str,
         resource_type: str,
         resource_id: str,
         action: str,
-        ip_address: str
+        ip_address: str,
     ):
         """Log data access event"""
-        await self.audit_collection.insert_one({
-            "timestamp": datetime.now(timezone.utc),
-            "event_type": "data_access",
-            "user_id": user_id,
-            "resource_type": resource_type,
-            "resource_id": resource_id,
-            "action": action,
-            "ip_address": ip_address
-        })
+        await self.audit_collection.insert_one(
+            {
+                "timestamp": datetime.now(timezone.utc),
+                "event_type": "data_access",
+                "user_id": user_id,
+                "resource_type": resource_type,
+                "resource_id": resource_id,
+                "action": action,
+                "ip_address": ip_address,
+            }
+        )
+
     async def log_security_event(
         self,
         event_type: str,
@@ -357,16 +376,18 @@ class AuditEventLogger:
         description: str,
         user_id: Optional[str] = None,
         ip_address: Optional[str] = None,
-        additional_data: Optional[Dict[str, Any]] = None
+        additional_data: Optional[Dict[str, Any]] = None,
     ):
         """Log security event"""
-        await self.audit_collection.insert_one({
-            "timestamp": datetime.now(timezone.utc),
-            "event_type": "security_event",
-            "security_event_type": event_type,
-            "severity": severity,
-            "description": description,
-            "user_id": user_id,
-            "ip_address": ip_address,
-            "additional_data": additional_data
-        })
+        await self.audit_collection.insert_one(
+            {
+                "timestamp": datetime.now(timezone.utc),
+                "event_type": "security_event",
+                "security_event_type": event_type,
+                "severity": severity,
+                "description": description,
+                "user_id": user_id,
+                "ip_address": ip_address,
+                "additional_data": additional_data,
+            }
+        )

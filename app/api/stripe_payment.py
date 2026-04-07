@@ -1,6 +1,7 @@
 """
 Stripe Payment API Endpoints
 """
+
 from fastapi import APIRouter, Depends, HTTPException, Request, Header
 from typing import Optional
 from bson import ObjectId
@@ -29,6 +30,7 @@ PAYABLE_PAYMENT_INTENT_STATUSES = {
 
 # ==================== REQUEST MODELS ====================
 
+
 def _is_public_checkout_resume_candidate(user_doc: dict) -> bool:
     """Allow unauthenticated checkout resumes only for public self-signups."""
 
@@ -42,44 +44,63 @@ def _is_public_checkout_resume_candidate(user_doc: dict) -> bool:
 async def _get_payment_request_by_public_token(public_token: str) -> dict:
     from app.core.database import mongo
 
-    payment_request = await mongo.db["payment_requests"].find_one({"public_token": public_token})
+    payment_request = await mongo.db["payment_requests"].find_one(
+        {"public_token": public_token}
+    )
     if not payment_request:
         raise HTTPException(status_code=404, detail="Payment request not found")
 
     return payment_request
 
+
 class CreateCheckoutSessionRequest(BaseModel):
     """Request model for creating a Stripe Checkout Session"""
+
     plan_id: str = Field(..., description="Subscription plan ID")
-    billing_interval: str = Field(default="monthly", description="Billing interval: monthly or yearly")
+    billing_interval: str = Field(
+        default="monthly", description="Billing interval: monthly or yearly"
+    )
     success_url: Optional[str] = Field(None, description="Success redirect URL")
     cancel_url: Optional[str] = Field(None, description="Cancel redirect URL")
-    trial_days: Optional[int] = Field(default=None, ge=0, description="Number of trial days")
+    trial_days: Optional[int] = Field(
+        default=None, ge=0, description="Number of trial days"
+    )
 
 
 class PublicCreateCheckoutSessionRequest(CreateCheckoutSessionRequest):
     """Public request model (no auth) for creating a Stripe Checkout Session after registration"""
+
     email: str = Field(..., description="Email to validate pending user ownership")
 
 
 class CreatePortalSessionRequest(BaseModel):
     """Request model for creating a Customer Portal Session"""
-    return_url: Optional[str] = Field(None, description="Return URL after portal session")
-    flow_type: Optional[str] = Field(None, description="Portal flow type: 'payment_method_update', 'subscription_update', or 'subscription_cancel'")
+
+    return_url: Optional[str] = Field(
+        None, description="Return URL after portal session"
+    )
+    flow_type: Optional[str] = Field(
+        None,
+        description="Portal flow type: 'payment_method_update', 'subscription_update', or 'subscription_cancel'",
+    )
 
 
 class CreatePaymentIntentRequest(BaseModel):
     """Request model for creating a payment intent for couple payments"""
+
     amount: float = Field(..., description="Payment amount in dollars", gt=0)
     currency: str = Field(default="usd", description="Currency code")
     wedding_id: str = Field(..., description="Associated wedding ID")
     description: Optional[str] = Field(None, description="Payment description")
     metadata: Optional[dict] = Field(default=None, description="Additional metadata")
-    destination_user_id: Optional[str] = Field(None, description="Internal ID of the user to receive funds (Connect account)")
+    destination_user_id: Optional[str] = Field(
+        None, description="Internal ID of the user to receive funds (Connect account)"
+    )
 
 
 class ConnectOnboardRequest(BaseModel):
     """Request model for onboarding a connected account"""
+
     country: str = Field(default="US", description="Two-letter country code")
     return_url: str = Field(..., description="Return URL after onboarding")
     refresh_url: str = Field(..., description="Refresh URL if onboarding fails")
@@ -87,6 +108,7 @@ class ConnectOnboardRequest(BaseModel):
 
 class VendorPaymentRequest(BaseModel):
     """Request model for paying a vendor"""
+
     vendor_user_id: str = Field(..., description="User ID of the vendor to pay")
     amount: float = Field(..., description="Payment amount in dollars", gt=0)
     currency: str = Field(default="usd", description="Currency code")
@@ -95,10 +117,11 @@ class VendorPaymentRequest(BaseModel):
 
 # ==================== CHECKOUT SESSION ENDPOINTS ====================
 
+
 @router.post("/create-checkout-session")
 async def create_checkout_session(
     request: CreateCheckoutSessionRequest,
-    current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
+    current_user: ExtendedAuthUser = Depends(require_admin_or_planner),
 ):
     """
     Create a Stripe Checkout Session for subscription signup
@@ -109,13 +132,17 @@ async def create_checkout_session(
     try:
         user_id = str(current_user.user_data.get("_id"))
         current_status = normalize_subscription_status(
-            current_user.user_data.get("subscription_status") or current_user.subscription_status
+            current_user.user_data.get("subscription_status")
+            or current_user.subscription_status
         )
 
-        if current_status in ACTIVE_SUBSCRIPTION_STATUSES or current_status in BILLING_PORTAL_RECOVERY_SUBSCRIPTION_STATUSES:
+        if (
+            current_status in ACTIVE_SUBSCRIPTION_STATUSES
+            or current_status in BILLING_PORTAL_RECOVERY_SUBSCRIPTION_STATUSES
+        ):
             raise HTTPException(
                 status_code=409,
-                detail="Your account already has an active billing relationship. Use the billing portal to manage or update it."
+                detail="Your account already has an active billing relationship. Use the billing portal to manage or update it.",
             )
 
         session = await stripe_service.create_checkout_session(
@@ -124,38 +151,43 @@ async def create_checkout_session(
             billing_interval=request.billing_interval,
             success_url=request.success_url or "",
             cancel_url=request.cancel_url or "",
-            trial_days=request.trial_days
+            trial_days=request.trial_days,
         )
 
-        return {
-            "status": "success",
-            "checkout_session": session
-        }
+        return {"status": "success", "checkout_session": session}
 
     except HTTPException:
         raise
     except Exception as e:
         logger.error(f"Error creating checkout session: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Failed to create checkout session: {str(e)}")
+        raise HTTPException(
+            status_code=500, detail=f"Failed to create checkout session: {str(e)}"
+        )
 
 
 @router.post("/public/create-checkout-session")
-async def create_public_checkout_session(
-    request: PublicCreateCheckoutSessionRequest
-):
+async def create_public_checkout_session(request: PublicCreateCheckoutSessionRequest):
     """
     Public endpoint to create a Stripe Checkout Session for pending signups.
     Validates the pending user by email, then creates checkout without requiring login.
     """
     try:
-        pending_user = await stripe_service.users_collection.find_one({"email": request.email})
+        pending_user = await stripe_service.users_collection.find_one(
+            {"email": request.email}
+        )
 
         # Use a generic error message for all failure cases to prevent email enumeration
         if not pending_user:
-            raise HTTPException(status_code=400, detail="Unable to create checkout session. Please check your email and try again.")
+            raise HTTPException(
+                status_code=400,
+                detail="Unable to create checkout session. Please check your email and try again.",
+            )
 
         if not _is_public_checkout_resume_candidate(pending_user):
-            raise HTTPException(status_code=400, detail="Unable to create checkout session. Please check your email and try again.")
+            raise HTTPException(
+                status_code=400,
+                detail="Unable to create checkout session. Please check your email and try again.",
+            )
 
         session = await stripe_service.create_checkout_session(
             user_id=str(pending_user["_id"]),
@@ -163,25 +195,23 @@ async def create_public_checkout_session(
             billing_interval=request.billing_interval,
             success_url=request.success_url or "",
             cancel_url=request.cancel_url or "",
-            trial_days=request.trial_days
+            trial_days=request.trial_days,
         )
 
-        return {
-            "status": "success",
-            "checkout_session": session
-        }
+        return {"status": "success", "checkout_session": session}
 
     except HTTPException:
         raise
     except Exception as e:
         logger.error(f"Error creating public checkout session: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Failed to create checkout session: {str(e)}")
+        raise HTTPException(
+            status_code=500, detail=f"Failed to create checkout session: {str(e)}"
+        )
 
 
 @router.get("/checkout-session/{session_id}")
 async def get_checkout_session(
-    session_id: str,
-    current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
+    session_id: str, current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
 ):
     """
     Retrieve details of a Stripe Checkout Session
@@ -202,14 +232,18 @@ async def get_checkout_session(
                 "payment_status": session.payment_status,
                 "customer": session.customer,
                 "subscription": session.subscription,
-                "amount_total": session.amount_total / 100 if session.amount_total else 0,
-                "currency": session.currency
-            }
+                "amount_total": session.amount_total / 100
+                if session.amount_total
+                else 0,
+                "currency": session.currency,
+            },
         }
 
     except Exception as e:
         logger.error(f"Error retrieving checkout session: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Failed to retrieve session: {str(e)}")
+        raise HTTPException(
+            status_code=500, detail=f"Failed to retrieve session: {str(e)}"
+        )
 
 
 @router.get("/payment-intent/{id}")
@@ -284,10 +318,11 @@ async def get_payment_intent_summary(id: str):
 
 # ==================== CUSTOMER PORTAL ENDPOINTS ====================
 
+
 @router.post("/create-portal-session")
 async def create_portal_session(
     request: CreatePortalSessionRequest,
-    current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
+    current_user: ExtendedAuthUser = Depends(require_admin_or_planner),
 ):
     """
     Create a Stripe Customer Portal session
@@ -304,27 +339,26 @@ async def create_portal_session(
         portal_session = await stripe_service.create_portal_session(
             user_id=user_id,
             return_url=request.return_url or "",
-            flow_type=request.flow_type or None
+            flow_type=request.flow_type or None,
         )
 
-        return {
-            "status": "success",
-            "portal_url": portal_session["url"]
-        }
+        return {"status": "success", "portal_url": portal_session["url"]}
 
     except HTTPException:
         raise
     except Exception as e:
         logger.error(f"Error creating portal session: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Failed to create portal session: {str(e)}")
+        raise HTTPException(
+            status_code=500, detail=f"Failed to create portal session: {str(e)}"
+        )
 
 
 # ==================== WEBHOOK ENDPOINT ====================
 
+
 @router.post("/webhook")
 async def stripe_webhook(
-    request: Request,
-    stripe_signature: str = Header(None, alias="stripe-signature")
+    request: Request, stripe_signature: str = Header(None, alias="stripe-signature")
 ):
     """
     Handle Stripe webhook events
@@ -378,15 +412,21 @@ async def stripe_webhook(
             logger.error(f"Webhook handler returned error: {error_msg}")
 
             # Permanent failures: acknowledge receipt, log for manual investigation
-            permanent_keywords = ["not found", "Missing user_id", "Missing plan_id", "metadata"]
+            permanent_keywords = [
+                "not found",
+                "Missing user_id",
+                "Missing plan_id",
+                "metadata",
+            ]
             if any(kw.lower() in error_msg.lower() for kw in permanent_keywords):
-                logger.warning(f"Permanent webhook failure (will not retry): {error_msg}")
+                logger.warning(
+                    f"Permanent webhook failure (will not retry): {error_msg}"
+                )
                 return {"status": "error_acknowledged", "message": error_msg}
 
             # Transient failures: return 500 so Stripe retries
             raise HTTPException(
-                status_code=500,
-                detail=f"Webhook handler error: {error_msg}"
+                status_code=500, detail=f"Webhook handler error: {error_msg}"
             )
 
         return {"status": "success", "result": result}
@@ -395,15 +435,18 @@ async def stripe_webhook(
         raise
     except Exception as e:
         logger.error(f"Error processing webhook: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Webhook processing failed: {str(e)}")
+        raise HTTPException(
+            status_code=500, detail=f"Webhook processing failed: {str(e)}"
+        )
 
 
 # ==================== CONNECT / MARKETPLACE ENDPOINTS ====================
 
+
 @router.post("/connect/onboard")
 async def create_connect_account_link(
     request: ConnectOnboardRequest,
-    current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
+    current_user: ExtendedAuthUser = Depends(require_admin_or_planner),
 ):
     """
     Create a Stripe Connect onboarding link for the current user.
@@ -413,35 +456,33 @@ async def create_connect_account_link(
         user_id = str(current_user.user_data.get("_id"))
         email = current_user.user_data.get("email")
         if not email:
-            raise HTTPException(status_code=400, detail="User email is required for Connect onboarding")
+            raise HTTPException(
+                status_code=400, detail="User email is required for Connect onboarding"
+            )
 
         # Create or get connected account
         account_id = await stripe_service.create_connected_account(
-            user_id=user_id,
-            email=email,
-            country=request.country
+            user_id=user_id, email=email, country=request.country
         )
 
         # Create onboarding link
         url = stripe_service.create_account_link(
             account_id=account_id,
             refresh_url=request.refresh_url,
-            return_url=request.return_url
+            return_url=request.return_url,
         )
 
-        return {
-            "status": "success",
-            "url": url,
-            "account_id": account_id
-        }
+        return {"status": "success", "url": url, "account_id": account_id}
     except Exception as e:
         logger.error(f"Error creating connect link: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Failed to create onboarding link: {str(e)}")
+        raise HTTPException(
+            status_code=500, detail=f"Failed to create onboarding link: {str(e)}"
+        )
 
 
 @router.get("/connect/status")
 async def get_connect_status(
-    current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
+    current_user: ExtendedAuthUser = Depends(require_admin_or_planner),
 ):
     """
     Check the onboarding status of the current user's connected account.
@@ -460,7 +501,7 @@ async def get_connect_status(
                 "status": "not_connected",
                 "charges_enabled": False,
                 "payouts_enabled": False,
-                "details_submitted": False
+                "details_submitted": False,
             }
 
         status = stripe_service.get_account_status(connect_id)
@@ -475,7 +516,7 @@ async def get_connect_status(
 @router.post("/pay-vendor")
 async def pay_vendor(
     request: VendorPaymentRequest,
-    current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
+    current_user: ExtendedAuthUser = Depends(require_admin_or_planner),
 ):
     """
     Create a payment intent for a Planner to pay a Vendor.
@@ -487,7 +528,9 @@ async def pay_vendor(
         from app.core.database import mongo
 
         # 1. Try finding as User first (direct ID match)
-        vendor_user = await mongo.db["users"].find_one({"_id": ObjectId(request.vendor_user_id)})
+        vendor_user = await mongo.db["users"].find_one(
+            {"_id": ObjectId(request.vendor_user_id)}
+        )
 
         # 2. If not found, try finding as VendorProfile and look up associated user by email
         if not vendor_user:
@@ -498,19 +541,29 @@ async def pay_vendor(
             # Given vendor.py doesn't specify collection, I'll assume 'vendor_directory' or 'vendors'.
             # Let's try 'vendor_directory' first as per API path.
 
-            vendor_profile = await mongo.db["vendor_directory"].find_one({"_id": ObjectId(request.vendor_user_id)})
+            vendor_profile = await mongo.db["vendor_directory"].find_one(
+                {"_id": ObjectId(request.vendor_user_id)}
+            )
 
             if vendor_profile:
                 vendor_email = vendor_profile.get("email")
                 if vendor_email:
-                    vendor_user = await mongo.db["users"].find_one({"email": vendor_email})
+                    vendor_user = await mongo.db["users"].find_one(
+                        {"email": vendor_email}
+                    )
 
         if not vendor_user:
-            raise HTTPException(status_code=404, detail="Vendor user account not found. The vendor must be a registered user to receive payments.")
+            raise HTTPException(
+                status_code=404,
+                detail="Vendor user account not found. The vendor must be a registered user to receive payments.",
+            )
 
         vendor_connect_id = vendor_user.get("stripe_connect_id")
         if not vendor_connect_id:
-            raise HTTPException(status_code=400, detail="Vendor has not connected their Stripe account to receive payments.")
+            raise HTTPException(
+                status_code=400,
+                detail="Vendor has not connected their Stripe account to receive payments.",
+            )
 
         # Verify sender permission (if needed, e.g. checking budget)
         # For now, we assume if they pay, they pay.
@@ -520,27 +573,27 @@ async def pay_vendor(
             vendor_connect_id=vendor_connect_id,
             amount=request.amount,
             currency=request.currency,
-            description=request.description or ""
+            description=request.description or "",
         )
 
-        return {
-            "status": "success",
-            "payment_intent": result
-        }
+        return {"status": "success", "payment_intent": result}
 
     except HTTPException:
         raise
     except Exception as e:
         logger.error(f"Error creating vendor payment: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Failed to create payment: {str(e)}")
+        raise HTTPException(
+            status_code=500, detail=f"Failed to create payment: {str(e)}"
+        )
 
 
 # ==================== PAYMENT COLLECTION FOR COUPLES ====================
 
+
 @router.post("/create-payment-intent")
 async def create_payment_intent(
     request: CreatePaymentIntentRequest,
-    current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
+    current_user: ExtendedAuthUser = Depends(require_admin_or_planner),
 ):
     """
     Create a payment intent for collecting payment from couples
@@ -556,11 +609,14 @@ async def create_payment_intent(
         # Ensure planner is authorized for the wedding if wedding_id provided
         if request.wedding_id and not current_user.is_root_admin:
             from app.core.database import mongo
+
             # Try string ID first (wedding IDs are stored as strings like "wedding_XXXXX")
             wedding = await mongo.db["weddings"].find_one({"_id": request.wedding_id})
             if not wedding:
                 try:
-                    wedding = await mongo.db["weddings"].find_one({"_id": ObjectId(request.wedding_id)})
+                    wedding = await mongo.db["weddings"].find_one(
+                        {"_id": ObjectId(request.wedding_id)}
+                    )
                 except Exception:
                     pass
             if not wedding:
@@ -571,10 +627,14 @@ async def create_payment_intent(
             planner_id = wedding.get("planner_id")
 
             # If current user is not admin, they must be the planner
-            if not current_user.is_root_admin and planner_id and str(planner_id) != user_id:
+            if (
+                not current_user.is_root_admin
+                and planner_id
+                and str(planner_id) != user_id
+            ):
                 raise HTTPException(
                     status_code=403,
-                    detail="You don't have permission to create payments for this wedding"
+                    detail="You don't have permission to create payments for this wedding",
                 )
 
             # If we want to route funds to the planner of the wedding:
@@ -588,7 +648,10 @@ async def create_payment_intent(
         if request.destination_user_id:
             # Look up connect ID for this user
             from app.core.database import mongo
-            dest_user = await mongo.db["users"].find_one({"_id": ObjectId(request.destination_user_id)})
+
+            dest_user = await mongo.db["users"].find_one(
+                {"_id": ObjectId(request.destination_user_id)}
+            )
             if dest_user and dest_user.get("stripe_connect_id"):
                 destination_account_id = dest_user.get("stripe_connect_id")
 
@@ -604,7 +667,7 @@ async def create_payment_intent(
             wedding_id=wedding_id,
             description=description,
             metadata=request.metadata or {},
-            destination_account_id=destination_account_id or ""
+            destination_account_id=destination_account_id or "",
         )
 
         # Save payment request record to Mongo
@@ -613,36 +676,37 @@ async def create_payment_intent(
 
         public_token = secrets.token_urlsafe(24)
 
-        await mongo.db["payment_requests"].insert_one({
-            "user_id": str(current_user.user_data.get("_id")),
-            "public_token": public_token,
-            "payment_intent_id": payment_intent["payment_intent_id"],
-            "amount": request.amount,
-            "currency": request.currency,
-            "status": "pending",  # Initial status
-            "wedding_id": wedding_id,
-            "description": request.description,
-            "created_at": datetime.now(timezone.utc),
-            "updated_at": datetime.now(timezone.utc)
-        })
+        await mongo.db["payment_requests"].insert_one(
+            {
+                "user_id": str(current_user.user_data.get("_id")),
+                "public_token": public_token,
+                "payment_intent_id": payment_intent["payment_intent_id"],
+                "amount": request.amount,
+                "currency": request.currency,
+                "status": "pending",  # Initial status
+                "wedding_id": wedding_id,
+                "description": request.description,
+                "created_at": datetime.now(timezone.utc),
+                "updated_at": datetime.now(timezone.utc),
+            }
+        )
 
         payment_intent["public_token"] = public_token
 
-        return {
-            "status": "success",
-            "payment_intent": payment_intent
-        }
+        return {"status": "success", "payment_intent": payment_intent}
 
     except HTTPException:
         raise
     except Exception as e:
         logger.error(f"Error creating payment intent: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Failed to create payment intent: {str(e)}")
+        raise HTTPException(
+            status_code=500, detail=f"Failed to create payment intent: {str(e)}"
+        )
 
 
 @router.get("/payment-requests")
 async def get_payment_requests(
-    current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
+    current_user: ExtendedAuthUser = Depends(require_admin_or_planner),
 ):
     """
     Get list of payment requests created by the current planner.
@@ -650,9 +714,14 @@ async def get_payment_requests(
     """
     try:
         from app.core.database import mongo
+
         user_id = str(current_user.user_data.get("_id"))
 
-        cursor = mongo.db["payment_requests"].find({"user_id": user_id}).sort("created_at", -1)
+        cursor = (
+            mongo.db["payment_requests"]
+            .find({"user_id": user_id})
+            .sort("created_at", -1)
+        )
         requests = await cursor.to_list(length=100)
 
         # Collect wedding IDs to fetch titles (support both string and ObjectId formats)
@@ -671,19 +740,21 @@ async def get_payment_requests(
         if string_wedding_ids:
             # Try string IDs first
             weddings_cursor = mongo.db["weddings"].find(
-                {"_id": {"$in": list(string_wedding_ids)}},
-                {"_id": 1, "title": 1}
+                {"_id": {"$in": list(string_wedding_ids)}}, {"_id": 1, "title": 1}
             )
             weddings = await weddings_cursor.to_list(length=len(string_wedding_ids))
-            wedding_titles = {str(w["_id"]): w.get("title", "Untitled Wedding") for w in weddings}
+            wedding_titles = {
+                str(w["_id"]): w.get("title", "Untitled Wedding") for w in weddings
+            }
 
             # Fallback: try ObjectId format for any not found
             if objectid_wedding_ids and len(wedding_titles) < len(string_wedding_ids):
                 weddings_cursor = mongo.db["weddings"].find(
-                    {"_id": {"$in": list(objectid_wedding_ids)}},
-                    {"_id": 1, "title": 1}
+                    {"_id": {"$in": list(objectid_wedding_ids)}}, {"_id": 1, "title": 1}
                 )
-                weddings = await weddings_cursor.to_list(length=len(objectid_wedding_ids))
+                weddings = await weddings_cursor.to_list(
+                    length=len(objectid_wedding_ids)
+                )
                 for w in weddings:
                     wedding_titles[str(w["_id"])] = w.get("title", "Untitled Wedding")
 
@@ -701,10 +772,10 @@ async def get_payment_requests(
 
 # ==================== BILLING HISTORY ENDPOINTS ====================
 
+
 @router.get("/invoices")
 async def get_invoices(
-    limit: int = 10,
-    current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
+    limit: int = 10, current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
 ):
     """
     Get billing history (invoices) for the current user
@@ -723,7 +794,9 @@ async def get_invoices(
         user_id = str(current_user.user_data.get("_id"))
 
         # Get customer ID from stripe_customers collection
-        customer_record = await mongo.db["stripe_customers"].find_one({"user_id": user_id})
+        customer_record = await mongo.db["stripe_customers"].find_one(
+            {"user_id": user_id}
+        )
         if not customer_record or not customer_record.get("stripe_customer_id"):
             return []
 
@@ -733,22 +806,26 @@ async def get_invoices(
         invoices = stripe.Invoice.list(
             customer=customer_id,
             limit=limit,
-            status="paid"  # Only show paid invoices
+            status="paid",  # Only show paid invoices
         )
 
         result = []
         for invoice in invoices.data:
-            result.append({
-                "id": invoice.id,
-                "date": invoice.created,  # Unix timestamp
-                "amount": invoice.amount_paid,  # In cents
-                "status": invoice.status,
-                "invoice_pdf": invoice.invoice_pdf,
-                "description": invoice.lines.data[0].description if invoice.lines.data else "Subscription payment",
-                "period_start": invoice.period_start,
-                "period_end": invoice.period_end,
-                "number": invoice.number
-            })
+            result.append(
+                {
+                    "id": invoice.id,
+                    "date": invoice.created,  # Unix timestamp
+                    "amount": invoice.amount_paid,  # In cents
+                    "status": invoice.status,
+                    "invoice_pdf": invoice.invoice_pdf,
+                    "description": invoice.lines.data[0].description
+                    if invoice.lines.data
+                    else "Subscription payment",
+                    "period_start": invoice.period_start,
+                    "period_end": invoice.period_end,
+                    "number": invoice.number,
+                }
+            )
 
         return result
 
@@ -759,7 +836,7 @@ async def get_invoices(
 
 @router.get("/payment-method")
 async def get_payment_method(
-    current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
+    current_user: ExtendedAuthUser = Depends(require_admin_or_planner),
 ):
     """
     Get the default payment method details for the current user
@@ -777,7 +854,9 @@ async def get_payment_method(
         user_id = str(current_user.user_data.get("_id"))
 
         # Get customer ID
-        customer_record = await mongo.db["stripe_customers"].find_one({"user_id": user_id})
+        customer_record = await mongo.db["stripe_customers"].find_one(
+            {"user_id": user_id}
+        )
         if not customer_record or not customer_record.get("stripe_customer_id"):
             return {"has_payment_method": False}
 
@@ -826,14 +905,11 @@ async def get_payment_method(
                     "card_last_four": card.last4,
                     "card_exp_month": card.exp_month,
                     "card_exp_year": card.exp_year,
-                    "card_funding": card.funding
+                    "card_funding": card.funding,
                 }
 
         # Non-card payment method
-        return {
-            "has_payment_method": True,
-            "type": pm.type
-        }
+        return {"has_payment_method": True, "type": pm.type}
 
     except Exception as e:
         logger.error(f"Error fetching payment method: {str(e)}")
@@ -842,7 +918,7 @@ async def get_payment_method(
 
 @router.get("/subscription")
 async def get_subscription_details(
-    current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
+    current_user: ExtendedAuthUser = Depends(require_admin_or_planner),
 ):
     """
     Get detailed subscription information including payment method
@@ -861,22 +937,32 @@ async def get_subscription_details(
         user_id = str(current_user.user_data.get("_id"))
 
         # Get local subscription record
-        subscription_record = await mongo.db["user_subscriptions"].find_one({"user_id": user_id})
+        subscription_record = await mongo.db["user_subscriptions"].find_one(
+            {"user_id": user_id}
+        )
 
         # Fallback: if user_subscriptions record is missing (e.g. standalone MongoDB
         # transaction failed during webhook), reconstruct from the users collection
         # which is also updated by _sync_subscription_state.
         if not subscription_record:
             from bson import ObjectId as _ObjId
+
             user_doc = await mongo.db["users"].find_one(
                 {"_id": _ObjId(user_id)},
                 {
-                    "subscription_status": 1, "plan_id": 1,
-                    "stripe_subscription_id": 1, "stripe_customer_id": 1,
-                    "trial_end_date": 1, "created_at": 1,
-                }
+                    "subscription_status": 1,
+                    "plan_id": 1,
+                    "stripe_subscription_id": 1,
+                    "stripe_customer_id": 1,
+                    "trial_end_date": 1,
+                    "created_at": 1,
+                },
             )
-            normalized_status = normalize_subscription_status(user_doc.get("subscription_status")) if user_doc else None
+            normalized_status = (
+                normalize_subscription_status(user_doc.get("subscription_status"))
+                if user_doc
+                else None
+            )
             if user_doc and normalized_status in ACTIVE_SUBSCRIPTION_STATUSES:
                 # Construct a minimal subscription record from users collection
                 subscription_record = {
@@ -890,7 +976,9 @@ async def get_subscription_details(
                     "trial_end_date": user_doc.get("trial_end_date"),
                     "payment_status": "paid",
                 }
-                logger.info(f"Reconstructed subscription from users collection for user {user_id}")
+                logger.info(
+                    f"Reconstructed subscription from users collection for user {user_id}"
+                )
             else:
                 raise HTTPException(status_code=404, detail="No subscription found")
 
@@ -900,12 +988,16 @@ async def get_subscription_details(
             plan = await mongo.db["subscription_plans"].find_one({"_id": plan_id})
 
         # Get customer and payment method from Stripe
-        customer_record = await mongo.db["stripe_customers"].find_one({"user_id": user_id})
+        customer_record = await mongo.db["stripe_customers"].find_one(
+            {"user_id": user_id}
+        )
         card_info = {}
 
         if customer_record and customer_record.get("stripe_customer_id"):
             try:
-                customer = stripe.Customer.retrieve(customer_record["stripe_customer_id"])
+                customer = stripe.Customer.retrieve(
+                    customer_record["stripe_customer_id"]
+                )
 
                 # Safely get default payment method from invoice_settings
                 default_pm_id: str | None = None
@@ -933,10 +1025,12 @@ async def get_subscription_details(
                         if card is not None:
                             card_brand = card.brand
                             card_info = {
-                                "card_brand": card_brand.capitalize() if card_brand else "Card",
+                                "card_brand": card_brand.capitalize()
+                                if card_brand
+                                else "Card",
                                 "card_last_four": card.last4,
                                 "card_exp_month": card.exp_month,
-                                "card_exp_year": card.exp_year
+                                "card_exp_year": card.exp_year,
                             }
             except Exception as e:
                 logger.warning(f"Could not fetch Stripe card info: {e}")
@@ -952,7 +1046,7 @@ async def get_subscription_details(
             "stripe_subscription_id": subscription_record.get("stripe_subscription_id"),
             "stripe_customer_id": subscription_record.get("stripe_customer_id"),
             "payment_status": subscription_record.get("payment_status"),
-            **card_info
+            **card_info,
         }
 
         if plan:
@@ -973,10 +1067,13 @@ async def get_subscription_details(
         raise
     except Exception as e:
         logger.error(f"Error fetching subscription details: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Failed to fetch subscription: {str(e)}")
+        raise HTTPException(
+            status_code=500, detail=f"Failed to fetch subscription: {str(e)}"
+        )
 
 
 # ==================== CONFIGURATION ENDPOINT ====================
+
 
 @router.get("/config")
 async def get_stripe_config():
@@ -994,12 +1091,11 @@ async def get_stripe_config():
         raise HTTPException(status_code=503, detail="Stripe is not enabled")
 
     if not settings.stripe_publishable_key:
-        raise HTTPException(status_code=500, detail="Stripe publishable key not configured")
+        raise HTTPException(
+            status_code=500, detail="Stripe publishable key not configured"
+        )
 
-    return {
-        "publishable_key": settings.stripe_publishable_key,
-        "currency": "usd"
-    }
+    return {"publishable_key": settings.stripe_publishable_key, "currency": "usd"}
 
 
 # ==================== PUBLIC WEBHOOK ENDPOINT (NO AUTH) ====================

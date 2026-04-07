@@ -20,7 +20,9 @@ from datetime import datetime, timezone, timedelta
 from app.core.database import mongo
 
 logger = logging.getLogger(__name__)
-logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+logging.basicConfig(
+    level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s"
+)
 
 # Fields to include in the export (subset of VendorProfile)
 EXPORT_FIELDS = {
@@ -84,7 +86,11 @@ async def export_vendors(output_path: str, since_hours: int | None = None):
         query["scraped_at"] = {"$gte": cutoff}
 
     try:
-        cursor = collection.find(query, EXPORT_FIELDS).sort("scraped_at", -1).batch_size(EXPORT_BATCH_SIZE)
+        cursor = (
+            collection.find(query, EXPORT_FIELDS)
+            .sort("scraped_at", -1)
+            .batch_size(EXPORT_BATCH_SIZE)
+        )
 
         # Stream to file: write opening bracket, then each doc, then closing bracket
         count = 0

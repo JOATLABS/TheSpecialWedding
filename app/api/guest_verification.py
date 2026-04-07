@@ -2,8 +2,15 @@ from fastapi import APIRouter, HTTPException, Depends, Request, Response
 from typing import Optional, Literal
 from pydantic import BaseModel, Field
 from app.services.guest_verification_service import GuestVerificationService
-from app.dependencies.auth_extended import require_admin_or_planner, ExtendedAuthUser, check_wedding_access
-from app.dependencies.guest_access import get_guest_access_session, set_guest_access_session
+from app.dependencies.auth_extended import (
+    require_admin_or_planner,
+    ExtendedAuthUser,
+    check_wedding_access,
+)
+from app.dependencies.guest_access import (
+    get_guest_access_session,
+    set_guest_access_session,
+)
 
 router = APIRouter()
 verification_service = GuestVerificationService()
@@ -12,17 +19,27 @@ verification_service = GuestVerificationService()
 class GuestVerificationRequest(BaseModel):
     token: Optional[str] = Field(None, description="Guest invitation token")
     name: Optional[str] = Field(None, description="Guest name for verification")
-    phone: Optional[str] = Field(None, description="Guest phone number for verification")
+    phone: Optional[str] = Field(
+        None, description="Guest phone number for verification"
+    )
     email: Optional[str] = Field(None, description="Guest email for verification")
-    password: Optional[str] = Field(None, description="Password for password-protected weddings")
+    password: Optional[str] = Field(
+        None, description="Password for password-protected weddings"
+    )
     otp_code: Optional[str] = Field(None, description="OTP verification code")
-    contact: Optional[str] = Field(None, description="Contact (phone/email) for OTP verification")
+    contact: Optional[str] = Field(
+        None, description="Contact (phone/email) for OTP verification"
+    )
 
 
 class PrivacySettingsUpdate(BaseModel):
-    privacy_mode: str = Field(..., description="Privacy mode: public, password, private")
+    privacy_mode: str = Field(
+        ..., description="Privacy mode: public, password, private"
+    )
     guest_auth_required: bool = Field(default=True)
-    password_protection: Optional[str] = Field(None, description="Password for password mode")
+    password_protection: Optional[str] = Field(
+        None, description="Password for password mode"
+    )
     allow_guest_sharing: bool = Field(default=False)
     require_phone_verification: bool = Field(default=True)
     require_name_verification: bool = Field(default=True)
@@ -30,13 +47,18 @@ class PrivacySettingsUpdate(BaseModel):
 
 class RequestRSVPLinkRequest(BaseModel):
     """Request model for guest RSVP link request."""
+
     slug: str = Field(..., description="Wedding slug")
     contact: str = Field(..., description="Phone number or email address")
-    contact_type: Literal["phone", "email"] = Field(..., description="Type of contact: phone or email")
+    contact_type: Literal["phone", "email"] = Field(
+        ..., description="Type of contact: phone or email"
+    )
 
 
 @router.post("/weddings/verify-guest-access/{slug}", tags=["Guest"])
-async def verify_guest_access(slug: str, verification: GuestVerificationRequest, response: Response):
+async def verify_guest_access(
+    slug: str, verification: GuestVerificationRequest, response: Response
+):
     """
     Verify visitor access to view a wedding page based on privacy settings.
 
@@ -65,7 +87,7 @@ async def verify_guest_access(slug: str, verification: GuestVerificationRequest,
             raise HTTPException(
                 status_code=403,
                 detail="Guest verification failed",
-                headers={"X-Auth-Required": result.get("required_auth", "private")}
+                headers={"X-Auth-Required": result.get("required_auth", "private")},
             )
 
         guest = result.get("guest")
@@ -103,7 +125,9 @@ async def get_wedding_privacy_info(slug: str):
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error getting privacy info: {str(e)}")
+        raise HTTPException(
+            status_code=500, detail=f"Error getting privacy info: {str(e)}"
+        )
 
 
 @router.get("/weddings/guest-access/{slug}/{token}", tags=["Guest"])
@@ -125,12 +149,16 @@ async def get_wedding_with_token_access(slug: str, token: str):
         return {
             "wedding": result["wedding"],
             "guest": result.get("guest"),
-            "rsvp": result.get("rsvp")  # Include existing RSVP data if guest already submitted
+            "rsvp": result.get(
+                "rsvp"
+            ),  # Include existing RSVP data if guest already submitted
         }
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Token verification error: {str(e)}")
+        raise HTTPException(
+            status_code=500, detail=f"Token verification error: {str(e)}"
+        )
 
 
 @router.post("/weddings/guest-access/{slug}/{token}/exchange", tags=["Guest"])
@@ -225,11 +253,11 @@ async def request_rsvp_link(
 
         return result
 
-    except Exception as e:
+    except Exception:
         # Even on errors, return generic success to prevent enumeration
         return {
             "success": True,
-            "message": "If you're on the guest list, you'll receive your RSVP link shortly."
+            "message": "If you're on the guest list, you'll receive your RSVP link shortly.",
         }
 
 
@@ -237,7 +265,7 @@ async def request_rsvp_link(
 async def update_wedding_privacy_settings(
     wedding_id: str,
     privacy_settings: PrivacySettingsUpdate,
-    current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
+    current_user: ExtendedAuthUser = Depends(require_admin_or_planner),
 ):
     """
     Update privacy settings for a wedding - Admin only
@@ -247,19 +275,19 @@ async def update_wedding_privacy_settings(
         raise HTTPException(status_code=403, detail="Access to this wedding denied")
     try:
         return await verification_service.update_wedding_privacy_settings(
-            wedding_id=wedding_id,
-            privacy_settings=privacy_settings.dict()
+            wedding_id=wedding_id, privacy_settings=privacy_settings.dict()
         )
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error updating privacy settings: {str(e)}")
+        raise HTTPException(
+            status_code=500, detail=f"Error updating privacy settings: {str(e)}"
+        )
 
 
 @router.get("/weddings/{wedding_id}/access-logs", tags=["Admin"])
 async def get_wedding_access_logs(
-    wedding_id: str,
-    current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
+    wedding_id: str, current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
 ):
     """
     Get access logs for a wedding - Admin only
@@ -269,12 +297,18 @@ async def get_wedding_access_logs(
         raise HTTPException(status_code=403, detail="Access to this wedding denied")
     try:
         from app.core.database import mongo
-        logs = await mongo.db["access_logs"].find(
-            {"wedding_id": wedding_id},
-            {"_id": 0}
-        ).sort("timestamp", -1).limit(100).to_list(length=100)
+
+        logs = (
+            await mongo.db["access_logs"]
+            .find({"wedding_id": wedding_id}, {"_id": 0})
+            .sort("timestamp", -1)
+            .limit(100)
+            .to_list(length=100)
+        )
 
         return {"logs": logs}
 
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error getting access logs: {str(e)}")
+        raise HTTPException(
+            status_code=500, detail=f"Error getting access logs: {str(e)}"
+        )

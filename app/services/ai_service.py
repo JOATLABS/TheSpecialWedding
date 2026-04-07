@@ -14,6 +14,7 @@ Model Strategy:
 - Default: gemini-2.5-flash (best price-performance)
 - Low credits (<10%): gemini-2.0-flash (faster, more economical)
 """
+
 from typing import Dict, Any, Optional
 from datetime import datetime, timezone
 import json
@@ -77,7 +78,7 @@ Return ONLY valid JSON in this exact format:
 
 Priority levels: "high" for urgent budget issues or missing essentials, "medium" for optimization suggestions, "low" for nice-to-know tips.
 Category should match one of the budget categories when applicable, or be "Overall" for general insights.
-Be specific about cultural considerations in your recommendations."""
+Be specific about cultural considerations in your recommendations.""",
     },
     "chat": {
         "credits": 1,
@@ -97,7 +98,7 @@ When discussing budgets, consider the cultural context and regional pricing.
 When you don't know something specific, say so rather than making up information.
 Keep responses focused and actionable - wedding planners are busy!
 
-If the user provides wedding context (cultural style, location, guest count, budget), use it to give more tailored advice."""
+If the user provides wedding context (cultural style, location, guest count, budget), use it to give more tailored advice.""",
     },
     "seating_small": {
         "credits": 2,
@@ -110,7 +111,7 @@ create an optimal seating arrangement that:
 2. Respects "keep apart" constraints
 3. Balances table sizes
 
-Return JSON: {"tables": [{"table_id": "...", "guests": ["guest_id", ...]}]}"""
+Return JSON: {"tables": [{"table_id": "...", "guests": ["guest_id", ...]}]}""",
     },
     "seating_medium": {
         "credits": 5,
@@ -134,7 +135,7 @@ Return ONLY valid JSON:
   {"table_id": "...", "table_name": "...", "guests": [
     {"guest_id": "...", "guest_name": "...", "reason": "Brief reason for placement"}
   ]}
-]}"""
+]}""",
     },
     "seating_large": {
         "credits": 10,
@@ -174,7 +175,7 @@ Return ONLY valid JSON with strategic reasoning:
   {"table_id": "...", "table_name": "...", "zone": "A|B|C", "guests": [
     {"guest_id": "...", "guest_name": "...", "reason": "Placement rationale"}
   ]}
-]}"""
+]}""",
     },
     "email_draft": {
         "credits": 1,
@@ -184,7 +185,7 @@ Return ONLY valid JSON with strategic reasoning:
         "system_prompt": """You are a professional wedding planner writing to clients.
 Draft a warm, professional message based on the context provided.
 Match the tone to the situation (reminder, thank you, follow-up, etc.).
-Keep it concise (2-3 short paragraphs max)."""
+Keep it concise (2-3 short paragraphs max).""",
     },
     "progress_report": {
         "credits": 2,
@@ -198,7 +199,7 @@ Include:
 3. Upcoming milestones
 4. Action items for the couple
 
-Return a warm, encouraging summary."""
+Return a warm, encouraging summary.""",
     },
     "package_pricing": {
         "credits": 3,
@@ -212,7 +213,7 @@ Based on the services, location, and market data, suggest:
 3. How this compares to market average
 
 Return JSON: {"min_price": X, "max_price": Y, "recommended": Z,
-"market_comparison": "above|at|below", "schedule_suggestion": [...]}"""
+"market_comparison": "above|at|below", "schedule_suggestion": [...]}""",
     },
     "payment_retry_timing": {
         "credits": 0,  # Internal feature - no cost
@@ -233,7 +234,7 @@ Return JSON: {
   "confidence": 0-100,
   "reasoning": "brief explanation",
   "override_backoff": true/false
-}"""
+}""",
     },
     "payment_success_prediction": {
         "credits": 0,  # Internal feature - no cost
@@ -254,7 +255,7 @@ Return JSON: {
   "risk_level": "low|medium|high",
   "risk_factors": ["factor1", "factor2"],
   "recommendations": ["recommendation1", "recommendation2"]
-}"""
+}""",
     },
     "dashboard_insights": {
         "credits": 2,
@@ -301,7 +302,7 @@ Icon guide:
 - calendar: Timeline/date related
 - clock: Deadline/timing related
 - alert-triangle: Warning/issue
-- check-circle: Positive update"""
+- check-circle: Positive update""",
     },
     "contract_section": {
         "credits": 1,
@@ -326,7 +327,7 @@ Section types you may generate:
 - force_majeure: Force majeure/act of god clauses
 - custom: Based on user's specific request
 
-Format the output as markdown-compatible text that can be directly inserted into a contract."""
+Format the output as markdown-compatible text that can be directly inserted into a contract.""",
     },
     # =========================================================================
     # PHASE 2C: Vendor & Calendar AI
@@ -367,7 +368,7 @@ Return ONLY valid JSON in this exact format:
 }
 
 Consider cultural wedding styles (Nigerian, Indian, Jewish, Mexican, Western, etc.) and their specific vendor needs.
-Regional pricing varies significantly - NYC/LA are 2-3x more expensive than smaller markets."""
+Regional pricing varies significantly - NYC/LA are 2-3x more expensive than smaller markets.""",
     },
     "task_prioritization": {
         "credits": 2,
@@ -403,7 +404,7 @@ Return ONLY valid JSON in this exact format:
   ]
 }
 
-Be specific about deadlines based on the wedding date. A wedding 6 months away has different priorities than one 2 months away."""
+Be specific about deadlines based on the wedding date. A wedding 6 months away has different priorities than one 2 months away.""",
     },
     "timeline_generator": {
         "credits": 2,
@@ -443,7 +444,7 @@ Return ONLY valid JSON in this exact format:
   "budget_tips": ["Timing-based budget advice"]
 }
 
-Adjust the timeline based on how much time is available. If wedding is 3 months away, compress appropriately."""
+Adjust the timeline based on how much time is available. If wedding is 3 months away, compress appropriately.""",
     },
     # =========================================================================
     # PHASE 2D: Financial AI
@@ -488,7 +489,7 @@ Return ONLY valid JSON in this exact format:
   }
 }
 
-Flag any cash flow concerns (multiple large payments in short window, overdue payments, etc.)."""
+Flag any cash flow concerns (multiple large payments in short window, overdue payments, etc.).""",
     },
     "vendor_price_analysis": {
         "credits": 1,
@@ -525,7 +526,7 @@ Return ONLY valid JSON in this exact format:
   "value_assessment": "Is this good value for what's included? Explanation."
 }
 
-Be specific about regional pricing differences. A $5K photographer in Oklahoma is different from $5K in Manhattan."""
+Be specific about regional pricing differences. A $5K photographer in Oklahoma is different from $5K in Manhattan.""",
     },
     # =========================================================================
     # PHASE 2B: Communication & Forms AI
@@ -561,7 +562,7 @@ Return ONLY valid JSON in this exact format:
   "sms_version": "A shorter version suitable for SMS (under 160 chars if possible)"
 }
 
-Keep messages concise but heartfelt. Include [Name] placeholder for personalization."""
+Keep messages concise but heartfelt. Include [Name] placeholder for personalization.""",
     },
     "form_questions": {
         "credits": 1,
@@ -602,7 +603,7 @@ Return ONLY valid JSON in this exact format:
   "form_title": "Suggested form title"
 }
 
-Generate 4-8 relevant questions. Make yes_no and multiple_choice the default when appropriate."""
+Generate 4-8 relevant questions. Make yes_no and multiple_choice the default when appropriate.""",
     },
     # =========================================================================
     # ADVERTISING PLATFORM: AI Quote Draft
@@ -645,7 +646,7 @@ Guidelines:
 - If wedding details are sparse, still write a compelling message but note you'll share details soon
 - Never fabricate wedding details that were not provided
 - Use the vendor's actual name and category in the message
-- End with a clear call to action (e.g., "Could you share your availability and pricing?")"""
+- End with a clear call to action (e.g., "Could you share your availability and pricing?")""",
     },
 }
 
@@ -659,6 +660,7 @@ LOW_CREDIT_THRESHOLD = 0.10  # Switch to economy model when <10% credits remain
 
 class InsufficientCreditsError(Exception):
     """Raised when user doesn't have enough AI credits."""
+
     def __init__(self, message: str, required: int, available: int):
         self.message = message
         self.required = required
@@ -668,67 +670,81 @@ class InsufficientCreditsError(Exception):
 
 class AIGenerationError(Exception):
     """Base class for AI generation failures."""
-    def __init__(self, message: str, error_code: str = "ai_error", retry_after: Optional[int] = None):
+
+    def __init__(
+        self,
+        message: str,
+        error_code: str = "ai_error",
+        retry_after: Optional[int] = None,
+    ):
         self.message = message
         self.error_code = error_code
-        self.retry_after = retry_after  # Seconds until retry is allowed (for rate limits)
+        self.retry_after = (
+            retry_after  # Seconds until retry is allowed (for rate limits)
+        )
         super().__init__(message)
 
 
 class AIRateLimitError(AIGenerationError):
     """Raised when hitting Gemini API rate limits."""
+
     def __init__(self, retry_after: int = 60):
         super().__init__(
             message="AI service is temporarily busy. Please wait a moment and try again.",
             error_code="rate_limit",
-            retry_after=retry_after
+            retry_after=retry_after,
         )
 
 
 class AIContentBlockedError(AIGenerationError):
     """Raised when Gemini safety filters block the content."""
+
     def __init__(self, reason: str = "content policy"):
         super().__init__(
             message=f"The request was blocked due to {reason}. Please modify your request and try again.",
-            error_code="content_blocked"
+            error_code="content_blocked",
         )
 
 
 class AIServiceUnavailableError(AIGenerationError):
     """Raised when Gemini service is unavailable."""
+
     def __init__(self):
         super().__init__(
             message="AI service is temporarily unavailable. Please try again in a few minutes.",
             error_code="service_unavailable",
-            retry_after=300
+            retry_after=300,
         )
 
 
 class AIQuotaExceededError(AIGenerationError):
     """Raised when API quota is exceeded."""
+
     def __init__(self):
         super().__init__(
             message="AI service quota has been reached. Please contact support or try again tomorrow.",
-            error_code="quota_exceeded"
+            error_code="quota_exceeded",
         )
 
 
 class AIInvalidResponseError(AIGenerationError):
     """Raised when AI returns an invalid/unparseable response."""
+
     def __init__(self):
         super().__init__(
             message="AI returned an unexpected response. Please try again.",
-            error_code="invalid_response"
+            error_code="invalid_response",
         )
 
 
 class AITimeoutError(AIGenerationError):
     """Raised when AI request times out."""
+
     def __init__(self):
         super().__init__(
             message="AI request timed out. Please try again with a simpler request.",
             error_code="timeout",
-            retry_after=10
+            retry_after=10,
         )
 
 
@@ -765,22 +781,33 @@ class AIService:
                     # Configure HTTP options with Referer header to satisfy API key restrictions
                     # The Referer must match what's configured in Google Cloud Console
                     http_options = types.HttpOptions(
-                        headers={"Referer": settings.frontend_url or "https://thespecialwedding.io"}
+                        headers={
+                            "Referer": settings.frontend_url
+                            or "https://thespecialwedding.io"
+                        }
                     )
-                    self._client = genai.Client(api_key=api_key, http_options=http_options)
-                    logger.info(f"Gemini client configured with Referer: {settings.frontend_url or 'https://thespecialwedding.io'}")
+                    self._client = genai.Client(
+                        api_key=api_key, http_options=http_options
+                    )
+                    logger.info(
+                        f"Gemini client configured with Referer: {settings.frontend_url or 'https://thespecialwedding.io'}"
+                    )
                 else:
                     # Try to use environment variable automatically
                     self._client = genai.Client()
 
-                logger.info(f"Gemini AI initialized successfully. Primary: {MODEL_PRIMARY}, Economy: {MODEL_ECONOMY}")
+                logger.info(
+                    f"Gemini AI initialized successfully. Primary: {MODEL_PRIMARY}, Economy: {MODEL_ECONOMY}"
+                )
             except ImportError as e:
                 logger.error(f"google-genai package not installed: {str(e)}")
                 logger.error("Install with: pip install google-genai")
             except Exception as e:
                 logger.error(f"Failed to initialize Gemini client: {str(e)}")
         else:
-            logger.warning("AI service disabled - GOOGLE_API_KEY or GEMINI_API_KEY not configured")
+            logger.warning(
+                "AI service disabled - GOOGLE_API_KEY or GEMINI_API_KEY not configured"
+            )
 
     def _ensure_initialized(self):
         """Verify AI service is properly configured.
@@ -802,7 +829,7 @@ class AIService:
             name: {
                 "credits": config["credits"],
                 "description": config["description"],
-                "cacheable": config["cacheable"]
+                "cacheable": config["cacheable"],
             }
             for name, config in AI_FEATURES.items()
         }
@@ -811,8 +838,7 @@ class AIService:
         """Return True when the usage-tracked user belongs to the configured root admin."""
         try:
             user = await self.subscription_service.users_collection.find_one(
-                {"_id": to_object_id(user_id, "user_id")},
-                {"role": 1, "email": 1}
+                {"_id": to_object_id(user_id, "user_id")}, {"role": 1, "email": 1}
             )
         except (HTTPException, ValueError, TypeError):
             return False
@@ -823,10 +849,16 @@ class AIService:
         if not user:
             return False
 
-        root_admin_email = settings.root_admin_email or "thedeveloper@thespecialwedding.io"
-        return user.get("role") == "ROOT_ADMIN" and user.get("email") == root_admin_email
+        root_admin_email = (
+            settings.root_admin_email or "thedeveloper@thespecialwedding.io"
+        )
+        return (
+            user.get("role") == "ROOT_ADMIN" and user.get("email") == root_admin_email
+        )
 
-    async def _select_model_and_check_credits(self, user_id: str, bypass_limits: Optional[bool] = None) -> Dict[str, Any]:
+    async def _select_model_and_check_credits(
+        self, user_id: str, bypass_limits: Optional[bool] = None
+    ) -> Dict[str, Any]:
         """
         Select the appropriate model based on user's credit level and return credit status.
 
@@ -842,7 +874,7 @@ class AIService:
             "credits_remaining": None,
             "credits_limit": None,
             "credits_percent": None,
-            "low_credits_warning": None
+            "low_credits_warning": None,
         }
 
         try:
@@ -852,7 +884,9 @@ class AIService:
                 return result
 
             # Get user's subscription and usage stats
-            subscription = await self.subscription_service.get_user_subscription(user_id)
+            subscription = await self.subscription_service.get_user_subscription(
+                user_id
+            )
             if not subscription:
                 return result
 
@@ -891,7 +925,9 @@ class AIService:
             logger.warning(f"Error checking credit level for model selection: {e}")
             return result
 
-    async def check_credits(self, user_id: str, feature: str, bypass_limits: Optional[bool] = None) -> Dict[str, Any]:
+    async def check_credits(
+        self, user_id: str, feature: str, bypass_limits: Optional[bool] = None
+    ) -> Dict[str, Any]:
         """
         Check if user has enough AI credits for a feature.
 
@@ -915,16 +951,14 @@ class AIService:
 
         # Use existing subscription service to check limits
         result = await self.subscription_service.check_usage_limits(
-            user_id=user_id,
-            resource_type="ai_credits",
-            requested_amount=credits_needed
+            user_id=user_id, resource_type="ai_credits", requested_amount=credits_needed
         )
 
         return {
             "allowed": result.get("allowed", False),
             "credits_needed": credits_needed,
             "credits_remaining": result.get("remaining", 0),
-            "message": result.get("message", "")
+            "message": result.get("message", ""),
         }
 
     async def generate(
@@ -935,7 +969,7 @@ class AIService:
         prompt: str,
         context: Dict[str, Any],
         force_refresh: bool = False,
-        cache_context: Optional[Dict[str, Any]] = None
+        cache_context: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         """
         Generate AI response with caching and credit tracking.
@@ -969,9 +1003,7 @@ class AIService:
         # Check cache first if feature is cacheable
         if feature_config["cacheable"] and not force_refresh:
             cached = await ai_cache_service.get_cached_response(
-                feature=feature,
-                tenant_id=tenant_id,
-                context=key_context
+                feature=feature, tenant_id=tenant_id, context=key_context
             )
             if cached:
                 # Log cache hit (no credits charged)
@@ -982,23 +1014,24 @@ class AIService:
                     credits_used=0,
                     latency_ms=0,
                     status="cached",
-                    model="cached"
+                    model="cached",
                 )
                 return {
                     "response": cached["response"],
                     "cached": True,
                     "credits_used": 0,
-                    "model_used": "cached"
+                    "model_used": "cached",
                 }
 
             # If exact cache miss, try the stable fallback lookup before making API call
             # This prevents unnecessary Gemini calls when only volatile context changed
             fallback = await ai_cache_service.get_latest_cached_response(
-                feature=feature,
-                tenant_id=tenant_id
+                feature=feature, tenant_id=tenant_id
             )
             if fallback:
-                logger.info(f"Using stable fallback cache for {feature}/{tenant_id} (context hash changed)")
+                logger.info(
+                    f"Using stable fallback cache for {feature}/{tenant_id} (context hash changed)"
+                )
                 await self._log_usage(
                     user_id=user_id,
                     tenant_id=tenant_id,
@@ -1006,41 +1039,47 @@ class AIService:
                     credits_used=0,
                     latency_ms=0,
                     status="cached_fallback",
-                    model="cached"
+                    model="cached",
                 )
                 return {
                     "response": fallback["response"],
                     "cached": True,
                     "credits_used": 0,
-                    "model_used": "cached"
+                    "model_used": "cached",
                 }
 
         is_root_admin = await self._is_root_admin_user(user_id)
 
         # Check credits before making API call
-        credits_check = await self.check_credits(user_id, feature, bypass_limits=is_root_admin)
+        credits_check = await self.check_credits(
+            user_id, feature, bypass_limits=is_root_admin
+        )
         if not credits_check["allowed"]:
             raise InsufficientCreditsError(
                 message=credits_check["message"] or "Insufficient AI credits",
                 required=credits_check["credits_needed"],
-                available=credits_check["credits_remaining"]
+                available=credits_check["credits_remaining"],
             )
 
         # Select model based on credit level and get credit status for warnings
-        credit_status = await self._select_model_and_check_credits(user_id, bypass_limits=is_root_admin)
+        credit_status = await self._select_model_and_check_credits(
+            user_id, bypass_limits=is_root_admin
+        )
         model = credit_status["model"]
 
         # Make AI API call
         try:
             response = await self._call_gemini(feature, prompt, context, model)
-            latency_ms = (datetime.now(timezone.utc) - start_time).total_seconds() * 1000
+            latency_ms = (
+                datetime.now(timezone.utc) - start_time
+            ).total_seconds() * 1000
 
             # Root admin uses these tools operationally and should not consume planner credits.
             if not is_root_admin:
                 await self.subscription_service.increment_usage(
                     user_id=user_id,
                     resource_type="ai_credits",
-                    amount=feature_config["credits"]
+                    amount=feature_config["credits"],
                 )
 
             # Cache response if cacheable (use key_context for stable cache keys)
@@ -1050,7 +1089,7 @@ class AIService:
                     tenant_id=tenant_id,
                     context=key_context,
                     response=response,
-                    ttl_hours=feature_config["ttl_hours"]
+                    ttl_hours=feature_config["ttl_hours"],
                 )
 
             # Log successful usage
@@ -1061,24 +1100,30 @@ class AIService:
                 credits_used=feature_config["credits"],
                 latency_ms=latency_ms,
                 status="success",
-                model=model
+                model=model,
             )
 
             # Calculate updated credits after deduction
             updated_remaining = None
             if credit_status["credits_remaining"] is not None:
-                updated_remaining = credit_status["credits_remaining"] - feature_config["credits"]
+                updated_remaining = (
+                    credit_status["credits_remaining"] - feature_config["credits"]
+                )
             updated_percent = None
             if credit_status["credits_limit"] and credit_status["credits_limit"] > 0:
-                updated_percent = round((updated_remaining / credit_status["credits_limit"]) * 100, 1)
+                updated_percent = round(
+                    (updated_remaining / credit_status["credits_limit"]) * 100, 1
+                )
 
             result = {
                 "response": response,
                 "cached": False,
                 "credits_used": 0 if is_root_admin else feature_config["credits"],
                 "model_used": model,
-                "credits_remaining": None if credit_status["credits_remaining"] is None else max(0, updated_remaining),
-                "credits_percent": updated_percent
+                "credits_remaining": None
+                if credit_status["credits_remaining"] is None
+                else max(0, updated_remaining),
+                "credits_percent": updated_percent,
             }
 
             # Include warning for frontend to display if credits are low
@@ -1092,11 +1137,12 @@ class AIService:
             # This handles the case where credits ran out but we have cached insights
             if feature_config["cacheable"]:
                 fallback = await ai_cache_service.get_latest_cached_response(
-                    feature=feature,
-                    tenant_id=tenant_id
+                    feature=feature, tenant_id=tenant_id
                 )
                 if fallback:
-                    logger.info(f"Returning cached fallback for {feature} due to insufficient credits")
+                    logger.info(
+                        f"Returning cached fallback for {feature} due to insufficient credits"
+                    )
                     await self._log_usage(
                         user_id=user_id,
                         tenant_id=tenant_id,
@@ -1104,18 +1150,20 @@ class AIService:
                         credits_used=0,
                         latency_ms=0,
                         status="cached_fallback",
-                        model="cached"
+                        model="cached",
                     )
                     return {
                         "response": fallback["response"],
                         "cached": True,
                         "credits_used": 0,
                         "model_used": "cached_fallback",
-                        "warning": "Showing cached insights (credits exhausted). Upgrade your plan for fresh analysis."
+                        "warning": "Showing cached insights (credits exhausted). Upgrade your plan for fresh analysis.",
                     }
             raise
         except Exception as e:
-            latency_ms = (datetime.now(timezone.utc) - start_time).total_seconds() * 1000
+            latency_ms = (
+                datetime.now(timezone.utc) - start_time
+            ).total_seconds() * 1000
 
             # Log error (no credits charged)
             await self._log_usage(
@@ -1126,7 +1174,7 @@ class AIService:
                 latency_ms=latency_ms,
                 status="error",
                 model=locals().get("model", "unknown"),
-                error=str(e)
+                error=str(e),
             )
 
             logger.error(f"AI generation error for {feature}: {str(e)}")
@@ -1135,27 +1183,24 @@ class AIService:
             # This provides a much better UX - stale insights > no insights
             if feature_config["cacheable"]:
                 fallback = await ai_cache_service.get_latest_cached_response(
-                    feature=feature,
-                    tenant_id=tenant_id
+                    feature=feature, tenant_id=tenant_id
                 )
                 if fallback:
-                    logger.info(f"Returning cached fallback for {feature} after API error: {str(e)}")
+                    logger.info(
+                        f"Returning cached fallback for {feature} after API error: {str(e)}"
+                    )
                     return {
                         "response": fallback["response"],
                         "cached": True,
                         "credits_used": 0,
                         "model_used": "cached_fallback",
-                        "warning": "Showing cached insights (AI service temporarily unavailable). Try refreshing later."
+                        "warning": "Showing cached insights (AI service temporarily unavailable). Try refreshing later.",
                     }
 
             raise AIGenerationError(f"AI generation failed: {str(e)}")
 
     async def _call_gemini(
-        self,
-        feature: str,
-        prompt: str,
-        context: Dict[str, Any],
-        model: str
+        self, feature: str, prompt: str, context: Dict[str, Any], model: str
     ) -> Dict[str, Any]:
         """
         Make the actual Gemini API call using the new SDK with proper async.
@@ -1181,7 +1226,9 @@ class AIService:
 
             # Format context into prompt
             context_str = json.dumps(context, indent=2, default=str)
-            full_prompt = f"{system_prompt}\n\nContext:\n{context_str}\n\nRequest:\n{prompt}"
+            full_prompt = (
+                f"{system_prompt}\n\nContext:\n{context_str}\n\nRequest:\n{prompt}"
+            )
 
             # Configure generation settings per official SDK docs
             # Reference: https://googleapis.github.io/python-genai/
@@ -1205,7 +1252,7 @@ class AIService:
                         category="HARM_CATEGORY_DANGEROUS_CONTENT",
                         threshold="BLOCK_ONLY_HIGH",
                     ),
-                ]
+                ],
             )
 
             # Use async client.aio.models.generate_content for proper async
@@ -1214,21 +1261,19 @@ class AIService:
             try:
                 response = await asyncio.wait_for(
                     self._client.aio.models.generate_content(
-                        model=model,
-                        contents=full_prompt,
-                        config=generation_config
+                        model=model, contents=full_prompt, config=generation_config
                     ),
-                    timeout=60.0
+                    timeout=60.0,
                 )
             except asyncio.TimeoutError:
                 logger.error(f"Gemini API timeout (model={model})")
                 raise AITimeoutError()
 
             # Check if response was blocked by safety filters
-            if hasattr(response, 'prompt_feedback') and response.prompt_feedback:
+            if hasattr(response, "prompt_feedback") and response.prompt_feedback:
                 feedback = response.prompt_feedback
-                if hasattr(feedback, 'block_reason') and feedback.block_reason:
-                    reason = str(feedback.block_reason).lower().replace('_', ' ')
+                if hasattr(feedback, "block_reason") and feedback.block_reason:
+                    reason = str(feedback.block_reason).lower().replace("_", " ")
                     logger.warning(f"Content blocked by Gemini: {reason}")
                     raise AIContentBlockedError(reason=reason)
 
@@ -1239,7 +1284,7 @@ class AIService:
 
             # Check candidate finish reason
             candidate = response.candidates[0]
-            if hasattr(candidate, 'finish_reason'):
+            if hasattr(candidate, "finish_reason"):
                 finish_reason = str(candidate.finish_reason).upper()
                 if finish_reason == "SAFETY":
                     raise AIContentBlockedError(reason="safety filters")
@@ -1273,18 +1318,28 @@ class AIService:
                 text_to_parse = text_to_parse.strip()
 
                 parsed = json.loads(text_to_parse)
-                logger.info(f"Successfully parsed JSON with keys: {list(parsed.keys()) if isinstance(parsed, dict) else 'not a dict'}")
+                logger.info(
+                    f"Successfully parsed JSON with keys: {list(parsed.keys()) if isinstance(parsed, dict) else 'not a dict'}"
+                )
                 return parsed
             except json.JSONDecodeError as e:
                 # Raise error instead of returning raw text — this triggers the
                 # cached fallback path in generate(), which is much better than
                 # returning {"text": ..., "raw": True} that breaks downstream
                 # code expecting structured JSON keys like "insights", "suggestions", etc.
-                logger.warning(f"Failed to parse as JSON for {feature}: {e}. Raising AIInvalidResponseError.")
+                logger.warning(
+                    f"Failed to parse as JSON for {feature}: {e}. Raising AIInvalidResponseError."
+                )
                 raise AIInvalidResponseError()
 
-        except (AIRateLimitError, AIContentBlockedError, AIServiceUnavailableError,
-                AIQuotaExceededError, AITimeoutError, AIInvalidResponseError):
+        except (
+            AIRateLimitError,
+            AIContentBlockedError,
+            AIServiceUnavailableError,
+            AIQuotaExceededError,
+            AITimeoutError,
+            AIInvalidResponseError,
+        ):
             # Re-raise our custom errors
             raise
 
@@ -1293,10 +1348,13 @@ class AIService:
             # Reference: https://github.com/googleapis/python-genai - errors.APIError
             try:
                 from google.genai import errors as genai_errors
+
                 if isinstance(e, genai_errors.APIError):
-                    error_code = getattr(e, 'code', None)
-                    error_message = getattr(e, 'message', str(e))
-                    logger.error(f"Gemini APIError (code={error_code}): {error_message}")
+                    error_code = getattr(e, "code", None)
+                    error_message = getattr(e, "message", str(e))
+                    logger.error(
+                        f"Gemini APIError (code={error_code}): {error_message}"
+                    )
 
                     # Handle specific error codes per Context7 docs
                     if error_code == 429:
@@ -1308,19 +1366,22 @@ class AIService:
                     elif error_code in (401, 403):
                         raise AIGenerationError(
                             message="AI service authentication failed. Please contact support.",
-                            error_code="auth_error"
+                            error_code="auth_error",
                         )
                     elif error_code == 400:
-                        if "safety" in error_message.lower() or "blocked" in error_message.lower():
+                        if (
+                            "safety" in error_message.lower()
+                            or "blocked" in error_message.lower()
+                        ):
                             raise AIContentBlockedError()
                         raise AIGenerationError(
                             message=f"Invalid AI request: {error_message}",
-                            error_code="invalid_request"
+                            error_code="invalid_request",
                         )
                     elif error_code == 404:
                         raise AIGenerationError(
                             message="AI model not available. Please try again later.",
-                            error_code="model_not_found"
+                            error_code="model_not_found",
                         )
             except ImportError:
                 pass  # SDK not installed, fall through to generic handling
@@ -1329,18 +1390,30 @@ class AIService:
             error_str = str(e).lower()
             logger.error(f"Gemini API error (model={model}): {str(e)}")
 
-            if "429" in error_str or "rate limit" in error_str or "resource exhausted" in error_str:
+            if (
+                "429" in error_str
+                or "rate limit" in error_str
+                or "resource exhausted" in error_str
+            ):
                 if "quota" in error_str:
                     raise AIQuotaExceededError()
                 raise AIRateLimitError()
 
-            if "503" in error_str or "service unavailable" in error_str or "overloaded" in error_str:
+            if (
+                "503" in error_str
+                or "service unavailable" in error_str
+                or "overloaded" in error_str
+            ):
                 raise AIServiceUnavailableError()
 
-            if "401" in error_str or "403" in error_str or "invalid api key" in error_str:
+            if (
+                "401" in error_str
+                or "403" in error_str
+                or "invalid api key" in error_str
+            ):
                 raise AIGenerationError(
                     message="AI service authentication failed. Please contact support.",
-                    error_code="auth_error"
+                    error_code="auth_error",
                 )
 
             if "timeout" in error_str:
@@ -1352,7 +1425,7 @@ class AIService:
             # Generic error for unhandled cases
             raise AIGenerationError(
                 message="AI service encountered an unexpected error. Please try again.",
-                error_code="unknown_error"
+                error_code="unknown_error",
             )
 
     async def _log_usage(
@@ -1364,7 +1437,7 @@ class AIService:
         latency_ms: float,
         status: str,
         model: str,
-        error: Optional[str] = None
+        error: Optional[str] = None,
     ):
         """Log AI usage for analytics and auditing."""
         try:
@@ -1377,17 +1450,14 @@ class AIService:
                 "status": status,
                 "model": model,
                 "error": error,
-                "created_at": datetime.now(timezone.utc)
+                "created_at": datetime.now(timezone.utc),
             }
             await self.usage_log.insert_one(log_entry)
         except Exception as e:
             logger.error(f"Failed to log AI usage: {str(e)}")
 
     async def _send_low_credit_notification(
-        self,
-        user_id: str,
-        credits_remaining: int,
-        credits_limit: int
+        self, user_id: str, credits_remaining: int, credits_limit: int
     ):
         """
         Send in-app notification when AI credits are running low.
@@ -1399,23 +1469,24 @@ class AIService:
             billing_period = now.strftime("%Y-%m")
 
             # Check if we already sent a notification this billing cycle
-            existing_alert = await self.low_credit_alerts.find_one({
-                "user_id": user_id,
-                "billing_period": billing_period
-            })
+            existing_alert = await self.low_credit_alerts.find_one(
+                {"user_id": user_id, "billing_period": billing_period}
+            )
 
             if existing_alert:
                 # Already notified this billing cycle
                 return
 
             # Record that we're sending this notification
-            await self.low_credit_alerts.insert_one({
-                "user_id": user_id,
-                "billing_period": billing_period,
-                "credits_remaining": credits_remaining,
-                "credits_limit": credits_limit,
-                "created_at": now
-            })
+            await self.low_credit_alerts.insert_one(
+                {
+                    "user_id": user_id,
+                    "billing_period": billing_period,
+                    "credits_remaining": credits_remaining,
+                    "credits_limit": credits_limit,
+                    "created_at": now,
+                }
+            )
 
             # Create in-app notification for the planner
             percent_remaining = round((credits_remaining / credits_limit) * 100, 1)
@@ -1431,21 +1502,21 @@ class AIService:
                     "target_audience": "wedding_planners",
                     "user_id": user_id,  # Target this specific planner
                     "is_dismissible": True,
-                    "priority": "high"
+                    "priority": "high",
                 },
-                created_by="system"
+                created_by="system",
             )
 
-            logger.info(f"Sent low credit notification to user {user_id}: {credits_remaining}/{credits_limit} credits remaining")
+            logger.info(
+                f"Sent low credit notification to user {user_id}: {credits_remaining}/{credits_limit} credits remaining"
+            )
 
         except Exception as e:
             # Don't fail the AI request if notification fails
             logger.error(f"Failed to send low credit notification: {str(e)}")
 
     async def get_usage_metrics(
-        self,
-        period_days: int = 7,
-        tenant_id: Optional[str] = None
+        self, period_days: int = 7, tenant_id: Optional[str] = None
     ) -> Dict[str, Any]:
         """
         Get AI usage metrics for admin dashboard.
@@ -1471,21 +1542,28 @@ class AIService:
             {
                 "$group": {
                     "_id": {
-                        "date": {"$dateToString": {"format": "%Y-%m-%d", "date": "$created_at"}},
-                        "feature": "$feature"
+                        "date": {
+                            "$dateToString": {
+                                "format": "%Y-%m-%d",
+                                "date": "$created_at",
+                            }
+                        },
+                        "feature": "$feature",
                     },
                     "total_credits": {"$sum": "$credits_used"},
                     "total_requests": {"$sum": 1},
                     "cached_requests": {
                         "$sum": {"$cond": [{"$eq": ["$status", "cached"]}, 1, 0]}
                     },
-                    "avg_latency": {"$avg": "$latency_ms"}
+                    "avg_latency": {"$avg": "$latency_ms"},
                 }
             },
-            {"$sort": {"_id.date": -1}}
+            {"$sort": {"_id.date": -1}},
         ]
 
-        daily_usage = await self.usage_log.aggregate(daily_pipeline).to_list(length=None)
+        daily_usage = await self.usage_log.aggregate(daily_pipeline).to_list(
+            length=None
+        )
 
         # Top users by credits
         user_pipeline = [
@@ -1494,11 +1572,11 @@ class AIService:
                 "$group": {
                     "_id": "$tenant_id",
                     "total_credits": {"$sum": "$credits_used"},
-                    "total_requests": {"$sum": 1}
+                    "total_requests": {"$sum": 1},
                 }
             },
             {"$sort": {"total_credits": -1}},
-            {"$limit": 10}
+            {"$limit": 10},
         ]
 
         top_tenants = await self.usage_log.aggregate(user_pipeline).to_list(length=None)
@@ -1516,12 +1594,14 @@ class AIService:
                     },
                     "error_rate": {
                         "$avg": {"$cond": [{"$eq": ["$status", "error"]}, 1, 0]}
-                    }
+                    },
                 }
-            }
+            },
         ]
 
-        feature_breakdown = await self.usage_log.aggregate(feature_pipeline).to_list(length=None)
+        feature_breakdown = await self.usage_log.aggregate(feature_pipeline).to_list(
+            length=None
+        )
 
         # Model usage breakdown
         model_pipeline = [
@@ -1530,12 +1610,14 @@ class AIService:
                 "$group": {
                     "_id": "$model",
                     "total_requests": {"$sum": 1},
-                    "avg_latency": {"$avg": "$latency_ms"}
+                    "avg_latency": {"$avg": "$latency_ms"},
                 }
-            }
+            },
         ]
 
-        model_breakdown = await self.usage_log.aggregate(model_pipeline).to_list(length=None)
+        model_breakdown = await self.usage_log.aggregate(model_pipeline).to_list(
+            length=None
+        )
 
         # Total summary
         total_credits = sum(f.get("total_credits", 0) for f in feature_breakdown)
@@ -1546,18 +1628,18 @@ class AIService:
             "models": {
                 "primary": MODEL_PRIMARY,
                 "economy": MODEL_ECONOMY,
-                "low_credit_threshold": f"{LOW_CREDIT_THRESHOLD * 100:.0f}%"
+                "low_credit_threshold": f"{LOW_CREDIT_THRESHOLD * 100:.0f}%",
             },
             "summary": {
                 "total_credits_used": total_credits,
                 "total_requests": total_requests,
-                "unique_features": len(feature_breakdown)
+                "unique_features": len(feature_breakdown),
             },
             "daily_usage": daily_usage,
             "top_tenants": top_tenants,
             "feature_breakdown": feature_breakdown,
             "model_breakdown": model_breakdown,
-            "generated_at": datetime.now(timezone.utc).isoformat()
+            "generated_at": datetime.now(timezone.utc).isoformat(),
         }
 
 

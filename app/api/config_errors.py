@@ -39,6 +39,7 @@ def _get_web_push_service():
         _web_push_checked = True
         try:
             from app.services.web_push_service import web_push_service
+
             _web_push_service = web_push_service
         except ImportError:
             _web_push_service = None
@@ -48,7 +49,7 @@ def _get_web_push_service():
 def _sanitize(value: Optional[str], max_len: int = 500) -> Optional[str]:
     if not value:
         return None
-    value = re.sub(r'<[^>]+>', '', value)
+    value = re.sub(r"<[^>]+>", "", value)
     return value[:max_len]
 
 
@@ -60,18 +61,20 @@ class ConfigErrorReport(BaseModel):
     hostname: Optional[str] = None
     user_agent: Optional[str] = None
 
-    @field_validator('error_type', 'message', 'variable_name', 'hostname', mode='before')
+    @field_validator(
+        "error_type", "message", "variable_name", "hostname", mode="before"
+    )
     @classmethod
     def sanitize_strings(cls, v):
         if isinstance(v, str):
-            return re.sub(r'<[^>]+>', '', v)[:500]
+            return re.sub(r"<[^>]+>", "", v)[:500]
         return v
 
-    @field_validator('current_value', mode='before')
+    @field_validator("current_value", mode="before")
     @classmethod
     def sanitize_value(cls, v):
         if isinstance(v, str):
-            return re.sub(r'<[^>]+>', '', v)[:200]
+            return re.sub(r"<[^>]+>", "", v)[:200]
         return v
 
 
@@ -102,7 +105,7 @@ async def report_config_error(report: ConfigErrorReport, request: Request):
     if not rate_limiter.check_rate_limit(
         f"config_error:{client_ip}",
         limit=settings.rate_limit_auth_calls,
-        window_seconds=settings.rate_limit_auth_period
+        window_seconds=settings.rate_limit_auth_period,
     ):
         raise HTTPException(status_code=429, detail="Rate limit exceeded")
 
@@ -113,15 +116,21 @@ async def report_config_error(report: ConfigErrorReport, request: Request):
     now = datetime.now(timezone.utc)
 
     # Check for existing unacknowledged error
-    existing = await mongo.db["errors"].find_one({
-        "error_type": "ConfigurationError",
-        "metadata.variable_name": report.variable_name,
-        "acknowledged": False,
-        "timestamp": {"$gte": now - timedelta(hours=24)}
-    })
+    existing = await mongo.db["errors"].find_one(
+        {
+            "error_type": "ConfigurationError",
+            "metadata.variable_name": report.variable_name,
+            "acknowledged": False,
+            "timestamp": {"$gte": now - timedelta(hours=24)},
+        }
+    )
 
     if existing:
-        return {"error_id": str(existing.get("error_id")), "reported": False, "reason": "exists"}
+        return {
+            "error_id": str(existing.get("error_id")),
+            "reported": False,
+            "reason": "exists",
+        }
 
     error_doc = {
         "error_id": error_id,
@@ -140,7 +149,7 @@ async def report_config_error(report: ConfigErrorReport, request: Request):
             "variable_name": _sanitize(report.variable_name, 100),
             "current_value": _sanitize(report.current_value, 200),
             "hostname": _sanitize(report.hostname, 100),
-        }
+        },
     }
 
     try:
@@ -156,18 +165,21 @@ async def report_config_error(report: ConfigErrorReport, request: Request):
     return {"error_id": error_id, "reported": True}
 
 
-async def _create_notification(error_id: str, report: ConfigErrorReport, timestamp: datetime):
+async def _create_notification(
+    error_id: str, report: ConfigErrorReport, timestamp: datetime
+):
     try:
-        existing = await mongo.db["notifications"].find_one({
-            "type": "system_config",
-            "status": "active",
-            "metadata.variable_name": report.variable_name
-        })
+        existing = await mongo.db["notifications"].find_one(
+            {
+                "type": "system_config",
+                "status": "active",
+                "metadata.variable_name": report.variable_name,
+            }
+        )
 
         if existing:
             await mongo.db["notifications"].update_one(
-                {"_id": existing["_id"]},
-                {"$set": {"updated_at": timestamp}}
+                {"_id": existing["_id"]}, {"$set": {"updated_at": timestamp}}
             )
             return
 
@@ -188,7 +200,7 @@ async def _create_notification(error_id: str, report: ConfigErrorReport, timesta
                 "error_id": error_id,
                 "variable_name": _sanitize(report.variable_name, 100),
                 "hostname": _sanitize(report.hostname, 100),
-            }
+            },
         }
 
         await mongo.db["notifications"].insert_one(notification)
@@ -208,7 +220,7 @@ async def _send_push_alert(report: ConfigErrorReport):
             title=f"Config Error: {_sanitize(report.variable_name, 50)}",
             body=f"{_sanitize(report.message, 150)}\nHost: {_sanitize(report.hostname, 50)}",
             url="/admin/platform",
-            tag="config-error"
+            tag="config-error",
         )
     except Exception as e:
         logger.error(f"Failed to send Web Push alert: {e}")

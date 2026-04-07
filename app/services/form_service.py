@@ -1,9 +1,6 @@
 from fastapi import HTTPException
 from app.core.database import mongo
 from app.models.form import (
-    FormModel,
-    FormResponse,
-    FormDistribution,
     CreateFormRequest,
     UpdateFormRequest,
     SendFormRequest,
@@ -11,9 +8,7 @@ from app.models.form import (
     DuplicateFormRequest,
 )
 from app.services.email_service_resend import ResendEmailService
-from app.utils.security_utils import (
-    FormSecurityValidator, InputSanitizer, rate_limiter
-)
+from app.utils.security_utils import FormSecurityValidator, InputSanitizer, rate_limiter
 from app.utils.csv_export import FormResponseCSVExporter, CSVSecurityError
 from datetime import datetime, timezone
 from typing import List, Dict, Any, Optional
@@ -36,34 +31,38 @@ class FormService:
 
     @staticmethod
     def _planner_state_key(email: str) -> str:
-        return email.replace('.', '_')
+        return email.replace(".", "_")
 
-    async def create_form(self, form_data: CreateFormRequest, created_by: str) -> Dict[str, Any]:
+    async def create_form(
+        self, form_data: CreateFormRequest, created_by: str
+    ) -> Dict[str, Any]:
         """Create a new form with enhanced security validation"""
         try:
             # Rate limiting check
             if not rate_limiter.check_rate_limit(
-                f"form_creation_{created_by}",
-                limit=10,
-                window_seconds=3600
+                f"form_creation_{created_by}", limit=10, window_seconds=3600
             ):
                 raise HTTPException(
                     status_code=429,
-                    detail="Too many forms created. Please try again later."
+                    detail="Too many forms created. Please try again later.",
                 )
 
             # Validate and sanitize form data
             try:
-                sanitized_data = FormSecurityValidator.validate_form_data(form_data.dict())
+                sanitized_data = FormSecurityValidator.validate_form_data(
+                    form_data.dict()
+                )
             except ValueError as e:
-                logger.warning(f"Form validation failed for user {created_by}: {str(e)}")
+                logger.warning(
+                    f"Form validation failed for user {created_by}: {str(e)}"
+                )
                 raise HTTPException(status_code=400, detail=str(e))
 
             # Generate unique form ID
             form_id = f"form_{int(datetime.now().timestamp() * 1000)}"
 
             # Validate field IDs are unique (double-check after sanitization)
-            field_ids = [field['id'] for field in sanitized_data['fields']]
+            field_ids = [field["id"] for field in sanitized_data["fields"]]
             if len(field_ids) != len(set(field_ids)):
                 raise HTTPException(status_code=400, detail="Field IDs must be unique")
 
@@ -85,13 +84,13 @@ class FormService:
             # Create form document with sanitized data
             form_doc = {
                 "_id": form_id,
-                "name": InputSanitizer.sanitize_text(sanitized_data['name'], 100),
-                "form_type": sanitized_data.get('form_type', 'general'),
-                "settings": sanitized_data['settings'],
-                "fields": sanitized_data['fields'],
+                "name": InputSanitizer.sanitize_text(sanitized_data["name"], 100),
+                "form_type": sanitized_data.get("form_type", "general"),
+                "settings": sanitized_data["settings"],
+                "fields": sanitized_data["fields"],
                 "created_by": creator_email,
-                "wedding_id": sanitized_data.get('wedding_id'),
-                "template_type": sanitized_data.get('template_type'),
+                "wedding_id": sanitized_data.get("wedding_id"),
+                "template_type": sanitized_data.get("template_type"),
                 "is_active": True,
                 "created_at": datetime.now(timezone.utc),
                 "updated_at": datetime.now(timezone.utc),
@@ -111,9 +110,13 @@ class FormService:
             raise
         except Exception as e:
             logging.error(f"Error creating form: {str(e)}")
-            raise HTTPException(status_code=500, detail=f"Failed to create form: {str(e)}")
+            raise HTTPException(
+                status_code=500, detail=f"Failed to create form: {str(e)}"
+            )
 
-    async def duplicate_form(self, source_form_id: str, payload: DuplicateFormRequest, created_by: str) -> Dict[str, Any]:
+    async def duplicate_form(
+        self, source_form_id: str, payload: DuplicateFormRequest, created_by: str
+    ) -> Dict[str, Any]:
         """Create a copy of an existing form for the same planner."""
         try:
             # Ensure the user can access the source form
@@ -144,7 +147,12 @@ class FormService:
             )
             raise HTTPException(status_code=500, detail="Failed to duplicate form")
 
-    async def get_forms(self, created_by: str, wedding_id: Optional[str] = None, is_root_admin: bool = False) -> List[Dict[str, Any]]:
+    async def get_forms(
+        self,
+        created_by: str,
+        wedding_id: Optional[str] = None,
+        is_root_admin: bool = False,
+    ) -> List[Dict[str, Any]]:
         """Get forms for a user"""
         try:
             # ROOT_ADMIN can see all forms, others see only their own
@@ -154,7 +162,11 @@ class FormService:
             if wedding_id:
                 query["wedding_id"] = wedding_id
 
-            forms = await self.forms_collection.find(query).sort("created_at", -1).to_list(length=None)
+            forms = (
+                await self.forms_collection.find(query)
+                .sort("created_at", -1)
+                .to_list(length=None)
+            )
 
             # Convert ObjectId to string and format response
             viewer_key = None
@@ -173,7 +185,13 @@ class FormService:
 
                 if viewer_key:
                     state = (
-                        planner_state.get(viewer_key) or (planner_state.get(raw_viewer_email) if raw_viewer_email else {}) or {}
+                        planner_state.get(viewer_key)
+                        or (
+                            planner_state.get(raw_viewer_email)
+                            if raw_viewer_email
+                            else {}
+                        )
+                        or {}
                     )
                     last_seen = int(state.get("last_viewed_submission_count", 0) or 0)
                     unread = max(submission_total - last_seen, 0)
@@ -185,9 +203,13 @@ class FormService:
 
         except Exception as e:
             logging.error(f"Error fetching forms: {str(e)}")
-            raise HTTPException(status_code=500, detail=f"Failed to fetch forms: {str(e)}")
+            raise HTTPException(
+                status_code=500, detail=f"Failed to fetch forms: {str(e)}"
+            )
 
-    async def get_form(self, form_id: str, created_by: Optional[str] = None) -> Dict[str, Any]:
+    async def get_form(
+        self, form_id: str, created_by: Optional[str] = None
+    ) -> Dict[str, Any]:
         """Get a specific form with security validation"""
         try:
             logger.info(f"get_form called: form_id={form_id}, created_by={created_by}")
@@ -253,9 +275,13 @@ class FormService:
             raise
         except Exception as e:
             logging.error(f"Error fetching form: {str(e)}")
-            raise HTTPException(status_code=500, detail=f"Failed to fetch form: {str(e)}")
+            raise HTTPException(
+                status_code=500, detail=f"Failed to fetch form: {str(e)}"
+            )
 
-    async def update_form(self, form_id: str, form_data: UpdateFormRequest, created_by: str) -> Dict[str, Any]:
+    async def update_form(
+        self, form_id: str, form_data: UpdateFormRequest, created_by: str
+    ) -> Dict[str, Any]:
         """Update an existing form with security validation"""
         try:
             # Validate inputs
@@ -269,14 +295,18 @@ class FormService:
             form_id = InputSanitizer.sanitize_text(form_id, 100)
 
             # Check if form exists and user owns it
-            existing_form = await self.forms_collection.find_one({
-                "_id": form_id,
-                "created_by": created_by.lower().strip(),
-                "is_active": True
-            })
+            existing_form = await self.forms_collection.find_one(
+                {
+                    "_id": form_id,
+                    "created_by": created_by.lower().strip(),
+                    "is_active": True,
+                }
+            )
 
             if not existing_form:
-                logger.warning(f"Update attempt on non-existent form {form_id} by {created_by}")
+                logger.warning(
+                    f"Update attempt on non-existent form {form_id} by {created_by}"
+                )
                 raise HTTPException(status_code=404, detail="Form not found")
 
             # Build update document with sanitization
@@ -304,13 +334,17 @@ class FormService:
                     field_ids = []
 
                     for field in form_data.fields:
-                        sanitized_field = FormSecurityValidator.validate_form_field(field.dict())
+                        sanitized_field = FormSecurityValidator.validate_form_field(
+                            field.dict()
+                        )
                         sanitized_fields.append(sanitized_field)
-                        field_ids.append(sanitized_field['id'])
+                        field_ids.append(sanitized_field["id"])
 
                     # Check for unique field IDs
                     if len(field_ids) != len(set(field_ids)):
-                        raise HTTPException(status_code=400, detail="Field IDs must be unique")
+                        raise HTTPException(
+                            status_code=400, detail="Field IDs must be unique"
+                        )
 
                     update_doc["fields"] = sanitized_fields
 
@@ -322,8 +356,7 @@ class FormService:
 
             # Update form
             result = await self.forms_collection.update_one(
-                {"_id": form_id},
-                {"$set": update_doc}
+                {"_id": form_id}, {"$set": update_doc}
             )
 
             if result.matched_count == 0:
@@ -335,12 +368,18 @@ class FormService:
             raise
         except Exception as e:
             logging.error(f"Error updating form: {str(e)}")
-            raise HTTPException(status_code=500, detail=f"Failed to update form: {str(e)}")
+            raise HTTPException(
+                status_code=500, detail=f"Failed to update form: {str(e)}"
+            )
 
-    async def delete_form(self, form_id: str, created_by: str, is_root_admin: bool = False) -> Dict[str, Any]:
+    async def delete_form(
+        self, form_id: str, created_by: str, is_root_admin: bool = False
+    ) -> Dict[str, Any]:
         """Soft delete a form"""
         try:
-            logger.info(f"delete_form called: form_id={form_id}, created_by={created_by}, is_root_admin={is_root_admin}")
+            logger.info(
+                f"delete_form called: form_id={form_id}, created_by={created_by}, is_root_admin={is_root_admin}"
+            )
             # ROOT_ADMIN can delete any form, others can only delete their own
             if is_root_admin:
                 query = {"_id": form_id}
@@ -352,15 +391,26 @@ class FormService:
             existing_form = await self.forms_collection.find_one({"_id": form_id})
             logger.info(f"Form exists check: {existing_form is not None}")
             if existing_form:
-                logger.info(f"Form details: _id={existing_form.get('_id')}, created_by={existing_form.get('created_by')}, is_active={existing_form.get('is_active')}")
+                logger.info(
+                    f"Form details: _id={existing_form.get('_id')}, created_by={existing_form.get('created_by')}, is_active={existing_form.get('is_active')}"
+                )
             result = await self.forms_collection.update_one(
                 query,
-                {"$set": {"is_active": False, "updated_at": datetime.now(timezone.utc)}}
+                {
+                    "$set": {
+                        "is_active": False,
+                        "updated_at": datetime.now(timezone.utc),
+                    }
+                },
             )
-            logger.info(f"Update result: matched_count={result.matched_count}, modified_count={result.modified_count}")
+            logger.info(
+                f"Update result: matched_count={result.matched_count}, modified_count={result.modified_count}"
+            )
 
             if result.matched_count == 0:
-                logger.warning(f"No form matched for deletion: form_id={form_id}, query={query}")
+                logger.warning(
+                    f"No form matched for deletion: form_id={form_id}, query={query}"
+                )
                 raise HTTPException(status_code=404, detail="Form not found")
 
             logger.info(f"Form {form_id} deleted successfully")
@@ -371,10 +421,15 @@ class FormService:
         except Exception as e:
             logger.error(f"Error deleting form: {str(e)}")
             import traceback
-            logger.error(f"Traceback: {traceback.format_exc()}")
-            raise HTTPException(status_code=500, detail=f"Failed to delete form: {str(e)}")
 
-    async def send_form(self, form_id: str, send_data: SendFormRequest, created_by: str) -> Dict[str, Any]:
+            logger.error(f"Traceback: {traceback.format_exc()}")
+            raise HTTPException(
+                status_code=500, detail=f"Failed to delete form: {str(e)}"
+            )
+
+    async def send_form(
+        self, form_id: str, send_data: SendFormRequest, created_by: str
+    ) -> Dict[str, Any]:
         """Send form to recipients via email"""
         try:
             # Get form
@@ -399,7 +454,7 @@ class FormService:
                         "recipient_email": recipient_email,
                         "wedding_id": send_data.wedding_id,
                         "sent_at": datetime.now(timezone.utc),
-                        "status": "sending"
+                        "status": "sending",
                     }
 
                     # Generate personalized email content
@@ -408,7 +463,7 @@ class FormService:
                         form_description=form["settings"].get("description", ""),
                         form_url=form_url,
                         sender_name=send_data.email_settings.sender_name,
-                        custom_message=send_data.email_settings.message
+                        custom_message=send_data.email_settings.message,
                     )
 
                     # Send email
@@ -417,7 +472,7 @@ class FormService:
                             to_email=recipient_email,
                             subject=send_data.email_settings.subject,
                             html_content=email_html,
-                            from_name=send_data.email_settings.sender_name
+                            from_name=send_data.email_settings.sender_name,
                         )
 
                         if email_result.get("success"):
@@ -435,21 +490,25 @@ class FormService:
                     await self.distributions_collection.insert_one(distribution_doc)
 
                 except Exception as email_error:
-                    logging.error(f"Failed to send form to {recipient_email}: {str(email_error)}")
+                    logging.error(
+                        f"Failed to send form to {recipient_email}: {str(email_error)}"
+                    )
                     failed_count += 1
 
             return {
                 "sent": sent_count,
                 "failed": failed_count,
                 "form_url": form_url,
-                "message": f"Form sent to {sent_count} recipients"
+                "message": f"Form sent to {sent_count} recipients",
             }
 
         except HTTPException:
             raise
         except Exception as e:
             logging.error(f"Error sending form: {str(e)}")
-            raise HTTPException(status_code=500, detail=f"Failed to send form: {str(e)}")
+            raise HTTPException(
+                status_code=500, detail=f"Failed to send form: {str(e)}"
+            )
 
     async def submit_form_response(
         self,
@@ -462,10 +521,12 @@ class FormService:
         try:
             # Rate limiting for form submissions
             rate_key = f"form_submission_{ip_address or 'unknown'}"
-            if not rate_limiter.check_rate_limit(rate_key, limit=100, window_seconds=3600):
+            if not rate_limiter.check_rate_limit(
+                rate_key, limit=100, window_seconds=3600
+            ):
                 raise HTTPException(
                     status_code=429,
-                    detail="Too many form submissions. Please try again later."
+                    detail="Too many form submissions. Please try again later.",
                 )
 
             # Validate form_id
@@ -481,7 +542,9 @@ class FormService:
 
             if not form["is_active"]:
                 logger.info(f"Submission attempt to inactive form: {form_id}")
-                raise HTTPException(status_code=400, detail="Form is no longer accepting responses")
+                raise HTTPException(
+                    status_code=400, detail="Form is no longer accepting responses"
+                )
 
             # Validate and sanitize response data
             try:
@@ -497,7 +560,7 @@ class FormService:
                 if field["required"] and field["id"] not in sanitized_responses:
                     raise HTTPException(
                         status_code=400,
-                        detail=f"Required field '{html.escape(field['label'])}' is missing"
+                        detail=f"Required field '{html.escape(field['label'])}' is missing",
                     )
 
             # Sanitize submitter information
@@ -506,7 +569,9 @@ class FormService:
 
             if response_data.submitted_by_email:
                 if InputSanitizer.validate_email(response_data.submitted_by_email):
-                    submitted_by_email = response_data.submitted_by_email.lower().strip()
+                    submitted_by_email = (
+                        response_data.submitted_by_email.lower().strip()
+                    )
                 else:
                     raise HTTPException(status_code=400, detail="Invalid email address")
 
@@ -518,22 +583,25 @@ class FormService:
             # Check if multiple submissions are allowed
             if not form["settings"].get("allow_multiple_submissions", False):
                 if submitted_by_email:
-                    existing_response = await self.responses_collection.find_one({
-                        "form_id": form_id,
-                        "submitted_by_email": submitted_by_email
-                    })
+                    existing_response = await self.responses_collection.find_one(
+                        {"form_id": form_id, "submitted_by_email": submitted_by_email}
+                    )
                     if existing_response:
                         raise HTTPException(
                             status_code=400,
-                            detail="You have already submitted a response to this form"
+                            detail="You have already submitted a response to this form",
                         )
 
             # Create response document with sanitized data
             response_id = str(uuid.uuid4())
 
             # Sanitize IP address and user agent
-            safe_ip = InputSanitizer.sanitize_text(ip_address, 45) if ip_address else None
-            safe_user_agent = InputSanitizer.sanitize_text(user_agent, 500) if user_agent else None
+            safe_ip = (
+                InputSanitizer.sanitize_text(ip_address, 45) if ip_address else None
+            )
+            safe_user_agent = (
+                InputSanitizer.sanitize_text(user_agent, 500) if user_agent else None
+            )
 
             response_doc = {
                 "_id": response_id,
@@ -547,8 +615,8 @@ class FormService:
                 "submitted_at": datetime.now(timezone.utc),
                 "metadata": {
                     "security_validated": True,
-                    "sanitized_at": datetime.now(timezone.utc)
-                }
+                    "sanitized_at": datetime.now(timezone.utc),
+                },
             }
 
             # Save response
@@ -568,7 +636,12 @@ class FormService:
                 if submitted_by_email:
                     await self.distributions_collection.update_one(
                         {"form_id": form_id, "recipient_email": submitted_by_email},
-                        {"$set": {"submitted_at": datetime.now(timezone.utc), "status": "submitted"}}
+                        {
+                            "$set": {
+                                "submitted_at": datetime.now(timezone.utc),
+                                "status": "submitted",
+                            }
+                        },
                     )
 
                 # Log successful submission for security monitoring
@@ -580,8 +653,10 @@ class FormService:
                 # Notify planner about the form submission
                 await self._notify_planner_form_submission(
                     form=form,
-                    submitter_name=submitted_by_name or submitted_by_email or "Anonymous",
-                    form_id=form_id
+                    submitter_name=submitted_by_name
+                    or submitted_by_email
+                    or "Anonymous",
+                    form_id=form_id,
                 )
 
                 # Sanitize response message to prevent XSS
@@ -598,7 +673,7 @@ class FormService:
                 return {
                     "id": response_id,
                     "message": safe_success_message,
-                    "redirect_url": safe_redirect_url
+                    "redirect_url": safe_redirect_url,
                 }
             else:
                 raise HTTPException(status_code=500, detail="Failed to save response")
@@ -607,17 +682,23 @@ class FormService:
             raise
         except Exception as e:
             logging.error(f"Error submitting form response: {str(e)}")
-            raise HTTPException(status_code=500, detail=f"Failed to submit response: {str(e)}")
+            raise HTTPException(
+                status_code=500, detail=f"Failed to submit response: {str(e)}"
+            )
 
-    async def get_form_responses(self, form_id: str, created_by: str) -> List[Dict[str, Any]]:
+    async def get_form_responses(
+        self, form_id: str, created_by: str
+    ) -> List[Dict[str, Any]]:
         """Get all responses for a form"""
         try:
             # Verify user owns the form
             await self.get_form(form_id, created_by)
 
-            responses = await self.responses_collection.find(
-                {"form_id": form_id}
-            ).sort("submitted_at", -1).to_list(length=None)
+            responses = (
+                await self.responses_collection.find({"form_id": form_id})
+                .sort("submitted_at", -1)
+                .to_list(length=None)
+            )
 
             # Format responses
             for response in responses:
@@ -630,7 +711,9 @@ class FormService:
             raise
         except Exception as e:
             logging.error(f"Error fetching form responses: {str(e)}")
-            raise HTTPException(status_code=500, detail=f"Failed to fetch responses: {str(e)}")
+            raise HTTPException(
+                status_code=500, detail=f"Failed to fetch responses: {str(e)}"
+            )
 
     async def mark_form_viewed(
         self,
@@ -659,19 +742,32 @@ class FormService:
         normalized_email = viewer_email.lower().strip()
         state_key = self._planner_state_key(normalized_email)
 
-        base_projection = {"planner_state": 1, "submission_count": 1, "is_active": 1, "created_by": 1}
+        base_projection = {
+            "planner_state": 1,
+            "submission_count": 1,
+            "is_active": 1,
+            "created_by": 1,
+        }
         if is_root_admin:
-            form = await self.forms_collection.find_one({"_id": sanitized_form_id}, base_projection)
+            form = await self.forms_collection.find_one(
+                {"_id": sanitized_form_id}, base_projection
+            )
         else:
             form = await self.forms_collection.find_one(
-                {"_id": sanitized_form_id, "is_active": True, "created_by": normalized_email},
+                {
+                    "_id": sanitized_form_id,
+                    "is_active": True,
+                    "created_by": normalized_email,
+                },
                 base_projection,
             )
 
         if not form:
             if not is_root_admin:
                 # Differentiate between unauthorized access and missing forms for clearer errors
-                exists = await self.forms_collection.find_one({"_id": sanitized_form_id}, {"_id": 1})
+                exists = await self.forms_collection.find_one(
+                    {"_id": sanitized_form_id}, {"_id": 1}
+                )
                 if exists:
                     raise HTTPException(status_code=403, detail="Access denied to form")
             raise HTTPException(status_code=404, detail="Form not found")
@@ -684,8 +780,14 @@ class FormService:
 
         total_submissions = int(form.get("submission_count", 0) or 0)
         planner_state = form.get("planner_state", {}) or {}
-        existing_state = planner_state.get(state_key) or planner_state.get(normalized_email) or {}
-        unread_after_update = max(total_submissions - int(existing_state.get("last_viewed_submission_count", 0) or 0), 0)
+        existing_state = (
+            planner_state.get(state_key) or planner_state.get(normalized_email) or {}
+        )
+        unread_after_update = max(
+            total_submissions
+            - int(existing_state.get("last_viewed_submission_count", 0) or 0),
+            0,
+        )
 
         if scope == "responses":
             latest_known = submission_count
@@ -693,14 +795,18 @@ class FormService:
                 latest_known = total_submissions
 
             latest_int = max(int(latest_known or 0), 0)
-            update_fields[f"planner_state.{state_key}.last_viewed_submission_count"] = latest_int
+            update_fields[f"planner_state.{state_key}.last_viewed_submission_count"] = (
+                latest_int
+            )
             update_fields[f"planner_state.{state_key}.last_viewed_responses_at"] = now
             unread_after_update = max(total_submissions - latest_int, 0)
 
         if scope == "analytics":
             update_fields[f"planner_state.{state_key}.last_viewed_analytics_at"] = now
 
-        await self.forms_collection.update_one({"_id": sanitized_form_id}, {"$set": update_fields}, upsert=False)
+        await self.forms_collection.update_one(
+            {"_id": sanitized_form_id}, {"$set": update_fields}, upsert=False
+        )
 
         return {
             "message": "Form view recorded",
@@ -714,19 +820,29 @@ class FormService:
             form = await self.get_form(form_id, created_by)
 
             # Get response count
-            response_count = await self.responses_collection.count_documents({"form_id": form_id})
+            response_count = await self.responses_collection.count_documents(
+                {"form_id": form_id}
+            )
 
             # Get distribution stats
-            distributions = await self.distributions_collection.find({"form_id": form_id}).to_list(length=None)
+            distributions = await self.distributions_collection.find(
+                {"form_id": form_id}
+            ).to_list(length=None)
             sent_count = len(distributions)
             opened_count = len([d for d in distributions if d.get("opened_at")])
             clicked_count = len([d for d in distributions if d.get("clicked_at")])
             submitted_count = len([d for d in distributions if d.get("submitted_at")])
 
             # Calculate rates
-            open_rate = round((opened_count / sent_count * 100) if sent_count > 0 else 0, 1)
-            click_rate = round((clicked_count / sent_count * 100) if sent_count > 0 else 0, 1)
-            completion_rate = round((submitted_count / sent_count * 100) if sent_count > 0 else 0, 1)
+            open_rate = round(
+                (opened_count / sent_count * 100) if sent_count > 0 else 0, 1
+            )
+            click_rate = round(
+                (clicked_count / sent_count * 100) if sent_count > 0 else 0, 1
+            )
+            completion_rate = round(
+                (submitted_count / sent_count * 100) if sent_count > 0 else 0, 1
+            )
 
             return {
                 "form_id": form_id,
@@ -739,24 +855,25 @@ class FormService:
                     "submitted": submitted_count,
                     "open_rate": open_rate,
                     "click_rate": click_rate,
-                    "completion_rate": completion_rate
+                    "completion_rate": completion_rate,
                 },
                 "created_at": form["created_at"],
-                "last_response": await self._get_last_response_time(form_id)
+                "last_response": await self._get_last_response_time(form_id),
             }
 
         except HTTPException:
             raise
         except Exception as e:
             logging.error(f"Error fetching form analytics: {str(e)}")
-            raise HTTPException(status_code=500, detail=f"Failed to fetch analytics: {str(e)}")
+            raise HTTPException(
+                status_code=500, detail=f"Failed to fetch analytics: {str(e)}"
+            )
 
     async def _get_last_response_time(self, form_id: str):
         """Get the timestamp of the most recent form response"""
         try:
             last_response = await self.responses_collection.find_one(
-                {"form_id": form_id},
-                sort=[("submitted_at", -1)]
+                {"form_id": form_id}, sort=[("submitted_at", -1)]
             )
             return last_response.get("submitted_at") if last_response else None
         except Exception:
@@ -807,7 +924,7 @@ class FormService:
 
                     <div class="form-preview">
                         <h3>{form_title}</h3>
-                        {f'<p>{form_description}</p>' if form_description else ''}
+                        {f"<p>{form_description}</p>" if form_description else ""}
                     </div>
 
                     <p>Please click the button below to access and complete the form:</p>
@@ -836,7 +953,7 @@ class FormService:
         created_by: str,
         date_from: Optional[str] = None,
         date_to: Optional[str] = None,
-        include_metadata: bool = True
+        include_metadata: bool = True,
     ) -> Dict[str, Any]:
         """
         Export form responses to CSV format with enhanced security validation.
@@ -858,13 +975,11 @@ class FormService:
         try:
             # Rate limiting for CSV exports (more restrictive than regular API calls)
             if not rate_limiter.check_rate_limit(
-                f"csv_export_{created_by}",
-                limit=5,
-                window_seconds=3600
+                f"csv_export_{created_by}", limit=5, window_seconds=3600
             ):
                 raise HTTPException(
                     status_code=429,
-                    detail="Too many CSV exports requested. Please try again later."
+                    detail="Too many CSV exports requested. Please try again later.",
                 )
 
             # Validate and sanitize inputs
@@ -894,22 +1009,38 @@ class FormService:
                 try:
                     # Support various date formats
                     date_from = InputSanitizer.sanitize_text(date_from, 50)
-                    parsed_date_from = datetime.fromisoformat(date_from.replace('Z', '+00:00'))
+                    parsed_date_from = datetime.fromisoformat(
+                        date_from.replace("Z", "+00:00")
+                    )
                 except (ValueError, AttributeError):
                     logger.warning(f"Invalid date_from parameter: {date_from}")
-                    raise HTTPException(status_code=400, detail="Invalid date_from format. Use ISO format (YYYY-MM-DD or YYYY-MM-DDTHH:MM:SS)")
+                    raise HTTPException(
+                        status_code=400,
+                        detail="Invalid date_from format. Use ISO format (YYYY-MM-DD or YYYY-MM-DDTHH:MM:SS)",
+                    )
 
             if date_to:
                 try:
                     date_to = InputSanitizer.sanitize_text(date_to, 50)
-                    parsed_date_to = datetime.fromisoformat(date_to.replace('Z', '+00:00'))
+                    parsed_date_to = datetime.fromisoformat(
+                        date_to.replace("Z", "+00:00")
+                    )
                 except (ValueError, AttributeError):
                     logger.warning(f"Invalid date_to parameter: {date_to}")
-                    raise HTTPException(status_code=400, detail="Invalid date_to format. Use ISO format (YYYY-MM-DD or YYYY-MM-DDTHH:MM:SS)")
+                    raise HTTPException(
+                        status_code=400,
+                        detail="Invalid date_to format. Use ISO format (YYYY-MM-DD or YYYY-MM-DDTHH:MM:SS)",
+                    )
 
             # Validate date range
-            if parsed_date_from and parsed_date_to and parsed_date_from > parsed_date_to:
-                raise HTTPException(status_code=400, detail="date_from cannot be after date_to")
+            if (
+                parsed_date_from
+                and parsed_date_to
+                and parsed_date_from > parsed_date_to
+            ):
+                raise HTTPException(
+                    status_code=400, detail="date_from cannot be after date_to"
+                )
 
             # Log export attempt for security audit
             logger.info(
@@ -932,31 +1063,31 @@ class FormService:
 
             # Prepare export options
             export_options = {
-                'include_metadata': include_metadata,
-                'date_from': parsed_date_from,
-                'date_to': parsed_date_to,
-                'max_responses': max_export_size
+                "include_metadata": include_metadata,
+                "date_from": parsed_date_from,
+                "date_to": parsed_date_to,
+                "max_responses": max_export_size,
             }
 
             # Use the CSV exporter utility
             csv_exporter = FormResponseCSVExporter()
             export_result = csv_exporter.export_responses(
-                form_data=form,
-                responses=responses,
-                options=export_options
+                form_data=form, responses=responses, options=export_options
             )
 
             # Add additional metadata
-            export_result.update({
-                'form_id': form_id,
-                'form_name': form.get('name', 'Unknown Form'),
-                'exported_by': created_by,
-                'request_params': {
-                    'date_from': date_from,
-                    'date_to': date_to,
-                    'include_metadata': include_metadata
+            export_result.update(
+                {
+                    "form_id": form_id,
+                    "form_name": form.get("name", "Unknown Form"),
+                    "exported_by": created_by,
+                    "request_params": {
+                        "date_from": date_from,
+                        "date_to": date_to,
+                        "include_metadata": include_metadata,
+                    },
                 }
-            })
+            )
 
             # Log successful export
             logger.info(
@@ -976,19 +1107,18 @@ class FormService:
             logger.error(f"Error exporting form responses to CSV: {str(e)}")
             raise HTTPException(
                 status_code=500,
-                detail="Failed to export form responses. Please try again later."
+                detail="Failed to export form responses. Please try again later.",
             )
 
     async def _notify_planner_form_submission(
-        self,
-        form: Dict[str, Any],
-        submitter_name: str,
-        form_id: str
+        self, form: Dict[str, Any], submitter_name: str, form_id: str
     ):
         """Notify the planner about a form submission"""
         try:
             wedding_id = form.get("wedding_id")
-            form_title = form.get("settings", {}).get("title", form.get("name", "Unknown Form"))
+            form_title = form.get("settings", {}).get(
+                "title", form.get("name", "Unknown Form")
+            )
 
             # If no wedding_id, try to find planner from the form creator
             planner_email = None
@@ -1007,14 +1137,16 @@ class FormService:
                 return
 
             # Import here to avoid circular imports
-            from app.services.planner_notification_service import planner_notification_service
+            from app.services.planner_notification_service import (
+                planner_notification_service,
+            )
 
             await planner_notification_service.notify_form_submission(
                 planner_id=planner_email,
                 wedding_id=wedding_id or "",
                 form_type=form_title,
                 submitter_name=submitter_name,
-                form_id=form_id
+                form_id=form_id,
             )
             logger.info(f"Form submission notification sent to {planner_email}")
 

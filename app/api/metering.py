@@ -12,7 +12,9 @@ router = APIRouter(prefix="/metering", tags=["ROOT_ADMIN", "Metering"])
 
 
 @router.post("/retry-pending")
-async def retry_pending_meter_events(current_user: ExtendedAuthUser = Depends(require_root_admin)):
+async def retry_pending_meter_events(
+    current_user: ExtendedAuthUser = Depends(require_root_admin),
+):
     """
     Retry Stripe meter events for weddings marked as meter_pending.
     ROOT_ADMIN only.
@@ -32,26 +34,51 @@ async def retry_pending_meter_events(current_user: ExtendedAuthUser = Depends(re
             for wedding in batch:
                 planner_email = wedding.get("assigned_planner_email")
                 if not planner_email:
-                    failed.append({"wedding_id": wedding.get("_id"), "reason": "no_planner_email"})
+                    failed.append(
+                        {"wedding_id": wedding.get("_id"), "reason": "no_planner_email"}
+                    )
                     continue
 
-                planner = await mongo.get_users_collection().find_one({"email": planner_email})
+                planner = await mongo.get_users_collection().find_one(
+                    {"email": planner_email}
+                )
                 if not planner:
-                    failed.append({"wedding_id": wedding.get("_id"), "reason": "planner_not_found"})
+                    failed.append(
+                        {
+                            "wedding_id": wedding.get("_id"),
+                            "reason": "planner_not_found",
+                        }
+                    )
                     continue
 
                 user_id = str(planner.get("_id"))
-                sub = await mongo.db["user_subscriptions"].find_one({
-                    "user_id": user_id,
-                    "status": SubscriptionStatus.ACTIVE.value
-                })
-                if not sub or not sub.get("stripe_customer_id") or not sub.get("plan_id"):
-                    failed.append({"wedding_id": wedding.get("_id"), "reason": "no_active_subscription"})
+                sub = await mongo.db["user_subscriptions"].find_one(
+                    {"user_id": user_id, "status": SubscriptionStatus.ACTIVE.value}
+                )
+                if (
+                    not sub
+                    or not sub.get("stripe_customer_id")
+                    or not sub.get("plan_id")
+                ):
+                    failed.append(
+                        {
+                            "wedding_id": wedding.get("_id"),
+                            "reason": "no_active_subscription",
+                        }
+                    )
                     continue
 
-                plan = await mongo.db["subscription_plans"].find_one({"_id": sub["plan_id"]})
-                if not plan or not plan.get("is_metered") or not plan.get("meter_event_name"):
-                    failed.append({"wedding_id": wedding.get("_id"), "reason": "plan_not_metered"})
+                plan = await mongo.db["subscription_plans"].find_one(
+                    {"_id": sub["plan_id"]}
+                )
+                if (
+                    not plan
+                    or not plan.get("is_metered")
+                    or not plan.get("meter_event_name")
+                ):
+                    failed.append(
+                        {"wedding_id": wedding.get("_id"), "reason": "plan_not_metered"}
+                    )
                     continue
 
                 retried += 1
@@ -67,32 +94,37 @@ async def retry_pending_meter_events(current_user: ExtendedAuthUser = Depends(re
                     event_name=plan["meter_event_name"],
                     payload={
                         "stripe_customer_id": sub["stripe_customer_id"],
-                        "value": "1"
+                        "value": "1",
                     },
-                    identifier=idempotency_key
+                    identifier=idempotency_key,
                 )
                 if meter_result.get("status") == "success":
                     succeeded += 1
                     await mongo.db["weddings"].update_one(
                         {"_id": wedding.get("_id")},
-                        {"$set": {
-                            "last_billed_at": datetime.now(timezone.utc),
-                            "billed_period": datetime.now(timezone.utc).strftime("%Y-%m"),
-                            "meter_pending": False,
-                            "meter_pending_reason": None
-                        }}
+                        {
+                            "$set": {
+                                "last_billed_at": datetime.now(timezone.utc),
+                                "billed_period": datetime.now(timezone.utc).strftime(
+                                    "%Y-%m"
+                                ),
+                                "meter_pending": False,
+                                "meter_pending_reason": None,
+                            }
+                        },
                     )
                 else:
-                    failed.append({"wedding_id": wedding.get("_id"), "reason": meter_result.get("message") or "retry_failed"})
+                    failed.append(
+                        {
+                            "wedding_id": wedding.get("_id"),
+                            "reason": meter_result.get("message") or "retry_failed",
+                        }
+                    )
 
             # Fetch next batch
             batch = await cursor.to_list(length=BATCH_SIZE)
 
-        return {
-            "retried": retried,
-            "succeeded": succeeded,
-            "failed": failed
-        }
+        return {"retried": retried, "succeeded": succeeded, "failed": failed}
 
     except Exception as e:
         logger.error(f"Meter retry failed: {str(e)}", exc_info=True)

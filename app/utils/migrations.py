@@ -28,7 +28,7 @@ class Migration:
         name: str,
         up_func: Callable,
         down_func: Optional[Callable] = None,
-        description: str = ""
+        description: str = "",
     ):
         self.version = version
         self.name = name
@@ -63,39 +63,49 @@ class MigrationManager:
 
         for migration in migrations:
             if not await self._is_applied(migration.version):
-                logger.info(f"⏳ Running migration: {migration.version} - {migration.name}")
+                logger.info(
+                    f"⏳ Running migration: {migration.version} - {migration.name}"
+                )
 
                 try:
                     # Run migration
                     await migration.up(mongo.db)
 
                     # Mark as applied
-                    await mongo.db[self.migrations_collection_name].insert_one({
-                        "version": migration.version,
-                        "name": migration.name,
-                        "description": migration.description,
-                        "applied_at": datetime.now(timezone.utc),
-                        "status": "success"
-                    })
+                    await mongo.db[self.migrations_collection_name].insert_one(
+                        {
+                            "version": migration.version,
+                            "name": migration.name,
+                            "description": migration.description,
+                            "applied_at": datetime.now(timezone.utc),
+                            "status": "success",
+                        }
+                    )
 
-                    logger.info(f"✓ Migration {migration.version} completed successfully")
+                    logger.info(
+                        f"✓ Migration {migration.version} completed successfully"
+                    )
 
                 except Exception as e:
                     logger.error(f"✗ Migration {migration.version} failed: {str(e)}")
 
                     # Log failed migration
-                    await mongo.db[self.migrations_collection_name].insert_one({
-                        "version": migration.version,
-                        "name": migration.name,
-                        "description": migration.description,
-                        "applied_at": datetime.now(timezone.utc),
-                        "status": "failed",
-                        "error": str(e)
-                    })
+                    await mongo.db[self.migrations_collection_name].insert_one(
+                        {
+                            "version": migration.version,
+                            "name": migration.name,
+                            "description": migration.description,
+                            "applied_at": datetime.now(timezone.utc),
+                            "status": "failed",
+                            "error": str(e),
+                        }
+                    )
 
                     raise Exception(f"Migration {migration.version} failed: {str(e)}")
             else:
-                logger.debug(f"⊘ Migration {migration.version} already applied, skipping")
+                logger.debug(
+                    f"⊘ Migration {migration.version} already applied, skipping"
+                )
 
     async def rollback_migration(self, version: str):
         """
@@ -124,9 +134,9 @@ class MigrationManager:
             await migration.down(mongo.db)
 
             # Remove from applied migrations
-            await mongo.db[self.migrations_collection_name].delete_one({
-                "version": version
-            })
+            await mongo.db[self.migrations_collection_name].delete_one(
+                {"version": version}
+            )
 
             logger.info(f"✓ Migration {version} rolled back successfully")
 
@@ -139,7 +149,9 @@ class MigrationManager:
         cursor = mongo.db[self.migrations_collection_name].find().sort("applied_at", 1)
         return await cursor.to_list(length=None)
 
-    async def get_pending_migrations(self, all_migrations: List[Migration]) -> List[Migration]:
+    async def get_pending_migrations(
+        self, all_migrations: List[Migration]
+    ) -> List[Migration]:
         """Get list of pending migrations"""
         pending = []
         for migration in all_migrations:
@@ -149,10 +161,9 @@ class MigrationManager:
 
     async def _is_applied(self, version: str) -> bool:
         """Check if a migration has been applied"""
-        result = await mongo.db[self.migrations_collection_name].find_one({
-            "version": version,
-            "status": "success"
-        })
+        result = await mongo.db[self.migrations_collection_name].find_one(
+            {"version": version, "status": "success"}
+        )
         return result is not None
 
 
@@ -163,12 +174,7 @@ class MigrationRegistry:
         self.migrations: Dict[str, Migration] = {}
         self._ordered_migrations: List[Migration] = []
 
-    def register(
-        self,
-        version: str,
-        name: str,
-        description: str = ""
-    ):
+    def register(self, version: str, name: str, description: str = ""):
         """
         Decorator to register a migration
 
@@ -180,6 +186,7 @@ class MigrationRegistry:
                     {"$set": {"subscription_tier": "free"}}
                 )
         """
+
         def decorator(up_func: Callable):
             # Rollback functions not yet implemented
             down_func = None
@@ -189,7 +196,7 @@ class MigrationRegistry:
                 name=name,
                 up_func=up_func,
                 down_func=down_func,
-                description=description
+                description=description,
             )
 
             self.migrations[version] = migration
@@ -202,12 +209,7 @@ class MigrationRegistry:
 
         return decorator
 
-    def register_with_rollback(
-        self,
-        version: str,
-        name: str,
-        description: str = ""
-    ):
+    def register_with_rollback(self, version: str, name: str, description: str = ""):
         """
         Decorator to register a migration with rollback function
 
@@ -220,9 +222,10 @@ class MigrationRegistry:
                 async def down(db):
                     await db["users"].update_many({}, {"$unset": {"field": ""}})
         """
+
         def decorator(migration_class):
-            up_func = getattr(migration_class, 'up', None)
-            down_func = getattr(migration_class, 'down', None)
+            up_func = getattr(migration_class, "up", None)
+            down_func = getattr(migration_class, "down", None)
 
             if not up_func:
                 raise ValueError("Migration class must have 'up' method")
@@ -232,7 +235,7 @@ class MigrationRegistry:
                 name=name,
                 up_func=up_func,
                 down_func=down_func,
-                description=description
+                description=description,
             )
 
             self.migrations[version] = migration
@@ -261,24 +264,29 @@ migration_manager = MigrationManager()
 
 # ==================== HELPERS ====================
 
+
 async def _safe_create_index(collection, keys, **kwargs):
     """Create an index, silently skipping if an equivalent index already exists."""
     from pymongo.errors import OperationFailure
+
     try:
         await collection.create_index(keys, **kwargs)
     except OperationFailure as e:
         if e.code == 85:  # IndexOptionsConflict
-            logger.debug(f"Index on {keys} already exists under a different name, skipping")
+            logger.debug(
+                f"Index on {keys} already exists under a different name, skipping"
+            )
         else:
             raise
 
 
 # ==================== MIGRATIONS ====================
 
+
 @migration_registry.register(
     "001",
     "Initialize error tracking collection",
-    "Creates the errors collection with indexes for fast querying"
+    "Creates the errors collection with indexes for fast querying",
 )
 async def migration_001_init_errors(db):
     """Initialize errors collection for self-hosted error tracking"""
@@ -294,7 +302,7 @@ async def migration_001_init_errors(db):
 @migration_registry.register(
     "002",
     "Add platform metrics collection",
-    "Creates collection for storing platform metrics snapshots"
+    "Creates collection for storing platform metrics snapshots",
 )
 async def migration_002_platform_metrics(db):
     """Create platform_metrics collection for historical tracking"""
@@ -307,7 +315,7 @@ async def migration_002_platform_metrics(db):
 @migration_registry.register_with_rollback(
     "003",
     "Add subscription status to users",
-    "Ensures all users have subscription_status and subscription_tier fields"
+    "Ensures all users have subscription_status and subscription_tier fields",
 )
 class Migration003:
     """Add subscription fields to existing users"""
@@ -321,9 +329,9 @@ class Migration003:
                 "$set": {
                     "subscription_status": "inactive",
                     "subscription_tier": "free",
-                    "trial_used": False
+                    "trial_used": False,
                 }
-            }
+            },
         )
         logger.info(f"Updated {result.modified_count} users with subscription fields")
 
@@ -336,9 +344,9 @@ class Migration003:
                 "$unset": {
                     "subscription_status": "",
                     "subscription_tier": "",
-                    "trial_used": ""
+                    "trial_used": "",
                 }
-            }
+            },
         )
         logger.info(f"Removed subscription fields from {result.modified_count} users")
 
@@ -346,7 +354,7 @@ class Migration003:
 @migration_registry.register(
     "004",
     "Add backup metadata collection",
-    "Creates collection for tracking backup status and history"
+    "Creates collection for tracking backup status and history",
 )
 async def migration_004_backup_tracking(db):
     """Create backup tracking collection"""
@@ -360,7 +368,7 @@ async def migration_004_backup_tracking(db):
 @migration_registry.register(
     "005",
     "Add production indexes for users collection",
-    "Creates critical indexes for user queries, authentication, and subscription management"
+    "Creates critical indexes for user queries, authentication, and subscription management",
 )
 async def migration_005_users_indexes(db):
     """Add production-critical indexes to users collection for performance"""
@@ -372,11 +380,9 @@ async def migration_005_users_indexes(db):
     await _safe_create_index(users, "trial_end_date")
     await _safe_create_index(users, "stripe_customer_id", sparse=True)
     await _safe_create_index(users, [("created_at", -1)])
-    await _safe_create_index(users, [
-        ("subscription_status", 1),
-        ("trial_end_date", 1),
-        ("is_active", 1)
-    ])
+    await _safe_create_index(
+        users, [("subscription_status", 1), ("trial_end_date", 1), ("is_active", 1)]
+    )
 
     logger.info("All users collection indexes created successfully")
 
@@ -384,7 +390,7 @@ async def migration_005_users_indexes(db):
 @migration_registry.register(
     "006",
     "Add activity and audit log indexes with TTL",
-    "Creates TTL indexes for admin_activity_log, activity_logs, audit_logs, and security_audit_logs for automatic cleanup"
+    "Creates TTL indexes for admin_activity_log, activity_logs, audit_logs, and security_audit_logs for automatic cleanup",
 )
 async def migration_006_activity_log_indexes(db):
     """
@@ -395,60 +401,67 @@ async def migration_006_activity_log_indexes(db):
     """
     from pymongo import ASCENDING
 
-    async def safe_create_ttl_index(collection_name: str, field: str, expire_seconds: int, index_name: str):
+    async def safe_create_ttl_index(
+        collection_name: str, field: str, expire_seconds: int, index_name: str
+    ):
         """Helper to safely create TTL index, handling 'already exists' errors gracefully."""
         try:
             await db[collection_name].create_index(
-                [(field, ASCENDING)],
-                expireAfterSeconds=expire_seconds,
-                name=index_name
+                [(field, ASCENDING)], expireAfterSeconds=expire_seconds, name=index_name
             )
             logger.info(f"Created TTL index {index_name} on {collection_name}")
         except Exception as e:
             error_str = str(e).lower()
             if "already exists" in error_str or "indexoptionsconflict" in error_str:
-                logger.info(f"TTL index {index_name} already exists on {collection_name}, skipping")
+                logger.info(
+                    f"TTL index {index_name} already exists on {collection_name}, skipping"
+                )
             else:
                 raise
 
     # admin_activity_log - 90 day TTL
     logger.info("Creating TTL index for admin_activity_log collection...")
     await safe_create_ttl_index(
-        "admin_activity_log", "created_at",
+        "admin_activity_log",
+        "created_at",
         90 * 24 * 60 * 60,  # 90 days
-        "admin_activity_log_ttl"
+        "admin_activity_log_ttl",
     )
 
     # activity_logs - 90 day TTL
     logger.info("Creating TTL index for activity_logs collection...")
     await safe_create_ttl_index(
-        "activity_logs", "timestamp",
+        "activity_logs",
+        "timestamp",
         90 * 24 * 60 * 60,  # 90 days
-        "activity_logs_ttl"
+        "activity_logs_ttl",
     )
 
     # audit_logs - 30 day TTL (high volume)
     logger.info("Creating TTL index for audit_logs collection...")
     await safe_create_ttl_index(
-        "audit_logs", "timestamp",
+        "audit_logs",
+        "timestamp",
         30 * 24 * 60 * 60,  # 30 days
-        "audit_logs_ttl"
+        "audit_logs_ttl",
     )
 
     # security_audit_logs - 180 day TTL (security compliance)
     logger.info("Creating TTL index for security_audit_logs collection...")
     await safe_create_ttl_index(
-        "security_audit_logs", "timestamp",
+        "security_audit_logs",
+        "timestamp",
         180 * 24 * 60 * 60,  # 180 days
-        "security_audit_logs_ttl"
+        "security_audit_logs_ttl",
     )
 
     # errors - 30 day TTL
     logger.info("Creating TTL index for errors collection...")
     await safe_create_ttl_index(
-        "errors", "timestamp",
+        "errors",
+        "timestamp",
         30 * 24 * 60 * 60,  # 30 days
-        "errors_ttl"
+        "errors_ttl",
     )
 
     logger.info("All TTL indexes created successfully")
@@ -457,7 +470,7 @@ async def migration_006_activity_log_indexes(db):
 @migration_registry.register(
     "007",
     "Repair team invite token consumption",
-    "Unsets consumed team invite tokens and repairs partially accepted team-member invites left pending by null-token index conflicts"
+    "Unsets consumed team invite tokens and repairs partially accepted team-member invites left pending by null-token index conflicts",
 )
 async def migration_007_repair_team_invites(db):
     """Repair team-member records that were left inconsistent by invite_token=null collisions."""
@@ -483,17 +496,21 @@ async def migration_007_repair_team_invites(db):
     )
 
     repaired = 0
-    cursor = team_members.find({
-        "status": {"$in": ["pending", "accepting"]},
-        "user_id": None,
-    })
+    cursor = team_members.find(
+        {
+            "status": {"$in": ["pending", "accepting"]},
+            "user_id": None,
+        }
+    )
     async for member in cursor:
-        user = await users.find_one({
-            "email": member.get("email"),
-            "role": "team_member",
-            "parent_planner_id": member.get("owner_id"),
-            "team_member_id": str(member.get("_id")),
-        })
+        user = await users.find_one(
+            {
+                "email": member.get("email"),
+                "role": "team_member",
+                "parent_planner_id": member.get("owner_id"),
+                "team_member_id": str(member.get("_id")),
+            }
+        )
         if not user:
             continue
 

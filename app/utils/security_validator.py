@@ -10,7 +10,6 @@ import hashlib
 import secrets
 import time
 from typing import Any, Dict, List, Optional, Union, Tuple
-from datetime import datetime, timedelta, timezone
 from bson import ObjectId
 from bson.errors import InvalidId
 import logging
@@ -19,48 +18,109 @@ import logging
 security_logger = logging.getLogger("wedding_security")
 security_logger.setLevel(logging.INFO)
 
+
 class SecurityValidator:
     """
     Comprehensive security validation utility for the wedding application.
     Implements defense-in-depth security controls.
     """
+
     # Security patterns for injection detection
     NOSQL_INJECTION_PATTERNS = [
-        r'\$where\s*:', r'\$regex\s*:', r'\$ne\s*:', r'\$nin\s*:', r'\$or\s*:',
-        r'\$and\s*:', r'\$nor\s*:', r'\$not\s*:', r'\$exists\s*:', r'\$type\s*:',
-        r'\$elemMatch\s*:', r'\$size\s*:', r'\$all\s*:', r'\$mod\s*:',
-        r'javascript:', r'eval\s*\(', r'function\s*\(', r'constructor',
-        r'\$\w+\s*:', r'\{\s*\$\w+', r'ObjectId\s*\(', r'ISODate\s*\(',
-        r'new\s+Date\s*\(', r'new\s+ObjectId\s*\('
+        r"\$where\s*:",
+        r"\$regex\s*:",
+        r"\$ne\s*:",
+        r"\$nin\s*:",
+        r"\$or\s*:",
+        r"\$and\s*:",
+        r"\$nor\s*:",
+        r"\$not\s*:",
+        r"\$exists\s*:",
+        r"\$type\s*:",
+        r"\$elemMatch\s*:",
+        r"\$size\s*:",
+        r"\$all\s*:",
+        r"\$mod\s*:",
+        r"javascript:",
+        r"eval\s*\(",
+        r"function\s*\(",
+        r"constructor",
+        r"\$\w+\s*:",
+        r"\{\s*\$\w+",
+        r"ObjectId\s*\(",
+        r"ISODate\s*\(",
+        r"new\s+Date\s*\(",
+        r"new\s+ObjectId\s*\(",
     ]
     SQL_INJECTION_PATTERNS = [
-        r'union\s+select', r'or\s+1\s*=\s*1', r'and\s+1\s*=\s*1',
-        r'drop\s+table', r'delete\s+from', r'insert\s+into',
-        r'update\s+set', r'create\s+table', r'alter\s+table',
-        r'exec\s*\(', r'sp_\w+', r'xp_\w+', r'--', r'/\*', r'\*/',
-        r'char\s*\(', r'cast\s*\(', r'convert\s*\('
+        r"union\s+select",
+        r"or\s+1\s*=\s*1",
+        r"and\s+1\s*=\s*1",
+        r"drop\s+table",
+        r"delete\s+from",
+        r"insert\s+into",
+        r"update\s+set",
+        r"create\s+table",
+        r"alter\s+table",
+        r"exec\s*\(",
+        r"sp_\w+",
+        r"xp_\w+",
+        r"--",
+        r"/\*",
+        r"\*/",
+        r"char\s*\(",
+        r"cast\s*\(",
+        r"convert\s*\(",
     ]
     XSS_PATTERNS = [
-        r'<script[^>]*>', r'</script>', r'javascript:', r'vbscript:',
-        r'onload\s*=', r'onerror\s*=', r'onclick\s*=', r'onmouseover\s*=',
-        r'<iframe[^>]*>', r'</iframe>', r'<object[^>]*>', r'</object>',
-        r'<embed[^>]*>', r'<form[^>]*>', r'<input[^>]*>', r'expression\s*\(',
-        r'url\s*\(', r'@import', r'<meta[^>]*>'
+        r"<script[^>]*>",
+        r"</script>",
+        r"javascript:",
+        r"vbscript:",
+        r"onload\s*=",
+        r"onerror\s*=",
+        r"onclick\s*=",
+        r"onmouseover\s*=",
+        r"<iframe[^>]*>",
+        r"</iframe>",
+        r"<object[^>]*>",
+        r"</object>",
+        r"<embed[^>]*>",
+        r"<form[^>]*>",
+        r"<input[^>]*>",
+        r"expression\s*\(",
+        r"url\s*\(",
+        r"@import",
+        r"<meta[^>]*>",
     ]
     PATH_TRAVERSAL_PATTERNS = [
-        r'\.\./', r'\.\.\\', r'%2e%2e%2f', r'%2e%2e%5c',
-        r'%252e%252e%252f', r'%252e%252e%255c', r'..%2f', r'..%5c',
-        r'%2e%2e/', r'\.\./\.\./\.\./\.\./\.\./\.\./\.\.',
-        r'/etc/passwd', r'/etc/shadow', r'C:\\Windows\\', r'C:\\Users\\'
+        r"\.\./",
+        r"\.\.\\",
+        r"%2e%2e%2f",
+        r"%2e%2e%5c",
+        r"%252e%252e%252f",
+        r"%252e%252e%255c",
+        r"..%2f",
+        r"..%5c",
+        r"%2e%2e/",
+        r"\.\./\.\./\.\./\.\./\.\./\.\./\.\.",
+        r"/etc/passwd",
+        r"/etc/shadow",
+        r"C:\\Windows\\",
+        r"C:\\Users\\",
     ]
     COMMAND_INJECTION_PATTERNS = [
-        r';.*(?:rm|del|cat|type|curl|wget|nc|netcat)',
-        r'\|.*(?:rm|del|cat|type|curl|wget|nc|netcat)',
-        r'&&.*(?:rm|del|cat|type|curl|wget|nc|netcat)',
-        r'\`.*(?:rm|del|cat|type|curl|wget|nc|netcat)',
-        r'\$\(.*(?:rm|del|cat|type|curl|wget|nc|netcat)',
-        r'exec\s*\(', r'eval\s*\(', r'system\s*\(', r'shell_exec\s*\('
+        r";.*(?:rm|del|cat|type|curl|wget|nc|netcat)",
+        r"\|.*(?:rm|del|cat|type|curl|wget|nc|netcat)",
+        r"&&.*(?:rm|del|cat|type|curl|wget|nc|netcat)",
+        r"\`.*(?:rm|del|cat|type|curl|wget|nc|netcat)",
+        r"\$\(.*(?:rm|del|cat|type|curl|wget|nc|netcat)",
+        r"exec\s*\(",
+        r"eval\s*\(",
+        r"system\s*\(",
+        r"shell_exec\s*\(",
     ]
+
     def __init__(self):
         self.failed_attempts = {}
         self.blocked_ips = {}
@@ -69,7 +129,9 @@ class SecurityValidator:
         self.lockout_duration = 300  # 5 minutes
         self.progressive_delays = [1, 2, 4, 8, 16]  # Progressive delays in seconds
 
-    def validate_input_security(self, value: Any, field_name: str, context: str = "") -> Tuple[bool, str]:
+    def validate_input_security(
+        self, value: Any, field_name: str, context: str = ""
+    ) -> Tuple[bool, str]:
         """
         Comprehensive input validation for security vulnerabilities.
 
@@ -99,16 +161,20 @@ class SecurityValidator:
                 return False, "Input too long"
 
             # Unicode normalization to prevent bypass attempts
-            normalized_value = unicodedata.normalize('NFKC', str_value)
+            normalized_value = unicodedata.normalize("NFKC", str_value)
 
             # Check for NoSQL injection patterns
-            if self._contains_injection_patterns(normalized_value, self.NOSQL_INJECTION_PATTERNS):
+            if self._contains_injection_patterns(
+                normalized_value, self.NOSQL_INJECTION_PATTERNS
+            ):
                 security_logger.warning(
                     f"NoSQL injection attempt detected in field {field_name}: {context}"
                 )
                 return False, "Invalid input detected"
             # Check for SQL injection patterns
-            if self._contains_injection_patterns(normalized_value, self.SQL_INJECTION_PATTERNS):
+            if self._contains_injection_patterns(
+                normalized_value, self.SQL_INJECTION_PATTERNS
+            ):
                 security_logger.warning(
                     f"SQL injection attempt detected in field {field_name}: {context}"
                 )
@@ -120,26 +186,34 @@ class SecurityValidator:
                 )
                 return False, "Invalid input detected"
             # Check for path traversal patterns
-            if self._contains_injection_patterns(normalized_value, self.PATH_TRAVERSAL_PATTERNS):
+            if self._contains_injection_patterns(
+                normalized_value, self.PATH_TRAVERSAL_PATTERNS
+            ):
                 security_logger.warning(
                     f"Path traversal attempt detected in field {field_name}: {context}"
                 )
                 return False, "Invalid input detected"
             # Check for command injection patterns
-            if self._contains_injection_patterns(normalized_value, self.COMMAND_INJECTION_PATTERNS):
+            if self._contains_injection_patterns(
+                normalized_value, self.COMMAND_INJECTION_PATTERNS
+            ):
                 security_logger.warning(
                     f"Command injection attempt detected in field {field_name}: {context}"
                 )
                 return False, "Invalid input detected"
             # Field-specific validation
-            sanitized_value = self._field_specific_validation(normalized_value, field_name)
+            sanitized_value = self._field_specific_validation(
+                normalized_value, field_name
+            )
             if sanitized_value is False:
                 return False, "Invalid field format"
 
             return True, sanitized_value
 
         except Exception as e:
-            security_logger.error(f"Security validation error for field {field_name}: {str(e)}")
+            security_logger.error(
+                f"Security validation error for field {field_name}: {str(e)}"
+            )
             return False, "Validation error"
 
     def _contains_injection_patterns(self, value: str, patterns: List[str]) -> bool:
@@ -151,24 +225,27 @@ class SecurityValidator:
                 return True
         return False
 
-    def _field_specific_validation(self, value: str, field_name: str) -> Union[str, bool]:
+    def _field_specific_validation(
+        self, value: str, field_name: str
+    ) -> Union[str, bool]:
         """Perform field-specific validation and sanitization"""
 
-        if field_name.lower() in ['name', 'guest_name', 'full_name']:
+        if field_name.lower() in ["name", "guest_name", "full_name"]:
             return self._validate_name(value)
-        elif field_name.lower() in ['phone', 'phone_number']:
+        elif field_name.lower() in ["phone", "phone_number"]:
             return self._validate_phone(value)
-        elif field_name.lower() in ['token', 'guest_token', 'verification_token']:
+        elif field_name.lower() in ["token", "guest_token", "verification_token"]:
             return self._validate_token(value)
-        elif field_name.lower() in ['password', 'wedding_password']:
+        elif field_name.lower() in ["password", "wedding_password"]:
             return self._validate_password(value)
-        elif field_name.lower() in ['slug', 'wedding_slug']:
+        elif field_name.lower() in ["slug", "wedding_slug"]:
             return self._validate_slug(value)
-        elif field_name.lower() in ['email']:
+        elif field_name.lower() in ["email"]:
             return self._validate_email(value)
         else:
             # Generic sanitization
             return html.escape(value, quote=True)
+
     def _validate_name(self, value: str) -> Union[str, bool]:
         """Validate and sanitize name fields"""
         # Allow letters, spaces, hyphens, apostrophes, and common unicode characters
@@ -181,20 +258,20 @@ class SecurityValidator:
             return False
 
         # Remove extra whitespace and normalize
-        sanitized = re.sub(r'\s+', ' ', value.strip())
+        sanitized = re.sub(r"\s+", " ", value.strip())
         return html.escape(sanitized, quote=True)
 
     def _validate_phone(self, value: str) -> Union[str, bool]:
         """Validate and sanitize phone numbers"""
         # Remove all non-digit characters for validation
-        digits_only = re.sub(r'\D', '', value)
+        digits_only = re.sub(r"\D", "", value)
 
         # Check if it's a valid phone number length
         if len(digits_only) < 10 or len(digits_only) > 15:
             return False
 
         # Only allow digits, spaces, hyphens, parentheses, and plus sign
-        phone_pattern = r'^[\d\s\-\(\)\+\.]+$'
+        phone_pattern = r"^[\d\s\-\(\)\+\.]+$"
 
         if not re.match(phone_pattern, value):
             return False
@@ -204,7 +281,7 @@ class SecurityValidator:
     def _validate_token(self, value: str) -> Union[str, bool]:
         """Validate security tokens"""
         # Tokens should be alphanumeric with possible hyphens/underscores
-        token_pattern = r'^[a-zA-Z0-9\-_]+$'
+        token_pattern = r"^[a-zA-Z0-9\-_]+$"
 
         if not re.match(token_pattern, value):
             return False
@@ -218,7 +295,7 @@ class SecurityValidator:
     def _validate_password(self, value: str) -> Union[str, bool]:
         """Validate passwords (for wedding password protection)"""
         # Password should not contain HTML or script tags
-        if '<' in value or '>' in value or 'script' in value.lower():
+        if "<" in value or ">" in value or "script" in value.lower():
             return False
 
         if len(value) > 128:  # Reasonable password length
@@ -229,7 +306,7 @@ class SecurityValidator:
     def _validate_slug(self, value: str) -> Union[str, bool]:
         """Validate wedding slugs"""
         # Slugs should be lowercase alphanumeric with hyphens
-        slug_pattern = r'^[a-z0-9\-]+$'
+        slug_pattern = r"^[a-z0-9\-]+$"
 
         if not re.match(slug_pattern, value):
             return False
@@ -241,7 +318,7 @@ class SecurityValidator:
 
     def _validate_email(self, value: str) -> Union[str, bool]:
         """Validate email addresses"""
-        email_pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
+        email_pattern = r"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$"
 
         if not re.match(email_pattern, value):
             return False
@@ -268,7 +345,9 @@ class SecurityValidator:
             security_logger.error(f"ObjectId validation error: {str(e)}")
             return False, "ID validation error"
 
-    def check_brute_force_protection(self, identifier: str, context: str = "") -> Tuple[bool, int]:
+    def check_brute_force_protection(
+        self, identifier: str, context: str = ""
+    ) -> Tuple[bool, int]:
         """
         Check and enforce brute force protection with progressive delays.
 
@@ -302,11 +381,15 @@ class SecurityValidator:
             self.failed_attempts[identifier] = []
 
         attempts = self.failed_attempts[identifier]
-        recent_attempts = [t for t in attempts if current_time - t < self.lockout_duration]
+        recent_attempts = [
+            t for t in attempts if current_time - t < self.lockout_duration
+        ]
 
         # Progressive delays based on attempt count
         if len(recent_attempts) > 0:
-            delay_index = min(len(recent_attempts) - 1, len(self.progressive_delays) - 1)
+            delay_index = min(
+                len(recent_attempts) - 1, len(self.progressive_delays) - 1
+            )
             delay = self.progressive_delays[delay_index]
             # If too many attempts, block the identifier
             if len(recent_attempts) >= self.max_attempts:
@@ -350,7 +433,9 @@ class SecurityValidator:
         # Clean failed attempts
         for identifier in list(self.failed_attempts.keys()):
             attempts = self.failed_attempts[identifier]
-            recent_attempts = [t for t in attempts if current_time - t < self.lockout_duration]
+            recent_attempts = [
+                t for t in attempts if current_time - t < self.lockout_duration
+            ]
             if recent_attempts:
                 self.failed_attempts[identifier] = recent_attempts
             else:
@@ -371,7 +456,7 @@ class SecurityValidator:
             return False
 
         # Check for valid characters (URL-safe base64)
-        if not re.match(r'^[A-Za-z0-9\-_]+$', token):
+        if not re.match(r"^[A-Za-z0-9\-_]+$", token):
             return False
 
         # Check length if specified
@@ -385,7 +470,7 @@ class SecurityValidator:
         if salt is None:
             salt = secrets.token_hex(16)
 
-        combined = f"{data}{salt}".encode('utf-8')
+        combined = f"{data}{salt}".encode("utf-8")
         hashed = hashlib.sha256(combined).hexdigest()
 
         return f"{salt}${hashed}"
@@ -393,25 +478,21 @@ class SecurityValidator:
     def verify_hashed_data(self, data: str, hashed: str) -> bool:
         """Verify data against hash"""
         try:
-            if '$' not in hashed:
+            if "$" not in hashed:
                 return False
 
-            salt, expected_hash = hashed.split('$', 1)
-            combined = f"{data}{salt}".encode('utf-8')
+            salt, expected_hash = hashed.split("$", 1)
+            combined = f"{data}{salt}".encode("utf-8")
             actual_hash = hashlib.sha256(combined).hexdigest()
 
             return secrets.compare_digest(expected_hash, actual_hash)
         except Exception:
             return False
 
-    def log_security_event(self, event_type: str, details: Dict[str, Any], severity: str = "INFO"):
+    def log_security_event(
+        self, event_type: str, details: Dict[str, Any], severity: str = "INFO"
+    ):
         """Log security events with structured data"""
-        log_entry = {
-            "timestamp": datetime.now(timezone.utc).isoformat(),
-            "event_type": event_type,
-            "severity": severity,
-            "details": details
-        }
         if severity == "WARNING":
             security_logger.warning(f"Security Event: {event_type} - {details}")
         elif severity == "ERROR":

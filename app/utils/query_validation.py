@@ -4,14 +4,17 @@ Query Parameter Validation Utilities
 Validates and sanitizes pagination, sorting, and filtering parameters
 to prevent injection and ensure sensible bounds.
 """
-from typing import Optional, List, Any
-from fastapi import Query, HTTPException
+
+from typing import Optional, List
+from fastapi import Query
 import logging
 
 logger = logging.getLogger(__name__)
 
 
-def validated_page(page: int = Query(1, ge=1, le=10000, description="Page number")) -> int:
+def validated_page(
+    page: int = Query(1, ge=1, le=10000, description="Page number"),
+) -> int:
     """
     Validate page number for pagination.
 
@@ -24,7 +27,9 @@ def validated_page(page: int = Query(1, ge=1, le=10000, description="Page number
     return page
 
 
-def validated_limit(limit: int = Query(20, ge=1, le=100, description="Items per page")) -> int:
+def validated_limit(
+    limit: int = Query(20, ge=1, le=100, description="Items per page"),
+) -> int:
     """
     Validate limit/items per page parameter.
 
@@ -37,7 +42,9 @@ def validated_limit(limit: int = Query(20, ge=1, le=100, description="Items per 
     return limit
 
 
-def validated_limit_extended(limit: int = Query(50, ge=1, le=200, description="Items per page")) -> int:
+def validated_limit_extended(
+    limit: int = Query(50, ge=1, le=200, description="Items per page"),
+) -> int:
     """
     Validate limit for endpoints that need more items per page.
 
@@ -74,7 +81,7 @@ def validated_skip(skip: int = Query(0, ge=0, le=100000)) -> int:
 def validate_sort_field(
     sort: str,
     allowed_fields: Optional[List[str]] = None,
-    default_field: str = "created_at"
+    default_field: str = "created_at",
 ) -> str:
     """
     Validate sort field against an allowlist to prevent MongoDB injection.
@@ -103,7 +110,7 @@ def validate_sort_field(
         "start_date",
         "end_date",
         "due_date",
-        "_id"
+        "_id",
     ]
 
     allowed = allowed_fields or default_allowed
@@ -113,7 +120,9 @@ def validate_sort_field(
 
     # Validate field is in allowlist
     if field_name not in allowed:
-        logger.warning(f"Invalid sort field requested: {sort}. Using default: {default_field}")
+        logger.warning(
+            f"Invalid sort field requested: {sort}. Using default: {default_field}"
+        )
         return default_field
 
     # Return original sort value (with - prefix if present)
@@ -136,9 +145,7 @@ def validate_sort_direction(direction: str) -> int:
 
 
 def validated_string_filter(
-    value: Optional[str],
-    max_length: int = 100,
-    allow_regex: bool = False
+    value: Optional[str], max_length: int = 100, allow_regex: bool = False
 ) -> Optional[str]:
     """
     Validate and sanitize a string filter parameter.
@@ -171,18 +178,17 @@ def validated_string_filter(
     # Basic regex injection prevention - only allow alphanumeric, common punctuation
     if not allow_regex:
         # Remove dangerous regex special characters
-        dangerous_chars = ['$', '{', '}', '|', '[', ']', '(', ')', '^', '\\']
+        dangerous_chars = ["$", "{", "}", "|", "[", "]", "(", ")", "^", "\\"]
         for char in dangerous_chars:
             if char in value:
                 logger.warning(f"Dangerous character in filter: {char}")
-                value = value.replace(char, '')
+                value = value.replace(char, "")
 
     return value
 
 
 def validated_status_filter(
-    status: Optional[str],
-    allowed_statuses: List[str]
+    status: Optional[str], allowed_statuses: List[str]
 ) -> Optional[str]:
     """
     Validate a status filter against an allowlist.
@@ -236,18 +242,16 @@ def validated_date_string(date_str: Optional[str]) -> Optional[str]:
     try:
         # Basic ISO 8601 format check
         from datetime import datetime
+
         # Try parsing as ISO format
-        datetime.fromisoformat(date_str.replace('Z', '+00:00'))
+        datetime.fromisoformat(date_str.replace("Z", "+00:00"))
         return date_str
     except (ValueError, TypeError):
         logger.warning(f"Invalid date format: {date_str}")
         return None
 
 
-def calculate_pagination_params(
-    page: int,
-    limit: int
-) -> tuple[int, int]:
+def calculate_pagination_params(page: int, limit: int) -> tuple[int, int]:
     """
     Calculate skip and limit values for pagination.
 
@@ -263,8 +267,7 @@ def calculate_pagination_params(
 
 
 def validated_enum_filter(
-    value: Optional[str],
-    allowed_values: List[str]
+    value: Optional[str], allowed_values: List[str]
 ) -> Optional[str]:
     """
     Validate an enum filter against allowed values.

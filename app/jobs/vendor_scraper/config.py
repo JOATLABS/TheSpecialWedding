@@ -53,9 +53,7 @@ def get_states() -> List[Tuple[str, str, str]]:
         with open(_STATES_FILE, "r") as f:
             entries = json.load(f)
     except json.JSONDecodeError as e:
-        raise ValueError(
-            f"Invalid JSON in states.json at line {e.lineno}: {e.msg}"
-        )
+        raise ValueError(f"Invalid JSON in states.json at line {e.lineno}: {e.msg}")
 
     if not isinstance(entries, list):
         raise ValueError(
@@ -108,7 +106,6 @@ SEARCH_QUERIES = [
     # (search_query_template, our_vendor_category)
     # Each query is crafted to minimize false positives from Google Places.
     # Be specific: "wedding event" context + concrete service terms.
-
     ("wedding photographer in {state_full}", "photographer"),
     ("wedding videographer in {state_full}", "videographer"),
     ("wedding florist flower arrangement in {state_full}", "florist"),

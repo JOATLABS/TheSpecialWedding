@@ -18,7 +18,6 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Body
 from typing import Optional
 
 from app.dependencies.auth_extended import (
-    get_current_user_extended,
     require_root_admin,
     ExtendedAuthUser,
 )
@@ -40,6 +39,7 @@ router = APIRouter(prefix="/admin/ads/campaigns", tags=["Admin Campaigns"])
 # DEPENDENCY INJECTION
 # =============================================================================
 
+
 async def get_admin_campaign_service() -> AdminCampaignService:
     """Get admin campaign service instance."""
     return AdminCampaignService(mongo.db)
@@ -48,8 +48,10 @@ async def get_admin_campaign_service() -> AdminCampaignService:
 def get_ad_billing_service():
     """Get ad billing service instance."""
     from app.services.ad_billing_service import AdBillingService
+
     try:
         from app.services.stripe_service import StripeService
+
         stripe_svc = StripeService(mongo.db)
     except Exception:
         stripe_svc = None
@@ -60,11 +62,11 @@ def get_ad_billing_service():
 # REVIEW QUEUE
 # =============================================================================
 
+
 @router.get("/review")
 async def get_review_queue(
     status: Optional[str] = Query(
-        None,
-        description="Filter by status (default: pending_review)"
+        None, description="Filter by status (default: pending_review)"
     ),
     limit: int = Query(50, ge=1, le=100),
     skip: int = Query(0, ge=0),
@@ -101,6 +103,7 @@ async def get_review_counts(
 # CAMPAIGN REVIEW ACTIONS
 # =============================================================================
 
+
 @router.put("/{campaign_id}/approve")
 async def approve_campaign(
     campaign_id: str,
@@ -128,7 +131,7 @@ async def reject_campaign(
     campaign_id: str,
     request: ReviewCampaignDecisionRequest = Body(
         default=ReviewCampaignDecisionRequest(review_notes=None)
-   ),
+    ),
     service: AdminCampaignService = Depends(get_admin_campaign_service),
     current_user: ExtendedAuthUser = Depends(require_root_admin),
 ):
@@ -163,6 +166,7 @@ async def request_changes(
 # =============================================================================
 # CREATIVE REVIEW
 # =============================================================================
+
 
 @router.get("/review/creatives")
 async def get_creative_review_queue(
@@ -212,6 +216,7 @@ async def reject_creative(
 # =============================================================================
 # CAMPAIGN MONITORING
 # =============================================================================
+
 
 @router.get("/")
 async def list_all_campaigns(
@@ -278,6 +283,7 @@ async def admin_deactivate_campaign(
 # REVENUE & ENGAGEMENT
 # =============================================================================
 
+
 @router.get("/revenue")
 async def get_revenue_summary(
     days: int = Query(30, ge=1, le=365, description="Period in days"),
@@ -297,6 +303,7 @@ async def get_revenue_summary(
 # PLANNER FEEDBACK
 # =============================================================================
 
+
 @router.get("/feedback")
 async def get_planner_feedback(
     limit: int = Query(50, ge=1, le=100),
@@ -315,6 +322,7 @@ async def get_planner_feedback(
 # FRAUD SIGNALS
 # =============================================================================
 
+
 @router.get("/fraud-signals")
 async def get_fraud_signals(
     status: Optional[str] = Query(None, description="Filter by signal status"),
@@ -324,9 +332,7 @@ async def get_fraud_signals(
     current_user: ExtendedAuthUser = Depends(require_root_admin),
 ):
     """Get fraud/anomaly signals (auto-expire after 7 days via TTL index)."""
-    return await service.get_fraud_signals(
-        status_filter=status, limit=limit, skip=skip
-    )
+    return await service.get_fraud_signals(status_filter=status, limit=limit, skip=skip)
 
 
 @router.put("/fraud-signals/{signal_id}")
@@ -350,9 +356,13 @@ async def update_fraud_signal(
 # VENDOR ACCOUNTS
 # =============================================================================
 
+
 @router.post("/vendors/bulk", status_code=201)
 async def bulk_create_vendors(
-    vendors: list = Body(..., description="List of vendor objects with email, business_name, category, location"),
+    vendors: list = Body(
+        ...,
+        description="List of vendor objects with email, business_name, category, location",
+    ),
     service: AdminCampaignService = Depends(get_admin_campaign_service),
     current_user: ExtendedAuthUser = Depends(require_root_admin),
 ):
@@ -377,9 +387,15 @@ async def list_vendor_accounts(
     status: Optional[str] = Query(None, description="Filter by account status"),
     category: Optional[str] = Query(None, description="Filter by vendor category"),
     location: Optional[str] = Query(None, description="Text search on vendor location"),
-    date_from: Optional[str] = Query(None, description="Filter created_at >= this ISO date"),
-    date_to: Optional[str] = Query(None, description="Filter created_at <= this ISO date"),
-    search: Optional[str] = Query(None, description="Text search on email or business_name"),
+    date_from: Optional[str] = Query(
+        None, description="Filter created_at >= this ISO date"
+    ),
+    date_to: Optional[str] = Query(
+        None, description="Filter created_at <= this ISO date"
+    ),
+    search: Optional[str] = Query(
+        None, description="Text search on email or business_name"
+    ),
     sort_by: str = Query("created_at", description="Sort field"),
     sort_order: int = Query(-1, description="Sort order: -1 desc, 1 asc"),
     limit: int = Query(50, ge=1, le=100),
@@ -406,11 +422,12 @@ async def list_vendor_accounts(
 # EVENT QUERY ENGINE (Elasticsearch-style)
 # =============================================================================
 
-from typing import List
 
 @router.get("/events/query")
 async def query_events(
-    event_types: Optional[str] = Query(None, description="Comma-separated event types to filter"),
+    event_types: Optional[str] = Query(
+        None, description="Comma-separated event types to filter"
+    ),
     campaign_id: Optional[str] = Query(None, description="Filter by campaign ID"),
     vendor_id: Optional[str] = Query(None, description="Filter by vendor ID"),
     planner_id: Optional[str] = Query(None, description="Filter by planner ID"),
@@ -421,7 +438,10 @@ async def query_events(
     sort_order: int = Query(-1, description="-1 desc, 1 asc"),
     limit: int = Query(100, ge=1, le=1000),
     skip: int = Query(0, ge=0),
-    aggregate_by: Optional[str] = Query(None, description="Group by field: event_type, campaign_id, vendor_id, planner_id, placement"),
+    aggregate_by: Optional[str] = Query(
+        None,
+        description="Group by field: event_type, campaign_id, vendor_id, planner_id, placement",
+    ),
     service: AdminCampaignService = Depends(get_admin_campaign_service),
     current_user: ExtendedAuthUser = Depends(require_root_admin),
 ):
@@ -431,7 +451,9 @@ async def query_events(
     Supports filtering by event_type, campaign_id, vendor_id, planner_id, session_id,
     date range, and optional aggregation (returns grouped counts instead of raw docs).
     """
-    event_type_list = [t.strip() for t in event_types.split(",")] if event_types else None
+    event_type_list = (
+        [t.strip() for t in event_types.split(",")] if event_types else None
+    )
     return await service.query_events(
         event_types=event_type_list,
         campaign_id=campaign_id,
@@ -451,6 +473,7 @@ async def query_events(
 # =============================================================================
 # BATCH VENDOR STATS (aggregation pipeline optimization)
 # =============================================================================
+
 
 @router.post("/vendors/stats")
 async def get_vendor_stats_batch(
@@ -473,6 +496,7 @@ async def get_vendor_stats_batch(
 # =============================================================================
 # PLATFORM CONFIG
 # =============================================================================
+
 
 @router.get("/config")
 async def get_platform_config(
@@ -499,6 +523,7 @@ async def update_platform_config(
 # =============================================================================
 # FREE TIER MANAGEMENT (Root Admin Only)
 # =============================================================================
+
 
 @router.put("/{campaign_id}/free-tier")
 async def set_campaign_free_tier(
@@ -556,6 +581,7 @@ async def list_free_tier_vendors(
 # CPL PRICING
 # =============================================================================
 
+
 @router.put("/{campaign_id}/cpl-pricing")
 async def update_campaign_cpl_pricing(
     campaign_id: str,
@@ -565,6 +591,7 @@ async def update_campaign_cpl_pricing(
 ):
     """Update CPL pricing for a campaign. Root admin only."""
     from bson import ObjectId
+
     updates = {}
     if request.cpl_quote_request is not None:
         updates["cpl_quote_request"] = request.cpl_quote_request
@@ -574,6 +601,7 @@ async def update_campaign_cpl_pricing(
         raise HTTPException(status_code=400, detail="No pricing fields provided")
 
     from datetime import datetime, timezone
+
     updates["updated_at"] = datetime.now(timezone.utc)
 
     result = await service.campaigns.update_one(
@@ -588,6 +616,7 @@ async def update_campaign_cpl_pricing(
 # =============================================================================
 # BILLING REPORTS
 # =============================================================================
+
 
 @router.get("/{campaign_id}/billing")
 async def get_campaign_billing(
@@ -619,9 +648,11 @@ async def get_campaign_lead_charges(
 # VENDOR ACCOUNT MANAGEMENT (Phase 10)
 # =============================================================================
 
+
 def get_vendor_signup_service():
     """Get vendor signup service instance."""
     from app.services.vendor_signup_service import VendorSignupService
+
     return VendorSignupService(mongo.db)
 
 
@@ -629,10 +660,13 @@ def _validate_vendor_id(vendor_id: str) -> str:
     """Validate vendor_id is a valid ObjectId format."""
     from bson import ObjectId
     from bson.errors import InvalidId
+
     try:
         ObjectId(vendor_id)
     except (InvalidId, TypeError):
-        raise HTTPException(status_code=400, detail=f"Invalid vendor ID format: {vendor_id}")
+        raise HTTPException(
+            status_code=400, detail=f"Invalid vendor ID format: {vendor_id}"
+        )
     return vendor_id
 
 

@@ -31,7 +31,9 @@ class WeddingService:
             try:
                 details["time"] = normalize_optional_event_time(details.get("time"))
             except ValueError as exc:
-                event_label = str(event.get("type") or f"event {index + 1}").replace("_", " ")
+                event_label = str(event.get("type") or f"event {index + 1}").replace(
+                    "_", " "
+                )
                 raise HTTPException(
                     status_code=422,
                     detail=f"Invalid time for {event_label}: {exc}",
@@ -144,7 +146,14 @@ class WeddingService:
                 status_code=500, detail=f"Error listing weddings: {str(e)}"
             )
 
-    async def list_weddings_for_planner(self, planner_email: str, accessible_ids: Optional[List[str]] = None, page: int = 1, limit: int = 50, search: Optional[str] = None) -> dict:
+    async def list_weddings_for_planner(
+        self,
+        planner_email: str,
+        accessible_ids: Optional[List[str]] = None,
+        page: int = 1,
+        limit: int = 50,
+        search: Optional[str] = None,
+    ) -> dict:
         """
         List weddings assigned to a specific planner with pagination.
 
@@ -161,14 +170,18 @@ class WeddingService:
             query = {"assigned_planner_email": planner_email}
             # Apply team member wedding scope filter if provided
             if accessible_ids is not None:
-                query["_id"] = {"$in": [ObjectId(id) if len(id) == 24 else id for id in accessible_ids]}
+                query["_id"] = {
+                    "$in": [
+                        ObjectId(id) if len(id) == 24 else id for id in accessible_ids
+                    ]
+                }
 
             # Add search filter if provided
             if search:
                 query["$or"] = [
                     {"name": {"$regex": search, "$options": "i"}},
                     {"couple_name": {"$regex": search, "$options": "i"}},
-                    {"venue": {"$regex": search, "$options": "i"}}
+                    {"venue": {"$regex": search, "$options": "i"}},
                 ]
 
             # Count total matching documents
@@ -178,7 +191,12 @@ class WeddingService:
             skip = (page - 1) * limit
             pages = ceil(total / limit) if total > 0 else 1
 
-            weddings = await self.collection.find(query).skip(skip).limit(limit).to_list(length=None)
+            weddings = (
+                await self.collection.find(query)
+                .skip(skip)
+                .limit(limit)
+                .to_list(length=None)
+            )
             for wedding in weddings:
                 normalize_doc_id(wedding)
 
@@ -187,14 +205,16 @@ class WeddingService:
                 "total": total,
                 "page": page,
                 "pages": pages,
-                "limit": limit
+                "limit": limit,
             }
         except Exception as e:
             raise HTTPException(
                 status_code=500, detail=f"Error listing weddings for planner: {str(e)}"
             )
 
-    async def list_weddings_with_planner_info(self, page: int = 1, limit: int = 50, search: Optional[str] = None) -> dict:
+    async def list_weddings_with_planner_info(
+        self, page: int = 1, limit: int = 50, search: Optional[str] = None
+    ) -> dict:
         """List all weddings with enhanced planner information for admin interface and pagination"""
         try:
             from math import ceil
@@ -207,7 +227,7 @@ class WeddingService:
                     {"name": {"$regex": search, "$options": "i"}},
                     {"couple_name": {"$regex": search, "$options": "i"}},
                     {"venue": {"$regex": search, "$options": "i"}},
-                    {"assigned_planner_email": {"$regex": search, "$options": "i"}}
+                    {"assigned_planner_email": {"$regex": search, "$options": "i"}},
                 ]
 
             # Count total matching documents
@@ -217,7 +237,12 @@ class WeddingService:
             skip = (page - 1) * limit
             pages = ceil(total / limit) if total > 0 else 1
 
-            weddings = await self.collection.find(query).skip(skip).limit(limit).to_list(length=None)
+            weddings = (
+                await self.collection.find(query)
+                .skip(skip)
+                .limit(limit)
+                .to_list(length=None)
+            )
             for wedding in weddings:
                 normalize_doc_id(wedding)
             serialized_weddings = serialize_mongo_doc(weddings)
@@ -241,7 +266,7 @@ class WeddingService:
                 "total": total,
                 "page": page,
                 "pages": pages,
-                "limit": limit
+                "limit": limit,
             }
         except Exception as e:
             raise HTTPException(

@@ -4,6 +4,7 @@ AI Cache Service
 Content-addressed caching for AI responses with TTL support.
 Reduces costs by avoiding redundant AI calls for identical inputs.
 """
+
 from typing import Dict, Any, Optional
 from datetime import datetime, timedelta, timezone
 import hashlib
@@ -31,10 +32,7 @@ class AICacheService:
         return f"ai:{feature}:{tenant_id}:{context_hash}"
 
     async def get_cached_response(
-        self,
-        feature: str,
-        tenant_id: str,
-        context: Dict
+        self, feature: str, tenant_id: str, context: Dict
     ) -> Optional[Dict]:
         """
         Get cached AI response if valid.
@@ -50,16 +48,14 @@ class AICacheService:
         try:
             cache_key = self._generate_cache_key(feature, tenant_id, context)
 
-            cached = await self.cache.find_one({
-                "_id": cache_key,
-                "expires_at": {"$gt": datetime.now(timezone.utc)}
-            })
+            cached = await self.cache.find_one(
+                {"_id": cache_key, "expires_at": {"$gt": datetime.now(timezone.utc)}}
+            )
 
             if cached:
                 # Increment hit count for analytics
                 await self.cache.update_one(
-                    {"_id": cache_key},
-                    {"$inc": {"hit_count": 1}}
+                    {"_id": cache_key}, {"$inc": {"hit_count": 1}}
                 )
                 logger.debug(f"Cache hit for {feature}/{tenant_id}")
                 return cached
@@ -76,7 +72,7 @@ class AICacheService:
         tenant_id: str,
         context: Dict,
         response: Dict,
-        ttl_hours: int
+        ttl_hours: int,
     ) -> bool:
         """
         Cache AI response with TTL.
@@ -104,16 +100,14 @@ class AICacheService:
                 "response": response,
                 "created_at": datetime.now(timezone.utc),
                 "expires_at": datetime.now(timezone.utc) + timedelta(hours=ttl_hours),
-                "hit_count": 0
+                "hit_count": 0,
             }
 
-            await self.cache.replace_one(
-                {"_id": cache_key},
-                cache_entry,
-                upsert=True
-            )
+            await self.cache.replace_one({"_id": cache_key}, cache_entry, upsert=True)
 
-            logger.debug(f"Cached response for {feature}/{tenant_id} (TTL: {ttl_hours}h)")
+            logger.debug(
+                f"Cached response for {feature}/{tenant_id} (TTL: {ttl_hours}h)"
+            )
             return True
 
         except Exception as e:
@@ -129,13 +123,14 @@ class AICacheService:
             Number of entries deleted
         """
         try:
-            result = await self.cache.delete_many({
-                "feature": feature,
-                "tenant_id": tenant_id
-            })
+            result = await self.cache.delete_many(
+                {"feature": feature, "tenant_id": tenant_id}
+            )
 
             if result.deleted_count > 0:
-                logger.info(f"Invalidated {result.deleted_count} cache entries for {feature}/{tenant_id}")
+                logger.info(
+                    f"Invalidated {result.deleted_count} cache entries for {feature}/{tenant_id}"
+                )
             return result.deleted_count
 
         except Exception as e:
@@ -154,7 +149,9 @@ class AICacheService:
             result = await self.cache.delete_many({"tenant_id": tenant_id})
 
             if result.deleted_count > 0:
-                logger.info(f"Invalidated all {result.deleted_count} cache entries for tenant {tenant_id}")
+                logger.info(
+                    f"Invalidated all {result.deleted_count} cache entries for tenant {tenant_id}"
+                )
             return result.deleted_count
 
         except Exception as e:
@@ -162,9 +159,7 @@ class AICacheService:
             return 0
 
     async def get_latest_cached_response(
-        self,
-        feature: str,
-        tenant_id: str
+        self, feature: str, tenant_id: str
     ) -> Optional[Dict]:
         """
         Get the most recent cached response for a feature+tenant regardless of context hash.
@@ -186,9 +181,9 @@ class AICacheService:
                 {
                     "feature": feature,
                     "tenant_id": tenant_id,
-                    "expires_at": {"$gt": datetime.now(timezone.utc)}
+                    "expires_at": {"$gt": datetime.now(timezone.utc)},
                 },
-                sort=[("created_at", -1)]  # Most recent first
+                sort=[("created_at", -1)],  # Most recent first
             )
 
             if cached:
@@ -198,15 +193,13 @@ class AICacheService:
             # If no non-expired entry, try the most recent entry regardless of expiration
             # (better to show stale insights than nothing)
             cached = await self.cache.find_one(
-                {
-                    "feature": feature,
-                    "tenant_id": tenant_id
-                },
-                sort=[("created_at", -1)]
+                {"feature": feature, "tenant_id": tenant_id}, sort=[("created_at", -1)]
             )
 
             if cached:
-                logger.info(f"Returning expired fallback cache for {feature}/{tenant_id}")
+                logger.info(
+                    f"Returning expired fallback cache for {feature}/{tenant_id}"
+                )
                 return cached
 
             return None
@@ -225,9 +218,9 @@ class AICacheService:
             Number of entries deleted
         """
         try:
-            result = await self.cache.delete_many({
-                "expires_at": {"$lt": datetime.now(timezone.utc)}
-            })
+            result = await self.cache.delete_many(
+                {"expires_at": {"$lt": datetime.now(timezone.utc)}}
+            )
 
             if result.deleted_count > 0:
                 logger.info(f"Cleaned up {result.deleted_count} expired cache entries")
@@ -256,17 +249,20 @@ class AICacheService:
                     "$group": {
                         "_id": "$feature",
                         "count": {"$sum": 1},
-                        "total_hits": {"$sum": "$hit_count"}
+                        "total_hits": {"$sum": "$hit_count"},
                     }
-                }
+                },
             ]
 
             stats = await self.cache.aggregate(pipeline).to_list(length=None)
 
             return {
-                "by_feature": {s["_id"]: {"count": s["count"], "hits": s["total_hits"]} for s in stats},
+                "by_feature": {
+                    s["_id"]: {"count": s["count"], "hits": s["total_hits"]}
+                    for s in stats
+                },
                 "total_entries": sum(s["count"] for s in stats),
-                "total_hits": sum(s["total_hits"] for s in stats)
+                "total_hits": sum(s["total_hits"] for s in stats),
             }
 
         except Exception as e:

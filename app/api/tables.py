@@ -6,7 +6,7 @@ from app.dependencies.auth_extended import (
     require_admin_or_planner,
     ExtendedAuthUser,
     check_wedding_access,
-    enforce_team_permission
+    enforce_team_permission,
 )
 from app.core.database import mongo
 from bson import ObjectId
@@ -19,8 +19,7 @@ router = APIRouter()
 
 @router.get("/tables/{wedding_id}", tags=["Seating"])
 async def list_tables(
-    wedding_id: str,
-    current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
+    wedding_id: str, current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
 ):
     """Fetch all tables for a wedding"""
     if not await check_wedding_access(current_user, wedding_id):
@@ -43,7 +42,7 @@ async def list_tables(
 @router.post("/tables", tags=["Seating"])
 async def create_table(
     table: TableModel,
-    current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
+    current_user: ExtendedAuthUser = Depends(require_admin_or_planner),
 ):
     """Create a new table"""
     enforce_team_permission(current_user, "manage_seating")
@@ -73,7 +72,7 @@ async def create_table(
 async def update_table(
     table_id: str,
     update_data: UpdateTableRequest,
-    current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
+    current_user: ExtendedAuthUser = Depends(require_admin_or_planner),
 ):
     """Update table properties"""
     enforce_team_permission(current_user, "manage_seating")
@@ -93,18 +92,14 @@ async def update_table(
     update_dict = {k: v for k, v in update_data.dict().items() if v is not None}
 
     if update_dict:
-        await mongo.db["tables"].update_one(
-            {"_id": oid},
-            {"$set": update_dict}
-        )
+        await mongo.db["tables"].update_one({"_id": oid}, {"$set": update_dict})
 
     return {"message": "Table updated successfully"}
 
 
 @router.delete("/tables/{table_id}", tags=["Seating"])
 async def delete_table(
-    table_id: str,
-    current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
+    table_id: str, current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
 ):
     """Delete a table and unassign its guests"""
     enforce_team_permission(current_user, "manage_seating")
@@ -124,7 +119,7 @@ async def delete_table(
     # Unassign guests assigned to this table (scoped to wedding for security)
     await mongo.db["guests"].update_many(
         {"table_id": table_id, "wedding_id": table["wedding_id"]},
-        {"$set": {"table_id": None}}
+        {"$set": {"table_id": None}},
     )
 
     # Delete the table
@@ -136,7 +131,7 @@ async def delete_table(
 @router.post("/tables/assign", tags=["Seating"])
 async def assign_guests(
     request: AssignGuestsRequest,
-    current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
+    current_user: ExtendedAuthUser = Depends(require_admin_or_planner),
 ):
     """Bulk assign guests to a table"""
     enforce_team_permission(current_user, "manage_seating")
@@ -164,25 +159,25 @@ async def assign_guests(
 
     if invalid_ids:
         raise HTTPException(
-            status_code=400,
-            detail=f"Invalid guest IDs: {', '.join(invalid_ids)}"
+            status_code=400, detail=f"Invalid guest IDs: {', '.join(invalid_ids)}"
         )
 
     if not guest_object_ids:
         return {"message": "No guest IDs provided", "assigned": 0}
 
     # Check capacity: count current guests at table + new guests (excluding those already at table)
-    current_guests_count = await mongo.db["guests"].count_documents({
-        "table_id": request.table_id,
-        "wedding_id": table["wedding_id"]
-    })
+    current_guests_count = await mongo.db["guests"].count_documents(
+        {"table_id": request.table_id, "wedding_id": table["wedding_id"]}
+    )
 
     # Count how many of the requested guests are NOT already at this table
-    guests_already_at_table = await mongo.db["guests"].count_documents({
-        "_id": {"$in": guest_object_ids},
-        "table_id": request.table_id,
-        "wedding_id": table["wedding_id"]
-    })
+    guests_already_at_table = await mongo.db["guests"].count_documents(
+        {
+            "_id": {"$in": guest_object_ids},
+            "table_id": request.table_id,
+            "wedding_id": table["wedding_id"],
+        }
+    )
 
     new_guests_count = len(guest_object_ids) - guests_already_at_table
     total_after_assign = current_guests_count + new_guests_count
@@ -191,21 +186,20 @@ async def assign_guests(
         raise HTTPException(
             status_code=400,
             detail=f"Cannot assign guests: table capacity is {table.get('capacity', 10)}, "
-                   f"would have {total_after_assign} guests after assignment"
+            f"would have {total_after_assign} guests after assignment",
         )
 
     # Bulk update guests
     if guest_object_ids:
         result = await mongo.db["guests"].update_many(
             {"_id": {"$in": guest_object_ids}, "wedding_id": table["wedding_id"]},
-            {"$set": {"table_id": request.table_id}}
+            {"$set": {"table_id": request.table_id}},
         )
 
         # Post-update capacity check for concurrent assignment safety (T8)
-        post_count = await mongo.db["guests"].count_documents({
-            "table_id": request.table_id,
-            "wedding_id": table["wedding_id"]
-        })
+        post_count = await mongo.db["guests"].count_documents(
+            {"table_id": request.table_id, "wedding_id": table["wedding_id"]}
+        )
         if post_count > table.get("capacity", 10):
             # Rollback: unassign the guests we just assigned
             logger.warning(
@@ -214,26 +208,29 @@ async def assign_guests(
             )
             await mongo.db["guests"].update_many(
                 {"_id": {"$in": guest_object_ids}, "wedding_id": table["wedding_id"]},
-                {"$set": {"table_id": None}}
+                {"$set": {"table_id": None}},
             )
             raise HTTPException(
                 status_code=409,
                 detail=f"Table capacity exceeded due to concurrent assignment. "
-                       f"Please retry. Capacity: {table.get('capacity', 10)}"
+                f"Please retry. Capacity: {table.get('capacity', 10)}",
             )
 
         actually_modified = result.modified_count
     else:
         actually_modified = 0
 
-    return {"message": f"Assigned {actually_modified} guests to table", "assigned": actually_modified}
+    return {
+        "message": f"Assigned {actually_modified} guests to table",
+        "assigned": actually_modified,
+    }
 
 
 @router.post("/tables/unassign", tags=["Seating"])
 async def unassign_guests(
     guest_ids: List[str] = Body(...),
     wedding_id: str = Body(...),
-    current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
+    current_user: ExtendedAuthUser = Depends(require_admin_or_planner),
 ):
     """Bulk unassign guests"""
     enforce_team_permission(current_user, "manage_seating")
@@ -250,7 +247,7 @@ async def unassign_guests(
     if guest_object_ids:
         await mongo.db["guests"].update_many(
             {"_id": {"$in": guest_object_ids}, "wedding_id": wedding_id},
-            {"$set": {"table_id": None}}
+            {"$set": {"table_id": None}},
         )
 
     return {"message": f"Unassigned {len(guest_object_ids)} guests"}
@@ -259,9 +256,15 @@ async def unassign_guests(
 @router.get("/tables/{wedding_id}/export/pdf", tags=["Seating"])
 async def export_seating_chart_pdf(
     wedding_id: str,
-    layout: str = Query("visual", description="Layout style: visual (floor plan) or list (table-by-table)"),
-    size: str = Query("poster", description="Paper size: poster (24x18 inches) or tabloid (11x17 inches)"),
-    current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
+    layout: str = Query(
+        "visual",
+        description="Layout style: visual (floor plan) or list (table-by-table)",
+    ),
+    size: str = Query(
+        "poster",
+        description="Paper size: poster (24x18 inches) or tabloid (11x17 inches)",
+    ),
+    current_user: ExtendedAuthUser = Depends(require_admin_or_planner),
 ):
     """
     Export seating chart as a printable PDF.
@@ -282,7 +285,9 @@ async def export_seating_chart_pdf(
         from app.services.seating_export_service import seating_export_service
 
         # Get wedding name for PDF header (handle both string and ObjectId formats)
-        wedding_oid = ObjectId(wedding_id) if ObjectId.is_valid(wedding_id) else wedding_id
+        wedding_oid = (
+            ObjectId(wedding_id) if ObjectId.is_valid(wedding_id) else wedding_id
+        )
         wedding = await mongo.db["weddings"].find_one({"_id": wedding_oid})
         wedding_name = wedding.get("couple_names", "Wedding") if wedding else "Wedding"
 
@@ -297,30 +302,27 @@ async def export_seating_chart_pdf(
             wedding_id=wedding_id,
             wedding_name=wedding_name,
             layout_style=layout,
-            paper_size=size
+            paper_size=size,
         )
 
         # Create safe filename
-        safe_name = "".join(c if c.isalnum() or c in " -_" else "_" for c in wedding_name)
+        safe_name = "".join(
+            c if c.isalnum() or c in " -_" else "_" for c in wedding_name
+        )
         filename = f"{safe_name}_seating_chart_{size}.pdf"
 
         return Response(
             content=pdf_bytes,
             media_type="application/pdf",
-            headers={
-                "Content-Disposition": f'attachment; filename="{filename}"'
-            }
+            headers={"Content-Disposition": f'attachment; filename="{filename}"'},
         )
 
     except ImportError as e:
         logger.error(f"PDF generation dependency missing: {str(e)}")
         raise HTTPException(
             status_code=503,
-            detail="PDF generation not available. WeasyPrint may not be installed."
+            detail="PDF generation not available. WeasyPrint may not be installed.",
         )
     except Exception as e:
         logger.error(f"Failed to generate seating chart PDF: {str(e)}")
-        raise HTTPException(
-            status_code=500,
-            detail=f"Failed to generate PDF: {str(e)}"
-        )
+        raise HTTPException(status_code=500, detail=f"Failed to generate PDF: {str(e)}")

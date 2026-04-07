@@ -6,10 +6,17 @@ from app.utils.event_time import normalize_optional_event_time
 
 class EventDetailsModel(BaseModel):
     venue_name: Optional[str] = Field(default=None, description="Name of the venue")
-    location: Optional[str] = Field(default=None, description="Address or location of the venue")
-    time: Optional[str] = Field(default=None, description="Event time (e.g., '3:00 PM')")
+    location: Optional[str] = Field(
+        default=None, description="Address or location of the venue"
+    )
+    time: Optional[str] = Field(
+        default=None, description="Event time (e.g., '3:00 PM')"
+    )
     attire: Optional[str] = Field(default=None, description="Dress code/attire details")
-    timezone: Optional[str] = Field(default=None, description="IANA timezone for this event (e.g., 'America/Chicago')")
+    timezone: Optional[str] = Field(
+        default=None,
+        description="IANA timezone for this event (e.g., 'America/Chicago')",
+    )
 
     @field_validator("time")
     @classmethod
@@ -19,66 +26,126 @@ class EventDetailsModel(BaseModel):
 
 class EventNoteModel(BaseModel):
     """A note/comment on an order-of-events item or the event itself, left by planner or couple."""
+
     id: str = Field(..., description="Unique note ID")
     author_role: str = Field(..., description="Who wrote it: 'planner' or 'couple'")
-    author_name: Optional[str] = Field(default=None, description="Display name of the author")
+    author_name: Optional[str] = Field(
+        default=None, description="Display name of the author"
+    )
     text: str = Field(..., description="Note content")
-    status: str = Field(default="pending", description="Note status: pending, seen, addressed")
-    reply_to: Optional[str] = Field(default=None, description="Parent note ID if this is a reply")
-    created_at: Optional[str] = Field(default=None, description="ISO timestamp when the note was created")
+    status: str = Field(
+        default="pending", description="Note status: pending, seen, addressed"
+    )
+    reply_to: Optional[str] = Field(
+        default=None, description="Parent note ID if this is a reply"
+    )
+    created_at: Optional[str] = Field(
+        default=None, description="ISO timestamp when the note was created"
+    )
 
 
 class OrderOfEventsItemModel(BaseModel):
     """A single step in the order of events / run of show for a ceremony."""
+
     id: str = Field(..., description="Unique item ID")
-    title: str = Field(..., description="Step title (e.g., 'First Dance', 'Cake Cutting')")
-    description: Optional[str] = Field(default=None, description="Optional details about this step")
-    time: Optional[str] = Field(default=None, description="Scheduled time (e.g., '6:30 PM')")
-    duration_minutes: Optional[int] = Field(default=None, description="Estimated duration in minutes")
-    order: int = Field(default=0, description="Display order (0-indexed, for drag-and-drop reordering)")
-    notes: List[EventNoteModel] = Field(default_factory=list, description="Notes/comments from planner or couple on this step")
+    title: str = Field(
+        ..., description="Step title (e.g., 'First Dance', 'Cake Cutting')"
+    )
+    description: Optional[str] = Field(
+        default=None, description="Optional details about this step"
+    )
+    time: Optional[str] = Field(
+        default=None, description="Scheduled time (e.g., '6:30 PM')"
+    )
+    duration_minutes: Optional[int] = Field(
+        default=None, description="Estimated duration in minutes"
+    )
+    order: int = Field(
+        default=0, description="Display order (0-indexed, for drag-and-drop reordering)"
+    )
+    notes: List[EventNoteModel] = Field(
+        default_factory=list,
+        description="Notes/comments from planner or couple on this step",
+    )
 
 
 class EventModel(BaseModel):
-    type: str = Field(..., description="Event type: traditional, white_wedding, reception, engagement, rehearsal")
+    type: str = Field(
+        ...,
+        description="Event type: traditional, white_wedding, reception, engagement, rehearsal",
+    )
     custom_type_label: Optional[str] = Field(
         default=None,
         max_length=100,
-        description="Planner-defined label for custom event types"
+        description="Planner-defined label for custom event types",
     )
     date: str = Field(..., description="Event date in YYYY-MM-DD format")
-    details: Optional[EventDetailsModel] = Field(default=None, description="Additional event details")
-    order_of_events: List[OrderOfEventsItemModel] = Field(default_factory=list, description="Detailed run of show / program for this event")
-    event_notes: List[EventNoteModel] = Field(default_factory=list, description="General notes on this event from planner or couple")
+    details: Optional[EventDetailsModel] = Field(
+        default=None, description="Additional event details"
+    )
+    order_of_events: List[OrderOfEventsItemModel] = Field(
+        default_factory=list,
+        description="Detailed run of show / program for this event",
+    )
+    event_notes: List[EventNoteModel] = Field(
+        default_factory=list,
+        description="General notes on this event from planner or couple",
+    )
 
 
 class RegistryItemModel(BaseModel):
     name: str = Field(..., description="Registry name (e.g., 'Target', 'Amazon')")
     url: str = Field(..., description="Registry URL")
-    color: Optional[str] = Field(default="bg-gray-600", description="Button color class")
+    color: Optional[str] = Field(
+        default="bg-gray-600", description="Button color class"
+    )
 
 
 class FAQItemModel(BaseModel):
     question: str = Field(..., description="FAQ question")
     answer: str = Field(..., description="FAQ answer")
-    link_url: Optional[str] = Field(default=None, description="Optional URL for a call-to-action button")
-    link_label: Optional[str] = Field(default=None, description="Label for the button (e.g., 'Book Hotel Room')")
+    link_url: Optional[str] = Field(
+        default=None, description="Optional URL for a call-to-action button"
+    )
+    link_label: Optional[str] = Field(
+        default=None, description="Label for the button (e.g., 'Book Hotel Room')"
+    )
 
 
 class PrivacySettingsModel(BaseModel):
-    privacy_mode: str = Field(default="private", description="Privacy mode: private, password, public")
-    guest_auth_required: bool = Field(default=True, description="Whether guest authentication is required")
-    password_protection: Optional[str] = Field(default=None, description="Password for password-protected weddings")
-    allow_guest_sharing: bool = Field(default=False, description="Whether guests can share wedding links")
-    require_phone_verification: bool = Field(default=True, description="Require phone number for guest verification")
-    require_name_verification: bool = Field(default=True, description="Require name for guest verification")
+    privacy_mode: str = Field(
+        default="private", description="Privacy mode: private, password, public"
+    )
+    guest_auth_required: bool = Field(
+        default=True, description="Whether guest authentication is required"
+    )
+    password_protection: Optional[str] = Field(
+        default=None, description="Password for password-protected weddings"
+    )
+    allow_guest_sharing: bool = Field(
+        default=False, description="Whether guests can share wedding links"
+    )
+    require_phone_verification: bool = Field(
+        default=True, description="Require phone number for guest verification"
+    )
+    require_name_verification: bool = Field(
+        default=True, description="Require name for guest verification"
+    )
 
 
 class GuestMediaConfigModel(BaseModel):
-    enabled: bool = Field(default=True, description="Whether guest memory uploads are open")
-    upload_token_hash: Optional[str] = Field(default=None, description="SHA-256 hash of the active guest upload token")
-    upload_closes_at: Optional[datetime] = Field(default=None, description="When guest memory uploads close")
-    last_rotated_at: Optional[datetime] = Field(default=None, description="When the guest upload token was last rotated")
+    enabled: bool = Field(
+        default=True, description="Whether guest memory uploads are open"
+    )
+    upload_token_hash: Optional[str] = Field(
+        default=None, description="SHA-256 hash of the active guest upload token"
+    )
+    upload_closes_at: Optional[datetime] = Field(
+        default=None, description="When guest memory uploads close"
+    )
+    last_rotated_at: Optional[datetime] = Field(
+        default=None, description="When the guest upload token was last rotated"
+    )
 
     @field_serializer("upload_closes_at", "last_rotated_at", when_used="json")
     def serialize_datetimes(self, value: Optional[datetime]) -> Optional[str]:
@@ -86,37 +153,65 @@ class GuestMediaConfigModel(BaseModel):
 
 
 class RSVPConfigModel(BaseModel):
-    greeting: str = Field(default="Join us in celebrating our special day! Please let us know if you'll be attending.",
-                          description="RSVP greeting message")
-    help_text: str = Field(default="Check your phone for your personal invitation link, or contact us directly.",
-                           description="RSVP help text")
-    phone_numbers: List[str] = Field(default_factory=lambda: ["(319) 529-6088", "(405) 708-1076"],
-                                     description="Contact phone numbers")
+    greeting: str = Field(
+        default="Join us in celebrating our special day! Please let us know if you'll be attending.",
+        description="RSVP greeting message",
+    )
+    help_text: str = Field(
+        default="Check your phone for your personal invitation link, or contact us directly.",
+        description="RSVP help text",
+    )
+    phone_numbers: List[str] = Field(
+        default_factory=lambda: ["(319) 529-6088", "(405) 708-1076"],
+        description="Contact phone numbers",
+    )
 
 
 class ThemeConfigModel(BaseModel):
-    primary_color: str = Field(default="#1e3a5f", description="Primary color (wedding-navy)")
-    secondary_color: str = Field(default="#d4af37", description="Secondary color (wedding-gold)")
-    accent_color: str = Field(default="#c8847e", description="Accent color (wedding-rose)")
-    background_style: str = Field(default="gradient", description="Background style: gradient, solid, or image")
-    font_style: str = Field(default="elegant", description="Font style: elegant, modern, classic, or playful")
+    primary_color: str = Field(
+        default="#1e3a5f", description="Primary color (wedding-navy)"
+    )
+    secondary_color: str = Field(
+        default="#d4af37", description="Secondary color (wedding-gold)"
+    )
+    accent_color: str = Field(
+        default="#c8847e", description="Accent color (wedding-rose)"
+    )
+    background_style: str = Field(
+        default="gradient", description="Background style: gradient, solid, or image"
+    )
+    font_style: str = Field(
+        default="elegant",
+        description="Font style: elegant, modern, classic, or playful",
+    )
 
 
 class OurStoryModel(BaseModel):
     text: str = Field(..., description="Our story text/paragraph")
     image_url: Optional[str] = Field(None, description="S3 key for couple photo")
-    image_shape: str = Field(default="circle", description="Image shape: circle, heart, square, or hexagon")
+    image_shape: str = Field(
+        default="circle", description="Image shape: circle, heart, square, or hexagon"
+    )
 
 
 class WeddingPartyMemberModel(BaseModel):
     id: str = Field(..., description="Unique identifier for the wedding party member")
     name: str = Field(..., description="Full name of the wedding party member")
-    role: str = Field(..., description="Role: maid_of_honor, bridesmaid, best_man, groomsman, or custom")
+    role: str = Field(
+        ...,
+        description="Role: maid_of_honor, bridesmaid, best_man, groomsman, or custom",
+    )
     image_url: Optional[str] = Field(None, description="S3 key for member photo")
-    display_order: Optional[int] = Field(default=0, description="Display order within their role group")
+    display_order: Optional[int] = Field(
+        default=0, description="Display order within their role group"
+    )
     side: str = Field(..., description="bride or groom")
-    linked_guest_id: Optional[str] = Field(None, description="ID of linked guest if applicable")
-    linked_guest_email: Optional[str] = Field(None, description="Email of linked guest for matching")
+    linked_guest_id: Optional[str] = Field(
+        None, description="ID of linked guest if applicable"
+    )
+    linked_guest_email: Optional[str] = Field(
+        None, description="Email of linked guest for matching"
+    )
 
 
 class WeddingModel(BaseModel):
@@ -126,41 +221,81 @@ class WeddingModel(BaseModel):
     slug: str = Field(..., description="URL-friendly slug for the wedding")
     events: List[EventModel] = Field(default_factory=list)
     rsvp_config: Optional[RSVPConfigModel] = Field(default_factory=RSVPConfigModel)
-    privacy_settings: Optional[PrivacySettingsModel] = Field(default_factory=lambda: PrivacySettingsModel())
-    guest_media: Optional[GuestMediaConfigModel] = Field(default_factory=GuestMediaConfigModel)
+    privacy_settings: Optional[PrivacySettingsModel] = Field(
+        default_factory=lambda: PrivacySettingsModel()
+    )
+    guest_media: Optional[GuestMediaConfigModel] = Field(
+        default_factory=GuestMediaConfigModel
+    )
     registries: List[RegistryItemModel] = Field(default_factory=list)
     faqs: List[FAQItemModel] = Field(default_factory=list)
     theme_config: Optional[ThemeConfigModel] = Field(default_factory=ThemeConfigModel)
-    featured_image: Optional[str] = Field(None, description="S3 key for the featured background image")
-    our_story: Optional[OurStoryModel] = Field(None, description="Our story content and image")
-    wedding_party: List[WeddingPartyMemberModel] = Field(default_factory=list, description="Wedding party members")
-    reminder_from_email: Optional[str] = Field(None, description="Custom from email for reminders (e.g., couple@example.com)")
+    featured_image: Optional[str] = Field(
+        None, description="S3 key for the featured background image"
+    )
+    our_story: Optional[OurStoryModel] = Field(
+        None, description="Our story content and image"
+    )
+    wedding_party: List[WeddingPartyMemberModel] = Field(
+        default_factory=list, description="Wedding party members"
+    )
+    reminder_from_email: Optional[str] = Field(
+        None, description="Custom from email for reminders (e.g., couple@example.com)"
+    )
     # SAAS Multi-tenancy fields (backward compatible - won't break existing weddings)
-    assigned_planner_email: Optional[str] = Field(None, description="Wedding planner responsible for this wedding")
-    assigned_planner_id: Optional[str] = Field(None, description="Wedding planner ID (MongoDB ObjectId)")
-    created_by: Optional[str] = Field(None, description="ROOT_ADMIN email (always thedeveloper@thespecialwedding.io)")
-    updated_by: Optional[str] = Field(None, description="Email of last user to update this wedding")
-    status: str = Field(default="active", description="Wedding status: active, inactive, deleted")
+    assigned_planner_email: Optional[str] = Field(
+        None, description="Wedding planner responsible for this wedding"
+    )
+    assigned_planner_id: Optional[str] = Field(
+        None, description="Wedding planner ID (MongoDB ObjectId)"
+    )
+    created_by: Optional[str] = Field(
+        None, description="ROOT_ADMIN email (always thedeveloper@thespecialwedding.io)"
+    )
+    updated_by: Optional[str] = Field(
+        None, description="Email of last user to update this wedding"
+    )
+    status: str = Field(
+        default="active", description="Wedding status: active, inactive, deleted"
+    )
     # Budget and guest tracking
-    guest_count: Optional[int] = Field(None, description="Total number of guests invited", ge=0)
-    total_budget: Optional[float] = Field(None, description="Total wedding budget amount", ge=0)
+    guest_count: Optional[int] = Field(
+        None, description="Total number of guests invited", ge=0
+    )
+    total_budget: Optional[float] = Field(
+        None, description="Total wedding budget amount", ge=0
+    )
     venue: Optional[str] = Field(None, description="Main venue name or location")
     # Cultural and regional context
     cultural_style: Optional[str] = Field(
         None,
-        description="Cultural wedding style: nigerian, indian, jewish, mexican, chinese, korean, filipino, greek, italian, western, interfaith, or custom"
+        description="Cultural wedding style: nigerian, indian, jewish, mexican, chinese, korean, filipino, greek, italian, western, interfaith, or custom",
     )
-    region: Optional[str] = Field(None, description="Geographic region for pricing context (e.g., 'Oklahoma City, OK', 'Lagos, Nigeria')")
-    timezone: Optional[str] = Field(default="America/Chicago", description="IANA timezone for wedding events (e.g., 'America/Chicago', 'Africa/Lagos')")
+    region: Optional[str] = Field(
+        None,
+        description="Geographic region for pricing context (e.g., 'Oklahoma City, OK', 'Lagos, Nigeria')",
+    )
+    timezone: Optional[str] = Field(
+        default="America/Chicago",
+        description="IANA timezone for wedding events (e.g., 'America/Chicago', 'Africa/Lagos')",
+    )
     # Billing fields
-    last_billed_at: Optional[datetime] = Field(None, description="Timestamp of last metered usage report")
-    billed_period: Optional[str] = Field(None, description="YYYY-MM period when last metered")
+    last_billed_at: Optional[datetime] = Field(
+        None, description="Timestamp of last metered usage report"
+    )
+    billed_period: Optional[str] = Field(
+        None, description="YYYY-MM period when last metered"
+    )
     meter_pending: bool = Field(default=False, description="Meter event pending retry")
-    meter_pending_reason: Optional[str] = Field(None, description="Reason meter event is pending")
-    meter_reversed_period: Optional[str] = Field(None, description="YYYY-MM period of last meter reversal")
+    meter_pending_reason: Optional[str] = Field(
+        None, description="Reason meter event is pending"
+    )
+    meter_reversed_period: Optional[str] = Field(
+        None, description="YYYY-MM period of last meter reversal"
+    )
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
-    @field_serializer('last_billed_at', 'created_at', when_used='json')
+    @field_serializer("last_billed_at", "created_at", when_used="json")
     def serialize_datetimes(self, value: datetime) -> Optional[str]:
         return value.isoformat() if value else None
 
@@ -180,8 +315,8 @@ class WeddingModel(BaseModel):
                             "venue_name": "Family Home",
                             "location": "123 Main Street, Lagos",
                             "time": "10:00 AM",
-                            "attire": "Traditional Nigerian attire"
-                        }
+                            "attire": "Traditional Nigerian attire",
+                        },
                     },
                     {
                         "type": "white_wedding",
@@ -190,8 +325,8 @@ class WeddingModel(BaseModel):
                             "venue_name": "St. Mary's Church",
                             "location": "456 Church Road, Lagos",
                             "time": "2:00 PM",
-                            "attire": "Formal attire"
-                        }
+                            "attire": "Formal attire",
+                        },
                     },
                     {
                         "type": "reception",
@@ -200,22 +335,33 @@ class WeddingModel(BaseModel):
                             "venue_name": "Grand Ballroom",
                             "location": "789 Event Center, Lagos",
                             "time": "6:00 PM",
-                            "attire": "Cocktail attire"
-                        }
-                    }
+                            "attire": "Cocktail attire",
+                        },
+                    },
                 ],
                 "rsvp_config": {
                     "greeting": "Join us in celebrating our special day!",
                     "help_text": "Contact us if you need help",
-                    "phone_numbers": ["(319) 529-6088", "(405) 708-1076"]
+                    "phone_numbers": ["(319) 529-6088", "(405) 708-1076"],
                 },
                 "registries": [
-                    {"name": "Target", "url": "https://target.com/registry/123", "color": "bg-red-600"},
-                    {"name": "Amazon", "url": "https://amazon.com/registry/456", "color": "bg-orange-500"}
+                    {
+                        "name": "Target",
+                        "url": "https://target.com/registry/123",
+                        "color": "bg-red-600",
+                    },
+                    {
+                        "name": "Amazon",
+                        "url": "https://amazon.com/registry/456",
+                        "color": "bg-orange-500",
+                    },
                 ],
                 "faqs": [
                     {"question": "What should I wear?", "answer": "Semi-formal attire"},
-                    {"question": "Is parking available?", "answer": "Yes, free parking at the venue"}
-                ]
+                    {
+                        "question": "Is parking available?",
+                        "answer": "Yes, free parking at the venue",
+                    },
+                ],
             }
         }

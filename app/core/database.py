@@ -2,6 +2,7 @@
 Async MongoDB connection using Motor
 Maintains same API as PyMongo version for backward compatibility
 """
+
 from motor.motor_asyncio import AsyncIOMotorClient
 from app.core.config import settings
 import logging
@@ -21,7 +22,7 @@ class MongoConnector:
                 serverSelectionTimeoutMS=5000,
                 connectTimeoutMS=10000,
                 socketTimeoutMS=20000,
-                tz_aware=True,          # Return timezone-aware UTC datetimes
+                tz_aware=True,  # Return timezone-aware UTC datetimes
                 tzinfo=__import__("datetime").timezone.utc,  # Set timezone to UTC
             )
             self.db = self.client[db_name]

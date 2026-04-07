@@ -38,16 +38,16 @@ def to_object_id(id_str: Union[str, ObjectId], field_name: str = "id") -> Object
         try:
             return ObjectId(id_str)
         except Exception as e:
-            logger.error(f"Failed to convert {field_name} to ObjectId: {id_str}, error: {e}")
+            logger.error(
+                f"Failed to convert {field_name} to ObjectId: {id_str}, error: {e}"
+            )
             raise HTTPException(
-                status_code=400,
-                detail=f"Invalid {field_name}: {id_str}"
+                status_code=400, detail=f"Invalid {field_name}: {id_str}"
             )
 
     # Unexpected type
     raise HTTPException(
-        status_code=400,
-        detail=f"Invalid {field_name} type: {type(id_str).__name__}"
+        status_code=400, detail=f"Invalid {field_name} type: {type(id_str).__name__}"
     )
 
 

@@ -1,6 +1,7 @@
 """
 Performance monitoring middleware
 """
+
 from fastapi import Request
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import Response
@@ -9,7 +10,6 @@ import logging
 from typing import Dict, List
 from collections import defaultdict, deque
 import asyncio
-from datetime import datetime, timedelta
 from app.core.cache import cache
 
 logger = logging.getLogger(__name__)
@@ -19,19 +19,22 @@ class PerformanceMonitoringMiddleware(BaseHTTPMiddleware):
     """
     Monitor API performance and track metrics
     """
+
     def __init__(
         self,
         app,
         slow_request_threshold: float = 1.0,  # seconds
         metrics_window_size: int = 1000,
-        enable_detailed_logging: bool = False
+        enable_detailed_logging: bool = False,
     ):
         super().__init__(app)
         self.slow_request_threshold = slow_request_threshold
         self.metrics_window_size = metrics_window_size
         self.enable_detailed_logging = enable_detailed_logging
         # In-memory metrics storage
-        self.request_times: Dict[str, deque] = defaultdict(lambda: deque(maxlen=metrics_window_size))
+        self.request_times: Dict[str, deque] = defaultdict(
+            lambda: deque(maxlen=metrics_window_size)
+        )
         self.request_counts: Dict[str, int] = defaultdict(int)
         self.error_counts: Dict[str, int] = defaultdict(int)
 
@@ -44,9 +47,10 @@ class PerformanceMonitoringMiddleware(BaseHTTPMiddleware):
         normalized_path = path
         # Replace common ID patterns
         import re
-        normalized_path = re.sub(r'/\d+', '/{id}', normalized_path)
-        normalized_path = re.sub(r'/[a-f0-9-]{36}', '/{uuid}', normalized_path)
-        normalized_path = re.sub(r'/[a-f0-9]{24}', '/{objectid}', normalized_path)
+
+        normalized_path = re.sub(r"/\d+", "/{id}", normalized_path)
+        normalized_path = re.sub(r"/[a-f0-9-]{36}", "/{uuid}", normalized_path)
+        normalized_path = re.sub(r"/[a-f0-9]{24}", "/{objectid}", normalized_path)
 
         return f"{method}:{normalized_path}"
 
@@ -70,8 +74,9 @@ class PerformanceMonitoringMiddleware(BaseHTTPMiddleware):
         return {
             "p50": sorted_times[int(n * 0.5)],
             "p95": sorted_times[int(n * 0.95)],
-            "p99": sorted_times[int(n * 0.99)]
+            "p99": sorted_times[int(n * 0.99)],
         }
+
     async def _cache_metrics(self):
         """Cache current metrics to Redis"""
         try:
@@ -86,9 +91,11 @@ class PerformanceMonitoringMiddleware(BaseHTTPMiddleware):
                         "avg_response_time": round(avg_time, 3),
                         "percentiles": percentiles,
                         "error_rate": (
-                            self.error_counts[endpoint_key] / self.request_counts[endpoint_key]
-                            if self.request_counts[endpoint_key] > 0 else 0
-                        )
+                            self.error_counts[endpoint_key]
+                            / self.request_counts[endpoint_key]
+                            if self.request_counts[endpoint_key] > 0
+                            else 0
+                        ),
                     }
 
             # Cache metrics for 5 minutes
@@ -101,6 +108,7 @@ class PerformanceMonitoringMiddleware(BaseHTTPMiddleware):
         """Start background metrics aggregation task"""
         if self._metrics_task is None:
             self._metrics_task = asyncio.create_task(self._metrics_loop())
+
     async def _metrics_loop(self):
         """Background loop for metrics aggregation"""
         while True:
@@ -188,9 +196,11 @@ class PerformanceMonitoringMiddleware(BaseHTTPMiddleware):
                     "avg_response_time": round(avg_time, 3),
                     "percentiles": percentiles,
                     "error_rate": (
-                        self.error_counts[endpoint_key] / self.request_counts[endpoint_key]
-                        if self.request_counts[endpoint_key] > 0 else 0
-                    )
+                        self.error_counts[endpoint_key]
+                        / self.request_counts[endpoint_key]
+                        if self.request_counts[endpoint_key] > 0
+                        else 0
+                    ),
                 }
         return metrics
 
@@ -203,7 +213,9 @@ class DatabaseQueryMonitor:
         self.query_times = defaultdict(list)
         self.slow_query_threshold = 0.5  # 500ms
 
-    async def monitor_query(self, collection_name: str, operation: str, query_func, *args, **kwargs):
+    async def monitor_query(
+        self, collection_name: str, operation: str, query_func, *args, **kwargs
+    ):
         """Monitor a database query"""
         start_time = time.time()
 
@@ -217,14 +229,12 @@ class DatabaseQueryMonitor:
 
             # Log slow queries
             if duration > self.slow_query_threshold:
-                logger.warning(
-                    f"Slow database query: {query_key} took {duration:.3f}s"
-                )
+                logger.warning(f"Slow database query: {query_key} took {duration:.3f}s")
             # Cache metrics
             await cache.set(
                 f"db_query_time:{query_key}",
                 duration,
-                expire=300  # 5 minutes
+                expire=300,  # 5 minutes
             )
 
             return result
@@ -242,7 +252,7 @@ class DatabaseQueryMonitor:
 performance_monitor = PerformanceMonitoringMiddleware(
     app=None,  # Will be set when added to app
     slow_request_threshold=1.0,
-    enable_detailed_logging=True
+    enable_detailed_logging=True,
 )
 
 db_monitor = DatabaseQueryMonitor()
@@ -251,14 +261,13 @@ db_monitor = DatabaseQueryMonitor()
 # Decorator for monitoring database operations
 def monitor_db_operation(collection_name: str, operation: str):
     """Decorator for monitoring database operations"""
+
     def decorator(func):
         async def wrapper(*args, **kwargs):
             return await db_monitor.monitor_query(
-                collection_name,
-                operation,
-                func,
-                *args,
-                **kwargs
+                collection_name, operation, func, *args, **kwargs
             )
+
         return wrapper
+
     return decorator

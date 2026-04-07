@@ -1,6 +1,7 @@
 """
 Utilities for normalizing and sanitizing public blog article content.
 """
+
 from __future__ import annotations
 
 import re

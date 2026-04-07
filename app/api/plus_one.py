@@ -2,7 +2,12 @@ from fastapi import APIRouter, HTTPException, Path, Body, Depends, Query
 from app.models.plus_one import PlusOneModel
 from app.services.plus_one_service import PlusOneService
 from app.services.guest_service import GuestService
-from app.dependencies.auth_extended import require_wedding_planner_only, ExtendedAuthUser, check_wedding_access, enforce_team_permission
+from app.dependencies.auth_extended import (
+    require_wedding_planner_only,
+    ExtendedAuthUser,
+    check_wedding_access,
+    enforce_team_permission,
+)
 from app.services.sse_manager import sse_manager
 import logging
 
@@ -15,7 +20,10 @@ guest_service = GuestService()
 
 
 @router.post("", tags=["Plus-Ones"])
-async def add_plus_one(plus_one: PlusOneModel, current_user: ExtendedAuthUser = Depends(require_wedding_planner_only)):
+async def add_plus_one(
+    plus_one: PlusOneModel,
+    current_user: ExtendedAuthUser = Depends(require_wedding_planner_only),
+):
     enforce_team_permission(current_user, "manage_guests")
     # Get guest to verify wedding access
     guest = await guest_service.get_guest(plus_one.guest_id)
@@ -28,7 +36,9 @@ async def add_plus_one(plus_one: PlusOneModel, current_user: ExtendedAuthUser = 
     result = await plus_one_service.add_plus_one(plus_one)
 
     await sse_manager.broadcast_data_change(
-        current_user.email, "plus_one", "created",
+        current_user.email,
+        "plus_one",
+        "created",
         wedding_id=guest.get("wedding_id"),
     )
 
@@ -47,13 +57,18 @@ async def get_plus_ones_by_wedding(
 
     guest_id_list = None
     if guest_ids is not None:
-        guest_id_list = [guest_id.strip() for guest_id in guest_ids.split(",") if guest_id.strip()]
+        guest_id_list = [
+            guest_id.strip() for guest_id in guest_ids.split(",") if guest_id.strip()
+        ]
 
     return await plus_one_service.get_plus_ones_by_wedding_id(wedding_id, guest_id_list)
 
 
 @router.get("/{guest_id}", tags=["Plus-Ones"])
-async def get_plus_ones(guest_id: str, current_user: ExtendedAuthUser = Depends(require_wedding_planner_only)):
+async def get_plus_ones(
+    guest_id: str,
+    current_user: ExtendedAuthUser = Depends(require_wedding_planner_only),
+):
     # Get guest to verify wedding access
     guest = await guest_service.get_guest(guest_id)
     if not guest:
@@ -66,7 +81,11 @@ async def get_plus_ones(guest_id: str, current_user: ExtendedAuthUser = Depends(
 
 
 @router.put("/plus-ones/{plus_one_id}", tags=["Plus-Ones"])
-async def update_plus_one(plus_one_id: str = Path(...), data: dict = Body(...), current_user: ExtendedAuthUser = Depends(require_wedding_planner_only)):
+async def update_plus_one(
+    plus_one_id: str = Path(...),
+    data: dict = Body(...),
+    current_user: ExtendedAuthUser = Depends(require_wedding_planner_only),
+):
     enforce_team_permission(current_user, "manage_guests")
     # Get plus-one to find guest and verify wedding access
     plus_one = await plus_one_service.get_plus_one(plus_one_id)
@@ -83,7 +102,9 @@ async def update_plus_one(plus_one_id: str = Path(...), data: dict = Body(...), 
     result = await plus_one_service.update_plus_one(plus_one_id, data)
 
     await sse_manager.broadcast_data_change(
-        current_user.email, "plus_one", "updated",
+        current_user.email,
+        "plus_one",
+        "updated",
         wedding_id=guest.get("wedding_id"),
         record_id=plus_one_id,
     )
@@ -92,7 +113,10 @@ async def update_plus_one(plus_one_id: str = Path(...), data: dict = Body(...), 
 
 
 @router.delete("/{plus_one_id}", tags=["Plus-Ones"])
-async def delete_plus_one(plus_one_id: str, current_user: ExtendedAuthUser = Depends(require_wedding_planner_only)):
+async def delete_plus_one(
+    plus_one_id: str,
+    current_user: ExtendedAuthUser = Depends(require_wedding_planner_only),
+):
     enforce_team_permission(current_user, "manage_guests")
     # Get plus-one to find guest and verify wedding access
     plus_one = await plus_one_service.get_plus_one(plus_one_id)
@@ -110,7 +134,9 @@ async def delete_plus_one(plus_one_id: str, current_user: ExtendedAuthUser = Dep
     result = await plus_one_service.delete_plus_one(plus_one_id)
 
     await sse_manager.broadcast_data_change(
-        current_user.email, "plus_one", "deleted",
+        current_user.email,
+        "plus_one",
+        "deleted",
         wedding_id=guest.get("wedding_id"),
         record_id=plus_one_id,
     )

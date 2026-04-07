@@ -1,6 +1,7 @@
 """
 Event Sourcing and Domain Events System
 """
+
 from typing import Dict, List, Any, Optional, Callable, Awaitable, Union
 from datetime import datetime, timezone
 from pydantic import BaseModel, Field
@@ -15,6 +16,7 @@ logger = logging.getLogger(__name__)
 
 class EventType(str, Enum):
     """Domain event types"""
+
     # User events
     USER_REGISTERED = "user.registered"
     USER_EMAIL_VERIFIED = "user.email_verified"
@@ -50,7 +52,12 @@ class EventType(str, Enum):
 
 class DomainEvent(BaseModel):
     """Base domain event"""
-    event_id: str = Field(default_factory=lambda: f"evt_{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S_%f')}")
+
+    event_id: str = Field(
+        default_factory=lambda: (
+            f"evt_{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S_%f')}"
+        )
+    )
     event_type: EventType
     aggregate_id: str  # ID of the entity this event relates to
     aggregate_type: str  # Type of entity (user, wedding, guest, etc.)
@@ -90,10 +97,12 @@ class EventStore:
             await cache.set(
                 f"recent_event:{event.event_id}",
                 event.model_dump(),
-                expire=3600  # 1 hour
+                expire=3600,  # 1 hour
             )
 
-            logger.info(f"Event stored: {event.event_type} for {event.aggregate_type}:{event.aggregate_id}")
+            logger.info(
+                f"Event stored: {event.event_type} for {event.aggregate_type}:{event.aggregate_id}"
+            )
             return True
 
         except Exception as e:
@@ -101,18 +110,17 @@ class EventStore:
             return False
 
     async def get_events(
-        self,
-        aggregate_id: str,
-        aggregate_type: str,
-        from_version: int = 0
+        self, aggregate_id: str, aggregate_type: str, from_version: int = 0
     ) -> List[DomainEvent]:
         """Get events for a specific aggregate"""
         try:
-            cursor = self.events_collection.find({
-                "aggregate_id": aggregate_id,
-                "aggregate_type": aggregate_type,
-                "version": {"$gt": from_version}
-            }).sort("timestamp", 1)
+            cursor = self.events_collection.find(
+                {
+                    "aggregate_id": aggregate_id,
+                    "aggregate_type": aggregate_type,
+                    "version": {"$gt": from_version},
+                }
+            ).sort("timestamp", 1)
 
             events = []
             async for event_doc in cursor:
@@ -121,20 +129,22 @@ class EventStore:
             return events
 
         except Exception as e:
-            logger.error(f"Failed to retrieve events for {aggregate_type}:{aggregate_id}: {str(e)}")
+            logger.error(
+                f"Failed to retrieve events for {aggregate_type}:{aggregate_id}: {str(e)}"
+            )
             return []
 
     async def get_events_by_type(
-        self,
-        event_type: EventType,
-        limit: int = 100,
-        offset: int = 0
+        self, event_type: EventType, limit: int = 100, offset: int = 0
     ) -> List[DomainEvent]:
         """Get events by type"""
         try:
-            cursor = self.events_collection.find({
-                "event_type": event_type.value
-            }).sort("timestamp", -1).skip(offset).limit(limit)
+            cursor = (
+                self.events_collection.find({"event_type": event_type.value})
+                .sort("timestamp", -1)
+                .skip(offset)
+                .limit(limit)
+            )
 
             events = []
             async for event_doc in cursor:
@@ -151,47 +161,45 @@ class EventStore:
         aggregate_id: str,
         aggregate_type: str,
         snapshot_data: Dict[str, Any],
-        version: int
+        version: int,
     ) -> bool:
         """Save aggregate snapshot for performance optimization"""
         try:
             await self.snapshots_collection.replace_one(
-                {
-                    "aggregate_id": aggregate_id,
-                    "aggregate_type": aggregate_type
-                },
+                {"aggregate_id": aggregate_id, "aggregate_type": aggregate_type},
                 {
                     "aggregate_id": aggregate_id,
                     "aggregate_type": aggregate_type,
                     "snapshot_data": snapshot_data,
                     "version": version,
-                    "timestamp": datetime.now(timezone.utc)
+                    "timestamp": datetime.now(timezone.utc),
                 },
-                upsert=True
+                upsert=True,
             )
 
             return True
 
         except Exception as e:
-            logger.error(f"Failed to save snapshot for {aggregate_type}:{aggregate_id}: {str(e)}")
+            logger.error(
+                f"Failed to save snapshot for {aggregate_type}:{aggregate_id}: {str(e)}"
+            )
             return False
 
     async def get_snapshot(
-        self,
-        aggregate_id: str,
-        aggregate_type: str
+        self, aggregate_id: str, aggregate_type: str
     ) -> Optional[Dict[str, Any]]:
         """Get latest snapshot for an aggregate"""
         try:
-            snapshot = await self.snapshots_collection.find_one({
-                "aggregate_id": aggregate_id,
-                "aggregate_type": aggregate_type
-            })
+            snapshot = await self.snapshots_collection.find_one(
+                {"aggregate_id": aggregate_id, "aggregate_type": aggregate_type}
+            )
 
             return snapshot
 
         except Exception as e:
-            logger.error(f"Failed to retrieve snapshot for {aggregate_type}:{aggregate_id}: {str(e)}")
+            logger.error(
+                f"Failed to retrieve snapshot for {aggregate_type}:{aggregate_id}: {str(e)}"
+            )
             return None
 
 
@@ -199,10 +207,24 @@ class EventBus:
     """Event bus for publishing and subscribing to domain events"""
 
     def __init__(self):
-        self.subscribers: Dict[EventType, List[Union[Callable[[DomainEvent], Awaitable[None]], Callable[[DomainEvent], None]]]] = {}
+        self.subscribers: Dict[
+            EventType,
+            List[
+                Union[
+                    Callable[[DomainEvent], Awaitable[None]],
+                    Callable[[DomainEvent], None],
+                ]
+            ],
+        ] = {}
         self.event_store = EventStore()
 
-    def subscribe(self, event_type: EventType, handler: Union[Callable[[DomainEvent], Awaitable[None]], Callable[[DomainEvent], None]]):
+    def subscribe(
+        self,
+        event_type: EventType,
+        handler: Union[
+            Callable[[DomainEvent], Awaitable[None]], Callable[[DomainEvent], None]
+        ],
+    ):
         """Subscribe to an event type"""
         if event_type not in self.subscribers:
             self.subscribers[event_type] = []
@@ -222,13 +244,17 @@ class EventBus:
                     tasks.append(handler(event))
                 else:
                     # Run sync handler in executor
-                    tasks.append(asyncio.get_event_loop().run_in_executor(None, handler, event))
+                    tasks.append(
+                        asyncio.get_event_loop().run_in_executor(None, handler, event)
+                    )
             # Execute all handlers concurrently
             if tasks:
                 try:
                     await asyncio.gather(*tasks, return_exceptions=True)
                 except Exception as e:
-                    logger.error(f"Error in event handlers for {event.event_type}: {str(e)}")
+                    logger.error(
+                        f"Error in event handlers for {event.event_type}: {str(e)}"
+                    )
         logger.info(f"Published event: {event.event_type}")
 
 
@@ -239,6 +265,7 @@ event_bus = EventBus()
 # Event factory functions
 class EventFactory:
     """Factory for creating domain events"""
+
     @staticmethod
     def user_registered(user_id: str, email: str, role: str) -> DomainEvent:
         return DomainEvent(
@@ -248,8 +275,8 @@ class EventFactory:
             event_data={
                 "email": email,
                 "role": role,
-                "registration_timestamp": datetime.now(timezone.utc).isoformat()
-            }
+                "registration_timestamp": datetime.now(timezone.utc).isoformat(),
+            },
         )
 
     @staticmethod
@@ -261,13 +288,15 @@ class EventFactory:
             event_data={
                 "planner_id": planner_id,
                 "title": title,
-                "creation_timestamp": datetime.now(timezone.utc).isoformat()
+                "creation_timestamp": datetime.now(timezone.utc).isoformat(),
             },
-            user_id=planner_id
+            user_id=planner_id,
         )
 
     @staticmethod
-    def guest_rsvp_submitted(guest_id: str, wedding_id: str, response: str) -> DomainEvent:
+    def guest_rsvp_submitted(
+        guest_id: str, wedding_id: str, response: str
+    ) -> DomainEvent:
         return DomainEvent(
             event_type=EventType.GUEST_RSVP_SUBMITTED,
             aggregate_id=guest_id,
@@ -275,12 +304,14 @@ class EventFactory:
             event_data={
                 "wedding_id": wedding_id,
                 "response": response,
-                "submission_timestamp": datetime.now(timezone.utc).isoformat()
-            }
+                "submission_timestamp": datetime.now(timezone.utc).isoformat(),
+            },
         )
 
     @staticmethod
-    def subscription_limit_exceeded(user_id: str, resource_type: str, limit: int) -> DomainEvent:
+    def subscription_limit_exceeded(
+        user_id: str, resource_type: str, limit: int
+    ) -> DomainEvent:
         return DomainEvent(
             event_type=EventType.SUBSCRIPTION_LIMIT_EXCEEDED,
             aggregate_id=user_id,
@@ -288,9 +319,9 @@ class EventFactory:
             event_data={
                 "resource_type": resource_type,
                 "limit": limit,
-                "timestamp": datetime.now(timezone.utc).isoformat()
+                "timestamp": datetime.now(timezone.utc).isoformat(),
             },
-            user_id=user_id
+            user_id=user_id,
         )
 
     @staticmethod
@@ -302,16 +333,15 @@ class EventFactory:
             event_data={
                 "ip_address": ip_address,
                 "reason": reason,
-                "timestamp": datetime.now(timezone.utc).isoformat()
+                "timestamp": datetime.now(timezone.utc).isoformat(),
             },
-            metadata={
-                "security_event": True,
-                "severity": "medium"
-            }
+            metadata={"security_event": True, "severity": "medium"},
         )
 
     @staticmethod
-    def password_changed(user_id: str, email: str, ip_address: Optional[str] = None) -> DomainEvent:
+    def password_changed(
+        user_id: str, email: str, ip_address: Optional[str] = None
+    ) -> DomainEvent:
         return DomainEvent(
             event_type=EventType.PASSWORD_CHANGED,
             aggregate_id=user_id,
@@ -319,17 +349,16 @@ class EventFactory:
             event_data={
                 "email": email,
                 "ip_address": ip_address,
-                "timestamp": datetime.now(timezone.utc).isoformat()
+                "timestamp": datetime.now(timezone.utc).isoformat(),
             },
-            metadata={
-                "security_event": True,
-                "severity": "low"
-            },
-            user_id=user_id
+            metadata={"security_event": True, "severity": "low"},
+            user_id=user_id,
         )
 
     @staticmethod
-    def email_change_requested(user_id: str, old_email: str, new_email: str, ip_address: Optional[str] = None) -> DomainEvent:
+    def email_change_requested(
+        user_id: str, old_email: str, new_email: str, ip_address: Optional[str] = None
+    ) -> DomainEvent:
         return DomainEvent(
             event_type=EventType.EMAIL_CHANGE_REQUESTED,
             aggregate_id=user_id,
@@ -338,13 +367,10 @@ class EventFactory:
                 "old_email": old_email,
                 "new_email": new_email,
                 "ip_address": ip_address,
-                "timestamp": datetime.now(timezone.utc).isoformat()
+                "timestamp": datetime.now(timezone.utc).isoformat(),
             },
-            metadata={
-                "security_event": True,
-                "severity": "medium"
-            },
-            user_id=user_id
+            metadata={"security_event": True, "severity": "medium"},
+            user_id=user_id,
         )
 
     @staticmethod
@@ -356,17 +382,16 @@ class EventFactory:
             event_data={
                 "old_email": old_email,
                 "new_email": new_email,
-                "timestamp": datetime.now(timezone.utc).isoformat()
+                "timestamp": datetime.now(timezone.utc).isoformat(),
             },
-            metadata={
-                "security_event": True,
-                "severity": "medium"
-            },
-            user_id=user_id
+            metadata={"security_event": True, "severity": "medium"},
+            user_id=user_id,
         )
 
     @staticmethod
-    def user_profile_updated(user_id: str, email: str, updated_fields: list) -> DomainEvent:
+    def user_profile_updated(
+        user_id: str, email: str, updated_fields: list
+    ) -> DomainEvent:
         return DomainEvent(
             event_type=EventType.USER_PROFILE_UPDATED,
             aggregate_id=user_id,
@@ -374,15 +399,16 @@ class EventFactory:
             event_data={
                 "email": email,
                 "updated_fields": updated_fields,
-                "timestamp": datetime.now(timezone.utc).isoformat()
+                "timestamp": datetime.now(timezone.utc).isoformat(),
             },
-            user_id=user_id
+            user_id=user_id,
         )
 
 
 # Decorator for automatically publishing events
 def publishes_event(event_factory_func: Callable[..., DomainEvent]):
     """Decorator to automatically publish events from service methods"""
+
     def decorator(func: Callable[..., Awaitable[Any]]) -> Callable[..., Awaitable[Any]]:
         async def wrapper(*args, **kwargs):
             result = await func(*args, **kwargs)
@@ -396,12 +422,14 @@ def publishes_event(event_factory_func: Callable[..., DomainEvent]):
             return result
 
         return wrapper
+
     return decorator
 
 
 # Event handlers setup
 async def setup_event_handlers():
     """Setup default event handlers"""
+
     async def log_security_events(event: DomainEvent):
         """Log security-related events"""
         if event.metadata.get("security_event"):
@@ -412,10 +440,11 @@ async def setup_event_handlers():
         if event.event_type in [
             EventType.WEDDING_CREATED,
             EventType.FORM_CREATED,
-            EventType.EMAIL_SENT
+            EventType.EMAIL_SENT,
         ]:
             # Update usage tracking
             from app.services.subscription_service import SubscriptionService
+
             subscription_service = SubscriptionService()
             if event.user_id:
                 # Increment appropriate usage counter
@@ -423,13 +452,18 @@ async def setup_event_handlers():
                     # Wedding usage is metered in /api/wedding.py; avoid double counting here
                     return
                 elif event.event_type == EventType.EMAIL_SENT:
-                    await subscription_service.increment_usage(event.user_id, "emails", 1)
+                    await subscription_service.increment_usage(
+                        event.user_id, "emails", 1
+                    )
 
     async def send_notifications(event: DomainEvent):
         """Send notifications for important events"""
         if event.event_type == EventType.GUEST_RSVP_SUBMITTED:
             # Send notification to wedding planner
-            logger.info(f"RSVP notification: Guest {event.aggregate_id} responded to wedding {event.event_data['wedding_id']}")
+            logger.info(
+                f"RSVP notification: Guest {event.aggregate_id} responded to wedding {event.event_data['wedding_id']}"
+            )
+
     # Subscribe handlers
     event_bus.subscribe(EventType.LOGIN_FAILED, log_security_events)
     event_bus.subscribe(EventType.SUSPICIOUS_ACTIVITY, log_security_events)

@@ -22,7 +22,10 @@ describe('formsApi', () => {
     if (originalFetch) {
       global.fetch = originalFetch;
     } else {
-      delete (global as typeof globalThis & { fetch?: typeof fetch }).fetch;
+      Reflect.deleteProperty(
+        global as typeof globalThis & { fetch?: typeof fetch },
+        'fetch'
+      );
     }
   });
 

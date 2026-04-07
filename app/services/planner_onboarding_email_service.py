@@ -97,9 +97,13 @@ class PlannerOnboardingEmailService:
         self.subscriptions_collection = mongo.db["user_subscriptions"]
         self.email_service = ResendEmailService()
 
-    async def start_sequence(self, user_id: str, user: Optional[dict[str, Any]] = None, dry_run: bool = False) -> dict[str, Any]:
+    async def start_sequence(
+        self, user_id: str, user: Optional[dict[str, Any]] = None, dry_run: bool = False
+    ) -> dict[str, Any]:
         if user is None:
-            user = await self.users_collection.find_one({"_id": self._to_object_id(user_id)})
+            user = await self.users_collection.find_one(
+                {"_id": self._to_object_id(user_id)}
+            )
 
         if not user or user.get("role") != "wedding_planner":
             return {"started": False, "reason": "user_not_eligible"}
@@ -117,12 +121,16 @@ class PlannerOnboardingEmailService:
 
         claim_token = await self._acquire_claim(user["_id"], "welcome")
         if not claim_token:
-            refreshed_user = await self.users_collection.find_one({"_id": user["_id"]}) or user
+            refreshed_user = (
+                await self.users_collection.find_one({"_id": user["_id"]}) or user
+            )
             if self._state(refreshed_user).get("welcome_sent_at"):
                 return {"started": False, "reason": "already_started"}
             return {"started": False, "reason": "sequence_in_progress"}
 
-        refreshed_user = await self.users_collection.find_one({"_id": user["_id"]}) or user
+        refreshed_user = (
+            await self.users_collection.find_one({"_id": user["_id"]}) or user
+        )
         if self._has_explicit_unsubscribe(refreshed_user):
             await self._release_claim(user["_id"], claim_token)
             return {"started": False, "reason": "unsubscribed"}
@@ -130,7 +138,11 @@ class PlannerOnboardingEmailService:
         send_result = await self._send_named_email("welcome", refreshed_user)
         if not send_result.get("success"):
             await self._release_claim(user["_id"], claim_token)
-            return {"started": False, "reason": "email_failed", "error": send_result.get("error")}
+            return {
+                "started": False,
+                "reason": "email_failed",
+                "error": send_result.get("error"),
+            }
 
         await self._finalize_claim(
             user["_id"],
@@ -180,7 +192,9 @@ class PlannerOnboardingEmailService:
 
         return results
 
-    async def _prefetch_context(self, users: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
+    async def _prefetch_context(
+        self, users: list[dict[str, Any]]
+    ) -> dict[str, dict[str, Any]]:
         """Batch-load wedding, team-member, and subscription data for a set of users.
 
         Returns a dict keyed by str(user_id) → {has_wedding, has_team, subscription}.
@@ -192,7 +206,9 @@ class PlannerOnboardingEmailService:
         # Weddings — any user who has at least one assigned wedding
         wedding_query: dict[str, Any] = {"assigned_planner_id": {"$in": user_ids}}
         if emails:
-            wedding_query = {"$or": [wedding_query, {"assigned_planner_email": {"$in": emails}}]}
+            wedding_query = {
+                "$or": [wedding_query, {"assigned_planner_email": {"$in": emails}}]
+            }
         wedding_cursor = self.weddings_collection.find(
             wedding_query,
             {"assigned_planner_id": 1, "assigned_planner_email": 1},
@@ -216,12 +232,18 @@ class PlannerOnboardingEmailService:
             owners_with_team.add(str(tm.get("owner_id") or ""))
 
         # Subscriptions — active/trial for each user
-        sub_query: dict[str, Any] = {"user_id": {"$in": user_ids}, "status": {"$in": ["active", "trial"]}}
+        sub_query: dict[str, Any] = {
+            "user_id": {"$in": user_ids},
+            "status": {"$in": ["active", "trial"]},
+        }
         if emails:
             sub_query = {
                 "$or": [
                     sub_query,
-                    {"user_email": {"$in": emails}, "status": {"$in": ["active", "trial"]}},
+                    {
+                        "user_email": {"$in": emails},
+                        "status": {"$in": ["active", "trial"]},
+                    },
                 ],
             }
         sub_cursor = self.subscriptions_collection.find(sub_query)
@@ -240,7 +262,8 @@ class PlannerOnboardingEmailService:
             uid = str(u["_id"])
             uemail = str(u.get("email") or "").strip().lower()
             context[uid] = {
-                "has_wedding": uid in planners_with_weddings or uemail in planners_with_weddings,
+                "has_wedding": uid in planners_with_weddings
+                or uemail in planners_with_weddings,
                 "has_team": uid in owners_with_team,
                 "subscription": subs_by_user.get(uid) or subs_by_user.get(uemail),
             }
@@ -259,14 +282,21 @@ class PlannerOnboardingEmailService:
         for user in users:
             results["processed"] += 1
             try:
-                outcome = await self._process_user(user, dry_run=dry_run, ctx=ctx.get(str(user["_id"])))
+                outcome = await self._process_user(
+                    user, dry_run=dry_run, ctx=ctx.get(str(user["_id"]))
+                )
                 results["details"].append(outcome)
                 results["sent"] += outcome.get("sent", 0)
                 results["skipped"] += outcome.get("skipped", 0)
                 results["completed"] += 1 if outcome.get("completed") else 0
                 results["exited"] += 1 if outcome.get("exited") else 0
             except Exception as exc:  # pragma: no cover - defensive logging
-                logger.error("Planner onboarding processing failed for %s: %s", user.get("email"), exc, exc_info=True)
+                logger.error(
+                    "Planner onboarding processing failed for %s: %s",
+                    user.get("email"),
+                    exc,
+                    exc_info=True,
+                )
                 results["errors"] += 1
                 results["details"].append(
                     {
@@ -276,7 +306,12 @@ class PlannerOnboardingEmailService:
                     }
                 )
 
-    async def _process_user(self, user: dict[str, Any], dry_run: bool = False, ctx: Optional[dict[str, Any]] = None) -> dict[str, Any]:
+    async def _process_user(
+        self,
+        user: dict[str, Any],
+        dry_run: bool = False,
+        ctx: Optional[dict[str, Any]] = None,
+    ) -> dict[str, Any]:
         now = _utc_now()
         state = self._state(user)
         status = state.get("status", "active")
@@ -321,13 +356,17 @@ class PlannerOnboardingEmailService:
                     result["actions"].append("signature_exit_in_progress")
                     return result
 
-                refreshed_user = await self.users_collection.find_one({"_id": user["_id"]}) or user
+                refreshed_user = (
+                    await self.users_collection.find_one({"_id": user["_id"]}) or user
+                )
                 if self._has_explicit_unsubscribe(refreshed_user):
                     await self._release_claim(user["_id"], claim_token)
                     result["actions"].append("signature_exit_aborted_unsubscribed")
                     return result
 
-                send_result = await self._send_named_email("signature_exit", refreshed_user)
+                send_result = await self._send_named_email(
+                    "signature_exit", refreshed_user
+                )
                 if send_result.get("success"):
                     await self._finalize_claim(
                         user["_id"],
@@ -398,7 +437,9 @@ class PlannerOnboardingEmailService:
                 result["actions"].append(f"step_in_progress_{step.key}")
                 continue
 
-            refreshed_user = await self.users_collection.find_one({"_id": user["_id"]}) or user
+            refreshed_user = (
+                await self.users_collection.find_one({"_id": user["_id"]}) or user
+            )
             if self._has_explicit_unsubscribe(refreshed_user):
                 await self._release_claim(user["_id"], claim_token)
                 result["actions"].append(f"aborted_unsubscribed_{step.key}")
@@ -421,9 +462,12 @@ class PlannerOnboardingEmailService:
             result["sent"] += 1
             result["actions"].append(f"sent_{step.key}")
 
-        refreshed_state = self._state(await self.users_collection.find_one({"_id": user["_id"]}) or user)
+        refreshed_state = self._state(
+            await self.users_collection.find_one({"_id": user["_id"]}) or user
+        )
         if all(
-            refreshed_state.get(step.sent_field) or refreshed_state.get(step.skipped_field)
+            refreshed_state.get(step.sent_field)
+            or refreshed_state.get(step.skipped_field)
             for step in SEQUENCE_STEPS
         ):
             if not dry_run and refreshed_state.get("status") != "completed":
@@ -440,9 +484,16 @@ class PlannerOnboardingEmailService:
 
         return result
 
-    async def _evaluate_step(self, user: dict[str, Any], step: SequenceStep, ctx: Optional[dict[str, Any]] = None) -> tuple[bool, Optional[str]]:
+    async def _evaluate_step(
+        self,
+        user: dict[str, Any],
+        step: SequenceStep,
+        ctx: Optional[dict[str, Any]] = None,
+    ) -> tuple[bool, Optional[str]]:
         if step.key == "first_wedding":
-            has_wedding = ctx["has_wedding"] if ctx else await self._has_created_wedding(user)
+            has_wedding = (
+                ctx["has_wedding"] if ctx else await self._has_created_wedding(user)
+            )
             if has_wedding:
                 return False, "wedding_already_created"
             return True, None
@@ -465,14 +516,19 @@ class PlannerOnboardingEmailService:
 
     async def _has_team_members(self, user: dict[str, Any]) -> bool:
         user_id = str(user.get("_id"))
-        return await self.team_members_collection.count_documents(
-            {
-                "owner_id": user_id,
-                "status": {"$in": ["pending", "active"]},
-            }
-        ) > 0
+        return (
+            await self.team_members_collection.count_documents(
+                {
+                    "owner_id": user_id,
+                    "status": {"$in": ["pending", "active"]},
+                }
+            )
+            > 0
+        )
 
-    async def _should_exit_for_signature(self, user: dict[str, Any], ctx: Optional[dict[str, Any]] = None) -> bool:
+    async def _should_exit_for_signature(
+        self, user: dict[str, Any], ctx: Optional[dict[str, Any]] = None
+    ) -> bool:
         if ctx is not None:
             subscription = ctx.get("subscription")
         else:
@@ -489,7 +545,9 @@ class PlannerOnboardingEmailService:
             plan_id = str(user.get("plan_id") or "").lower()
             return "signature" in plan_id
 
-        plan_name = str((subscription.get("plan_snapshot") or {}).get("plan_name") or "").lower()
+        plan_name = str(
+            (subscription.get("plan_snapshot") or {}).get("plan_name") or ""
+        ).lower()
         plan_id = str(subscription.get("plan_id") or "").lower()
         return "signature" in plan_name or "signature" in plan_id
 
@@ -518,17 +576,23 @@ class PlannerOnboardingEmailService:
             _ensure_utc(user.get("verified_at")),
             _ensure_utc(user.get("created_at")),
         ]
-        most_recent = max((anchor for anchor in anchors if anchor is not None), default=None)
+        most_recent = max(
+            (anchor for anchor in anchors if anchor is not None), default=None
+        )
         if most_recent is None:
             return False
         return _utc_now() - most_recent >= timedelta(days=14)
 
     async def _set_state_fields(self, user_id: Any, fields: dict[str, Any]) -> None:
-        updates = {f"planner_onboarding_email.{key}": value for key, value in fields.items()}
+        updates = {
+            f"planner_onboarding_email.{key}": value for key, value in fields.items()
+        }
         updates["planner_onboarding_email.sequence_version"] = SEQUENCE_VERSION
         await self.users_collection.update_one({"_id": user_id}, {"$set": updates})
 
-    async def _acquire_claim(self, user_id: Any, claim_step: str, step: Optional[SequenceStep] = None) -> Optional[str]:
+    async def _acquire_claim(
+        self, user_id: Any, claim_step: str, step: Optional[SequenceStep] = None
+    ) -> Optional[str]:
         claim_token = secrets.token_urlsafe(12)
         now = _utc_now()
         stale_before = now - CLAIM_TTL
@@ -546,7 +610,9 @@ class PlannerOnboardingEmailService:
         elif claim_step == "welcome":
             query["planner_onboarding_email.welcome_sent_at"] = {"$exists": False}
         elif claim_step == "signature_exit":
-            query["planner_onboarding_email.signature_exit_sent_at"] = {"$exists": False}
+            query["planner_onboarding_email.signature_exit_sent_at"] = {
+                "$exists": False
+            }
 
         result = await self.users_collection.update_one(
             query,
@@ -578,8 +644,12 @@ class PlannerOnboardingEmailService:
             },
         )
 
-    async def _finalize_claim(self, user_id: Any, claim_token: str, fields: dict[str, Any]) -> None:
-        updates = {f"planner_onboarding_email.{key}": value for key, value in fields.items()}
+    async def _finalize_claim(
+        self, user_id: Any, claim_token: str, fields: dict[str, Any]
+    ) -> None:
+        updates = {
+            f"planner_onboarding_email.{key}": value for key, value in fields.items()
+        }
         updates["planner_onboarding_email.sequence_version"] = SEQUENCE_VERSION
         await self.users_collection.update_one(
             {
@@ -644,7 +714,9 @@ class PlannerOnboardingEmailService:
         if len(local_part) <= 2:
             masked_local = f"{local_part[:1]}*"
         else:
-            masked_local = f"{local_part[:1]}{'*' * max(len(local_part) - 2, 1)}{local_part[-1]}"
+            masked_local = (
+                f"{local_part[:1]}{'*' * max(len(local_part) - 2, 1)}{local_part[-1]}"
+            )
         return f"{masked_local}@{domain}"
 
     def _role_label(self, user: dict[str, Any]) -> str:
@@ -659,7 +731,11 @@ class PlannerOnboardingEmailService:
         token_created = _ensure_utc(state.get("unsubscribe_token_created_at"))
 
         # Reuse existing token if it hasn't expired
-        if existing_token and token_created and (_utc_now() - token_created < UNSUBSCRIBE_TOKEN_TTL):
+        if (
+            existing_token
+            and token_created
+            and (_utc_now() - token_created < UNSUBSCRIBE_TOKEN_TTL)
+        ):
             return existing_token
 
         # Generate a fresh token (also handles rotation of expired tokens)
@@ -685,7 +761,9 @@ class PlannerOnboardingEmailService:
         refreshed_token = self._state(refreshed_user or {}).get("unsubscribe_token")
         return refreshed_token or generated_token
 
-    async def _find_user_by_unsubscribe_token(self, token: str) -> Optional[dict[str, Any]]:
+    async def _find_user_by_unsubscribe_token(
+        self, token: str
+    ) -> Optional[dict[str, Any]]:
         """Look up a user by unsubscribe token with timing-attack mitigation.
 
         Uses an indexed MongoDB query for the lookup, then validates the
@@ -708,7 +786,10 @@ class PlannerOnboardingEmailService:
         if not hmac.compare_digest(stored_token, token):
             # On miss, run a dummy query to normalize total response time
             await self.users_collection.find_one(
-                {"role": "wedding_planner", "planner_onboarding_email.status": "completed"},
+                {
+                    "role": "wedding_planner",
+                    "planner_onboarding_email.status": "completed",
+                },
                 {"_id": 1},
             )
             return None
@@ -761,7 +842,10 @@ class PlannerOnboardingEmailService:
                     "$set": {
                         "planner_onboarding_email.unsubscribed_at": now,
                         "planner_onboarding_email.status": "exited",
-                        "planner_onboarding_email.completed_at": state.get("completed_at") or now,
+                        "planner_onboarding_email.completed_at": state.get(
+                            "completed_at"
+                        )
+                        or now,
                         "planner_onboarding_email.exit_reason": "explicit_unsubscribe",
                         "planner_onboarding_email.last_processed_at": now,
                         "planner_onboarding_email.sequence_version": SEQUENCE_VERSION,
@@ -785,7 +869,9 @@ class PlannerOnboardingEmailService:
     _SEND_MAX_RETRIES = 3
     _SEND_BASE_DELAY = 1.0  # seconds; doubles on each retry
 
-    async def _send_named_email(self, template_key: str, user: dict[str, Any]) -> dict[str, Any]:
+    async def _send_named_email(
+        self, template_key: str, user: dict[str, Any]
+    ) -> dict[str, Any]:
         unsubscribe_token = await self._ensure_unsubscribe_token(user)
         subject, html_content = self._render_email(
             template_key,
@@ -807,17 +893,26 @@ class PlannerOnboardingEmailService:
 
             # Don't retry on 4xx-class errors (bad address, validation, etc.)
             error_str = str(last_result.get("error") or "")
-            if any(code in error_str for code in ("400", "401", "403", "422", "unsubscribed", "invalid")):
+            if any(
+                code in error_str
+                for code in ("400", "401", "403", "422", "unsubscribed", "invalid")
+            ):
                 logger.warning(
                     "Email send non-retryable failure for %s (attempt %d): %s",
-                    user.get("email"), attempt + 1, error_str,
+                    user.get("email"),
+                    attempt + 1,
+                    error_str,
                 )
                 return last_result
 
-            delay = self._SEND_BASE_DELAY * (2 ** attempt)
+            delay = self._SEND_BASE_DELAY * (2**attempt)
             logger.warning(
                 "Email send failed for %s (attempt %d/%d), retrying in %.1fs: %s",
-                user.get("email"), attempt + 1, self._SEND_MAX_RETRIES, delay, error_str,
+                user.get("email"),
+                attempt + 1,
+                self._SEND_MAX_RETRIES,
+                delay,
+                error_str,
             )
             await asyncio.sleep(delay)
 
@@ -828,9 +923,17 @@ class PlannerOnboardingEmailService:
             return "planner_onboarding_day0_welcome"
         if template_key == "signature_exit":
             return "planner_onboarding_signature_exit"
-        return next(step.email_type for step in SEQUENCE_STEPS if step.key == template_key)
+        return next(
+            step.email_type for step in SEQUENCE_STEPS if step.key == template_key
+        )
 
-    def _render_email(self, template_key: str, user: dict[str, Any], *, unsubscribe_url: Optional[str] = None) -> tuple[str, str]:
+    def _render_email(
+        self,
+        template_key: str,
+        user: dict[str, Any],
+        *,
+        unsubscribe_url: Optional[str] = None,
+    ) -> tuple[str, str]:
         if template_key == "welcome":
             return self._welcome_email(user, unsubscribe_url=unsubscribe_url)
         if template_key == "first_wedding":
@@ -847,7 +950,18 @@ class PlannerOnboardingEmailService:
             return self._signature_exit_email(user, unsubscribe_url=unsubscribe_url)
         raise ValueError(f"Unknown onboarding template: {template_key}")
 
-    def _email_wrapper(self, *, title: str, eyebrow: str, intro: str, body_html: str, cta_label: str, cta_path: str, outro: str, unsubscribe_url: Optional[str]) -> str:
+    def _email_wrapper(
+        self,
+        *,
+        title: str,
+        eyebrow: str,
+        intro: str,
+        body_html: str,
+        cta_label: str,
+        cta_path: str,
+        outro: str,
+        unsubscribe_url: Optional[str],
+    ) -> str:
         cta_url = _esc(f"{self._frontend_url()}{cta_path}")
         unsubscribe_html = (
             f'<p style="margin-top:16px;">If you want to stop this onboarding sequence, <a href="{_esc(unsubscribe_url)}" style="color:#475569;">unsubscribe here</a>.</p>'
@@ -893,7 +1007,9 @@ class PlannerOnboardingEmailService:
         </html>
         """
 
-    def _welcome_email(self, user: dict[str, Any], *, unsubscribe_url: Optional[str]) -> tuple[str, str]:
+    def _welcome_email(
+        self, user: dict[str, Any], *, unsubscribe_url: Optional[str]
+    ) -> tuple[str, str]:
         subject = "Welcome to The Special Wedding — your 18-tool command center"
         intro = f"Hi {self._display_name(user)}, welcome to <strong>The Special Wedding</strong>. Your account is live and you now have access to the planner workspace."
         body_html = f"""
@@ -907,7 +1023,7 @@ class PlannerOnboardingEmailService:
             <li><strong>Seating, budget, payments, vendor CRM, and forms</strong> in one workspace</li>
           </ul>
         </div>
-        <p>As a <strong>{self._role_label(user)}</strong>{f' at <strong>{_esc(str(user.get("company_name")))}</strong>' if user.get("company_name") else ''}, you have the tools you need to run weddings from one system.</p>
+        <p>As a <strong>{self._role_label(user)}</strong>{f" at <strong>{_esc(str(user.get("company_name")))}</strong>" if user.get("company_name") else ""}, you have the tools you need to run weddings from one system.</p>
         """
         outro = "Tomorrow we will focus on the fastest activation step: creating your first wedding."
         return subject, self._email_wrapper(
@@ -921,7 +1037,9 @@ class PlannerOnboardingEmailService:
             unsubscribe_url=unsubscribe_url,
         )
 
-    def _first_wedding_email(self, user: dict[str, Any], *, unsubscribe_url: Optional[str]) -> tuple[str, str]:
+    def _first_wedding_email(
+        self, user: dict[str, Any], *, unsubscribe_url: Optional[str]
+    ) -> tuple[str, str]:
         subject = "Your first wedding in 5 minutes"
         intro = f"Hi {self._display_name(user)}, the fastest way to see the product come alive is to create your first wedding project."
         body_html = """
@@ -947,7 +1065,9 @@ class PlannerOnboardingEmailService:
             unsubscribe_url=unsubscribe_url,
         )
 
-    def _couple_portal_email(self, user: dict[str, Any], *, unsubscribe_url: Optional[str]) -> tuple[str, str]:
+    def _couple_portal_email(
+        self, user: dict[str, Any], *, unsubscribe_url: Optional[str]
+    ) -> tuple[str, str]:
         subject = "Meet your couple portal"
         intro = f"Hi {self._display_name(user)}, one of the clearest differentiators in the platform is the <strong>Couple Portal</strong> attached to each wedding."
         body_html = """
@@ -972,7 +1092,9 @@ class PlannerOnboardingEmailService:
             unsubscribe_url=unsubscribe_url,
         )
 
-    def _ai_paperwork_email(self, user: dict[str, Any], *, unsubscribe_url: Optional[str]) -> tuple[str, str]:
+    def _ai_paperwork_email(
+        self, user: dict[str, Any], *, unsubscribe_url: Optional[str]
+    ) -> tuple[str, str]:
         subject = "Let AI handle the paperwork"
         intro = f"Hi {self._display_name(user)}, the AI layer in The Special Wedding is built to cut repetitive work without taking control away from you."
         body_html = """
@@ -997,7 +1119,9 @@ class PlannerOnboardingEmailService:
             unsubscribe_url=unsubscribe_url,
         )
 
-    def _team_rules_email(self, user: dict[str, Any], *, unsubscribe_url: Optional[str]) -> tuple[str, str]:
+    def _team_rules_email(
+        self, user: dict[str, Any], *, unsubscribe_url: Optional[str]
+    ) -> tuple[str, str]:
         subject = "Your team, your rules"
         intro = f"Hi {self._display_name(user)}, if you collaborate with coordinators or assistants, the planner team workspace lets you keep access clean instead of sharing one login."
         body_html = """
@@ -1021,7 +1145,9 @@ class PlannerOnboardingEmailService:
             unsubscribe_url=unsubscribe_url,
         )
 
-    def _planners_love_email(self, user: dict[str, Any], *, unsubscribe_url: Optional[str]) -> tuple[str, str]:
+    def _planners_love_email(
+        self, user: dict[str, Any], *, unsubscribe_url: Optional[str]
+    ) -> tuple[str, str]:
         subject = "You're all set — here's what planners love most"
         intro = f"Hi {self._display_name(user)}, after the first two weeks most planners settle into one rhythm: fewer disconnected tools and fewer status checks spread across inboxes and spreadsheets."
         body_html = """
@@ -1042,7 +1168,9 @@ class PlannerOnboardingEmailService:
             unsubscribe_url=unsubscribe_url,
         )
 
-    def _signature_exit_email(self, user: dict[str, Any], *, unsubscribe_url: Optional[str]) -> tuple[str, str]:
+    def _signature_exit_email(
+        self, user: dict[str, Any], *, unsubscribe_url: Optional[str]
+    ) -> tuple[str, str]:
         subject = "Welcome to Signature — your full planner stack is unlocked"
         intro = f"Hi {self._display_name(user)}, your workspace is now on the <strong>Signature</strong> tier."
         body_html = """

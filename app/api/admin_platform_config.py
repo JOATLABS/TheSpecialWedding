@@ -30,6 +30,7 @@ router = APIRouter(prefix="/admin/ads/config", tags=["Admin Platform Config"])
 # DEPENDENCY INJECTION
 # =============================================================================
 
+
 async def get_config_service() -> AdPlatformConfigService:
     """Get platform config service instance."""
     return AdPlatformConfigService(mongo.db)
@@ -38,6 +39,7 @@ async def get_config_service() -> AdPlatformConfigService:
 # =============================================================================
 # SETTINGS
 # =============================================================================
+
 
 @router.get(
     "",
@@ -69,6 +71,7 @@ async def update_platform_config(
 # DATA PIPELINE
 # =============================================================================
 
+
 @router.get(
     "/pipeline",
     summary="Get data pipeline status",
@@ -84,6 +87,7 @@ async def get_pipeline_status(
 # =============================================================================
 # DATA EXPORT
 # =============================================================================
+
 
 @router.get(
     "/export",

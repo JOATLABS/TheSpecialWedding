@@ -1,6 +1,7 @@
 """
 Centralized configuration management using Pydantic Settings
 """
+
 # Use pydantic-settings for proper Pydantic v2 compatibility
 from pydantic_settings import BaseSettings
 from pydantic import Field, field_validator
@@ -13,6 +14,7 @@ from urllib.parse import urlparse
 
 class Environment(str, Enum):
     """Application environments"""
+
     DEVELOPMENT = "development"
     STAGING = "staging"
     PRODUCTION = "production"
@@ -23,10 +25,10 @@ class Settings(BaseSettings):
     """
     Application settings with validation and type checking
     """
+
     # Environment
     environment: Environment = Field(
-        default=Environment.DEVELOPMENT,
-        alias="ENVIRONMENT"
+        default=Environment.DEVELOPMENT, alias="ENVIRONMENT"
     )
     debug: bool = Field(default=False, alias="DEBUG")
     testing: bool = Field(default=False, alias="TESTING")
@@ -41,38 +43,56 @@ class Settings(BaseSettings):
     media_domain: Optional[str] = Field(default=None, alias="MEDIA_DOMAIN")
 
     # Security
-    secret_key: str = Field(default="", alias="SECRET_KEY")  # Required - validated below
+    secret_key: str = Field(
+        default="", alias="SECRET_KEY"
+    )  # Required - validated below
     jwt_algorithm: str = Field(default="HS256", alias="JWT_ALGORITHM")
-    access_token_expire_minutes: int = Field(default=60, alias="ACCESS_TOKEN_EXPIRE_MINUTES")
+    access_token_expire_minutes: int = Field(
+        default=60, alias="ACCESS_TOKEN_EXPIRE_MINUTES"
+    )
     refresh_token_expire_days: int = Field(default=7, alias="REFRESH_TOKEN_EXPIRE_DAYS")
-    guest_access_session_minutes: int = Field(default=180, alias="GUEST_ACCESS_SESSION_MINUTES")
+    guest_access_session_minutes: int = Field(
+        default=180, alias="GUEST_ACCESS_SESSION_MINUTES"
+    )
     # CORS
-    cors_origins: List[str] = Field(default=[], alias="CORS_ORIGINS")  # Required - validated below
+    cors_origins: List[str] = Field(
+        default=[], alias="CORS_ORIGINS"
+    )  # Required - validated below
 
-    @field_validator('secret_key')
+    @field_validator("secret_key")
     @classmethod
     def validate_secret_key(cls, v: str) -> str:
         """Ensure secret_key is not a weak default"""
-        weak_keys = {'changeme', 'secret', 'password', 'test', 'development'}
+        weak_keys = {"changeme", "secret", "password", "test", "development"}
         if v.lower() in weak_keys or len(v) < 32:
-            raise ValueError('SECRET_KEY must be at least 32 characters and not a common default')
+            raise ValueError(
+                "SECRET_KEY must be at least 32 characters and not a common default"
+            )
         return v
 
-    @field_validator('cors_origins')
+    @field_validator("cors_origins")
     @classmethod
     def validate_cors_origins(cls, v: List[str]) -> List[str]:
         """Ensure cors_origins is configured"""
         if not v:
-            raise ValueError('CORS_ORIGINS must be configured with at least one origin')
+            raise ValueError("CORS_ORIGINS must be configured with at least one origin")
         return v
+
     cors_credentials: bool = Field(default=True, alias="CORS_CREDENTIALS")
     cors_methods: List[str] = Field(
         default=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-        alias="CORS_METHODS"
+        alias="CORS_METHODS",
     )
     cors_headers: List[str] = Field(
-        default=["Authorization", "Content-Type", "Accept", "X-Requested-With", "Cache-Control", "Pragma"],
-        alias="CORS_HEADERS"
+        default=[
+            "Authorization",
+            "Content-Type",
+            "Accept",
+            "X-Requested-With",
+            "Cache-Control",
+            "Pragma",
+        ],
+        alias="CORS_HEADERS",
     )
     allowed_hosts: List[str] = Field(default=[], alias="ALLOWED_HOSTS")
     # Database
@@ -93,14 +113,24 @@ class Settings(BaseSettings):
     rate_limit_period: int = Field(default=60, alias="RATE_LIMIT_PERIOD")
     rate_limit_auth_calls: int = Field(default=10, alias="RATE_LIMIT_AUTH_CALLS")
     rate_limit_auth_period: int = Field(default=60, alias="RATE_LIMIT_AUTH_PERIOD")
-    rate_limit_login_ip_calls: int = Field(default=30, alias="RATE_LIMIT_LOGIN_IP_CALLS")
-    rate_limit_login_principal_calls: int = Field(default=5, alias="RATE_LIMIT_LOGIN_PRINCIPAL_CALLS")
+    rate_limit_login_ip_calls: int = Field(
+        default=30, alias="RATE_LIMIT_LOGIN_IP_CALLS"
+    )
+    rate_limit_login_principal_calls: int = Field(
+        default=5, alias="RATE_LIMIT_LOGIN_PRINCIPAL_CALLS"
+    )
     rate_limit_login_period: int = Field(default=60, alias="RATE_LIMIT_LOGIN_PERIOD")
     # Email Service (Resend)
     resend_api_key: Optional[str] = Field(default=None, alias="RESEND_API_KEY")
-    resend_from_email: str = Field(default="noreply@thespecialwedding.com", alias="RESEND_FROM_EMAIL")
-    resend_billing_email: Optional[str] = Field(default=None, alias="RESEND_BILLING_EMAIL")
-    resend_from_name: str = Field(default="The Special Wedding", alias="RESEND_FROM_NAME")
+    resend_from_email: str = Field(
+        default="noreply@thespecialwedding.com", alias="RESEND_FROM_EMAIL"
+    )
+    resend_billing_email: Optional[str] = Field(
+        default=None, alias="RESEND_BILLING_EMAIL"
+    )
+    resend_from_name: str = Field(
+        default="The Special Wedding", alias="RESEND_FROM_NAME"
+    )
     # SMS Services
     twilio_enabled: bool = Field(default=False, alias="TWILIO_ENABLED")
     twilio_account_sid: Optional[str] = Field(default=None, alias="TWILIO_ACCOUNT_SID")
@@ -114,7 +144,9 @@ class Settings(BaseSettings):
     # AWS S3 / Cloudflare R2 - variable names match .env exactly
     s3_enabled: bool = Field(default=False, alias="S3_ENABLED")
     s3_access_key_id: Optional[str] = Field(default=None, alias="S3_ACCESS_KEY_ID")
-    s3_secret_access_key: Optional[str] = Field(default=None, alias="S3_SECRET_ACCESS_KEY")
+    s3_secret_access_key: Optional[str] = Field(
+        default=None, alias="S3_SECRET_ACCESS_KEY"
+    )
     s3_bucket_name: Optional[str] = Field(default=None, alias="S3_BUCKET_NAME")
     s3_region: str = Field(default="auto", alias="S3_REGION")
     s3_endpoint_url: Optional[str] = Field(default=None, alias="S3_ENDPOINT_URL")
@@ -125,7 +157,9 @@ class Settings(BaseSettings):
     csrf_cookie_name: str = Field(default="csrf_token", alias="CSRF_COOKIE_NAME")
     csrf_header_name: str = Field(default="X-CSRF-Token", alias="CSRF_HEADER_NAME")
 
-    security_headers_enabled: bool = Field(default=True, alias="SECURITY_HEADERS_ENABLED")
+    security_headers_enabled: bool = Field(
+        default=True, alias="SECURITY_HEADERS_ENABLED"
+    )
     hsts_enabled: bool = Field(default=True, alias="HSTS_ENABLED")
     csp_enabled: bool = Field(default=True, alias="CSP_ENABLED")
 
@@ -135,7 +169,9 @@ class Settings(BaseSettings):
     audit_log_to_file: bool = Field(default=True, alias="AUDIT_LOG_TO_FILE")
     audit_log_file: str = Field(default="audit.log", alias="AUDIT_LOG_FILE")
     security_log_to_file: bool = Field(default=True, alias="SECURITY_LOG_TO_FILE")
-    security_log_file: str = Field(default="logs/security_audit.log", alias="SECURITY_LOG_FILE")
+    security_log_file: str = Field(
+        default="logs/security_audit.log", alias="SECURITY_LOG_FILE"
+    )
     # Performance
     enable_compression: bool = Field(default=True, alias="ENABLE_COMPRESSION")
     enable_cache_headers: bool = Field(default=True, alias="ENABLE_CACHE_HEADERS")
@@ -148,20 +184,32 @@ class Settings(BaseSettings):
 
     # Feature Flags
     feature_ai_tools: bool = Field(default=True, alias="FEATURE_AI_TOOLS")
-    feature_advanced_reporting: bool = Field(default=True, alias="FEATURE_ADVANCED_REPORTING")
+    feature_advanced_reporting: bool = Field(
+        default=True, alias="FEATURE_ADVANCED_REPORTING"
+    )
     feature_white_label: bool = Field(default=False, alias="FEATURE_WHITE_LABEL")
-    feature_custom_integrations: bool = Field(default=False, alias="FEATURE_CUSTOM_INTEGRATIONS")
+    feature_custom_integrations: bool = Field(
+        default=False, alias="FEATURE_CUSTOM_INTEGRATIONS"
+    )
     # Subscription & Billing
     stripe_enabled: bool = Field(default=True, alias="STRIPE_ENABLED")
     stripe_secret_key: Optional[str] = Field(default=None, alias="STRIPE_SECRET_KEY")
-    stripe_publishable_key: Optional[str] = Field(default=None, alias="STRIPE_PUBLISHABLE_KEY")
-    stripe_webhook_secret: Optional[str] = Field(default=None, alias="STRIPE_WEBHOOK_SECRET")
+    stripe_publishable_key: Optional[str] = Field(
+        default=None, alias="STRIPE_PUBLISHABLE_KEY"
+    )
+    stripe_webhook_secret: Optional[str] = Field(
+        default=None, alias="STRIPE_WEBHOOK_SECRET"
+    )
 
-    free_trial_days: int = Field(default=0, alias="FREE_TRIAL_DAYS")  # 0 = no free trial
+    free_trial_days: int = Field(
+        default=0, alias="FREE_TRIAL_DAYS"
+    )  # 0 = no free trial
 
     # Admin Settings
     root_admin_email: Optional[str] = Field(default=None, alias="ROOT_ADMIN_EMAIL")
-    root_admin_password: Optional[str] = Field(default=None, alias="ROOT_ADMIN_PASSWORD")
+    root_admin_password: Optional[str] = Field(
+        default=None, alias="ROOT_ADMIN_PASSWORD"
+    )
 
     # AI Service (Gemini)
     google_api_key: Optional[str] = Field(default=None, alias="GOOGLE_API_KEY")
@@ -181,7 +229,7 @@ class Settings(BaseSettings):
         "env_file": ".env",
         "env_file_encoding": "utf-8",
         "case_sensitive": False,
-        "extra": "ignore"
+        "extra": "ignore",
     }
 
     @field_validator("cors_origins", mode="before")
@@ -194,7 +242,11 @@ class Settings(BaseSettings):
                 try:
                     parsed = json.loads(stripped)
                     if isinstance(parsed, list):
-                        return [str(origin).strip() for origin in parsed if str(origin).strip()]
+                        return [
+                            str(origin).strip()
+                            for origin in parsed
+                            if str(origin).strip()
+                        ]
                 except json.JSONDecodeError:
                     pass
             return [origin.strip() for origin in v.split(",") if origin.strip()]
@@ -212,7 +264,9 @@ class Settings(BaseSettings):
                 try:
                     parsed = json.loads(stripped)
                     if isinstance(parsed, list):
-                        return [str(host).strip() for host in parsed if str(host).strip()]
+                        return [
+                            str(host).strip() for host in parsed if str(host).strip()
+                        ]
                 except json.JSONDecodeError:
                     pass
             return [host.strip() for host in stripped.split(",") if host.strip()]
@@ -250,7 +304,7 @@ class Settings(BaseSettings):
             f"maxPoolSize={self.mongo_max_pool_size}",
             f"minPoolSize={self.mongo_min_pool_size}",
             "retryWrites=true",
-            "w=majority"
+            "w=majority",
         ]
 
         return f"{base_url}{separator}{'&'.join(options)}"
@@ -331,7 +385,7 @@ class Settings(BaseSettings):
             "ai_tools": self.feature_ai_tools,
             "advanced_reporting": self.feature_advanced_reporting,
             "white_label": self.feature_white_label,
-            "custom_integrations": self.feature_custom_integrations
+            "custom_integrations": self.feature_custom_integrations,
         }
 
     def get_security_config(self) -> Dict[str, Any]:
@@ -341,7 +395,7 @@ class Settings(BaseSettings):
             "security_headers_enabled": self.security_headers_enabled,
             "hsts_enabled": self.hsts_enabled,
             "csp_enabled": self.csp_enabled,
-            "audit_logging_enabled": self.audit_logging_enabled
+            "audit_logging_enabled": self.audit_logging_enabled,
         }
 
 

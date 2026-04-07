@@ -7,6 +7,7 @@ Usage:
 
 Or call seed_blog() from app startup.
 """
+
 import asyncio
 from datetime import datetime, timezone
 from bson import ObjectId
@@ -19,7 +20,12 @@ BLOG_ARTICLES = [
         "slug": "introducing-the-special-wedding",
         "excerpt": "Stop jumping between 8+ tools. We built The Special Wedding to give professional wedding planners everything they need in one purpose-built platform — powered by AI.",
         "category": "platform-updates",
-        "tags": ["wedding planner software", "all-in-one platform", "AI wedding tools", "launch"],
+        "tags": [
+            "wedding planner software",
+            "all-in-one platform",
+            "AI wedding tools",
+            "launch",
+        ],
         "featured": True,
         "published_date": "2026-03-19",
         "read_time": 7,
@@ -94,14 +100,19 @@ Your couples' information and wedding details are some of the most sensitive dat
 
 Sign up for a free 30-day trial. No credit card required until the trial ends. You get full access to all features, unlimited weddings during the trial, and dedicated onboarding support to make sure you're set up for success.
 
-Stop managing your tools. Start managing your weddings."""
+Stop managing your tools. Start managing your weddings.""",
     },
     {
         "title": "How to Price Your Wedding Planning Services in 2026",
         "slug": "how-to-price-wedding-planning-services",
         "excerpt": "Most planners underprice. Here's a framework for building tiered packages that reflect your value — plus how AI can validate your pricing against market data.",
         "category": "pricing-strategy",
-        "tags": ["pricing", "wedding planner pricing", "service packages", "AI pricing"],
+        "tags": [
+            "pricing",
+            "wedding planner pricing",
+            "service packages",
+            "AI pricing",
+        ],
         "featured": False,
         "published_date": "2026-03-12",
         "read_time": 8,
@@ -210,7 +221,7 @@ Most planners raise rates 5-15% annually, whether tied to inflation or tied to i
 
 Pricing wedding planning services is both art and science. The science part — calculating costs, researching markets, understanding competitor rates — gives you a data-backed floor. The art part — positioning your unique value, choosing your service tier, deciding what weddings you want to do — is where you build a business you love at rates you deserve.
 
-Stop underpricing your expertise. Price strategically. Sell the value. Build the business you deserve."""
+Stop underpricing your expertise. Price strategically. Sell the value. Build the business you deserve.""",
     },
     {
         "title": "Managing 200+ Guests Without Losing Your Mind",
@@ -319,7 +330,7 @@ The Special Wedding's mobile app gives you all this information at your fingerti
 
 Managing 200+ guests is harder than 75-person weddings. There's more data, more complexity, more failure points. But with a good system in place, it becomes manageable. You go from crossing your fingers and hoping everything works out to having a detailed, organized plan that executes smoothly.
 
-The couples you serve will notice. They'll see calm professionalism, no surprises, and perfect execution. That's what they're paying you for."""
+The couples you serve will notice. They'll see calm professionalism, no surprises, and perfect execution. That's what they're paying you for.""",
     },
     {
         "title": "HoneyBook vs Aisle Planner: Which Is Better for Wedding Planners?",
@@ -427,7 +438,7 @@ This guide compares them honestly — the strengths of each, where they fall sho
 
 Both platforms have limitations because neither was designed specifically for the complex, interconnected workflows modern wedding planning requires. The future is platforms purpose-built for wedding planners that combine the best of both approaches: strong guest management and seating tools like Aisle Planner with contract, payment, and integration capabilities like HoneyBook, all in one wedding-specific platform.
 
-When evaluating tools, ask yourself: **What part of my workflow is most broken today?** That should guide your choice."""
+When evaluating tools, ask yourself: **What part of my workflow is most broken today?** That should guide your choice.""",
     },
     {
         "title": "Wedding Planner Contract Essentials: What to Include in 2026",
@@ -546,7 +557,7 @@ A good contract doesn't mean you'll never have disputes with couples. But it mea
 
 Update your contract every 2-3 years as your business evolves and as laws change. Ask couples to sign electronically (e-signature platforms like DocuSign or Stripe Sign make this seamless). Keep a signed copy of every contract in your files.
 
-A contract is a sign of professionalism, not mistrust. Couples will respect you more for having clear expectations in writing."""
+A contract is a sign of professionalism, not mistrust. Couples will respect you more for having clear expectations in writing.""",
     },
     {
         "title": "How AI Is Changing Wedding Planning (And What Planners Should Actually Use)",
@@ -683,7 +694,7 @@ AI is useful for wedding planners right now, but it's not magical. The tools tha
 
 Use AI to reclaim 5-10 hours per wedding from routine work. Invest that time in what you're actually good at: understanding couples, managing vendor relationships, and orchestrating perfect days.
 
-That's where AI and humans work best together."""
+That's where AI and humans work best together.""",
     },
     {
         "title": "Seating Chart Strategy: Beyond Drag-and-Drop",
@@ -768,8 +779,8 @@ The Special Wedding's seating planner includes all of this. Import your guest li
 
 A perfect seating chart prevents drunk relatives from yelling at each other, keeps people feeling welcomed and included, and makes logistics run smoothly. It's one of the highest-leverage planning tasks you do. Spend the time to get it right, use tools that make it easy to visualize and adjust, and think beyond just "fill the tables."
 
-The couple will notice. Their guests will have a better time. That's what it's all about."""
-    }
+The couple will notice. Their guests will have a better time. That's what it's all about.""",
+    },
 ]
 
 
@@ -806,7 +817,9 @@ async def seed_blog():
             "author_email": "hello@thespecialwedding.io",
             "created_by": "hello@thespecialwedding.io",
             "meta_title": None,
-            "meta_description": article_data.get("meta_description", article_data["excerpt"]),
+            "meta_description": article_data.get(
+                "meta_description", article_data["excerpt"]
+            ),
             "og_image": None,
             "card_image": None,
             "published_at": pub_date,

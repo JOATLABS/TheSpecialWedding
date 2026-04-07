@@ -23,7 +23,7 @@ def verify_cron_auth(authorization: Optional[str] = Header(None)):
         logger.error("CRON_SECRET not configured - rejecting cron request for security")
         raise HTTPException(
             status_code=503,
-            detail="Cron endpoints unavailable: CRON_SECRET not configured"
+            detail="Cron endpoints unavailable: CRON_SECRET not configured",
         )
 
     if not authorization:
@@ -37,18 +37,27 @@ def verify_cron_auth(authorization: Optional[str] = Header(None)):
 
     raise HTTPException(status_code=401, detail="Invalid cron authorization")
 
+
 @router.post("/trials/check-expired", tags=["ROOT_ADMIN"])
-async def check_expired_trials(current_user: ExtendedAuthUser = Depends(require_root_admin)):
+async def check_expired_trials(
+    current_user: ExtendedAuthUser = Depends(require_root_admin),
+):
     """Check for expired trials and deactivate accounts - ROOT_ADMIN only"""
     return await trial_service.check_and_expire_trials()
 
+
 @router.post("/trials/send-warnings", tags=["ROOT_ADMIN"])
-async def send_trial_warnings(current_user: ExtendedAuthUser = Depends(require_root_admin)):
+async def send_trial_warnings(
+    current_user: ExtendedAuthUser = Depends(require_root_admin),
+):
     """Send warning emails for trials expiring soon - ROOT_ADMIN only"""
     return await trial_service.send_trial_warning_emails()
 
+
 @router.post("/trials/run-maintenance", tags=["ROOT_ADMIN"])
-async def run_trial_maintenance(current_user: ExtendedAuthUser = Depends(require_root_admin)):
+async def run_trial_maintenance(
+    current_user: ExtendedAuthUser = Depends(require_root_admin),
+):
     """Run complete trial maintenance (warnings and expiration) - ROOT_ADMIN only"""
     try:
         # Send warnings first
@@ -60,13 +69,18 @@ async def run_trial_maintenance(current_user: ExtendedAuthUser = Depends(require
         return {
             "message": "Trial maintenance completed successfully",
             "warning_results": warning_result,
-            "expiration_results": expiration_result
+            "expiration_results": expiration_result,
         }
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error running trial maintenance: {str(e)}")
+        raise HTTPException(
+            status_code=500, detail=f"Error running trial maintenance: {str(e)}"
+        )
+
 
 @router.get("/trials/status", tags=["ROOT_ADMIN"])
-async def get_trial_status(current_user: ExtendedAuthUser = Depends(require_root_admin)):
+async def get_trial_status(
+    current_user: ExtendedAuthUser = Depends(require_root_admin),
+):
     """Get overview of trial statuses - ROOT_ADMIN only"""
     try:
         from app.core.database import mongo
@@ -76,43 +90,48 @@ async def get_trial_status(current_user: ExtendedAuthUser = Depends(require_root
         now = datetime.now(timezone.utc)
 
         # Count trials by status
-        active_trials = await users_collection.count_documents({
-            "subscription_status": "trial",
-            "is_active": True,
-            "email_verified": True
-        })
+        active_trials = await users_collection.count_documents(
+            {"subscription_status": "trial", "is_active": True, "email_verified": True}
+        )
 
-        expired_trials = await users_collection.count_documents({
-            "subscription_status": "expired"
-        })
+        expired_trials = await users_collection.count_documents(
+            {"subscription_status": "expired"}
+        )
 
         # Trials expiring in next 7 days
-        expiring_soon = await users_collection.count_documents({
-            "subscription_status": "trial",
-            "trial_end_date": {"$lte": now + timedelta(days=7), "$gt": now},
-            "is_active": True
-        })
+        expiring_soon = await users_collection.count_documents(
+            {
+                "subscription_status": "trial",
+                "trial_end_date": {"$lte": now + timedelta(days=7), "$gt": now},
+                "is_active": True,
+            }
+        )
         # Trials expiring today
-        expiring_today = await users_collection.count_documents({
-            "subscription_status": "trial",
-            "trial_end_date": {"$lte": now + timedelta(days=1), "$gt": now},
-            "is_active": True
-        })
+        expiring_today = await users_collection.count_documents(
+            {
+                "subscription_status": "trial",
+                "trial_end_date": {"$lte": now + timedelta(days=1), "$gt": now},
+                "is_active": True,
+            }
+        )
         return {
             "active_trials": active_trials,
             "expired_trials": expired_trials,
             "expiring_soon": expiring_soon,
             "expiring_today": expiring_today,
-            "checked_at": now.isoformat()
+            "checked_at": now.isoformat(),
         }
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error getting trial status: {str(e)}")
+        raise HTTPException(
+            status_code=500, detail=f"Error getting trial status: {str(e)}"
+        )
 
 
 # =========================================================================
 # CRON JOB ENDPOINTS (authenticated via CRON_SECRET)
 # These endpoints are called by Cloudflare Workers cron triggers
 # =========================================================================
+
 
 @router.post("/cron/trials/run-maintenance", tags=["CRON"])
 async def cron_run_trial_maintenance(_: bool = Depends(verify_cron_auth)):
@@ -138,14 +157,14 @@ async def cron_run_trial_maintenance(_: bool = Depends(verify_cron_auth)):
             "message": "Trial maintenance completed successfully",
             "warning_results": warning_result,
             "expiration_results": expiration_result,
-            "timestamp": datetime.now(timezone.utc).isoformat()
+            "timestamp": datetime.now(timezone.utc).isoformat(),
         }
     except Exception as e:
         logger.error(f"Error in trial maintenance cron: {str(e)}")
         return {
             "status": "error",
             "error": str(e),
-            "timestamp": datetime.now(timezone.utc).isoformat()
+            "timestamp": datetime.now(timezone.utc).isoformat(),
         }
 
 
@@ -164,14 +183,14 @@ async def cron_send_trial_warnings(_: bool = Depends(verify_cron_auth)):
         return {
             "status": "success",
             "results": result,
-            "timestamp": datetime.now(timezone.utc).isoformat()
+            "timestamp": datetime.now(timezone.utc).isoformat(),
         }
     except Exception as e:
         logger.error(f"Error in trial warnings cron: {str(e)}")
         return {
             "status": "error",
             "error": str(e),
-            "timestamp": datetime.now(timezone.utc).isoformat()
+            "timestamp": datetime.now(timezone.utc).isoformat(),
         }
 
 
@@ -190,12 +209,12 @@ async def cron_check_expired_trials(_: bool = Depends(verify_cron_auth)):
         return {
             "status": "success",
             "results": result,
-            "timestamp": datetime.now(timezone.utc).isoformat()
+            "timestamp": datetime.now(timezone.utc).isoformat(),
         }
     except Exception as e:
         logger.error(f"Error in trial expiration cron: {str(e)}")
         return {
             "status": "error",
             "error": str(e),
-            "timestamp": datetime.now(timezone.utc).isoformat()
+            "timestamp": datetime.now(timezone.utc).isoformat(),
         }

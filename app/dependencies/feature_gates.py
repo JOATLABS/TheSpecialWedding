@@ -25,7 +25,10 @@ async def get_user_plan_features(user_email: str) -> dict:
         # Get user's subscription — check both user_email and user_id fields
         # since subscriptions may be stored with either identifier
         subscription = await mongo.db["user_subscriptions"].find_one(
-            {"user_email": user_email, "status": {"$in": list(ACTIVE_SUBSCRIPTION_STATUSES)}}
+            {
+                "user_email": user_email,
+                "status": {"$in": list(ACTIVE_SUBSCRIPTION_STATUSES)},
+            }
         )
 
         if not subscription:
@@ -34,7 +37,10 @@ async def get_user_plan_features(user_email: str) -> dict:
             if user:
                 user_id_str = str(user["_id"])
                 subscription = await mongo.db["user_subscriptions"].find_one(
-                    {"user_id": user_id_str, "status": {"$in": list(ACTIVE_SUBSCRIPTION_STATUSES)}}
+                    {
+                        "user_id": user_id_str,
+                        "status": {"$in": list(ACTIVE_SUBSCRIPTION_STATUSES)},
+                    }
                 )
 
         if not subscription:
@@ -60,7 +66,7 @@ async def get_user_plan_features(user_email: str) -> dict:
 
 
 async def require_vendor_feature(
-    current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
+    current_user: ExtendedAuthUser = Depends(require_admin_or_planner),
 ) -> ExtendedAuthUser:
     """
     Dependency that checks if the user's plan includes vendor management.
@@ -84,8 +90,8 @@ async def require_vendor_feature(
                 "error": "feature_not_available",
                 "message": "Vendor management is not included in your current plan",
                 "feature": "vendor_management",
-                "upgrade_required": True
-            }
+                "upgrade_required": True,
+            },
         )
 
     return current_user
@@ -115,8 +121,9 @@ def require_feature(feature_name: str):
         async def endpoint(user = Depends(require_feature("ai_tools"))):
             ...
     """
+
     async def _check_feature(
-        current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
+        current_user: ExtendedAuthUser = Depends(require_admin_or_planner),
     ) -> ExtendedAuthUser:
         if current_user.is_root_admin:
             return current_user
@@ -130,8 +137,8 @@ def require_feature(feature_name: str):
                     "error": "feature_not_available",
                     "message": f"{feature_name.replace('_', ' ').title()} is not included in your current plan",
                     "feature": feature_name,
-                    "upgrade_required": True
-                }
+                    "upgrade_required": True,
+                },
             )
 
         return current_user
@@ -161,7 +168,10 @@ async def require_team_management(
             user = await mongo.get_users_collection().find_one({"email": email})
             if user:
                 subscription = await mongo.db["user_subscriptions"].find_one(
-                    {"user_id": str(user["_id"]), "status": {"$in": list(ACTIVE_SUBSCRIPTION_STATUSES)}}
+                    {
+                        "user_id": str(user["_id"]),
+                        "status": {"$in": list(ACTIVE_SUBSCRIPTION_STATUSES)},
+                    }
                 )
 
         staff_seats = 0

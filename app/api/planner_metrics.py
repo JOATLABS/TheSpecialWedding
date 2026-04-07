@@ -1,8 +1,9 @@
 from fastapi import APIRouter, HTTPException, Depends, Query
 from app.dependencies.auth_extended import (
-    get_current_user_extended, ExtendedAuthUser,
-    enforce_team_permission, require_team_or_planner,
-    get_accessible_wedding_ids
+    ExtendedAuthUser,
+    enforce_team_permission,
+    require_team_or_planner,
+    get_accessible_wedding_ids,
 )
 from app.core.cache import cache, CacheKeys
 from app.core.database import mongo
@@ -91,7 +92,9 @@ def _planner_weddings_scope_key(
         "include_cancelled" if include_cancelled else "active_only",
     ]
     if accessible_ids is not None:
-        digest = hashlib.sha256(",".join(sorted(accessible_ids)).encode("utf-8")).hexdigest()[:12]
+        digest = hashlib.sha256(
+            ",".join(sorted(accessible_ids)).encode("utf-8")
+        ).hexdigest()[:12]
         scope_parts.append(digest)
     return CacheKeys.planner_weddings(":".join(scope_parts), include_cancelled)
 
@@ -106,8 +109,12 @@ def _normalize_cached_planner_wedding(payload: dict[str, Any]) -> dict[str, Any]
     return payload
 
 
-@router.get("/planner/metrics", tags=["Wedding Planner"], response_model=PlannerMetricsResponse)
-async def get_planner_metrics(current_user: ExtendedAuthUser = Depends(require_team_or_planner)) -> PlannerMetricsResponse:
+@router.get(
+    "/planner/metrics", tags=["Wedding Planner"], response_model=PlannerMetricsResponse
+)
+async def get_planner_metrics(
+    current_user: ExtendedAuthUser = Depends(require_team_or_planner),
+) -> PlannerMetricsResponse:
     """
     Get comprehensive metrics for wedding planner dashboard.
 
@@ -130,7 +137,7 @@ async def get_planner_metrics(current_user: ExtendedAuthUser = Depends(require_t
         else:
             query = {
                 "assigned_planner_email": current_user.email,
-                "status": {"$ne": "cancelled"}
+                "status": {"$ne": "cancelled"},
             }
             # Apply team member wedding scope filter
             accessible_ids = get_accessible_wedding_ids(current_user)
@@ -147,8 +154,7 @@ async def get_planner_metrics(current_user: ExtendedAuthUser = Depends(require_t
             activity_query: dict[str, Any] = {}
         else:
             assigned_weddings = await weddings_collection.find(
-                {"assigned_planner_email": current_user.email},
-                {"_id": 1}
+                {"assigned_planner_email": current_user.email}, {"_id": 1}
             ).to_list(length=MAX_WEDDINGS)
 
             wedding_id_values: list[Any] = []
@@ -165,7 +171,7 @@ async def get_planner_metrics(current_user: ExtendedAuthUser = Depends(require_t
                     {"actor_email": current_user.email},
                     {"user_email": current_user.email},
                     {"assigned_planner_email": current_user.email},
-                    {"wedding_id": {"$in": wedding_id_values}}
+                    {"wedding_id": {"$in": wedding_id_values}},
                 ]
             }
 
@@ -185,15 +191,15 @@ async def get_planner_metrics(current_user: ExtendedAuthUser = Depends(require_t
                 "confirmed_plus_ones_submitted": 0,
                 "pending_rsvps": 0,
                 "pending_plus_ones_allowed": 0,
-                "declined_rsvps": 0
+                "declined_rsvps": 0,
             },
             "weddings": [],
             "recent_activity": [],
             "revenue_metrics": {
                 "monthly_bookings": 0,
                 "total_revenue": 0,
-                "average_wedding_value": 0
-            }
+                "average_wedding_value": 0,
+            },
         }
 
         # Process each wedding
@@ -221,7 +227,7 @@ async def get_planner_metrics(current_user: ExtendedAuthUser = Depends(require_t
             MAX_WEDDING_GUESTS = 5000
             guest_docs = await guests_collection.find(
                 {"wedding_id": wedding_id_str},
-                {"_id": 1, "number_of_plus_ones_allowed": 1, "invite_sent": 1}
+                {"_id": 1, "number_of_plus_ones_allowed": 1, "invite_sent": 1},
             ).to_list(length=MAX_WEDDING_GUESTS)
             guest_count = len(guest_docs)
             metrics["summary"]["total_guests"] += guest_count
@@ -250,12 +256,9 @@ async def get_planner_metrics(current_user: ExtendedAuthUser = Depends(require_t
 
             # Get RSVP statistics - handle both ObjectId and string formats for wedding_id
             # Safety cap: max guest RSVPs (same as guest cap)
-            rsvps = await rsvps_collection.find({
-                "$or": [
-                    {"wedding_id": wedding_id},
-                    {"wedding_id": wedding_id_str}
-                ]
-            }).to_list(length=MAX_WEDDING_GUESTS)
+            rsvps = await rsvps_collection.find(
+                {"$or": [{"wedding_id": wedding_id}, {"wedding_id": wedding_id_str}]}
+            ).to_list(length=MAX_WEDDING_GUESTS)
 
             confirmed = 0
             declined = 0
@@ -274,18 +277,22 @@ async def get_planner_metrics(current_user: ExtendedAuthUser = Depends(require_t
 
             # Count submitted plus-ones for confirmed guests
             confirmed_guest_ids = [
-                str(rsvp.get("guest_id", "")) for rsvp in rsvps
+                str(rsvp.get("guest_id", ""))
+                for rsvp in rsvps
                 if _calculate_rsvp_status(rsvp) == "confirmed"
             ]
             if confirmed_guest_ids:
-                confirmed_plus_ones_submitted = await plus_ones_collection.count_documents(
-                    {"guest_id": {"$in": confirmed_guest_ids}}
+                confirmed_plus_ones_submitted = (
+                    await plus_ones_collection.count_documents(
+                        {"guest_id": {"$in": confirmed_guest_ids}}
+                    )
                 )
 
             # Pending = guests who were INVITED but haven't submitted an RSVP
             # This matches the guests page "Awaiting Response" calculation
             pending = sum(
-                1 for gid in guest_plus_ones_map
+                1
+                for gid in guest_plus_ones_map
                 if gid not in rsvp_guest_ids and guest_invite_sent.get(gid, False)
             )
             pending_plus_allowed = sum(
@@ -296,7 +303,9 @@ async def get_planner_metrics(current_user: ExtendedAuthUser = Depends(require_t
 
             metrics["summary"]["confirmed_rsvps"] += confirmed
             metrics["summary"]["confirmed_plus_ones_allowed"] += confirmed_plus_allowed
-            metrics["summary"]["confirmed_plus_ones_submitted"] += confirmed_plus_ones_submitted
+            metrics["summary"]["confirmed_plus_ones_submitted"] += (
+                confirmed_plus_ones_submitted
+            )
             metrics["summary"]["declined_rsvps"] += declined
             metrics["summary"]["pending_rsvps"] += pending
             metrics["summary"]["pending_plus_ones_allowed"] += pending_plus_allowed
@@ -324,18 +333,20 @@ async def get_planner_metrics(current_user: ExtendedAuthUser = Depends(require_t
                     "declined": declined,
                     "pending": pending,
                     "total_responses": len(rsvps),
-                    "response_rate": round((len(rsvps) / guest_count * 100) if guest_count > 0 else 0, 1)
+                    "response_rate": round(
+                        (len(rsvps) / guest_count * 100) if guest_count > 0 else 0, 1
+                    ),
                 },
                 "progress_percentage": min(100, round(progress_score)),
                 "days_until_wedding": days_until_wedding,
                 "created_at": _safe_isoformat(wedding.get("created_at")),
-                "assigned_planner_email": wedding.get("assigned_planner_email", "")
+                "assigned_planner_email": wedding.get("assigned_planner_email", ""),
             }
 
             metrics["weddings"].append(wedding_metrics)
 
         # Sort weddings by date (upcoming first, then by date)
-        metrics["weddings"].sort(key=lambda x: (x["date"] or "9999-12-31"))
+        metrics["weddings"].sort(key=lambda x: x["date"] or "9999-12-31")
 
         # Calculate revenue metrics from subscription data
         if metrics["weddings"]:
@@ -347,7 +358,11 @@ async def get_planner_metrics(current_user: ExtendedAuthUser = Depends(require_t
                 created_at = w.get("created_at")
                 if created_at:
                     created_date = _parse_date_safe(created_at)
-                    if created_date and created_date.month == current_month and created_date.year == current_year:
+                    if (
+                        created_date
+                        and created_date.month == current_month
+                        and created_date.year == current_year
+                    ):
                         monthly_bookings += 1
 
             metrics["revenue_metrics"]["monthly_bookings"] = monthly_bookings
@@ -364,7 +379,9 @@ async def get_planner_metrics(current_user: ExtendedAuthUser = Depends(require_t
             user_id_values: list[Any] = []
             # Safety cap: fetch revenue users (typically <10k)
             MAX_REVENUE_USERS = 10000
-            users_for_revenue = await users_collection.find(user_query, {"_id": 1}).to_list(length=MAX_REVENUE_USERS)
+            users_for_revenue = await users_collection.find(
+                user_query, {"_id": 1}
+            ).to_list(length=MAX_REVENUE_USERS)
             for user in users_for_revenue:
                 user_id = user.get("_id")
                 if user_id is None:
@@ -376,148 +393,188 @@ async def get_planner_metrics(current_user: ExtendedAuthUser = Depends(require_t
             if user_id_values:
                 subscription_match["user_id"] = {"$in": user_id_values}
             elif not current_user.is_root_admin:
-                subscription_match["user_id"] = "__none__"  # Prevent leaking other users' revenue
+                subscription_match["user_id"] = (
+                    "__none__"  # Prevent leaking other users' revenue
+                )
 
             revenue_pipeline = [
                 {"$match": subscription_match},
-                {"$lookup": {
-                    "from": plans_collection.name if hasattr(plans_collection, "name") else "subscription_plans",
-                    "localField": "plan_id",
-                    "foreignField": "_id",
-                    "as": "plan_doc"
-                }},
-                {"$unwind": {"path": "$plan_doc", "preserveNullAndEmptyArrays": True}},
-                {"$project": {
-                    "billing_interval": "$billing_interval",
-                    "price_monthly": {"$ifNull": ["$plan_doc.price_monthly", 0]},
-                    "price_yearly": {"$ifNull": ["$plan_doc.price_yearly", 0]}
-                }},
-                {"$project": {
-                    "monthly_revenue": {
-                        "$switch": {
-                            "branches": [
-                                {
-                                    "case": {"$eq": ["$billing_interval", "yearly"]},
-                                    "then": {
-                                        "$cond": [
-                                            {"$gt": ["$price_yearly", 0]},
-                                            {"$divide": ["$price_yearly", 12]},
-                                            "$price_monthly"
-                                        ]
-                                    }
-                                },
-                                {
-                                    "case": {"$eq": ["$billing_interval", "monthly"]},
-                                    "then": {
-                                        "$cond": [
-                                            {"$gt": ["$price_monthly", 0]},
-                                            "$price_monthly",
-                                            {"$divide": ["$price_yearly", 12]}
-                                        ]
-                                    }
-                                }
-                            ],
-                            "default": {
-                                "$cond": [
-                                    {"$gt": ["$price_monthly", 0]},
-                                    "$price_monthly",
-                                    {"$divide": ["$price_yearly", 12]}
-                                ]
-                            }
-                        }
-                    },
-                    "annual_revenue": {
-                        "$cond": [
-                            {"$gt": ["$price_yearly", 0]},
-                            "$price_yearly",
-                            {"$multiply": ["$price_monthly", 12]}
-                        ]
+                {
+                    "$lookup": {
+                        "from": plans_collection.name
+                        if hasattr(plans_collection, "name")
+                        else "subscription_plans",
+                        "localField": "plan_id",
+                        "foreignField": "_id",
+                        "as": "plan_doc",
                     }
-                }},
-                {"$group": {
-                    "_id": None,
-                    "monthly": {"$sum": "$monthly_revenue"},
-                    "annual": {"$sum": "$annual_revenue"}
-                }}
+                },
+                {"$unwind": {"path": "$plan_doc", "preserveNullAndEmptyArrays": True}},
+                {
+                    "$project": {
+                        "billing_interval": "$billing_interval",
+                        "price_monthly": {"$ifNull": ["$plan_doc.price_monthly", 0]},
+                        "price_yearly": {"$ifNull": ["$plan_doc.price_yearly", 0]},
+                    }
+                },
+                {
+                    "$project": {
+                        "monthly_revenue": {
+                            "$switch": {
+                                "branches": [
+                                    {
+                                        "case": {
+                                            "$eq": ["$billing_interval", "yearly"]
+                                        },
+                                        "then": {
+                                            "$cond": [
+                                                {"$gt": ["$price_yearly", 0]},
+                                                {"$divide": ["$price_yearly", 12]},
+                                                "$price_monthly",
+                                            ]
+                                        },
+                                    },
+                                    {
+                                        "case": {
+                                            "$eq": ["$billing_interval", "monthly"]
+                                        },
+                                        "then": {
+                                            "$cond": [
+                                                {"$gt": ["$price_monthly", 0]},
+                                                "$price_monthly",
+                                                {"$divide": ["$price_yearly", 12]},
+                                            ]
+                                        },
+                                    },
+                                ],
+                                "default": {
+                                    "$cond": [
+                                        {"$gt": ["$price_monthly", 0]},
+                                        "$price_monthly",
+                                        {"$divide": ["$price_yearly", 12]},
+                                    ]
+                                },
+                            }
+                        },
+                        "annual_revenue": {
+                            "$cond": [
+                                {"$gt": ["$price_yearly", 0]},
+                                "$price_yearly",
+                                {"$multiply": ["$price_monthly", 12]},
+                            ]
+                        },
+                    }
+                },
+                {
+                    "$group": {
+                        "_id": None,
+                        "monthly": {"$sum": "$monthly_revenue"},
+                        "annual": {"$sum": "$annual_revenue"},
+                    }
+                },
             ]
 
             monthly_revenue = 0.0
 
             try:
                 # Aggregate result should be single doc, but cap at 10 for safety
-                revenue_docs = await subscriptions_collection.aggregate(revenue_pipeline).to_list(length=10)
+                revenue_docs = await subscriptions_collection.aggregate(
+                    revenue_pipeline
+                ).to_list(length=10)
                 if revenue_docs:
                     monthly_revenue = float(revenue_docs[0].get("monthly", 0) or 0)
             except Exception as exc:
                 logger.debug(f"Revenue aggregation fallback: {exc}")
                 plan_cache: dict[Any, dict[str, Any]] = {}
-                async for plan in plans_collection.find({}, {"price_monthly": 1, "price_yearly": 1}):
+                async for plan in plans_collection.find(
+                    {}, {"price_monthly": 1, "price_yearly": 1}
+                ):
                     plan_cache[plan.get("_id")] = plan
 
-                async for sub in subscriptions_collection.find(subscription_match, {"plan_id": 1, "billing_interval": 1}):
+                async for sub in subscriptions_collection.find(
+                    subscription_match, {"plan_id": 1, "billing_interval": 1}
+                ):
                     plan = plan_cache.get(sub.get("plan_id"), {})
                     price_monthly = float(plan.get("price_monthly") or 0)
                     price_yearly = float(plan.get("price_yearly") or 0)
                     interval = sub.get("billing_interval")
 
                     if interval == "yearly":
-                        monthly_revenue += price_yearly / 12 if price_yearly else price_monthly
+                        monthly_revenue += (
+                            price_yearly / 12 if price_yearly else price_monthly
+                        )
                     else:
-                        monthly_revenue += price_monthly or (price_yearly / 12 if price_yearly else 0)
+                        monthly_revenue += price_monthly or (
+                            price_yearly / 12 if price_yearly else 0
+                        )
 
             total_weddings = metrics["summary"]["total_weddings"] or 0
             metrics["revenue_metrics"]["total_revenue"] = round(monthly_revenue, 2)
-            metrics["revenue_metrics"]["average_wedding_value"] = round(
-                monthly_revenue / total_weddings, 2) if total_weddings > 0 else 0
+            metrics["revenue_metrics"]["average_wedding_value"] = (
+                round(monthly_revenue / total_weddings, 2) if total_weddings > 0 else 0
+            )
 
         # Recent activity (latest 10)
         recent_activity: List[ActivityItemModel] = []
         try:
             activity_logs_collection = mongo.get_collection("activity_logs")
-            cursor = activity_logs_collection.find(
-                activity_query,
-                {
-                    "_id": 1,
-                    "type": 1,
-                    "message": 1,
-                    "timestamp": 1,
-                    "created_at": 1,
-                    "wedding_id": 1,
-                    "metadata": 1,
-                }
-            ).sort([("timestamp", -1), ("created_at", -1)]).limit(10)
+            cursor = (
+                activity_logs_collection.find(
+                    activity_query,
+                    {
+                        "_id": 1,
+                        "type": 1,
+                        "message": 1,
+                        "timestamp": 1,
+                        "created_at": 1,
+                        "wedding_id": 1,
+                        "metadata": 1,
+                    },
+                )
+                .sort([("timestamp", -1), ("created_at", -1)])
+                .limit(10)
+            )
 
             # Activity already limited by .limit(10) in cursor
             activity_docs = await cursor.to_list(length=10)
             for activity in activity_docs:
-                recent_activity.append(ActivityItemModel(
-                    id=str(activity.get("_id")),
-                    type=activity.get("type", "info"),
-                    message=activity.get("message", ""),
-                    timestamp=_safe_isoformat(activity.get("timestamp") or activity.get("created_at")),
-                    wedding_id=str(activity.get("wedding_id")) if activity.get("wedding_id") is not None else None,
-                    metadata=activity.get("metadata", {}),
-                ))
+                recent_activity.append(
+                    ActivityItemModel(
+                        id=str(activity.get("_id")),
+                        type=activity.get("type", "info"),
+                        message=activity.get("message", ""),
+                        timestamp=_safe_isoformat(
+                            activity.get("timestamp") or activity.get("created_at")
+                        ),
+                        wedding_id=str(activity.get("wedding_id"))
+                        if activity.get("wedding_id") is not None
+                        else None,
+                        metadata=activity.get("metadata", {}),
+                    )
+                )
         except Exception as exc:
             logger.debug(f"Recent activity fetch skipped: {exc}")
 
         return PlannerMetricsResponse(
             summary=MetricsSummaryModel(**metrics["summary"]),
-            weddings=[WeddingMetricsModel(
-                id=w["id"],
-                couple_names=w["couple_names"],
-                date=w["date"],
-                slug=w["slug"],
-                status=w["status"],
-                guest_count=w["guest_count"],
-                rsvp_stats=RSVPStatsModel(**w["rsvp_stats"]),
-                progress_percentage=w["progress_percentage"],
-                days_until_wedding=w["days_until_wedding"],
-                created_at=w["created_at"],
-                assigned_planner_email=w["assigned_planner_email"]
-            ) for w in metrics["weddings"]],
+            weddings=[
+                WeddingMetricsModel(
+                    id=w["id"],
+                    couple_names=w["couple_names"],
+                    date=w["date"],
+                    slug=w["slug"],
+                    status=w["status"],
+                    guest_count=w["guest_count"],
+                    rsvp_stats=RSVPStatsModel(**w["rsvp_stats"]),
+                    progress_percentage=w["progress_percentage"],
+                    days_until_wedding=w["days_until_wedding"],
+                    created_at=w["created_at"],
+                    assigned_planner_email=w["assigned_planner_email"],
+                )
+                for w in metrics["weddings"]
+            ],
             recent_activity=recent_activity,
-            revenue_metrics=RevenueMetricsModel(**metrics["revenue_metrics"])
+            revenue_metrics=RevenueMetricsModel(**metrics["revenue_metrics"]),
         )
 
     except HTTPException:
@@ -527,11 +584,20 @@ async def get_planner_metrics(current_user: ExtendedAuthUser = Depends(require_t
         raise HTTPException(status_code=500, detail="Failed to fetch planner metrics")
 
 
-@router.get("/planner/activity-log", tags=["Wedding Planner"], response_model=ActivityLogResponse)
+@router.get(
+    "/planner/activity-log",
+    tags=["Wedding Planner"],
+    response_model=ActivityLogResponse,
+)
 async def get_activity_log(
     current_user: ExtendedAuthUser = Depends(require_team_or_planner),
     page: int = Query(default=1, ge=1, le=10000, description="Page number (1-indexed)"),
-    limit: int = Query(default=50, ge=1, le=200, description="Maximum number of activities to return per page")
+    limit: int = Query(
+        default=50,
+        ge=1,
+        le=200,
+        description="Maximum number of activities to return per page",
+    ),
 ) -> ActivityLogResponse:
     """
     Get detailed activity log for wedding planner.
@@ -550,8 +616,7 @@ async def get_activity_log(
             # Safety cap: planner's assigned weddings (typically <1k)
             MAX_PLANNER_WEDDINGS = 1000
             assigned_weddings = await weddings_collection.find(
-                {"assigned_planner_email": current_user.email},
-                {"_id": 1}
+                {"assigned_planner_email": current_user.email}, {"_id": 1}
             ).to_list(length=MAX_PLANNER_WEDDINGS)
 
             wedding_id_values: list[Any] = []
@@ -568,7 +633,7 @@ async def get_activity_log(
                     {"actor_email": current_user.email},
                     {"user_email": current_user.email},
                     {"assigned_planner_email": current_user.email},
-                    {"wedding_id": {"$in": wedding_id_values}}
+                    {"wedding_id": {"$in": wedding_id_values}},
                 ]
             }
 
@@ -578,42 +643,49 @@ async def get_activity_log(
         # Calculate skip value for pagination
         skip = (page - 1) * limit
 
-        cursor = activity_logs_collection.find(
-            query,
-            {
-                "_id": 1,
-                "type": 1,
-                "message": 1,
-                "timestamp": 1,
-                "created_at": 1,
-                "wedding_id": 1,
-                "metadata": 1,
-            }
-        ).sort([("timestamp", -1), ("created_at", -1)]).skip(skip).limit(limit)
+        cursor = (
+            activity_logs_collection.find(
+                query,
+                {
+                    "_id": 1,
+                    "type": 1,
+                    "message": 1,
+                    "timestamp": 1,
+                    "created_at": 1,
+                    "wedding_id": 1,
+                    "metadata": 1,
+                },
+            )
+            .sort([("timestamp", -1), ("created_at", -1)])
+            .skip(skip)
+            .limit(limit)
+        )
 
         # Activity results already bounded by .limit(limit) above
         activities_raw = await cursor.to_list(length=limit)
 
         activities: List[ActivityItemModel] = []
         for activity in activities_raw:
-            activities.append(ActivityItemModel(
-                id=str(activity.get("_id")),
-                type=activity.get("type", "info"),
-                message=activity.get("message", ""),
-                timestamp=_safe_isoformat(activity.get("timestamp") or activity.get("created_at")),
-                wedding_id=str(activity.get("wedding_id")) if activity.get("wedding_id") is not None else None,
-                metadata=activity.get("metadata", {}),
-            ))
+            activities.append(
+                ActivityItemModel(
+                    id=str(activity.get("_id")),
+                    type=activity.get("type", "info"),
+                    message=activity.get("message", ""),
+                    timestamp=_safe_isoformat(
+                        activity.get("timestamp") or activity.get("created_at")
+                    ),
+                    wedding_id=str(activity.get("wedding_id"))
+                    if activity.get("wedding_id") is not None
+                    else None,
+                    metadata=activity.get("metadata", {}),
+                )
+            )
 
         # Calculate total pages
         pages = ceil(total / limit) if total > 0 else 0
 
         return ActivityLogResponse(
-            activities=activities,
-            total=total,
-            page=page,
-            limit=limit,
-            pages=pages
+            activities=activities, total=total, page=page, limit=limit, pages=pages
         )
 
     except HTTPException:
@@ -623,10 +695,16 @@ async def get_activity_log(
         raise HTTPException(status_code=500, detail="Failed to fetch activity log")
 
 
-@router.get("/planner/weddings", tags=["Wedding Planner"], response_model=List[PlannerWeddingModel])
+@router.get(
+    "/planner/weddings",
+    tags=["Wedding Planner"],
+    response_model=List[PlannerWeddingModel],
+)
 async def get_planner_weddings(
     current_user: ExtendedAuthUser = Depends(require_team_or_planner),
-    include_cancelled: bool = Query(default=False, description="Include cancelled weddings")
+    include_cancelled: bool = Query(
+        default=False, description="Include cancelled weddings"
+    ),
 ) -> List[PlannerWeddingModel]:
     """
     Get all weddings assigned to the current planner.
@@ -655,10 +733,15 @@ async def get_planner_weddings(
         if not include_cancelled:
             query["status"] = {"$ne": "cancelled"}
 
-        cache_key = _planner_weddings_scope_key(current_user, include_cancelled, accessible_ids)
+        cache_key = _planner_weddings_scope_key(
+            current_user, include_cancelled, accessible_ids
+        )
         cached_weddings = await cache.get(cache_key)
         if cached_weddings is not None:
-            return [PlannerWeddingModel(**_normalize_cached_planner_wedding(wedding)) for wedding in cached_weddings]
+            return [
+                PlannerWeddingModel(**_normalize_cached_planner_wedding(wedding))
+                for wedding in cached_weddings
+            ]
 
         # Safety cap: typical planner has <5k weddings
         MAX_WEDDINGS_LIST = 5000
@@ -690,28 +773,30 @@ async def get_planner_weddings(
         # Convert ObjectId to string and format response
         wedding_list: List[PlannerWeddingModel] = []
         for wedding in weddings:
-            wedding_list.append(PlannerWeddingModel(
-                id=str(wedding["_id"]),
-                couple_names=wedding.get("couple_names", ""),
-                date=wedding.get("date", ""),
-                slug=wedding.get("slug", ""),
-                assigned_planner_email=wedding.get("assigned_planner_email"),
-                assigned_planner_id=wedding.get("assigned_planner_id"),
-                status=wedding.get("status", "active"),
-                venue=wedding.get("venue"),
-                guest_count=wedding.get("guest_count", 0),
-                created_at=_safe_isoformat(wedding.get("created_at")),
-                updated_at=_safe_isoformat(wedding.get("updated_at")),
-                events=wedding.get("events", []),
-                privacy_settings=wedding.get("privacy_settings"),
-                rsvp_config=wedding.get("rsvp_config"),
-                theme_config=wedding.get("theme_config"),
-                registries=wedding.get("registries", []),
-                faqs=wedding.get("faqs", []),
-                our_story=wedding.get("our_story"),
-                wedding_party=wedding.get("wedding_party", []),
-                featured_image=wedding.get("featured_image")
-            ))
+            wedding_list.append(
+                PlannerWeddingModel(
+                    id=str(wedding["_id"]),
+                    couple_names=wedding.get("couple_names", ""),
+                    date=wedding.get("date", ""),
+                    slug=wedding.get("slug", ""),
+                    assigned_planner_email=wedding.get("assigned_planner_email"),
+                    assigned_planner_id=wedding.get("assigned_planner_id"),
+                    status=wedding.get("status", "active"),
+                    venue=wedding.get("venue"),
+                    guest_count=wedding.get("guest_count", 0),
+                    created_at=_safe_isoformat(wedding.get("created_at")),
+                    updated_at=_safe_isoformat(wedding.get("updated_at")),
+                    events=wedding.get("events", []),
+                    privacy_settings=wedding.get("privacy_settings"),
+                    rsvp_config=wedding.get("rsvp_config"),
+                    theme_config=wedding.get("theme_config"),
+                    registries=wedding.get("registries", []),
+                    faqs=wedding.get("faqs", []),
+                    our_story=wedding.get("our_story"),
+                    wedding_party=wedding.get("wedding_party", []),
+                    featured_image=wedding.get("featured_image"),
+                )
+            )
 
         # Sort by date (upcoming first)
         wedding_list.sort(key=lambda x: x.date or "9999-12-31")

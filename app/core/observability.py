@@ -1,14 +1,14 @@
 """
 Comprehensive observability system with metrics, tracing, and health checks
 """
-from typing import Dict, List, Any, Optional, Callable
-from datetime import datetime, timedelta, timezone
+
+from typing import Dict, List, Any, Callable
+from datetime import datetime, timezone
 import time
 import asyncio
 import logging
 from dataclasses import dataclass, field
 from enum import Enum
-import json
 import psutil
 import platform
 from app.core.settings import settings
@@ -20,6 +20,7 @@ logger = logging.getLogger(__name__)
 
 class HealthStatus(Enum):
     """Health check status"""
+
     HEALTHY = "healthy"
     DEGRADED = "degraded"
     UNHEALTHY = "unhealthy"
@@ -28,6 +29,7 @@ class HealthStatus(Enum):
 @dataclass
 class HealthCheck:
     """Health check result"""
+
     name: str
     status: HealthStatus
     message: str
@@ -39,6 +41,7 @@ class HealthCheck:
 @dataclass
 class MetricData:
     """Metric data point"""
+
     name: str
     value: float
     timestamp: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
@@ -48,13 +51,17 @@ class MetricData:
 
 class MetricsCollector:
     """Collect and manage application metrics"""
+
     def __init__(self):
         self.metrics: Dict[str, List[MetricData]] = {}
         self.counters: Dict[str, float] = {}
         self.gauges: Dict[str, float] = {}
         self.histograms: Dict[str, List[float]] = {}
         self.max_data_points = 1000
-    def increment_counter(self, name: str, value: float = 1.0, tags: Dict[str, str] = None):
+
+    def increment_counter(
+        self, name: str, value: float = 1.0, tags: Dict[str, str] = None
+    ):
         """Increment a counter metric"""
         if name not in self.counters:
             self.counters[name] = 0
@@ -62,10 +69,7 @@ class MetricsCollector:
         self.counters[name] += value
 
         metric = MetricData(
-            name=name,
-            value=self.counters[name],
-            tags=tags or {},
-            metric_type="counter"
+            name=name, value=self.counters[name], tags=tags or {}, metric_type="counter"
         )
 
         self._store_metric(metric)
@@ -75,10 +79,7 @@ class MetricsCollector:
         self.gauges[name] = value
 
         metric = MetricData(
-            name=name,
-            value=value,
-            tags=tags or {},
-            metric_type="gauge"
+            name=name, value=value, tags=tags or {}, metric_type="gauge"
         )
 
         self._store_metric(metric)
@@ -92,13 +93,10 @@ class MetricsCollector:
 
         # Keep only recent values
         if len(self.histograms[name]) > self.max_data_points:
-            self.histograms[name] = self.histograms[name][-self.max_data_points:]
+            self.histograms[name] = self.histograms[name][-self.max_data_points :]
 
         metric = MetricData(
-            name=name,
-            value=value,
-            tags=tags or {},
-            metric_type="histogram"
+            name=name, value=value, tags=tags or {}, metric_type="histogram"
         )
 
         self._store_metric(metric)
@@ -112,7 +110,9 @@ class MetricsCollector:
 
         # Keep only recent data points
         if len(self.metrics[metric.name]) > self.max_data_points:
-            self.metrics[metric.name] = self.metrics[metric.name][-self.max_data_points:]
+            self.metrics[metric.name] = self.metrics[metric.name][
+                -self.max_data_points :
+            ]
 
     def get_counter_value(self, name: str) -> float:
         """Get current counter value"""
@@ -137,18 +137,18 @@ class MetricsCollector:
             "mean": sum(values) / len(values),
             "p50": values[int(len(values) * 0.5)],
             "p95": values[int(len(values) * 0.95)],
-            "p99": values[int(len(values) * 0.99)]
+            "p99": values[int(len(values) * 0.99)],
         }
+
     async def export_metrics(self) -> Dict[str, Any]:
         """Export all metrics"""
         return {
             "counters": self.counters,
             "gauges": self.gauges,
             "histograms": {
-                name: self.get_histogram_stats(name)
-                for name in self.histograms.keys()
+                name: self.get_histogram_stats(name) for name in self.histograms.keys()
             },
-            "timestamp": datetime.now(timezone.utc).isoformat()
+            "timestamp": datetime.now(timezone.utc).isoformat(),
         }
 
 
@@ -163,13 +163,14 @@ class HealthMonitor:
         """Register a health check function"""
         self.health_checks[name] = check_func
         logger.info(f"Registered health check: {name}")
+
     async def run_health_check(self, name: str) -> HealthCheck:
         """Run a specific health check"""
         if name not in self.health_checks:
             return HealthCheck(
                 name=name,
                 status=HealthStatus.UNHEALTHY,
-                message=f"Health check '{name}' not found"
+                message=f"Health check '{name}' not found",
             )
 
         start_time = time.time()
@@ -192,14 +193,14 @@ class HealthMonitor:
                     name=name,
                     status=HealthStatus.HEALTHY if result else HealthStatus.UNHEALTHY,
                     message="OK" if result else "Check failed",
-                    response_time_ms=response_time
+                    response_time_ms=response_time,
                 )
             else:
                 return HealthCheck(
                     name=name,
                     status=HealthStatus.HEALTHY,
                     message=str(result),
-                    response_time_ms=response_time
+                    response_time_ms=response_time,
                 )
         except Exception as e:
             response_time = (time.time() - start_time) * 1000
@@ -207,7 +208,7 @@ class HealthMonitor:
                 name=name,
                 status=HealthStatus.UNHEALTHY,
                 message=f"Health check failed: {str(e)}",
-                response_time_ms=response_time
+                response_time_ms=response_time,
             )
 
     async def run_all_health_checks(self) -> Dict[str, HealthCheck]:
@@ -227,7 +228,7 @@ class HealthMonitor:
                     results[name] = HealthCheck(
                         name=name,
                         status=HealthStatus.UNHEALTHY,
-                        message=f"Health check error: {str(result)}"
+                        message=f"Health check error: {str(result)}",
                     )
                 else:
                     results[name] = result
@@ -267,7 +268,7 @@ class SystemMonitor:
             memory = psutil.virtual_memory()
 
             # Disk metrics
-            disk = psutil.disk_usage('/')
+            disk = psutil.disk_usage("/")
 
             # Network metrics (if available)
             try:
@@ -276,7 +277,7 @@ class SystemMonitor:
                     "bytes_sent": network.bytes_sent,
                     "bytes_recv": network.bytes_recv,
                     "packets_sent": network.packets_sent,
-                    "packets_recv": network.packets_recv
+                    "packets_recv": network.packets_recv,
                 }
             except Exception as e:
                 logger.warning(f"Failed to collect network metrics: {e}", exc_info=True)
@@ -287,36 +288,35 @@ class SystemMonitor:
             process_memory = process.memory_info()
 
             return {
-                "uptime_seconds": (datetime.now(timezone.utc) - self.start_time).total_seconds(),
-                "cpu": {
-                    "percent": cpu_percent,
-                    "count": cpu_count
-                },
+                "uptime_seconds": (
+                    datetime.now(timezone.utc) - self.start_time
+                ).total_seconds(),
+                "cpu": {"percent": cpu_percent, "count": cpu_count},
                 "memory": {
                     "total": memory.total,
                     "available": memory.available,
                     "percent": memory.percent,
-                    "used": memory.used
+                    "used": memory.used,
                 },
                 "disk": {
                     "total": disk.total,
                     "used": disk.used,
                     "free": disk.free,
-                    "percent": (disk.used / disk.total) * 100
+                    "percent": (disk.used / disk.total) * 100,
                 },
                 "network": network_stats,
                 "process": {
                     "memory_rss": process_memory.rss,
                     "memory_vms": process_memory.vms,
                     "pid": process.pid,
-                    "threads": process.num_threads()
+                    "threads": process.num_threads(),
                 },
                 "platform": {
                     "system": platform.system(),
                     "release": platform.release(),
                     "version": platform.version(),
-                    "python_version": platform.python_version()
-                }
+                    "python_version": platform.python_version(),
+                },
             }
         except Exception as e:
             logger.error(f"Failed to collect system metrics: {str(e)}")
@@ -325,6 +325,7 @@ class SystemMonitor:
 
 class ObservabilityManager:
     """Main observability manager"""
+
     def __init__(self):
         self.metrics = MetricsCollector()
         self.health_monitor = HealthMonitor()
@@ -343,35 +344,35 @@ class ObservabilityManager:
                 return HealthCheck(
                     name="database",
                     status=HealthStatus.HEALTHY,
-                    message="Database connection OK"
+                    message="Database connection OK",
                 )
             except Exception as e:
                 return HealthCheck(
                     name="database",
                     status=HealthStatus.UNHEALTHY,
-                    message=f"Database connection failed: {str(e)}"
+                    message=f"Database connection failed: {str(e)}",
                 )
+
         async def cache_health():
             """Check cache connectivity"""
             if not cache.enabled:
                 return HealthCheck(
-                    name="cache",
-                    status=HealthStatus.HEALTHY,
-                    message="Cache disabled"
+                    name="cache", status=HealthStatus.HEALTHY, message="Cache disabled"
                 )
             try:
                 await cache.redis_client.ping()
                 return HealthCheck(
                     name="cache",
                     status=HealthStatus.HEALTHY,
-                    message="Cache connection OK"
+                    message="Cache connection OK",
                 )
             except Exception as e:
                 return HealthCheck(
                     name="cache",
                     status=HealthStatus.DEGRADED,
-                    message=f"Cache connection failed: {str(e)}"
+                    message=f"Cache connection failed: {str(e)}",
                 )
+
         def memory_health():
             """Check memory usage"""
             memory = psutil.virtual_memory()
@@ -380,54 +381,58 @@ class ObservabilityManager:
                     name="memory",
                     status=HealthStatus.UNHEALTHY,
                     message=f"High memory usage: {memory.percent}%",
-                    details={"memory_percent": memory.percent}
+                    details={"memory_percent": memory.percent},
                 )
             elif memory.percent > 80:
                 return HealthCheck(
                     name="memory",
                     status=HealthStatus.DEGRADED,
                     message=f"Elevated memory usage: {memory.percent}%",
-                    details={"memory_percent": memory.percent}
+                    details={"memory_percent": memory.percent},
                 )
             else:
                 return HealthCheck(
                     name="memory",
                     status=HealthStatus.HEALTHY,
                     message=f"Memory usage OK: {memory.percent}%",
-                    details={"memory_percent": memory.percent}
+                    details={"memory_percent": memory.percent},
                 )
+
         def disk_health():
             """Check disk usage"""
-            disk = psutil.disk_usage('/')
+            disk = psutil.disk_usage("/")
             percent = (disk.used / disk.total) * 100
             if percent > 95:
                 return HealthCheck(
                     name="disk",
                     status=HealthStatus.UNHEALTHY,
                     message=f"Critical disk usage: {percent:.1f}%",
-                    details={"disk_percent": percent}
+                    details={"disk_percent": percent},
                 )
             elif percent > 85:
                 return HealthCheck(
                     name="disk",
                     status=HealthStatus.DEGRADED,
                     message=f"High disk usage: {percent:.1f}%",
-                    details={"disk_percent": percent}
+                    details={"disk_percent": percent},
                 )
             else:
                 return HealthCheck(
                     name="disk",
                     status=HealthStatus.HEALTHY,
                     message=f"Disk usage OK: {percent:.1f}%",
-                    details={"disk_percent": percent}
+                    details={"disk_percent": percent},
                 )
+
         # Register health checks
         self.health_monitor.register_health_check("database", database_health)
         self.health_monitor.register_health_check("cache", cache_health)
         self.health_monitor.register_health_check("memory", memory_health)
         self.health_monitor.register_health_check("disk", disk_health)
+
     def _start_background_tasks(self):
         """Start background monitoring tasks"""
+
         async def collect_system_metrics():
             """Background task to collect system metrics"""
             while True:
@@ -436,15 +441,26 @@ class ObservabilityManager:
 
                     # Record key metrics
                     if "cpu" in system_metrics:
-                        self.metrics.set_gauge("system.cpu.percent", system_metrics["cpu"]["percent"])
+                        self.metrics.set_gauge(
+                            "system.cpu.percent", system_metrics["cpu"]["percent"]
+                        )
 
                     if "memory" in system_metrics:
-                        self.metrics.set_gauge("system.memory.percent", system_metrics["memory"]["percent"])
-                        self.metrics.set_gauge("system.memory.used", system_metrics["memory"]["used"])
+                        self.metrics.set_gauge(
+                            "system.memory.percent", system_metrics["memory"]["percent"]
+                        )
+                        self.metrics.set_gauge(
+                            "system.memory.used", system_metrics["memory"]["used"]
+                        )
 
                     if "process" in system_metrics:
-                        self.metrics.set_gauge("process.memory.rss", system_metrics["process"]["memory_rss"])
-                        self.metrics.set_gauge("process.threads", system_metrics["process"]["threads"])
+                        self.metrics.set_gauge(
+                            "process.memory.rss",
+                            system_metrics["process"]["memory_rss"],
+                        )
+                        self.metrics.set_gauge(
+                            "process.threads", system_metrics["process"]["threads"]
+                        )
 
                     # Cache metrics for later retrieval
                     await cache.set("system_metrics", system_metrics, expire=300)
@@ -471,14 +487,14 @@ class ObservabilityManager:
                     "status": check.status.value,
                     "message": check.message,
                     "response_time_ms": check.response_time_ms,
-                    "details": check.details
+                    "details": check.details,
                 }
                 for name, check in health_checks.items()
             },
             "system_metrics": system_metrics,
             "application_metrics": app_metrics,
             "version": settings.app_version,
-            "environment": settings.environment
+            "environment": settings.environment,
         }
 
 
@@ -505,19 +521,24 @@ def record_histogram(name: str, value: float, **tags):
 # Decorator for timing function execution
 def timed(metric_name: str):
     """Decorator to time function execution"""
+
     def decorator(func):
         async def wrapper(*args, **kwargs):
             start_time = time.time()
             try:
                 result = await func(*args, **kwargs)
                 duration = time.time() - start_time
-                record_histogram(f"{metric_name}.duration", duration * 1000)  # milliseconds
+                record_histogram(
+                    f"{metric_name}.duration", duration * 1000
+                )  # milliseconds
                 increment_counter(f"{metric_name}.success")
                 return result
-            except Exception as e:
+            except Exception:
                 duration = time.time() - start_time
                 record_histogram(f"{metric_name}.duration", duration * 1000)
                 increment_counter(f"{metric_name}.error")
                 raise
+
         return wrapper
+
     return decorator

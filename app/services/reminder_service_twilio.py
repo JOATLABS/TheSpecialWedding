@@ -42,11 +42,15 @@ try:
     auth_token = os.getenv("TWILIO_AUTH_TOKEN")
     MESSAGING_SERVICE_SID = os.getenv("TWILIO_MESSAGING_SERVICE_SID")
 
-    missing = [k for k, v in {
-        "TWILIO_ACCOUNT_SID": account_sid,
-        "TWILIO_AUTH_TOKEN": auth_token,
-        "TWILIO_MESSAGING_SERVICE_SID": MESSAGING_SERVICE_SID
-    }.items() if not v]
+    missing = [
+        k
+        for k, v in {
+            "TWILIO_ACCOUNT_SID": account_sid,
+            "TWILIO_AUTH_TOKEN": auth_token,
+            "TWILIO_MESSAGING_SERVICE_SID": MESSAGING_SERVICE_SID,
+        }.items()
+        if not v
+    ]
 
     if missing:
         raise RuntimeError(f"Missing Twilio env vars: {', '.join(missing)}")
@@ -106,15 +110,17 @@ class TwilioReminderService:
                         skipped_opted_out += 1
                         continue
                     status = self._send_sms(phone, message)
-                    logs.append(self._log(
-                        phone,
-                        guest["_id"],
-                        message,
-                        "guest",
-                        event_type,
-                        status,
-                        now,
-                    ))
+                    logs.append(
+                        self._log(
+                            phone,
+                            guest["_id"],
+                            message,
+                            "guest",
+                            event_type,
+                            status,
+                            now,
+                        )
+                    )
                     # Throttle to stay within Twilio MPS / API rate limits
                     if SMS_THROTTLE_DELAY_S > 0:
                         await asyncio.sleep(SMS_THROTTLE_DELAY_S)
@@ -132,15 +138,17 @@ class TwilioReminderService:
                         skipped_no_phone += 1
                         continue
                     status = self._send_sms(phone, message)
-                    logs.append(self._log(
-                        phone,
-                        po["guest_id"],
-                        message,
-                        "plus-one",
-                        event_type,
-                        status,
-                        now,
-                    ))
+                    logs.append(
+                        self._log(
+                            phone,
+                            po["guest_id"],
+                            message,
+                            "plus-one",
+                            event_type,
+                            status,
+                            now,
+                        )
+                    )
                     # Throttle to stay within Twilio MPS / API rate limits
                     if SMS_THROTTLE_DELAY_S > 0:
                         await asyncio.sleep(SMS_THROTTLE_DELAY_S)
@@ -152,7 +160,7 @@ class TwilioReminderService:
             "sent": len(logs),
             "skipped_no_phone": skipped_no_phone,
             "skipped_opted_out": skipped_opted_out,
-            "provider": "twilio"
+            "provider": "twilio",
         }
 
     def _send_sms(self, to: str, body: str, max_retries: int = 2) -> dict:
@@ -173,7 +181,7 @@ class TwilioReminderService:
                 "message_sid": None,
                 "initial_status": None,
                 "error_code": "not_configured",
-                "retryable": False
+                "retryable": False,
             }
 
         # Sanitize and normalize phone to E.164 format
@@ -184,7 +192,7 @@ class TwilioReminderService:
                 "message_sid": None,
                 "initial_status": None,
                 "error_code": "invalid_number",
-                "retryable": False
+                "retryable": False,
             }
         to = normalized
         status_callback_url = os.getenv("TWILIO_STATUS_CALLBACK_URL")
@@ -198,23 +206,25 @@ class TwilioReminderService:
                         messaging_service_sid=self.messaging_service_sid,
                         body=body,
                         to=to,
-                        status_callback=status_callback_url
+                        status_callback=status_callback_url,
                     )
                 else:
-                    from_number = os.getenv("TWILIO_FROM_NUMBER") or os.getenv("TWILIO_PHONE_NUMBER")
+                    from_number = os.getenv("TWILIO_FROM_NUMBER") or os.getenv(
+                        "TWILIO_PHONE_NUMBER"
+                    )
                     if not from_number:
                         return {
                             "status": "failed: No Twilio sending number configured",
                             "message_sid": None,
                             "initial_status": None,
                             "error_code": "not_configured",
-                            "retryable": False
+                            "retryable": False,
                         }
                     message = self.client.messages.create(
                         from_=from_number,
                         body=body,
                         to=to,
-                        status_callback=status_callback_url
+                        status_callback=status_callback_url,
                     )
 
                 logger.info(f"Twilio SMS sent to {to}, SID: {message.sid}")
@@ -223,30 +233,36 @@ class TwilioReminderService:
                     "message_sid": message.sid,
                     "initial_status": message.status,
                     "error_code": None,
-                    "retryable": False
+                    "retryable": False,
                 }
 
             except Exception as e:
                 last_error = e
                 error_str = str(e).lower()
-                error_code_int = getattr(e, 'code', None) or getattr(e, 'status', None)
+                error_code_int = getattr(e, "code", None) or getattr(e, "status", None)
 
                 # Classify the error
-                error_code, retryable = self._classify_twilio_error(error_str, error_code_int)
+                error_code, retryable = self._classify_twilio_error(
+                    error_str, error_code_int
+                )
 
                 if retryable and attempt < max_retries:
                     wait_time = (attempt + 1) * 1.5  # 1.5s, 3s backoff
-                    logger.warning(f"Twilio SMS attempt {attempt + 1} failed (retryable), retrying in {wait_time}s: {str(e)}")
+                    logger.warning(
+                        f"Twilio SMS attempt {attempt + 1} failed (retryable), retrying in {wait_time}s: {str(e)}"
+                    )
                     time.sleep(wait_time)
                     continue
 
-                logger.error(f"Twilio SMS failed to {to} after {attempt + 1} attempt(s): {str(e)}")
+                logger.error(
+                    f"Twilio SMS failed to {to} after {attempt + 1} attempt(s): {str(e)}"
+                )
                 return {
                     "status": f"failed: {str(e)}",
                     "message_sid": None,
                     "initial_status": None,
                     "error_code": error_code,
-                    "retryable": retryable
+                    "retryable": retryable,
                 }
 
         # Should not reach here, but safety fallback
@@ -255,7 +271,7 @@ class TwilioReminderService:
             "message_sid": None,
             "initial_status": None,
             "error_code": "unknown",
-            "retryable": False
+            "retryable": False,
         }
 
     @staticmethod
@@ -265,36 +281,59 @@ class TwilioReminderService:
         Returns (error_code: str, retryable: bool)
         """
         # Rate limited (429 or Twilio code 20429)
-        if '429' in error_str or 'rate limit' in error_str or 'too many requests' in error_str:
+        if (
+            "429" in error_str
+            or "rate limit" in error_str
+            or "too many requests" in error_str
+        ):
             return ("rate_limited", False)
 
         # Daily message limit exceeded (Twilio code 14101)
-        if '14101' in error_str or 'daily' in error_str and 'limit' in error_str:
+        if "14101" in error_str or "daily" in error_str and "limit" in error_str:
             return ("daily_limit", False)
 
         # Invalid phone number (Twilio codes 21211, 21214, 21217, 21612)
-        if any(code in error_str for code in ['21211', '21214', '21217', '21612']):
+        if any(code in error_str for code in ["21211", "21214", "21217", "21612"]):
             return ("invalid_number", False)
-        if 'not a valid phone' in error_str or 'unverified' in error_str:
+        if "not a valid phone" in error_str or "unverified" in error_str:
             return ("invalid_number", False)
 
         # Number blocked or unreachable (Twilio codes 21408, 21610, 21611)
-        if any(code in error_str for code in ['21408', '21610', '21611']):
+        if any(code in error_str for code in ["21408", "21610", "21611"]):
             return ("number_blocked", False)
 
         # Service unavailable (5xx, network issues)
-        if '500' in error_str or '502' in error_str or '503' in error_str or '504' in error_str:
+        if (
+            "500" in error_str
+            or "502" in error_str
+            or "503" in error_str
+            or "504" in error_str
+        ):
             return ("service_unavailable", True)
-        if 'timeout' in error_str or 'connection' in error_str or 'network' in error_str:
+        if (
+            "timeout" in error_str
+            or "connection" in error_str
+            or "network" in error_str
+        ):
             return ("network_error", True)
 
         # Authentication error (won't fix on retry)
-        if '401' in error_str or 'authenticate' in error_str:
+        if "401" in error_str or "authenticate" in error_str:
             return ("auth_error", False)
 
         return ("unknown", False)
 
-    def _log(self, phone, guest_id, message, target_type, event_type, send_result, timestamp, wedding_id=None):
+    def _log(
+        self,
+        phone,
+        guest_id,
+        message,
+        target_type,
+        event_type,
+        send_result,
+        timestamp,
+        wedding_id=None,
+    ):
         """
         Create log record with MessageSid for delivery tracking.
 
@@ -331,11 +370,13 @@ class TwilioReminderService:
         if message_sid:
             log_record["message_sid"] = message_sid
             if initial_status:
-                log_record["delivery_events"] = [{
-                    "status": initial_status,
-                    "timestamp": timestamp,
-                    "error_code": None
-                }]
+                log_record["delivery_events"] = [
+                    {
+                        "status": initial_status,
+                        "timestamp": timestamp,
+                        "error_code": None,
+                    }
+                ]
             else:
                 log_record["delivery_events"] = []
         else:
@@ -344,7 +385,9 @@ class TwilioReminderService:
         return log_record
 
     async def get_logs(self):
-        return await self.log_collection.find({"provider": "twilio"}, {"_id": 0}).to_list(length=None)
+        return await self.log_collection.find(
+            {"provider": "twilio"}, {"_id": 0}
+        ).to_list(length=None)
 
 
 class TwilioRSVPReminderHelper:
@@ -360,13 +403,20 @@ class TwilioRSVPReminderHelper:
         self.base_url = os.getenv("FRONTEND_URL")
         if not self.base_url:
             raise ValueError("FRONTEND_URL environment variable is required")
-        
-    async def send_personalized_rsvp_links(self, slug: str, custom_message: Optional[str] = None):
+
+    async def send_personalized_rsvp_links(
+        self, slug: str, custom_message: Optional[str] = None
+    ):
         # Get wedding by slug first
         wedding = await self.wedding_collection.find_one({"slug": slug})
         if not wedding:
             logger.error(f"Wedding not found with slug: {slug}")
-            return {"sent": 0, "failed": 0, "error": "Wedding not found", "provider": "twilio"}
+            return {
+                "sent": 0,
+                "failed": 0,
+                "error": "Wedding not found",
+                "provider": "twilio",
+            }
 
         wedding_id = wedding.get("_id")
 
@@ -395,10 +445,12 @@ class TwilioRSVPReminderHelper:
                 logger.info(f"Skipping {guest.get('name')} - no phone number")
                 # Track guests with no contact info at all
                 if not email:
-                    unreachable_guests.append({
-                        "name": guest.get("name", "Unknown"),
-                        "guest_id": str(guest_id),
-                    })
+                    unreachable_guests.append(
+                        {
+                            "name": guest.get("name", "Unknown"),
+                            "guest_id": str(guest_id),
+                        }
+                    )
                 continue
 
             sms_opt_in = guest.get("sms_opt_in", None)
@@ -410,7 +462,9 @@ class TwilioRSVPReminderHelper:
             url = f"{self.base_url}/{slug}/invite/{token}"
 
             if custom_message:
-                message = custom_message.replace("{url}", url).replace("{name}", guest.get("name", ""))
+                message = custom_message.replace("{url}", url).replace(
+                    "{name}", guest.get("name", "")
+                )
             else:
                 message = f"You're invited! RSVP here: {url}"
 
@@ -418,7 +472,9 @@ class TwilioRSVPReminderHelper:
             phone = normalize_phone_e164(phone)
             if not phone:
                 skipped_no_phone += 1
-                logger.warning(f"Skipping {guest.get('name')} - phone sanitized to empty")
+                logger.warning(
+                    f"Skipping {guest.get('name')} - phone sanitized to empty"
+                )
                 continue
 
             # Delivery tracking fields
@@ -436,7 +492,7 @@ class TwilioRSVPReminderHelper:
                     messaging_service_sid=self.messaging_service_sid,
                     body=message,
                     to=phone,
-                    status_callback=status_callback_url
+                    status_callback=status_callback_url,
                 )
                 logger.info(f"Twilio invite sent to {phone}, SID: {twilio_message.sid}")
                 status = "success"
@@ -447,7 +503,7 @@ class TwilioRSVPReminderHelper:
                 # Mark guest as having received an invite
                 await self.guest_collection.update_one(
                     {"_id": guest_id},
-                    {"$set": {"invite_sent": True, "invite_sent_date": now}}
+                    {"$set": {"invite_sent": True, "invite_sent_date": now}},
                 )
             except Exception as e:
                 logger.error(f"Failed to send Twilio invite to {phone}: {str(e)}")
@@ -475,11 +531,9 @@ class TwilioRSVPReminderHelper:
             if message_sid:
                 log_record["message_sid"] = message_sid
                 if initial_status:
-                    log_record["delivery_events"] = [{
-                        "status": initial_status,
-                        "timestamp": now,
-                        "error_code": None
-                    }]
+                    log_record["delivery_events"] = [
+                        {"status": initial_status, "timestamp": now, "error_code": None}
+                    ]
                 else:
                     log_record["delivery_events"] = []
             else:
@@ -501,5 +555,5 @@ class TwilioRSVPReminderHelper:
             "skipped_no_token": skipped_no_token,
             "skipped_opted_out": skipped_opted_out,
             "unreachable_guests": unreachable_guests if unreachable_guests else None,
-            "provider": "twilio"
+            "provider": "twilio",
         }

@@ -14,7 +14,6 @@ from pydantic import BaseModel, Field
 
 from app.dependencies.auth_extended import require_admin_or_planner, ExtendedAuthUser
 from app.services.inbound_email_service import inbound_email_service
-from app.utils.response import dict_response
 import logging
 
 logger = logging.getLogger(__name__)
@@ -23,8 +22,13 @@ router = APIRouter()
 
 class ReplyRequest(BaseModel):
     """Request body for sending a reply"""
-    html_content: str = Field(..., min_length=1, max_length=50000, description="HTML content of reply")
-    text_content: Optional[str] = Field(None, max_length=50000, description="Plain text fallback")
+
+    html_content: str = Field(
+        ..., min_length=1, max_length=50000, description="HTML content of reply"
+    )
+    text_content: Optional[str] = Field(
+        None, max_length=50000, description="Plain text fallback"
+    )
 
 
 # ==================== INBOX ENDPOINTS ====================
@@ -36,7 +40,7 @@ async def get_inbox(
     limit: int = Query(20, ge=1, le=100, description="Items per page"),
     wedding_id: Optional[str] = Query(None, description="Filter by wedding ID"),
     unread_only: bool = Query(False, description="Show only unread emails"),
-    current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
+    current_user: ExtendedAuthUser = Depends(require_admin_or_planner),
 ):
     """
     Get planner's inbox with pagination.
@@ -49,13 +53,13 @@ async def get_inbox(
         wedding_id=wedding_id,
         page=page,
         limit=limit,
-        unread_only=unread_only
+        unread_only=unread_only,
     )
 
 
 @router.get("/inbound-emails/unread-count", tags=["Inbound Emails"])
 async def get_unread_count(
-    current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
+    current_user: ExtendedAuthUser = Depends(require_admin_or_planner),
 ):
     """Get unread email count for badge/notification display"""
     return await inbound_email_service.get_unread_count(current_user.email)
@@ -66,8 +70,7 @@ async def get_unread_count(
 
 @router.get("/inbound-emails/{email_id}", tags=["Inbound Emails"])
 async def get_email(
-    email_id: str,
-    current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
+    email_id: str, current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
 ):
     """
     Get a single inbound email with full content.
@@ -79,8 +82,7 @@ async def get_email(
 
 @router.get("/inbound-emails/threads/{thread_id}", tags=["Inbound Emails"])
 async def get_thread(
-    thread_id: str,
-    current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
+    thread_id: str, current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
 ):
     """
     Get full email thread — both inbound and outbound messages.
@@ -96,8 +98,7 @@ async def get_thread(
 
 @router.put("/inbound-emails/{email_id}/read", tags=["Inbound Emails"])
 async def mark_as_read(
-    email_id: str,
-    current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
+    email_id: str, current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
 ):
     """Mark a single email as read"""
     return await inbound_email_service.mark_as_read(email_id, current_user.email)
@@ -105,7 +106,7 @@ async def mark_as_read(
 
 @router.put("/inbound-emails/read-all", tags=["Inbound Emails"])
 async def mark_all_as_read(
-    current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
+    current_user: ExtendedAuthUser = Depends(require_admin_or_planner),
 ):
     """Mark all unread emails as read"""
     return await inbound_email_service.mark_all_as_read(current_user.email)
@@ -115,7 +116,7 @@ async def mark_all_as_read(
 async def send_reply(
     email_id: str,
     reply: ReplyRequest,
-    current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
+    current_user: ExtendedAuthUser = Depends(require_admin_or_planner),
 ):
     """
     Send a reply to an inbound email.
@@ -127,5 +128,5 @@ async def send_reply(
         email_id=email_id,
         planner_id=current_user.email,
         reply_html=reply.html_content,
-        reply_text=reply.text_content
+        reply_text=reply.text_content,
     )

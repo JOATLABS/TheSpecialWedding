@@ -23,7 +23,7 @@ from typing import Any, Dict, List, Optional
 from bson import ObjectId
 from bson.errors import InvalidId
 from fastapi import HTTPException
-from pymongo.errors import BulkWriteError, DuplicateKeyError
+from pymongo.errors import DuplicateKeyError
 
 from app.models.advertising_campaign import CampaignStatus
 
@@ -31,6 +31,7 @@ logger = logging.getLogger(__name__)
 
 
 # ── Helpers ──────────────────────────────────────────────────────────────
+
 
 def _serialize(doc: Dict[str, Any]) -> Dict[str, Any]:
     """Convert ObjectId _id to string for JSON serialization."""
@@ -57,7 +58,14 @@ class PlannerAdInteractionService:
     Writes: vendor_profiles, ad_leads, ad_events
     """
 
-    def __init__(self, db, email_service=None, billing_service=None, fraud_detection_service=None, auction_service=None):
+    def __init__(
+        self,
+        db,
+        email_service=None,
+        billing_service=None,
+        fraud_detection_service=None,
+        auction_service=None,
+    ):
         self.db = db
         self.campaigns = db["ad_campaigns"]
         self.creatives = db["ad_creatives"]
@@ -87,13 +95,17 @@ class PlannerAdInteractionService:
         Uses an index on (event_type, campaign_id, planner_id, created_at)
         for efficient lookback.
         """
-        cutoff = datetime.now(timezone.utc) - timedelta(seconds=self.DEDUP_WINDOW_SECONDS)
-        existing = await self.ad_events.find_one({
-            "event_type": event_type,
-            "campaign_id": campaign_id,
-            "planner_id": planner_id,
-            "created_at": {"$gte": cutoff},
-        })
+        cutoff = datetime.now(timezone.utc) - timedelta(
+            seconds=self.DEDUP_WINDOW_SECONDS
+        )
+        existing = await self.ad_events.find_one(
+            {
+                "event_type": event_type,
+                "campaign_id": campaign_id,
+                "planner_id": planner_id,
+                "created_at": {"$gte": cutoff},
+            }
+        )
         return existing is not None
 
     async def record_event_deduplicated(
@@ -156,7 +168,9 @@ class PlannerAdInteractionService:
             )
         return campaign
 
-    async def _get_primary_creative(self, campaign: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    async def _get_primary_creative(
+        self, campaign: Dict[str, Any]
+    ) -> Optional[Dict[str, Any]]:
         """Load the primary creative for a campaign."""
         cid = campaign.get("primary_creative_id")
         if not cid:
@@ -262,11 +276,13 @@ class PlannerAdInteractionService:
 
         # Also catch the non-race-condition duplicate (pre-check for better UX
         # when unique index is not yet created — belt + suspenders)
-        existing = await self.vendor_profiles.find_one({
-            "created_by": planner_email,
-            "source_campaign_id": campaign_id,
-            "_id": {"$ne": result.inserted_id},
-        })
+        existing = await self.vendor_profiles.find_one(
+            {
+                "created_by": planner_email,
+                "source_campaign_id": campaign_id,
+                "_id": {"$ne": result.inserted_id},
+            }
+        )
         if existing:
             # Unlikely but clean up the duplicate we just inserted
             await self.vendor_profiles.delete_one({"_id": result.inserted_id})
@@ -355,7 +371,10 @@ class PlannerAdInteractionService:
 
         # ── 6. Push notification to vendor ──
         try:
-            from app.services.vendor_notification_service import VendorNotificationService
+            from app.services.vendor_notification_service import (
+                VendorNotificationService,
+            )
+
             vns = VendorNotificationService()
             await vns.notify_vendor_new_lead(
                 vendor_email=campaign.get("vendor_email", ""),
@@ -364,7 +383,9 @@ class PlannerAdInteractionService:
                 campaign_name=campaign.get("campaign_name", ""),
             )
         except Exception as e:
-            logger.warning(f"Failed to push-notify vendor on add_to_directory lead: {e}")
+            logger.warning(
+                f"Failed to push-notify vendor on add_to_directory lead: {e}"
+            )
 
         logger.info(
             f"Planner {planner_email} added vendor {vendor_name} "
@@ -526,7 +547,10 @@ class PlannerAdInteractionService:
 
         # ── 4b. Push notification to vendor ──
         try:
-            from app.services.vendor_notification_service import VendorNotificationService
+            from app.services.vendor_notification_service import (
+                VendorNotificationService,
+            )
+
             vns = VendorNotificationService()
             await vns.notify_vendor_new_lead(
                 vendor_email=vendor_email,
@@ -540,10 +564,12 @@ class PlannerAdInteractionService:
         # ── 5. Auto-add vendor to directory if not already present ──
         directory_entry = None
         if auto_add_to_directory:
-            existing = await self.vendor_profiles.find_one({
-                "created_by": planner_email,
-                "source_campaign_id": campaign_id,
-            })
+            existing = await self.vendor_profiles.find_one(
+                {
+                    "created_by": planner_email,
+                    "source_campaign_id": campaign_id,
+                }
+            )
             if not existing:
                 directory_entry = await self._create_directory_entry(
                     campaign=campaign,
@@ -569,7 +595,9 @@ class PlannerAdInteractionService:
             "status": "quote_requested",
             "email_sent": email_sent,
             "auto_added_to_directory": directory_entry is not None,
-            "vendor_profile_id": directory_entry.get("_id") if directory_entry else None,
+            "vendor_profile_id": directory_entry.get("_id")
+            if directory_entry
+            else None,
             "billing": billing_result,
         }
 
@@ -582,7 +610,11 @@ class PlannerAdInteractionService:
         planner_id: Optional[str] = None,
     ) -> Dict[str, Any]:
         """Create a slim vendor profile entry (shared between flows)."""
-        campaign_id = str(campaign["_id"]) if isinstance(campaign.get("_id"), ObjectId) else campaign.get("_id", "")
+        campaign_id = (
+            str(campaign["_id"])
+            if isinstance(campaign.get("_id"), ObjectId)
+            else campaign.get("_id", "")
+        )
 
         vendor_profile = {
             "created_by": planner_email,
@@ -655,11 +687,15 @@ class PlannerAdInteractionService:
             if ctx.get("location"):
                 parts.append(f"<strong>Location:</strong> {esc(str(ctx['location']))}")
             if ctx.get("guest_count"):
-                parts.append(f"<strong>Guest Count:</strong> {esc(str(ctx['guest_count']))}")
+                parts.append(
+                    f"<strong>Guest Count:</strong> {esc(str(ctx['guest_count']))}"
+                )
             if ctx.get("venue"):
                 parts.append(f"<strong>Venue:</strong> {esc(str(ctx['venue']))}")
             if ctx.get("budget_range"):
-                parts.append(f"<strong>Budget Range:</strong> {esc(str(ctx['budget_range']))}")
+                parts.append(
+                    f"<strong>Budget Range:</strong> {esc(str(ctx['budget_range']))}"
+                )
             if parts:
                 wedding_details = (
                     '<div style="background:#f8fafc;border:1px solid #e5e7eb;'
@@ -757,21 +793,31 @@ class PlannerAdInteractionService:
             "status": CampaignStatus.ACTIVE.value,
             "primary_creative_id": {"$ne": None},
             "$and": [
-                {"$or": [
-                    {"start_date": {"$lte": now}},
-                    {"start_date": {"$in": [None]}},
-                    {"start_date": {"$exists": False}},
-                ]},
-                {"$or": [
-                    {"end_date": {"$gte": now}},
-                    {"end_date": {"$in": [None]}},
-                    {"end_date": {"$exists": False}},
-                ]},
+                {
+                    "$or": [
+                        {"start_date": {"$lte": now}},
+                        {"start_date": {"$in": [None]}},
+                        {"start_date": {"$exists": False}},
+                    ]
+                },
+                {
+                    "$or": [
+                        {"end_date": {"$gte": now}},
+                        {"end_date": {"$in": [None]}},
+                        {"end_date": {"$exists": False}},
+                    ]
+                },
             ],
         }
 
         if already_added_campaign_ids:
-            query["_id"] = {"$nin": [ObjectId(c) for c in already_added_campaign_ids if ObjectId.is_valid(c)]}
+            query["_id"] = {
+                "$nin": [
+                    ObjectId(c)
+                    for c in already_added_campaign_ids
+                    if ObjectId.is_valid(c)
+                ]
+            }
 
         # Filter out hidden vendors
         if hidden_vendor_ids:
@@ -793,10 +839,17 @@ class PlannerAdInteractionService:
         if planner_location:
             # Nest inside existing $and to avoid overwriting date checks
             query["$and"].append(
-                {"$or": [
-                    {"target_regions": {"$size": 0}},
-                    {"target_regions": {"$regex": planner_location, "$options": "i"}},
-                ]}
+                {
+                    "$or": [
+                        {"target_regions": {"$size": 0}},
+                        {
+                            "target_regions": {
+                                "$regex": planner_location,
+                                "$options": "i",
+                            }
+                        },
+                    ]
+                }
             )
 
         # Fetch eligible campaigns, dedup by vendor_id
@@ -839,20 +892,34 @@ class PlannerAdInteractionService:
                         "creative": {
                             "creative_id": str(creative["_id"]) if creative else None,
                             "headline": creative.get("headline") if creative else None,
-                            "description": creative.get("description") if creative else None,
-                            "image_url": creative.get("image_url") if creative else None,
+                            "description": creative.get("description")
+                            if creative
+                            else None,
+                            "image_url": creative.get("image_url")
+                            if creative
+                            else None,
                             "offer": creative.get("offer") if creative else None,
-                            "call_to_action": creative.get("call_to_action", "View Portfolio") if creative else "View Portfolio",
-                        } if creative else None,
+                            "call_to_action": creative.get(
+                                "call_to_action", "View Portfolio"
+                            )
+                            if creative
+                            else "View Portfolio",
+                        }
+                        if creative
+                        else None,
                         "in_directory": False,
-                        "targeting_reason": self._build_targeting_reason(campaign, planner_location),
+                        "targeting_reason": self._build_targeting_reason(
+                            campaign, planner_location
+                        ),
                     }
                     results.append(card)
 
                 return results
 
             except Exception as e:
-                logger.error(f"Auction engine failed, falling back to quality_score sort: {e}")
+                logger.error(
+                    f"Auction engine failed, falling back to quality_score sort: {e}"
+                )
                 # Fall through to legacy quality_score ranking below
 
         # ── Legacy fallback: quality_score sort (no auction service) ──
@@ -873,10 +940,16 @@ class PlannerAdInteractionService:
                     "description": creative.get("description") if creative else None,
                     "image_url": creative.get("image_url") if creative else None,
                     "offer": creative.get("offer") if creative else None,
-                    "call_to_action": creative.get("call_to_action", "View Portfolio") if creative else "View Portfolio",
-                } if creative else None,
+                    "call_to_action": creative.get("call_to_action", "View Portfolio")
+                    if creative
+                    else "View Portfolio",
+                }
+                if creative
+                else None,
                 "in_directory": False,
-                "targeting_reason": self._build_targeting_reason(campaign, planner_location),
+                "targeting_reason": self._build_targeting_reason(
+                    campaign, planner_location
+                ),
             }
             results.append(card)
 
@@ -927,10 +1000,12 @@ class PlannerAdInteractionService:
         planner_email: str,
     ) -> Dict[str, Any]:
         """Check if a planner already has this campaign's vendor in their directory."""
-        existing = await self.vendor_profiles.find_one({
-            "created_by": planner_email,
-            "source_campaign_id": campaign_id,
-        })
+        existing = await self.vendor_profiles.find_one(
+            {
+                "created_by": planner_email,
+                "source_campaign_id": campaign_id,
+            }
+        )
         return {
             "campaign_id": campaign_id,
             "in_directory": existing is not None,

@@ -36,6 +36,7 @@ router = APIRouter(prefix="/portal/ads", tags=["Vendor Campaigns"])
 # DEPENDENCY INJECTION
 # =============================================================================
 
+
 async def get_vendor_campaign_service() -> VendorCampaignService:
     """Get vendor campaign service instance."""
     return VendorCampaignService(mongo.db)
@@ -52,10 +53,7 @@ async def require_advertising_vendor(
     """
     if current_user.is_root_admin or current_user.is_advertising_vendor:
         return current_user
-    raise HTTPException(
-        status_code=403,
-        detail="Advertising vendor access required"
-    )
+    raise HTTPException(status_code=403, detail="Advertising vendor access required")
 
 
 def _get_vendor_id(user: ExtendedAuthUser) -> str:
@@ -74,6 +72,7 @@ def _get_vendor_id(user: ExtendedAuthUser) -> str:
 # =============================================================================
 # CAMPAIGN CRUD
 # =============================================================================
+
 
 @router.post("/campaigns", status_code=201)
 async def create_campaign(
@@ -165,6 +164,7 @@ async def delete_campaign(
 # CAMPAIGN LIFECYCLE
 # =============================================================================
 
+
 @router.post("/campaigns/{campaign_id}/submit")
 async def submit_for_review(
     campaign_id: str,
@@ -200,6 +200,7 @@ async def pause_campaign(
 # CAMPAIGN STATS
 # =============================================================================
 
+
 @router.get("/campaigns/{campaign_id}/stats")
 async def get_campaign_stats(
     campaign_id: str,
@@ -219,6 +220,7 @@ async def get_campaign_stats(
 # =============================================================================
 # CREATIVE MANAGEMENT
 # =============================================================================
+
 
 @router.post("/campaigns/{campaign_id}/creatives", status_code=201)
 async def create_creative(
@@ -288,6 +290,7 @@ async def set_primary_creative(
 # LEADS
 # =============================================================================
 
+
 @router.get("/leads")
 async def get_vendor_leads(
     status: Optional[str] = Query(None, description="Filter by lead status"),
@@ -317,6 +320,7 @@ async def get_vendor_leads(
 # BILLING — CPL (Cost Per Lead)
 # =============================================================================
 
+
 @router.get("/billing")
 async def get_billing_summary(
     current_user: ExtendedAuthUser = Depends(require_advertising_vendor),
@@ -330,6 +334,7 @@ async def get_billing_summary(
     vendor_id = _get_vendor_id(current_user)
 
     from app.services.ad_billing_service import AdBillingService
+
     billing_svc = AdBillingService(mongo.db)
 
     # Check free tier status
@@ -345,7 +350,11 @@ async def get_billing_summary(
 
     # Get period billing records
     billing_records = []
-    cursor = billing_svc.billing.find({"vendor_id": vendor_id}).sort("billing_period_start", -1).limit(12)
+    cursor = (
+        billing_svc.billing.find({"vendor_id": vendor_id})
+        .sort("billing_period_start", -1)
+        .limit(12)
+    )
     async for doc in cursor:
         if "_id" in doc:
             doc["_id"] = str(doc["_id"])
@@ -376,11 +385,13 @@ async def get_billing_charges(
     """List individual CPL charges for the vendor."""
     vendor_id = _get_vendor_id(current_user)
     from app.services.ad_billing_service import AdBillingService
+
     billing_svc = AdBillingService(mongo.db)
 
     if campaign_id:
         # Verify campaign belongs to this vendor
         from bson import ObjectId as OId
+
         campaign = await mongo.db["ad_campaigns"].find_one({"_id": OId(campaign_id)})
         if not campaign or campaign.get("vendor_id") != vendor_id:
             raise HTTPException(status_code=404, detail="Campaign not found")

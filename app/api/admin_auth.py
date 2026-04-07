@@ -21,7 +21,9 @@ def login_options():
 
 @router.post("/token", tags=["Auth"])
 async def login_for_access_token(credentials: AdminLoginModel, response: Response):
-    payload = await auth_service.login_and_get_token(credentials.email, credentials.password)
+    payload = await auth_service.login_and_get_token(
+        credentials.email, credentials.password
+    )
     set_auth_cookie(response, "admin_token", payload["access_token"])
     return payload
 
@@ -52,7 +54,9 @@ async def logout_admin(response: Response):
 
 
 @router.get("/profile", tags=["Auth"])
-async def get_current_user_profile(current_user: ExtendedAuthUser = Depends(get_current_user_extended)):
+async def get_current_user_profile(
+    current_user: ExtendedAuthUser = Depends(get_current_user_extended),
+):
     """Get current user profile information with cache-busting headers"""
     # Serialize user_data first to handle all datetime and ObjectId fields recursively
     serialized_user_data = serialize_mongo_doc(current_user.user_data) or {}
@@ -69,22 +73,32 @@ async def get_current_user_profile(current_user: ExtendedAuthUser = Depends(get_
         "last_name": serialized_user_data.get("last_name"),
         "company_name": serialized_user_data.get("company_name"),
         "profile_image_url": serialized_user_data.get("profile_image_url"),
-        "push_notifications_enabled": serialized_user_data.get("push_notifications_enabled", True),  # Default to True
-        "timezone": serialized_user_data.get("timezone", "America/Chicago"),  # IANA timezone for display
+        "push_notifications_enabled": serialized_user_data.get(
+            "push_notifications_enabled", True
+        ),  # Default to True
+        "timezone": serialized_user_data.get(
+            "timezone", "America/Chicago"
+        ),  # IANA timezone for display
         "onboarding_completed": serialized_user_data.get("onboarding_completed", False),
         "onboarding_completed_at": serialized_user_data.get("onboarding_completed_at"),
-        "onboarding_steps_completed": serialized_user_data.get("onboarding_steps_completed", []),
+        "onboarding_steps_completed": serialized_user_data.get(
+            "onboarding_steps_completed", []
+        ),
         # Subscription fields for billing and access control
         "subscription_status": serialized_user_data.get("subscription_status"),
         "trial_end_date": serialized_user_data.get("trial_end_date"),
-        "_subscription_blocked": serialized_user_data.get("_subscription_blocked", False),
-        "user_data": serialized_user_data
+        "_subscription_blocked": serialized_user_data.get(
+            "_subscription_blocked", False
+        ),
+        "user_data": serialized_user_data,
     }
     # Add team member context if applicable
     if current_user.is_team_member:
         profile_data["team_permissions"] = current_user.team_permissions or {}
         profile_data["team_wedding_access"] = current_user.team_wedding_access
-        profile_data["team_assigned_wedding_ids"] = current_user.team_assigned_wedding_ids
+        profile_data["team_assigned_wedding_ids"] = (
+            current_user.team_assigned_wedding_ids
+        )
         profile_data["parent_planner_id"] = current_user.parent_planner_id
     # Add cache-busting headers to prevent browser caching of user profile data
     headers = {
@@ -92,6 +106,6 @@ async def get_current_user_profile(current_user: ExtendedAuthUser = Depends(get_
         "Pragma": "no-cache",
         "Expires": "0",
         "X-Content-Type-Options": "nosniff",
-        "X-Frame-Options": "DENY"
+        "X-Frame-Options": "DENY",
     }
     return JSONResponse(content=profile_data, headers=headers)

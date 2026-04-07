@@ -35,7 +35,6 @@ Usage:
 """
 
 import base64
-import json
 import logging
 from typing import Optional, List, Any, Tuple, TypeVar, Generic
 from datetime import datetime
@@ -59,6 +58,7 @@ class CursorPage(BaseModel, Generic[T]):
         cursor: Next cursor for fetching the next page (None if no more items)
         has_more: Boolean indicating if more items exist beyond this page
     """
+
     items: List[T]
     cursor: Optional[str] = None
     has_more: bool = False
@@ -68,6 +68,7 @@ class CursorPage(BaseModel, Generic[T]):
 
 class CursorData(BaseModel):
     """Internal model for cursor payload."""
+
     id: str  # MongoDB ObjectId as string
     ts: str  # Sort field value as string (ISO format for dates, or value as string)
 
@@ -95,14 +96,11 @@ def encode_cursor(object_id: ObjectId, sort_value: Any) -> str:
         else:
             ts = str(sort_value)
 
-        cursor_data = CursorData(
-            id=str(object_id),
-            ts=ts
-        )
+        cursor_data = CursorData(id=str(object_id), ts=ts)
 
         cursor_json = cursor_data.model_dump_json()
-        cursor_bytes = cursor_json.encode('utf-8')
-        encoded = base64.b64encode(cursor_bytes).decode('utf-8')
+        cursor_bytes = cursor_json.encode("utf-8")
+        encoded = base64.b64encode(cursor_bytes).decode("utf-8")
 
         logger.debug(f"Encoded cursor: {encoded}")
         return encoded
@@ -125,8 +123,8 @@ def decode_cursor(cursor: str) -> CursorData:
         ValueError: If cursor is invalid or decoding fails
     """
     try:
-        cursor_bytes = base64.b64decode(cursor.encode('utf-8'))
-        cursor_json = cursor_bytes.decode('utf-8')
+        cursor_bytes = base64.b64decode(cursor.encode("utf-8"))
+        cursor_json = cursor_bytes.decode("utf-8")
         cursor_data = CursorData.model_validate_json(cursor_json)
         logger.debug(f"Decoded cursor: id={cursor_data.id}, ts={cursor_data.ts}")
         return cursor_data
@@ -136,9 +134,7 @@ def decode_cursor(cursor: str) -> CursorData:
 
 
 def build_cursor_query(
-    cursor_data: CursorData,
-    sort_field: str,
-    sort_direction: int = 1
+    cursor_data: CursorData, sort_field: str, sort_direction: int = 1
 ) -> dict:
     """
     Build a MongoDB query filter from decoded cursor data.
@@ -161,15 +157,17 @@ def build_cursor_query(
 
     # Try to parse as ObjectId if it looks like one
     try:
-        if len(sort_value) == 24 and all(c in '0123456789abcdef' for c in sort_value.lower()):
+        if len(sort_value) == 24 and all(
+            c in "0123456789abcdef" for c in sort_value.lower()
+        ):
             sort_value = ObjectId(sort_value)
     except Exception:
         pass
 
     # Try to parse as ISO datetime if it contains T
-    if isinstance(sort_value, str) and 'T' in sort_value:
+    if isinstance(sort_value, str) and "T" in sort_value:
         try:
-            sort_value = datetime.fromisoformat(sort_value.replace('Z', '+00:00'))
+            sort_value = datetime.fromisoformat(sort_value.replace("Z", "+00:00"))
         except Exception:
             pass
 
@@ -180,7 +178,7 @@ def build_cursor_query(
         return {
             "$or": [
                 {sort_field: {"$gt": sort_value}},
-                {sort_field: sort_value, "_id": {"$gt": object_id}}
+                {sort_field: sort_value, "_id": {"$gt": object_id}},
             ]
         }
     else:
@@ -188,7 +186,7 @@ def build_cursor_query(
         return {
             "$or": [
                 {sort_field: {"$lt": sort_value}},
-                {sort_field: sort_value, "_id": {"$lt": object_id}}
+                {sort_field: sort_value, "_id": {"$lt": object_id}},
             ]
         }
 
@@ -199,7 +197,7 @@ async def cursor_paginate(
     sort_field: str,
     limit: int,
     cursor: Optional[str] = None,
-    sort_direction: int = 1
+    sort_direction: int = 1,
 ) -> Tuple[List[dict], Optional[str], bool]:
     """
     Perform cursor-based pagination on a MongoDB collection.
@@ -254,7 +252,12 @@ async def cursor_paginate(
 
     sort_order = [(sort_field, sort_direction), ("_id", sort_direction)]
 
-    results = await collection.find(query_filter).sort(sort_order).limit(fetch_limit).to_list(fetch_limit)
+    results = (
+        await collection.find(query_filter)
+        .sort(sort_order)
+        .limit(fetch_limit)
+        .to_list(fetch_limit)
+    )
 
     # Determine if more items exist
     has_more = len(results) > limit
@@ -276,7 +279,9 @@ async def cursor_paginate(
     return results, next_cursor, has_more
 
 
-def validated_cursor(cursor: Optional[str] = Query(None, description="Cursor for pagination")) -> Optional[str]:
+def validated_cursor(
+    cursor: Optional[str] = Query(None, description="Cursor for pagination"),
+) -> Optional[str]:
     """
     FastAPI dependency to validate and sanitize cursor parameter.
 
@@ -314,7 +319,7 @@ def validated_cursor(cursor: Optional[str] = Query(None, description="Cursor for
 
 
 def validated_cursor_limit(
-    limit: int = Query(20, ge=1, le=100, description="Items per page")
+    limit: int = Query(20, ge=1, le=100, description="Items per page"),
 ) -> int:
     """
     FastAPI dependency to validate cursor pagination limit.

@@ -5,7 +5,8 @@ Pydantic models for the team management feature.
 Supports planner → team member relationships with role-based permissions
 and wedding-scoped access control.
 """
-from datetime import datetime, timezone
+
+from datetime import datetime
 from typing import Optional, List, Dict
 from pydantic import BaseModel, Field, field_validator, model_validator, ConfigDict
 from enum import Enum
@@ -13,6 +14,7 @@ from enum import Enum
 
 class TeamMemberRole(str, Enum):
     """Team member role presets"""
+
     ADMIN = "admin"
     EDITOR = "editor"
     VIEWER = "viewer"
@@ -20,6 +22,7 @@ class TeamMemberRole(str, Enum):
 
 class TeamMemberStatus(str, Enum):
     """Team member lifecycle status"""
+
     PENDING = "pending"
     ACTIVE = "active"
     DEACTIVATED = "deactivated"
@@ -27,6 +30,7 @@ class TeamMemberStatus(str, Enum):
 
 class WeddingAccessType(str, Enum):
     """Wedding access scope"""
+
     ALL = "all"
     ASSIGNED = "assigned"
 
@@ -86,6 +90,7 @@ ALL_PERMISSION_KEYS = list(ROLE_PRESETS["admin"].keys())
 
 class TeamPermissions(BaseModel):
     """Granular permission toggles for team members"""
+
     manage_guests: bool = False
     manage_budget: bool = False
     manage_gallery: bool = False
@@ -120,29 +125,28 @@ class TeamPermissions(BaseModel):
 
 # ─── Request Models ───────────────────────────────────────────────────────────
 
+
 class InviteTeamMemberRequest(BaseModel):
     """Request body for inviting a new team member"""
+
     email: str = Field(
         ...,
         min_length=5,
         max_length=254,
-        description="Email address of the team member to invite"
+        description="Email address of the team member to invite",
     )
     role: TeamMemberRole = Field(
-        TeamMemberRole.VIEWER,
-        description="Role preset (admin, editor, viewer)"
+        TeamMemberRole.VIEWER, description="Role preset (admin, editor, viewer)"
     )
     custom_permissions: Optional[Dict[str, bool]] = Field(
-        None,
-        description="Override individual permissions from the role preset"
+        None, description="Override individual permissions from the role preset"
     )
     wedding_access: WeddingAccessType = Field(
-        WeddingAccessType.ALL,
-        description="Wedding access scope: 'all' or 'assigned'"
+        WeddingAccessType.ALL, description="Wedding access scope: 'all' or 'assigned'"
     )
     assigned_wedding_ids: Optional[List[str]] = Field(
         None,
-        description="Wedding IDs to grant access to (only when wedding_access='assigned')"
+        description="Wedding IDs to grant access to (only when wedding_access='assigned')",
     )
 
     @field_validator("email")
@@ -174,21 +178,18 @@ class InviteTeamMemberRequest(BaseModel):
 
 class UpdateTeamMemberRequest(BaseModel):
     """Request body for updating an existing team member"""
+
     role: Optional[TeamMemberRole] = Field(
-        None,
-        description="New role preset (resets permissions to preset defaults)"
+        None, description="New role preset (resets permissions to preset defaults)"
     )
     custom_permissions: Optional[Dict[str, bool]] = Field(
-        None,
-        description="Override individual permissions"
+        None, description="Override individual permissions"
     )
     wedding_access: Optional[WeddingAccessType] = Field(
-        None,
-        description="Wedding access scope"
+        None, description="Wedding access scope"
     )
     assigned_wedding_ids: Optional[List[str]] = Field(
-        None,
-        description="Wedding IDs to grant access to"
+        None, description="Wedding IDs to grant access to"
     )
 
     @field_validator("custom_permissions")
@@ -212,10 +213,13 @@ class UpdateTeamMemberRequest(BaseModel):
 
 class AcceptInviteRequest(BaseModel):
     """Request body for accepting a team invitation"""
+
     token: str = Field(..., min_length=1, description="Invitation token from email")
     first_name: str = Field(..., min_length=1, max_length=100, description="First name")
     last_name: str = Field(..., min_length=1, max_length=100, description="Last name")
-    password: str = Field(..., min_length=8, max_length=128, description="Account password")
+    password: str = Field(
+        ..., min_length=8, max_length=128, description="Account password"
+    )
 
     @field_validator("first_name", "last_name")
     @classmethod
@@ -225,8 +229,10 @@ class AcceptInviteRequest(BaseModel):
 
 # ─── Response Models ──────────────────────────────────────────────────────────
 
+
 class TeamMemberResponse(BaseModel):
     """Response model for a team member"""
+
     id: str = Field(..., description="Team member document ID")
     owner_id: str = Field(..., description="Planner (account owner) user ID")
     email: str = Field(..., description="Team member email")
@@ -245,27 +251,30 @@ class TeamMemberResponse(BaseModel):
     updated_at: Optional[datetime] = None
     user_id: Optional[str] = Field(None, description="Linked user account ID")
     owner_email: str = Field(..., description="Planner's email address")
-    invite_token_expires_at: Optional[datetime] = Field(None, description="When the invite token expires")
+    invite_token_expires_at: Optional[datetime] = Field(
+        None, description="When the invite token expires"
+    )
 
     model_config = ConfigDict(
         populate_by_name=True,
-        json_encoders={datetime: lambda v: v.isoformat() if v else None}
+        json_encoders={datetime: lambda v: v.isoformat() if v else None},
     )
 
 
 class TeamSeatsResponse(BaseModel):
     """Response model for seat usage"""
+
     total_seats: int = Field(..., description="Total seats in the plan")
     used_seats: int = Field(..., description="Currently used seats")
     available_seats: int = Field(..., description="Remaining available seats")
     members_by_status: Dict[str, int] = Field(
-        default_factory=dict,
-        description="Count of members by status"
+        default_factory=dict, description="Count of members by status"
     )
 
 
 class TeamPermissionsResponse(BaseModel):
     """Response model for current user's effective permissions"""
+
     is_team_member: bool = False
     is_owner: bool = False
     role: Optional[str] = None
@@ -276,6 +285,7 @@ class TeamPermissionsResponse(BaseModel):
 
 class InviteInfoResponse(BaseModel):
     """Response model for public invite info (shown on accept page)"""
+
     email: str
     role: str
     permissions: Dict[str, bool] = Field(default_factory=dict)

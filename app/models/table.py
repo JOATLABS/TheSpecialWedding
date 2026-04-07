@@ -24,7 +24,7 @@ class TableModel(BaseModel):
                 "shape": "round",
                 "capacity": 8,
                 "x": 100.5,
-                "y": 200.0
+                "y": 200.0,
             }
         }
     }

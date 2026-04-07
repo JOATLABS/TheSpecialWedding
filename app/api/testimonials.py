@@ -11,7 +11,7 @@ from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 from bson import ObjectId
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
 from app.dependencies.auth_extended import require_root_admin, ExtendedAuthUser
@@ -95,12 +95,19 @@ DEFAULT_TESTIMONIALS: List[Dict[str, Any]] = [
 
 # ── Pydantic schemas ─────────────────────────────────────────────────────────
 
+
 class TestimonialCreate(BaseModel):
-    name: str = Field(..., min_length=1, max_length=200, description="Reviewer full name")
+    name: str = Field(
+        ..., min_length=1, max_length=200, description="Reviewer full name"
+    )
     company: str = Field("", max_length=200, description="Company / organisation name")
     role: str = Field("", max_length=200, description="Job title or role")
-    quote: str = Field(..., min_length=1, max_length=2000, description="Testimonial text")
-    avatar_url: Optional[str] = Field(None, max_length=500, description="Optional avatar image URL")
+    quote: str = Field(
+        ..., min_length=1, max_length=2000, description="Testimonial text"
+    )
+    avatar_url: Optional[str] = Field(
+        None, max_length=500, description="Optional avatar image URL"
+    )
     is_active: bool = Field(True, description="Show on landing page")
     display_order: int = Field(0, description="Sort priority (lower = first)")
 
@@ -116,6 +123,7 @@ class TestimonialUpdate(BaseModel):
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
+
 
 def _serialize(doc: Dict[str, Any]) -> Dict[str, Any]:
     """Convert a MongoDB document to a JSON-safe dict."""
@@ -145,6 +153,7 @@ async def _ensure_seeded() -> None:
 
 # ── Public endpoint (no auth — consumed by landing page) ─────────────────────
 
+
 @router.get("/public/testimonials", tags=["Public"])
 async def list_public_testimonials():
     """Return active testimonials for the public landing page."""
@@ -154,13 +163,18 @@ async def list_public_testimonials():
         docs = await cursor.to_list(length=50)
         return [_serialize(d) for d in docs]
     except Exception as exc:
-        raise HTTPException(status_code=500, detail=f"Error fetching testimonials: {exc}")
+        raise HTTPException(
+            status_code=500, detail=f"Error fetching testimonials: {exc}"
+        )
 
 
 # ── Admin CRUD (ROOT_ADMIN only) ─────────────────────────────────────────────
 
+
 @router.get("/testimonials", tags=["ROOT_ADMIN"])
-async def list_testimonials(current_user: ExtendedAuthUser = Depends(require_root_admin)):
+async def list_testimonials(
+    current_user: ExtendedAuthUser = Depends(require_root_admin),
+):
     """List all testimonials (active + inactive) for admin management."""
     try:
         await _ensure_seeded()
@@ -168,7 +182,9 @@ async def list_testimonials(current_user: ExtendedAuthUser = Depends(require_roo
         docs = await cursor.to_list(length=200)
         return [_serialize(d) for d in docs]
     except Exception as exc:
-        raise HTTPException(status_code=500, detail=f"Error fetching testimonials: {exc}")
+        raise HTTPException(
+            status_code=500, detail=f"Error fetching testimonials: {exc}"
+        )
 
 
 @router.post("/testimonials", tags=["ROOT_ADMIN"])
@@ -188,7 +204,9 @@ async def create_testimonial(
         result = await mongo.db[COLLECTION].insert_one(doc)
         return {"message": "Testimonial created", "_id": str(result.inserted_id)}
     except Exception as exc:
-        raise HTTPException(status_code=500, detail=f"Error creating testimonial: {exc}")
+        raise HTTPException(
+            status_code=500, detail=f"Error creating testimonial: {exc}"
+        )
 
 
 @router.put("/testimonials/{testimonial_id}", tags=["ROOT_ADMIN"])
@@ -220,7 +238,9 @@ async def update_testimonial(
     except HTTPException:
         raise
     except Exception as exc:
-        raise HTTPException(status_code=500, detail=f"Error updating testimonial: {exc}")
+        raise HTTPException(
+            status_code=500, detail=f"Error updating testimonial: {exc}"
+        )
 
 
 @router.delete("/testimonials/{testimonial_id}", tags=["ROOT_ADMIN"])
@@ -233,7 +253,9 @@ async def delete_testimonial(
         if not ObjectId.is_valid(testimonial_id):
             raise HTTPException(status_code=400, detail="Invalid testimonial ID")
 
-        result = await mongo.db[COLLECTION].delete_one({"_id": ObjectId(testimonial_id)})
+        result = await mongo.db[COLLECTION].delete_one(
+            {"_id": ObjectId(testimonial_id)}
+        )
         if result.deleted_count == 0:
             raise HTTPException(status_code=404, detail="Testimonial not found")
 
@@ -241,7 +263,9 @@ async def delete_testimonial(
     except HTTPException:
         raise
     except Exception as exc:
-        raise HTTPException(status_code=500, detail=f"Error deleting testimonial: {exc}")
+        raise HTTPException(
+            status_code=500, detail=f"Error deleting testimonial: {exc}"
+        )
 
 
 @router.put("/testimonials/{testimonial_id}/toggle", tags=["ROOT_ADMIN"])
@@ -261,14 +285,21 @@ async def toggle_testimonial(
         new_status = not doc.get("is_active", True)
         await mongo.db[COLLECTION].update_one(
             {"_id": ObjectId(testimonial_id)},
-            {"$set": {
-                "is_active": new_status,
-                "updated_by": current_user.email,
-                "updated_at": datetime.now(timezone.utc),
-            }},
+            {
+                "$set": {
+                    "is_active": new_status,
+                    "updated_by": current_user.email,
+                    "updated_at": datetime.now(timezone.utc),
+                }
+            },
         )
-        return {"message": f"Testimonial {'activated' if new_status else 'deactivated'}", "is_active": new_status}
+        return {
+            "message": f"Testimonial {'activated' if new_status else 'deactivated'}",
+            "is_active": new_status,
+        }
     except HTTPException:
         raise
     except Exception as exc:
-        raise HTTPException(status_code=500, detail=f"Error toggling testimonial: {exc}")
+        raise HTTPException(
+            status_code=500, detail=f"Error toggling testimonial: {exc}"
+        )

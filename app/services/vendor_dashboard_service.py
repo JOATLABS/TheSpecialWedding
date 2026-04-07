@@ -60,19 +60,24 @@ class VendorDashboardService:
 
         return {"vendor_ids": vendor_ids, "wedding_ids": list(wedding_ids)}
 
-    def _build_wedding_snapshot(self, wedding_ids: Sequence[str]) -> Dict[str, Dict[str, str]]:
+    def _build_wedding_snapshot(
+        self, wedding_ids: Sequence[str]
+    ) -> Dict[str, Dict[str, str]]:
         """Fetch minimal wedding metadata for display."""
 
         if not wedding_ids:
             return {}
 
-        query_ids = [ObjectId(w_id) if ObjectId.is_valid(w_id) else w_id for w_id in wedding_ids]
+        query_ids = [
+            ObjectId(w_id) if ObjectId.is_valid(w_id) else w_id for w_id in wedding_ids
+        ]
         snapshot: Dict[str, Dict[str, str]] = {}
 
         for wedding in self.weddings.find({"_id": {"$in": query_ids}}):
             key = str(wedding.get("_id"))
             snapshot[key] = {
-                "name": wedding.get("couple_names") or wedding.get("couple_name", "Wedding"),
+                "name": wedding.get("couple_names")
+                or wedding.get("couple_name", "Wedding"),
                 "date": _isoformat(wedding.get("date")),
                 "status": wedding.get("status", "active"),
                 "location": wedding.get("location") or wedding.get("venue", ""),
@@ -80,8 +85,12 @@ class VendorDashboardService:
 
         return snapshot
 
-    def _serialize_task(self, task: dict, wedding_map: Dict[str, Dict[str, str]]) -> dict:
-        wedding_id = str(task.get("wedding_id")) if task.get("wedding_id") is not None else ""
+    def _serialize_task(
+        self, task: dict, wedding_map: Dict[str, Dict[str, str]]
+    ) -> dict:
+        wedding_id = (
+            str(task.get("wedding_id")) if task.get("wedding_id") is not None else ""
+        )
         wedding = wedding_map.get(wedding_id, {})
 
         return {
@@ -96,9 +105,16 @@ class VendorDashboardService:
             "updated_at": _isoformat(task.get("updated_at")),
         }
 
-    def _serialize_form(self, form: dict, submissions: Dict[str, dict], wedding_map: Dict[str, Dict[str, str]]) -> dict:
+    def _serialize_form(
+        self,
+        form: dict,
+        submissions: Dict[str, dict],
+        wedding_map: Dict[str, Dict[str, str]],
+    ) -> dict:
         form_id = str(form.get("_id"))
-        wedding_id = str(form.get("wedding_id")) if form.get("wedding_id") is not None else ""
+        wedding_id = (
+            str(form.get("wedding_id")) if form.get("wedding_id") is not None else ""
+        )
         wedding = wedding_map.get(wedding_id, {})
         submission = submissions.get(form_id)
 
@@ -146,7 +162,9 @@ class VendorDashboardService:
             checklist_query["wedding_id"] = {"$in": wedding_ids}
 
         raw_tasks = list(self.checklist.find(checklist_query))
-        serialized_tasks = [self._serialize_task(task, wedding_map) for task in raw_tasks]
+        serialized_tasks = [
+            self._serialize_task(task, wedding_map) for task in raw_tasks
+        ]
 
         serialized_tasks.sort(
             key=lambda task: (
@@ -172,18 +190,27 @@ class VendorDashboardService:
                 }
 
         serialized_forms = [
-            self._serialize_form(form, submission_map, wedding_map) for form in raw_forms
+            self._serialize_form(form, submission_map, wedding_map)
+            for form in raw_forms
         ]
 
-        pending_forms = [form for form in serialized_forms if form["status"] != "submitted"]
-        completed_forms = [form for form in serialized_forms if form["status"] == "submitted"]
+        pending_forms = [
+            form for form in serialized_forms if form["status"] != "submitted"
+        ]
+        completed_forms = [
+            form for form in serialized_forms if form["status"] == "submitted"
+        ]
 
         total_tasks = len(serialized_tasks)
-        completed_tasks = sum(1 for task in serialized_tasks if task["status"] == "completed")
+        completed_tasks = sum(
+            1 for task in serialized_tasks if task["status"] == "completed"
+        )
 
         wedding_cards = []
         for wedding_id, metadata in wedding_map.items():
-            wedding_tasks = [task for task in serialized_tasks if task["wedding_id"] == wedding_id]
+            wedding_tasks = [
+                task for task in serialized_tasks if task["wedding_id"] == wedding_id
+            ]
             wedding_cards.append(
                 {
                     "id": wedding_id,
@@ -243,14 +270,20 @@ class VendorDashboardService:
         try:
             object_id = ObjectId(task_id)
         except Exception as exc:  # pragma: no cover - defensive guard
-            raise HTTPException(status_code=400, detail="Invalid task identifier") from exc
+            raise HTTPException(
+                status_code=400, detail="Invalid task identifier"
+            ) from exc
 
         task = self.checklist.find_one({"_id": object_id})
         if not task:
             raise HTTPException(status_code=404, detail="Task not found")
 
         if not bypass_permission:
-            assigned_vendor_id = str(task.get("assigned_vendor_id")) if task.get("assigned_vendor_id") else None
+            assigned_vendor_id = (
+                str(task.get("assigned_vendor_id"))
+                if task.get("assigned_vendor_id")
+                else None
+            )
             assigned_email = task.get("assigned_vendor_email")
             wedding_id = str(task.get("wedding_id")) if task.get("wedding_id") else None
 
@@ -263,7 +296,9 @@ class VendorDashboardService:
                 owns_task = True
 
             if not owns_task:
-                raise HTTPException(status_code=403, detail="You are not assigned to this task")
+                raise HTTPException(
+                    status_code=403, detail="You are not assigned to this task"
+                )
 
         update_payload = {
             "status": new_status,

@@ -12,7 +12,13 @@ from app.services.reminder_service_twilio import (
     SMS_THROTTLE_DELAY_S,
 )
 from app.services.activity_log_service import activity_log_service
-from app.dependencies.auth_extended import require_root_admin, require_team_or_planner, enforce_team_permission, ExtendedAuthUser, check_wedding_access
+from app.dependencies.auth_extended import (
+    require_root_admin,
+    require_team_or_planner,
+    enforce_team_permission,
+    ExtendedAuthUser,
+    check_wedding_access,
+)
 from app.core.database import mongo
 from pydantic import BaseModel
 from typing import Optional, List
@@ -40,12 +46,14 @@ class SlugModel(BaseModel):
 
 class IndividualReminderRequest(BaseModel):
     """Request model for sending reminders to specific guests by their tokens"""
+
     guest_tokens: List[str]
     message: str
 
 
 class IndividualPlusOneReminderRequest(BaseModel):
     """Request model for sending reminders to specific plus-ones by their IDs"""
+
     plus_one_ids: List[str]
     message: str
     wedding_id: str
@@ -56,29 +64,37 @@ def get_twilio_status():
     """Check if Twilio services are configured and available"""
     return {
         "available": twilio_configured,
-        "message": "Twilio configured and ready" if twilio_configured else "Twilio not configured"
+        "message": "Twilio configured and ready"
+        if twilio_configured
+        else "Twilio not configured",
     }
 
 
 @router.post("/reminders/twilio/send", tags=["Admin"])
 async def send_reminder_twilio(
-    event_type: str = Query(..., description="Event type: traditional, white_wedding, or reception"),
+    event_type: str = Query(
+        ..., description="Event type: traditional, white_wedding, or reception"
+    ),
     message: str = Query(..., description="Message to send"),
-    target_group: str = Query(..., description="Target group: guests, plus-ones, or all"),
-    current_user: ExtendedAuthUser = Depends(require_team_or_planner)
+    target_group: str = Query(
+        ..., description="Target group: guests, plus-ones, or all"
+    ),
+    current_user: ExtendedAuthUser = Depends(require_team_or_planner),
 ):
     """Send SMS reminders using Twilio"""
     enforce_team_permission(current_user, "send_reminders")
     if not twilio_configured or not twilio_reminder_service:
         raise HTTPException(status_code=503, detail="Twilio service not configured")
 
-    return await twilio_reminder_service.send_reminders(event_type, message, target_group)
+    return await twilio_reminder_service.send_reminders(
+        event_type, message, target_group
+    )
 
 
 @router.post("/reminders/twilio/send-invites", tags=["Admin"])
 async def send_invites_twilio(
     payload: SlugModel,
-    current_user: ExtendedAuthUser = Depends(require_team_or_planner)
+    current_user: ExtendedAuthUser = Depends(require_team_or_planner),
 ):
     """Send RSVP invite links using Twilio"""
     enforce_team_permission(current_user, "send_rsvp")
@@ -92,8 +108,7 @@ async def send_invites_twilio(
         raise HTTPException(status_code=403, detail="Access to this wedding denied")
 
     result = await twilio_helper.send_personalized_rsvp_links(
-        slug=payload.slug,
-        custom_message=payload.custom_message
+        slug=payload.slug, custom_message=payload.custom_message
     )
 
     # Create bulk send summary notification for the planner
@@ -106,7 +121,9 @@ async def send_invites_twilio(
 
     # Broadcast invite status change so planner UI refreshes
     await sse_manager.broadcast_data_change(
-        current_user.email, "invite", "created",
+        current_user.email,
+        "invite",
+        "created",
         wedding_id=str(wedding["_id"]),
     )
 
@@ -116,7 +133,7 @@ async def send_invites_twilio(
 @router.post("/reminders/send-to-guests", tags=["Admin"])
 async def send_individual_reminders(
     payload: IndividualReminderRequest,
-    current_user: ExtendedAuthUser = Depends(require_team_or_planner)
+    current_user: ExtendedAuthUser = Depends(require_team_or_planner),
 ):
     """
     Send SMS reminders to specific guests by their tokens.
@@ -160,7 +177,9 @@ async def send_individual_reminders(
         raw_phone = guest.get("phone")
         phone = normalize_phone_e164(raw_phone)
         if not phone:
-            logger.warning(f"Guest {guest_name} has no valid phone number (raw: {raw_phone!r})")
+            logger.warning(
+                f"Guest {guest_name} has no valid phone number (raw: {raw_phone!r})"
+            )
             failed_count += 1
             failure_reasons.append(f"{guest_name} has no phone number")
             continue
@@ -175,10 +194,16 @@ async def send_individual_reminders(
             if sms_opt_in is not True:
                 if sms_opt_in is False:
                     logger.info(f"Guest {guest_name} has opted out of SMS")
-                    failure_reasons.append(f"{guest_name} has opted out of SMS notifications")
+                    failure_reasons.append(
+                        f"{guest_name} has opted out of SMS notifications"
+                    )
                 else:
-                    logger.info(f"Guest {guest_name} hasn't opted in to SMS (status: not set)")
-                    failure_reasons.append(f"{guest_name} hasn't opted in to SMS notifications yet (please wait for their RSVP)")
+                    logger.info(
+                        f"Guest {guest_name} hasn't opted in to SMS (status: not set)"
+                    )
+                    failure_reasons.append(
+                        f"{guest_name} hasn't opted in to SMS notifications yet (please wait for their RSVP)"
+                    )
                 failed_count += 1
                 continue
         else:
@@ -186,7 +211,9 @@ async def send_individual_reminders(
             if sms_opt_in is False:
                 logger.info(f"Guest {guest_name} has opted out of SMS")
                 failed_count += 1
-                failure_reasons.append(f"{guest_name} has opted out of SMS notifications")
+                failure_reasons.append(
+                    f"{guest_name} has opted out of SMS notifications"
+                )
                 continue
 
         # Send SMS with delivery tracking
@@ -202,14 +229,14 @@ async def send_individual_reminders(
             # Try messaging service first, fallback to direct number
             try:
                 message = twilio_client.messages.create(
-                    messaging_service_sid=MESSAGING_SERVICE_SID,
-                    **send_kwargs
+                    messaging_service_sid=MESSAGING_SERVICE_SID, **send_kwargs
                 )
             except Exception as msg_service_error:
-                logger.warning(f"Messaging service failed, trying direct number: {msg_service_error}")
+                logger.warning(
+                    f"Messaging service failed, trying direct number: {msg_service_error}"
+                )
                 message = twilio_client.messages.create(
-                    from_=from_number,
-                    **send_kwargs
+                    from_=from_number, **send_kwargs
                 )
 
             logger.info(f"SMS sent to {phone}, SID: {message.sid}")
@@ -222,7 +249,7 @@ async def send_individual_reminders(
             if not invite_sent:
                 await guest_collection.update_one(
                     {"_id": guest["_id"]},
-                    {"$set": {"invite_sent": True, "invite_sent_date": now}}
+                    {"$set": {"invite_sent": True, "invite_sent_date": now}},
                 )
                 logger.info(f"Set invite_sent=True for guest {guest_name}")
         except Exception as e:
@@ -235,7 +262,9 @@ async def send_individual_reminders(
         log_record = {
             "phone": phone,
             "guest_id": str(guest["_id"]),
-            "wedding_id": str(guest.get("wedding_id")) if guest.get("wedding_id") else None,
+            "wedding_id": str(guest.get("wedding_id"))
+            if guest.get("wedding_id")
+            else None,
             "message": payload.message,
             "target_type": "guest",
             "event_type": "individual_reminder",
@@ -251,11 +280,9 @@ async def send_individual_reminders(
         if message_sid:
             log_record["message_sid"] = message_sid
             if initial_status:
-                log_record["delivery_events"] = [{
-                    "status": initial_status,
-                    "timestamp": now,
-                    "error_code": None
-                }]
+                log_record["delivery_events"] = [
+                    {"status": initial_status, "timestamp": now, "error_code": None}
+                ]
             else:
                 log_record["delivery_events"] = []
         else:
@@ -287,13 +314,15 @@ async def send_individual_reminders(
                     recipient_count=count,
                     reminder_type="individual",
                     planner_email=current_user.email,
-                    channel="sms"
+                    channel="sms",
                 )
 
             # Broadcast SSE data-change per wedding so planner UI refreshes
             for wedding_id in wedding_sent_counts:
                 await sse_manager.broadcast_data_change(
-                    current_user.email, "invite", "created",
+                    current_user.email,
+                    "invite",
+                    "created",
                     wedding_id=wedding_id,
                 )
         except Exception as log_err:
@@ -304,14 +333,14 @@ async def send_individual_reminders(
         "failed": failed_count,
         "total": len(payload.guest_tokens),
         "provider": "twilio",
-        "failure_reasons": failure_reasons if failure_reasons else None
+        "failure_reasons": failure_reasons if failure_reasons else None,
     }
 
 
 @router.post("/reminders/send-to-plus-ones", tags=["Admin"])
 async def send_plus_one_reminders(
     payload: IndividualPlusOneReminderRequest,
-    current_user: ExtendedAuthUser = Depends(require_team_or_planner)
+    current_user: ExtendedAuthUser = Depends(require_team_or_planner),
 ):
     """
     Send SMS reminders to specific plus-ones by their IDs.
@@ -322,6 +351,7 @@ async def send_plus_one_reminders(
         raise HTTPException(status_code=503, detail="SMS service not configured")
 
     from app.dependencies.auth_extended import check_wedding_access
+
     if not await check_wedding_access(current_user, payload.wedding_id):
         raise HTTPException(status_code=403, detail="Access to this wedding denied")
 
@@ -339,8 +369,7 @@ async def send_plus_one_reminders(
 
     # Pre-fetch all guest IDs for this wedding to verify plus-one ownership
     wedding_guests = await guest_collection.find(
-        {"wedding_id": payload.wedding_id},
-        {"_id": 1}
+        {"wedding_id": payload.wedding_id}, {"_id": 1}
     ).to_list(length=None)
     wedding_guest_ids = {str(g["_id"]) for g in wedding_guests}
 
@@ -400,17 +429,19 @@ async def send_plus_one_reminders(
 
             try:
                 message = twilio_client.messages.create(
-                    messaging_service_sid=MESSAGING_SERVICE_SID,
-                    **send_kwargs
+                    messaging_service_sid=MESSAGING_SERVICE_SID, **send_kwargs
                 )
             except Exception as msg_service_error:
-                logger.warning(f"Messaging service failed, trying direct number: {msg_service_error}")
+                logger.warning(
+                    f"Messaging service failed, trying direct number: {msg_service_error}"
+                )
                 message = twilio_client.messages.create(
-                    from_=from_number,
-                    **send_kwargs
+                    from_=from_number, **send_kwargs
                 )
 
-            logger.info(f"SMS sent to plus-one {po_name} at {phone}, SID: {message.sid}")
+            logger.info(
+                f"SMS sent to plus-one {po_name} at {phone}, SID: {message.sid}"
+            )
             sent_count += 1
             status = "success"
             message_sid = message.sid
@@ -437,11 +468,11 @@ async def send_plus_one_reminders(
         }
         if message_sid:
             log_record["message_sid"] = message_sid
-            log_record["delivery_events"] = [{
-                "status": initial_status,
-                "timestamp": now,
-                "error_code": None
-            }] if initial_status else []
+            log_record["delivery_events"] = (
+                [{"status": initial_status, "timestamp": now, "error_code": None}]
+                if initial_status
+                else []
+            )
         else:
             log_record["delivery_events"] = []
         logs.append(log_record)
@@ -462,10 +493,12 @@ async def send_plus_one_reminders(
                 recipient_count=sent_count,
                 reminder_type="individual_plus_one",
                 planner_email=current_user.email,
-                channel="sms"
+                channel="sms",
             )
             await sse_manager.broadcast_data_change(
-                current_user.email, "reminder", "created",
+                current_user.email,
+                "reminder",
+                "created",
                 wedding_id=payload.wedding_id,
             )
         except Exception as log_err:
@@ -476,7 +509,7 @@ async def send_plus_one_reminders(
         "failed": failed_count,
         "total": len(payload.plus_one_ids),
         "provider": "twilio",
-        "failure_reasons": failure_reasons if failure_reasons else None
+        "failure_reasons": failure_reasons if failure_reasons else None,
     }
 
 
@@ -494,7 +527,9 @@ async def _create_bulk_send_summary(
         failed = result.get("failed", 0)
         skipped_no_phone = result.get("skipped_no_phone", 0)
         skipped_opted_out = result.get("skipped_opted_out", 0)
-        total_skipped = skipped_no_phone + result.get("skipped_no_token", 0) + skipped_opted_out
+        total_skipped = (
+            skipped_no_phone + result.get("skipped_no_token", 0) + skipped_opted_out
+        )
 
         # Build human-readable summary
         parts = [f"{sent} sent"]
@@ -511,13 +546,17 @@ async def _create_bulk_send_summary(
         if skipped_opted_out > 0:
             details.append(f"{skipped_opted_out} guests opted out of SMS")
 
-        message = f"Bulk {channel.upper()} send completed for wedding '{wedding_slug}'. "
+        message = (
+            f"Bulk {channel.upper()} send completed for wedding '{wedding_slug}'. "
+        )
         message += f"{sent} messages sent successfully."
         if details:
             message += " " + ". ".join(details) + "."
 
         # Look up wedding_id from slug
-        wedding = await mongo.db["weddings"].find_one({"slug": wedding_slug}, {"_id": 1})
+        wedding = await mongo.db["weddings"].find_one(
+            {"slug": wedding_slug}, {"_id": 1}
+        )
         wedding_id = str(wedding["_id"]) if wedding else None
 
         priority = "high" if failed > 0 else "low"
@@ -541,13 +580,17 @@ async def _create_bulk_send_summary(
         )
 
         await mongo.db["planner_notifications"].insert_one(notification)
-        logger.info(f"Bulk send summary notification created for {planner_email}: {title}")
+        logger.info(
+            f"Bulk send summary notification created for {planner_email}: {title}"
+        )
 
     except Exception as e:
         logger.warning(f"Failed to create bulk send summary notification: {str(e)}")
 
 
-@router.get("/reminders/twilio/logs", tags=["Admin"], dependencies=[Depends(require_root_admin)])
+@router.get(
+    "/reminders/twilio/logs", tags=["Admin"], dependencies=[Depends(require_root_admin)]
+)
 async def get_twilio_logs():
     """Get SMS logs for messages sent via Twilio (Root Admin only)"""
     if not twilio_configured or not twilio_reminder_service:
@@ -557,7 +600,9 @@ async def get_twilio_logs():
 
 
 @router.get("/reminders/logs", tags=["Admin"])
-async def get_all_logs(current_user: ExtendedAuthUser = Depends(require_team_or_planner)):
+async def get_all_logs(
+    current_user: ExtendedAuthUser = Depends(require_team_or_planner),
+):
     """Get SMS logs - filtered by wedding for planners"""
     if not twilio_configured or not twilio_reminder_service:
         return []
@@ -570,8 +615,7 @@ async def get_all_logs(current_user: ExtendedAuthUser = Depends(require_team_or_
     if current_user.is_wedding_planner:
         # Get weddings assigned to this planner
         weddings_cursor = mongo.db["weddings"].find(
-            {"assigned_planner_email": current_user.email},
-            {"_id": 1}
+            {"assigned_planner_email": current_user.email}, {"_id": 1}
         )
         weddings = await weddings_cursor.to_list(length=None)
         wedding_ids = [w["_id"] for w in weddings]
@@ -580,10 +624,12 @@ async def get_all_logs(current_user: ExtendedAuthUser = Depends(require_team_or_
             return []
 
         # Get logs only for those weddings
-        logs_cursor = mongo.db["reminders_sent"].find(
-            {"wedding_id": {"$in": wedding_ids}},
-            {"_id": 0}
-        ).sort("sent_at", -1).limit(500)
+        logs_cursor = (
+            mongo.db["reminders_sent"]
+            .find({"wedding_id": {"$in": wedding_ids}}, {"_id": 0})
+            .sort("sent_at", -1)
+            .limit(500)
+        )
         return await logs_cursor.to_list(length=500)
 
     return []

@@ -2,6 +2,7 @@
 Pydantic v2 compatible ObjectId implementation for MongoDB integration.
 This replaces the deprecated v1 style validators with modern core schema approach.
 """
+
 from typing import Any, Dict
 from bson import ObjectId
 from pydantic import GetCoreSchemaHandler
@@ -17,6 +18,7 @@ class PyObjectId(ObjectId):
     - Serializes to string for JSON responses
     - Full Pydantic v2 core schema support
     """
+
     @classmethod
     def __get_pydantic_core_schema__(
         cls, source_type: Any, handler: GetCoreSchemaHandler
@@ -28,10 +30,11 @@ class PyObjectId(ObjectId):
         return core_schema.with_info_before_validator_function(
             cls._validate_object_id,
             core_schema.str_schema(),
-            serialization=core_schema.to_string_ser_schema()
+            serialization=core_schema.to_string_ser_schema(),
         )
+
     @classmethod
-    def _validate_object_id(cls, value: Any) -> 'PyObjectId':
+    def _validate_object_id(cls, value: Any) -> "PyObjectId":
         """
         Validate and convert input to ObjectId.
 
@@ -57,7 +60,7 @@ class PyObjectId(ObjectId):
                 raise ValueError(f"Invalid ObjectId format: {value}")
         # Handle other types that might be convertible
         try:
-            if hasattr(value, '__str__'):
+            if hasattr(value, "__str__"):
                 str_value = str(value)
                 if ObjectId.is_valid(str_value):
                     return cls(str_value)
@@ -74,13 +77,15 @@ class PyObjectId(ObjectId):
         Generate JSON schema for OpenAPI documentation.
         This replaces the deprecated __modify_schema__ method from v1.
         """
-        field_schema.update({
-            "type": "string",
-            "format": "objectid",
-            "description": "MongoDB ObjectId as a 24-character hexadecimal string",
-            "pattern": "^[0-9a-fA-F]{24}$",
-            "example": "507f1f77bcf86cd799439011"
-        })
+        field_schema.update(
+            {
+                "type": "string",
+                "format": "objectid",
+                "description": "MongoDB ObjectId as a 24-character hexadecimal string",
+                "pattern": "^[0-9a-fA-F]{24}$",
+                "example": "507f1f77bcf86cd799439011",
+            }
+        )
         return field_schema
 
     def __str__(self) -> str:
@@ -95,6 +100,7 @@ class PyObjectId(ObjectId):
     def hex_string(self) -> str:
         """Get the hexadecimal string representation."""
         return str(self)
+
     def to_dict(self) -> Dict[str, str]:
         """Convert to dictionary for serialization."""
         return {"$oid": str(self)}

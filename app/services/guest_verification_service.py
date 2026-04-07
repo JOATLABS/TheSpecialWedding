@@ -45,7 +45,9 @@ class GuestVerificationService:
         }
 
     @staticmethod
-    def _serialize_guest_response(guest: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+    def _serialize_guest_response(
+        guest: Optional[Dict[str, Any]],
+    ) -> Optional[Dict[str, Any]]:
         if not guest:
             return None
 
@@ -58,12 +60,18 @@ class GuestVerificationService:
         return guest_response
 
     async def _load_rsvp_data(self, guest_id: str) -> Optional[Dict[str, Any]]:
-        existing_rsvp = await self.rsvp_collection.find_one({
-            "$or": [
-                {"guest_id": guest_id},
-                {"guest_id": ObjectId(guest_id) if ObjectId.is_valid(guest_id) else guest_id},
-            ]
-        })
+        existing_rsvp = await self.rsvp_collection.find_one(
+            {
+                "$or": [
+                    {"guest_id": guest_id},
+                    {
+                        "guest_id": ObjectId(guest_id)
+                        if ObjectId.is_valid(guest_id)
+                        else guest_id
+                    },
+                ]
+            }
+        )
 
         if not existing_rsvp:
             return None
@@ -97,7 +105,10 @@ class GuestVerificationService:
             raise HTTPException(status_code=404, detail="Wedding not found")
 
         if str(wedding.get("_id")) != str(wedding_id):
-            raise HTTPException(status_code=403, detail="Guest access session does not match this wedding")
+            raise HTTPException(
+                status_code=403,
+                detail="Guest access session does not match this wedding",
+            )
 
         guest_response = None
         rsvp_data = None
@@ -119,7 +130,9 @@ class GuestVerificationService:
             "otp_verified": otp_verified,
         }
 
-    def _sanitize_input(self, value: str, field_name: str, max_length: int = 255) -> str:
+    def _sanitize_input(
+        self, value: str, field_name: str, max_length: int = 255
+    ) -> str:
         """Sanitize user input to prevent injection attacks"""
         if not value or not isinstance(value, str):
             return ""
@@ -131,7 +144,7 @@ class GuestVerificationService:
         # Allow alphanumeric, spaces, and common punctuation
         if field_name in ["name", "slug"]:
             # More restrictive for names and slugs
-            sanitized = re.sub(r'[^\w\s\-\.]', '', sanitized)
+            sanitized = re.sub(r"[^\w\s\-\.]", "", sanitized)
 
         return sanitized
 
@@ -161,18 +174,16 @@ class GuestVerificationService:
                 if verification_data.get("token")
                 else None
             )
-            or (
-                "password_attempt"
-                if verification_data.get("password")
-                else None
-            )
+            or ("password_attempt" if verification_data.get("password") else None)
             or "anonymous"
         )
 
         scoped_identifier = f"{slug}:{rate_limit_identifier}"
         return scoped_identifier, scoped_identifier
 
-    def _check_memory_rate_limit(self, rate_limit_key: str, max_attempts: int, window_seconds: int) -> bool:
+    def _check_memory_rate_limit(
+        self, rate_limit_key: str, max_attempts: int, window_seconds: int
+    ) -> bool:
         current_time = datetime.now(timezone.utc)
         attempts = self.__class__._failed_attempts
         attempt_data = attempts.get(rate_limit_key)
@@ -186,7 +197,10 @@ class GuestVerificationService:
             return True
 
         if attempt_data.get("count", 0) >= max_attempts:
-            security_logger.warning("Rate limit exceeded for namespace key: %s", rate_limit_key.rsplit(":", 1)[-1])
+            security_logger.warning(
+                "Rate limit exceeded for namespace key: %s",
+                rate_limit_key.rsplit(":", 1)[-1],
+            )
             return False
 
         return True
@@ -197,7 +211,9 @@ class GuestVerificationService:
         attempt_data = attempts.get(rate_limit_key)
 
         if attempt_data:
-            time_since_last = (current_time - attempt_data["last_attempt"]).total_seconds()
+            time_since_last = (
+                current_time - attempt_data["last_attempt"]
+            ).total_seconds()
             if time_since_last >= window_seconds:
                 attempts[rate_limit_key] = {"count": 1, "last_attempt": current_time}
                 return
@@ -207,7 +223,9 @@ class GuestVerificationService:
         else:
             attempts[rate_limit_key] = {"count": 1, "last_attempt": current_time}
 
-    def _acquire_memory_lock(self, lock_key: str, lock_token: str, lock_seconds: int) -> bool:
+    def _acquire_memory_lock(
+        self, lock_key: str, lock_token: str, lock_seconds: int
+    ) -> bool:
         current_time = datetime.now(timezone.utc)
         locks = self.__class__._attempt_locks
         lock_data = locks.get(lock_key)
@@ -242,7 +260,9 @@ class GuestVerificationService:
         lock_token = secrets.token_hex(16)
 
         if cache.enabled and cache.redis_client:
-            redis_result = await cache.acquire_lock(lock_key, lock_token, expire=duration)
+            redis_result = await cache.acquire_lock(
+                lock_key, lock_token, expire=duration
+            )
             if redis_result is not None:
                 return lock_token if redis_result else None
 
@@ -282,11 +302,15 @@ class GuestVerificationService:
             try:
                 current_count = await cache.get(rate_limit_key, default=0)
                 if int(current_count or 0) >= limit:
-                    security_logger.warning("Rate limit exceeded for namespace: %s", namespace)
+                    security_logger.warning(
+                        "Rate limit exceeded for namespace: %s", namespace
+                    )
                     return False
                 return True
             except Exception as exc:
-                security_logger.warning("Redis rate limit check failed for %s: %s", namespace, exc)
+                security_logger.warning(
+                    "Redis rate limit check failed for %s: %s", namespace, exc
+                )
 
         return self._check_memory_rate_limit(rate_limit_key, limit, window)
 
@@ -308,7 +332,9 @@ class GuestVerificationService:
 
         self._record_memory_failed_attempt(rate_limit_key, window)
 
-    async def _reset_failed_attempts(self, identifier: str, namespace: str = "guest_access"):
+    async def _reset_failed_attempts(
+        self, identifier: str, namespace: str = "guest_access"
+    ):
         """Reset failed attempts after successful authentication"""
         rate_limit_key = self._build_rate_limit_key(namespace, identifier)
 
@@ -323,7 +349,7 @@ class GuestVerificationService:
             log_entry = {
                 "event_type": event_type,
                 "timestamp": datetime.now(timezone.utc),
-                "details": details
+                "details": details,
             }
             # Only log event type to console, not the sensitive details
             security_logger.info(f"Security Event: {event_type}")
@@ -367,16 +393,22 @@ class GuestVerificationService:
         # Rate limiting by token
         rate_limit_identifier = f"{slug}:{token}"
         lock_identifier = f"{slug}:{token}"
-        lock_token = await self._acquire_attempt_lock(lock_identifier, namespace="rsvp_token_access")
+        lock_token = await self._acquire_attempt_lock(
+            lock_identifier, namespace="rsvp_token_access"
+        )
         if not lock_token:
-            raise HTTPException(status_code=429, detail="Verification already in progress. Please try again.")
+            raise HTTPException(
+                status_code=429,
+                detail="Verification already in progress. Please try again.",
+            )
 
         try:
-            if not await self._check_rate_limit(rate_limit_identifier, namespace="rsvp_token_access"):
+            if not await self._check_rate_limit(
+                rate_limit_identifier, namespace="rsvp_token_access"
+            ):
                 await self._log_security_event("RSVP_TOKEN_RATE_LIMIT", {"slug": slug})
                 raise HTTPException(
-                    status_code=429,
-                    detail="Too many attempts. Please try again later."
+                    status_code=429, detail="Too many attempts. Please try again later."
                 )
 
             # Get wedding by slug
@@ -388,17 +420,24 @@ class GuestVerificationService:
             guest = await self.guest_service.get_guest_by_token(token, wedding["_id"])
 
             if not guest:
-                await self._record_failed_attempt(rate_limit_identifier, namespace="rsvp_token_access")
+                await self._record_failed_attempt(
+                    rate_limit_identifier, namespace="rsvp_token_access"
+                )
                 await self._log_security_event("RSVP_TOKEN_INVALID", {"slug": slug})
                 raise HTTPException(status_code=403, detail="Invalid invite token")
 
             # Success - reset rate limit and log
-            await self._reset_failed_attempts(rate_limit_identifier, namespace="rsvp_token_access")
-            await self._log_security_event("RSVP_TOKEN_SUCCESS", {
-                "slug": slug,
-                "wedding_id": str(wedding.get("_id")),
-                "guest_id": str(guest.get("id"))
-            })
+            await self._reset_failed_attempts(
+                rate_limit_identifier, namespace="rsvp_token_access"
+            )
+            await self._log_security_event(
+                "RSVP_TOKEN_SUCCESS",
+                {
+                    "slug": slug,
+                    "wedding_id": str(wedding.get("_id")),
+                    "guest_id": str(guest.get("id")),
+                },
+            )
 
             guest = self._serialize_guest_response(guest)
             guest_id_str = str(guest.get("id"))
@@ -409,7 +448,7 @@ class GuestVerificationService:
                 "wedding": self._serialize_wedding_response(wedding),
                 "guest": guest,
                 "rsvp": rsvp_data,
-                "auth_method": "token"
+                "auth_method": "token",
             }
 
         except HTTPException:
@@ -418,7 +457,9 @@ class GuestVerificationService:
             security_logger.error(f"RSVP token access error: {type(e).__name__}")
             raise HTTPException(status_code=500, detail="Error accessing RSVP")
         finally:
-            await self._release_attempt_lock(lock_identifier, lock_token, namespace="rsvp_token_access")
+            await self._release_attempt_lock(
+                lock_identifier, lock_token, namespace="rsvp_token_access"
+            )
 
     # =========================================================================
     # WEDDING PAGE ACCESS - Privacy-based verification for viewing wedding page
@@ -452,16 +493,23 @@ class GuestVerificationService:
             slug=slug,
             verification_data=verification_data,
         )
-        lock_token = await self._acquire_attempt_lock(lock_identifier, namespace="guest_page_access")
+        lock_token = await self._acquire_attempt_lock(
+            lock_identifier, namespace="guest_page_access"
+        )
         if not lock_token:
-            raise HTTPException(status_code=429, detail="Verification already in progress. Please try again.")
+            raise HTTPException(
+                status_code=429,
+                detail="Verification already in progress. Please try again.",
+            )
 
         try:
-            if not await self._check_rate_limit(rate_limit_identifier, namespace="guest_page_access"):
+            if not await self._check_rate_limit(
+                rate_limit_identifier, namespace="guest_page_access"
+            ):
                 await self._log_security_event("RATE_LIMIT_EXCEEDED", {"slug": slug})
                 raise HTTPException(
                     status_code=429,
-                    detail="Too many failed attempts. Please try again later."
+                    detail="Too many failed attempts. Please try again later.",
                 )
 
             # Get wedding by slug
@@ -479,7 +527,7 @@ class GuestVerificationService:
                     "access": True,
                     "wedding": self._serialize_wedding_response(wedding),
                     "guest": None,
-                    "auth_method": "public"
+                    "auth_method": "public",
                 }
 
             # If password protected, check password
@@ -488,23 +536,34 @@ class GuestVerificationService:
                 stored_password = privacy_settings.get("password_protection", "")
 
                 # Use constant-time comparison to prevent timing attacks
-                if provided_password and stored_password and \
-                   secrets.compare_digest(str(provided_password), str(stored_password)):
-                    await self._reset_failed_attempts(rate_limit_identifier, namespace="guest_page_access")
-                    await self._log_security_event("PASSWORD_AUTH_SUCCESS", {
-                        "slug": slug,
-                        "wedding_id": str(wedding.get("_id"))
-                    })
+                if (
+                    provided_password
+                    and stored_password
+                    and secrets.compare_digest(
+                        str(provided_password), str(stored_password)
+                    )
+                ):
+                    await self._reset_failed_attempts(
+                        rate_limit_identifier, namespace="guest_page_access"
+                    )
+                    await self._log_security_event(
+                        "PASSWORD_AUTH_SUCCESS",
+                        {"slug": slug, "wedding_id": str(wedding.get("_id"))},
+                    )
                     return {
                         "access": True,
                         "wedding": self._serialize_wedding_response(wedding),
                         "guest": None,
-                        "auth_method": "password"
+                        "auth_method": "password",
                     }
                 elif provided_password:
                     # Password was provided but incorrect
-                    await self._record_failed_attempt(rate_limit_identifier, namespace="guest_page_access")
-                    await self._log_security_event("PASSWORD_AUTH_FAILED", {"slug": slug})
+                    await self._record_failed_attempt(
+                        rate_limit_identifier, namespace="guest_page_access"
+                    )
+                    await self._log_security_event(
+                        "PASSWORD_AUTH_FAILED", {"slug": slug}
+                    )
 
             # For private mode, try different verification methods
             # Note: Token verification is handled above (before privacy mode checks)
@@ -525,28 +584,43 @@ class GuestVerificationService:
                         otp_result = await self.otp_service.verify_otp(
                             wedding_id=wedding["_id"],
                             contact=contact,
-                            otp_code=otp_code
+                            otp_code=otp_code,
                         )
                         if otp_result.get("success"):
-                            await self._reset_failed_attempts(rate_limit_identifier, namespace="guest_page_access")
-                            await self._log_security_event("OTP_AUTH_SUCCESS", {
-                                "slug": slug,
-                                "wedding_id": str(wedding.get("_id")),
-                                "contact_type": otp_result.get("auth_method", "otp")
-                            })
-                            guest_response = self._serialize_guest_response(otp_result.get("guest"))
+                            await self._reset_failed_attempts(
+                                rate_limit_identifier, namespace="guest_page_access"
+                            )
+                            await self._log_security_event(
+                                "OTP_AUTH_SUCCESS",
+                                {
+                                    "slug": slug,
+                                    "wedding_id": str(wedding.get("_id")),
+                                    "contact_type": otp_result.get(
+                                        "auth_method", "otp"
+                                    ),
+                                },
+                            )
+                            guest_response = self._serialize_guest_response(
+                                otp_result.get("guest")
+                            )
                             return {
                                 "access": True,
                                 "wedding": self._serialize_wedding_response(wedding),
                                 "guest": guest_response,
-                                "auth_method": otp_result.get("auth_method", "otp")
+                                "auth_method": otp_result.get("auth_method", "otp"),
                             }
                         else:
-                            await self._record_failed_attempt(rate_limit_identifier, namespace="guest_page_access")
-                            await self._log_security_event("OTP_AUTH_FAILED", {"slug": slug})
+                            await self._record_failed_attempt(
+                                rate_limit_identifier, namespace="guest_page_access"
+                            )
+                            await self._log_security_event(
+                                "OTP_AUTH_FAILED", {"slug": slug}
+                            )
                     except Exception:
                         security_logger.warning("OTP verification error")
-                        await self._record_failed_attempt(rate_limit_identifier, namespace="guest_page_access")
+                        await self._record_failed_attempt(
+                            rate_limit_identifier, namespace="guest_page_access"
+                        )
 
                 # Method 3: Request OTP (when phone/email provided without code)
                 phone = verification_data.get("phone", "").strip()
@@ -562,7 +636,7 @@ class GuestVerificationService:
                         "otp_required": True,
                         "contact": phone if phone else email,
                         "contact_type": "phone" if phone else "email",
-                        "message": "Verification code will be sent to your contact"
+                        "message": "Verification code will be sent to your contact",
                     }
 
             # Access denied - log why
@@ -575,20 +649,32 @@ class GuestVerificationService:
                 "guest": None,
                 "required_auth": privacy_mode,
                 "privacy_settings": {
-                    "require_phone_verification": privacy_settings.get("require_phone_verification", True),
-                    "require_name_verification": privacy_settings.get("require_name_verification", True),
-                    "allow_guest_sharing": privacy_settings.get("allow_guest_sharing", False)
-                }
+                    "require_phone_verification": privacy_settings.get(
+                        "require_phone_verification", True
+                    ),
+                    "require_name_verification": privacy_settings.get(
+                        "require_name_verification", True
+                    ),
+                    "allow_guest_sharing": privacy_settings.get(
+                        "allow_guest_sharing", False
+                    ),
+                },
             }
 
         except HTTPException:
             raise
         except Exception as e:
-            raise HTTPException(status_code=500, detail=f"Error verifying guest access: {str(e)}")
+            raise HTTPException(
+                status_code=500, detail=f"Error verifying guest access: {str(e)}"
+            )
         finally:
-            await self._release_attempt_lock(lock_identifier, lock_token, namespace="guest_page_access")
+            await self._release_attempt_lock(
+                lock_identifier, lock_token, namespace="guest_page_access"
+            )
 
-    def _find_guest_by_verification(self, wedding_id: str, name: str, phone: str, privacy_settings: Dict) -> Optional[Dict]:
+    def _find_guest_by_verification(
+        self, wedding_id: str, name: str, phone: str, privacy_settings: Dict
+    ) -> Optional[Dict]:
         """
         DEPRECATED: This method is replaced by OTP verification.
         Keeping for backward compatibility but should not be used for new implementations.
@@ -604,23 +690,25 @@ class GuestVerificationService:
             return ""
 
         # Remove all non-digit characters
-        digits_only = re.sub(r'\D', '', phone)
+        digits_only = re.sub(r"\D", "", phone)
 
         # Handle US phone numbers
         if len(digits_only) == 10:
             return f"+1{digits_only}"
-        elif len(digits_only) == 11 and digits_only.startswith('1'):
+        elif len(digits_only) == 11 and digits_only.startswith("1"):
             return f"+{digits_only}"
-        elif digits_only.startswith('1') and len(digits_only) > 11:
+        elif digits_only.startswith("1") and len(digits_only) > 11:
             return f"+{digits_only}"
 
         # For other formats, just prepend + if not present
-        if not phone.startswith('+'):
+        if not phone.startswith("+"):
             return f"+{digits_only}"
 
         return phone
 
-    async def _log_guest_verification(self, wedding_id: str, guest_id: str, method: str):
+    async def _log_guest_verification(
+        self, wedding_id: str, guest_id: str, method: str
+    ):
         """Log guest verification for analytics"""
         try:
             log_entry = {
@@ -628,7 +716,7 @@ class GuestVerificationService:
                 "guest_id": guest_id,
                 "verification_method": method,
                 "timestamp": datetime.now(timezone.utc),
-                "type": "guest_verification"
+                "type": "guest_verification",
             }
             await mongo.db["access_logs"].insert_one(log_entry)
         except Exception:
@@ -684,19 +772,21 @@ class GuestVerificationService:
                 "verification_requirements": {
                     "otp_enabled": True,
                     "supports_phone": True,
-                    "supports_email": True
-                }
+                    "supports_email": True,
+                },
             }
 
             # For public weddings, include full wedding data since no verification needed
             if privacy_mode == "public":
-                response.update({
-                    "registries": wedding.get("registries", []),
-                    "faqs": wedding.get("faqs", []),
-                    "our_story": wedding.get("our_story"),
-                    "venue": wedding.get("venue"),
-                    "wedding_party": wedding.get("wedding_party", []),
-                })
+                response.update(
+                    {
+                        "registries": wedding.get("registries", []),
+                        "faqs": wedding.get("faqs", []),
+                        "our_story": wedding.get("our_story"),
+                        "venue": wedding.get("venue"),
+                        "wedding_party": wedding.get("wedding_party", []),
+                    }
+                )
 
             await cache.set(cache_key, response, expire=self._privacy_info_cache_ttl)
             return response
@@ -704,20 +794,32 @@ class GuestVerificationService:
         except HTTPException:
             raise
         except Exception as e:
-            raise HTTPException(status_code=500, detail=f"Error getting wedding privacy info: {str(e)}")
+            raise HTTPException(
+                status_code=500, detail=f"Error getting wedding privacy info: {str(e)}"
+            )
 
-    async def update_wedding_privacy_settings(self, wedding_id: str, privacy_settings: Dict[str, Any]) -> Dict[str, Any]:
+    async def update_wedding_privacy_settings(
+        self, wedding_id: str, privacy_settings: Dict[str, Any]
+    ) -> Dict[str, Any]:
         """Update privacy settings for a wedding (admin only)"""
         try:
             # Validate privacy mode
             valid_modes = ["public", "password", "private"]
             privacy_mode = privacy_settings.get("privacy_mode", "private")
             if privacy_mode not in valid_modes:
-                raise HTTPException(status_code=400, detail=f"Invalid privacy mode. Must be one of: {valid_modes}")
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Invalid privacy mode. Must be one of: {valid_modes}",
+                )
 
             # If password mode, ensure password is provided
-            if privacy_mode == "password" and not privacy_settings.get("password_protection"):
-                raise HTTPException(status_code=400, detail="Password is required for password-protected weddings")
+            if privacy_mode == "password" and not privacy_settings.get(
+                "password_protection"
+            ):
+                raise HTTPException(
+                    status_code=400,
+                    detail="Password is required for password-protected weddings",
+                )
 
             # Update wedding with new privacy settings
             result = await self.weddings_collection.update_one(
@@ -725,9 +827,9 @@ class GuestVerificationService:
                 {
                     "$set": {
                         "privacy_settings": privacy_settings,
-                        "updated_at": datetime.now(timezone.utc)
+                        "updated_at": datetime.now(timezone.utc),
                     }
-                }
+                },
             )
 
             if result.matched_count == 0:
@@ -738,7 +840,9 @@ class GuestVerificationService:
         except HTTPException:
             raise
         except Exception as e:
-            raise HTTPException(status_code=500, detail=f"Error updating privacy settings: {str(e)}")
+            raise HTTPException(
+                status_code=500, detail=f"Error updating privacy settings: {str(e)}"
+            )
 
     # =========================================================================
     # REQUEST RSVP LINK - Guest lookup and RSVP link delivery
@@ -773,19 +877,21 @@ class GuestVerificationService:
         if not contact or contact_type not in ["phone", "email"]:
             return {
                 "success": True,
-                "message": "If you're on the guest list, you'll receive your RSVP link shortly."
+                "message": "If you're on the guest list, you'll receive your RSVP link shortly.",
             }
 
         # Rate limiting by contact hash (more restrictive for this feature)
         contact_hash = hashlib.sha256(contact.encode()).hexdigest()[:16]
         rate_limit_key = f"{slug}:{contact_hash}"
         lock_identifier = rate_limit_key
-        lock_token = await self._acquire_attempt_lock(lock_identifier, namespace="rsvp_link_request")
+        lock_token = await self._acquire_attempt_lock(
+            lock_identifier, namespace="rsvp_link_request"
+        )
 
         if not lock_token:
             return {
                 "success": True,
-                "message": "If you're on the guest list, you'll receive your RSVP link shortly."
+                "message": "If you're on the guest list, you'll receive your RSVP link shortly.",
             }
 
         try:
@@ -795,14 +901,14 @@ class GuestVerificationService:
                 max_attempts=self._rsvp_link_max_attempts,
                 window_seconds=self._rsvp_link_lockout_duration,
             ):
-                await self._log_security_event("RSVP_LINK_RATE_LIMITED", {
-                    "slug": slug,
-                    "contact_type": contact_type
-                })
+                await self._log_security_event(
+                    "RSVP_LINK_RATE_LIMITED",
+                    {"slug": slug, "contact_type": contact_type},
+                )
                 # Return success to prevent enumeration
                 return {
                     "success": True,
-                    "message": "If you're on the guest list, you'll receive your RSVP link shortly."
+                    "message": "If you're on the guest list, you'll receive your RSVP link shortly.",
                 }
 
             # Get wedding by slug
@@ -810,7 +916,7 @@ class GuestVerificationService:
             if not wedding:
                 return {
                     "success": True,
-                    "message": "If you're on the guest list, you'll receive your RSVP link shortly."
+                    "message": "If you're on the guest list, you'll receive your RSVP link shortly.",
                 }
 
             wedding_id = wedding.get("_id")
@@ -820,51 +926,61 @@ class GuestVerificationService:
             if contact_type == "phone":
                 # Phones may be stored in various formats, try multiple lookups
                 # Extract digits only from input
-                digits_only = re.sub(r'\D', '', contact)
+                digits_only = re.sub(r"\D", "", contact)
 
                 # Try different phone formats that might be in the database
                 phone_variants = [
                     contact.strip(),  # Original input
                     digits_only,  # Just digits
-                    f"+1{digits_only}" if len(digits_only) == 10 else digits_only,  # E.164 format
-                    f"+{digits_only}" if digits_only.startswith('1') and len(digits_only) == 11 else digits_only,
+                    f"+1{digits_only}"
+                    if len(digits_only) == 10
+                    else digits_only,  # E.164 format
+                    f"+{digits_only}"
+                    if digits_only.startswith("1") and len(digits_only) == 11
+                    else digits_only,
                 ]
                 # Remove duplicates while preserving order
                 phone_variants = list(dict.fromkeys(phone_variants))
 
                 for phone_variant in phone_variants:
-                    guest = await self.guests_collection.find_one({
-                        "wedding_id": wedding_id,
-                        "phone": phone_variant
-                    })
+                    guest = await self.guests_collection.find_one(
+                        {"wedding_id": wedding_id, "phone": phone_variant}
+                    )
                     if guest:
                         break
             else:
                 # Email lookup - try case-insensitive with regex
                 email_cleaned = contact.strip()
-                guest = await self.guests_collection.find_one({
-                    "wedding_id": wedding_id,
-                    "email": {"$regex": f"^{re.escape(email_cleaned)}$", "$options": "i"}
-                })
+                guest = await self.guests_collection.find_one(
+                    {
+                        "wedding_id": wedding_id,
+                        "email": {
+                            "$regex": f"^{re.escape(email_cleaned)}$",
+                            "$options": "i",
+                        },
+                    }
+                )
 
             if not guest:
                 # Log but return success to prevent enumeration
-                await self._log_security_event("RSVP_LINK_GUEST_NOT_FOUND", {
-                    "slug": slug,
-                    "contact_type": contact_type
-                })
+                await self._log_security_event(
+                    "RSVP_LINK_GUEST_NOT_FOUND",
+                    {"slug": slug, "contact_type": contact_type},
+                )
                 return {
                     "success": True,
-                    "message": "If you're on the guest list, you'll receive your RSVP link shortly."
+                    "message": "If you're on the guest list, you'll receive your RSVP link shortly.",
                 }
 
             # Guest found - build RSVP URL
             token = guest.get("token")
             if not token:
-                security_logger.warning(f"Guest found but missing token for wedding {slug}")
+                security_logger.warning(
+                    f"Guest found but missing token for wedding {slug}"
+                )
                 return {
                     "success": True,
-                    "message": "If you're on the guest list, you'll receive your RSVP link shortly."
+                    "message": "If you're on the guest list, you'll receive your RSVP link shortly.",
                 }
 
             frontend_url = os.getenv("FRONTEND_URL", "https://thespecialwedding.io")
@@ -876,7 +992,10 @@ class GuestVerificationService:
             send_success = False
             if contact_type == "phone":
                 try:
-                    from app.services.reminder_service_twilio import TwilioReminderService
+                    from app.services.reminder_service_twilio import (
+                        TwilioReminderService,
+                    )
+
                     twilio_service = TwilioReminderService()
                     message = f"Hi {guest_name}! Here's your personal RSVP link for {couple_names}'s wedding: {rsvp_url}"
                     # Use digits_only for Twilio - it will add +1 prefix for E.164 format
@@ -887,18 +1006,19 @@ class GuestVerificationService:
             else:
                 try:
                     from app.services.email_service_resend import ResendEmailService
+
                     email_service = ResendEmailService()
                     html_content = self._generate_rsvp_link_email_html(
                         guest_name=guest_name,
                         rsvp_url=rsvp_url,
-                        couple_names=couple_names
+                        couple_names=couple_names,
                     )
                     result = await email_service.send_email(
                         to_email=contact,
                         subject=f"Your RSVP Link - {couple_names}'s Wedding",
                         html_content=html_content,
                         wedding_id=str(wedding_id),
-                        email_type="rsvp_link_request"
+                        email_type="rsvp_link_request",
                     )
                     send_success = result.get("success", False)
                 except Exception as e:
@@ -906,38 +1026,40 @@ class GuestVerificationService:
 
             # Log success/failure
             if send_success:
-                await self._log_security_event("RSVP_LINK_SENT", {
-                    "slug": slug,
-                    "contact_type": contact_type,
-                    "wedding_id": str(wedding_id),
-                    "guest_id": str(guest.get("_id"))
-                })
+                await self._log_security_event(
+                    "RSVP_LINK_SENT",
+                    {
+                        "slug": slug,
+                        "contact_type": contact_type,
+                        "wedding_id": str(wedding_id),
+                        "guest_id": str(guest.get("_id")),
+                    },
+                )
             else:
-                await self._log_security_event("RSVP_LINK_SEND_FAILED", {
-                    "slug": slug,
-                    "contact_type": contact_type
-                })
+                await self._log_security_event(
+                    "RSVP_LINK_SEND_FAILED",
+                    {"slug": slug, "contact_type": contact_type},
+                )
 
             # Always return success message
             return {
                 "success": True,
-                "message": "If you're on the guest list, you'll receive your RSVP link shortly."
+                "message": "If you're on the guest list, you'll receive your RSVP link shortly.",
             }
 
         except Exception as e:
             security_logger.error(f"Error in request_and_send_rsvp_link: {str(e)}")
             return {
                 "success": True,
-                "message": "If you're on the guest list, you'll receive your RSVP link shortly."
+                "message": "If you're on the guest list, you'll receive your RSVP link shortly.",
             }
         finally:
-            await self._release_attempt_lock(lock_identifier, lock_token, namespace="rsvp_link_request")
+            await self._release_attempt_lock(
+                lock_identifier, lock_token, namespace="rsvp_link_request"
+            )
 
     def _generate_rsvp_link_email_html(
-        self,
-        guest_name: str,
-        rsvp_url: str,
-        couple_names: str
+        self, guest_name: str, rsvp_url: str, couple_names: str
     ) -> str:
         """Generate HTML email content for RSVP link request."""
         return f"""
@@ -992,7 +1114,9 @@ class GuestVerificationService:
     # BACKWARD COMPATIBILITY WRAPPER
     # Routes to appropriate method based on whether token is provided
     # =========================================================================
-    async def verify_guest_access(self, slug: str, verification_data: Dict[str, Any]) -> Dict[str, Any]:
+    async def verify_guest_access(
+        self, slug: str, verification_data: Dict[str, Any]
+    ) -> Dict[str, Any]:
         """
         DEPRECATED: Use get_rsvp_access_by_token() for RSVP or
         verify_wedding_page_access() for wedding page viewing.

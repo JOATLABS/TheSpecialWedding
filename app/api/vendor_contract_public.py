@@ -25,7 +25,11 @@ async def get_contract_for_vendor(contract_id: str, token: str):
     return await vendor_service.get_contract_by_token(contract_id, token)
 
 
-@router.get("/public/contracts/{contract_id}", tags=["Public Contract Access"], include_in_schema=False)
+@router.get(
+    "/public/contracts/{contract_id}",
+    tags=["Public Contract Access"],
+    include_in_schema=False,
+)
 async def get_contract_for_vendor_legacy(
     contract_id: str,
     token: str = Query(..., description="Access token from email"),
@@ -34,7 +38,9 @@ async def get_contract_for_vendor_legacy(
     return await vendor_service.get_contract_by_token(contract_id, token)
 
 
-@router.post("/public/contracts/{contract_id}/{token}/sign", tags=["Public Contract Access"])
+@router.post(
+    "/public/contracts/{contract_id}/{token}/sign", tags=["Public Contract Access"]
+)
 async def sign_contract_as_vendor(
     contract_id: str,
     token: str,
@@ -52,11 +58,15 @@ async def sign_contract_as_vendor(
         token=token,
         signer_name=payload.signer_name,
         signer_email=payload.signer_email,
-        signature_ip=signature_ip
+        signature_ip=signature_ip,
     )
 
 
-@router.post("/public/contracts/{contract_id}/sign", tags=["Public Contract Access"], include_in_schema=False)
+@router.post(
+    "/public/contracts/{contract_id}/sign",
+    tags=["Public Contract Access"],
+    include_in_schema=False,
+)
 async def sign_contract_as_vendor_legacy(
     request: Request,
     contract_id: str,

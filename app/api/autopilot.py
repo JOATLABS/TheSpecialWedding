@@ -7,6 +7,7 @@ Provides endpoints for automated payment processing:
 - Retry failed payments
 - Recalculate payment schedules
 """
+
 from fastapi import APIRouter, Depends, Header, HTTPException
 from typing import Dict, Any, Optional
 from datetime import datetime
@@ -32,7 +33,7 @@ def verify_cron_auth(authorization: Optional[str] = Header(None)):
         logger.error("CRON_SECRET not configured - rejecting cron request for security")
         raise HTTPException(
             status_code=503,
-            detail="Cron endpoints unavailable: CRON_SECRET not configured"
+            detail="Cron endpoints unavailable: CRON_SECRET not configured",
         )
 
     if not authorization:
@@ -51,10 +52,9 @@ def verify_cron_auth(authorization: Optional[str] = Header(None)):
 # CRON JOB ENDPOINTS (WFA-502, WFA-503, WFA-504, WFA-507)
 # =========================================================================
 
+
 @router.post("/process-due-payments")
-async def process_due_payments(
-    _: bool = Depends(verify_cron_auth)
-) -> Dict[str, Any]:
+async def process_due_payments(_: bool = Depends(verify_cron_auth)) -> Dict[str, Any]:
     """
     Process all scheduled payments that are due.
 
@@ -68,7 +68,7 @@ async def process_due_payments(
         return {
             "status": "success",
             "results": results,
-            "timestamp": datetime.now(timezone.utc).isoformat()
+            "timestamp": datetime.now(timezone.utc).isoformat(),
         }
 
     except Exception as e:
@@ -76,14 +76,13 @@ async def process_due_payments(
         return {
             "status": "error",
             "error": str(e),
-            "timestamp": datetime.now(timezone.utc).isoformat()
+            "timestamp": datetime.now(timezone.utc).isoformat(),
         }
 
 
 @router.post("/send-payment-reminders")
 async def send_payment_reminders(
-    days_ahead: int = 3,
-    _: bool = Depends(verify_cron_auth)
+    days_ahead: int = 3, _: bool = Depends(verify_cron_auth)
 ) -> Dict[str, Any]:
     """
     Send reminders for upcoming payments.
@@ -92,14 +91,16 @@ async def send_payment_reminders(
     Sends reminders for payments due in `days_ahead` days (default: 3).
     """
     try:
-        logger.info(f"Starting send-payment-reminders cron job (days_ahead={days_ahead})")
+        logger.info(
+            f"Starting send-payment-reminders cron job (days_ahead={days_ahead})"
+        )
         results = await autopilot_service.send_payment_reminders(days_ahead)
         logger.info(f"send-payment-reminders completed: {results}")
 
         return {
             "status": "success",
             "results": results,
-            "timestamp": datetime.now(timezone.utc).isoformat()
+            "timestamp": datetime.now(timezone.utc).isoformat(),
         }
 
     except Exception as e:
@@ -107,14 +108,12 @@ async def send_payment_reminders(
         return {
             "status": "error",
             "error": str(e),
-            "timestamp": datetime.now(timezone.utc).isoformat()
+            "timestamp": datetime.now(timezone.utc).isoformat(),
         }
 
 
 @router.post("/retry-failed-payments")
-async def retry_failed_payments(
-    _: bool = Depends(verify_cron_auth)
-) -> Dict[str, Any]:
+async def retry_failed_payments(_: bool = Depends(verify_cron_auth)) -> Dict[str, Any]:
     """
     Retry failed payments that are due for retry.
 
@@ -129,7 +128,7 @@ async def retry_failed_payments(
         return {
             "status": "success",
             "results": results,
-            "timestamp": datetime.now(timezone.utc).isoformat()
+            "timestamp": datetime.now(timezone.utc).isoformat(),
         }
 
     except Exception as e:
@@ -137,14 +136,13 @@ async def retry_failed_payments(
         return {
             "status": "error",
             "error": str(e),
-            "timestamp": datetime.now(timezone.utc).isoformat()
+            "timestamp": datetime.now(timezone.utc).isoformat(),
         }
 
 
 @router.post("/recalculate-schedules/{contract_id}")
 async def recalculate_payment_schedules(
-    contract_id: str,
-    _: bool = Depends(verify_cron_auth)
+    contract_id: str, _: bool = Depends(verify_cron_auth)
 ) -> Dict[str, Any]:
     """
     Recalculate payment due dates for a contract.
@@ -160,7 +158,7 @@ async def recalculate_payment_schedules(
         return {
             "status": "success",
             "results": results,
-            "timestamp": datetime.now(timezone.utc).isoformat()
+            "timestamp": datetime.now(timezone.utc).isoformat(),
         }
 
     except Exception as e:
@@ -168,7 +166,7 @@ async def recalculate_payment_schedules(
         return {
             "status": "error",
             "error": str(e),
-            "timestamp": datetime.now(timezone.utc).isoformat()
+            "timestamp": datetime.now(timezone.utc).isoformat(),
         }
 
 
@@ -176,10 +174,9 @@ async def recalculate_payment_schedules(
 # STATUS AND MONITORING
 # =========================================================================
 
+
 @router.get("/status")
-async def get_autopilot_status(
-    _: bool = Depends(verify_cron_auth)
-) -> Dict[str, Any]:
+async def get_autopilot_status(_: bool = Depends(verify_cron_auth)) -> Dict[str, Any]:
     """Get autopilot status and metrics."""
     try:
         # Get counts of payments in various states
@@ -189,15 +186,25 @@ async def get_autopilot_status(
         failed_count = await autopilot_service.scheduled_payments.count_documents(
             {"status": "failed", "max_retries_reached": {"$ne": True}}
         )
-        pending_retry_count = await autopilot_service.scheduled_payments.count_documents(
-            {"status": "failed", "next_retry_at": {"$exists": True}, "max_retries_reached": {"$ne": True}}
+        pending_retry_count = (
+            await autopilot_service.scheduled_payments.count_documents(
+                {
+                    "status": "failed",
+                    "next_retry_at": {"$exists": True},
+                    "max_retries_reached": {"$ne": True},
+                }
+            )
         )
-        succeeded_today = await autopilot_service.scheduled_payments.count_documents({
-            "status": "succeeded",
-            "paid_at": {
-                "$gte": datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
+        succeeded_today = await autopilot_service.scheduled_payments.count_documents(
+            {
+                "status": "succeeded",
+                "paid_at": {
+                    "$gte": datetime.now(timezone.utc).replace(
+                        hour=0, minute=0, second=0, microsecond=0
+                    )
+                },
             }
-        })
+        )
 
         return {
             "status": "active",
@@ -205,9 +212,9 @@ async def get_autopilot_status(
                 "scheduled_payments": scheduled_count,
                 "failed_pending_retry": failed_count,
                 "pending_retries": pending_retry_count,
-                "succeeded_today": succeeded_today
+                "succeeded_today": succeeded_today,
             },
-            "timestamp": datetime.now(timezone.utc).isoformat()
+            "timestamp": datetime.now(timezone.utc).isoformat(),
         }
 
     except Exception as e:
@@ -215,7 +222,7 @@ async def get_autopilot_status(
         return {
             "status": "error",
             "error": str(e),
-            "timestamp": datetime.now(timezone.utc).isoformat()
+            "timestamp": datetime.now(timezone.utc).isoformat(),
         }
 
 
@@ -231,15 +238,25 @@ async def get_autopilot_admin_status(
         failed_count = await autopilot_service.scheduled_payments.count_documents(
             {"status": "failed", "max_retries_reached": {"$ne": True}}
         )
-        pending_retry_count = await autopilot_service.scheduled_payments.count_documents(
-            {"status": "failed", "next_retry_at": {"$exists": True}, "max_retries_reached": {"$ne": True}}
+        pending_retry_count = (
+            await autopilot_service.scheduled_payments.count_documents(
+                {
+                    "status": "failed",
+                    "next_retry_at": {"$exists": True},
+                    "max_retries_reached": {"$ne": True},
+                }
+            )
         )
-        succeeded_today = await autopilot_service.scheduled_payments.count_documents({
-            "status": "succeeded",
-            "paid_at": {
-                "$gte": datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
+        succeeded_today = await autopilot_service.scheduled_payments.count_documents(
+            {
+                "status": "succeeded",
+                "paid_at": {
+                    "$gte": datetime.now(timezone.utc).replace(
+                        hour=0, minute=0, second=0, microsecond=0
+                    )
+                },
             }
-        })
+        )
 
         return {
             "status": "active",
@@ -247,9 +264,9 @@ async def get_autopilot_admin_status(
                 "scheduled_payments": scheduled_count,
                 "failed_pending_retry": failed_count,
                 "pending_retries": pending_retry_count,
-                "succeeded_today": succeeded_today
+                "succeeded_today": succeeded_today,
             },
-            "timestamp": datetime.now(timezone.utc).isoformat()
+            "timestamp": datetime.now(timezone.utc).isoformat(),
         }
 
     except Exception as e:
@@ -257,14 +274,12 @@ async def get_autopilot_admin_status(
         return {
             "status": "error",
             "error": str(e),
-            "timestamp": datetime.now(timezone.utc).isoformat()
+            "timestamp": datetime.now(timezone.utc).isoformat(),
         }
 
 
 @router.get("/due-payments")
-async def get_due_payments(
-    _: bool = Depends(verify_cron_auth)
-) -> Dict[str, Any]:
+async def get_due_payments(_: bool = Depends(verify_cron_auth)) -> Dict[str, Any]:
     """Get list of payments due today."""
     try:
         due_payments = await autopilot_service.get_due_payments()
@@ -272,7 +287,7 @@ async def get_due_payments(
             "status": "success",
             "count": len(due_payments),
             "payments": due_payments,
-            "timestamp": datetime.now(timezone.utc).isoformat()
+            "timestamp": datetime.now(timezone.utc).isoformat(),
         }
 
     except Exception as e:
@@ -280,14 +295,13 @@ async def get_due_payments(
         return {
             "status": "error",
             "error": str(e),
-            "timestamp": datetime.now(timezone.utc).isoformat()
+            "timestamp": datetime.now(timezone.utc).isoformat(),
         }
 
 
 @router.get("/upcoming-reminders")
 async def get_upcoming_reminders(
-    days_ahead: int = 3,
-    _: bool = Depends(verify_cron_auth)
+    days_ahead: int = 3, _: bool = Depends(verify_cron_auth)
 ) -> Dict[str, Any]:
     """Get list of payments needing reminders."""
     try:
@@ -296,7 +310,7 @@ async def get_upcoming_reminders(
             "status": "success",
             "count": len(upcoming),
             "payments": upcoming,
-            "timestamp": datetime.now(timezone.utc).isoformat()
+            "timestamp": datetime.now(timezone.utc).isoformat(),
         }
 
     except Exception as e:
@@ -304,14 +318,12 @@ async def get_upcoming_reminders(
         return {
             "status": "error",
             "error": str(e),
-            "timestamp": datetime.now(timezone.utc).isoformat()
+            "timestamp": datetime.now(timezone.utc).isoformat(),
         }
 
 
 @router.get("/failed-payments")
-async def get_failed_payments(
-    _: bool = Depends(verify_cron_auth)
-) -> Dict[str, Any]:
+async def get_failed_payments(_: bool = Depends(verify_cron_auth)) -> Dict[str, Any]:
     """Get list of failed payments pending retry."""
     try:
         failed = await autopilot_service.get_payments_for_retry()
@@ -319,7 +331,7 @@ async def get_failed_payments(
             "status": "success",
             "count": len(failed),
             "payments": failed,
-            "timestamp": datetime.now(timezone.utc).isoformat()
+            "timestamp": datetime.now(timezone.utc).isoformat(),
         }
 
     except Exception as e:
@@ -327,7 +339,7 @@ async def get_failed_payments(
         return {
             "status": "error",
             "error": str(e),
-            "timestamp": datetime.now(timezone.utc).isoformat()
+            "timestamp": datetime.now(timezone.utc).isoformat(),
         }
 
 
@@ -335,10 +347,10 @@ async def get_failed_payments(
 # AI FEATURES (WFA-508, WFA-509)
 # =========================================================================
 
+
 @router.get("/ai/retry-timing/{payment_id}")
 async def get_optimal_retry_timing(
-    payment_id: str,
-    _: bool = Depends(verify_cron_auth)
+    payment_id: str, _: bool = Depends(verify_cron_auth)
 ) -> Dict[str, Any]:
     """
     Get AI-suggested optimal retry timing for a failed payment.
@@ -360,7 +372,7 @@ async def get_optimal_retry_timing(
             return {
                 "status": "error",
                 "error": "Payment not found",
-                "timestamp": datetime.now(timezone.utc).isoformat()
+                "timestamp": datetime.now(timezone.utc).isoformat(),
             }
 
         result = await autopilot_service.get_optimal_retry_timing(payment)
@@ -369,7 +381,7 @@ async def get_optimal_retry_timing(
             "status": "success",
             "payment_id": payment_id,
             "suggestion": result,
-            "timestamp": datetime.now(timezone.utc).isoformat()
+            "timestamp": datetime.now(timezone.utc).isoformat(),
         }
 
     except Exception as e:
@@ -377,14 +389,13 @@ async def get_optimal_retry_timing(
         return {
             "status": "error",
             "error": str(e),
-            "timestamp": datetime.now(timezone.utc).isoformat()
+            "timestamp": datetime.now(timezone.utc).isoformat(),
         }
 
 
 @router.get("/ai/success-prediction/{payment_id}")
 async def predict_payment_success(
-    payment_id: str,
-    _: bool = Depends(verify_cron_auth)
+    payment_id: str, _: bool = Depends(verify_cron_auth)
 ) -> Dict[str, Any]:
     """
     Get AI prediction of payment success likelihood.
@@ -401,7 +412,7 @@ async def predict_payment_success(
         return {
             "status": "success" if result.get("success") else "error",
             **result,
-            "timestamp": datetime.now(timezone.utc).isoformat()
+            "timestamp": datetime.now(timezone.utc).isoformat(),
         }
 
     except Exception as e:
@@ -409,13 +420,13 @@ async def predict_payment_success(
         return {
             "status": "error",
             "error": str(e),
-            "timestamp": datetime.now(timezone.utc).isoformat()
+            "timestamp": datetime.now(timezone.utc).isoformat(),
         }
 
 
 @router.post("/ai/assess-all-payments")
 async def assess_all_scheduled_payments(
-    _: bool = Depends(verify_cron_auth)
+    _: bool = Depends(verify_cron_auth),
 ) -> Dict[str, Any]:
     """
     Run AI risk assessment on all scheduled payments.
@@ -442,7 +453,7 @@ async def assess_all_scheduled_payments(
             "status": "success",
             "assessed": assessed,
             "errors": errors,
-            "timestamp": datetime.now(timezone.utc).isoformat()
+            "timestamp": datetime.now(timezone.utc).isoformat(),
         }
 
     except Exception as e:
@@ -450,5 +461,5 @@ async def assess_all_scheduled_payments(
         return {
             "status": "error",
             "error": str(e),
-            "timestamp": datetime.now(timezone.utc).isoformat()
+            "timestamp": datetime.now(timezone.utc).isoformat(),
         }

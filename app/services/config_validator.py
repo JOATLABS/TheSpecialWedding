@@ -27,6 +27,7 @@ def _get_web_push_service():
         _web_push_checked = True
         try:
             from app.services.web_push_service import web_push_service
+
             _web_push_service = web_push_service
         except ImportError:
             logger.warning("Web Push service not available")
@@ -78,32 +79,36 @@ async def validate_environment_and_notify() -> Dict[str, List[str]]:
     for var_name, description in CRITICAL_ENV_VARS.items():
         if not os.getenv(var_name):
             missing_critical.append(f"{var_name}: {description}")
-            logger.error(f"CRITICAL: Missing environment variable {var_name} - {description}")
+            logger.error(
+                f"CRITICAL: Missing environment variable {var_name} - {description}"
+            )
 
     # Check recommended vars
     for var_name, description in RECOMMENDED_ENV_VARS.items():
         if not os.getenv(var_name):
             missing_recommended.append(f"{var_name}: {description}")
-            logger.warning(f"RECOMMENDED: Missing environment variable {var_name} - {description}")
+            logger.warning(
+                f"RECOMMENDED: Missing environment variable {var_name} - {description}"
+            )
 
     # If any critical vars are missing, notify root admin
     if missing_critical:
         await _create_root_admin_notification(
             title="CRITICAL: Missing Environment Configuration",
             message=_build_notification_message(missing_critical, missing_recommended),
-            priority="critical"
+            priority="critical",
         )
     elif missing_recommended:
         # Only notify about recommended if there are no critical issues
         await _create_root_admin_notification(
             title="Configuration Warning: Missing Recommended Settings",
             message=_build_notification_message([], missing_recommended),
-            priority="high"
+            priority="high",
         )
 
     return {
         "missing_critical": missing_critical,
-        "missing_recommended": missing_recommended
+        "missing_recommended": missing_recommended,
     }
 
 
@@ -118,17 +123,23 @@ def _build_notification_message(critical: List[str], recommended: List[str]) -> 
         parts.append("")
 
     if recommended:
-        parts.append("RECOMMENDED - These variables should be set for full functionality:")
+        parts.append(
+            "RECOMMENDED - These variables should be set for full functionality:"
+        )
         for item in recommended:
             parts.append(f"  • {item}")
         parts.append("")
 
-    parts.append("Update your .env file or deployment environment variables and restart the server.")
+    parts.append(
+        "Update your .env file or deployment environment variables and restart the server."
+    )
 
     return "\n".join(parts)
 
 
-async def _create_root_admin_notification(title: str, message: str, priority: str = "high"):
+async def _create_root_admin_notification(
+    title: str, message: str, priority: str = "high"
+):
     """
     Create a notification for the root admin about configuration issues.
     Sends both:
@@ -142,12 +153,14 @@ async def _create_root_admin_notification(title: str, message: str, priority: st
         notifications_collection = mongo.db["notifications"]
 
         # Check if we already have an unread notification about this
-        existing = await notifications_collection.find_one({
-            "title": title,
-            "type": "system_config",
-            "status": "active",
-            "read_by.user_id": {"$ne": ROOT_ADMIN_EMAIL}
-        })
+        existing = await notifications_collection.find_one(
+            {
+                "title": title,
+                "type": "system_config",
+                "status": "active",
+                "read_by.user_id": {"$ne": ROOT_ADMIN_EMAIL},
+            }
+        )
 
         if existing:
             # Update the existing notification instead of creating a new one
@@ -156,9 +169,9 @@ async def _create_root_admin_notification(title: str, message: str, priority: st
                 {
                     "$set": {
                         "message": message,
-                        "updated_at": datetime.now(timezone.utc)
+                        "updated_at": datetime.now(timezone.utc),
                     }
-                }
+                },
             )
             logger.info("Updated existing config notification for root admin")
             return
@@ -177,10 +190,7 @@ async def _create_root_admin_notification(title: str, message: str, priority: st
             "status": "active",
             "read_by": [],
             "dismissed_by": [],
-            "metadata": {
-                "source": "config_validator",
-                "auto_generated": True
-            }
+            "metadata": {"source": "config_validator", "auto_generated": True},
         }
 
         await notifications_collection.insert_one(notification)
@@ -207,7 +217,7 @@ async def _send_push_alert(title: str, message: str, priority: str):
             title=title,
             body=message[:200] + "..." if len(message) > 200 else message,
             url="/admin/platform",
-            tag="config-alert"
+            tag="config-alert",
         )
     except Exception as e:
         logger.warning(f"Failed to send Web Push config alert: {e}")
@@ -222,9 +232,11 @@ async def clear_config_notifications():
         notifications_collection = mongo.db["notifications"]
         result = await notifications_collection.update_many(
             {"type": "system_config", "status": "active"},
-            {"$set": {"status": "resolved", "resolved_at": datetime.now(timezone.utc)}}
+            {"$set": {"status": "resolved", "resolved_at": datetime.now(timezone.utc)}},
         )
         if result.modified_count > 0:
-            logger.info(f"Cleared {result.modified_count} resolved config notifications")
+            logger.info(
+                f"Cleared {result.modified_count} resolved config notifications"
+            )
     except Exception as e:
         logger.error(f"Error clearing config notifications: {str(e)}")

@@ -7,36 +7,36 @@ from app.models.form import (
     SubmitFormRequest,
     DuplicateFormRequest,
     FormViewUpdateRequest,
-    FormModel,
-    FormResponse,
 )
 from app.services.form_service import FormService
 from app.dependencies.auth_extended import (
-    get_current_user_extended, ExtendedAuthUser, check_wedding_access,
-    enforce_team_permission, require_team_or_planner
+    ExtendedAuthUser,
+    check_wedding_access,
+    enforce_team_permission,
+    require_team_or_planner,
 )
-from app.utils.security_utils import (
-    InputSanitizer, SecurityHeaders, rate_limiter, FormSecurityValidator
-)
+from app.utils.security_utils import InputSanitizer, SecurityHeaders, rate_limiter
 from app.services.security_audit_service import (
-    security_audit, SecurityEventType, SecuritySeverity
+    security_audit,
+    SecurityEventType,
+    SecuritySeverity,
 )
-from typing import List, Dict, Any, Optional
+from typing import Optional
 import logging
 import html
-from datetime import datetime
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
 form_service = FormService()
 
+
 # Admin endpoints (require authentication)
 @router.post("/forms", tags=["Forms"])
 async def create_form(
     form_data: CreateFormRequest,
     request: Request,
-    current_user: ExtendedAuthUser = Depends(require_team_or_planner)
+    current_user: ExtendedAuthUser = Depends(require_team_or_planner),
 ):
     """Create a new form with enhanced security validation"""
     enforce_team_permission(current_user, "manage_forms")
@@ -50,11 +50,11 @@ async def create_form(
             )
             raise HTTPException(
                 status_code=403,
-                detail="Access denied. You don't have access to this wedding."
+                detail="Access denied. You don't have access to this wedding.",
             )
 
     # Log form creation attempt
-    client_ip = getattr(request.client, 'host', None) if request.client else None
+    client_ip = getattr(request.client, "host", None) if request.client else None
     logger.info(
         f"Form creation attempt: user={current_user.email}, "
         f"ip={client_ip}, wedding_id={form_data.wedding_id}"
@@ -74,34 +74,32 @@ async def create_form(
             severity=SecuritySeverity.MEDIUM,
             user_email=current_user.email,
             ip_address=client_ip,
-            user_agent=request.headers.get('user-agent'),
+            user_agent=request.headers.get("user-agent"),
             resource="forms",
             action="create",
             details={
-                "form_id": result.get('id'),
+                "form_id": result.get("id"),
                 "wedding_id": form_data.wedding_id,
                 "form_name": form_data.name,
-                "field_count": len(form_data.fields)
+                "field_count": len(form_data.fields),
             },
             success=True,
-            form_id=result.get('id'),
-            wedding_id=form_data.wedding_id
+            form_id=result.get("id"),
+            wedding_id=form_data.wedding_id,
         )
 
         return result
 
     except Exception as e:
-        logger.error(
-            f"Form creation failed: user={current_user.email}, "
-            f"error={str(e)}"
-        )
+        logger.error(f"Form creation failed: user={current_user.email}, error={str(e)}")
         raise
+
 
 @router.get("/forms", tags=["Forms"])
 async def get_forms(
     wedding_id: Optional[str] = None,
     request: Request = None,
-    current_user: ExtendedAuthUser = Depends(require_team_or_planner)
+    current_user: ExtendedAuthUser = Depends(require_team_or_planner),
 ):
     """Get all forms for the current user with security validation"""
 
@@ -117,11 +115,13 @@ async def get_forms(
             )
             raise HTTPException(
                 status_code=403,
-                detail="Access denied. You don't have access to this wedding."
+                detail="Access denied. You don't have access to this wedding.",
             )
 
     try:
-        forms = await form_service.get_forms(current_user.email, wedding_id, current_user.is_root_admin)
+        forms = await form_service.get_forms(
+            current_user.email, wedding_id, current_user.is_root_admin
+        )
 
         # Log access
         logger.info(
@@ -138,11 +138,12 @@ async def get_forms(
         )
         raise
 
+
 @router.get("/forms/{form_id}", tags=["Forms"])
 async def get_form(
     form_id: str,
     request: Request,
-    current_user: ExtendedAuthUser = Depends(require_team_or_planner)
+    current_user: ExtendedAuthUser = Depends(require_team_or_planner),
 ):
     """Get a specific form with authorization validation"""
 
@@ -158,20 +159,20 @@ async def get_form(
         form = await form_service.get_form(form_id, current_user.email)
 
         # Additional wedding access check if form has wedding_id
-        if form.get('wedding_id') and not await check_wedding_access(current_user, form['wedding_id']):
+        if form.get("wedding_id") and not await check_wedding_access(
+            current_user, form["wedding_id"]
+        ):
             logger.warning(
                 f"User {current_user.email} attempted to access form {form_id} "
                 f"for wedding {form['wedding_id']} without access"
             )
             raise HTTPException(
                 status_code=403,
-                detail="Access denied. You don't have access to this wedding."
+                detail="Access denied. You don't have access to this wedding.",
             )
 
         # Log access
-        logger.info(
-            f"Form accessed: id={form_id}, user={current_user.email}"
-        )
+        logger.info(f"Form accessed: id={form_id}, user={current_user.email}")
 
         return form
 
@@ -184,12 +185,13 @@ async def get_form(
         )
         raise HTTPException(status_code=500, detail="Failed to retrieve form")
 
+
 @router.put("/forms/{form_id}", tags=["Forms"])
 async def update_form(
     form_id: str,
     form_data: UpdateFormRequest,
     request: Request,
-    current_user: ExtendedAuthUser = Depends(require_team_or_planner)
+    current_user: ExtendedAuthUser = Depends(require_team_or_planner),
 ):
     """Update a form with enhanced security validation"""
     enforce_team_permission(current_user, "manage_forms")
@@ -207,19 +209,21 @@ async def update_form(
         existing_form = await form_service.get_form(form_id, current_user.email)
 
         # Check wedding access if form has wedding_id
-        if existing_form.get('wedding_id'):
-            if not await check_wedding_access(current_user, existing_form['wedding_id']):
+        if existing_form.get("wedding_id"):
+            if not await check_wedding_access(
+                current_user, existing_form["wedding_id"]
+            ):
                 logger.warning(
                     f"User {current_user.email} attempted to update form {form_id} "
                     f"for wedding {existing_form['wedding_id']} without access"
                 )
                 raise HTTPException(
                     status_code=403,
-                    detail="Access denied. You don't have access to this wedding."
+                    detail="Access denied. You don't have access to this wedding.",
                 )
 
         # Log update attempt
-        client_ip = getattr(request.client, 'host', None) if request.client else None
+        client_ip = getattr(request.client, "host", None) if request.client else None
         logger.info(
             f"Form update attempt: id={form_id}, user={current_user.email}, "
             f"ip={client_ip}"
@@ -243,14 +247,17 @@ async def update_form(
         )
         raise HTTPException(status_code=500, detail="Failed to update form")
 
+
 @router.delete("/forms/{form_id}", tags=["Forms"])
 async def delete_form(
     form_id: str,
     request: Request,
-    current_user: ExtendedAuthUser = Depends(require_team_or_planner)
+    current_user: ExtendedAuthUser = Depends(require_team_or_planner),
 ):
     """Delete a form with enhanced security validation"""
-    logger.info(f"DELETE /forms/{form_id} called by {current_user.email}, is_root_admin={current_user.is_root_admin}")
+    logger.info(
+        f"DELETE /forms/{form_id} called by {current_user.email}, is_root_admin={current_user.is_root_admin}"
+    )
     enforce_team_permission(current_user, "manage_forms")
 
     # Validate form_id
@@ -259,48 +266,54 @@ async def delete_form(
         raise HTTPException(status_code=400, detail="Invalid form ID")
     form_id = InputSanitizer.sanitize_text(form_id, 100)
     if not form_id:
-        logger.error(f"Form ID sanitization failed")
+        logger.error("Form ID sanitization failed")
         raise HTTPException(status_code=400, detail="Invalid form ID")
 
     logger.info(f"Form ID after sanitization: {form_id}")
 
     try:
-        logger.info(f"About to get existing form for access check...")
+        logger.info("About to get existing form for access check...")
 
         # For ROOT_ADMIN, get form without created_by constraint
         if current_user.is_root_admin:
-            existing_form = await form_service.get_form(form_id)  # No created_by for ROOT_ADMIN
-            logger.info(f"ROOT_ADMIN form retrieval successful")
+            existing_form = await form_service.get_form(
+                form_id
+            )  # No created_by for ROOT_ADMIN
+            logger.info("ROOT_ADMIN form retrieval successful")
         else:
             existing_form = await form_service.get_form(form_id, current_user.email)
-            logger.info(f"Regular user form retrieval successful")
+            logger.info("Regular user form retrieval successful")
         # Check wedding access if form has wedding_id
-        if existing_form.get('wedding_id'):
-            logger.info(f"Checking wedding access for wedding_id: {existing_form['wedding_id']}")
-            if not await check_wedding_access(current_user, existing_form['wedding_id']):
+        if existing_form.get("wedding_id"):
+            logger.info(
+                f"Checking wedding access for wedding_id: {existing_form['wedding_id']}"
+            )
+            if not await check_wedding_access(
+                current_user, existing_form["wedding_id"]
+            ):
                 logger.warning(
                     f"User {current_user.email} attempted to delete form {form_id} "
                     f"for wedding {existing_form['wedding_id']} without access"
                 )
                 raise HTTPException(
                     status_code=403,
-                    detail="Access denied. You don't have access to this wedding."
+                    detail="Access denied. You don't have access to this wedding.",
                 )
 
         # Log deletion attempt
-        client_ip = getattr(request.client, 'host', None) if request.client else None
+        client_ip = getattr(request.client, "host", None) if request.client else None
         logger.warning(
             f"Form deletion attempt: id={form_id}, user={current_user.email}, "
             f"ip={client_ip}"
         )
 
-        logger.info(f"About to call form_service.delete_form...")
-        result = await form_service.delete_form(form_id, current_user.email, current_user.is_root_admin)
+        logger.info("About to call form_service.delete_form...")
+        result = await form_service.delete_form(
+            form_id, current_user.email, current_user.is_root_admin
+        )
 
         # Log successful deletion
-        logger.warning(
-            f"Form deleted: id={form_id}, user={current_user.email}"
-        )
+        logger.warning(f"Form deleted: id={form_id}, user={current_user.email}")
 
         return result
 
@@ -312,23 +325,25 @@ async def delete_form(
             f"error={str(e)}"
         )
         import traceback
+
         logger.error(f"Traceback: {traceback.format_exc()}")
         raise HTTPException(status_code=500, detail="Failed to delete form")
+
 
 @router.post("/forms/{form_id}/send", tags=["Forms"])
 async def send_form(
     form_id: str,
     send_data: SendFormRequest,
-    current_user: ExtendedAuthUser = Depends(require_team_or_planner)
+    current_user: ExtendedAuthUser = Depends(require_team_or_planner),
 ):
     """Send form to recipients via email"""
     enforce_team_permission(current_user, "manage_forms")
     return await form_service.send_form(form_id, send_data, current_user.email)
 
+
 @router.get("/forms/{form_id}/responses", tags=["Forms"])
 async def get_form_responses(
-    form_id: str,
-    current_user: ExtendedAuthUser = Depends(require_team_or_planner)
+    form_id: str, current_user: ExtendedAuthUser = Depends(require_team_or_planner)
 ):
     """Get all responses for a form"""
 
@@ -352,22 +367,31 @@ async def mark_form_view(
         is_root_admin=current_user.is_root_admin,
     )
 
+
 @router.get("/forms/{form_id}/analytics", tags=["Forms"])
 async def get_form_analytics(
-    form_id: str,
-    current_user: ExtendedAuthUser = Depends(require_team_or_planner)
+    form_id: str, current_user: ExtendedAuthUser = Depends(require_team_or_planner)
 ):
     """Get analytics for a form"""
     return await form_service.get_form_analytics(form_id, current_user.email)
+
 
 @router.get("/forms/{form_id}/export/csv", tags=["Forms"])
 async def export_form_responses_csv(
     form_id: str,
     request: Request,
     current_user: ExtendedAuthUser = Depends(require_team_or_planner),
-    date_from: Optional[str] = Query(None, description="Start date filter (ISO format: YYYY-MM-DD or YYYY-MM-DDTHH:MM:SS)"),
-    date_to: Optional[str] = Query(None, description="End date filter (ISO format: YYYY-MM-DD or YYYY-MM-DDTHH:MM:SS)"),
-    include_metadata: bool = Query(True, description="Include submission metadata (date, IP, etc.)")
+    date_from: Optional[str] = Query(
+        None,
+        description="Start date filter (ISO format: YYYY-MM-DD or YYYY-MM-DDTHH:MM:SS)",
+    ),
+    date_to: Optional[str] = Query(
+        None,
+        description="End date filter (ISO format: YYYY-MM-DD or YYYY-MM-DDTHH:MM:SS)",
+    ),
+    include_metadata: bool = Query(
+        True, description="Include submission metadata (date, IP, etc.)"
+    ),
 ):
     """
     Export form responses to CSV format with enhanced security and filtering.
@@ -415,21 +439,25 @@ async def export_form_responses_csv(
             form = await form_service.get_form(form_id, current_user.email)
 
             # Additional wedding access check if form has wedding_id
-            if form.get('wedding_id') and not await check_wedding_access(current_user, form['wedding_id']):
+            if form.get("wedding_id") and not await check_wedding_access(
+                current_user, form["wedding_id"]
+            ):
                 logger.warning(
                     f"User {current_user.email} attempted to export CSV for form {form_id} "
                     f"for wedding {form['wedding_id']} without access"
                 )
                 raise HTTPException(
                     status_code=403,
-                    detail="Access denied. You don't have access to this wedding's forms."
+                    detail="Access denied. You don't have access to this wedding's forms.",
                 )
         except HTTPException as e:
             if e.status_code == 404:
-                logger.info(f"CSV export attempted for non-existent form {form_id} by {current_user.email}")
+                logger.info(
+                    f"CSV export attempted for non-existent form {form_id} by {current_user.email}"
+                )
             raise
         # Log CSV export attempt for security audit
-        client_ip = getattr(request.client, 'host', None) if request.client else None
+        client_ip = getattr(request.client, "host", None) if request.client else None
         logger.info(
             f"CSV export attempt: form_id={form_id}, user={current_user.email}, "
             f"ip={client_ip}, date_from={date_from}, date_to={date_to}, "
@@ -441,7 +469,7 @@ async def export_form_responses_csv(
             created_by=current_user.email,
             date_from=date_from,
             date_to=date_to,
-            include_metadata=include_metadata
+            include_metadata=include_metadata,
         )
         # Log successful export for audit
         await security_audit.log_security_event(
@@ -449,23 +477,23 @@ async def export_form_responses_csv(
             severity=SecuritySeverity.MEDIUM,
             user_email=current_user.email,
             ip_address=client_ip,
-            user_agent=request.headers.get('user-agent'),
+            user_agent=request.headers.get("user-agent"),
             resource="forms",
             action="csv_export",
             details={
                 "form_id": form_id,
-                "form_name": export_result.get('form_name'),
-                "exported_count": export_result.get('exported_count', 0),
-                "file_size": export_result.get('size', 0),
+                "form_name": export_result.get("form_name"),
+                "exported_count": export_result.get("exported_count", 0),
+                "file_size": export_result.get("size", 0),
                 "filters": {
                     "date_from": date_from,
                     "date_to": date_to,
-                    "include_metadata": include_metadata
-                }
+                    "include_metadata": include_metadata,
+                },
             },
             success=True,
             form_id=form_id,
-            wedding_id=form.get('wedding_id')
+            wedding_id=form.get("wedding_id"),
         )
         logger.info(
             f"CSV export successful: form_id={form_id}, user={current_user.email}, "
@@ -474,15 +502,15 @@ async def export_form_responses_csv(
         )
         # Return CSV file as download
         return FastAPIResponse(
-            content=export_result['content'],
-            media_type=export_result['content_type'],
+            content=export_result["content"],
+            media_type=export_result["content_type"],
             headers={
-                "Content-Disposition": f"attachment; filename=\"{export_result['filename']}\"",
-                "Content-Length": str(export_result['size']),
+                "Content-Disposition": f'attachment; filename="{export_result["filename"]}"',
+                "Content-Length": str(export_result["size"]),
                 "Cache-Control": "no-cache, no-store, must-revalidate",
                 "Pragma": "no-cache",
-                "Expires": "0"
-            }
+                "Expires": "0",
+            },
         )
     except HTTPException:
         raise
@@ -493,8 +521,9 @@ async def export_form_responses_csv(
         )
         raise HTTPException(
             status_code=500,
-            detail="Failed to export form responses. Please try again later."
+            detail="Failed to export form responses. Please try again later.",
         )
+
 
 # Public endpoints (no authentication required) - Enhanced security
 @router.get("/public/forms/{form_id}", tags=["Public Forms"])
@@ -502,21 +531,24 @@ async def get_public_form(form_id: str, request: Request, response: Response):
     """Get a form for public submission with security validation"""
     try:
         # Rate limiting for public form access
-        client_ip = getattr(request.client, 'host', None) if request.client else 'unknown'
+        client_ip = (
+            getattr(request.client, "host", None) if request.client else "unknown"
+        )
         if not rate_limiter.check_rate_limit(
-            f"public_form_access_{client_ip}",
-            limit=50,
-            window_seconds=3600
+            f"public_form_access_{client_ip}", limit=50, window_seconds=3600
         ):
-            logger.warning(f"Rate limit exceeded for public form access from IP: {client_ip}")
+            logger.warning(
+                f"Rate limit exceeded for public form access from IP: {client_ip}"
+            )
             raise HTTPException(
-                status_code=429,
-                detail="Too many requests. Please try again later."
+                status_code=429, detail="Too many requests. Please try again later."
             )
 
         # Validate form_id
         if not form_id or not isinstance(form_id, str):
-            logger.warning(f"Invalid form ID in public access: {form_id} from IP: {client_ip}")
+            logger.warning(
+                f"Invalid form ID in public access: {form_id} from IP: {client_ip}"
+            )
             raise HTTPException(status_code=400, detail="Invalid form ID")
 
         form_id = InputSanitizer.sanitize_text(form_id, 100)
@@ -531,7 +563,9 @@ async def get_public_form(form_id: str, request: Request, response: Response):
             logger.warning(
                 f"Attempt to access non-public form {form_id} from IP: {client_ip}"
             )
-            raise HTTPException(status_code=403, detail="Form is not publicly accessible")
+            raise HTTPException(
+                status_code=403, detail="Form is not publicly accessible"
+            )
         # Only return necessary fields for public access with sanitization
         public_form = {
             "id": form["id"],
@@ -544,7 +578,7 @@ async def get_public_form(form_id: str, request: Request, response: Response):
                 "collect_email": form["settings"].get("collect_email", True),
                 "allow_multiple_submissions": form["settings"].get(
                     "allow_multiple_submissions", False
-                )
+                ),
             },
             "fields": [
                 {
@@ -555,21 +589,22 @@ async def get_public_form(form_id: str, request: Request, response: Response):
                     "required": field.get("required", False),
                     "description": html.escape(field.get("description", "")),
                     "options": [html.escape(opt) for opt in field.get("options", [])],
-                    "order": field.get("order", 0)
+                    "order": field.get("order", 0),
                 }
                 for field in form["fields"]
             ],
-            "is_active": form["is_active"]
+            "is_active": form["is_active"],
         }
 
         # Add security headers
-        for header_name, header_value in SecurityHeaders.get_form_security_headers().items():
+        for (
+            header_name,
+            header_value,
+        ) in SecurityHeaders.get_form_security_headers().items():
             response.headers[header_name] = header_value
 
         # Log public access
-        logger.info(
-            f"Public form accessed: id={form_id}, ip={client_ip}"
-        )
+        logger.info(f"Public form accessed: id={form_id}, ip={client_ip}")
 
         return public_form
 
@@ -579,31 +614,29 @@ async def get_public_form(form_id: str, request: Request, response: Response):
         logger.error(f"Error fetching public form {form_id}: {str(e)}")
         raise HTTPException(status_code=404, detail="Form not found")
 
+
 @router.post("/public/forms/{form_id}/submit", tags=["Public Forms"])
 async def submit_form(
-    form_id: str,
-    response_data: SubmitFormRequest,
-    request: Request,
-    response: Response
+    form_id: str, response_data: SubmitFormRequest, request: Request, response: Response
 ):
     """Submit a form response with enhanced security validation"""
     try:
         # Get client information
-        client_ip = getattr(request.client, 'host', None) if request.client else 'unknown'
-        user_agent = request.headers.get('user-agent', '')
+        client_ip = (
+            getattr(request.client, "host", None) if request.client else "unknown"
+        )
+        user_agent = request.headers.get("user-agent", "")
 
         # Enhanced rate limiting for form submissions
         if not rate_limiter.check_rate_limit(
-            f"form_submission_{client_ip}",
-            limit=20,
-            window_seconds=3600
+            f"form_submission_{client_ip}", limit=20, window_seconds=3600
         ):
             logger.warning(
                 f"Rate limit exceeded for form submission from IP: {client_ip}"
             )
             raise HTTPException(
                 status_code=429,
-                detail="Too many form submissions. Please try again later."
+                detail="Too many form submissions. Please try again later.",
             )
 
         # Validate form_id
@@ -625,8 +658,7 @@ async def submit_form(
                     f"Attempt to submit to non-public form {form_id} from IP: {client_ip}"
                 )
                 raise HTTPException(
-                    status_code=403,
-                    detail="Form is not publicly accessible"
+                    status_code=403, detail="Form is not publicly accessible"
                 )
         except HTTPException:
             raise
@@ -641,14 +673,14 @@ async def submit_form(
 
         # Submit form with security validation
         result = await form_service.submit_form_response(
-            form_id,
-            response_data,
-            client_ip,
-            user_agent
+            form_id, response_data, client_ip, user_agent
         )
 
         # Add security headers
-        for header_name, header_value in SecurityHeaders.get_form_security_headers().items():
+        for (
+            header_name,
+            header_value,
+        ) in SecurityHeaders.get_form_security_headers().items():
             response.headers[header_name] = header_value
 
         # Log successful submission
@@ -662,15 +694,14 @@ async def submit_form(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(
-            f"Error submitting form {form_id}: {str(e)}, ip={client_ip}"
-        )
+        logger.error(f"Error submitting form {form_id}: {str(e)}, ip={client_ip}")
         raise HTTPException(status_code=500, detail="Failed to submit form")
+
 
 # Form template endpoints
 @router.get("/form-templates", tags=["Form Templates"])
 def get_form_templates(
-    current_user: ExtendedAuthUser = Depends(require_team_or_planner)
+    current_user: ExtendedAuthUser = Depends(require_team_or_planner),
 ):
     """Get available form templates"""
     templates = [
@@ -686,7 +717,7 @@ def get_form_templates(
                     "type": "rating",
                     "required": True,
                     "description": "Rate your overall wedding planning experience (1-5 stars)",
-                    "order": 1
+                    "order": 1,
                 },
                 {
                     "id": "planning_satisfaction",
@@ -694,7 +725,7 @@ def get_form_templates(
                     "type": "scale",
                     "required": True,
                     "description": "How satisfied were you with the planning process? (1-10 scale)",
-                    "order": 2
+                    "order": 2,
                 },
                 {
                     "id": "communication_rating",
@@ -702,7 +733,7 @@ def get_form_templates(
                     "type": "rating",
                     "required": True,
                     "description": "Rate the quality of communication throughout the process",
-                    "order": 3
+                    "order": 3,
                 },
                 {
                     "id": "venue_satisfaction",
@@ -710,7 +741,7 @@ def get_form_templates(
                     "type": "rating",
                     "required": False,
                     "description": "How satisfied were you with the venue?",
-                    "order": 4
+                    "order": 4,
                 },
                 {
                     "id": "vendor_satisfaction",
@@ -718,7 +749,7 @@ def get_form_templates(
                     "type": "rating",
                     "required": False,
                     "description": "Rate the overall performance of vendors",
-                    "order": 5
+                    "order": 5,
                 },
                 {
                     "id": "timeline_satisfaction",
@@ -726,7 +757,7 @@ def get_form_templates(
                     "type": "rating",
                     "required": False,
                     "description": "How well was the wedding timeline managed?",
-                    "order": 6
+                    "order": 6,
                 },
                 {
                     "id": "budget_satisfaction",
@@ -734,7 +765,7 @@ def get_form_templates(
                     "type": "rating",
                     "required": False,
                     "description": "Rate how well the budget was managed",
-                    "order": 7
+                    "order": 7,
                 },
                 {
                     "id": "favorite_moment",
@@ -743,7 +774,7 @@ def get_form_templates(
                     "required": False,
                     "placeholder": "Tell us about your favorite moment from the wedding...",
                     "description": "Share your most memorable moment",
-                    "order": 8
+                    "order": 8,
                 },
                 {
                     "id": "improvements",
@@ -752,15 +783,21 @@ def get_form_templates(
                     "required": False,
                     "placeholder": "How could we improve our services?",
                     "description": "Any suggestions for how we could improve",
-                    "order": 9
+                    "order": 9,
                 },
                 {
                     "id": "recommendation",
                     "label": "Would you recommend our services?",
                     "type": "radio",
                     "required": True,
-                    "options": ["Definitely", "Probably", "Maybe", "Probably not", "Definitely not"],
-                    "order": 10
+                    "options": [
+                        "Definitely",
+                        "Probably",
+                        "Maybe",
+                        "Probably not",
+                        "Definitely not",
+                    ],
+                    "order": 10,
                 },
                 {
                     "id": "additional_comments",
@@ -769,9 +806,9 @@ def get_form_templates(
                     "required": False,
                     "placeholder": "Any other thoughts or comments...",
                     "description": "Share any additional feedback",
-                    "order": 11
-                }
-            ]
+                    "order": 11,
+                },
+            ],
         },
         {
             "id": "guest_feedback",
@@ -784,14 +821,14 @@ def get_form_templates(
                     "label": "Your Name",
                     "type": "text",
                     "required": True,
-                    "order": 1
+                    "order": 1,
                 },
                 {
                     "id": "guest_email",
                     "label": "Email Address",
                     "type": "email",
                     "required": True,
-                    "order": 2
+                    "order": 2,
                 },
                 {
                     "id": "event_rating",
@@ -799,7 +836,7 @@ def get_form_templates(
                     "type": "rating",
                     "required": True,
                     "description": "Rate your overall experience at the wedding",
-                    "order": 3
+                    "order": 3,
                 },
                 {
                     "id": "venue_rating",
@@ -807,7 +844,7 @@ def get_form_templates(
                     "type": "rating",
                     "required": False,
                     "description": "How did you like the venue?",
-                    "order": 4
+                    "order": 4,
                 },
                 {
                     "id": "food_rating",
@@ -815,7 +852,7 @@ def get_form_templates(
                     "type": "rating",
                     "required": False,
                     "description": "Rate the food and drinks",
-                    "order": 5
+                    "order": 5,
                 },
                 {
                     "id": "music_rating",
@@ -823,7 +860,7 @@ def get_form_templates(
                     "type": "rating",
                     "required": False,
                     "description": "Rate the music and entertainment",
-                    "order": 6
+                    "order": 6,
                 },
                 {
                     "id": "favorite_part",
@@ -831,7 +868,7 @@ def get_form_templates(
                     "type": "textarea",
                     "required": False,
                     "placeholder": "What was your favorite moment?",
-                    "order": 7
+                    "order": 7,
                 },
                 {
                     "id": "guest_comments",
@@ -839,9 +876,9 @@ def get_form_templates(
                     "type": "textarea",
                     "required": False,
                     "placeholder": "Any other feedback for the couple...",
-                    "order": 8
-                }
-            ]
+                    "order": 8,
+                },
+            ],
         },
         {
             "id": "vendor_questionnaire",
@@ -854,43 +891,51 @@ def get_form_templates(
                     "label": "Company Name",
                     "type": "text",
                     "required": True,
-                    "order": 1
+                    "order": 1,
                 },
                 {
                     "id": "contact_name",
                     "label": "Primary Contact Name",
                     "type": "text",
                     "required": True,
-                    "order": 2
+                    "order": 2,
                 },
                 {
                     "id": "contact_email",
                     "label": "Contact Email",
                     "type": "email",
                     "required": True,
-                    "order": 3
+                    "order": 3,
                 },
                 {
                     "id": "contact_phone",
                     "label": "Phone Number",
                     "type": "phone",
                     "required": True,
-                    "order": 4
+                    "order": 4,
                 },
                 {
                     "id": "service_type",
                     "label": "Service Type",
                     "type": "select",
                     "required": True,
-                    "options": ["Photography", "Videography", "Catering", "Florist", "Music/DJ", "Transportation", "Other"],
-                    "order": 5
+                    "options": [
+                        "Photography",
+                        "Videography",
+                        "Catering",
+                        "Florist",
+                        "Music/DJ",
+                        "Transportation",
+                        "Other",
+                    ],
+                    "order": 5,
                 },
                 {
                     "id": "years_experience",
                     "label": "Years in Business",
                     "type": "number",
                     "required": True,
-                    "order": 6
+                    "order": 6,
                 },
                 {
                     "id": "service_description",
@@ -898,22 +943,28 @@ def get_form_templates(
                     "type": "textarea",
                     "required": True,
                     "placeholder": "Describe your services in detail...",
-                    "order": 7
+                    "order": 7,
                 },
                 {
                     "id": "portfolio_url",
                     "label": "Portfolio/Website URL",
                     "type": "text",
                     "required": False,
-                    "order": 8
+                    "order": 8,
                 },
                 {
                     "id": "pricing_range",
                     "label": "Typical Pricing Range",
                     "type": "select",
                     "required": True,
-                    "options": ["$500-$1,000", "$1,000-$2,500", "$2,500-$5,000", "$5,000-$10,000", "$10,000+"],
-                    "order": 9
+                    "options": [
+                        "$500-$1,000",
+                        "$1,000-$2,500",
+                        "$2,500-$5,000",
+                        "$5,000-$10,000",
+                        "$10,000+",
+                    ],
+                    "order": 9,
                 },
                 {
                     "id": "availability",
@@ -921,19 +972,20 @@ def get_form_templates(
                     "type": "textarea",
                     "required": True,
                     "placeholder": "Describe your availability for events...",
-                    "order": 10
-                }
-            ]
-        }
+                    "order": 10,
+                },
+            ],
+        },
     ]
     return {"templates": templates}
+
 
 @router.post("/forms/from-template/{template_id}", tags=["Form Templates"])
 async def create_form_from_template(
     template_id: str,
     form_name: str,
     wedding_id: Optional[str] = None,
-    current_user: ExtendedAuthUser = Depends(require_team_or_planner)
+    current_user: ExtendedAuthUser = Depends(require_team_or_planner),
 ):
     """Create a form from a template"""
     enforce_team_permission(current_user, "manage_forms")
@@ -957,11 +1009,11 @@ async def create_form_from_template(
             "allow_multiple_submissions": False,
             "collect_email": True,
             "is_public": True,
-            "requires_auth": False
+            "requires_auth": False,
         },
         fields=template["fields"],
         wedding_id=wedding_id,
-        template_type=template_id
+        template_type=template_id,
     )
 
     return await form_service.create_form(form_data, current_user.email)
@@ -976,4 +1028,6 @@ async def duplicate_form(
     """Duplicate an existing form for the authenticated planner."""
     enforce_team_permission(current_user, "manage_forms")
 
-    return await form_service.duplicate_form(form_id, duplicate_request, current_user.email)
+    return await form_service.duplicate_form(
+        form_id, duplicate_request, current_user.email
+    )

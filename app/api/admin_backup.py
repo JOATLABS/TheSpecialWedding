@@ -11,14 +11,12 @@ Zero-cost backup solution:
 """
 
 from fastapi import APIRouter, Depends, HTTPException, Header
-from typing import Dict, Any, List
+from typing import Dict, Any
 from datetime import datetime, timedelta, timezone
 from app.dependencies.auth_extended import require_root_admin, ExtendedAuthUser
 from app.core.database import mongo
-import subprocess
 import os
 import logging
-from pathlib import Path
 import asyncio
 
 logger = logging.getLogger(__name__)
@@ -31,7 +29,7 @@ BACKUP_SECRET = os.getenv("BACKUP_SECRET")
 
 @router.post("/trigger")
 async def trigger_backup(
-    authorization: str = Header(None, description="Bearer token for authentication")
+    authorization: str = Header(None, description="Bearer token for authentication"),
 ) -> Dict[str, Any]:
     """
     Trigger MongoDB backup and upload to R2
@@ -79,16 +77,17 @@ async def trigger_backup(
 
         dump_command = [
             "mongodump",
-            "--uri", mongo_uri,
+            "--uri",
+            mongo_uri,
             "--gzip",
-            f"--archive={backup_path}"
+            f"--archive={backup_path}",
         ]
 
         # Run subprocess asynchronously
         process = await asyncio.create_subprocess_exec(
             *dump_command,
             stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE
+            stderr=asyncio.subprocess.PIPE,
         )
 
         stdout, stderr = await process.communicate()
@@ -113,11 +112,11 @@ async def trigger_backup(
 
             # Create S3 client for R2
             s3_client = boto3.client(
-                's3',
+                "s3",
                 endpoint_url=os.getenv("S3_ENDPOINT_URL"),
                 aws_access_key_id=os.getenv("S3_ACCESS_KEY_ID"),
                 aws_secret_access_key=os.getenv("S3_SECRET_ACCESS_KEY"),
-                config=Config(signature_version='s3v4')
+                config=Config(signature_version="s3v4"),
             )
 
             bucket_name = os.getenv("S3_BUCKET_NAME")
@@ -129,19 +128,19 @@ async def trigger_backup(
 
             logger.info(f"Uploading to R2: {s3_key}...")
 
-            with open(backup_path, 'rb') as f:
+            with open(backup_path, "rb") as f:
                 s3_client.upload_fileobj(
                     f,
                     bucket_name,
                     s3_key,
                     ExtraArgs={
-                        'Metadata': {
-                            'backup-date': timestamp,
-                            'retention-days': '30',
-                            'file-size-mb': str(file_size_mb),
-                            'database': os.getenv("MONGO_DB", "wedding")
+                        "Metadata": {
+                            "backup-date": timestamp,
+                            "retention-days": "30",
+                            "file-size-mb": str(file_size_mb),
+                            "database": os.getenv("MONGO_DB", "wedding"),
                         }
-                    }
+                    },
                 )
 
             logger.info("Upload to R2 completed successfully")
@@ -168,7 +167,7 @@ async def trigger_backup(
             "storage_location": "R2",
             "storage_key": s3_key,
             "status": "success",
-            "retention_days": 30
+            "retention_days": 30,
         }
 
         await mongo.db["backup_history"].insert_one(backup_record)
@@ -182,7 +181,7 @@ async def trigger_backup(
             "filename": backup_filename,
             "file_size_mb": round(file_size_mb, 2),
             "storage_location": "R2",
-            "storage_key": s3_key
+            "storage_key": s3_key,
         }
 
     except Exception as e:
@@ -190,11 +189,13 @@ async def trigger_backup(
 
         # Log failure to database
         try:
-            await mongo.db["backup_history"].insert_one({
-                "backup_date": datetime.now(timezone.utc),
-                "status": "failed",
-                "error": str(e)
-            })
+            await mongo.db["backup_history"].insert_one(
+                {
+                    "backup_date": datetime.now(timezone.utc),
+                    "status": "failed",
+                    "error": str(e),
+                }
+            )
         except Exception:
             pass
 
@@ -215,26 +216,20 @@ async def cleanup_old_backups(days: int, s3_client, bucket_name: str):
         logger.info(f"Cleaning up backups older than {cutoff_date.isoformat()}")
 
         # List all backups in R2
-        response = s3_client.list_objects_v2(
-            Bucket=bucket_name,
-            Prefix="backups/"
-        )
+        response = s3_client.list_objects_v2(Bucket=bucket_name, Prefix="backups/")
 
-        if 'Contents' not in response:
+        if "Contents" not in response:
             logger.info("No backups found to clean up")
             return
 
         deleted_count = 0
 
-        for obj in response['Contents']:
+        for obj in response["Contents"]:
             # Get object metadata
-            head = s3_client.head_object(
-                Bucket=bucket_name,
-                Key=obj['Key']
-            )
+            head = s3_client.head_object(Bucket=bucket_name, Key=obj["Key"])
 
             # Check backup date from metadata
-            backup_date_str = head.get('Metadata', {}).get('backup-date')
+            backup_date_str = head.get("Metadata", {}).get("backup-date")
 
             if backup_date_str:
                 try:
@@ -242,17 +237,19 @@ async def cleanup_old_backups(days: int, s3_client, bucket_name: str):
 
                     if backup_date < cutoff_date:
                         # Delete old backup
-                        s3_client.delete_object(
-                            Bucket=bucket_name,
-                            Key=obj['Key']
-                        )
+                        s3_client.delete_object(Bucket=bucket_name, Key=obj["Key"])
                         logger.info(f"Deleted old backup: {obj['Key']}")
                         deleted_count += 1
 
                         # Update database record
                         await mongo.db["backup_history"].update_one(
-                            {"storage_key": obj['Key']},
-                            {"$set": {"deleted_at": datetime.now(timezone.utc), "status": "deleted"}}
+                            {"storage_key": obj["Key"]},
+                            {
+                                "$set": {
+                                    "deleted_at": datetime.now(timezone.utc),
+                                    "status": "deleted",
+                                }
+                            },
                         )
 
                 except Exception as e:
@@ -267,8 +264,7 @@ async def cleanup_old_backups(days: int, s3_client, bucket_name: str):
 
 @router.get("/history")
 async def get_backup_history(
-    limit: int = 30,
-    current_user: ExtendedAuthUser = Depends(require_root_admin)
+    limit: int = 30, current_user: ExtendedAuthUser = Depends(require_root_admin)
 ) -> Dict[str, Any]:
     """
     Get backup history
@@ -286,7 +282,9 @@ async def get_backup_history(
     # Calculate statistics
     successful = len([b for b in backups if b.get("status") == "success"])
     failed = len([b for b in backups if b.get("status") == "failed"])
-    total_size_mb = sum(b.get("file_size_mb", 0) for b in backups if b.get("status") == "success")
+    total_size_mb = sum(
+        b.get("file_size_mb", 0) for b in backups if b.get("status") == "success"
+    )
 
     return {
         "backups": backups,
@@ -294,20 +292,19 @@ async def get_backup_history(
             "total": len(backups),
             "successful": successful,
             "failed": failed,
-            "total_size_mb": round(total_size_mb, 2)
-        }
+            "total_size_mb": round(total_size_mb, 2),
+        },
     }
 
 
 @router.get("/latest")
 async def get_latest_backup(
-    current_user: ExtendedAuthUser = Depends(require_root_admin)
+    current_user: ExtendedAuthUser = Depends(require_root_admin),
 ) -> Dict[str, Any]:
     """Get information about the most recent backup"""
 
     backup = await mongo.db["backup_history"].find_one(
-        {"status": "success"},
-        sort=[("backup_date", -1)]
+        {"status": "success"}, sort=[("backup_date", -1)]
     )
 
     if not backup:
@@ -318,19 +315,21 @@ async def get_latest_backup(
         backup["_id"] = str(backup["_id"])
 
     # Calculate age
-    age_hours = (datetime.now(timezone.utc) - backup["backup_date"]).total_seconds() / 3600
+    age_hours = (
+        datetime.now(timezone.utc) - backup["backup_date"]
+    ).total_seconds() / 3600
 
     return {
         **backup,
         "age_hours": round(age_hours, 1),
-        "is_fresh": age_hours < 26  # Should be < 26 hours old (daily backups + 2h grace)
+        "is_fresh": age_hours
+        < 26,  # Should be < 26 hours old (daily backups + 2h grace)
     }
 
 
 @router.post("/restore-info/{backup_id}")
 async def get_restore_info(
-    backup_id: str,
-    current_user: ExtendedAuthUser = Depends(require_root_admin)
+    backup_id: str, current_user: ExtendedAuthUser = Depends(require_root_admin)
 ) -> Dict[str, Any]:
     """
     Get restore instructions for a specific backup
@@ -339,10 +338,9 @@ async def get_restore_info(
     This provides the commands to run.
     """
 
-    backup = await mongo.db["backup_history"].find_one({
-        "backup_id": backup_id,
-        "status": "success"
-    })
+    backup = await mongo.db["backup_history"].find_one(
+        {"backup_id": backup_id, "status": "success"}
+    )
 
     if not backup:
         raise HTTPException(status_code=404, detail="Backup not found")
@@ -358,9 +356,9 @@ async def get_restore_info(
 ```bash
 # Using AWS CLI (configure with R2 credentials)
 aws s3 cp \\
-  s3://{os.getenv('S3_BUCKET_NAME')}/{backup['storage_key']} \\
-  /tmp/{backup['filename']} \\
-  --endpoint-url {os.getenv('S3_ENDPOINT_URL')}
+  s3://{os.getenv("S3_BUCKET_NAME")}/{backup["storage_key"]} \\
+  /tmp/{backup["filename"]} \\
+  --endpoint-url {os.getenv("S3_ENDPOINT_URL")}
 ```
 
 ## Step 2: Restore MongoDB
@@ -371,9 +369,9 @@ docker-compose down
 
 # Restore the backup
 mongorestore \\
-  --uri "{os.getenv('MONGO_URI')}" \\
+  --uri "{os.getenv("MONGO_URI")}" \\
   --gzip \\
-  --archive=/tmp/{backup['filename']} \\
+  --archive=/tmp/{backup["filename"]} \\
   --drop
 
 # Restart your application
@@ -382,9 +380,9 @@ docker-compose up -d
 
 ## Backup Details
 
-- Date: {backup['backup_date'].strftime('%Y-%m-%d %H:%M:%S UTC')}
-- Size: {backup['file_size_mb']:.2f} MB
-- Location: R2 - {backup['storage_key']}
+- Date: {backup["backup_date"].strftime("%Y-%m-%d %H:%M:%S UTC")}
+- Size: {backup["file_size_mb"]:.2f} MB
+- Location: R2 - {backup["storage_key"]}
 
 ## Important Notes
 
@@ -398,14 +396,13 @@ docker-compose up -d
         "backup_id": backup_id,
         "backup_date": backup["backup_date"].isoformat(),
         "file_size_mb": backup["file_size_mb"],
-        "instructions": instructions
+        "instructions": instructions,
     }
 
 
 @router.delete("/cleanup-old")
 async def manual_cleanup_old_backups(
-    days: int = 30,
-    current_user: ExtendedAuthUser = Depends(require_root_admin)
+    days: int = 30, current_user: ExtendedAuthUser = Depends(require_root_admin)
 ) -> Dict[str, Any]:
     """
     Manually trigger cleanup of old backups
@@ -418,22 +415,25 @@ async def manual_cleanup_old_backups(
         from botocore.config import Config
 
         s3_client = boto3.client(
-            's3',
+            "s3",
             endpoint_url=os.getenv("S3_ENDPOINT_URL"),
             aws_access_key_id=os.getenv("S3_ACCESS_KEY_ID"),
             aws_secret_access_key=os.getenv("S3_SECRET_ACCESS_KEY"),
-            config=Config(signature_version='s3v4')
+            config=Config(signature_version="s3v4"),
         )
 
         bucket_name = os.getenv("S3_BUCKET_NAME")
         if not bucket_name:
-            raise HTTPException(status_code=500, detail="S3_BUCKET_NAME environment variable not configured")
+            raise HTTPException(
+                status_code=500,
+                detail="S3_BUCKET_NAME environment variable not configured",
+            )
 
         await cleanup_old_backups(days, s3_client, bucket_name)
 
         return {
             "status": "success",
-            "message": f"Cleaned up backups older than {days} days"
+            "message": f"Cleaned up backups older than {days} days",
         }
 
     except Exception as e:

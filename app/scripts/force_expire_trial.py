@@ -41,27 +41,31 @@ async def force_expire(email: str):
     # still log in and reach the billing page to upgrade
     await users_col.update_one(
         {"_id": user["_id"]},
-        {"$set": {
-            "trial_end_date": past_date,
-            "is_active": True,
-            "subscription_status": "trial",
-            "updated_at": datetime.now(timezone.utc),
-        }}
+        {
+            "$set": {
+                "trial_end_date": past_date,
+                "is_active": True,
+                "subscription_status": "trial",
+                "updated_at": datetime.now(timezone.utc),
+            }
+        },
     )
 
     # Update user_subscriptions collection
     result = await subs_col.update_one(
         {"user_id": user_id, "status": "trial"},
-        {"$set": {
-            "trial_end_date": past_date,
-            "current_period_end": past_date,
-            "updated_at": datetime.now(timezone.utc),
-        }}
+        {
+            "$set": {
+                "trial_end_date": past_date,
+                "current_period_end": past_date,
+                "updated_at": datetime.now(timezone.utc),
+            }
+        },
     )
 
-    print(f"[OK] Users collection updated")
+    print("[OK] Users collection updated")
     print(f"[OK] Subscriptions updated: {result.modified_count}")
-    print(f"\nNext login attempt will trigger trial expiration (402).")
+    print("\nNext login attempt will trigger trial expiration (402).")
 
     mongo.close()
 

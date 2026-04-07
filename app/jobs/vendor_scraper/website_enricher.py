@@ -45,7 +45,12 @@ async def enrich_from_website(website_url: str) -> Dict:
             return result
         try:
             addr = ipaddress.ip_address(host)
-            if addr.is_private or addr.is_loopback or addr.is_reserved or addr.is_link_local:
+            if (
+                addr.is_private
+                or addr.is_loopback
+                or addr.is_reserved
+                or addr.is_link_local
+            ):
                 logger.debug(f"Blocked private/reserved IP URL: {website_url}")
                 return result
         except ValueError:
@@ -96,13 +101,15 @@ def _extract_description(html: str) -> Optional[str]:
     # Pattern 1: property/name before content
     og_match = re.search(
         r'<meta\s+(?:property|name)=["\']og:description["\']\s+content=["\']([^"\']+)["\']',
-        html, re.IGNORECASE
+        html,
+        re.IGNORECASE,
     )
     if not og_match:
         # Pattern 2: content before property/name
         og_match = re.search(
             r'<meta\s+content=["\']([^"\']+)["\']\s+(?:property|name)=["\']og:description["\']',
-            html, re.IGNORECASE
+            html,
+            re.IGNORECASE,
         )
     if og_match:
         return og_match.group(1).strip()
@@ -110,12 +117,14 @@ def _extract_description(html: str) -> Optional[str]:
     # Fall back to meta description
     meta_match = re.search(
         r'<meta\s+name=["\']description["\']\s+content=["\']([^"\']+)["\']',
-        html, re.IGNORECASE
+        html,
+        re.IGNORECASE,
     )
     if not meta_match:
         meta_match = re.search(
             r'<meta\s+content=["\']([^"\']+)["\']\s+name=["\']description["\']',
-            html, re.IGNORECASE
+            html,
+            re.IGNORECASE,
         )
     if meta_match:
         return meta_match.group(1).strip()

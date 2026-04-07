@@ -1,5 +1,5 @@
 from typing import List, Dict, Optional, Any
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from app.utils.pydantic_objectid import PyObjectId
 from app.core.database import mongo
 from app.models.budget import (
@@ -9,11 +9,10 @@ from app.models.budget import (
     BudgetSummary,
     PaymentRecord,
     BudgetAlert,
-    BudgetSubcategory
 )
 from app.utils.security_validator import SecurityValidator
 from app.utils.serializers import serialize_mongo_doc
-from app.utils.id_utils import to_object_id, to_str_id, normalize_doc_id
+from app.utils.id_utils import to_object_id, to_str_id
 import logging
 
 logger = logging.getLogger(__name__)
@@ -27,6 +26,7 @@ def _get_ai_cache_service():
     global _ai_cache_service
     if _ai_cache_service is None:
         from app.services.ai_cache_service import ai_cache_service
+
         _ai_cache_service = ai_cache_service
     return _ai_cache_service
 
@@ -60,7 +60,9 @@ class BudgetService:
 
     # ===== BUDGET CATEGORY MANAGEMENT =====
 
-    async def create_budget_category(self, wedding_id: str, category_data: Dict) -> Dict:
+    async def create_budget_category(
+        self, wedding_id: str, category_data: Dict
+    ) -> Dict:
         """Create a new budget category for a wedding"""
         try:
             # Validate wedding exists and user has access
@@ -74,11 +76,15 @@ class BudgetService:
                 # Get existing categories (safety cap: typical wedding has <5k categories)
                 cursor = self.budget_categories.find({"wedding_id": wedding_id})
                 existing_categories = await cursor.to_list(length=self.MAX_CATEGORIES)
-                existing_total = sum(cat.get("budgeted_amount", 0) for cat in existing_categories)
+                existing_total = sum(
+                    cat.get("budgeted_amount", 0) for cat in existing_categories
+                )
                 new_category_amount = category_data.get("budgeted_amount", 0)
 
                 if existing_total + new_category_amount > wedding_total_budget:
-                    overage = (existing_total + new_category_amount) - wedding_total_budget
+                    overage = (
+                        existing_total + new_category_amount
+                    ) - wedding_total_budget
                     logger.warning(
                         f"Creating category would exceed wedding budget: "
                         f"Wedding {wedding_id} total: ${wedding_total_budget:,.2f}, "
@@ -89,13 +95,12 @@ class BudgetService:
                     # Still allow creation but alert will be triggered
 
             # Create category
-            category = BudgetCategory(
-                wedding_id=wedding_id,
-                **category_data
-            )
+            category = BudgetCategory(wedding_id=wedding_id, **category_data)
 
             # Insert into database
-            result = await self.budget_categories.insert_one(category.model_dump(by_alias=True))
+            result = await self.budget_categories.insert_one(
+                category.model_dump(by_alias=True)
+            )
             category.id = result.inserted_id  # type: ignore[assignment]
 
             # Update wedding total budget if needed
@@ -107,7 +112,9 @@ class BudgetService:
             # Invalidate AI cache for budget insights
             await self._invalidate_budget_cache(wedding_id)
 
-            logger.info(f"Created budget category {category.name} for wedding {wedding_id}")
+            logger.info(
+                f"Created budget category {category.name} for wedding {wedding_id}"
+            )
             return category.model_dump()
 
         except Exception as e:
@@ -134,9 +141,13 @@ class BudgetService:
             summary = await self._calculate_budget_summary(wedding_id)
 
             # Get recent alerts (already limited by .limit(10) in cursor)
-            alerts_cursor = self.budget_alerts.find(
-                {"wedding_id": wedding_id, "is_resolved": False}
-            ).sort("created_at", -1).limit(10)
+            alerts_cursor = (
+                self.budget_alerts.find(
+                    {"wedding_id": wedding_id, "is_resolved": False}
+                )
+                .sort("created_at", -1)
+                .limit(10)
+            )
             alerts = await alerts_cursor.to_list(length=10)
 
             # Serialize alerts (convert ObjectId to string)
@@ -153,7 +164,7 @@ class BudgetService:
                 "summary": summary.model_dump(),
                 "categories": serialized_categories,
                 "alerts": serialized_alerts,
-                "last_updated": datetime.now(timezone.utc).isoformat()
+                "last_updated": datetime.now(timezone.utc).isoformat(),
             }
 
         except Exception as e:
@@ -179,12 +190,13 @@ class BudgetService:
 
                 if wedding_total_budget > 0:
                     # Get all categories except this one (safety cap applied)
-                    cursor = self.budget_categories.find({
-                        "wedding_id": wedding_id,
-                        "_id": {"$ne": obj_id}
-                    })
+                    cursor = self.budget_categories.find(
+                        {"wedding_id": wedding_id, "_id": {"$ne": obj_id}}
+                    )
                     other_categories = await cursor.to_list(length=self.MAX_CATEGORIES)
-                    other_total = sum(cat.get("budgeted_amount", 0) for cat in other_categories)
+                    other_total = sum(
+                        cat.get("budgeted_amount", 0) for cat in other_categories
+                    )
                     new_amount = update_data["budgeted_amount"]
 
                     if other_total + new_amount > wedding_total_budget:
@@ -203,15 +215,16 @@ class BudgetService:
 
             # Update category
             result = await self.budget_categories.update_one(
-                {"_id": obj_id},
-                {"$set": update_data}
+                {"_id": obj_id}, {"$set": update_data}
             )
 
             if result.modified_count == 0:
                 raise ValueError("No changes made to category")
 
             # Get updated category
-            updated_category = await self.budget_categories.find_one({"_id": PyObjectId(category_id)})
+            updated_category = await self.budget_categories.find_one(
+                {"_id": PyObjectId(category_id)}
+            )
             if not updated_category:
                 raise ValueError("Category not found after update")
 
@@ -245,8 +258,12 @@ class BudgetService:
             wedding_id = category["wedding_id"]
 
             # Delete associated quotes and payments
-            await self.vendor_quotes.delete_many({"category_id": to_str_id(category_id)})
-            await self.payment_records.delete_many({"category_id": to_str_id(category_id)})
+            await self.vendor_quotes.delete_many(
+                {"category_id": to_str_id(category_id)}
+            )
+            await self.payment_records.delete_many(
+                {"category_id": to_str_id(category_id)}
+            )
 
             # Delete category
             result = await self.budget_categories.delete_one({"_id": obj_id})
@@ -272,22 +289,23 @@ class BudgetService:
     async def create_vendor_quote(self, wedding_id: str, quote_data: Dict) -> Dict:
         """Create a new vendor quote"""
         try:
-            quote = VendorQuote(
-                wedding_id=wedding_id,
-                **quote_data
-            )
+            quote = VendorQuote(wedding_id=wedding_id, **quote_data)
 
             await self.vendor_quotes.insert_one(quote.model_dump(by_alias=True))
             # Note: id is already set by default_factory
 
-            logger.info(f"Created vendor quote from {quote.vendor_name} for wedding {wedding_id}")
+            logger.info(
+                f"Created vendor quote from {quote.vendor_name} for wedding {wedding_id}"
+            )
             return quote.model_dump()
 
         except Exception as e:
             logger.error(f"Failed to create vendor quote: {str(e)}")
             raise
 
-    async def get_vendor_quotes(self, wedding_id: str, service_category: Optional[str] = None) -> List[Dict]:
+    async def get_vendor_quotes(
+        self, wedding_id: str, service_category: Optional[str] = None
+    ) -> List[Dict]:
         """Get vendor quotes for a wedding, optionally filtered by category"""
         try:
             query = {"wedding_id": wedding_id}
@@ -303,7 +321,9 @@ class BudgetService:
             logger.error(f"Failed to get vendor quotes: {str(e)}")
             raise
 
-    async def compare_vendor_quotes(self, wedding_id: str, service_category: str) -> Dict:
+    async def compare_vendor_quotes(
+        self, wedding_id: str, service_category: str
+    ) -> Dict:
         """Compare vendor quotes for a specific service category"""
         try:
             quotes = await self.get_vendor_quotes(wedding_id, service_category)
@@ -321,27 +341,31 @@ class BudgetService:
                     "lowest": min(quote_amounts),
                     "highest": max(quote_amounts),
                     "average": sum(quote_amounts) / len(quote_amounts),
-                    "savings_potential": max(quote_amounts) - min(quote_amounts)
+                    "savings_potential": max(quote_amounts) - min(quote_amounts),
                 },
-                "recommendations": []
+                "recommendations": [],
             }
 
             # Add recommendations
             lowest_quote = min(quotes, key=lambda x: x["quote_amount"])
             # Note: highest_quote available in statistics already
 
-            comparison["recommendations"].append({
-                "type": "lowest_price",
-                "vendor": lowest_quote["vendor_name"],
-                "amount": lowest_quote["quote_amount"],
-                "message": "Lowest price option"
-            })
+            comparison["recommendations"].append(
+                {
+                    "type": "lowest_price",
+                    "vendor": lowest_quote["vendor_name"],
+                    "amount": lowest_quote["quote_amount"],
+                    "message": "Lowest price option",
+                }
+            )
             if comparison["statistics"]["savings_potential"] > 1000:
-                comparison["recommendations"].append({
-                    "type": "savings_alert",
-                    "message": f"You could save ${comparison['statistics']['savings_potential']:.2f} by choosing the lowest quote",
-                    "savings": comparison["statistics"]["savings_potential"]
-                })
+                comparison["recommendations"].append(
+                    {
+                        "type": "savings_alert",
+                        "message": f"You could save ${comparison['statistics']['savings_potential']:.2f} by choosing the lowest quote",
+                        "savings": comparison["statistics"]["savings_potential"],
+                    }
+                )
 
             return comparison
 
@@ -360,25 +384,25 @@ class BudgetService:
             logger.error(f"Failed to fetch vendor quote: {str(e)}")
             raise
 
-    async def update_quote_status(self, quote_id: str, status: str, notes: Optional[str] = None) -> Dict:
+    async def update_quote_status(
+        self, quote_id: str, status: str, notes: Optional[str] = None
+    ) -> Dict:
         """Update vendor quote status (accept/reject)"""
         try:
-            update_data = {
-                "status": status,
-                "updated_at": datetime.now(timezone.utc)
-            }
+            update_data = {"status": status, "updated_at": datetime.now(timezone.utc)}
             if notes:
                 update_data["notes"] = notes
             result = await self.vendor_quotes.update_one(
-                {"_id": PyObjectId(quote_id)},
-                {"$set": update_data}
+                {"_id": PyObjectId(quote_id)}, {"$set": update_data}
             )
 
             if result.modified_count == 0:
                 raise ValueError("Quote not found or no changes made")
 
             # Get updated quote
-            updated_quote = await self.vendor_quotes.find_one({"_id": PyObjectId(quote_id)})
+            updated_quote = await self.vendor_quotes.find_one(
+                {"_id": PyObjectId(quote_id)}
+            )
             if not updated_quote:
                 raise ValueError("Quote not found after update")
 
@@ -393,25 +417,28 @@ class BudgetService:
             logger.error(f"Failed to update quote status: {str(e)}")
             raise
 
-    async def rate_vendor_quote(self, quote_id: str, rating: int, notes: Optional[str] = None) -> Dict:
+    async def rate_vendor_quote(
+        self, quote_id: str, rating: int, notes: Optional[str] = None
+    ) -> Dict:
         """Rate a vendor quote (1-5 stars)"""
         try:
             update_data: Dict[str, Any] = {
                 "rating": rating,
-                "updated_at": datetime.now(timezone.utc)
+                "updated_at": datetime.now(timezone.utc),
             }
             if notes is not None:
                 update_data["rating_notes"] = notes
 
             result = await self.vendor_quotes.update_one(
-                {"_id": PyObjectId(quote_id)},
-                {"$set": update_data}
+                {"_id": PyObjectId(quote_id)}, {"$set": update_data}
             )
 
             if result.modified_count == 0:
                 raise ValueError("Quote not found or no changes made")
 
-            updated_quote = await self.vendor_quotes.find_one({"_id": PyObjectId(quote_id)})
+            updated_quote = await self.vendor_quotes.find_one(
+                {"_id": PyObjectId(quote_id)}
+            )
             if not updated_quote:
                 raise ValueError("Quote not found after update")
 
@@ -424,7 +451,9 @@ class BudgetService:
 
     # ===== BUDGET TEMPLATES =====
 
-    async def get_budget_templates(self, wedding_type: Optional[str] = None) -> List[Dict]:
+    async def get_budget_templates(
+        self, wedding_type: Optional[str] = None
+    ) -> List[Dict]:
         """Get available budget templates"""
         try:
             query: Dict[str, Any] = {"is_public": True}
@@ -434,20 +463,26 @@ class BudgetService:
             cursor = self.budget_templates.find(query).sort("name", 1)
             # Safety cap for templates (typically <1k public templates)
             templates = await cursor.to_list(length=self.MAX_TEMPLATES)
-            return [self._serialize_template(template) for template in templates if template]
+            return [
+                self._serialize_template(template) for template in templates if template
+            ]
 
         except Exception as e:
             logger.error(f"Failed to get budget templates: {str(e)}")
             raise
 
-    async def create_budget_template(self, template_data: Dict, created_by: Optional[str] = None) -> Dict:
+    async def create_budget_template(
+        self, template_data: Dict, created_by: Optional[str] = None
+    ) -> Dict:
         """Create a custom budget template"""
         try:
             categories = template_data.get("categories", [])
             if not categories:
                 raise ValueError("At least one category is required")
 
-            total_percentage = sum(category.get("percentage", 0) for category in categories)
+            total_percentage = sum(
+                category.get("percentage", 0) for category in categories
+            )
             if abs(total_percentage - 100) > 0.5:
                 raise ValueError("Category percentages must total 100%")
 
@@ -488,7 +523,9 @@ class BudgetService:
             target_min = float(template_data.get("target_budget_min", 0))
             target_max = float(template_data.get("target_budget_max", 0))
             if target_max < target_min:
-                raise ValueError("Maximum budget must be greater than or equal to minimum budget")
+                raise ValueError(
+                    "Maximum budget must be greater than or equal to minimum budget"
+                )
 
             template = BudgetTemplate(
                 name=template_data.get("name", "").strip(),
@@ -505,7 +542,9 @@ class BudgetService:
             insert_payload = template.model_dump(by_alias=True)
             result = await self.budget_templates.insert_one(insert_payload)
 
-            stored_template = await self.budget_templates.find_one({"_id": result.inserted_id})
+            stored_template = await self.budget_templates.find_one(
+                {"_id": result.inserted_id}
+            )
             if not stored_template:
                 raise ValueError("Failed to retrieve template after creation")
             return self._serialize_template(stored_template)
@@ -514,18 +553,24 @@ class BudgetService:
             logger.error(f"Failed to create budget template: {str(e)}")
             raise
 
-    async def apply_budget_template(self, wedding_id: str, template_id: str, total_budget: float) -> Dict:
+    async def apply_budget_template(
+        self, wedding_id: str, template_id: str, total_budget: float
+    ) -> Dict:
         """Apply a budget template to a wedding"""
         try:
             # Get template
-            template = await self.budget_templates.find_one({"_id": PyObjectId(template_id)})
+            template = await self.budget_templates.find_one(
+                {"_id": PyObjectId(template_id)}
+            )
             if not template:
                 raise ValueError("Budget template not found")
             # Clear existing categories (optional - could be made configurable)
             cursor = self.budget_categories.find({"wedding_id": wedding_id})
             existing_categories = await cursor.to_list(length=self.MAX_CATEGORIES)
             if existing_categories:
-                logger.warning(f"Wedding {wedding_id} already has {len(existing_categories)} budget categories")
+                logger.warning(
+                    f"Wedding {wedding_id} already has {len(existing_categories)} budget categories"
+                )
             # Create categories from template
             created_categories = []
             for category_template in template["categories"]:
@@ -535,7 +580,7 @@ class BudgetService:
                     "description": f"Generated from {template['name']} template",
                     "budgeted_amount": category_amount,
                     "priority": category_template.get("priority", 3),
-                    "percentage_of_total": category_template["percentage"]
+                    "percentage_of_total": category_template["percentage"],
                 }
 
                 category = await self.create_budget_category(wedding_id, category_data)
@@ -544,14 +589,21 @@ class BudgetService:
             # Update wedding with total budget
             await self.weddings.update_one(
                 {"_id": wedding_id},
-                {"$set": {"total_budget": total_budget, "budget_template_applied": template_id}}
+                {
+                    "$set": {
+                        "total_budget": total_budget,
+                        "budget_template_applied": template_id,
+                    }
+                },
             )
-            logger.info(f"Applied budget template {template['name']} to wedding {wedding_id}")
+            logger.info(
+                f"Applied budget template {template['name']} to wedding {wedding_id}"
+            )
             return {
                 "template_applied": template["name"],
                 "total_budget": total_budget,
                 "categories_created": len(created_categories),
-                "categories": created_categories
+                "categories": created_categories,
             }
 
         except Exception as e:
@@ -605,7 +657,9 @@ class BudgetService:
     async def get_budget_category(self, category_id: str) -> Optional[Dict]:
         """Fetch a single budget category by its identifier."""
         try:
-            category = await self.budget_categories.find_one({"_id": PyObjectId(category_id)})
+            category = await self.budget_categories.find_one(
+                {"_id": PyObjectId(category_id)}
+            )
             if not category:
                 return None
 
@@ -620,14 +674,13 @@ class BudgetService:
     async def record_payment(self, category_id: str, payment_data: Dict) -> Dict:
         """Record a payment for a budget category"""
         try:
-            category = await self.budget_categories.find_one({"_id": PyObjectId(category_id)})
+            category = await self.budget_categories.find_one(
+                {"_id": PyObjectId(category_id)}
+            )
             if not category:
                 raise ValueError("Budget category not found")
 
-            payment = PaymentRecord(
-                category_id=category_id,
-                **payment_data
-            )
+            payment = PaymentRecord(category_id=category_id, **payment_data)
 
             result = await self.payment_records.insert_one(payment.model_dump())
             payment.id = result.inserted_id  # type: ignore[assignment]
@@ -636,10 +689,12 @@ class BudgetService:
             new_actual_spent = category.get("actual_spent", 0) + payment.amount
             await self.budget_categories.update_one(
                 {"_id": PyObjectId(category_id)},
-                {"$set": {
-                    "actual_spent": new_actual_spent,
-                    "updated_at": datetime.now(timezone.utc)
-                }}
+                {
+                    "$set": {
+                        "actual_spent": new_actual_spent,
+                        "updated_at": datetime.now(timezone.utc),
+                    }
+                },
             )
 
             # Update payment status based on spending vs budget
@@ -653,13 +708,15 @@ class BudgetService:
 
             await self.budget_categories.update_one(
                 {"_id": PyObjectId(category_id)},
-                {"$set": {"payment_status": payment_status}}
+                {"$set": {"payment_status": payment_status}},
             )
 
             # Check for over-budget alerts
             await self._check_budget_alerts(category["wedding_id"])
 
-            logger.info(f"Recorded payment of ${payment.amount} for category {category_id}")
+            logger.info(
+                f"Recorded payment of ${payment.amount} for category {category_id}"
+            )
             payment_dict = payment.model_dump()
             if "id" in payment_dict and payment_dict["id"] is not None:
                 payment_dict["id"] = str(payment_dict["id"])
@@ -685,7 +742,9 @@ class BudgetService:
             # Add category name to each payment
             category_names = {str(cat["_id"]): cat["name"] for cat in categories}
             for payment in payments:
-                payment["category_name"] = category_names.get(payment["category_id"], "Unknown")
+                payment["category_name"] = category_names.get(
+                    payment["category_id"], "Unknown"
+                )
 
             # Serialize all MongoDB documents and fields for JSON response
             return [serialize_mongo_doc(payment) for payment in payments]
@@ -694,7 +753,9 @@ class BudgetService:
             logger.error(f"Failed to get payment history: {str(e)}")
             raise
 
-    async def get_outgoing_payments_overview(self, weddings: List[Dict[str, Any]]) -> Dict[str, Any]:
+    async def get_outgoing_payments_overview(
+        self, weddings: List[Dict[str, Any]]
+    ) -> Dict[str, Any]:
         """
         Get aggregated outgoing payment data for the admin money dashboard.
 
@@ -722,14 +783,20 @@ class BudgetService:
                 return {"payments": [], "count": 0, "weddings": [], "weddings_total": 0}
 
             wedding_ids = list(wedding_lookup.keys())
-            categories_cursor = self.budget_categories.find({
-                "wedding_id": {"$in": wedding_ids},
-                "actual_spent": {"$gt": 0},
-            })
+            categories_cursor = self.budget_categories.find(
+                {
+                    "wedding_id": {"$in": wedding_ids},
+                    "actual_spent": {"$gt": 0},
+                }
+            )
             categories = await categories_cursor.to_list(length=self.MAX_CATEGORIES)
 
             latest_payment_by_category: Dict[str, Dict[str, Any]] = {}
-            category_ids = [str(category["_id"]) for category in categories if category.get("_id") is not None]
+            category_ids = [
+                str(category["_id"])
+                for category in categories
+                if category.get("_id") is not None
+            ]
             if category_ids:
                 latest_payment_pipeline = [
                     {"$match": {"category_id": {"$in": category_ids}}},
@@ -742,10 +809,11 @@ class BudgetService:
                         }
                     },
                 ]
-                latest_payments = await self.payment_records.aggregate(latest_payment_pipeline).to_list(length=len(category_ids))
+                latest_payments = await self.payment_records.aggregate(
+                    latest_payment_pipeline
+                ).to_list(length=len(category_ids))
                 latest_payment_by_category = {
-                    str(payment["_id"]): payment
-                    for payment in latest_payments
+                    str(payment["_id"]): payment for payment in latest_payments
                 }
 
             payments: List[Dict[str, Any]] = []
@@ -754,22 +822,35 @@ class BudgetService:
                 wedding_id = str(category.get("wedding_id") or "")
                 wedding_meta = wedding_lookup.get(wedding_id, {"title": "Wedding"})
                 latest_payment = latest_payment_by_category.get(category_id, {})
-                payments.append({
-                    "id": category_id,
-                    "vendor_name": latest_payment.get("vendor_name") or category.get("vendor_name") or category.get("name") or "Unknown Vendor",
-                    "vendor_email": category.get("vendor_email"),
-                    "category": category.get("name") or "Service",
-                    "wedding_title": wedding_meta.get("title", "Wedding"),
-                    "wedding_id": wedding_id,
-                    "amount": float(category.get("actual_spent", 0) or 0),
-                    "budgeted": float(category.get("budgeted_amount", 0) or 0),
-                    "status": category.get("payment_status") or "pending",
-                    "due_date": None,
-                    "paid_at": serialize_mongo_doc(latest_payment).get("payment_date") if latest_payment else None,
-                })
+                payments.append(
+                    {
+                        "id": category_id,
+                        "vendor_name": latest_payment.get("vendor_name")
+                        or category.get("vendor_name")
+                        or category.get("name")
+                        or "Unknown Vendor",
+                        "vendor_email": category.get("vendor_email"),
+                        "category": category.get("name") or "Service",
+                        "wedding_title": wedding_meta.get("title", "Wedding"),
+                        "wedding_id": wedding_id,
+                        "amount": float(category.get("actual_spent", 0) or 0),
+                        "budgeted": float(category.get("budgeted_amount", 0) or 0),
+                        "status": category.get("payment_status") or "pending",
+                        "due_date": None,
+                        "paid_at": serialize_mongo_doc(latest_payment).get(
+                            "payment_date"
+                        )
+                        if latest_payment
+                        else None,
+                    }
+                )
 
-            payments.sort(key=lambda payment: payment.get("paid_at") or "", reverse=True)
-            weddings_payload = sorted(wedding_lookup.values(), key=lambda wedding: wedding["title"].lower())
+            payments.sort(
+                key=lambda payment: payment.get("paid_at") or "", reverse=True
+            )
+            weddings_payload = sorted(
+                wedding_lookup.values(), key=lambda wedding: wedding["title"].lower()
+            )
 
             return {
                 "payments": payments,
@@ -785,7 +866,9 @@ class BudgetService:
     async def get_payment(self, payment_id: str) -> Optional[Dict]:
         """Fetch a single payment by ID"""
         try:
-            payment = await self.payment_records.find_one({"_id": PyObjectId(payment_id)})
+            payment = await self.payment_records.find_one(
+                {"_id": PyObjectId(payment_id)}
+            )
             if not payment:
                 return None
             return serialize_mongo_doc(payment)
@@ -796,7 +879,9 @@ class BudgetService:
     async def update_payment(self, payment_id: str, update_data: Dict) -> Dict:
         """Update a payment record and adjust category spending"""
         try:
-            original = await self.payment_records.find_one({"_id": PyObjectId(payment_id)})
+            original = await self.payment_records.find_one(
+                {"_id": PyObjectId(payment_id)}
+            )
             if not original:
                 raise ValueError("Payment not found")
 
@@ -808,20 +893,23 @@ class BudgetService:
             update_data["updated_at"] = datetime.now(timezone.utc)
 
             await self.payment_records.update_one(
-                {"_id": PyObjectId(payment_id)},
-                {"$set": update_data}
+                {"_id": PyObjectId(payment_id)}, {"$set": update_data}
             )
 
             if amount_diff != 0:
                 await self.budget_categories.update_one(
                     {"_id": PyObjectId(category_id)},
-                    {"$inc": {"actual_spent": amount_diff}}
+                    {"$inc": {"actual_spent": amount_diff}},
                 )
-                category = await self.budget_categories.find_one({"_id": PyObjectId(category_id)})
+                category = await self.budget_categories.find_one(
+                    {"_id": PyObjectId(category_id)}
+                )
                 if category:
                     await self._check_budget_alerts(category["wedding_id"])
 
-            updated = await self.payment_records.find_one({"_id": PyObjectId(payment_id)})
+            updated = await self.payment_records.find_one(
+                {"_id": PyObjectId(payment_id)}
+            )
             return serialize_mongo_doc(updated)
         except ValueError:
             raise
@@ -832,23 +920,28 @@ class BudgetService:
     async def delete_payment(self, payment_id: str) -> bool:
         """Delete a payment and adjust category spending"""
         try:
-            payment = await self.payment_records.find_one({"_id": PyObjectId(payment_id)})
+            payment = await self.payment_records.find_one(
+                {"_id": PyObjectId(payment_id)}
+            )
             if not payment:
                 raise ValueError("Payment not found")
 
             category_id = payment["category_id"]
             amount = payment.get("amount", 0)
 
-            result = await self.payment_records.delete_one({"_id": PyObjectId(payment_id)})
+            result = await self.payment_records.delete_one(
+                {"_id": PyObjectId(payment_id)}
+            )
             if result.deleted_count == 0:
                 raise ValueError("Failed to delete payment")
 
             await self.budget_categories.update_one(
-                {"_id": PyObjectId(category_id)},
-                {"$inc": {"actual_spent": -amount}}
+                {"_id": PyObjectId(category_id)}, {"$inc": {"actual_spent": -amount}}
             )
 
-            category = await self.budget_categories.find_one({"_id": PyObjectId(category_id)})
+            category = await self.budget_categories.find_one(
+                {"_id": PyObjectId(category_id)}
+            )
             if category:
                 await self._check_budget_alerts(category["wedding_id"])
 
@@ -888,7 +981,9 @@ class BudgetService:
                 "payment_history": payments[-10:],  # Last 10 payments
                 "quotes_summary": quotes_summary,
                 "insights": insights,
-                "recommendations": self._generate_budget_recommendations(wedding_id, summary, categories)
+                "recommendations": self._generate_budget_recommendations(
+                    wedding_id, summary, categories
+                ),
             }
 
             return report
@@ -899,7 +994,12 @@ class BudgetService:
 
     # ===== COST ESTIMATION =====
 
-    def estimate_costs(self, guest_count: int, wedding_type: str = "traditional", region: str = "national") -> Dict:
+    def estimate_costs(
+        self,
+        guest_count: int,
+        wedding_type: str = "traditional",
+        region: str = "national",
+    ) -> Dict:
         """Estimate wedding costs based on guest count and type"""
         try:
             # Base cost per guest by region (these would ideally come from a database)
@@ -907,14 +1007,14 @@ class BudgetService:
                 "national": 1.0,
                 "urban": 1.3,
                 "rural": 0.8,
-                "luxury": 1.8
+                "luxury": 1.8,
             }
             base_cost_per_guest = {
                 "traditional": 180,
                 "modern": 220,
                 "destination": 350,
                 "intimate": 400,  # Higher per-guest cost for smaller weddings
-                "courthouse": 50
+                "courthouse": 50,
             }
 
             multiplier = regional_multipliers.get(region, 1.0)
@@ -932,14 +1032,14 @@ class BudgetService:
                 "Transportation": 5.0,
                 "Invitations & Stationery": 3.0,
                 "Favors & Gifts": 2.0,
-                "Miscellaneous": 7.0
+                "Miscellaneous": 7.0,
             }
             estimated_categories = {}
             for category, percentage in category_percentages.items():
                 estimated_categories[category] = {
                     "amount": estimated_total * (percentage / 100),
                     "percentage": percentage,
-                    "per_guest": (estimated_total * (percentage / 100)) / guest_count
+                    "per_guest": (estimated_total * (percentage / 100)) / guest_count,
                 }
             return {
                 "guest_count": guest_count,
@@ -951,8 +1051,8 @@ class BudgetService:
                 "assumptions": {
                     "base_per_guest": per_guest_cost,
                     "regional_multiplier": multiplier,
-                    "calculation_method": "guest_count * base_cost * regional_multiplier"
-                }
+                    "calculation_method": "guest_count * base_cost * regional_multiplier",
+                },
             }
 
         except Exception as e:
@@ -972,15 +1072,16 @@ class BudgetService:
 
         # Use wedding's total_budget if set, otherwise sum category budgets
         categories_total = sum(cat.get("budgeted_amount", 0) for cat in categories)
-        total_budget = wedding_total_budget if wedding_total_budget > 0 else categories_total
+        total_budget = (
+            wedding_total_budget if wedding_total_budget > 0 else categories_total
+        )
 
         total_spent = sum(cat.get("actual_spent", 0) for cat in categories)
 
         # Calculate committed amounts (accepted quotes) (safety cap applied)
-        quotes_cursor = self.vendor_quotes.find({
-            "wedding_id": wedding_id,
-            "status": "accepted"
-        })
+        quotes_cursor = self.vendor_quotes.find(
+            {"wedding_id": wedding_id, "status": "accepted"}
+        )
         accepted_quotes = await quotes_cursor.to_list(length=self.MAX_QUOTES)
         total_committed = sum(quote.get("quote_amount", 0) for quote in accepted_quotes)
 
@@ -988,10 +1089,16 @@ class BudgetService:
         variance = total_spent - total_budget
         variance_percentage = (variance / total_budget * 100) if total_budget > 0 else 0
 
-        paid_categories = len([cat for cat in categories if cat.get("payment_status") == "paid"])
-        overdue_categories = len([cat for cat in categories if cat.get("payment_status") == "overdue"])
+        paid_categories = len(
+            [cat for cat in categories if cat.get("payment_status") == "paid"]
+        )
+        overdue_categories = len(
+            [cat for cat in categories if cat.get("payment_status") == "overdue"]
+        )
 
-        quotes_count = await self.vendor_quotes.count_documents({"wedding_id": wedding_id})
+        quotes_count = await self.vendor_quotes.count_documents(
+            {"wedding_id": wedding_id}
+        )
 
         return BudgetSummary(
             wedding_id=wedding_id,
@@ -1004,7 +1111,7 @@ class BudgetService:
             categories_count=len(categories),
             paid_categories=paid_categories,
             overdue_categories=overdue_categories,
-            vendor_quotes_count=quotes_count
+            vendor_quotes_count=quotes_count,
         )
 
     async def _update_wedding_budget_total(self, wedding_id: str):
@@ -1013,8 +1120,7 @@ class BudgetService:
         categories = await cursor.to_list(length=self.MAX_CATEGORIES)
         total_budget = sum(cat.get("budgeted_amount", 0) for cat in categories)
         await self.weddings.update_one(
-            {"_id": wedding_id},
-            {"$set": {"total_budget": total_budget}}
+            {"_id": wedding_id}, {"$set": {"total_budget": total_budget}}
         )
 
     async def _check_budget_alerts(self, wedding_id: str):
@@ -1025,7 +1131,9 @@ class BudgetService:
         # Check if total category budgets exceed wedding's total budget
         wedding = await self.weddings.find_one({"_id": wedding_id})
         wedding_total_budget = wedding.get("total_budget", 0) if wedding else 0
-        categories_total_budget = sum(cat.get("budgeted_amount", 0) for cat in categories)
+        categories_total_budget = sum(
+            cat.get("budgeted_amount", 0) for cat in categories
+        )
 
         if wedding_total_budget > 0 and categories_total_budget > wedding_total_budget:
             overage = categories_total_budget - wedding_total_budget
@@ -1036,27 +1144,36 @@ class BudgetService:
                 title="Category Budgets Exceed Total Wedding Budget",
                 message=f"Your category budgets total ${categories_total_budget:,.2f}, which is ${overage:,.2f} over your total wedding budget of ${wedding_total_budget:,.2f}",
                 amount=overage,
-                threshold=wedding_total_budget
+                threshold=wedding_total_budget,
             )
             # Check if alert already exists
-            existing = await self.budget_alerts.find_one({
-                "wedding_id": wedding_id,
-                "alert_type": "categories_exceed_total",
-                "is_resolved": False
-            })
+            existing = await self.budget_alerts.find_one(
+                {
+                    "wedding_id": wedding_id,
+                    "alert_type": "categories_exceed_total",
+                    "is_resolved": False,
+                }
+            )
 
             if not existing:
                 await self.budget_alerts.insert_one(alert.model_dump())
-                logger.warning(f"Wedding {wedding_id}: Category budgets (${categories_total_budget:,.2f}) exceed total budget (${wedding_total_budget:,.2f})")
+                logger.warning(
+                    f"Wedding {wedding_id}: Category budgets (${categories_total_budget:,.2f}) exceed total budget (${wedding_total_budget:,.2f})"
+                )
         else:
             # If categories are now within budget, resolve any existing alerts
             await self.budget_alerts.update_many(
                 {
                     "wedding_id": wedding_id,
                     "alert_type": "categories_exceed_total",
-                    "is_resolved": False
+                    "is_resolved": False,
                 },
-                {"$set": {"is_resolved": True, "resolved_at": datetime.now(timezone.utc)}}
+                {
+                    "$set": {
+                        "is_resolved": True,
+                        "resolved_at": datetime.now(timezone.utc),
+                    }
+                },
             )
 
         for category in categories:
@@ -1074,15 +1191,17 @@ class BudgetService:
                     title=f"{category['name']} Over Budget",
                     message=f"This category is ${overage:.2f} over budget",
                     amount=overage,
-                    threshold=budgeted
+                    threshold=budgeted,
                 )
                 # Check if alert already exists
-                existing = await self.budget_alerts.find_one({
-                    "wedding_id": wedding_id,
-                    "category_id": str(category["_id"]),
-                    "alert_type": "over_budget",
-                    "is_resolved": False
-                })
+                existing = await self.budget_alerts.find_one(
+                    {
+                        "wedding_id": wedding_id,
+                        "category_id": str(category["_id"]),
+                        "alert_type": "over_budget",
+                        "is_resolved": False,
+                    }
+                )
 
                 if not existing:
                     await self.budget_alerts.insert_one(alert.model_dump())
@@ -1098,21 +1217,25 @@ class BudgetService:
                     title=f"{category['name']} Approaching Budget Limit",
                     message=f"Only ${remaining:.2f} remaining in this category",
                     amount=remaining,
-                    threshold=budgeted * 0.9
+                    threshold=budgeted * 0.9,
                 )
-                existing = await self.budget_alerts.find_one({
-                    "wedding_id": wedding_id,
-                    "category_id": str(category["_id"]),
-                    "alert_type": "approaching_limit",
-                    "is_resolved": False
-                })
+                existing = await self.budget_alerts.find_one(
+                    {
+                        "wedding_id": wedding_id,
+                        "category_id": str(category["_id"]),
+                        "alert_type": "approaching_limit",
+                        "is_resolved": False,
+                    }
+                )
 
                 if not existing:
                     await self.budget_alerts.insert_one(alert.model_dump())
 
     # ===== BUDGET ALERT MANAGEMENT =====
 
-    async def get_budget_alerts(self, wedding_id: str, include_resolved: bool = False) -> List[Dict]:
+    async def get_budget_alerts(
+        self, wedding_id: str, include_resolved: bool = False
+    ) -> List[Dict]:
         """Get budget alerts for a wedding"""
         query = {"wedding_id": wedding_id}
         if not include_resolved:
@@ -1127,8 +1250,7 @@ class BudgetService:
     async def mark_alert_as_read(self, alert_id: str) -> Dict:
         """Mark a budget alert as read"""
         result = await self.budget_alerts.update_one(
-            {"_id": PyObjectId(alert_id)},
-            {"$set": {"is_read": True}}
+            {"_id": PyObjectId(alert_id)}, {"$set": {"is_read": True}}
         )
         if result.matched_count == 0:
             raise ValueError("Alert not found")
@@ -1138,7 +1260,7 @@ class BudgetService:
         """Resolve a budget alert"""
         result = await self.budget_alerts.update_one(
             {"_id": PyObjectId(alert_id)},
-            {"$set": {"is_resolved": True, "resolved_at": datetime.now(timezone.utc)}}
+            {"$set": {"is_resolved": True, "resolved_at": datetime.now(timezone.utc)}},
         )
         if result.matched_count == 0:
             raise ValueError("Alert not found")
@@ -1150,7 +1272,7 @@ class BudgetService:
         if quote.get("status") == "accepted" and category_id:
             await self.budget_categories.update_one(
                 {"_id": PyObjectId(category_id)},
-                {"$inc": {"actual_spent": quote["quote_amount"]}}
+                {"$inc": {"actual_spent": quote["quote_amount"]}},
             )
 
     async def _get_quotes_summary(self, wedding_id: str) -> Dict:
@@ -1177,9 +1299,16 @@ class BudgetService:
             "by_status": by_status,
             "by_category": by_category,
             "total_value": sum(q.get("quote_amount", 0) for q in quotes),
-            "accepted_value": sum(q.get("quote_amount", 0) for q in quotes if q.get("status") == "accepted")
+            "accepted_value": sum(
+                q.get("quote_amount", 0)
+                for q in quotes
+                if q.get("status") == "accepted"
+            ),
         }
-    def _calculate_budget_insights(self, wedding_id: str, categories: List[Dict], payments: List[Dict]) -> Dict:
+
+    def _calculate_budget_insights(
+        self, wedding_id: str, categories: List[Dict], payments: List[Dict]
+    ) -> Dict:
         """Calculate insights and trends for the budget"""
         if not categories:
             return {}
@@ -1199,29 +1328,47 @@ class BudgetService:
                 variance_pct = ((spent - budgeted) / budgeted) * 100
                 variances.append((cat["name"], variance_pct, spent - budgeted))
 
-        highest_variance = max(variances, key=lambda x: abs(x[1])) if variances else None
+        highest_variance = (
+            max(variances, key=lambda x: abs(x[1])) if variances else None
+        )
 
         # Payment frequency
         payment_frequency = {}
         for payment in payments[-30:]:  # Last 30 payments
-            month = payment.get("payment_date", datetime.now(timezone.utc)).strftime("%Y-%m")
+            month = payment.get("payment_date", datetime.now(timezone.utc)).strftime(
+                "%Y-%m"
+            )
             payment_frequency[month] = payment_frequency.get(month, 0) + 1
         return {
-            "budget_utilization": (total_spent / total_budgeted * 100) if total_budgeted > 0 else 0,
+            "budget_utilization": (total_spent / total_budgeted * 100)
+            if total_budgeted > 0
+            else 0,
             "most_expensive_category": {
                 "name": most_expensive["name"],
-                "amount": most_expensive.get("budgeted_amount", 0)
+                "amount": most_expensive.get("budgeted_amount", 0),
             },
             "highest_variance": {
                 "category": highest_variance[0] if highest_variance else None,
                 "variance_percentage": highest_variance[1] if highest_variance else 0,
-                "variance_amount": highest_variance[2] if highest_variance else 0
-            } if highest_variance else None,
+                "variance_amount": highest_variance[2] if highest_variance else 0,
+            }
+            if highest_variance
+            else None,
             "payment_frequency": payment_frequency,
-            "categories_on_budget": len([cat for cat in categories
-                                       if cat.get("actual_spent", 0) <= cat.get("budgeted_amount", 0)]),
-            "categories_over_budget": len([cat for cat in categories
-                                         if cat.get("actual_spent", 0) > cat.get("budgeted_amount", 0)])
+            "categories_on_budget": len(
+                [
+                    cat
+                    for cat in categories
+                    if cat.get("actual_spent", 0) <= cat.get("budgeted_amount", 0)
+                ]
+            ),
+            "categories_over_budget": len(
+                [
+                    cat
+                    for cat in categories
+                    if cat.get("actual_spent", 0) > cat.get("budgeted_amount", 0)
+                ]
+            ),
         }
 
     async def record_contract_payment(
@@ -1231,7 +1378,7 @@ class BudgetService:
         payment_name: str,
         amount: float,
         category_name: str = "Wedding Planner",
-        payment_method: str = "card"
+        payment_method: str = "card",
     ) -> Optional[Dict]:
         """
         Record a contract payment in the budget module.
@@ -1258,10 +1405,9 @@ class BudgetService:
                 return None
 
             # Find or create the category
-            category = await self.budget_categories.find_one({
-                "wedding_id": wedding_id,
-                "name": category_name
-            })
+            category = await self.budget_categories.find_one(
+                {"wedding_id": wedding_id, "name": category_name}
+            )
 
             if not category:
                 # Create the category
@@ -1276,17 +1422,22 @@ class BudgetService:
                     "vendor_quotes": [],
                     "payments": [],
                     "created_at": datetime.now(timezone.utc),
-                    "updated_at": datetime.now(timezone.utc)
+                    "updated_at": datetime.now(timezone.utc),
                 }
-                result = await self.budget_categories.insert_one({
-                    "wedding_id": wedding_id,
-                    **category_data
-                })
-                category = await self.budget_categories.find_one({"_id": result.inserted_id})
+                result = await self.budget_categories.insert_one(
+                    {"wedding_id": wedding_id, **category_data}
+                )
+                category = await self.budget_categories.find_one(
+                    {"_id": result.inserted_id}
+                )
                 if not category:
-                    logger.error(f"Failed to retrieve newly created category for wedding {wedding_id}")
+                    logger.error(
+                        f"Failed to retrieve newly created category for wedding {wedding_id}"
+                    )
                     return None
-                logger.info(f"Created budget category '{category_name}' for wedding {wedding_id}")
+                logger.info(
+                    f"Created budget category '{category_name}' for wedding {wedding_id}"
+                )
 
             # Record the payment
             payment_data = {
@@ -1296,13 +1447,10 @@ class BudgetService:
                 "payment_date": datetime.now(timezone.utc),
                 "description": payment_name,
                 "status": "completed",
-                "notes": f"From contract: {contract_id}"
+                "notes": f"From contract: {contract_id}",
             }
 
-            payment = PaymentRecord(
-                category_id=str(category["_id"]),
-                **payment_data
-            )
+            payment = PaymentRecord(category_id=str(category["_id"]), **payment_data)
 
             result = await self.payment_records.insert_one(payment.model_dump())
             payment.id = result.inserted_id  # type: ignore[assignment]
@@ -1311,10 +1459,12 @@ class BudgetService:
             new_actual_spent = category.get("actual_spent", 0) + amount
             await self.budget_categories.update_one(
                 {"_id": category["_id"]},
-                {"$set": {
-                    "actual_spent": new_actual_spent,
-                    "updated_at": datetime.now(timezone.utc)
-                }}
+                {
+                    "$set": {
+                        "actual_spent": new_actual_spent,
+                        "updated_at": datetime.now(timezone.utc),
+                    }
+                },
             )
 
             # Update payment status
@@ -1327,8 +1477,7 @@ class BudgetService:
                 payment_status = "pending"
 
             await self.budget_categories.update_one(
-                {"_id": category["_id"]},
-                {"$set": {"payment_status": payment_status}}
+                {"_id": category["_id"]}, {"$set": {"payment_status": payment_status}}
             )
 
             logger.info(f"Recorded contract payment ${amount} for wedding {wedding_id}")
@@ -1338,35 +1487,43 @@ class BudgetService:
             logger.error(f"Failed to record contract payment in budget: {str(e)}")
             return None
 
-    def _generate_budget_recommendations(self, wedding_id: str, summary: BudgetSummary, categories: List[Dict]) -> List[Dict]:
+    def _generate_budget_recommendations(
+        self, wedding_id: str, summary: BudgetSummary, categories: List[Dict]
+    ) -> List[Dict]:
         """Generate actionable budget recommendations"""
         recommendations = []
 
         # Over budget recommendation
         if summary.budget_variance > 0:
-            recommendations.append({
-                "type": "over_budget",
-                "priority": "high",
-                "title": "Budget Exceeded",
-                "message": f"You are ${summary.budget_variance:.2f} over budget ({summary.variance_percentage:.1f}%)",
-                "action": "Review spending in highest categories and consider adjustments"
-            })
+            recommendations.append(
+                {
+                    "type": "over_budget",
+                    "priority": "high",
+                    "title": "Budget Exceeded",
+                    "message": f"You are ${summary.budget_variance:.2f} over budget ({summary.variance_percentage:.1f}%)",
+                    "action": "Review spending in highest categories and consider adjustments",
+                }
+            )
         # Under budget recommendation
         elif summary.budget_variance < -1000:  # More than $1000 under
-            recommendations.append({
-                "type": "under_budget",
-                "priority": "medium",
-                "title": "Budget Opportunity",
-                "message": f"You have ${abs(summary.budget_variance):.2f} remaining in your budget",
-                "action": "Consider upgrading services or adding special touches"
-            })
+            recommendations.append(
+                {
+                    "type": "under_budget",
+                    "priority": "medium",
+                    "title": "Budget Opportunity",
+                    "message": f"You have ${abs(summary.budget_variance):.2f} remaining in your budget",
+                    "action": "Consider upgrading services or adding special touches",
+                }
+            )
         # Vendor quote recommendations
         if summary.vendor_quotes_count < 3:
-            recommendations.append({
-                "type": "vendor_quotes",
-                "priority": "medium",
-                "title": "Get More Quotes",
-                "message": "Consider getting more vendor quotes to ensure competitive pricing",
-                "action": "Aim for at least 3 quotes per major category"
-            })
+            recommendations.append(
+                {
+                    "type": "vendor_quotes",
+                    "priority": "medium",
+                    "title": "Get More Quotes",
+                    "message": "Consider getting more vendor quotes to ensure competitive pricing",
+                    "action": "Aim for at least 3 quotes per major category",
+                }
+            )
         return recommendations

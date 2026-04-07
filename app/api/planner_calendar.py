@@ -12,24 +12,19 @@ from pydantic import BaseModel
 
 from app.core.database import mongo
 from app.dependencies.auth_extended import (
-    get_current_user_extended,
     ExtendedAuthUser,
     require_wedding_planner,
     enforce_team_permission,
 )
 from app.utils.query_validation import (
-    validated_page,
-    validated_limit_extended,
     validated_string_filter,
     validated_status_filter,
-    calculate_pagination_params
+    calculate_pagination_params,
 )
 from app.models.calendar import (
     CalendarEventCreate,
     CalendarEventUpdate,
     CalendarSyncStatus,
-    TaskStatus,
-    TaskPriority,
 )
 from app.services.google_calendar_service import google_calendar_service
 
@@ -42,8 +37,10 @@ router = APIRouter()
 # Response Models
 # ============================================================================
 
+
 class TaskResponse(BaseModel):
     """Response model for a planner task."""
+
     id: str
     planner_email: str
     wedding_id: Optional[str] = None
@@ -71,6 +68,7 @@ class TaskResponse(BaseModel):
 
 class TaskListResponse(BaseModel):
     """Response model for list of tasks."""
+
     tasks: List[TaskResponse]
     total: int
     page: int
@@ -79,12 +77,14 @@ class TaskListResponse(BaseModel):
 
 class GoogleAuthUrlResponse(BaseModel):
     """Response for Google OAuth authorization URL."""
+
     auth_url: str
     message: str
 
 
 class GoogleCallbackResponse(BaseModel):
     """Response after Google OAuth callback."""
+
     connected: bool
     calendar_id: Optional[str] = None
     message: str
@@ -93,6 +93,7 @@ class GoogleCallbackResponse(BaseModel):
 # ============================================================================
 # Helper Functions
 # ============================================================================
+
 
 def _isoformat(value: Optional[datetime | str]) -> Optional[str]:
     """Convert datetime to ISO format string."""
@@ -150,6 +151,7 @@ def _serialize_task(task: dict, wedding_name: Optional[str] = None) -> TaskRespo
 # ============================================================================
 # Google Calendar OAuth Endpoints
 # ============================================================================
+
 
 @router.get(
     "/planner/calendar/google/connect",
@@ -244,7 +246,9 @@ async def disconnect_google_calendar(
 )
 async def fetch_google_events(
     current_user: ExtendedAuthUser = Depends(require_wedding_planner),
-    days_ahead: int = Query(default=30, ge=1, le=365, description="Days ahead to fetch"),
+    days_ahead: int = Query(
+        default=30, ge=1, le=365, description="Days ahead to fetch"
+    ),
 ) -> List[dict]:
     """
     Fetch events from connected Google Calendar.
@@ -266,6 +270,7 @@ async def fetch_google_events(
 # ============================================================================
 # Task/Event CRUD Endpoints
 # ============================================================================
+
 
 @router.post(
     "/planner/calendar/tasks",
@@ -356,8 +361,12 @@ async def list_tasks(
     wedding_id: Optional[str] = Query(None, description="Filter by wedding ID"),
     status: Optional[str] = Query(None, description="Filter by status"),
     category: Optional[str] = Query(None, description="Filter by category"),
-    start_date: Optional[datetime] = Query(None, description="Filter tasks after this date"),
-    end_date: Optional[datetime] = Query(None, description="Filter tasks before this date"),
+    start_date: Optional[datetime] = Query(
+        None, description="Filter tasks after this date"
+    ),
+    end_date: Optional[datetime] = Query(
+        None, description="Filter tasks before this date"
+    ),
     page: int = Query(default=1, ge=1, le=10000, description="Page number"),
     page_size: int = Query(default=50, ge=1, le=200, description="Items per page"),
 ) -> TaskListResponse:
@@ -371,7 +380,9 @@ async def list_tasks(
 
     # Validate filter parameters
     wedding_id = validated_string_filter(wedding_id, max_length=100)
-    status = validated_status_filter(status, ['pending', 'in_progress', 'completed', 'on_hold'])
+    status = validated_status_filter(
+        status, ["pending", "in_progress", "completed", "on_hold"]
+    )
     category = validated_string_filter(category, max_length=50)
 
     # Build query
@@ -415,8 +426,7 @@ async def list_tasks(
                 pass
 
     serialized_tasks = [
-        _serialize_task(t, wedding_names.get(t.get("wedding_id")))
-        for t in tasks
+        _serialize_task(t, wedding_names.get(t.get("wedding_id"))) for t in tasks
     ]
 
     return TaskListResponse(
@@ -446,10 +456,12 @@ async def get_task(
     except Exception:
         raise HTTPException(status_code=400, detail="Invalid task ID format")
 
-    task = await tasks_collection.find_one({
-        "_id": oid,
-        "planner_email": current_user.email,
-    })
+    task = await tasks_collection.find_one(
+        {
+            "_id": oid,
+            "planner_email": current_user.email,
+        }
+    )
 
     if not task:
         raise HTTPException(status_code=404, detail="Task not found")
@@ -484,10 +496,12 @@ async def update_task(
         raise HTTPException(status_code=400, detail="Invalid task ID format")
 
     # Get existing task
-    task = await tasks_collection.find_one({
-        "_id": oid,
-        "planner_email": current_user.email,
-    })
+    task = await tasks_collection.find_one(
+        {
+            "_id": oid,
+            "planner_email": current_user.email,
+        }
+    )
 
     if not task:
         raise HTTPException(status_code=404, detail="Task not found")
@@ -548,10 +562,12 @@ async def delete_task(
         raise HTTPException(status_code=400, detail="Invalid task ID format")
 
     # Get existing task
-    task = await tasks_collection.find_one({
-        "_id": oid,
-        "planner_email": current_user.email,
-    })
+    task = await tasks_collection.find_one(
+        {
+            "_id": oid,
+            "planner_email": current_user.email,
+        }
+    )
 
     if not task:
         raise HTTPException(status_code=404, detail="Task not found")
@@ -601,10 +617,12 @@ async def sync_task_to_google(
     except Exception:
         raise HTTPException(status_code=400, detail="Invalid task ID format")
 
-    task = await tasks_collection.find_one({
-        "_id": oid,
-        "planner_email": current_user.email,
-    })
+    task = await tasks_collection.find_one(
+        {
+            "_id": oid,
+            "planner_email": current_user.email,
+        }
+    )
 
     if not task:
         raise HTTPException(status_code=404, detail="Task not found")
@@ -616,7 +634,9 @@ async def sync_task_to_google(
     )
 
     if not success:
-        raise HTTPException(status_code=500, detail="Failed to sync task to Google Calendar")
+        raise HTTPException(
+            status_code=500, detail="Failed to sync task to Google Calendar"
+        )
 
     # Fetch updated task
     updated_task = await tasks_collection.find_one({"_id": oid})
@@ -628,6 +648,7 @@ async def sync_task_to_google(
 # ============================================================================
 # Bulk Operations
 # ============================================================================
+
 
 @router.patch(
     "/planner/calendar/tasks/bulk/status",
@@ -685,6 +706,7 @@ async def bulk_update_task_status(
 # ============================================================================
 # Calendar View Helpers
 # ============================================================================
+
 
 @router.get(
     "/planner/calendar/month/{year}/{month}",
@@ -746,10 +768,7 @@ async def get_month_tasks(
             except Exception:
                 pass
 
-    return [
-        _serialize_task(t, wedding_names.get(t.get("wedding_id")))
-        for t in tasks
-    ]
+    return [_serialize_task(t, wedding_names.get(t.get("wedding_id"))) for t in tasks]
 
 
 @router.get(
@@ -777,7 +796,12 @@ async def get_upcoming_tasks(
         "start_date": {"$gte": now, "$lte": end_date},
     }
 
-    tasks = await tasks_collection.find(query).sort("start_date", 1).limit(limit).to_list(length=limit)
+    tasks = (
+        await tasks_collection.find(query)
+        .sort("start_date", 1)
+        .limit(limit)
+        .to_list(length=limit)
+    )
 
     # Get wedding names
     wedding_ids = set(t.get("wedding_id") for t in tasks if t.get("wedding_id"))
@@ -794,7 +818,4 @@ async def get_upcoming_tasks(
             except Exception:
                 pass
 
-    return [
-        _serialize_task(t, wedding_names.get(t.get("wedding_id")))
-        for t in tasks
-    ]
+    return [_serialize_task(t, wedding_names.get(t.get("wedding_id"))) for t in tasks]

@@ -11,10 +11,10 @@ This service ensures referential integrity when deleting a wedding by:
 4. Logging all operations with detailed counts
 5. Rolling back on errors to prevent partial deletes
 """
+
 import logging
 from datetime import datetime, timezone
-from typing import Dict, List, Optional
-from bson import ObjectId
+from typing import Dict, List
 from app.core.database import mongo
 
 logger = logging.getLogger(__name__)
@@ -23,7 +23,7 @@ logger = logging.getLogger(__name__)
 WEDDING_DEPENDENT_COLLECTIONS = [
     "guests",
     "plus_ones",  # References guest_id, which references wedding_id
-    "rsvps",       # References guest_id
+    "rsvps",  # References guest_id
     "tables",
     "activity_logs",
     "forms",
@@ -74,7 +74,9 @@ class CascadeDeleteService:
             Dict with deletion statistics and status
         """
         try:
-            logger.info(f"Starting soft delete for wedding {wedding_id} by {deleted_by}")
+            logger.info(
+                f"Starting soft delete for wedding {wedding_id} by {deleted_by}"
+            )
 
             # First, get counts of all dependent records
             counts = await self._get_dependent_counts(wedding_id)
@@ -92,8 +94,7 @@ class CascadeDeleteService:
 
             # Delete/archive the wedding itself
             wedding_result = await mongo.db["weddings"].update_one(
-                {"_id": wedding_id},
-                {"$set": update_data}
+                {"_id": wedding_id}, {"$set": update_data}
             )
 
             if wedding_result.matched_count == 0:
@@ -108,14 +109,15 @@ class CascadeDeleteService:
                 collection = mongo.db[collection_name]
                 try:
                     result = await collection.update_many(
-                        {"wedding_id": wedding_id},
-                        {"$set": update_data}
+                        {"wedding_id": wedding_id}, {"$set": update_data}
                     )
                     logger.debug(
                         f"Soft deleted {result.modified_count} records from {collection_name}"
                     )
                 except Exception as e:
-                    logger.error(f"Error soft deleting from {collection_name}: {str(e)}")
+                    logger.error(
+                        f"Error soft deleting from {collection_name}: {str(e)}"
+                    )
                     raise
 
             # Soft delete guest-dependent collections (via guest_id)
@@ -123,8 +125,7 @@ class CascadeDeleteService:
                 collection = mongo.db[collection_name]
                 try:
                     result = await collection.update_many(
-                        {"guest_id": {"$in": guest_ids}},
-                        {"$set": update_data}
+                        {"guest_id": {"$in": guest_ids}}, {"$set": update_data}
                     )
                     logger.debug(
                         f"Soft deleted {result.modified_count} records from {collection_name} (via guest_id)"
@@ -140,7 +141,7 @@ class CascadeDeleteService:
                 wedding_id=wedding_id,
                 deletion_type="soft",
                 deleted_by=deleted_by,
-                counts=counts
+                counts=counts,
             )
 
             return {
@@ -151,7 +152,7 @@ class CascadeDeleteService:
                 "deleted_by": deleted_by,
                 "records_archived": sum(counts.values()),
                 "counts": counts,
-                "message": f"Wedding {wedding_id} and all {sum(counts.values())} dependent records archived"
+                "message": f"Wedding {wedding_id} and all {sum(counts.values())} dependent records archived",
             }
 
         except Exception as e:
@@ -204,7 +205,9 @@ class CascadeDeleteService:
                         f"Hard deleted {result.deleted_count} records from {collection_name}"
                     )
                 except Exception as e:
-                    logger.error(f"Error hard deleting from {collection_name}: {str(e)}")
+                    logger.error(
+                        f"Error hard deleting from {collection_name}: {str(e)}"
+                    )
                     raise
 
             # Hard delete guest-dependent collections (via guest_id)
@@ -228,7 +231,7 @@ class CascadeDeleteService:
                 wedding_id=wedding_id,
                 deletion_type="hard",
                 deleted_by=deleted_by,
-                counts=counts
+                counts=counts,
             )
 
             return {
@@ -239,7 +242,7 @@ class CascadeDeleteService:
                 "deleted_by": deleted_by,
                 "records_deleted": sum(counts.values()),
                 "counts": counts,
-                "message": f"Wedding {wedding_id} and all {sum(counts.values())} dependent records permanently deleted"
+                "message": f"Wedding {wedding_id} and all {sum(counts.values())} dependent records permanently deleted",
             }
 
         except Exception as e:
@@ -304,10 +307,11 @@ class CascadeDeleteService:
             List of guest ObjectIds
         """
         try:
-            guests = await mongo.db["guests"].find(
-                {"wedding_id": wedding_id},
-                {"_id": 1}
-            ).to_list(length=None)
+            guests = (
+                await mongo.db["guests"]
+                .find({"wedding_id": wedding_id}, {"_id": 1})
+                .to_list(length=None)
+            )
 
             guest_ids = [guest["_id"] for guest in guests]
             logger.debug(f"Found {len(guest_ids)} guests for wedding {wedding_id}")
@@ -335,7 +339,9 @@ class CascadeDeleteService:
                 {"guest_id": {"$in": guest_ids}}
             )
 
-            logger.info(f"Deleted {result.deleted_count} plus_ones for wedding {wedding_id}")
+            logger.info(
+                f"Deleted {result.deleted_count} plus_ones for wedding {wedding_id}"
+            )
             return result.deleted_count
 
         except Exception as e:
@@ -343,11 +349,7 @@ class CascadeDeleteService:
             raise
 
     async def _log_deletion_operation(
-        self,
-        wedding_id: str,
-        deletion_type: str,
-        deleted_by: str,
-        counts: Dict
+        self, wedding_id: str, deletion_type: str, deleted_by: str, counts: Dict
     ) -> None:
         """
         Log the deletion operation for audit and compliance purposes.
@@ -448,7 +450,9 @@ class CascadeDeleteService:
             Dict with suspension statistics
         """
         try:
-            logger.info(f"Starting data suspension for planner {planner_email} (ID: {planner_id})")
+            logger.info(
+                f"Starting data suspension for planner {planner_email} (ID: {planner_id})"
+            )
 
             now = datetime.now(timezone.utc)
             suspension_data = {
@@ -465,13 +469,12 @@ class CascadeDeleteService:
                         {"assigned_planner_email": planner_email},
                     ]
                 },
-                {"$set": suspension_data}
+                {"$set": suspension_data},
             )
 
             # Suspend packages created by this planner
             packages_result = await mongo.db["packages"].update_many(
-                {"planner_id": planner_id},
-                {"$set": suspension_data}
+                {"planner_id": planner_id}, {"$set": suspension_data}
             )
 
             # Suspend contracts associated with this planner
@@ -482,7 +485,7 @@ class CascadeDeleteService:
                         {"planner_email": planner_email},
                     ]
                 },
-                {"$set": suspension_data}
+                {"$set": suspension_data},
             )
 
             logger.info(
@@ -502,9 +505,7 @@ class CascadeDeleteService:
             }
 
         except Exception as e:
-            logger.error(
-                f"Error suspending data for planner {planner_email}: {str(e)}"
-            )
+            logger.error(f"Error suspending data for planner {planner_email}: {str(e)}")
             raise
 
     async def unsuspend_planner_data(self, planner_id: str, planner_email: str) -> Dict:
@@ -520,7 +521,9 @@ class CascadeDeleteService:
             Dict with unsuspension statistics
         """
         try:
-            logger.info(f"Starting data unsuspension for planner {planner_email} (ID: {planner_id})")
+            logger.info(
+                f"Starting data unsuspension for planner {planner_email} (ID: {planner_id})"
+            )
 
             # Unsuspend weddings
             weddings_result = await mongo.db["weddings"].update_many(
@@ -538,8 +541,8 @@ class CascadeDeleteService:
                     },
                     "$set": {
                         "updated_at": datetime.now(timezone.utc),
-                    }
-                }
+                    },
+                },
             )
 
             # Unsuspend packages
@@ -555,8 +558,8 @@ class CascadeDeleteService:
                     },
                     "$set": {
                         "updated_at": datetime.now(timezone.utc),
-                    }
-                }
+                    },
+                },
             )
 
             # Unsuspend contracts
@@ -575,8 +578,8 @@ class CascadeDeleteService:
                     },
                     "$set": {
                         "updated_at": datetime.now(timezone.utc),
-                    }
-                }
+                    },
+                },
             )
 
             logger.info(

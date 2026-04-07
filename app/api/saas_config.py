@@ -52,6 +52,7 @@ def _is_upcoming(date_value: Any, reference: datetime) -> bool:
     parsed = _normalize_datetime(date_value)
     return bool(parsed and parsed.date() >= reference.date())
 
+
 # ==================== SAAS CONFIGURATION MANAGEMENT ====================
 
 
@@ -66,55 +67,46 @@ def _get_default_saas_config():
         "hero_title": "The Special Wedding",
         "hero_subtitle": "A stage-set platform where every wedding feels like a cinematic premiere",
         "hero_description": "Sculpt invitations, RSVP journeys, wedding websites, seating, timelines, and on-site orchestration—woven together with romantic motion and intelligent automation.",
-
         # Modern hero fields (benefit-driven)
         "hero_headline": "A stage-set platform where every wedding feels like a cinematic premiere",
         "hero_subheadline": "The Special Wedding",
         "hero_problem_statement": "Stop juggling spreadsheets, email chains, and vendor chaos",
         "hero_solution_statement": "Sculpt invitations, RSVP journeys, wedding websites, seating, timelines, and on-site orchestration—woven together with romantic motion and intelligent automation.",
-
         # CTA buttons
         "hero_cta_primary": "Explore pricing",
         "hero_cta_secondary": "Launch console",
         "contact_cta_label": "Contact Sales",
         "contact_url": "mailto:sales@thespecialwedding.com",
-
         # Product showcase
         "hero_screenshot_primary": None,
         "hero_screenshot_secondary": None,
         "demo_video_url": None,
         "show_product_demo": False,
-
         # Layout settings
         "hero_layout": "split",
         "hero_image_position": "right",
         "show_decorative_logo": True,
-
         # Trust indicators - partners from page.tsx
         "trust_indicators": ["Stripe", "Mailgun", "Mapbox", "Slack", "Zoom"],
-
         # Statistics/metrics - from page.tsx metrics array
         "statistics": [
             {"label": "Guest records managed across active weddings", "value": "48k"},
             {"label": "Average RSVP window to reach 90% response", "value": "5 days"},
             {"label": "Median guest memory upload completion time", "value": "43s"},
-            {"label": "Automation reliability across reminders", "value": "99.9%"}
+            {"label": "Automation reliability across reminders", "value": "99.9%"},
         ],
         "statistics_enabled": True,
-
         # Modern impact metrics
         "impact_metrics": [
             {"metric": "48k", "label": "Guest records managed across active weddings"},
             {"metric": "5 days", "label": "Average RSVP window to reach 90% response"},
             {"metric": "43s", "label": "Median guest memory upload completion time"},
-            {"metric": "99.9%", "label": "Automation reliability across reminders"}
+            {"metric": "99.9%", "label": "Automation reliability across reminders"},
         ],
         "show_impact_metrics": True,
-
         # Customer logos (social proof)
         "customer_logos": ["Stripe", "Mailgun", "Mapbox", "Slack", "Zoom"],
         "show_customer_logos": True,
-
         # Features - all 10 from page.tsx
         "features": [
             {
@@ -122,95 +114,93 @@ def _get_default_saas_config():
                 "description": "Unify invites, plus-ones, and households with filters for VIPs, vendors, and families.",
                 "category": "Planning",
                 "status": "available",
-                "order": 1
+                "order": 1,
             },
             {
                 "title": "Signature invitations",
                 "description": "Send branded email invitations, track bounces, and personalize every RSVP link.",
                 "category": "Engagement",
                 "status": "available",
-                "order": 2
+                "order": 2,
             },
             {
                 "title": "Wedding websites",
                 "description": "Launch a stunning site for every celebration—custom domains, schedules, travel, and galleries.",
                 "category": "Experience",
                 "status": "available",
-                "order": 3
+                "order": 3,
             },
             {
                 "title": "RSVP & meal selections",
                 "description": "Capture attendance, meal preferences, allergies, and notes in real time.",
                 "category": "Engagement",
                 "status": "available",
-                "order": 4
+                "order": 4,
             },
             {
                 "title": "Seating orchestration",
                 "description": "Drag-and-drop tables, respect family groupings, and export final charts instantly.",
                 "category": "Planning",
                 "status": "available",
-                "order": 5
+                "order": 5,
             },
             {
                 "title": "Ceremony & reception timeline",
                 "description": "Publish schedules for planners, vendors, and couples with role-based visibility.",
                 "category": "Execution",
                 "status": "available",
-                "order": 6
+                "order": 6,
             },
             {
                 "title": "Moments gallery",
                 "description": "Collect guest photos, curate galleries, and share highlights after the celebration.",
                 "category": "Celebration",
                 "status": "available",
-                "order": 7
+                "order": 7,
             },
             {
                 "title": "Smart reminders",
                 "description": "Automate nudges for RSVP deadlines, travel updates, and day-of changes.",
                 "category": "Communication",
                 "status": "available",
-                "order": 8
+                "order": 8,
             },
             {
                 "title": "Guest memories uploads",
                 "description": "Share a QR code so guests can upload photos and videos from their phones without an app.",
                 "category": "Celebration",
                 "status": "available",
-                "order": 9
+                "order": 9,
             },
             {
                 "title": "Maps & travel",
                 "description": "Share venues, shuttles, and hotel blocks with smart directions for every guest.",
                 "category": "Communication",
                 "status": "available",
-                "order": 10
-            }
+                "order": 10,
+            },
         ],
-
         # Benefits/Suites - from page.tsx suites array
         "benefits": [
             {
                 "title": "Multi-tenant oversight",
                 "description": "Serve every planner, partner, or franchise in isolated workspaces with shared brand standards.",
                 "stat": "Scale to 100+ concurrent weddings with centralized governance.",
-                "order": 1
+                "order": 1,
             },
             {
                 "title": "Vendor collaboration",
                 "description": "Loop photographers, caterers, and venues into dedicated timelines and file exchanges.",
                 "stat": "Reduce coordination rounds by 68% through unified updates.",
-                "order": 2
+                "order": 2,
             },
             {
                 "title": "Insights & compliance",
                 "description": "Audit-ready exports cover guest consent, messaging logs, and accessibility notes.",
                 "stat": "SOC 2 aligned infrastructure keeps client data secure.",
-                "order": 3
-            }
+                "order": 3,
+            },
         ],
-
         # Testimonials - kept in sync with app/api/testimonials.py defaults
         "testimonials": [
             {
@@ -218,31 +208,30 @@ def _get_default_saas_config():
                 "company": "Aurora Collective",
                 "role": "Director of Events",
                 "content": "I used to juggle Google Sheets for guests, QuickBooks for budgets, and DocuSign for contracts — all disconnected. Now my 240-person guest list, seating chart, and budget tracker live in one place. Last Saturday I reassigned three tables in the seating orchestrator ten minutes before doors opened and guest memories were already flowing into the couple portal before dinner.",
-                "order": 1
+                "order": 1,
             },
             {
                 "name": "Elias Romero",
                 "company": "Harbor & Bloom",
                 "role": "Lead Coordinator",
                 "content": "Building a service package with AI-suggested pricing took me ten minutes instead of a full afternoon of market research. I sent the quote through the contract canvas with e-sign the same day, and the client's milestone payment hit my dashboard before dinner. The entire book-to-pay cycle that used to take me a week now happens in a single session.",
-                "order": 2
+                "order": 2,
             },
             {
                 "name": "Priya Chandran",
                 "company": "Verdant Celebrations",
                 "role": "Senior Planner",
                 "content": "Coordinating twelve vendors across two venues was a nightmare of group texts and missed emails. Now every florist, caterer, and photographer has role-based access to the timeline, uploads deliverables to the gallery, and signs off on contracts inside the platform. The automated reminders alone saved me from three near-disasters last season.",
-                "order": 3
+                "order": 3,
             },
             {
                 "name": "Tomás Vega",
                 "company": "Día Perfecto Weddings",
                 "role": "Founder",
                 "content": "We run fifteen weddings a month and the planning calendar synced with Google Calendar keeps my team sane. I set up intake forms for new couples in the forms canvas, the RSVP reminders go out automatically by SMS and email, and every wedding has its own branded configuration so clients feel like they have a dedicated app. The knowledge base even onboards our junior planners faster than I can.",
-                "order": 4
-            }
+                "order": 4,
+            },
         ],
-
         # Workflow steps - from page.tsx workflow array
         "workflow_steps": [
             {
@@ -252,8 +241,8 @@ def _get_default_saas_config():
                 "bullets": [
                     "Launch weddings in minutes with reusable templates",
                     "Assign visibility by planner, couple, or vendor team",
-                    "Model budgets, seating, and timelines side by side"
-                ]
+                    "Model budgets, seating, and timelines side by side",
+                ],
             },
             {
                 "title": "Invite & delight",
@@ -262,8 +251,8 @@ def _get_default_saas_config():
                 "bullets": [
                     "Personalized wedding websites with per-wedding slugs",
                     "Automated reminders that adapt to RSVP behavior",
-                    "Guest portal with travel guidance and gallery teasers"
-                ]
+                    "Guest portal with travel guidance and gallery teasers",
+                ],
             },
             {
                 "title": "Execute flawlessly",
@@ -272,36 +261,33 @@ def _get_default_saas_config():
                 "bullets": [
                     "QR-powered guest memory uploads with instant photo and video delivery",
                     "Role-based run of show for coordinators and crew",
-                    "Instant galleries and thank-you follow ups post event"
-                ]
-            }
+                    "Instant galleries and thank-you follow ups post event",
+                ],
+            },
         ],
-
         # FAQs - from page.tsx faqs array
         "faqs": [
             {
                 "question": "Can I manage multiple weddings at once?",
-                "answer": "Yes. Workspaces let you run simultaneous weddings, each with their own permissions, branding, and analytics while maintaining agency-wide oversight."
+                "answer": "Yes. Workspaces let you run simultaneous weddings, each with their own permissions, branding, and analytics while maintaining agency-wide oversight.",
             },
             {
                 "question": "How do couples collaborate with planners?",
-                "answer": "Invite couples to a curated dashboard where they approve guest lists, monitor RSVPs, and review timelines without seeing internal notes."
+                "answer": "Invite couples to a curated dashboard where they approve guest lists, monitor RSVPs, and review timelines without seeing internal notes.",
             },
             {
                 "question": "Is there support on the wedding day?",
-                "answer": "Signature and Agency plans include live chat with our success team plus on-call escalation for critical day-of moments."
+                "answer": "Signature and Agency plans include live chat with our success team plus on-call escalation for critical day-of moments.",
             },
             {
                 "question": "What's next for messaging?",
-                "answer": "We are crafting a dedicated messaging studio that centralizes vendor, couple, and planner conversations with payment, contract, and budget context—launching soon."
-            }
+                "answer": "We are crafting a dedicated messaging studio that centralizes vendor, couple, and planner conversations with payment, contract, and budget context—launching soon.",
+            },
         ],
-
         # Section toggles
         "features_enabled": True,
         "benefits_enabled": True,
         "testimonials_enabled": True,
-
         # Theme configuration - matches page.tsx defaultTheme colors
         "theme": {
             "primary_color": "#D4A5A5",
@@ -310,22 +296,20 @@ def _get_default_saas_config():
             "font_style": "elegant",
             "fallback_images": [
                 "/wedding-images/wedding-ceremony.jpg",
-                "/wedding-images/wedding-reception.jpg"
-            ]
+                "/wedding-images/wedding-reception.jpg",
+            ],
         },
-
         # Animation settings
         "animations_enabled": True,
         "scroll_animations": True,
         "animation_speed": "medium",
-
         # Trial settings
         "trial_settings": {
             "default_trial_days": 30,
             "trial_warning_days": 7,
             "auto_expire_trials": True,
-            "allow_multiple_trials": False
-        }
+            "allow_multiple_trials": False,
+        },
     }
 
 
@@ -350,13 +334,15 @@ async def get_saas_config(current_user: ExtendedAuthUser = Depends(require_root_
         return config
 
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error fetching SAAS config: {str(e)}")
+        raise HTTPException(
+            status_code=500, detail=f"Error fetching SAAS config: {str(e)}"
+        )
 
 
 @router.put("/saas-config", tags=["ROOT_ADMIN"])
 async def update_saas_config(
     config_data: Dict[str, Any],
-    current_user: ExtendedAuthUser = Depends(require_root_admin)
+    current_user: ExtendedAuthUser = Depends(require_root_admin),
 ):
     """Update SAAS configuration - ROOT_ADMIN only"""
     try:
@@ -366,21 +352,24 @@ async def update_saas_config(
         config_data["updated_at"] = datetime.now(timezone.utc)
         # Update or insert configuration
         await mongo.db["saas_config"].update_one(
-            {"type": "main_config"},
-            {"$set": config_data},
-            upsert=True
+            {"type": "main_config"}, {"$set": config_data}, upsert=True
         )
 
         return {"message": "SAAS configuration updated successfully"}
 
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error updating SAAS config: {str(e)}")
+        raise HTTPException(
+            status_code=500, detail=f"Error updating SAAS config: {str(e)}"
+        )
+
 
 # ==================== CONTENT SECTIONS MANAGEMENT ====================
 
 
 @router.get("/content-sections", tags=["ROOT_ADMIN"])
-async def get_content_sections(current_user: ExtendedAuthUser = Depends(require_root_admin)):
+async def get_content_sections(
+    current_user: ExtendedAuthUser = Depends(require_root_admin),
+):
     """Get all content sections - ROOT_ADMIN only"""
     try:
         # Safety cap: typically ~10-20 content sections
@@ -401,38 +390,40 @@ async def get_content_sections(current_user: ExtendedAuthUser = Depends(require_
                     "content": {
                         "title": "Welcome to Special Wedding",
                         "subtitle": "Wedding Planning Made Simple",
-                        "description": "The ultimate wedding planning platform..."
+                        "description": "The ultimate wedding planning platform...",
                     },
                     "is_active": True,
                     "display_order": 1,
                     "updated_by": "system",
-                    "updated_at": datetime.now(timezone.utc).isoformat()
+                    "updated_at": datetime.now(timezone.utc).isoformat(),
                 },
                 {
                     "id": "features_section",
                     "section": "features",
                     "content": {
                         "title": "Powerful Features for Wedding Professionals",
-                        "features": []
+                        "features": [],
                     },
                     "is_active": True,
                     "display_order": 2,
                     "updated_by": "system",
-                    "updated_at": datetime.now(timezone.utc).isoformat()
-                }
+                    "updated_at": datetime.now(timezone.utc).isoformat(),
+                },
             ]
 
         return sections
 
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error fetching content sections: {str(e)}")
+        raise HTTPException(
+            status_code=500, detail=f"Error fetching content sections: {str(e)}"
+        )
 
 
 @router.put("/content-sections/{section_id}", tags=["ROOT_ADMIN"])
 async def update_content_section(
     section_id: str,
     section_data: Dict[str, Any],
-    current_user: ExtendedAuthUser = Depends(require_root_admin)
+    current_user: ExtendedAuthUser = Depends(require_root_admin),
 ):
     """Update a content section - ROOT_ADMIN only"""
     try:
@@ -441,21 +432,24 @@ async def update_content_section(
         section_data["updated_at"] = datetime.now(timezone.utc)
         # Update section
         await mongo.db["content_sections"].update_one(
-            {"section": section_id},
-            {"$set": section_data},
-            upsert=True
+            {"section": section_id}, {"$set": section_data}, upsert=True
         )
 
         return {"message": f"Content section '{section_id}' updated successfully"}
 
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error updating content section: {str(e)}")
+        raise HTTPException(
+            status_code=500, detail=f"Error updating content section: {str(e)}"
+        )
+
 
 # ==================== WEDDING PLANNERS MANAGEMENT ====================
 
 
 @router.get("/wedding-planners", tags=["ROOT_ADMIN"])
-async def get_wedding_planners(current_user: ExtendedAuthUser = Depends(require_root_admin)):
+async def get_wedding_planners(
+    current_user: ExtendedAuthUser = Depends(require_root_admin),
+):
     """Get all wedding planners - ROOT_ADMIN only"""
     try:
         # Get users with wedding_planner role (async Motor query)
@@ -468,9 +462,9 @@ async def get_wedding_planners(current_user: ExtendedAuthUser = Depends(require_
         for planner in planners:
             planner["_id"] = str(planner["_id"])
             # Get assigned weddings count (async count)
-            weddings_count = await mongo.get_weddings_collection().count_documents({
-                "assigned_planner_email": planner["email"]
-            })
+            weddings_count = await mongo.get_weddings_collection().count_documents(
+                {"assigned_planner_email": planner["email"]}
+            )
             formatted_planner = {
                 "id": planner["_id"],
                 "email": planner["email"],
@@ -480,21 +474,27 @@ async def get_wedding_planners(current_user: ExtendedAuthUser = Depends(require_
                 "max_weddings": planner.get("max_weddings", 0),
                 "assigned_weddings_count": weddings_count,
                 "is_active": planner.get("is_active", True),
-                "created_at": planner.get("created_at", datetime.now(timezone.utc)).isoformat(),
-                "last_login": planner.get("last_login").isoformat() if planner.get("last_login") else None
+                "created_at": planner.get(
+                    "created_at", datetime.now(timezone.utc)
+                ).isoformat(),
+                "last_login": planner.get("last_login").isoformat()
+                if planner.get("last_login")
+                else None,
             }
             formatted_planners.append(formatted_planner)
 
         return formatted_planners
 
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error fetching wedding planners: {str(e)}")
+        raise HTTPException(
+            status_code=500, detail=f"Error fetching wedding planners: {str(e)}"
+        )
 
 
 @router.post("/wedding-planners", tags=["ROOT_ADMIN"])
 async def create_wedding_planner(
     planner_data: Dict[str, Any],
-    current_user: ExtendedAuthUser = Depends(require_root_admin)
+    current_user: ExtendedAuthUser = Depends(require_root_admin),
 ):
     """Create a new wedding planner - ROOT_ADMIN only"""
     try:
@@ -502,9 +502,13 @@ async def create_wedding_planner(
         if not planner_data.get("email"):
             raise HTTPException(status_code=400, detail="Email is required")
         # Check if user already exists
-        existing_user = await mongo.get_users_collection().find_one({"email": planner_data["email"]})
+        existing_user = await mongo.get_users_collection().find_one(
+            {"email": planner_data["email"]}
+        )
         if existing_user:
-            raise HTTPException(status_code=400, detail="User with this email already exists")
+            raise HTTPException(
+                status_code=400, detail="User with this email already exists"
+            )
         # Create user document
         user_doc = {
             "email": planner_data["email"],
@@ -514,7 +518,7 @@ async def create_wedding_planner(
             "subscription_status": "inactive",
             "is_active": True,
             "created_by": current_user.email,
-            "created_at": datetime.now(timezone.utc)
+            "created_at": datetime.now(timezone.utc),
         }
 
         # Insert user
@@ -522,23 +526,26 @@ async def create_wedding_planner(
 
         return {
             "message": "Wedding planner created successfully",
-            "user_id": str(result.inserted_id)
+            "user_id": str(result.inserted_id),
         }
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error creating wedding planner: {str(e)}")
+        raise HTTPException(
+            status_code=500, detail=f"Error creating wedding planner: {str(e)}"
+        )
 
 
 @router.put("/wedding-planners/{planner_id}/status", tags=["ROOT_ADMIN"])
 async def toggle_planner_status(
-    planner_id: str,
-    current_user: ExtendedAuthUser = Depends(require_root_admin)
+    planner_id: str, current_user: ExtendedAuthUser = Depends(require_root_admin)
 ):
     """Toggle wedding planner active status - ROOT_ADMIN only"""
     try:
         # Get current status
-        planner = await mongo.get_users_collection().find_one({"_id": PyObjectId(planner_id)})
+        planner = await mongo.get_users_collection().find_one(
+            {"_id": PyObjectId(planner_id)}
+        )
         if not planner:
             raise HTTPException(status_code=404, detail="Wedding planner not found")
 
@@ -551,18 +558,21 @@ async def toggle_planner_status(
                 "$set": {
                     "is_active": new_status,
                     "updated_by": current_user.email,
-                    "updated_at": datetime.now(timezone.utc)
+                    "updated_at": datetime.now(timezone.utc),
                 }
-            }
+            },
         )
         return {
             "message": f"Planner {'activated' if new_status else 'deactivated'} successfully",
-            "new_status": new_status
+            "new_status": new_status,
         }
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error updating planner status: {str(e)}")
+        raise HTTPException(
+            status_code=500, detail=f"Error updating planner status: {str(e)}"
+        )
+
 
 # ==================== PUBLIC SAAS CONFIGURATION ====================
 
@@ -590,21 +600,28 @@ async def get_public_saas_config():
         return config
 
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error fetching public SAAS config: {str(e)}")
+        raise HTTPException(
+            status_code=500, detail=f"Error fetching public SAAS config: {str(e)}"
+        )
 
 
 @router.get("/analytics/overview", tags=["ROOT_ADMIN"])
-async def get_overview_analytics(current_user: ExtendedAuthUser = Depends(require_root_admin)):
+async def get_overview_analytics(
+    current_user: ExtendedAuthUser = Depends(require_root_admin),
+):
     """Get overview analytics for dashboard - ROOT_ADMIN only"""
     try:
         # Get counts (all async operations)
-        total_planners = await mongo.get_users_collection().count_documents({"role": "wedding_planner"})
-        active_planners = await mongo.get_users_collection().count_documents({
-            "role": "wedding_planner",
-            "is_active": True
-        })
+        total_planners = await mongo.get_users_collection().count_documents(
+            {"role": "wedding_planner"}
+        )
+        active_planners = await mongo.get_users_collection().count_documents(
+            {"role": "wedding_planner", "is_active": True}
+        )
         total_weddings = await mongo.get_weddings_collection().count_documents({})
-        active_plans = await mongo.get_subscription_plans_collection().count_documents({"is_active": True})
+        active_plans = await mongo.get_subscription_plans_collection().count_documents(
+            {"is_active": True}
+        )
 
         # Calculate revenue based on active subscriptions
         monthly_revenue = 0
@@ -613,10 +630,12 @@ async def get_overview_analytics(current_user: ExtendedAuthUser = Depends(requir
         # Get all users with active subscriptions (async cursor)
         # Safety cap: iterate through batches to avoid memory overload
         MAX_ACTIVE_USERS = 10000
-        active_users_cursor = mongo.get_users_collection().find({
-            "subscription_status": {"$in": list(ACTIVE_SUBSCRIPTION_STATUSES)},
-            "is_active": True
-        })
+        active_users_cursor = mongo.get_users_collection().find(
+            {
+                "subscription_status": {"$in": list(ACTIVE_SUBSCRIPTION_STATUSES)},
+                "is_active": True,
+            }
+        )
         active_users = await active_users_cursor.to_list(length=MAX_ACTIVE_USERS)
         for user in active_users:
             # Skip trial users for revenue calculation
@@ -625,7 +644,9 @@ async def get_overview_analytics(current_user: ExtendedAuthUser = Depends(requir
             plan_id = user.get("plan_id")
             if plan_id:
                 # Get the subscription plan (async find_one)
-                plan = await mongo.get_subscription_plans_collection().find_one({"_id": plan_id})
+                plan = await mongo.get_subscription_plans_collection().find_one(
+                    {"_id": plan_id}
+                )
                 if plan:
                     monthly_revenue += plan.get("price_monthly", 0)
                     yearly_revenue += plan.get("price_yearly", 0)
@@ -640,52 +661,60 @@ async def get_overview_analytics(current_user: ExtendedAuthUser = Depends(requir
             "active_plans": active_plans,
             "monthly_revenue": monthly_revenue,
             "yearly_revenue": yearly_revenue,
-            "projected_annual_revenue": projected_annual_revenue
+            "projected_annual_revenue": projected_annual_revenue,
         }
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error fetching overview analytics: {str(e)}")
+        raise HTTPException(
+            status_code=500, detail=f"Error fetching overview analytics: {str(e)}"
+        )
 
 
 @router.get("/analytics/revenue", tags=["ROOT_ADMIN"])
-async def get_revenue_analytics(current_user: ExtendedAuthUser = Depends(require_root_admin)):
+async def get_revenue_analytics(
+    current_user: ExtendedAuthUser = Depends(require_root_admin),
+):
     """Get detailed revenue analytics for ROOT_ADMIN"""
     try:
         # Revenue by subscription plan
         plan_revenue = []
         # Safety cap: typically <100 subscription plans
         MAX_PLANS = 500
-        plans_cursor = mongo.get_subscription_plans_collection().find({"is_active": True})
+        plans_cursor = mongo.get_subscription_plans_collection().find(
+            {"is_active": True}
+        )
         plans = await plans_cursor.to_list(length=MAX_PLANS)
 
         for plan in plans:
             plan_id = plan["_id"]
 
             # Count active users on this plan
-            active_users_count = await mongo.get_users_collection().count_documents({
-                "plan_id": plan_id,
-                "subscription_status": "active",
-                "is_active": True
-            })
+            active_users_count = await mongo.get_users_collection().count_documents(
+                {"plan_id": plan_id, "subscription_status": "active", "is_active": True}
+            )
             # Count trial users on this plan
-            trial_users_count = await mongo.get_users_collection().count_documents({
-                "plan_id": plan_id,
-                "subscription_status": {"$in": ["trial", "trial_expiring"]},
-                "is_active": True
-            })
+            trial_users_count = await mongo.get_users_collection().count_documents(
+                {
+                    "plan_id": plan_id,
+                    "subscription_status": {"$in": ["trial", "trial_expiring"]},
+                    "is_active": True,
+                }
+            )
 
             plan_monthly_revenue = active_users_count * plan.get("price_monthly", 0)
             plan_yearly_revenue = active_users_count * plan.get("price_yearly", 0)
 
-            plan_revenue.append({
-                "plan_name": plan.get("name"),
-                "plan_id": str(plan_id),
-                "active_users": active_users_count,
-                "trial_users": trial_users_count,
-                "monthly_revenue": plan_monthly_revenue,
-                "yearly_revenue": plan_yearly_revenue,
-                "price_monthly": plan.get("price_monthly", 0),
-                "price_yearly": plan.get("price_yearly", 0)
-            })
+            plan_revenue.append(
+                {
+                    "plan_name": plan.get("name"),
+                    "plan_id": str(plan_id),
+                    "active_users": active_users_count,
+                    "trial_users": trial_users_count,
+                    "monthly_revenue": plan_monthly_revenue,
+                    "yearly_revenue": plan_yearly_revenue,
+                    "price_monthly": plan.get("price_monthly", 0),
+                    "price_yearly": plan.get("price_yearly", 0),
+                }
+            )
         # Calculate totals
         total_monthly_revenue = sum(plan["monthly_revenue"] for plan in plan_revenue)
         total_yearly_revenue = sum(plan["yearly_revenue"] for plan in plan_revenue)
@@ -693,8 +722,12 @@ async def get_revenue_analytics(current_user: ExtendedAuthUser = Depends(require
         total_trial_users = sum(plan["trial_users"] for plan in plan_revenue)
 
         # Average revenue per user
-        arpu_monthly = total_monthly_revenue / total_active_users if total_active_users > 0 else 0
-        arpu_yearly = total_yearly_revenue / total_active_users if total_active_users > 0 else 0
+        arpu_monthly = (
+            total_monthly_revenue / total_active_users if total_active_users > 0 else 0
+        )
+        arpu_yearly = (
+            total_yearly_revenue / total_active_users if total_active_users > 0 else 0
+        )
 
         return {
             "summary": {
@@ -704,13 +737,15 @@ async def get_revenue_analytics(current_user: ExtendedAuthUser = Depends(require
                 "total_active_users": total_active_users,
                 "total_trial_users": total_trial_users,
                 "arpu_monthly": arpu_monthly,
-                "arpu_yearly": arpu_yearly
+                "arpu_yearly": arpu_yearly,
             },
             "plan_breakdown": plan_revenue,
-            "generated_at": datetime.now(timezone.utc).isoformat()
+            "generated_at": datetime.now(timezone.utc).isoformat(),
         }
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error fetching revenue analytics: {str(e)}")
+        raise HTTPException(
+            status_code=500, detail=f"Error fetching revenue analytics: {str(e)}"
+        )
 
 
 @router.get("/analytics/platform", tags=["ROOT_ADMIN"])
@@ -751,7 +786,7 @@ async def get_trial_settings():
             "default_trial_days": 30,
             "trial_warning_days": 7,
             "auto_expire_trials": True,
-            "allow_multiple_trials": False
+            "allow_multiple_trials": False,
         }
     except Exception:
         # Return defaults on error to prevent registration failures
@@ -759,5 +794,5 @@ async def get_trial_settings():
             "default_trial_days": 30,
             "trial_warning_days": 7,
             "auto_expire_trials": True,
-            "allow_multiple_trials": False
+            "allow_multiple_trials": False,
         }

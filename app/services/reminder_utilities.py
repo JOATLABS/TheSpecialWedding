@@ -3,11 +3,11 @@
 from datetime import datetime, timezone
 from fastapi import HTTPException
 from app.core.database import mongo
-from app.models.rsvp import RSVPModel
 from app.models.plus_one import PlusOneModel
 from bson import ObjectId
 from twilio.rest import Client
 import os
+
 
 class RSVPReminderHelper:
     def __init__(self):
@@ -15,17 +15,23 @@ class RSVPReminderHelper:
         self.rsvp_collection = mongo.db["rsvps"]
         self.plus_one_collection = mongo.db["plus_ones"]
         self.log_collection = mongo.db["reminders_sent"]  # Add logging collection
-        self.twilio_client = Client(os.getenv("TWILIO_ACCOUNT_SID"), os.getenv("TWILIO_AUTH_TOKEN"))
+        self.twilio_client = Client(
+            os.getenv("TWILIO_ACCOUNT_SID"), os.getenv("TWILIO_AUTH_TOKEN")
+        )
         self.from_phone = os.getenv("TWILIO_PHONE_NUMBER")
         self.base_url = os.getenv("FRONTEND_URL")
         if not self.base_url:
             raise ValueError("FRONTEND_URL environment variable is required")
 
-    async def send_personalized_rsvp_links(self, slug: str, custom_message: str = None, event_type: str = "traditional"):
+    async def send_personalized_rsvp_links(
+        self, slug: str, custom_message: str = None, event_type: str = "traditional"
+    ):
         # First, get the wedding by slug to find its ID
         wedding = await mongo.db["weddings"].find_one({"slug": slug})
         if not wedding:
-            raise HTTPException(status_code=404, detail=f"Wedding with slug '{slug}' not found")
+            raise HTTPException(
+                status_code=404, detail=f"Wedding with slug '{slug}' not found"
+            )
 
         wedding_id = wedding.get("_id")
 
@@ -50,51 +56,61 @@ class RSVPReminderHelper:
                 message = f"You're invited! RSVP here: {url}"
 
             try:
-                self.twilio_client.messages.create(to=phone, from_=self.from_phone, body=message)
+                self.twilio_client.messages.create(
+                    to=phone, from_=self.from_phone, body=message
+                )
                 sent += 1
 
                 # Mark guest as invited so the dashboard shows "Pending"
                 if not guest.get("invite_sent"):
                     await self.guest_collection.update_one(
                         {"_id": guest["_id"]},
-                        {"$set": {
-                            "invite_sent": True,
-                            "invite_sent_date": datetime.now(timezone.utc)
-                        }}
+                        {
+                            "$set": {
+                                "invite_sent": True,
+                                "invite_sent_date": datetime.now(timezone.utc),
+                            }
+                        },
                     )
 
                 # Log successful send
-                await self.log_collection.insert_one({
-                    "wedding_id": wedding_id,
-                    "wedding_slug": slug,
-                    "guest_id": str(guest.get("_id")),
-                    "guest_name": guest.get("name"),
-                    "recipient": phone,
-                    "message": message,
-                    "status": "sent",
-                    "provider": "twilio",
-                    "type": "sms",
-                    "sent_at": datetime.now(timezone.utc)
-                })
+                await self.log_collection.insert_one(
+                    {
+                        "wedding_id": wedding_id,
+                        "wedding_slug": slug,
+                        "guest_id": str(guest.get("_id")),
+                        "guest_name": guest.get("name"),
+                        "recipient": phone,
+                        "message": message,
+                        "status": "sent",
+                        "provider": "twilio",
+                        "type": "sms",
+                        "sent_at": datetime.now(timezone.utc),
+                    }
+                )
             except Exception as e:
                 print(f"Failed to send to {phone}: {e}")
                 # Log failed send
-                await self.log_collection.insert_one({
-                    "wedding_id": wedding_id,
-                    "wedding_slug": slug,
-                    "guest_id": str(guest.get("_id")),
-                    "guest_name": guest.get("name"),
-                    "recipient": phone,
-                    "message": message,
-                    "status": "failed",
-                    "error": str(e),
-                    "provider": "twilio",
-                    "type": "sms",
-                    "sent_at": datetime.now(timezone.utc)
-                })
+                await self.log_collection.insert_one(
+                    {
+                        "wedding_id": wedding_id,
+                        "wedding_slug": slug,
+                        "guest_id": str(guest.get("_id")),
+                        "guest_name": guest.get("name"),
+                        "recipient": phone,
+                        "message": message,
+                        "status": "failed",
+                        "error": str(e),
+                        "provider": "twilio",
+                        "type": "sms",
+                        "sent_at": datetime.now(timezone.utc),
+                    }
+                )
         return {"sent": sent}
 
-    async def simulate_rsvp_for_guest(self, token: str, attending=None, dietary=None, phone=None, plus_one=None):
+    async def simulate_rsvp_for_guest(
+        self, token: str, attending=None, dietary=None, phone=None, plus_one=None
+    ):
         if attending is None:
             attending = ["traditional"]
         guest = await self.guest_collection.find_one({"token": token})
@@ -104,32 +120,42 @@ class RSVPReminderHelper:
         guest_id = guest["_id"]
         await self.rsvp_collection.update_one(
             {"guest_id": guest_id},
-            {"$set": {
-                "guest_id": guest_id,
-                "attending": attending,
-                "dietary": dietary,
-                "submitted_at": datetime.now(timezone.utc)
-            }},
-            upsert=True
+            {
+                "$set": {
+                    "guest_id": guest_id,
+                    "attending": attending,
+                    "dietary": dietary,
+                    "submitted_at": datetime.now(timezone.utc),
+                }
+            },
+            upsert=True,
         )
         if phone:
-            await self.guest_collection.update_one({"_id": guest_id}, {"$set": {"phone": phone}})
+            await self.guest_collection.update_one(
+                {"_id": guest_id}, {"$set": {"phone": phone}}
+            )
 
         if plus_one:
             if not guest.get("plus_one_allowed"):
                 raise HTTPException(status_code=403, detail="Plus-one not allowed")
-            existing_plus_one = await self.plus_one_collection.find_one({"guest_id": ObjectId(guest_id)})
+            existing_plus_one = await self.plus_one_collection.find_one(
+                {"guest_id": ObjectId(guest_id)}
+            )
             if existing_plus_one:
-                raise HTTPException(status_code=400, detail="Plus-one already submitted")
+                raise HTTPException(
+                    status_code=400, detail="Plus-one already submitted"
+                )
 
             plus_one_obj = PlusOneModel(
                 guest_id=str(ObjectId(guest_id)),
                 name=plus_one["name"],
                 phone=plus_one.get("phone"),
                 attending=plus_one.get("attending", []),
-                dietary=plus_one.get("dietary")
+                dietary=plus_one.get("dietary"),
             )
             await self.plus_one_collection.insert_one(plus_one_obj.dict(by_alias=True))
-            await self.guest_collection.update_one({"_id": guest_id}, {"$set": {"plus_one_submitted": True}})
+            await self.guest_collection.update_one(
+                {"_id": guest_id}, {"$set": {"plus_one_submitted": True}}
+            )
 
         return {"message": "RSVP simulated successfully"}

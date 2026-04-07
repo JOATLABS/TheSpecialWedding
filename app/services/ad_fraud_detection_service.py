@@ -18,9 +18,8 @@ Called from:
 
 import logging
 from datetime import datetime, timezone, timedelta
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Optional
 
-from bson import ObjectId
 
 logger = logging.getLogger(__name__)
 
@@ -61,9 +60,7 @@ class AdFraudDetectionService:
         signals = []
 
         # Check 1: Click velocity — too many clicks in short window
-        velocity_signal = await self._check_click_velocity(
-            planner_id, campaign_id, now
-        )
+        velocity_signal = await self._check_click_velocity(planner_id, campaign_id, now)
         if velocity_signal:
             signals.append(velocity_signal)
 
@@ -77,9 +74,7 @@ class AdFraudDetectionService:
 
         # Check 3: Session anomaly — too many events from one session
         if session_id:
-            session_signal = await self._check_session_anomaly(
-                session_id, now
-            )
+            session_signal = await self._check_session_anomaly(session_id, now)
             if session_signal:
                 signals.append(session_signal)
 
@@ -94,7 +89,10 @@ class AdFraudDetectionService:
         # Push-notify admin about fraud signals
         if signals:
             try:
-                from app.services.vendor_notification_service import VendorNotificationService
+                from app.services.vendor_notification_service import (
+                    VendorNotificationService,
+                )
+
                 vns = VendorNotificationService()
                 await vns.notify_admin_fraud_detected(
                     signal_type=signals[0]["signal_type"],
@@ -112,12 +110,16 @@ class AdFraudDetectionService:
         """Detect rapid clicking on the same campaign."""
         window_start = now - timedelta(minutes=self.CLICK_VELOCITY_WINDOW_MINUTES)
 
-        count = await self.ad_events.count_documents({
-            "planner_id": planner_id,
-            "campaign_id": campaign_id,
-            "event_type": {"$in": ["click", "vendor_added_to_directory", "quote_requested"]},
-            "created_at": {"$gte": window_start},
-        })
+        count = await self.ad_events.count_documents(
+            {
+                "planner_id": planner_id,
+                "campaign_id": campaign_id,
+                "event_type": {
+                    "$in": ["click", "vendor_added_to_directory", "quote_requested"]
+                },
+                "created_at": {"$gte": window_start},
+            }
+        )
 
         if count >= self.MAX_CLICKS_IN_VELOCITY_WINDOW:
             return {
@@ -147,13 +149,17 @@ class AdFraudDetectionService:
         """Detect exact duplicate clicks (same planner + campaign + creative within 1 min)."""
         window_start = now - timedelta(seconds=self.DUPLICATE_CLICK_WINDOW_SECONDS)
 
-        count = await self.ad_events.count_documents({
-            "planner_id": planner_id,
-            "campaign_id": campaign_id,
-            "creative_id": creative_id,
-            "event_type": {"$in": ["click", "vendor_added_to_directory", "quote_requested"]},
-            "created_at": {"$gte": window_start},
-        })
+        count = await self.ad_events.count_documents(
+            {
+                "planner_id": planner_id,
+                "campaign_id": campaign_id,
+                "creative_id": creative_id,
+                "event_type": {
+                    "$in": ["click", "vendor_added_to_directory", "quote_requested"]
+                },
+                "created_at": {"$gte": window_start},
+            }
+        )
 
         if count >= 2:  # Current click + at least 1 duplicate
             return {
@@ -178,10 +184,12 @@ class AdFraudDetectionService:
         """Detect excessive events from a single session."""
         window_start = now - timedelta(hours=1)
 
-        count = await self.ad_events.count_documents({
-            "session_id": session_id,
-            "created_at": {"$gte": window_start},
-        })
+        count = await self.ad_events.count_documents(
+            {
+                "session_id": session_id,
+                "created_at": {"$gte": window_start},
+            }
+        )
 
         if count >= self.MAX_EVENTS_PER_SESSION_PER_HOUR:
             return {
@@ -224,7 +232,9 @@ class AdFraudDetectionService:
         click_signals = await self._detect_hourly_click_abuse(now)
         signals_created += click_signals
 
-        logger.info(f"Batch fraud detection complete: {signals_created} signals created")
+        logger.info(
+            f"Batch fraud detection complete: {signals_created} signals created"
+        )
         return {"signals_created": signals_created}
 
     async def _detect_high_hide_rates(self, now: datetime) -> int:
@@ -258,11 +268,13 @@ class AdFraudDetectionService:
             unique_hiders = len(result.get("unique_planners", []))
 
             # Get total impressions for this campaign in the same window
-            impression_count = await self.ad_events.count_documents({
-                "campaign_id": campaign_id,
-                "event_type": "impression",
-                "created_at": {"$gte": seven_days_ago},
-            })
+            impression_count = await self.ad_events.count_documents(
+                {
+                    "campaign_id": campaign_id,
+                    "event_type": "impression",
+                    "created_at": {"$gte": seven_days_ago},
+                }
+            )
 
             if impression_count == 0:
                 continue
@@ -271,11 +283,13 @@ class AdFraudDetectionService:
 
             if hide_rate >= self.HIGH_HIDE_RATE_THRESHOLD:
                 # Check if we already have a recent signal for this campaign
-                existing = await self.fraud_signals.find_one({
-                    "campaign_id": campaign_id,
-                    "signal_type": "unusual_traffic",
-                    "flagged_at": {"$gte": seven_days_ago},
-                })
+                existing = await self.fraud_signals.find_one(
+                    {
+                        "campaign_id": campaign_id,
+                        "signal_type": "unusual_traffic",
+                        "flagged_at": {"$gte": seven_days_ago},
+                    }
+                )
                 if existing:
                     continue
 
@@ -316,7 +330,9 @@ class AdFraudDetectionService:
         pipeline = [
             {
                 "$match": {
-                    "event_type": {"$in": ["click", "vendor_added_to_directory", "quote_requested"]},
+                    "event_type": {
+                        "$in": ["click", "vendor_added_to_directory", "quote_requested"]
+                    },
                     "created_at": {"$gte": one_day_ago},
                 }
             },
@@ -325,14 +341,21 @@ class AdFraudDetectionService:
                     "_id": {
                         "planner_id": "$planner_id",
                         "campaign_id": "$campaign_id",
-                        "hour": {"$dateToString": {"format": "%Y-%m-%dT%H", "date": "$created_at"}},
+                        "hour": {
+                            "$dateToString": {
+                                "format": "%Y-%m-%dT%H",
+                                "date": "$created_at",
+                            }
+                        },
                     },
                     "click_count": {"$sum": 1},
                 }
             },
             {
                 "$match": {
-                    "click_count": {"$gte": self.MAX_CLICKS_PER_PLANNER_PER_CAMPAIGN_PER_HOUR}
+                    "click_count": {
+                        "$gte": self.MAX_CLICKS_PER_PLANNER_PER_CAMPAIGN_PER_HOUR
+                    }
                 }
             },
         ]
@@ -344,12 +367,14 @@ class AdFraudDetectionService:
             hour = key.get("hour", "")
 
             # Avoid duplicate signals for same planner+campaign+hour
-            existing = await self.fraud_signals.find_one({
-                "planner_id": planner_id,
-                "campaign_id": campaign_id,
-                "signal_type": "rapid_clicks",
-                "details.detection_hour": hour,
-            })
+            existing = await self.fraud_signals.find_one(
+                {
+                    "planner_id": planner_id,
+                    "campaign_id": campaign_id,
+                    "signal_type": "rapid_clicks",
+                    "details.detection_hour": hour,
+                }
+            )
             if existing:
                 continue
 
