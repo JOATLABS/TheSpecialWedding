@@ -271,11 +271,28 @@ A deployment should be blocked if any of these fail:
 1. Planner, couple, or vendor login/logout is broken
 2. Session does not survive a hard refresh
 3. Session does not clear on logout
-4. Inbox HTML executes script or unsanitized markup
+4. Planner `Communications -> Inbox` HTML executes script or unsanitized markup
 5. Budget template apply or campaign stats show obviously incorrect data
 6. Public homepage or features page fails to render
 7. Guest memories upload, moderation, download, or export fails its write/reread checks
 8. A screen looks correct but the underlying action, reread, or persistence check fails
+
+## 4A. Planner Communications Route Note
+
+As of the communications IA refactor on April 7, 2026, the canonical planner messaging routes are:
+
+1. `/admin/communications/inbox`
+2. `/admin/communications/invites`
+3. `/admin/communications/reminders`
+4. `/admin/communications/individual`
+5. `/admin/communications/history`
+
+Legacy planner routes now redirect:
+
+1. `/admin/inbox` -> `/admin/communications/inbox`
+2. `/admin/reminders?tab=*` -> the matching `/admin/communications/*` child route
+
+When this runbook references planner inbox or reminder/history verification, use the canonical `/admin/communications/*` routes.
 
 ## 5. Scenario A: Public Routes, Marketing, and SEO Surfaces
 
@@ -339,7 +356,7 @@ Verify planner auth is cookie-backed, survives refresh, and fully clears on logo
 3. Confirm redirect to `/admin/planner`.
 4. Run the storage checks from Section 3.
 5. Hard refresh the page.
-6. Navigate to another planner route such as `/admin/guests` or `/admin/forms`.
+6. Navigate to another planner route such as `/admin/communications/inbox` or `/admin/forms`.
 7. Reload again.
 8. Log out using the visible planner logout control.
 9. Attempt to open `/admin/planner` directly in the same tab.
@@ -652,11 +669,11 @@ Verify vendor portal auth works without vendor token storage and that root admin
 5. Logout removes access
 6. Root admin can still access the portal
 
-## 12. Scenario H: Planner Inbox HTML Sanitization
+## 12. Scenario H: Planner Communications Inbox HTML Sanitization
 
 ### Objective
 
-Verify inbound HTML is sanitized before rendering in the planner inbox.
+Verify inbound HTML is sanitized before rendering in the planner communications inbox.
 
 ### Test Payload
 
@@ -673,7 +690,7 @@ Use a seeded email or send a real test email containing at least these snippets:
 ### Steps
 
 1. Ensure the email is ingested into the planner inbox.
-2. Open the relevant planner inbox thread.
+2. Open `/admin/communications/inbox` and then open the relevant planner inbox thread.
 3. View the rendered email detail.
 4. Watch the browser console while the email renders.
 5. Inspect the rendered DOM if needed.

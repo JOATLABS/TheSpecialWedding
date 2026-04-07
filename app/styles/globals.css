@@ -13,7 +13,7 @@
 
 /* Theme CSS Custom Properties */
 :root {
-  --theme-primary: #1e3a5f;
+  --theme-primary: #1D3557;
   --theme-secondary: #d4af37;
   --theme-accent: #c8847e; /* rose accent */
   /* Lightened variants computed by useTheme hook at runtime; fallbacks here */

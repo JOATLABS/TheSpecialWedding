@@ -452,3 +452,152 @@ def test_html_escaping_in_display_name():
     assert "<script>" not in html, "Script tags should be escaped"
     assert "<img src=x" not in html, "HTML injection via company_name should be escaped"
     assert "&lt;script&gt;" in html, "Name should be HTML-escaped"
+
+
+def test_process_due_emails_sends_day3_couple_portal():
+    """Day 3 couple_portal email should fire when day 1 is already sent."""
+    user_id = ObjectId()
+    started_at = datetime.now(timezone.utc) - timedelta(days=4)
+    storage = {
+        "users": [
+            {
+                "_id": user_id,
+                "email": "planner@example.com",
+                "role": "wedding_planner",
+                "first_name": "Ava",
+                "email_verified": True,
+                "is_active": True,
+                "created_at": started_at,
+                "planner_onboarding_email": {
+                    "status": "active",
+                    "started_at": started_at,
+                    "welcome_sent_at": started_at,
+                    "first_wedding_sent_at": started_at + timedelta(days=1),
+                },
+            }
+        ],
+        "weddings": [],
+        "team_members": [],
+        "user_subscriptions": [],
+    }
+    service = build_service(storage)
+    result = asyncio.run(service.process_due_emails())
+    assert result["sent"] >= 1
+    email_types = [s["email_type"] for s in service.email_service.sent]
+    assert "planner_onboarding_day3_couple_portal" in email_types
+    state = storage["users"][0]["planner_onboarding_email"]
+    assert state.get("couple_portal_sent_at") is not None
+
+
+def test_process_due_emails_sends_day5_ai_paperwork():
+    """Day 5 ai_paperwork email should fire when days 1 and 3 are already sent."""
+    user_id = ObjectId()
+    started_at = datetime.now(timezone.utc) - timedelta(days=6)
+    storage = {
+        "users": [
+            {
+                "_id": user_id,
+                "email": "planner@example.com",
+                "role": "wedding_planner",
+                "first_name": "Ava",
+                "email_verified": True,
+                "is_active": True,
+                "created_at": started_at,
+                "planner_onboarding_email": {
+                    "status": "active",
+                    "started_at": started_at,
+                    "welcome_sent_at": started_at,
+                    "first_wedding_sent_at": started_at + timedelta(days=1),
+                    "couple_portal_sent_at": started_at + timedelta(days=3),
+                },
+            }
+        ],
+        "weddings": [],
+        "team_members": [],
+        "user_subscriptions": [],
+    }
+    service = build_service(storage)
+    result = asyncio.run(service.process_due_emails())
+    assert result["sent"] >= 1
+    email_types = [s["email_type"] for s in service.email_service.sent]
+    assert "planner_onboarding_day5_ai_paperwork" in email_types
+    state = storage["users"][0]["planner_onboarding_email"]
+    assert state.get("ai_paperwork_sent_at") is not None
+
+
+def test_process_due_emails_skips_day8_when_team_exists():
+    """Day 8 team_rules should be skipped when the planner already has team members."""
+    user_id = ObjectId()
+    started_at = datetime.now(timezone.utc) - timedelta(days=9)
+    storage = {
+        "users": [
+            {
+                "_id": user_id,
+                "email": "planner@example.com",
+                "role": "wedding_planner",
+                "first_name": "Ava",
+                "email_verified": True,
+                "is_active": True,
+                "created_at": started_at,
+                "planner_onboarding_email": {
+                    "status": "active",
+                    "started_at": started_at,
+                    "welcome_sent_at": started_at,
+                    "first_wedding_sent_at": started_at + timedelta(days=1),
+                    "couple_portal_sent_at": started_at + timedelta(days=3),
+                    "ai_paperwork_sent_at": started_at + timedelta(days=5),
+                },
+            }
+        ],
+        "weddings": [],
+        "team_members": [
+            {"_id": "tm_1", "owner_id": str(user_id), "status": "active"}
+        ],
+        "user_subscriptions": [],
+    }
+    service = build_service(storage)
+    result = asyncio.run(service.process_due_emails())
+    state = storage["users"][0]["planner_onboarding_email"]
+    assert state.get("team_rules_skipped_at") is not None
+    assert state.get("team_rules_skip_reason") == "team_members_already_exist"
+    email_types = [s["email_type"] for s in service.email_service.sent]
+    assert "planner_onboarding_day8_team_rules" not in email_types
+
+
+def test_process_due_emails_sends_day12_and_completes_sequence():
+    """Day 12 social proof should send and mark the sequence as completed."""
+    user_id = ObjectId()
+    started_at = datetime.now(timezone.utc) - timedelta(days=13)
+    storage = {
+        "users": [
+            {
+                "_id": user_id,
+                "email": "planner@example.com",
+                "role": "wedding_planner",
+                "first_name": "Ava",
+                "email_verified": True,
+                "is_active": True,
+                "created_at": started_at,
+                "planner_onboarding_email": {
+                    "status": "active",
+                    "started_at": started_at,
+                    "welcome_sent_at": started_at,
+                    "first_wedding_sent_at": started_at + timedelta(days=1),
+                    "couple_portal_sent_at": started_at + timedelta(days=3),
+                    "ai_paperwork_sent_at": started_at + timedelta(days=5),
+                    "team_rules_sent_at": started_at + timedelta(days=8),
+                },
+            }
+        ],
+        "weddings": [],
+        "team_members": [],
+        "user_subscriptions": [],
+    }
+    service = build_service(storage)
+    result = asyncio.run(service.process_due_emails())
+    assert result["sent"] >= 1
+    email_types = [s["email_type"] for s in service.email_service.sent]
+    assert "planner_onboarding_day12_social_proof" in email_types
+    state = storage["users"][0]["planner_onboarding_email"]
+    assert state.get("planners_love_sent_at") is not None
+    assert state.get("status") == "completed"

@@ -2,6 +2,9 @@
 import './styles/globals.css'
 import Script from 'next/script'
 import type { Metadata } from 'next'
+import { MARKETING_FEATURES } from './data/marketingFeatures';
+
+const TOOL_COUNT = MARKETING_FEATURES.length;
 
 export const metadata: Metadata = {
   title: {
@@ -86,7 +89,7 @@ export default function RootLayout({
                   name: 'The Special Wedding',
                   url: 'https://thespecialwedding.io',
                   logo: 'https://thespecialwedding.io/logo.svg',
-                  description: 'All-in-one wedding planning software with 18 tools for professional planners — couple portal, guest management, AI contracts, SMS reminders, vendor CRM, seating, budgets, photo gallery, and day-of execution.',
+                  description: `All-in-one wedding planning software with ${TOOL_COUNT} tools for professional planners — couple portal, guest management, AI contracts, SMS reminders, vendor CRM, seating, budgets, photo gallery, and day-of execution.`,
                 },
                 {
                   '@type': 'SoftwareApplication',
@@ -94,7 +97,7 @@ export default function RootLayout({
                   applicationCategory: 'BusinessApplication',
                   operatingSystem: 'Web',
                   url: 'https://thespecialwedding.io',
-                  description: 'All-in-one wedding planning software with 18 AI-powered tools for professional planners — couple portal, guest management, contracts, SMS reminders, vendor CRM, seating, budgets, photo gallery, forms, and more.',
+                  description: `All-in-one wedding planning software with ${TOOL_COUNT} AI-powered tools for professional planners — couple portal, guest management, contracts, SMS reminders, vendor CRM, seating, budgets, photo gallery, forms, and more.`,
                   offers: {
                     '@type': 'AggregateOffer',
                     lowPrice: '29',

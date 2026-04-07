@@ -46,7 +46,7 @@ export const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
         variantStyle = 'bg-transparent text-gray-700 dark:text-slate-200 hover:bg-gray-100 dark:hover:bg-slate-700 focus:ring-gray-400/80';
         break;
       case 'default':
-        variantStyle = 'bg-blue-600 text-white hover:bg-blue-700 focus:ring-blue-500';
+        variantStyle = 'bg-wedding-navy text-white hover:bg-wedding-navy/90 focus:ring-wedding-navy/50';
         break;
       case 'primary':
       default:

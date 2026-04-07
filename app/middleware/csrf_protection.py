@@ -44,7 +44,8 @@ class CSRFProtectionMiddleware(BaseHTTPMiddleware):
             "/reset-password",                # Password reset (uses reset token)
             "/setup/",                        # Account setup (uses invitation token)
             "/signup",                        # User registration
-            "/contact"                        # Contact forms (public)
+            "/contact",                       # Contact forms (public)
+            "/planner-onboarding/unsubscribe"  # Token-authenticated unsubscribe
         ]
 
         # Store tokens with expiration

@@ -1,5 +1,11 @@
 import type { CompetitorSlug } from './data';
 
+/**
+ * Confidence level for a comparison evidence row.
+ * - **High** — claim is directly backed by a reviewed source
+ * - **Medium** — claim is inferred or partially backed
+ * - **Low** — claim could not be verified in the reviewed source set
+ */
 export type EvidenceConfidence = 'High' | 'Medium' | 'Low';
 
 export type CompareEvidenceSource = {
@@ -91,4 +97,36 @@ const EVIDENCE_BY_COMPETITOR: Record<CompetitorSlug, CompareEvidenceSet> = {
 
 export function getCompareEvidence(slug: CompetitorSlug): CompareEvidenceSet {
   return EVIDENCE_BY_COMPETITOR[slug];
+}
+
+/* ------------------------------------------------------------------ *
+ * Build-time validation: keep evidence rows in sync with comparison  *
+ * rows. A mismatch here means a feature was added to one file but    *
+ * not the other — TypeScript will surface this as a compile error.   *
+ * ------------------------------------------------------------------ */
+import { comparisonRows, getCompareSupportedSlugs } from './data';
+
+const _comparisonFeatures = new Set(comparisonRows.map((r) => r.feature));
+
+for (const slug of getCompareSupportedSlugs()) {
+  const evidence = EVIDENCE_BY_COMPETITOR[slug];
+  const evidenceFeatures = new Set(evidence.rows.map((r) => r.feature));
+
+  Array.from(_comparisonFeatures).forEach((feature) => {
+    if (!evidenceFeatures.has(feature)) {
+      throw new Error(
+        `[compare/evidence] Missing evidence row for "${feature}" in competitor "${slug}". ` +
+        `Add an entry to EVIDENCE_BY_COMPETITOR['${slug}'].rows.`
+      );
+    }
+  });
+
+  Array.from(evidenceFeatures).forEach((feature) => {
+    if (!_comparisonFeatures.has(feature)) {
+      throw new Error(
+        `[compare/evidence] Evidence row "${feature}" in competitor "${slug}" has no matching comparison row. ` +
+        `Either add it to comparisonRows in data.ts or remove the evidence entry.`
+      );
+    }
+  });
 }
