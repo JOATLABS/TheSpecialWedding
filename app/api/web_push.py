@@ -109,7 +109,10 @@ async def unsubscribe_from_push(
     """
     if body and body.endpoint:
         # Remove specific subscription by endpoint
-        success = await web_push_service.remove_subscription(body.endpoint)
+        success = await web_push_service.remove_subscription(
+            body.endpoint,
+            user_id=current_user.email,
+        )
         return {
             "success": success,
             "message": "Subscription removed" if success else "Subscription not found"

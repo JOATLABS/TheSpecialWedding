@@ -234,7 +234,10 @@ async def vendor_unsubscribe_from_push(
     from app.services.web_push_service import web_push_service
 
     if body and body.endpoint:
-        success = await web_push_service.remove_subscription(body.endpoint)
+        success = await web_push_service.remove_subscription(
+            body.endpoint,
+            user_id=current_user.email,
+        )
         return {
             "success": success,
             "message": "Subscription removed" if success else "Subscription not found",

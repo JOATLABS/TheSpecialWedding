@@ -116,11 +116,14 @@ class WebPushService:
             logger.error(f"Error saving push subscription: {e}")
             return False
 
-    async def remove_subscription(self, endpoint: str) -> bool:
-        """Remove a push subscription by endpoint"""
+    async def remove_subscription(self, endpoint: str, user_id: Optional[str] = None) -> bool:
+        """Remove a push subscription by endpoint, optionally scoped to a user."""
         try:
             collection = mongo.db["push_subscriptions"]
-            result = await collection.delete_one({"endpoint": endpoint})
+            query = {"endpoint": endpoint}
+            if user_id:
+                query["user_id"] = user_id
+            result = await collection.delete_one(query)
             return result.deleted_count > 0
         except Exception as e:
             logger.error(f"Error removing push subscription: {e}")
