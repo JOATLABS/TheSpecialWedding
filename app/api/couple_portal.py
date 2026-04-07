@@ -396,7 +396,7 @@ async def add_order_item(
     event = _get_event_by_index(wedding, event_index)
 
     order_of_events = event.get("order_of_events", [])
-    new_item = {
+    new_item: dict[str, Any] = {
         "id": str(uuid.uuid4()),
         "title": data.title,
         "description": data.description,
@@ -846,6 +846,18 @@ async def _get_message_broadcast_recipients(wedding_id: str) -> set[str]:
     return recipients
 
 
+def _collect_email_targets(*values: object) -> list[str]:
+    """Normalize optional email-like values into a concrete string list."""
+    emails: list[str] = []
+    for value in values:
+        if not isinstance(value, str):
+            continue
+        email = value.strip()
+        if email and email not in emails:
+            emails.append(email)
+    return emails
+
+
 async def _broadcast_couple_message_change(
     wedding_id: str,
     action: str,
@@ -966,13 +978,13 @@ async def couple_send_message(
         logger.error(f"Failed to notify planner of couple message: {e}")
 
     try:
-        planner_targets = [couple.get("planner_email")] if couple.get("planner_email") else None
+        planner_targets = _collect_email_targets(couple.get("planner_email"))
         await _broadcast_couple_message_change(
             wedding_id,
             action="created",
             record_id=str(result.inserted_id),
             include_couple_email=couple["email"],
-            extra_planner_emails=planner_targets,
+            extra_planner_emails=planner_targets or None,
         )
     except Exception as exc:
         logger.warning(f"Failed to broadcast couple message change: {exc}")
@@ -1096,9 +1108,10 @@ async def planner_send_message(
 
     result = await mongo.db["couple_messages"].insert_one(message_doc)
 
-    planner_targets = [current_user.email]
-    if current_user.is_team_member and current_user.team_owner_email:
-        planner_targets.append(current_user.team_owner_email)
+    planner_targets = _collect_email_targets(
+        current_user.email,
+        current_user.team_owner_email if current_user.is_team_member else None,
+    )
 
     try:
         await _broadcast_couple_message_change(
@@ -1175,9 +1188,10 @@ async def planner_mark_messages_read(
         {"$set": {"read_by_planner": True}},
     )
 
-    planner_targets = [current_user.email]
-    if current_user.is_team_member and current_user.team_owner_email:
-        planner_targets.append(current_user.team_owner_email)
+    planner_targets = _collect_email_targets(
+        current_user.email,
+        current_user.team_owner_email if current_user.is_team_member else None,
+    )
 
     if result.modified_count > 0:
         try:
@@ -1378,11 +1392,6 @@ async def archive_wedding(
     Archived couples can still log in but see a read-only archived view.
     """
     enforce_team_permission(current_user, "manage_contracts")
-
-    try:
-        wedding_id
-    except (InvalidId, Exception):
-        raise HTTPException(status_code=400, detail="Invalid wedding ID format")
 
     if not await check_wedding_access(current_user, wedding_id):
         raise HTTPException(status_code=403, detail="You don't have access to this wedding")
@@ -1782,7 +1791,7 @@ async def schedule_meeting(
 
     now = datetime.now(timezone.utc)
 
-    task_doc = {
+    task_doc: dict[str, Any] = {
         "planner_email": current_user.email,
         "wedding_id": data.wedding_id,
         "title": data.title,
@@ -2308,8 +2317,8 @@ async def unsubscribe_couple_push(
 ):
     """Couple unsubscribes from browser push notifications."""
     success = await web_push_service.remove_subscription(
-        user_id=couple["email"],
         endpoint=body.endpoint,
+        user_id=couple["email"],
     )
 
     if not success:
