@@ -24,6 +24,8 @@ This guide moves the platform from one combined app container to two separate en
 
 This keeps staging real, keeps production promotion manual, and avoids rebuilding the frontend for each environment.
 
+If you need to bootstrap the first staging image after enabling the workflow chain, manually run the `CI` workflow on `main` first. That produces the initial SHA-tagged frontend and backend images in GHCR; staging can then auto-deploy from the completed CI run or be redeployed manually by the same SHA tag.
+
 ---
 
 ## Workflow assets in this repo
@@ -75,11 +77,18 @@ Create these resources in Coolify Cloud.
 For both frontend and backend:
 
 1. Use **Docker Image**
-2. Point the resource at the GHCR image name already produced by CI
+2. Point the resource at the lowercase GHCR image name already produced by CI
 3. Set the initial image tag to any valid SHA tag or a temporary placeholder tag that exists
 4. Disable **Auto Deploy from Source**
 
 The GitHub Actions workflows drive deploys by calling the Coolify API and changing the image tag on the existing app resources.
+
+Use these exact image names:
+
+- frontend: `ghcr.io/lopewale/wedding-app-frontend`
+- backend: `ghcr.io/lopewale/wedding-app-backend`
+
+Do not point Coolify at digest-pinned image names such as `...@sha256`. The deploy workflows manage tag-based promotion and rollback.
 
 ---
 

@@ -22,7 +22,11 @@ from app.services.couple_portal_service import couple_portal_service
 from app.services.guest_export_service import guest_export_service
 from app.services.web_push_service import web_push_service
 from app.dependencies.auth_extended import (
-    ExtendedAuthUser, require_team_or_planner, enforce_team_permission, check_wedding_access
+    ExtendedAuthUser,
+    require_team_or_planner,
+    enforce_team_permission,
+    check_wedding_access,
+    get_accessible_wedding_ids,
 )
 from app.dependencies.couple_auth import require_couple_auth
 from bson import ObjectId
@@ -31,6 +35,7 @@ import uuid
 import copy
 import logging
 import os
+import re
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -796,6 +801,112 @@ class PlannerSendMessageRequest(BaseModel):
     """Planner sends a message to a couple."""
     wedding_id: str = Field(...)
     content: str = Field(..., min_length=1, max_length=5000)
+
+
+class PlannerMarkMessagesReadRequest(BaseModel):
+    """Planner marks a wedding conversation as read."""
+    wedding_id: str = Field(...)
+
+
+def _normalize_query_id(value: str) -> str | ObjectId:
+    """Normalize a wedding identifier for Mongo queries."""
+    if re.match(r"^[0-9a-fA-F]{24}$", value):
+        return ObjectId(value)
+    return value.strip()
+
+
+async def _get_message_broadcast_recipients(wedding_id: str) -> set[str]:
+    """Collect planner/team recipients who should see couple-message updates."""
+    recipients: set[str] = set()
+
+    wedding = await mongo.get_weddings_collection().find_one(
+        {"_id": _normalize_query_id(wedding_id)},
+        {"assigned_planner_email": 1},
+    )
+    owner_email = wedding.get("assigned_planner_email") if wedding else None
+    if owner_email:
+        recipients.add(owner_email)
+
+        async for team_member in mongo.db["team_members"].find(
+            {
+                "owner_email": owner_email,
+                "status": "active",
+                "custom_permissions.manage_contracts": True,
+            },
+            {"email": 1, "wedding_access": 1, "assigned_wedding_ids": 1},
+        ):
+            access = team_member.get("wedding_access", "all")
+            if access == "all" or wedding_id in (team_member.get("assigned_wedding_ids") or []):
+                email = team_member.get("email")
+                if email:
+                    recipients.add(email)
+
+    return recipients
+
+
+async def _broadcast_couple_message_change(
+    wedding_id: str,
+    action: str,
+    record_id: Optional[str] = None,
+    include_couple_email: Optional[str] = None,
+    extra_planner_emails: Optional[List[str]] = None,
+) -> None:
+    """Broadcast couple-message updates to relevant planner/team/couple clients."""
+    from app.services.sse_manager import sse_manager
+
+    recipients = await _get_message_broadcast_recipients(wedding_id)
+    if extra_planner_emails:
+        recipients.update(email for email in extra_planner_emails if email)
+
+    for email in recipients:
+        await sse_manager.broadcast_data_change(
+            email,
+            resource="couple_message",
+            action=action,
+            wedding_id=wedding_id,
+            record_id=record_id,
+        )
+
+    if include_couple_email:
+        await sse_manager.broadcast_data_change(
+            include_couple_email,
+            resource="couple_message",
+            action=action,
+            wedding_id=wedding_id,
+            record_id=record_id,
+        )
+
+
+async def _get_accessible_couple_wedding_ids(
+    current_user: ExtendedAuthUser,
+    wedding_id: Optional[str] = None,
+) -> list[str]:
+    """Resolve wedding IDs the current user can access for couple conversations."""
+    weddings_collection = mongo.get_weddings_collection()
+
+    if wedding_id:
+        if not await check_wedding_access(current_user, wedding_id):
+            raise HTTPException(status_code=403, detail="You don't have access to this wedding")
+        return [wedding_id]
+
+    query: dict = {}
+    if current_user.is_root_admin:
+        query = {}
+    elif current_user.is_wedding_planner:
+        query = {"assigned_planner_email": current_user.email}
+    elif current_user.is_team_member:
+        owner_email = current_user.team_owner_email
+        if not owner_email:
+            return []
+        query = {"assigned_planner_email": owner_email}
+        accessible_ids = get_accessible_wedding_ids(current_user)
+        if accessible_ids is not None:
+          query["_id"] = {"$in": [_normalize_query_id(value) for value in accessible_ids]}
+    else:
+        return []
+
+    weddings = await weddings_collection.find(query, {"_id": 1}).to_list(length=None)
+    return [str(wedding["_id"]) for wedding in weddings]
 
 
 # --- Couple-side messaging ---

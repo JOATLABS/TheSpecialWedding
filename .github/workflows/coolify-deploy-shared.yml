@@ -58,6 +58,10 @@ concurrency:
 permissions:
   contents: read
 
+env:
+  BACKEND_IMAGE: ghcr.io/lopewale/wedding-app-backend
+  FRONTEND_IMAGE: ghcr.io/lopewale/wedding-app-frontend
+
 jobs:
   prepare:
     name: Prepare ${{ inputs.environment_name }} deploy
@@ -117,11 +121,26 @@ jobs:
     needs: prepare
     if: needs.prepare.outputs.deploy-backend == 'true'
     outputs:
+      previous-name: ${{ steps.current-image.outputs.name }}
       previous-tag: ${{ steps.current-tag.outputs.tag }}
     environment:
       name: ${{ inputs.environment_name }}
       url: ${{ inputs.api_url }}
     steps:
+      - name: Read current backend image name
+        id: current-image
+        run: |
+          RESPONSE=$(curl -sf \
+            "${{ secrets.COOLIFY_BASE_URL }}/api/v1/applications/${{ secrets.COOLIFY_BACKEND_UUID }}" \
+            -H "Authorization: Bearer ${{ secrets.COOLIFY_API_TOKEN }}")
+
+          NAME=$(printf '%s' "$RESPONSE" | python3 -c "import json,sys; print((json.load(sys.stdin).get('docker_registry_image_name') or '').strip())")
+          if [ -z "$NAME" ]; then
+            echo "Current backend image name is empty; refusing to continue."
+            exit 1
+          fi
+          echo "name=$NAME" >> "$GITHUB_OUTPUT"
+
       - name: Read current backend image tag
         id: current-tag
         run: |
@@ -131,19 +150,19 @@ jobs:
 
           TAG=$(printf '%s' "$RESPONSE" | python3 -c "import json,sys; print((json.load(sys.stdin).get('docker_registry_image_tag') or '').strip())")
           if [ -z "$TAG" ]; then
-            echo "Current backend image tag is empty; refusing to continue without an immutable rollback target."
+            echo "Current backend image tag is empty; refusing to continue without a rollback target."
             exit 1
           fi
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
 
-      - name: Update backend image tag
+      - name: Update backend image reference
         run: |
           TAG="${{ needs.prepare.outputs.image-tag }}"
           curl -sf -X PATCH \
             "${{ secrets.COOLIFY_BASE_URL }}/api/v1/applications/${{ secrets.COOLIFY_BACKEND_UUID }}" \
             -H "Authorization: Bearer ${{ secrets.COOLIFY_API_TOKEN }}" \
             -H "Content-Type: application/json" \
-            -d "{\"docker_registry_image_tag\": \"${TAG}\"}"
+            -d "{\"docker_registry_image_name\": \"${{ env.BACKEND_IMAGE }}\", \"docker_registry_image_tag\": \"${TAG}\"}"
 
       - name: Restart backend
         run: |
@@ -158,11 +177,26 @@ jobs:
     needs: prepare
     if: needs.prepare.outputs.deploy-frontend == 'true'
     outputs:
+      previous-name: ${{ steps.current-image.outputs.name }}
       previous-tag: ${{ steps.current-tag.outputs.tag }}
     environment:
       name: ${{ inputs.environment_name }}
       url: ${{ inputs.frontend_url }}
     steps:
+      - name: Read current frontend image name
+        id: current-image
+        run: |
+          RESPONSE=$(curl -sf \
+            "${{ secrets.COOLIFY_BASE_URL }}/api/v1/applications/${{ secrets.COOLIFY_FRONTEND_UUID }}" \
+            -H "Authorization: Bearer ${{ secrets.COOLIFY_API_TOKEN }}")
+
+          NAME=$(printf '%s' "$RESPONSE" | python3 -c "import json,sys; print((json.load(sys.stdin).get('docker_registry_image_name') or '').strip())")
+          if [ -z "$NAME" ]; then
+            echo "Current frontend image name is empty; refusing to continue."
+            exit 1
+          fi
+          echo "name=$NAME" >> "$GITHUB_OUTPUT"
+
       - name: Read current frontend image tag
         id: current-tag
         run: |
@@ -177,14 +211,14 @@ jobs:
           fi
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
 
-      - name: Update frontend image tag
+      - name: Update frontend image reference
         run: |
           TAG="${{ needs.prepare.outputs.image-tag }}"
           curl -sf -X PATCH \
             "${{ secrets.COOLIFY_BASE_URL }}/api/v1/applications/${{ secrets.COOLIFY_FRONTEND_UUID }}" \
             -H "Authorization: Bearer ${{ secrets.COOLIFY_API_TOKEN }}" \
             -H "Content-Type: application/json" \
-            -d "{\"docker_registry_image_tag\": \"${TAG}\"}"
+            -d "{\"docker_registry_image_name\": \"${{ env.FRONTEND_IMAGE }}\", \"docker_registry_image_tag\": \"${TAG}\"}"
 
       - name: Restart frontend
         run: |
@@ -274,7 +308,12 @@ jobs:
             (needs.deploy-backend.result == 'failure' || needs.verify.result == 'failure')
           }}
         run: |
+          NAME="${{ needs.deploy-backend.outputs.previous-name }}"
           TAG="${{ needs.deploy-backend.outputs.previous-tag }}"
+          if [ -z "$NAME" ]; then
+            echo "Missing recorded backend rollback image name."
+            exit 1
+          fi
           if [ -z "$TAG" ]; then
             echo "Missing recorded backend rollback tag."
             exit 1
@@ -284,7 +323,7 @@ jobs:
             "${{ secrets.COOLIFY_BASE_URL }}/api/v1/applications/${{ secrets.COOLIFY_BACKEND_UUID }}" \
             -H "Authorization: Bearer ${{ secrets.COOLIFY_API_TOKEN }}" \
             -H "Content-Type: application/json" \
-            -d "{\"docker_registry_image_tag\": \"${TAG}\"}"
+            -d "{\"docker_registry_image_name\": \"${NAME}\", \"docker_registry_image_tag\": \"${TAG}\"}"
 
           curl -sf -X POST \
             "${{ secrets.COOLIFY_BASE_URL }}/api/v1/applications/${{ secrets.COOLIFY_BACKEND_UUID }}/restart" \
@@ -298,7 +337,12 @@ jobs:
             (needs.deploy-frontend.result == 'failure' || needs.verify.result == 'failure')
           }}
         run: |
+          NAME="${{ needs.deploy-frontend.outputs.previous-name }}"
           TAG="${{ needs.deploy-frontend.outputs.previous-tag }}"
+          if [ -z "$NAME" ]; then
+            echo "Missing recorded frontend rollback image name."
+            exit 1
+          fi
           if [ -z "$TAG" ]; then
             echo "Missing recorded frontend rollback tag."
             exit 1
@@ -308,7 +352,7 @@ jobs:
             "${{ secrets.COOLIFY_BASE_URL }}/api/v1/applications/${{ secrets.COOLIFY_FRONTEND_UUID }}" \
             -H "Authorization: Bearer ${{ secrets.COOLIFY_API_TOKEN }}" \
             -H "Content-Type: application/json" \
-            -d "{\"docker_registry_image_tag\": \"${TAG}\"}"
+            -d "{\"docker_registry_image_name\": \"${NAME}\", \"docker_registry_image_tag\": \"${TAG}\"}"
 
           curl -sf -X POST \
             "${{ secrets.COOLIFY_BASE_URL }}/api/v1/applications/${{ secrets.COOLIFY_FRONTEND_UUID }}/restart" \
