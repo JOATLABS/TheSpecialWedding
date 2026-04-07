@@ -12,33 +12,48 @@ import { MARKETING_FEATURES } from '../data/marketingFeatures';
    ═══════════════════════════════════════════════════════════ */
 const features = MARKETING_FEATURES;
 
+/**
+ * Three-state comparison:
+ *  true      = Confirmed: feature exists and is documented
+ *  'adjacent' = Adjacent: related capability exists but not a 1:1 match
+ *  false     = Not found in reviewed sources
+ */
+type FeatureState = boolean | 'adjacent';
+
 type ComparisonRow = {
   feature: string;
-  you: boolean;
-  honeybook: boolean;
-  aislePlanner: boolean;
-  planningPod: boolean;
+  you: FeatureState;
+  honeybook: FeatureState;
+  aislePlanner: FeatureState;
+  planningPod: FeatureState;
 };
 
+/* Values aligned with /compare evidence.ts research (April 6, 2026 audit) */
 const comparison: ComparisonRow[] = [
-  { feature: 'Guest Management & RSVPs', you: true, honeybook: false, aislePlanner: true, planningPod: true },
-  { feature: 'Client Portal / Couple Portal', you: true, honeybook: false, aislePlanner: false, planningPod: false },
-  { feature: 'SMS & Email Reminders', you: true, honeybook: false, aislePlanner: false, planningPod: true },
+  { feature: 'Guest Management & RSVPs', you: true, honeybook: 'adjacent', aislePlanner: true, planningPod: true },
+  { feature: 'Client Portal / Couple Portal', you: true, honeybook: 'adjacent', aislePlanner: 'adjacent', planningPod: false },
+  { feature: 'SMS & Email Reminders', you: true, honeybook: 'adjacent', aislePlanner: 'adjacent', planningPod: true },
   { feature: 'Seating Charts', you: true, honeybook: false, aislePlanner: true, planningPod: true },
-  { feature: 'AI Contract Generation & E-Sign', you: true, honeybook: false, aislePlanner: false, planningPod: false },
-  { feature: 'Service Packages', you: true, honeybook: false, aislePlanner: false, planningPod: false },
+  { feature: 'AI Contract Generation & E-Sign', you: true, honeybook: 'adjacent', aislePlanner: 'adjacent', planningPod: false },
+  { feature: 'Service Packages', you: true, honeybook: 'adjacent', aislePlanner: false, planningPod: false },
   { feature: 'AI Cash Flow Predictions', you: true, honeybook: false, aislePlanner: false, planningPod: false },
-  { feature: 'Budget Management', you: true, honeybook: false, aislePlanner: true, planningPod: true },
-  { feature: 'Photo Gallery & Guest QR Uploads', you: true, honeybook: false, aislePlanner: false, planningPod: false },
-  { feature: 'Vendor / Contact CRM', you: true, honeybook: true, aislePlanner: true, planningPod: true },
-  { feature: 'Custom Forms & Intake', you: true, honeybook: true, aislePlanner: true, planningPod: true },
-  { feature: 'Calendar Sync', you: true, honeybook: false, aislePlanner: true, planningPod: false },
-  { feature: 'Team Management & Permissions', you: true, honeybook: false, aislePlanner: false, planningPod: false },
-  { feature: 'Invoicing & Online Payments', you: true, honeybook: true, aislePlanner: true, planningPod: true },
-  { feature: 'Multi-Tenant Agency Tier', you: true, honeybook: false, aislePlanner: false, planningPod: false },
+  { feature: 'Budget Management', you: true, honeybook: 'adjacent', aislePlanner: true, planningPod: true },
+  { feature: 'Photo Gallery & Guest QR Uploads', you: true, honeybook: false, aislePlanner: 'adjacent', planningPod: false },
+  { feature: 'Vendor / Contact CRM', you: true, honeybook: 'adjacent', aislePlanner: 'adjacent', planningPod: true },
+  { feature: 'Custom Forms & Intake', you: true, honeybook: 'adjacent', aislePlanner: 'adjacent', planningPod: true },
+  { feature: 'Calendar Sync', you: true, honeybook: 'adjacent', aislePlanner: true, planningPod: false },
+  { feature: 'Team Management & Permissions', you: true, honeybook: 'adjacent', aislePlanner: 'adjacent', planningPod: false },
+  { feature: 'Invoicing & Online Payments', you: true, honeybook: 'adjacent', aislePlanner: 'adjacent', planningPod: true },
+  { feature: 'Multi-Tenant Agency Tier', you: true, honeybook: 'adjacent', aislePlanner: false, planningPod: false },
   { feature: 'Vendor Advertising Portal', you: true, honeybook: false, aislePlanner: false, planningPod: false },
   { feature: 'Day-of / Onsite Check-In', you: true, honeybook: false, aislePlanner: false, planningPod: true },
 ];
+
+function FeatureCell({ value }: { value: FeatureState }) {
+  if (value === true) return <span className="text-emerald-400 text-base">✓</span>;
+  if (value === 'adjacent') return <span className="text-amber-400/70 text-xs font-medium" title="Adjacent capability — not a 1:1 match">~</span>;
+  return <span className="text-slate-600">—</span>;
+}
 
 /* ═══════════════════════════════════════════════════════════
    Page
@@ -154,34 +169,10 @@ export default function FeaturesPage() {
               {comparison.map((row) => (
                 <tr key={row.feature} className="border-b border-white/5 hover:bg-white/[0.02]">
                   <td className="px-5 py-3.5 text-sm text-slate-300">{row.feature}</td>
-                  <td className="text-center px-4 py-3.5">
-                    {row.you ? (
-                      <span className="text-emerald-400 text-base">✓</span>
-                    ) : (
-                      <span className="text-slate-600">—</span>
-                    )}
-                  </td>
-                  <td className="text-center px-4 py-3.5">
-                    {row.honeybook ? (
-                      <span className="text-emerald-400/60 text-base">✓</span>
-                    ) : (
-                      <span className="text-slate-600">—</span>
-                    )}
-                  </td>
-                  <td className="text-center px-4 py-3.5">
-                    {row.aislePlanner ? (
-                      <span className="text-emerald-400/60 text-base">✓</span>
-                    ) : (
-                      <span className="text-slate-600">—</span>
-                    )}
-                  </td>
-                  <td className="text-center px-4 py-3.5">
-                    {row.planningPod ? (
-                      <span className="text-emerald-400/60 text-base">✓</span>
-                    ) : (
-                      <span className="text-slate-600">—</span>
-                    )}
-                  </td>
+                  <td className="text-center px-4 py-3.5"><FeatureCell value={row.you} /></td>
+                  <td className="text-center px-4 py-3.5"><FeatureCell value={row.honeybook} /></td>
+                  <td className="text-center px-4 py-3.5"><FeatureCell value={row.aislePlanner} /></td>
+                  <td className="text-center px-4 py-3.5"><FeatureCell value={row.planningPod} /></td>
                 </tr>
               ))}
               {/* Pricing row */}
@@ -196,7 +187,7 @@ export default function FeaturesPage() {
           </table>
         </div>
         <p className="mt-4 text-xs leading-relaxed text-slate-500">
-          Pricing and feature statuses reflect publicly documented capabilities as of April 2026. Where a competitor has an adjacent workflow rather than a one-to-one match, this table uses the closest documented equivalent.
+          ✓ = confirmed &nbsp; ~ = adjacent capability &nbsp; — = not found. Pricing and feature statuses reflect publicly documented capabilities as of April 2026. For source-backed detail on each row, see the <Link href="/compare" className="underline hover:text-slate-300">full comparison pages</Link>.
         </p>
       </section>
 

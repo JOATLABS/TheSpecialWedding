@@ -75,7 +75,7 @@ async def download_and_upload_logo(
 
     try:
         # Download the image
-        async with httpx.AsyncClient(timeout=15.0) as client:
+        async with httpx.AsyncClient(timeout=15.0, follow_redirects=True) as client:
             resp = await client.get(photo_url)
             resp.raise_for_status()
             image_bytes = resp.content

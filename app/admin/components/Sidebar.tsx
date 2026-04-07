@@ -73,13 +73,12 @@ const plannerNavItems: NavItem[] = [
   { name: 'Weddings', href: '/admin/weddings', icon: Heart },
   { name: 'Packages', href: '/admin/packages', icon: Package },
   { name: 'Guests', href: '/admin/guests', icon: Users },
-  { name: 'Inbox', href: '/admin/inbox', icon: Mail },
+  { name: 'Communications', href: '/admin/communications', icon: Mail },
   { name: 'Gallery', href: '/admin/gallery/upload', icon: Image },
   { name: 'Budget', href: '/admin/budget', icon: Wallet },
   { name: 'Money', href: '/admin/money', icon: CreditCard },
   { name: 'Forms', href: '/admin/forms', icon: FileText },
   { name: 'Vendors', href: '/admin/vendors', icon: Store },
-  { name: 'Reminders', href: '/admin/reminders', icon: Bell },
   { name: 'Notifications', href: '/admin/notifications', icon: Bell },
   { name: 'Seating', href: '/admin/seating', icon: LayoutGrid },
   { name: 'Team', href: '/admin/planner/team', icon: UserPlus, plannerOnly: true },
@@ -108,8 +107,8 @@ export default function Sidebar({ isOpen, setIsOpen, isMobile }: SidebarProps) {
     manage_forms: ['Forms'],
     manage_contracts: ['Vendors'],
     manage_packages: ['Packages'],
-    send_rsvp: ['Guests'],
-    send_reminders: ['Reminders'],
+    send_rsvp: ['Guests', 'Communications'],
+    send_reminders: ['Communications'],
     view_analytics: [],
     manage_wedding_settings: ['Weddings'],
   };
@@ -130,7 +129,7 @@ export default function Sidebar({ isOpen, setIsOpen, isMobile }: SidebarProps) {
 
     // Team members get filtered navigation based on their permissions
     if (userProfile.is_team_member && userProfile.team_permissions) {
-      const allowedNavNames = new Set(['Dashboard', 'Calendar', 'Notifications', 'Inbox', 'Support']);
+      const allowedNavNames = new Set(['Dashboard', 'Calendar', 'Notifications', 'Communications', 'Support']);
       const perms = userProfile.team_permissions;
 
       for (const [permKey, navNames] of Object.entries(permissionNavMap)) {

@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+import asyncio
+import hmac
 import logging
 import os
 import secrets
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
+from html import escape as _esc
 from typing import Any, Optional
 
 from bson import ObjectId
@@ -17,6 +20,7 @@ logger = logging.getLogger(__name__)
 SEQUENCE_VERSION = 1
 FRONTEND_FALLBACK_URL = "https://thespecialwedding.io"
 CLAIM_TTL = timedelta(minutes=30)
+UNSUBSCRIBE_TOKEN_TTL = timedelta(days=90)
 
 
 @dataclass(frozen=True)
@@ -160,10 +164,102 @@ class PlannerOnboardingEmailService:
             }
         )
 
+        # Batch-prefetch: collect users in chunks to avoid N+1 queries
+        # against weddings, team_members, and subscriptions collections.
+        _BATCH_SIZE = 50
+        batch: list[dict[str, Any]] = []
+
         async for user in cursor:
+            batch.append(user)
+            if len(batch) >= _BATCH_SIZE:
+                await self._process_user_batch(batch, results, dry_run=dry_run)
+                batch = []
+
+        if batch:
+            await self._process_user_batch(batch, results, dry_run=dry_run)
+
+        return results
+
+    async def _prefetch_context(self, users: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
+        """Batch-load wedding, team-member, and subscription data for a set of users.
+
+        Returns a dict keyed by str(user_id) → {has_wedding, has_team, subscription}.
+        """
+        user_ids = [str(u["_id"]) for u in users]
+        emails = [str(u.get("email") or "").strip().lower() for u in users]
+        emails = [e for e in emails if e]
+
+        # Weddings — any user who has at least one assigned wedding
+        wedding_query: dict[str, Any] = {"assigned_planner_id": {"$in": user_ids}}
+        if emails:
+            wedding_query = {"$or": [wedding_query, {"assigned_planner_email": {"$in": emails}}]}
+        wedding_cursor = self.weddings_collection.find(
+            wedding_query,
+            {"assigned_planner_id": 1, "assigned_planner_email": 1},
+        )
+        planners_with_weddings: set[str] = set()
+        async for w in wedding_cursor:
+            pid = str(w.get("assigned_planner_id") or "")
+            if pid:
+                planners_with_weddings.add(pid)
+            pe = str(w.get("assigned_planner_email") or "").strip().lower()
+            if pe:
+                planners_with_weddings.add(pe)
+
+        # Team members — any user who owns at least one pending/active member
+        team_cursor = self.team_members_collection.find(
+            {"owner_id": {"$in": user_ids}, "status": {"$in": ["pending", "active"]}},
+            {"owner_id": 1},
+        )
+        owners_with_team: set[str] = set()
+        async for tm in team_cursor:
+            owners_with_team.add(str(tm.get("owner_id") or ""))
+
+        # Subscriptions — active/trial for each user
+        sub_query: dict[str, Any] = {"user_id": {"$in": user_ids}, "status": {"$in": ["active", "trial"]}}
+        if emails:
+            sub_query = {
+                "$or": [
+                    sub_query,
+                    {"user_email": {"$in": emails}, "status": {"$in": ["active", "trial"]}},
+                ],
+            }
+        sub_cursor = self.subscriptions_collection.find(sub_query)
+        subs_by_user: dict[str, dict[str, Any]] = {}
+        async for sub in sub_cursor:
+            uid = str(sub.get("user_id") or "")
+            uemail = str(sub.get("user_email") or "").strip().lower()
+            if uid:
+                subs_by_user.setdefault(uid, sub)
+            if uemail:
+                subs_by_user.setdefault(uemail, sub)
+
+        # Build per-user context
+        context: dict[str, dict[str, Any]] = {}
+        for u in users:
+            uid = str(u["_id"])
+            uemail = str(u.get("email") or "").strip().lower()
+            context[uid] = {
+                "has_wedding": uid in planners_with_weddings or uemail in planners_with_weddings,
+                "has_team": uid in owners_with_team,
+                "subscription": subs_by_user.get(uid) or subs_by_user.get(uemail),
+            }
+        return context
+
+    async def _process_user_batch(
+        self,
+        users: list[dict[str, Any]],
+        results: dict[str, Any],
+        *,
+        dry_run: bool = False,
+    ) -> None:
+        """Process a batch of users with prefetched auxiliary data."""
+        ctx = await self._prefetch_context(users)
+
+        for user in users:
             results["processed"] += 1
             try:
-                outcome = await self._process_user(user, dry_run=dry_run)
+                outcome = await self._process_user(user, dry_run=dry_run, ctx=ctx.get(str(user["_id"])))
                 results["details"].append(outcome)
                 results["sent"] += outcome.get("sent", 0)
                 results["skipped"] += outcome.get("skipped", 0)
@@ -180,9 +276,7 @@ class PlannerOnboardingEmailService:
                     }
                 )
 
-        return results
-
-    async def _process_user(self, user: dict[str, Any], dry_run: bool = False) -> dict[str, Any]:
+    async def _process_user(self, user: dict[str, Any], dry_run: bool = False, ctx: Optional[dict[str, Any]] = None) -> dict[str, Any]:
         now = _utc_now()
         state = self._state(user)
         status = state.get("status", "active")
@@ -216,7 +310,7 @@ class PlannerOnboardingEmailService:
             result["actions"].append("exited_unsubscribed")
             return result
 
-        if await self._should_exit_for_signature(user):
+        if await self._should_exit_for_signature(user, ctx=ctx):
             if not state.get("signature_exit_sent_at"):
                 if dry_run:
                     result["actions"].append("would_send_signature_exit")
@@ -279,7 +373,7 @@ class PlannerOnboardingEmailService:
             if now < started_at + timedelta(days=step.offset_days):
                 continue
 
-            should_send, skip_reason = await self._evaluate_step(user, step)
+            should_send, skip_reason = await self._evaluate_step(user, step, ctx=ctx)
             if not should_send:
                 if not dry_run:
                     updated = await self._mark_step_skipped_once(
@@ -346,14 +440,16 @@ class PlannerOnboardingEmailService:
 
         return result
 
-    async def _evaluate_step(self, user: dict[str, Any], step: SequenceStep) -> tuple[bool, Optional[str]]:
+    async def _evaluate_step(self, user: dict[str, Any], step: SequenceStep, ctx: Optional[dict[str, Any]] = None) -> tuple[bool, Optional[str]]:
         if step.key == "first_wedding":
-            if await self._has_created_wedding(user):
+            has_wedding = ctx["has_wedding"] if ctx else await self._has_created_wedding(user)
+            if has_wedding:
                 return False, "wedding_already_created"
             return True, None
 
         if step.key == "team_rules":
-            if await self._has_team_members(user):
+            has_team = ctx["has_team"] if ctx else await self._has_team_members(user)
+            if has_team:
                 return False, "team_members_already_exist"
             return True, None
 
@@ -376,15 +472,19 @@ class PlannerOnboardingEmailService:
             }
         ) > 0
 
-    async def _should_exit_for_signature(self, user: dict[str, Any]) -> bool:
-        user_id = str(user.get("_id"))
-        user_email = str(user.get("email") or "").strip().lower()
-        subscription = await self.subscriptions_collection.find_one(
-            {
-                "$or": [{"user_id": user_id}, {"user_email": user_email}],
-                "status": {"$in": ["active", "trial"]},
-            }
-        )
+    async def _should_exit_for_signature(self, user: dict[str, Any], ctx: Optional[dict[str, Any]] = None) -> bool:
+        if ctx is not None:
+            subscription = ctx.get("subscription")
+        else:
+            user_id = str(user.get("_id"))
+            user_email = str(user.get("email") or "").strip().lower()
+            subscription = await self.subscriptions_collection.find_one(
+                {
+                    "$or": [{"user_id": user_id}, {"user_email": user_email}],
+                    "status": {"$in": ["active", "trial"]},
+                }
+            )
+
         if not subscription:
             plan_id = str(user.get("plan_id") or "").lower()
             return "signature" in plan_id
@@ -439,11 +539,14 @@ class PlannerOnboardingEmailService:
                 {"planner_onboarding_email.current_claimed_at": {"$lt": stale_before}},
             ],
         }
-        if step is None:
-            query["planner_onboarding_email.welcome_sent_at"] = {"$exists": False}
-        else:
+        if step is not None:
+            # Sequence step: guard on both sent and skipped fields
             query[f"planner_onboarding_email.{step.sent_field}"] = {"$exists": False}
             query[f"planner_onboarding_email.{step.skipped_field}"] = {"$exists": False}
+        elif claim_step == "welcome":
+            query["planner_onboarding_email.welcome_sent_at"] = {"$exists": False}
+        elif claim_step == "signature_exit":
+            query["planner_onboarding_email.signature_exit_sent_at"] = {"$exists": False}
 
         result = await self.users_collection.update_one(
             query,
@@ -530,9 +633,9 @@ class PlannerOnboardingEmailService:
     def _display_name(self, user: dict[str, Any]) -> str:
         first_name = (user.get("first_name") or "").strip()
         if first_name:
-            return first_name
+            return _esc(first_name)
         email = user.get("email", "planner")
-        return str(email).split("@")[0].replace(".", " ").title()
+        return _esc(str(email).split("@")[0].replace(".", " ").title())
 
     def _mask_email(self, email: str) -> str:
         local_part, _, domain = email.partition("@")
@@ -545,7 +648,7 @@ class PlannerOnboardingEmailService:
         return f"{masked_local}@{domain}"
 
     def _role_label(self, user: dict[str, Any]) -> str:
-        return str(user.get("role", "wedding_planner")).replace("_", " ").title()
+        return _esc(str(user.get("role", "wedding_planner")).replace("_", " ").title())
 
     def _unsubscribe_url(self, token: str) -> str:
         return f"{self._frontend_url()}/unsubscribe/planner-onboarding?token={token}"
@@ -553,18 +656,21 @@ class PlannerOnboardingEmailService:
     async def _ensure_unsubscribe_token(self, user: dict[str, Any]) -> str:
         state = self._state(user)
         existing_token = state.get("unsubscribe_token")
-        if existing_token:
+        token_created = _ensure_utc(state.get("unsubscribe_token_created_at"))
+
+        # Reuse existing token if it hasn't expired
+        if existing_token and token_created and (_utc_now() - token_created < UNSUBSCRIBE_TOKEN_TTL):
             return existing_token
 
+        # Generate a fresh token (also handles rotation of expired tokens)
         generated_token = secrets.token_urlsafe(24)
+        now = _utc_now()
         result = await self.users_collection.update_one(
-            {
-                "_id": user["_id"],
-                "planner_onboarding_email.unsubscribe_token": {"$exists": False},
-            },
+            {"_id": user["_id"]},
             {
                 "$set": {
                     "planner_onboarding_email.unsubscribe_token": generated_token,
+                    "planner_onboarding_email.unsubscribe_token_created_at": now,
                     "planner_onboarding_email.sequence_version": SEQUENCE_VERSION,
                 }
             },
@@ -579,7 +685,13 @@ class PlannerOnboardingEmailService:
         refreshed_token = self._state(refreshed_user or {}).get("unsubscribe_token")
         return refreshed_token or generated_token
 
-    async def get_unsubscribe_status(self, token: str) -> Optional[dict[str, Any]]:
+    async def _find_user_by_unsubscribe_token(self, token: str) -> Optional[dict[str, Any]]:
+        """Look up a user by unsubscribe token with timing-attack mitigation.
+
+        Uses an indexed MongoDB query for the lookup, then validates the
+        returned token with hmac.compare_digest so a miss and a hit take
+        similar time at the application layer.
+        """
         user = await self.users_collection.find_one(
             {
                 "role": "wedding_planner",
@@ -591,10 +703,36 @@ class PlannerOnboardingEmailService:
                 "planner_onboarding_email": 1,
             },
         )
+        stored_token = self._state(user or {}).get("unsubscribe_token") or ""
+        # Constant-time comparison prevents timing leakage on the app layer
+        if not hmac.compare_digest(stored_token, token):
+            # On miss, run a dummy query to normalize total response time
+            await self.users_collection.find_one(
+                {"role": "wedding_planner", "planner_onboarding_email.status": "completed"},
+                {"_id": 1},
+            )
+            return None
+        return user
+
+    def _is_token_expired(self, state: dict[str, Any]) -> bool:
+        """Check if the unsubscribe token has exceeded its TTL."""
+        token_created = _ensure_utc(state.get("unsubscribe_token_created_at"))
+        if token_created is None:
+            # Legacy tokens without a timestamp — treat as expired to force rotation
+            return True
+        return _utc_now() - token_created >= UNSUBSCRIBE_TOKEN_TTL
+
+    async def get_unsubscribe_status(self, token: str) -> Optional[dict[str, Any]]:
+        user = await self._find_user_by_unsubscribe_token(token)
         if not user:
             return None
 
         state = self._state(user)
+
+        # Reject expired tokens (unless the user already unsubscribed via this token)
+        if state.get("unsubscribed_at") is None and self._is_token_expired(state):
+            return None
+
         unsubscribed_at = state.get("unsubscribed_at")
         return {
             "email": self._mask_email(str(user.get("email") or "")),
@@ -604,23 +742,17 @@ class PlannerOnboardingEmailService:
         }
 
     async def unsubscribe_by_token(self, token: str) -> Optional[dict[str, Any]]:
-        user = await self.users_collection.find_one(
-            {
-                "role": "wedding_planner",
-                "planner_onboarding_email.unsubscribe_token": token,
-            },
-            {
-                "email": 1,
-                "first_name": 1,
-                "planner_onboarding_email": 1,
-            },
-        )
+        user = await self._find_user_by_unsubscribe_token(token)
         if not user:
             return None
 
         state = self._state(user)
         now = _utc_now()
         unsubscribed_at = state.get("unsubscribed_at")
+
+        # Reject expired tokens (unless already unsubscribed)
+        if unsubscribed_at is None and self._is_token_expired(state):
+            return None
 
         if unsubscribed_at is None:
             await self.users_collection.update_one(
@@ -650,6 +782,9 @@ class PlannerOnboardingEmailService:
             "unsubscribed_at": unsubscribed_at,
         }
 
+    _SEND_MAX_RETRIES = 3
+    _SEND_BASE_DELAY = 1.0  # seconds; doubles on each retry
+
     async def _send_named_email(self, template_key: str, user: dict[str, Any]) -> dict[str, Any]:
         unsubscribe_token = await self._ensure_unsubscribe_token(user)
         subject, html_content = self._render_email(
@@ -657,13 +792,36 @@ class PlannerOnboardingEmailService:
             user,
             unsubscribe_url=self._unsubscribe_url(unsubscribe_token),
         )
-        return await self.email_service.send_email(
-            to_email=user["email"],
-            subject=subject,
-            html_content=html_content,
-            from_name="The Special Wedding Team",
-            email_type=self._email_type(template_key),
-        )
+
+        last_result: dict[str, Any] = {}
+        for attempt in range(self._SEND_MAX_RETRIES):
+            last_result = await self.email_service.send_email(
+                to_email=user["email"],
+                subject=subject,
+                html_content=html_content,
+                from_name="The Special Wedding Team",
+                email_type=self._email_type(template_key),
+            )
+            if last_result.get("success"):
+                return last_result
+
+            # Don't retry on 4xx-class errors (bad address, validation, etc.)
+            error_str = str(last_result.get("error") or "")
+            if any(code in error_str for code in ("400", "401", "403", "422", "unsubscribed", "invalid")):
+                logger.warning(
+                    "Email send non-retryable failure for %s (attempt %d): %s",
+                    user.get("email"), attempt + 1, error_str,
+                )
+                return last_result
+
+            delay = self._SEND_BASE_DELAY * (2 ** attempt)
+            logger.warning(
+                "Email send failed for %s (attempt %d/%d), retrying in %.1fs: %s",
+                user.get("email"), attempt + 1, self._SEND_MAX_RETRIES, delay, error_str,
+            )
+            await asyncio.sleep(delay)
+
+        return last_result
 
     def _email_type(self, template_key: str) -> str:
         if template_key == "welcome":
@@ -690,9 +848,9 @@ class PlannerOnboardingEmailService:
         raise ValueError(f"Unknown onboarding template: {template_key}")
 
     def _email_wrapper(self, *, title: str, eyebrow: str, intro: str, body_html: str, cta_label: str, cta_path: str, outro: str, unsubscribe_url: Optional[str]) -> str:
-        cta_url = f"{self._frontend_url()}{cta_path}"
+        cta_url = _esc(f"{self._frontend_url()}{cta_path}")
         unsubscribe_html = (
-            f'<p style="margin-top:16px;">If you want to stop this onboarding sequence, <a href="{unsubscribe_url}" style="color:#475569;">unsubscribe here</a>.</p>'
+            f'<p style="margin-top:16px;">If you want to stop this onboarding sequence, <a href="{_esc(unsubscribe_url)}" style="color:#475569;">unsubscribe here</a>.</p>'
             if unsubscribe_url
             else ""
         )
@@ -749,7 +907,7 @@ class PlannerOnboardingEmailService:
             <li><strong>Seating, budget, payments, vendor CRM, and forms</strong> in one workspace</li>
           </ul>
         </div>
-        <p>As a <strong>{self._role_label(user)}</strong>{f' at <strong>{user.get("company_name")}</strong>' if user.get("company_name") else ''}, you have the tools you need to run weddings from one system.</p>
+        <p>As a <strong>{self._role_label(user)}</strong>{f' at <strong>{_esc(str(user.get("company_name")))}</strong>' if user.get("company_name") else ''}, you have the tools you need to run weddings from one system.</p>
         """
         outro = "Tomorrow we will focus on the fastest activation step: creating your first wedding."
         return subject, self._email_wrapper(

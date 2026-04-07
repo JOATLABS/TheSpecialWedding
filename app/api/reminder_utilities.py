@@ -5,11 +5,18 @@ from pydantic import BaseModel, Field
 from typing import List, Optional
 from app.services.reminder_utilities import RSVPReminderHelper
 from app.services.sse_manager import sse_manager
-from app.dependencies.auth_extended import require_admin_or_planner, ExtendedAuthUser
+from app.dependencies.auth_extended import (
+    require_admin_or_planner,
+    ExtendedAuthUser,
+    enforce_team_permission,
+    check_wedding_access,
+)
+from app.services.wedding_service import WeddingService
 
 router = APIRouter()
 
 reminder_helper = RSVPReminderHelper()
+wedding_service = WeddingService()
 
 class RSVPRequestModel(BaseModel):
     token: str
@@ -24,16 +31,20 @@ class SlugModel(BaseModel):
 
 @router.post("/reminders/send-personalized-links", tags=["Admin"])
 async def send_invite_links(payload: SlugModel, current_user: ExtendedAuthUser = Depends(require_admin_or_planner)):
+    enforce_team_permission(current_user, "send_rsvp")
+    wedding = await wedding_service.get_wedding_by_slug(payload.slug)
+    if not wedding:
+        raise HTTPException(status_code=404, detail="Wedding not found")
+    if not await check_wedding_access(current_user, wedding["_id"]):
+        raise HTTPException(status_code=403, detail="Access to this wedding denied")
+
     result = await reminder_helper.send_personalized_rsvp_links(slug=payload.slug, custom_message=payload.custom_message)
 
     # Broadcast invite status change so planner UI refreshes
-    from app.core.database import mongo
-    wedding = await mongo.db["weddings"].find_one({"slug": payload.slug}, {"_id": 1})
-    if wedding:
-        await sse_manager.broadcast_data_change(
-            current_user.email, "invite", "created",
-            wedding_id=str(wedding["_id"]),
-        )
+    await sse_manager.broadcast_data_change(
+        current_user.email, "invite", "created",
+        wedding_id=str(wedding["_id"]),
+    )
 
     return result
 

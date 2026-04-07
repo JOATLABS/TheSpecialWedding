@@ -433,6 +433,174 @@ class CascadeDeleteService:
             logger.error(f"Error verifying deletion for wedding {wedding_id}: {str(e)}")
             raise
 
+    async def suspend_planner_data(self, planner_id: str, planner_email: str) -> Dict:
+        """
+        Suspend all data access for a planner by stamping suspension fields.
+        This prevents the planner from accessing weddings, packages, and contracts.
+
+        Data is NOT deleted, only marked as suspended. This is reversible.
+
+        Args:
+            planner_id: The planner's user ID
+            planner_email: The planner's email address
+
+        Returns:
+            Dict with suspension statistics
+        """
+        try:
+            logger.info(f"Starting data suspension for planner {planner_email} (ID: {planner_id})")
+
+            now = datetime.now(timezone.utc)
+            suspension_data = {
+                "data_access_suspended_at": now,
+                "data_access_suspended_reason": "planner_subscription_cancelled",
+                "updated_at": now,
+            }
+
+            # Suspend weddings assigned to this planner
+            weddings_result = await mongo.db["weddings"].update_many(
+                {
+                    "$or": [
+                        {"planner_id": planner_id},
+                        {"assigned_planner_email": planner_email},
+                    ]
+                },
+                {"$set": suspension_data}
+            )
+
+            # Suspend packages created by this planner
+            packages_result = await mongo.db["packages"].update_many(
+                {"planner_id": planner_id},
+                {"$set": suspension_data}
+            )
+
+            # Suspend contracts associated with this planner
+            contracts_result = await mongo.db["contracts"].update_many(
+                {
+                    "$or": [
+                        {"planner_id": planner_id},
+                        {"planner_email": planner_email},
+                    ]
+                },
+                {"$set": suspension_data}
+            )
+
+            logger.info(
+                f"Suspended data for planner {planner_email}: "
+                f"{weddings_result.modified_count} weddings, "
+                f"{packages_result.modified_count} packages, "
+                f"{contracts_result.modified_count} contracts"
+            )
+
+            return {
+                "weddings_suspended": weddings_result.modified_count,
+                "packages_suspended": packages_result.modified_count,
+                "contracts_suspended": contracts_result.modified_count,
+                "suspended_at": now.isoformat(),
+                "status": "success",
+                "message": f"Data suspended for planner {planner_email}",
+            }
+
+        except Exception as e:
+            logger.error(
+                f"Error suspending data for planner {planner_email}: {str(e)}"
+            )
+            raise
+
+    async def unsuspend_planner_data(self, planner_id: str, planner_email: str) -> Dict:
+        """
+        Unsuspend data access for a planner by removing suspension fields.
+        Restores access to previously suspended weddings, packages, and contracts.
+
+        Args:
+            planner_id: The planner's user ID
+            planner_email: The planner's email address
+
+        Returns:
+            Dict with unsuspension statistics
+        """
+        try:
+            logger.info(f"Starting data unsuspension for planner {planner_email} (ID: {planner_id})")
+
+            # Unsuspend weddings
+            weddings_result = await mongo.db["weddings"].update_many(
+                {
+                    "$or": [
+                        {"planner_id": planner_id},
+                        {"assigned_planner_email": planner_email},
+                    ],
+                    "data_access_suspended_reason": "planner_subscription_cancelled",
+                },
+                {
+                    "$unset": {
+                        "data_access_suspended_at": "",
+                        "data_access_suspended_reason": "",
+                    },
+                    "$set": {
+                        "updated_at": datetime.now(timezone.utc),
+                    }
+                }
+            )
+
+            # Unsuspend packages
+            packages_result = await mongo.db["packages"].update_many(
+                {
+                    "planner_id": planner_id,
+                    "data_access_suspended_reason": "planner_subscription_cancelled",
+                },
+                {
+                    "$unset": {
+                        "data_access_suspended_at": "",
+                        "data_access_suspended_reason": "",
+                    },
+                    "$set": {
+                        "updated_at": datetime.now(timezone.utc),
+                    }
+                }
+            )
+
+            # Unsuspend contracts
+            contracts_result = await mongo.db["contracts"].update_many(
+                {
+                    "$or": [
+                        {"planner_id": planner_id},
+                        {"planner_email": planner_email},
+                    ],
+                    "data_access_suspended_reason": "planner_subscription_cancelled",
+                },
+                {
+                    "$unset": {
+                        "data_access_suspended_at": "",
+                        "data_access_suspended_reason": "",
+                    },
+                    "$set": {
+                        "updated_at": datetime.now(timezone.utc),
+                    }
+                }
+            )
+
+            logger.info(
+                f"Unsuspended data for planner {planner_email}: "
+                f"{weddings_result.modified_count} weddings, "
+                f"{packages_result.modified_count} packages, "
+                f"{contracts_result.modified_count} contracts"
+            )
+
+            return {
+                "weddings_unsuspended": weddings_result.modified_count,
+                "packages_unsuspended": packages_result.modified_count,
+                "contracts_unsuspended": contracts_result.modified_count,
+                "unsuspended_at": datetime.now(timezone.utc).isoformat(),
+                "status": "success",
+                "message": f"Data unsuspended for planner {planner_email}",
+            }
+
+        except Exception as e:
+            logger.error(
+                f"Error unsuspending data for planner {planner_email}: {str(e)}"
+            )
+            raise
+
 
 # Singleton instance
 cascade_delete_service = CascadeDeleteService()

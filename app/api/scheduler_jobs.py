@@ -12,9 +12,12 @@ Example cron setup (every 5 minutes):
         -H "X-Scheduler-Key: YOUR_SCHEDULER_API_KEY"
 """
 
+import hashlib
+import hmac
 import os
 import logging
-from fastapi import APIRouter, HTTPException, Header, Query, BackgroundTasks
+import time
+from fastapi import APIRouter, HTTPException, Header, Query, BackgroundTasks, Request
 from typing import Optional
 from datetime import datetime, timezone
 
@@ -25,19 +28,76 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
+# Maximum allowed clock skew for HMAC timestamp validation (5 minutes)
+_HMAC_MAX_SKEW_SECONDS = 300
 
-def verify_scheduler_key(x_scheduler_key: Optional[str] = Header(None)):
-    """Verify the scheduler API key"""
+
+def _verify_hmac(request: Request, x_scheduler_signature: Optional[str], x_scheduler_timestamp: Optional[str]):
+    """Verify HMAC-SHA256 request signature with timestamp replay protection.
+
+    Callers must send:
+        X-Scheduler-Timestamp: <unix epoch seconds>
+        X-Scheduler-Signature: sha256=<hex digest>
+
+    The signed payload is: ``<timestamp>.<method>.<path>``
+    """
+    secret = os.getenv("SCHEDULER_HMAC_SECRET")
+    if not secret:
+        return  # HMAC not configured — fall through to legacy key check
+
+    if not x_scheduler_signature or not x_scheduler_timestamp:
+        raise HTTPException(status_code=401, detail="Missing HMAC signature or timestamp header")
+
+    # Replay protection: reject timestamps too far from server time
+    try:
+        ts = int(x_scheduler_timestamp)
+    except (ValueError, TypeError):
+        raise HTTPException(status_code=401, detail="Invalid scheduler timestamp")
+
+    if abs(time.time() - ts) > _HMAC_MAX_SKEW_SECONDS:
+        logger.warning("Scheduler HMAC timestamp outside skew window: %s", x_scheduler_timestamp)
+        raise HTTPException(status_code=401, detail="Scheduler timestamp expired or too far in the future")
+
+    # Build signed payload: timestamp.METHOD.path
+    payload = f"{x_scheduler_timestamp}.{request.method}.{request.url.path}"
+    expected = hmac.new(secret.encode(), payload.encode(), hashlib.sha256).hexdigest()
+    received = x_scheduler_signature.removeprefix("sha256=")
+
+    if not hmac.compare_digest(expected, received):
+        logger.warning("Scheduler HMAC signature mismatch")
+        raise HTTPException(status_code=401, detail="Invalid scheduler signature")
+
+
+def verify_scheduler_key(
+    request: Request,
+    x_scheduler_key: Optional[str] = Header(None),
+    x_scheduler_signature: Optional[str] = Header(None),
+    x_scheduler_timestamp: Optional[str] = Header(None),
+):
+    """Verify scheduler authentication.
+
+    Supports two modes:
+    1. HMAC-SHA256 signing (preferred) — set SCHEDULER_HMAC_SECRET env var
+    2. Legacy static API key — set SCHEDULER_API_KEY env var
+    """
+    hmac_secret = os.getenv("SCHEDULER_HMAC_SECRET")
+
+    # Prefer HMAC if configured
+    if hmac_secret:
+        _verify_hmac(request, x_scheduler_signature, x_scheduler_timestamp)
+        return True
+
+    # Fall back to legacy static key
     expected_key = os.getenv("SCHEDULER_API_KEY")
 
     if not expected_key:
-        logger.warning("SCHEDULER_API_KEY not configured - scheduler endpoints disabled")
+        logger.warning("Neither SCHEDULER_HMAC_SECRET nor SCHEDULER_API_KEY configured - scheduler endpoints disabled")
         raise HTTPException(
             status_code=503,
-            detail="Scheduler endpoints not configured. Set SCHEDULER_API_KEY environment variable."
+            detail="Scheduler endpoints not configured. Set SCHEDULER_HMAC_SECRET or SCHEDULER_API_KEY environment variable."
         )
 
-    if not x_scheduler_key or x_scheduler_key != expected_key:
+    if not x_scheduler_key or not hmac.compare_digest(x_scheduler_key, expected_key):
         logger.warning("Invalid scheduler key attempted")
         raise HTTPException(
             status_code=401,
@@ -49,8 +109,11 @@ def verify_scheduler_key(x_scheduler_key: Optional[str] = Header(None)):
 
 @router.post("/task-reminders", tags=["Scheduler"])
 async def process_task_reminders(
+    request: Request,
     background_tasks: BackgroundTasks,
     x_scheduler_key: Optional[str] = Header(None),
+    x_scheduler_signature: Optional[str] = Header(None),
+    x_scheduler_timestamp: Optional[str] = Header(None),
     dry_run: bool = Query(False, description="If true, only report what would be sent"),
     sync: bool = Query(False, description="If true, run synchronously instead of in background")
 ):
@@ -62,13 +125,15 @@ async def process_task_reminders(
     and sends push notifications via Web Push API.
 
     Headers:
-        X-Scheduler-Key: Required scheduler API key
+        X-Scheduler-Signature: sha256=<HMAC hex digest> (preferred)
+        X-Scheduler-Timestamp: <unix epoch seconds> (required with signature)
+        X-Scheduler-Key: Legacy static API key (fallback)
 
     Query Params:
         dry_run: If true, only logs what would be sent without actually sending
         sync: If true, runs synchronously and returns results (useful for debugging)
     """
-    verify_scheduler_key(x_scheduler_key)
+    verify_scheduler_key(request, x_scheduler_key, x_scheduler_signature, x_scheduler_timestamp)
 
     if sync:
         # Run synchronously and return results
@@ -89,7 +154,10 @@ async def process_task_reminders(
 
 @router.post("/cleanup-reminders", tags=["Scheduler"])
 async def cleanup_old_reminders(
+    request: Request,
     x_scheduler_key: Optional[str] = Header(None),
+    x_scheduler_signature: Optional[str] = Header(None),
+    x_scheduler_timestamp: Optional[str] = Header(None),
     days_old: int = Query(7, description="Remove records older than this many days")
 ):
     """
@@ -97,7 +165,7 @@ async def cleanup_old_reminders(
 
     This should be called less frequently, e.g., once per day.
     """
-    verify_scheduler_key(x_scheduler_key)
+    verify_scheduler_key(request, x_scheduler_key, x_scheduler_signature, x_scheduler_timestamp)
 
     deleted_count = await task_reminder_service.cleanup_old_records(days_old=days_old)
 
@@ -125,8 +193,11 @@ async def scheduler_health():
 
 @router.post("/planner-onboarding-emails", tags=["Scheduler"])
 async def process_planner_onboarding_emails(
+    request: Request,
     background_tasks: BackgroundTasks,
     x_scheduler_key: Optional[str] = Header(None),
+    x_scheduler_signature: Optional[str] = Header(None),
+    x_scheduler_timestamp: Optional[str] = Header(None),
     dry_run: bool = Query(False, description="If true, report what would be sent without sending"),
     sync: bool = Query(False, description="If true, run synchronously and return results"),
 ):
@@ -136,7 +207,7 @@ async def process_planner_onboarding_emails(
     This endpoint is intended for a daily scheduler and sends due onboarding
     emails at day 1, 3, 5, 8, and 12 after the day-0 welcome email.
     """
-    verify_scheduler_key(x_scheduler_key)
+    verify_scheduler_key(request, x_scheduler_key, x_scheduler_signature, x_scheduler_timestamp)
 
     if sync:
         return await planner_onboarding_email_service.process_due_emails(dry_run=dry_run)

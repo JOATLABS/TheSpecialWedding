@@ -12,7 +12,7 @@ from app.services.reminder_service_twilio import (
     SMS_THROTTLE_DELAY_S,
 )
 from app.services.activity_log_service import activity_log_service
-from app.dependencies.auth_extended import require_root_admin, require_team_or_planner, enforce_team_permission, ExtendedAuthUser
+from app.dependencies.auth_extended import require_root_admin, require_team_or_planner, enforce_team_permission, ExtendedAuthUser, check_wedding_access
 from app.core.database import mongo
 from pydantic import BaseModel
 from typing import Optional, List
@@ -81,9 +81,15 @@ async def send_invites_twilio(
     current_user: ExtendedAuthUser = Depends(require_team_or_planner)
 ):
     """Send RSVP invite links using Twilio"""
-    enforce_team_permission(current_user, "send_reminders")
+    enforce_team_permission(current_user, "send_rsvp")
     if not twilio_configured or not twilio_helper:
         raise HTTPException(status_code=503, detail="Twilio service not configured")
+
+    wedding = await mongo.db["weddings"].find_one({"slug": payload.slug}, {"_id": 1})
+    if not wedding:
+        raise HTTPException(status_code=404, detail="Wedding not found")
+    if not await check_wedding_access(current_user, str(wedding["_id"])):
+        raise HTTPException(status_code=403, detail="Access to this wedding denied")
 
     result = await twilio_helper.send_personalized_rsvp_links(
         slug=payload.slug,
@@ -99,12 +105,10 @@ async def send_invites_twilio(
     )
 
     # Broadcast invite status change so planner UI refreshes
-    wedding = await mongo.db["weddings"].find_one({"slug": payload.slug}, {"_id": 1})
-    if wedding:
-        await sse_manager.broadcast_data_change(
-            current_user.email, "invite", "created",
-            wedding_id=str(wedding["_id"]),
-        )
+    await sse_manager.broadcast_data_change(
+        current_user.email, "invite", "created",
+        wedding_id=str(wedding["_id"]),
+    )
 
     return result
 
@@ -533,7 +537,7 @@ async def _create_bulk_send_summary(
                 "wedding_slug": wedding_slug,
             },
             priority=priority,
-            action_url="/admin/reminders?tab=history",
+            action_url="/admin/communications/history",
         )
 
         await mongo.db["planner_notifications"].insert_one(notification)

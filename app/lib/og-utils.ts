@@ -129,15 +129,20 @@ export function buildVendorCardData(vendor: {
 
 export async function fetchBlogArticleForOg(slug: string): Promise<PublicBlogApiArticle | null> {
   const baseUrl = getApiBaseUrl();
-  const response = await fetch(`${baseUrl}/api/v1/blog/articles/slug/${encodeURIComponent(slug)}`, {
-    next: { revalidate: 600 },
-  });
+  try {
+    const response = await fetch(`${baseUrl}/api/v1/blog/articles/slug/${encodeURIComponent(slug)}`, {
+      next: { revalidate: 600 },
+      signal: AbortSignal.timeout(5000),
+    });
 
-  if (!response.ok) {
+    if (!response.ok) {
+      return null;
+    }
+
+    return (await response.json()) as PublicBlogApiArticle;
+  } catch {
     return null;
   }
-
-  return (await response.json()) as PublicBlogApiArticle;
 }
 
 export async function fetchVendorForOg(id: string): Promise<{
@@ -148,13 +153,18 @@ export async function fetchVendorForOg(id: string): Promise<{
   state?: string;
 } | null> {
   const baseUrl = getApiBaseUrl();
-  const response = await fetch(`${baseUrl}/api/v1/vendors/${encodeURIComponent(id)}/public`, {
-    next: { revalidate: 600 },
-  });
+  try {
+    const response = await fetch(`${baseUrl}/api/v1/vendors/${encodeURIComponent(id)}/public`, {
+      next: { revalidate: 600 },
+      signal: AbortSignal.timeout(5000),
+    });
 
-  if (!response.ok) {
+    if (!response.ok) {
+      return null;
+    }
+
+    return await response.json();
+  } catch {
     return null;
   }
-
-  return await response.json();
 }

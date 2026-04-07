@@ -1,9 +1,10 @@
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Query
+from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile, File, Query
 from typing import List, Optional, Any
 from app.dependencies.auth_extended import require_root_admin, require_admin_or_planner, ExtendedAuthUser
 from app.services.user_management_service import UserManagementService
 from app.services.planner_onboarding_email_service import planner_onboarding_email_service
 from app.services.gallery_upload_service import GalleryUploadService
+from app.utils.rate_limiter import create_rate_limiter, get_client_ip, check_rate_limit
 from pydantic import BaseModel, Field, validator, EmailStr
 from datetime import datetime
 from math import ceil
@@ -12,6 +13,9 @@ import os
 router = APIRouter()
 user_service = UserManagementService()
 gallery_service = GalleryUploadService()
+
+# Rate limiter for public unsubscribe endpoints (10 req/min per IP)
+_unsubscribe_limiter = create_rate_limiter("planner_onsubscribe", requests_per_minute=10)
 
 
 class UserInviteModel(BaseModel):
@@ -378,9 +382,11 @@ async def reset_password(data: ResetPasswordModel):
 
 @router.get("/planner-onboarding/unsubscribe/status", tags=["Public"])
 async def get_planner_onboarding_unsubscribe_status(
+    request: Request,
     token: str = Query(..., min_length=16, max_length=256),
 ):
     """Preview a planner onboarding unsubscribe request using a public token."""
+    await check_rate_limit(get_client_ip(request), _unsubscribe_limiter)
     result = await planner_onboarding_email_service.get_unsubscribe_status(token)
     if not result:
         raise HTTPException(status_code=404, detail="Invalid or expired unsubscribe link")
@@ -388,8 +394,9 @@ async def get_planner_onboarding_unsubscribe_status(
 
 
 @router.post("/planner-onboarding/unsubscribe", tags=["Public"])
-async def unsubscribe_planner_onboarding(data: PlannerOnboardingUnsubscribeModel):
+async def unsubscribe_planner_onboarding(request: Request, data: PlannerOnboardingUnsubscribeModel):
     """Confirm planner onboarding email unsubscribe using a public token."""
+    await check_rate_limit(get_client_ip(request), _unsubscribe_limiter)
     result = await planner_onboarding_email_service.unsubscribe_by_token(data.token)
     if not result:
         raise HTTPException(status_code=404, detail="Invalid or expired unsubscribe link")

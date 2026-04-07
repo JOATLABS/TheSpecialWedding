@@ -174,6 +174,7 @@ async def send_individual_email_reminder(
     current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
 ):
     """Send an email reminder to a specific guest (used for guests without phone numbers)."""
+    enforce_team_permission(current_user, "send_reminders")
     if not email_available or email_service is None:
         raise HTTPException(status_code=503, detail="Email service not configured")
 

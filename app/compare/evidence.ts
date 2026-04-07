@@ -1,6 +1,6 @@
 import type { CompetitorSlug } from './data';
 
-export type EvidenceConfidence = 'High' | 'Medium';
+export type EvidenceConfidence = 'High' | 'Medium' | 'Low';
 
 export type CompareEvidenceSource = {
   code: string;

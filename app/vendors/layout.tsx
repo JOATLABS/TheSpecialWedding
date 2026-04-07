@@ -1,4 +1,5 @@
 import type { Metadata } from 'next';
+import BreadcrumbSchema from '../components/seo/BreadcrumbSchema';
 
 export const metadata: Metadata = {
   title: 'Vendor Directory',
@@ -34,5 +35,15 @@ export default function VendorsLayout({
 }: {
   children: React.ReactNode;
 }) {
-  return <>{children}</>;
+  return (
+    <>
+      <BreadcrumbSchema
+        items={[
+          { name: 'Home', href: '/' },
+          { name: 'Vendor Directory', href: '/vendors' },
+        ]}
+      />
+      {children}
+    </>
+  );
 }

@@ -1,4 +1,5 @@
 import type { Metadata } from 'next';
+import { notFound } from 'next/navigation';
 import Link from 'next/link';
 import {
   ArrowRight,
@@ -83,10 +84,11 @@ function SupportedPage({
   const competitorColumn = competitor.slug === 'honeybook' ? 'honeybook' : 'aislePlanner';
   const evidence = getCompareEvidence(competitor.slug);
   const evidenceLookup = new Map(evidence.rows.map((row) => [row.feature, row]));
-  const confidenceClasses = {
+  const confidenceClasses: Record<import('../evidence').EvidenceConfidence, string> = {
     High: 'border-emerald-400/20 bg-emerald-500/10 text-emerald-100',
     Medium: 'border-amber-400/20 bg-amber-500/10 text-amber-100',
-  } as const;
+    Low: 'border-slate-400/20 bg-slate-500/10 text-slate-200',
+  };
 
   return (
     <main>
@@ -466,7 +468,7 @@ export async function generateMetadata({ params }: PageParams): Promise<Metadata
     return {
       title: 'Compare The Special Wedding',
       description:
-        'Wedding planner comparison pages for HoneyBook and Aisle Planner, updated against official competitor sources reviewed on April 6, 2026.',
+        `Wedding planner comparison pages for HoneyBook and Aisle Planner, updated against official competitor sources reviewed on ${COMPARE_AUDIT_STAMP}.`,
       robots: {
         index: false,
         follow: true,
@@ -514,7 +516,7 @@ export default async function CompareCompetitorPage({ params }: PageParams) {
   const pageData = getComparePageData(competitor);
 
   if (!pageData) {
-    return <UnsupportedPage competitor={competitor} />;
+    notFound();
   }
 
   return (

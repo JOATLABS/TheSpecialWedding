@@ -576,7 +576,7 @@ class ResendEmailService:
                 <div class="content">
                     <p>Dear {guest_name},</p>
                     <p>This is a friendly reminder about the upcoming {event_title}. We're looking forward to celebrating with you!</p>
-                    
+
                     <div class="event-card">
                         <h2>Event Details</h2>
                         <div class="event-detail">
@@ -610,6 +610,223 @@ class ResendEmailService:
                     <p>If you have any questions, please don't hesitate to reach out.</p>
                     <hr style="border: none; border-top: 1px solid #ddd; margin: 20px 0;">
                     <p>&copy; TheSpecialWedding</p>
+                </div>
+            </div>
+        </body>
+        </html>
+        """
+
+    async def send_subscription_cancelled_email(self, user: dict) -> bool:
+        """Send subscription cancellation confirmation email to user.
+
+        Args:
+            user: User document with keys: email, full_name or company_name
+
+        Returns:
+            True if email sent successfully, False otherwise
+        """
+        try:
+            if not self.configured:
+                logger.warning("Email service not configured — skipping subscription cancellation email")
+                return False
+
+            email = user.get("email")
+            if not email:
+                logger.error(f"User {user.get('_id')} has no email address — skipping cancellation email")
+                return False
+
+            # Use full_name or company_name
+            user_name = user.get("full_name") or user.get("company_name", "Planner")
+
+            html_content = self._generate_subscription_cancelled_email_html(user_name=user_name)
+
+            subject = "Your Special Wedding subscription has been cancelled"
+
+            from_email = os.getenv("RESEND_BILLING_EMAIL") or os.getenv("RESEND_FROM_EMAIL", "noreply@thespecialwedding.com")
+            from_name = "The Special Wedding"
+
+            result = await self.send_email(
+                to_email=email,
+                subject=subject,
+                html_content=html_content,
+                from_email=from_email,
+                from_name=from_name,
+                email_type="subscription_cancelled"
+            )
+
+            return result.get("success", False)
+
+        except Exception as e:
+            logger.error(f"Error sending subscription cancellation email to {user.get('email', 'unknown')}: {str(e)}")
+            return False
+
+    async def send_planner_cancelled_couple_notification(self, couple: dict, planner: dict, wedding: dict) -> bool:
+        """Send notification to couple when their planner's account is cancelled.
+
+        Args:
+            couple: Couple/user document with keys: email, name
+            planner: Planner document with keys: company_name, email
+            wedding: Wedding document with keys: title or couple_names
+
+        Returns:
+            True if email sent successfully, False otherwise
+        """
+        try:
+            if not self.configured:
+                logger.warning("Email service not configured — skipping couple cancellation notification")
+                return False
+
+            email = couple.get("email")
+            if not email:
+                logger.error(f"Couple {couple.get('_id')} has no email address — skipping notification")
+                return False
+
+            couple_name = couple.get("name", "Couple")
+            planner_company = planner.get("company_name", "Your wedding planner")
+            wedding_title = wedding.get("title") or wedding.get("couple_names", "Your wedding")
+
+            html_content = self._generate_planner_cancelled_couple_notification_html(
+                couple_name=couple_name,
+                planner_company=planner_company,
+                wedding_title=wedding_title
+            )
+
+            subject = "Important update about your wedding planning service"
+
+            from_email = os.getenv("RESEND_BILLING_EMAIL") or os.getenv("RESEND_FROM_EMAIL", "noreply@thespecialwedding.com")
+            from_name = "The Special Wedding"
+
+            result = await self.send_email(
+                to_email=email,
+                subject=subject,
+                html_content=html_content,
+                from_email=from_email,
+                from_name=from_name,
+                email_type="planner_cancelled_couple_notification"
+            )
+
+            return result.get("success", False)
+
+        except Exception as e:
+            logger.error(f"Error sending couple cancellation notification to {couple.get('email', 'unknown')}: {str(e)}")
+            return False
+
+    def _generate_subscription_cancelled_email_html(self, user_name: str) -> str:
+        """Generate subscription cancellation confirmation email HTML"""
+        frontend_url = os.getenv("FRONTEND_URL", "https://thespecialwedding.com")
+        resubscribe_url = f"{frontend_url}/admin/planner/billing"
+
+        return f"""
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <meta charset="UTF-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
+            <style>
+                body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; line-height: 1.6; color: #333; margin: 0; padding: 0; }}
+                .container {{ max-width: 600px; margin: 0 auto; }}
+                .header {{ background: linear-gradient(135deg, #1e3a5f, #2c5282); color: white; padding: 40px 30px; text-align: center; }}
+                .header h1 {{ margin: 0; font-size: 28px; font-weight: 300; letter-spacing: 2px; }}
+                .content {{ background: #ffffff; padding: 40px 30px; }}
+                .content p {{ margin: 15px 0; }}
+                .info-box {{ background: #f0f4f8; border-left: 4px solid #c8847e; padding: 25px; margin: 25px 0; border-radius: 0 8px 8px 0; }}
+                .button-container {{ text-align: center; margin: 35px 0; }}
+                .button {{ display: inline-block; padding: 16px 40px; background-color: #c8847e; color: white; text-decoration: none; border-radius: 30px; font-weight: 500; letter-spacing: 1px; transition: background-color 0.3s; }}
+                .button:hover {{ background-color: #b6736d; }}
+                .footer {{ text-align: center; padding: 30px; color: #666; font-size: 14px; background: #f8f9fa; }}
+                .footer p {{ margin: 5px 0; }}
+            </style>
+        </head>
+        <body>
+            <div class="container">
+                <div class="header">
+                    <h1>Subscription Cancelled</h1>
+                </div>
+                <div class="content">
+                    <p>Hi {user_name},</p>
+                    <p>We've processed your subscription cancellation request. Your Special Wedding subscription is now inactive.</p>
+
+                    <div class="info-box">
+                        <p style="margin: 0;"><strong>What happens next:</strong></p>
+                        <ul style="margin: 10px 0; padding-left: 20px;">
+                            <li>Your wedding planning data will be preserved for 30 days</li>
+                            <li>You can reactivate your subscription at any time</li>
+                            <li>Access to your wedding details will be restored immediately upon resubscription</li>
+                        </ul>
+                    </div>
+
+                    <p>If you'd like to reactivate your subscription, you can do so anytime:</p>
+
+                    <div class="button-container">
+                        <a href="{resubscribe_url}" class="button">RESUBSCRIBE NOW</a>
+                    </div>
+
+                    <p>We'll miss you! If you have any feedback about your experience with The Special Wedding, we'd love to hear from you. Feel free to reach out to our support team.</p>
+
+                    <p>Thank you for being part of The Special Wedding community.</p>
+                </div>
+                <div class="footer">
+                    <p>Have questions? Contact us at support@thespecialwedding.com</p>
+                    <hr style="border: none; border-top: 1px solid #ddd; margin: 20px 0;">
+                    <p>&copy; The Special Wedding. All rights reserved.</p>
+                </div>
+            </div>
+        </body>
+        </html>
+        """
+
+    def _generate_planner_cancelled_couple_notification_html(self, couple_name: str, planner_company: str, wedding_title: str) -> str:
+        """Generate couple notification when planner's account is cancelled"""
+        return f"""
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <meta charset="UTF-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
+            <style>
+                body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; line-height: 1.6; color: #333; margin: 0; padding: 0; }}
+                .container {{ max-width: 600px; margin: 0 auto; }}
+                .header {{ background: linear-gradient(135deg, #1e3a5f, #2c5282); color: white; padding: 40px 30px; text-align: center; }}
+                .header h1 {{ margin: 0; font-size: 28px; font-weight: 300; letter-spacing: 2px; }}
+                .header p {{ margin: 10px 0 0; font-size: 16px; opacity: 0.9; }}
+                .content {{ background: #ffffff; padding: 40px 30px; }}
+                .content p {{ margin: 15px 0; }}
+                .alert-box {{ background: #fff4e6; border-left: 4px solid #ff9800; padding: 25px; margin: 25px 0; border-radius: 0 8px 8px 0; }}
+                .highlight {{ color: #1e3a5f; font-weight: 600; }}
+                .footer {{ text-align: center; padding: 30px; color: #666; font-size: 14px; background: #f8f9fa; }}
+                .footer p {{ margin: 5px 0; }}
+            </style>
+        </head>
+        <body>
+            <div class="container">
+                <div class="header">
+                    <h1>Service Update</h1>
+                    <p>Important information about your wedding planning</p>
+                </div>
+                <div class="content">
+                    <p>Hello {couple_name},</p>
+
+                    <div class="alert-box">
+                        <p style="margin-top: 0;"><strong>Your wedding planner's account is no longer active</strong></p>
+                        <p style="margin-bottom: 0;">The Special Wedding account for <span class="highlight">{planner_company}</span> has been cancelled.</p>
+                    </div>
+
+                    <p><strong>What this means for your wedding:</strong></p>
+                    <ul style="margin: 15px 0; padding-left: 20px;">
+                        <li>Your wedding details and planning information for <span class="highlight">{wedding_title}</span> remain fully accessible to you</li>
+                        <li>Any scheduled payments or recurring charges have been paused</li>
+                        <li>You retain full access to your data and can manage your wedding planning independently</li>
+                    </ul>
+
+                    <p><strong>Next Steps:</strong></p>
+                    <p>We recommend reaching out to {planner_company} directly to discuss the transition of your wedding planning services. If you need assistance or have questions, our support team is here to help.</p>
+
+                    <p>Your wedding details are safe and secure with us. Thank you for using The Special Wedding to plan your special day.</p>
+                </div>
+                <div class="footer">
+                    <p>Questions? Contact support@thespecialwedding.com</p>
+                    <hr style="border: none; border-top: 1px solid #ddd; margin: 20px 0;">
+                    <p>&copy; The Special Wedding. All rights reserved.</p>
                 </div>
             </div>
         </body>

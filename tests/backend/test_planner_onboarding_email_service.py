@@ -14,15 +14,26 @@ if PROJECT_ROOT not in sys.path:
 import app.services.planner_onboarding_email_service as onboarding_module
 
 
+def _resolve_dotted(document, dotted_key):
+    """Resolve a dotted key path like 'a.b.c' against a nested dict."""
+    actual = document
+    for part in dotted_key.split("."):
+        if isinstance(actual, dict) and part in actual:
+            actual = actual[part]
+        else:
+            return None
+    return actual
+
+
 def _matches(document, query):
     for key, expected in query.items():
-        actual = document
-        for part in key.split("."):
-            if isinstance(actual, dict) and part in actual:
-                actual = actual[part]
-            else:
-                actual = None
-                break
+        # Handle $or operator
+        if key == "$or":
+            if not any(_matches(document, sub_query) for sub_query in expected):
+                return False
+            continue
+
+        actual = _resolve_dotted(document, key)
 
         if isinstance(expected, dict):
             if "$exists" in expected:
@@ -31,6 +42,9 @@ def _matches(document, query):
                     return False
             if "$in" in expected and actual not in expected["$in"]:
                 return False
+            if "$lt" in expected:
+                if actual is None or actual >= expected["$lt"]:
+                    return False
             continue
 
         if actual != expected:
@@ -75,6 +89,17 @@ class AsyncCollection:
                     for part in parts[:-1]:
                         target = target.setdefault(part, {})
                     target[parts[-1]] = value
+                for key in update.get("$unset", {}):
+                    target = document
+                    parts = key.split(".")
+                    for part in parts[:-1]:
+                        if isinstance(target, dict) and part in target:
+                            target = target[part]
+                        else:
+                            target = None
+                            break
+                    if target is not None and isinstance(target, dict) and parts[-1] in target:
+                        del target[parts[-1]]
                 return SimpleNamespace(modified_count=1)
         return SimpleNamespace(modified_count=0)
 
@@ -313,6 +338,7 @@ def test_unsubscribe_by_token_marks_sequence_exited():
                     "started_at": started_at,
                     "welcome_sent_at": started_at,
                     "unsubscribe_token": unsubscribe_token,
+                    "unsubscribe_token_created_at": datetime.now(timezone.utc),
                 },
             }
         ],
@@ -330,3 +356,99 @@ def test_unsubscribe_by_token_marks_sequence_exited():
     assert state["status"] == "exited"
     assert state["exit_reason"] == "explicit_unsubscribe"
     assert state["unsubscribed_at"] is not None
+
+
+def test_unsubscribe_rejects_expired_token():
+    """Tokens older than 90 days should be rejected."""
+    user_id = ObjectId()
+    unsubscribe_token = "token_expired_1234567890abcdefgh"
+    started_at = datetime.now(timezone.utc) - timedelta(days=100)
+    storage = {
+        "users": [
+            {
+                "_id": user_id,
+                "email": "planner@example.com",
+                "role": "wedding_planner",
+                "first_name": "Ava",
+                "email_verified": True,
+                "is_active": True,
+                "created_at": started_at,
+                "planner_onboarding_email": {
+                    "status": "active",
+                    "started_at": started_at,
+                    "welcome_sent_at": started_at,
+                    "unsubscribe_token": unsubscribe_token,
+                    "unsubscribe_token_created_at": datetime.now(timezone.utc) - timedelta(days=91),
+                },
+            }
+        ],
+        "weddings": [],
+        "team_members": [],
+        "user_subscriptions": [],
+    }
+    service = build_service(storage)
+
+    result = asyncio.run(service.unsubscribe_by_token(unsubscribe_token))
+    assert result is None, "Expired token should be rejected"
+
+    status = asyncio.run(service.get_unsubscribe_status(unsubscribe_token))
+    assert status is None, "Expired token status should return None"
+
+
+def test_unsubscribe_token_created_at_set_on_start():
+    """Starting the sequence should set unsubscribe_token_created_at alongside the token."""
+    user_id = ObjectId()
+    storage = {
+        "users": [
+            {
+                "_id": user_id,
+                "email": "planner@example.com",
+                "role": "wedding_planner",
+                "first_name": "Ava",
+                "email_verified": True,
+                "is_active": True,
+                "created_at": datetime.now(timezone.utc),
+            }
+        ],
+        "weddings": [],
+        "team_members": [],
+        "user_subscriptions": [],
+    }
+    service = build_service(storage)
+
+    asyncio.run(service.start_sequence(str(user_id)))
+
+    state = storage["users"][0]["planner_onboarding_email"]
+    assert state.get("unsubscribe_token") is not None
+    assert state.get("unsubscribe_token_created_at") is not None
+
+
+def test_html_escaping_in_display_name():
+    """User-supplied names should be HTML-escaped in email templates."""
+    user_id = ObjectId()
+    storage = {
+        "users": [
+            {
+                "_id": user_id,
+                "email": "planner@example.com",
+                "role": "wedding_planner",
+                "first_name": '<script>alert("xss")</script>',
+                "company_name": '<img src=x onerror=alert(1)>',
+                "email_verified": True,
+                "is_active": True,
+                "created_at": datetime.now(timezone.utc),
+            }
+        ],
+        "weddings": [],
+        "team_members": [],
+        "user_subscriptions": [],
+    }
+    service = build_service(storage)
+
+    asyncio.run(service.start_sequence(str(user_id)))
+
+    sent = service.email_service.sent[0]
+    html = sent["html_content"]
+    assert "<script>" not in html, "Script tags should be escaped"
+    assert "<img src=x" not in html, "HTML injection via company_name should be escaped"
+    assert "&lt;script&gt;" in html, "Name should be HTML-escaped"
