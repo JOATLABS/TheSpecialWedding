@@ -1,0 +1,4 @@
+# Legacy release workflow disabled on 2026-04-07.
+# This repo no longer uses the command-bundle release template that expected
+# version.txt, install.sh, and Git tag history. Rebuild a repo-specific release
+# flow before re-enabling automated GitHub Releases.

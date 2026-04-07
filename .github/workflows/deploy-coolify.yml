@@ -28,6 +28,10 @@ permissions:
   contents: read
   packages: read
 
+env:
+  BACKEND_IMAGE: ghcr.io/lopewale/wedding-app-backend
+  FRONTEND_IMAGE: ghcr.io/lopewale/wedding-app-frontend
+
 jobs:
   prepare:
     name: Prepare staging deploy
@@ -76,13 +80,13 @@ jobs:
 
           case "$SERVICE" in
             both|backend)
-              docker manifest inspect "ghcr.io/${{ github.repository_owner }}/wedding-app-backend:${TAG}" >/dev/null
+              docker manifest inspect "${{ env.BACKEND_IMAGE }}:${TAG}" >/dev/null
               ;;
           esac
 
           case "$SERVICE" in
             both|frontend)
-              docker manifest inspect "ghcr.io/${{ github.repository_owner }}/wedding-app-frontend:${TAG}" >/dev/null
+              docker manifest inspect "${{ env.FRONTEND_IMAGE }}:${TAG}" >/dev/null
               ;;
           esac
 

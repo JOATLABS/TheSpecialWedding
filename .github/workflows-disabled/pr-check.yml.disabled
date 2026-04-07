@@ -22,13 +22,19 @@ jobs:
             
             // Conventional commit regex
             const conventionalCommitRegex = /^(build|chore|ci|docs|feat|fix|perf|refactor|revert|style|test)(\(.+\))?!?: .+$/;
+            // Repo-friendly descriptive title fallback, e.g. "Enhance middleware and error handling"
+            const descriptiveTitleRegex = /^[A-Z][A-Za-z0-9/&(),:' -]{9,}$/;
+            const isConventional = conventionalCommitRegex.test(prTitle);
+            const isDescriptive = descriptiveTitleRegex.test(prTitle);
             
-            if (!conventionalCommitRegex.test(prTitle)) {
-              const comment = `## ❌ PR Title Check Failed
+            if (!isConventional && !isDescriptive) {
+              const comment = `<!-- pr-title-check -->\n## ❌ PR Title Check Failed
               
-              Your PR title doesn't follow the [Conventional Commits](https://www.conventionalcommits.org/) format.
+              Your PR title should be either:
+              - a [Conventional Commits](https://www.conventionalcommits.org/) title, or
+              - a clear descriptive sentence in Title Case
               
-              ### Expected Format:
+              ### Preferred Conventional Format:
               \`<type>(<scope>): <subject>\`
               
               ### Valid Types:
@@ -47,60 +53,87 @@ jobs:
               - \`fix: correct file path handling in Windows\`
               - \`docs: update installation instructions\`
               - \`feat!: change command argument format\` (breaking change)
+              - \`Improve staging deployment workflow reliability\`
               
               ### Your PR Title:
               \`${prTitle}\`
               
-              Please update your PR title to follow the conventional commits format.`;
+              Please update your PR title so it is either conventional or clearly descriptive.`;
               
-              // Post comment
-              await github.rest.issues.createComment({
-                issue_number: context.issue.number,
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                body: comment
-              });
-              
-              core.setFailed('PR title must follow Conventional Commits format');
-            } else {
-              // Extract type for version bump prediction
-              const match = prTitle.match(/^(\w+)(\(.+\))?(!)?:/);
-              const type = match[1];
-              const isBreaking = match[3] === '!' || prTitle.includes('BREAKING CHANGE');
-              
-              let versionBump = 'No version bump';
-              let emoji = '📝';
-              
-              if (isBreaking) {
-                versionBump = 'Major version bump (breaking change)';
-                emoji = '💥';
-              } else if (type === 'feat') {
-                versionBump = 'Minor version bump (new feature)';
-                emoji = '✨';
-              } else if (type === 'fix') {
-                versionBump = 'Patch version bump (bug fix)';
-                emoji = '🐛';
-              }
-              
-              const comment = `## ✅ PR Title Check Passed
-              
-              ${emoji} **Version Impact**: ${versionBump}
-              
-              Your PR title follows the conventional commits format and will be included in the automated changelog.`;
-              
-              // Check if we already commented
               const comments = await github.rest.issues.listComments({
                 issue_number: context.issue.number,
                 owner: context.repo.owner,
                 repo: context.repo.repo
               });
+
+              const existing = comments.data.find(comment => comment.body.includes('<!-- pr-title-check -->'));
+              if (existing) {
+                await github.rest.issues.updateComment({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  comment_id: existing.id,
+                  body: comment
+                });
+              } else {
+                await github.rest.issues.createComment({
+                  issue_number: context.issue.number,
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  body: comment
+                });
+              }
               
-              const botComment = comments.data.find(comment => 
-                comment.user.type === 'Bot' && 
-                comment.body.includes('PR Title Check')
-              );
-              
-              if (!botComment || botComment.body.includes('Failed')) {
+              core.setFailed('PR title must be conventional or clearly descriptive');
+            } else {
+              const comments = await github.rest.issues.listComments({
+                issue_number: context.issue.number,
+                owner: context.repo.owner,
+                repo: context.repo.repo
+              });
+
+              const existing = comments.data.find(comment => comment.body.includes('<!-- pr-title-check -->'));
+              let comment = '';
+
+              if (isConventional) {
+                const match = prTitle.match(/^(\w+)(\(.+\))?(!)?:/);
+                const type = match[1];
+                const isBreaking = match[3] === '!' || prTitle.includes('BREAKING CHANGE');
+                
+                let versionBump = 'No version bump';
+                let emoji = '📝';
+                
+                if (isBreaking) {
+                  versionBump = 'Major version bump (breaking change)';
+                  emoji = '💥';
+                } else if (type === 'feat') {
+                  versionBump = 'Minor version bump (new feature)';
+                  emoji = '✨';
+                } else if (type === 'fix') {
+                  versionBump = 'Patch version bump (bug fix)';
+                  emoji = '🐛';
+                }
+
+                comment = `<!-- pr-title-check -->\n## ✅ PR Title Check Passed
+                
+                ${emoji} **Version Impact**: ${versionBump}
+                
+                Your PR title follows the conventional commits format.`;
+              } else {
+                comment = `<!-- pr-title-check -->\n## ✅ PR Title Check Passed
+                
+                Your PR title is clear and descriptive.
+                
+                Optional improvement: switch to a conventional title like \`feat:\`, \`fix:\`, or \`chore:\` if you want machine-readable release metadata later.`;
+              }
+
+              if (existing) {
+                await github.rest.issues.updateComment({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  comment_id: existing.id,
+                  body: comment
+                });
+              } else {
                 await github.rest.issues.createComment({
                   issue_number: context.issue.number,
                   owner: context.repo.owner,
