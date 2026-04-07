@@ -22,13 +22,13 @@ function resolveTarget(request: NextRequest): OgTarget | null {
 
   if (type === 'blog') {
     const slug = searchParams.get('slug')?.trim();
-    if (!slug) return null;
+    if (!slug || slug.length > 255) return null;
     return { type: 'blog', slug };
   }
 
   if (type === 'vendor') {
     const id = searchParams.get('id')?.trim();
-    if (!id) return null;
+    if (!id || id.length > 255) return null;
     return { type: 'vendor', id };
   }
 

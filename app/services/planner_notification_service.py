@@ -583,7 +583,7 @@ class PlannerNotificationService:
                 **(metadata or {})
             },
             priority="high",
-            action_url=f"/admin/reminders?tab=history"
+            action_url="/admin/communications/history"
         )
 
     async def notify_bulk_delivery_summary(
@@ -618,7 +618,7 @@ class PlannerNotificationService:
                 **(metadata or {})
             },
             priority="high" if failed > 0 else "low",
-            action_url="/admin/reminders?tab=history"
+            action_url="/admin/communications/history"
         )
 
     async def notify_support_ticket_response(

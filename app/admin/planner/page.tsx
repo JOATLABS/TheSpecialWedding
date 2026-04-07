@@ -503,7 +503,7 @@ export default function WeddingPlannerDashboard() {
  </button>
 
  <button
- onClick={() => router.push('/admin/reminders')}
+ onClick={() => router.push('/admin/communications/reminders')}
  className="flex items-center p-4 border border-gray-200 dark:border-gray-700 rounded-lg hover:bg-gray-50 dark:hover:bg-slate-700 transition-colors"
  >
  <div className="w-8 h-8 bg-blue-100 rounded-lg flex items-center justify-center mr-3">

@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
+import { useSearchParams } from 'next/navigation';
 import { getApiBaseUrl } from '@/utils/env';
 import { useAdmin } from '@/contexts/AdminContext';
 import { Card } from '@/components/ui/Card';
@@ -40,9 +41,11 @@ interface GuestImportResult {
 
 export default function AdminImportPage() {
  const { token } = useAdmin();
+ const searchParams = useSearchParams();
+ const requestedWeddingId = searchParams.get('wedding_id') || '';
  const [file, setFile] = useState<File | null>(null);
  const [weddings, setWeddings] = useState<Wedding[]>([]);
- const [selectedWedding, setSelectedWedding] = useState<string>('');
+ const [selectedWedding, setSelectedWedding] = useState<string>(requestedWeddingId);
  const [loading, setLoading] = useState(false);
  const [result, setResult] = useState<GuestImportResult | null>(null);
  const [error, setError] = useState<string>('');
@@ -100,6 +103,18 @@ export default function AdminImportPage() {
  useEffect(() => {
  fetchWeddings();
  }, [fetchWeddings]);
+
+ useEffect(() => {
+ if (!weddings.length) return;
+ if (selectedWedding) return;
+
+ if (!requestedWeddingId) return;
+
+ const matchingWedding = weddings.find((wedding) => (wedding.id || wedding._id) === requestedWeddingId);
+ if (matchingWedding) {
+ setSelectedWedding(matchingWedding.id || matchingWedding._id || '');
+ }
+ }, [requestedWeddingId, selectedWedding, weddings]);
 
  useEffect(() => {
  if (selectedWedding) {
@@ -176,7 +191,6 @@ export default function AdminImportPage() {
  const data = await response.json();
  setResult(data);
  setFile(null);
- setSelectedWedding('');
 
  // Reset file input
  const fileInput = document.getElementById('csvFile') as HTMLInputElement;

@@ -31,7 +31,7 @@ from app.models.team_member import (
     TeamPermissions,
     ROLE_PRESETS,
 )
-from app.dependencies.auth_extended import invalidate_team_cache
+from app.dependencies.auth_extended import invalidate_team_cache, invalidate_team_cache_by_owner
 
 logger = logging.getLogger(__name__)
 
@@ -1166,6 +1166,209 @@ class TeamManagementService:
         _run_background(_log_removal())
 
         return {"success": True, "message": f"Team member {doc['email']} has been removed."}
+
+    # ─── Bulk Deactivation / Reactivation ─────────────────────────────────
+
+    async def bulk_deactivate_by_owner(self, owner_id: str, reason: str = "owner_subscription_cancelled") -> dict:
+        """
+        Bulk-deactivate all active team members belonging to an owner.
+        Used when owner's subscription is cancelled or account is suspended.
+        Also deactivates their user accounts to prevent login.
+        """
+        now = datetime.now(timezone.utc)
+
+        # Find all active team members for this owner
+        team_members = await self.team_collection.find({
+            "owner_id": owner_id,
+            "status": TeamMemberStatus.ACTIVE.value,
+        }).to_list(length=None)
+
+        if not team_members:
+            return {"deactivated_count": 0, "team_member_ids": []}
+
+        team_member_ids = [str(doc["_id"]) for doc in team_members]
+        user_ids = [doc["user_id"] for doc in team_members if doc.get("user_id")]
+
+        # Step 1: Update team_members collection with bulk deactivation
+        try:
+            result = await self.team_collection.update_many(
+                {
+                    "owner_id": owner_id,
+                    "status": TeamMemberStatus.ACTIVE.value,
+                },
+                {
+                    "$set": {
+                        "status": "suspended_owner_cancelled",
+                        "suspended_at": now,
+                        "suspension_reason": reason,
+                        "updated_at": now,
+                    }
+                },
+            )
+        except Exception as e:
+            logger.error("[TeamMgmt:bulk_deactivate] Failed to update team_members: %s", str(e))
+            raise HTTPException(
+                status_code=500,
+                detail="Failed to bulk deactivate team members. Please try again."
+            )
+
+        # Step 2: Deactivate user accounts (with rollback on failure)
+        if user_ids:
+            try:
+                await self.users_collection.update_many(
+                    {"_id": {"$in": [to_object_id(uid, "user_id") for uid in user_ids]}},
+                    {"$set": {"is_active": False, "updated_at": now}},
+                )
+            except Exception as e:
+                # Rollback step 1
+                logger.error("[TeamMgmt:bulk_deactivate] Failed to deactivate user accounts, rolling back: %s", str(e))
+                await self.team_collection.update_many(
+                    {
+                        "owner_id": owner_id,
+                        "status": "suspended_owner_cancelled",
+                    },
+                    {
+                        "$set": {
+                            "status": TeamMemberStatus.ACTIVE.value,
+                            "suspended_at": None,
+                            "suspension_reason": None,
+                            "updated_at": now,
+                        }
+                    },
+                )
+                raise HTTPException(
+                    status_code=500,
+                    detail="Failed to fully deactivate team members. Please try again."
+                )
+
+        # Invalidate cached permissions for all affected members
+        invalidate_team_cache_by_owner(owner_id)
+
+        logger.info(f"Bulk deactivated {len(team_member_ids)} team members for owner {owner_id}, reason: {reason}")
+
+        # Log activity asynchronously (non-blocking)
+        async def _log_bulk_deactivation():
+            try:
+                owner = await self.users_collection.find_one({"_id": to_object_id(owner_id, "owner_id")})
+                member_count = len(team_member_ids)
+                await activity_log_service.log_activity(
+                    action="bulk_team_deactivation",
+                    user_email=owner.get("email", "") if owner else "",
+                    details={
+                        "reason": reason,
+                        "member_count": member_count,
+                        "team_member_ids": team_member_ids,
+                    }
+                )
+            except Exception as log_err:
+                logger.warning("[TeamMgmt:bulk_deactivate] Activity log failed: %s", str(log_err))
+
+        _run_background(_log_bulk_deactivation())
+
+        return {
+            "deactivated_count": len(team_member_ids),
+            "team_member_ids": team_member_ids,
+        }
+
+    async def bulk_reactivate_by_owner(self, owner_id: str) -> dict:
+        """
+        Bulk-reactivate all suspended_owner_cancelled team members belonging to an owner.
+        Used when owner's subscription is restored or account is reactivated.
+        Also reactivates their user accounts to enable login.
+        """
+        now = datetime.now(timezone.utc)
+
+        # Find all suspended_owner_cancelled team members for this owner
+        team_members = await self.team_collection.find({
+            "owner_id": owner_id,
+            "status": "suspended_owner_cancelled",
+        }).to_list(length=None)
+
+        if not team_members:
+            return {"reactivated_count": 0, "team_member_ids": []}
+
+        team_member_ids = [str(doc["_id"]) for doc in team_members]
+        user_ids = [doc["user_id"] for doc in team_members if doc.get("user_id")]
+
+        # Step 1: Update team_members collection with bulk reactivation
+        try:
+            result = await self.team_collection.update_many(
+                {
+                    "owner_id": owner_id,
+                    "status": "suspended_owner_cancelled",
+                },
+                {
+                    "$set": {
+                        "status": TeamMemberStatus.ACTIVE.value,
+                        "suspended_at": None,
+                        "suspension_reason": None,
+                        "updated_at": now,
+                    }
+                },
+            )
+        except Exception as e:
+            logger.error("[TeamMgmt:bulk_reactivate] Failed to update team_members: %s", str(e))
+            raise HTTPException(
+                status_code=500,
+                detail="Failed to bulk reactivate team members. Please try again."
+            )
+
+        # Step 2: Reactivate user accounts (with rollback on failure)
+        if user_ids:
+            try:
+                await self.users_collection.update_many(
+                    {"_id": {"$in": [to_object_id(uid, "user_id") for uid in user_ids]}},
+                    {"$set": {"is_active": True, "updated_at": now}},
+                )
+            except Exception as e:
+                # Rollback step 1
+                logger.error("[TeamMgmt:bulk_reactivate] Failed to reactivate user accounts, rolling back: %s", str(e))
+                await self.team_collection.update_many(
+                    {
+                        "owner_id": owner_id,
+                        "status": TeamMemberStatus.ACTIVE.value,
+                    },
+                    {
+                        "$set": {
+                            "status": "suspended_owner_cancelled",
+                            "suspended_at": now,
+                            "suspension_reason": "owner_subscription_cancelled",
+                            "updated_at": now,
+                        }
+                    },
+                )
+                raise HTTPException(
+                    status_code=500,
+                    detail="Failed to fully reactivate team members. Please try again."
+                )
+
+        # Invalidate cached permissions for all affected members
+        invalidate_team_cache_by_owner(owner_id)
+
+        logger.info(f"Bulk reactivated {len(team_member_ids)} team members for owner {owner_id}")
+
+        # Log activity asynchronously (non-blocking)
+        async def _log_bulk_reactivation():
+            try:
+                owner = await self.users_collection.find_one({"_id": to_object_id(owner_id, "owner_id")})
+                member_count = len(team_member_ids)
+                await activity_log_service.log_activity(
+                    action="bulk_team_reactivation",
+                    user_email=owner.get("email", "") if owner else "",
+                    details={
+                        "member_count": member_count,
+                        "team_member_ids": team_member_ids,
+                    }
+                )
+            except Exception as log_err:
+                logger.warning("[TeamMgmt:bulk_reactivate] Activity log failed: %s", str(log_err))
+
+        _run_background(_log_bulk_reactivation())
+
+        return {
+            "reactivated_count": len(team_member_ids),
+            "team_member_ids": team_member_ids,
+        }
 
     # ─── Permission Resolution (used by auth middleware) ──────────────────
 

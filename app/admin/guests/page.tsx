@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
-import { useSearchParams } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { useAdmin } from '@/contexts/AdminContext';
 import { useSSE } from '@/hooks/useSSE';
 import { BUILT_IN_WEDDING_EVENT_OPTIONS, getWeddingEventLabel, getWeddingEventOptions } from '@/utils/weddingEvents';
@@ -74,16 +74,9 @@ interface PlusOne {
   email_opt_in?: boolean | null;
 }
 
-interface GuestImportResult {
-  imported: number;
-  tokens: string[];
-  warnings?: string[];
-}
-
 type SortField = 'name' | 'email' | 'phone' | 'role' | 'group_id' | 'rsvp_status' | 'plus_ones';
 type SortDirection = 'asc' | 'desc';
 type ViewMode = 'table' | 'cards';
-type GuestsTab = 'all' | 'import';
 type RsvpStatusFilter = 'all' | 'responded' | 'pending' | 'not_invited';
 type PlusOneStatusFilter = 'all' | 'allowed' | 'submitted' | 'none';
 type PhoneIssueFilter = 'all' | 'invalid_or_unreachable' | 'no_contact';
@@ -123,6 +116,7 @@ const WEDDING_PARTY_GROUP_IDS = ['maid_of_honor', 'bridesmaids', 'best_man', 'gr
 
 export default function AdminGuestsPage() {
   const { token } = useAdmin();
+  const router = useRouter();
   const apiBaseUrl = getApiBaseUrl();
   const searchParams = useSearchParams();
   const didHydrateFiltersFromUrl = useRef(false);
@@ -140,7 +134,6 @@ export default function AdminGuestsPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string>('');
   const [successMessage, setSuccessMessage] = useState<string>('');
-  const [activeTab, setActiveTab] = useState<GuestsTab>('all');
   const [viewMode, setViewMode] = useState<ViewMode>('table');
   const [expandedGuest, setExpandedGuest] = useState<string | null>(null);
 
@@ -188,7 +181,7 @@ export default function AdminGuestsPage() {
   // Modal states
   const [editingGuest, setEditingGuest] = useState<Guest | null>(null);
   const [addingGuest, setAddingGuest] = useState(false);
-  const [bulkActionModal, setBulkActionModal] = useState<'group' | 'form' | null>(null);
+  const [bulkActionModal, setBulkActionModal] = useState<'group' | null>(null);
 
   // Edit form state (includes RSVP)
   const [editForm, setEditForm] = useState({
@@ -215,21 +208,8 @@ export default function AdminGuestsPage() {
     number_of_plus_ones_allowed: 0,
   });
 
-  // Import state
-  const [importFile, setImportFile] = useState<File | null>(null);
-  const [importLoading, setImportLoading] = useState(false);
-  const [importResult, setImportResult] = useState<GuestImportResult | null>(null);
-  const [importError, setImportError] = useState<string>('');
-
   // Bulk action state
   const [bulkGroupId, setBulkGroupId] = useState('');
-  const [bulkFormMessage, setBulkFormMessage] = useState('');
-
-  // Reminder modal state
-  const [reminderModal, setReminderModal] = useState<{ guest: Guest; weddingSlug: string } | null>(null);
-  const [reminderMessage, setReminderMessage] = useState('');
-  const [sendingReminder, setSendingReminder] = useState(false);
-  const [reminderChannel, setReminderChannel] = useState<'sms' | 'email' | 'both'>('both');
 
   // QR preview modal state
   const [qrModalGuest, setQrModalGuest] = useState<Guest | null>(null);
@@ -845,127 +825,66 @@ export default function AdminGuestsPage() {
     }
   };
 
-  const openReminderModal = (guestId: string) => {
-    const guest = guests.find(g => (g.id || g._id) === guestId);
+  const buildImportRoute = useCallback(() => {
+    if (!selectedWedding) {
+      return '/admin/import';
+    }
+
+    const params = new URLSearchParams({ wedding_id: selectedWedding });
+    return `/admin/import?${params.toString()}`;
+  }, [selectedWedding]);
+
+  const buildCommunicationsRoute = useCallback(
+    (guestTokens: string[], template?: 'rsvp_link') => {
+      const params = new URLSearchParams();
+
+      if (selectedWedding) {
+        params.set('wedding_id', selectedWedding);
+      }
+
+      if (guestTokens.length > 0) {
+        params.set(
+          'recipients',
+          guestTokens.map((guestToken) => `guest:${guestToken}`).join(',')
+        );
+      }
+
+      params.set('channel', 'both');
+
+      if (template) {
+        params.set('template', template);
+      }
+
+      const queryString = params.toString();
+      return queryString
+        ? `/admin/communications/individual?${queryString}`
+        : '/admin/communications/individual';
+    },
+    [selectedWedding]
+  );
+
+  const openGuestMessaging = useCallback(
+    (guestTokens: string[], template?: 'rsvp_link') => {
+      if (guestTokens.length === 0) {
+        setError('Select at least one guest to continue to Communications.');
+        return;
+      }
+
+      router.push(buildCommunicationsRoute(guestTokens, template));
+    },
+    [buildCommunicationsRoute, router]
+  );
+
+  const handleOpenGuestReminder = (guestId: string) => {
+    const guest = guests.find((candidate) => (candidate.id || candidate._id) === guestId);
     if (!guest) return;
 
-    // Get the wedding slug for RSVP link
-    const wedding = weddings.find(w => (w.id || w._id) === selectedWedding);
-    const weddingSlug = wedding?.slug || '';
-
-    // Set default message with personalization
-    const defaultMessage = `Hi ${guest.name}, you're invited to our wedding! Please RSVP at: ${window.location.origin}/${weddingSlug}/invite/${guest.token}`;
-
-    setReminderMessage(defaultMessage);
-    // Auto-select best channel based on guest contact info
-    if (guest.phone && guest.email) setReminderChannel('both');
-    else if (guest.phone) setReminderChannel('sms');
-    else setReminderChannel('email');
-    setReminderModal({ guest, weddingSlug });
-  };
-
-  const handleSendReminder = async () => {
-    if (!reminderModal || !reminderMessage.trim()) return;
-
-    const guest = reminderModal.guest;
-    const hasPhone = !!guest.phone;
-    const hasEmail = !!guest.email;
-    const sendSms = hasPhone && (reminderChannel === 'sms' || reminderChannel === 'both');
-    const sendEmail = hasEmail && (reminderChannel === 'email' || reminderChannel === 'both');
-
-    if (!sendSms && !sendEmail) {
-      setError('Cannot send — guest is missing the selected contact method.');
+    if (!guest.phone && !guest.email) {
+      setError('This guest needs a phone number or email before you can message them from Communications.');
       return;
     }
 
-    setSendingReminder(true);
-    try {
-      const baseUrl = apiBaseUrl;
-      let smsSent = 0;
-      let emailSent = 0;
-      let smsError = '';
-      let emailError = '';
-
-      // Send SMS if selected and guest has phone
-      if (sendSms) {
-        try {
-          const response = await fetch(`${baseUrl}/admin/reminders/send-to-guests`, {
-            method: 'POST',
-            headers: {
-              'Authorization': `Bearer ${token}`,
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-              guest_tokens: [guest.token],
-              message: reminderMessage,
-            }),
-          });
-
-          if (response.ok) {
-            const result = await response.json();
-            smsSent = result.sent || 0;
-            if (smsSent === 0 && result.failure_reasons?.length > 0) {
-              smsError = result.failure_reasons.join('. ');
-            }
-          } else {
-            const errorData = await response.json().catch(() => ({}));
-            smsError = errorData.detail || 'SMS send failed';
-          }
-        } catch {
-          smsError = 'SMS send failed';
-        }
-      }
-
-      // Send email if selected and guest has email
-      if (sendEmail) {
-        try {
-          const wedding = weddings.find(w => (w.id || w._id) === selectedWedding);
-          const weddingSlug = wedding?.slug || reminderModal.weddingSlug;
-
-          const response = await fetch(`${baseUrl}/admin/email/send-reminder-individual`, {
-            method: 'POST',
-            headers: {
-              'Authorization': `Bearer ${token}`,
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-              wedding_slug: weddingSlug,
-              guest_email: guest.email,
-              guest_name: guest.name,
-              guest_token: guest.token,
-              custom_message: reminderMessage,
-            }),
-          });
-
-          if (response.ok) {
-            const result = await response.json();
-            emailSent = result.sent || (result.success ? 1 : 0);
-          } else {
-            const errorData = await response.json().catch(() => ({}));
-            emailError = errorData.detail || 'Email send failed';
-          }
-        } catch {
-          emailError = 'Email send failed';
-        }
-      }
-
-      const totalSent = smsSent + emailSent;
-      if (totalSent > 0) {
-        const channels: string[] = [];
-        if (smsSent > 0) channels.push('SMS');
-        if (emailSent > 0) channels.push('email');
-        showSuccess(`Reminder sent via ${channels.join(' and ')}!`);
-        setReminderModal(null);
-        setReminderMessage('');
-      } else {
-        const errors = [smsError, emailError].filter(Boolean);
-        setError(errors.length > 0 ? errors.join('. ') : 'Failed to send reminder.');
-      }
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to send reminder');
-    } finally {
-      setSendingReminder(false);
-    }
+    openGuestMessaging([guest.token], 'rsvp_link');
   };
 
   // ==================== EXPORT FUNCTIONS ====================
@@ -1168,108 +1087,18 @@ export default function AdminGuestsPage() {
     }
   };
 
-  const handleBulkSendForm = async () => {
-    if (!bulkFormMessage.trim()) {
-      setError('Please enter a message');
+  const handleBulkSendMessage = () => {
+    const selectedGuestTokens = guests
+      .filter((guest) => selectedGuests.has(guest.id || guest._id || ''))
+      .filter((guest) => guest.phone || guest.email)
+      .map((guest) => guest.token);
+
+    if (selectedGuestTokens.length === 0) {
+      setError('Select at least one guest with a phone number or email address to message them from Communications.');
       return;
     }
 
-    try {
-      const selectedGuestsList = guests.filter(g => selectedGuests.has(g.id || g._id || ''));
-      const tokens = selectedGuestsList.map(g => g.token);
-
-      const baseUrl = apiBaseUrl;
-      const response = await fetch(`${baseUrl}/admin/reminders/send-to-guests`, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          guest_tokens: tokens,
-          message: bulkFormMessage,
-        }),
-      });
-
-      if (response.ok) {
-        const result = await response.json();
-        setBulkActionModal(null);
-        setBulkFormMessage('');
-        setSelectedGuests(new Set());
-        setSelectAll(false);
-        if (result.sent > 0) {
-          showSuccess(`Message sent to ${result.sent} guests!${result.failed > 0 ? ` (${result.failed} failed)` : ''}`);
-        } else {
-          setError('No messages sent. Guests may have opted out or have no phone numbers.');
-        }
-      } else {
-        const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.detail || 'Failed to send message');
-      }
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to send message to some guests');
-    }
-  };
-
-  // ==================== IMPORT HANDLERS ====================
-
-  const handleImportFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const selectedFile = e.target.files?.[0];
-    if (selectedFile && selectedFile.type === 'text/csv') {
-      setImportFile(selectedFile);
-      setImportError('');
-    } else {
-      setImportError('Please select a valid CSV file');
-      setImportFile(null);
-    }
-  };
-
-  const handleImport = async (e: React.FormEvent) => {
-    e.preventDefault();
-
-    if (!importFile || !selectedWedding) {
-      setImportError('Please select both a CSV file and a wedding');
-      return;
-    }
-
-    setImportLoading(true);
-    setImportError('');
-    setImportResult(null);
-
-    try {
-      const formData = new FormData();
-      formData.append('file', importFile);
-
-      const baseUrl = apiBaseUrl;
-      const response = await fetch(
-        `${baseUrl}/admin/guests/import?wedding_id=${selectedWedding}`,
-        {
-          method: 'POST',
-          headers: { 'Authorization': `Bearer ${token}` },
-          body: formData,
-        }
-      );
-
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.detail || 'Import failed');
-      }
-
-      const data = await response.json();
-      setImportResult(data);
-      setImportFile(null);
-
-      const fileInput = document.getElementById('csvFile') as HTMLInputElement;
-      if (fileInput) fileInput.value = '';
-
-      fetchGuestData();
-      setTimeout(() => setActiveTab('all'), 1500);
-
-    } catch (err) {
-      setImportError(err instanceof Error ? err.message : 'Import failed');
-    } finally {
-      setImportLoading(false);
-    }
+    openGuestMessaging(selectedGuestTokens);
   };
 
   // ==================== RSVP EVENT TOGGLE ====================
@@ -1505,14 +1334,10 @@ export default function AdminGuestsPage() {
                       </button>
                     )}
                     <button
-                      onClick={() => setActiveTab(activeTab === 'import' ? 'all' : 'import')}
-                      className={`px-4 py-2 rounded-lg font-medium transition-colors ${
-                        activeTab === 'import'
-                          ? 'bg-wedding-sage text-white'
-                          : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
-                      }`}
+                      onClick={() => router.push(buildImportRoute())}
+                      className="px-4 py-2 rounded-lg font-medium transition-colors bg-gray-200 text-gray-700 hover:bg-gray-300"
                     >
-                      {activeTab === 'import' ? 'Back to Guests' : 'Import'}
+                      Import CSV
                     </button>
                     <button
                       onClick={() => setAddingGuest(true)}
@@ -1691,10 +1516,10 @@ export default function AdminGuestsPage() {
                       Assign Group
                     </button>
                     <button
-                      onClick={() => setBulkActionModal('form')}
+                      onClick={handleBulkSendMessage}
                       className="px-3 py-1 bg-purple-600 text-white text-sm rounded-lg hover:bg-purple-700"
                     >
-                      Send Message
+                      Message via Communications
                     </button>
                     <button
                       onClick={handleExportSelectedQRZip}
@@ -1721,95 +1546,8 @@ export default function AdminGuestsPage() {
               </div>
             </div>
 
-            {/* Import Form */}
-            {activeTab === 'import' && (
-              <div className="bg-white dark:bg-slate-800/95 rounded-xl shadow-lg border border-slate-200 dark:border-slate-700 overflow-hidden mb-8">
-                <div className="px-6 py-4 border-b border-slate-200 dark:border-slate-700">
-                  <h2 className="text-xl font-bold text-slate-900 dark:text-white">Import Guests from CSV</h2>
-                  <p className="text-slate-600 dark:text-slate-400 mt-1">Upload a CSV file to bulk import guests</p>
-                </div>
-                <div className="p-6 space-y-6">
-                  <div className="p-4 bg-blue-50 rounded-lg border border-blue-200">
-                    <h3 className="text-lg font-semibold text-blue-900 mb-2">CSV Format Requirements</h3>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm text-blue-800">
-                      <div>
-                        <strong>Required columns:</strong>
-                        <ul className="ml-4 mt-1 list-disc">
-                          <li>name (min. 2 characters)</li>
-                          <li>phone OR email (at least one)</li>
-                        </ul>
-                      </div>
-                      <div>
-                        <strong>Optional columns:</strong>
-                        <ul className="ml-4 mt-1 list-disc">
-                          <li>role (default: &quot;guest&quot;)</li>
-                          <li>plus_one_allowed (true/false)</li>
-                          <li>number_of_plus_ones_allowed (number)</li>
-                          <li>group_id (for grouping)</li>
-                        </ul>
-                      </div>
-                    </div>
-                  </div>
-
-                  <form onSubmit={handleImport} className="space-y-4">
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                        CSV File
-                      </label>
-                      <input
-                        id="csvFile"
-                        type="file"
-                        accept=".csv"
-                        onChange={handleImportFileChange}
-                        className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-wedding-sage focus:border-transparent file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-wedding-sage file:text-white hover:file:bg-wedding-gold"
-                        required
-                      />
-                      {importFile && (
-                        <p className="mt-2 text-sm text-green-600 dark:text-green-300">Selected: {importFile.name}</p>
-                      )}
-                    </div>
-
-                    {importError && (
-                      <div className="p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg">
-                        <p className="text-red-700 dark:text-red-300">{importError}</p>
-                      </div>
-                    )}
-
-                    {importResult && (
-                      <div className="p-4 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg">
-                        <p className="text-green-700 dark:text-green-300 font-semibold">
-                          Successfully imported {importResult.imported} guests!
-                        </p>
-                        {importResult.warnings && importResult.warnings.length > 0 && (
-                          <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 p-3 dark:border-amber-700 dark:bg-amber-900/20">
-                            <p className="text-sm font-medium text-amber-800 dark:text-amber-200">
-                              {importResult.warnings.length} row{importResult.warnings.length === 1 ? '' : 's'} skipped during import.
-                            </p>
-                            <ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-amber-700 dark:text-amber-300">
-                              {importResult.warnings.map((warning, index) => (
-                                <li key={`${warning}-${index}`}>{warning}</li>
-                              ))}
-                            </ul>
-                          </div>
-                        )}
-                      </div>
-                    )}
-
-                    <button
-                      type="submit"
-                      disabled={importLoading || !importFile}
-                      className="w-full py-3 rounded-lg bg-gradient-to-r from-wedding-sage to-wedding-gold text-white font-semibold hover:from-wedding-rose hover:to-wedding-gold focus:outline-none focus:ring-2 focus:ring-wedding-sage disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200"
-                    >
-                      {importLoading ? 'Importing...' : 'Import Guests'}
-                    </button>
-                  </form>
-                </div>
-              </div>
-            )}
-
             {/* Guest List */}
-            {activeTab !== 'import' && (
-              <div className="bg-white dark:bg-slate-800 rounded-xl shadow-lg overflow-hidden">
+            <div className="bg-white dark:bg-slate-800 rounded-xl shadow-lg overflow-hidden">
                 {loading ? (
                   <div className="flex items-center justify-center py-12">
                     <div className="animate-spin h-8 w-8 border-4 border-wedding-rose border-t-transparent rounded-full"></div>
@@ -1970,7 +1708,7 @@ export default function AdminGuestsPage() {
                                     </button>
                                     {!rsvp && (
                                       <button
-                                        onClick={() => openReminderModal(guestId)}
+                                        onClick={() => handleOpenGuestReminder(guestId)}
                                         className="px-2 py-1 text-xs bg-wedding-sage text-white rounded hover:bg-opacity-90"
                                       >
                                         Remind
@@ -2162,7 +1900,7 @@ export default function AdminGuestsPage() {
                                 </button>
                                 {!rsvp && (
                                   <button
-                                    onClick={() => openReminderModal(guestId)}
+                                    onClick={() => handleOpenGuestReminder(guestId)}
                                     className="px-3 py-1 text-sm bg-wedding-sage text-white rounded-lg hover:bg-opacity-90"
                                   >
                                     Remind
@@ -2308,7 +2046,6 @@ export default function AdminGuestsPage() {
                   </div>
                 )}
               </div>
-            )}
           </>
           );
         })()}
@@ -2626,193 +2363,6 @@ export default function AdminGuestsPage() {
                 <button
                   onClick={() => { setBulkActionModal(null); setBulkGroupId(''); }}
                   className="flex-1 bg-gray-200 text-gray-700 px-4 py-2 rounded-lg hover:bg-gray-300 transition-colors"
-                >
-                  Cancel
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* Bulk Send Message Modal */}
-        {bulkActionModal === 'form' && (
-          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-            <div className="bg-white dark:bg-slate-800 rounded-xl shadow-2xl max-w-md w-full p-6">
-              <h2 className="text-2xl font-bold text-wedding-navy dark:text-white mb-4">Send Message to {selectedGuests.size} Guests</h2>
-
-              <div className="space-y-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Message</label>
-                  <textarea
-                    value={bulkFormMessage}
-                    onChange={(e) => setBulkFormMessage(e.target.value)}
-                    rows={4}
-                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-wedding-rose focus:border-transparent"
-                    placeholder="Enter your message..."
-                  />
-                </div>
-                <p className="text-xs text-gray-500 dark:text-gray-400">
-                  This will send an SMS/email reminder to all selected guests.
-                </p>
-              </div>
-
-              <div className="flex gap-3 mt-6">
-                <button
-                  onClick={handleBulkSendForm}
-                  disabled={!bulkFormMessage.trim()}
-                  className="flex-1 bg-purple-600 text-white px-4 py-2 rounded-lg hover:bg-purple-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  Send Message
-                </button>
-                <button
-                  onClick={() => { setBulkActionModal(null); setBulkFormMessage(''); }}
-                  className="flex-1 bg-gray-200 text-gray-700 px-4 py-2 rounded-lg hover:bg-gray-300 transition-colors"
-                >
-                  Cancel
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* Send Reminder Modal */}
-        {reminderModal && (
-          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-            <div className="bg-white dark:bg-slate-800 rounded-xl shadow-2xl max-w-lg w-full p-6">
-              <h2 className="text-2xl font-bold text-wedding-navy dark:text-white mb-4">
-                Send Reminder to {reminderModal.guest.name}
-              </h2>
-
-              <div className="space-y-4">
-                {/* Guest Info */}
-                <div className="bg-gray-50 dark:bg-slate-700 rounded-lg p-3">
-                  <p className="text-sm text-gray-600 dark:text-gray-300">
-                    <span className="font-medium">Phone:</span> {reminderModal.guest.phone || 'No phone number'}
-                  </p>
-                  {reminderModal.guest.email && (
-                    <p className="text-sm text-gray-600 dark:text-gray-300">
-                      <span className="font-medium">Email:</span> {reminderModal.guest.email}
-                    </p>
-                  )}
-                </div>
-
-                {/* Message Input */}
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                    Message
-                  </label>
-                  <textarea
-                    value={reminderMessage}
-                    onChange={(e) => setReminderMessage(e.target.value)}
-                    rows={5}
-                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-wedding-sage focus:border-transparent"
-                    placeholder="Enter your reminder message..."
-                  />
-                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                    {reminderMessage.length} characters
-                  </p>
-                </div>
-
-                {/* Quick Templates */}
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                    Quick Templates
-                  </label>
-                  <div className="flex flex-wrap gap-2">
-                    <button
-                      type="button"
-                      onClick={() => setReminderMessage(`Hi ${reminderModal.guest.name}, please RSVP for our wedding! We'd love to have you celebrate with us.`)}
-                      className="px-3 py-1 text-xs bg-gray-100 dark:bg-slate-600 text-gray-700 dark:text-gray-200 rounded-full hover:bg-gray-200 dark:hover:bg-slate-500"
-                    >
-                      RSVP Reminder
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setReminderMessage(`Hi ${reminderModal.guest.name}, just a friendly reminder about our upcoming wedding. We can't wait to see you there!`)}
-                      className="px-3 py-1 text-xs bg-gray-100 dark:bg-slate-600 text-gray-700 dark:text-gray-200 rounded-full hover:bg-gray-200 dark:hover:bg-slate-500"
-                    >
-                      Event Reminder
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setReminderMessage(`Hi ${reminderModal.guest.name}, you're invited to our wedding! RSVP here: ${window.location.origin}/${reminderModal.weddingSlug}/invite/${reminderModal.guest.token}`);
-                      }}
-                      className="px-3 py-1 text-xs bg-gray-100 dark:bg-slate-600 text-gray-700 dark:text-gray-200 rounded-full hover:bg-gray-200 dark:hover:bg-slate-500"
-                    >
-                      With RSVP Link
-                    </button>
-                  </div>
-                </div>
-
-                {/* Channel Picker */}
-                {!reminderModal.guest.phone && !reminderModal.guest.email ? (
-                  <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-3">
-                    <p className="text-sm text-red-700 dark:text-red-300">
-                      This guest has no phone number or email. Cannot send reminder.
-                    </p>
-                  </div>
-                ) : (
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                      Send via
-                    </label>
-                    <div className="flex gap-2">
-                      {reminderModal.guest.phone && (
-                        <button
-                          type="button"
-                          onClick={() => setReminderChannel('sms')}
-                          className={`flex-1 px-3 py-2 text-sm rounded-lg border transition-colors ${
-                            reminderChannel === 'sms'
-                              ? 'bg-wedding-sage text-white border-wedding-sage'
-                              : 'bg-white dark:bg-slate-700 text-gray-700 dark:text-gray-200 border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-slate-600'
-                          }`}
-                        >
-                          SMS
-                        </button>
-                      )}
-                      {reminderModal.guest.email && (
-                        <button
-                          type="button"
-                          onClick={() => setReminderChannel('email')}
-                          className={`flex-1 px-3 py-2 text-sm rounded-lg border transition-colors ${
-                            reminderChannel === 'email'
-                              ? 'bg-wedding-sage text-white border-wedding-sage'
-                              : 'bg-white dark:bg-slate-700 text-gray-700 dark:text-gray-200 border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-slate-600'
-                          }`}
-                        >
-                          Email
-                        </button>
-                      )}
-                      {reminderModal.guest.phone && reminderModal.guest.email && (
-                        <button
-                          type="button"
-                          onClick={() => setReminderChannel('both')}
-                          className={`flex-1 px-3 py-2 text-sm rounded-lg border transition-colors ${
-                            reminderChannel === 'both'
-                              ? 'bg-wedding-sage text-white border-wedding-sage'
-                              : 'bg-white dark:bg-slate-700 text-gray-700 dark:text-gray-200 border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-slate-600'
-                          }`}
-                        >
-                          Both
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                )}
-              </div>
-
-              <div className="flex gap-3 mt-6">
-                <button
-                  onClick={handleSendReminder}
-                  disabled={sendingReminder || !reminderMessage.trim() || (!reminderModal.guest.phone && !reminderModal.guest.email)}
-                  className="flex-1 bg-wedding-sage text-white px-4 py-2 rounded-lg hover:bg-opacity-90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  {sendingReminder ? 'Sending...' : `Send via ${reminderChannel === 'both' ? 'SMS & Email' : reminderChannel === 'sms' ? 'SMS' : 'Email'}`}
-                </button>
-                <button
-                  onClick={() => { setReminderModal(null); setReminderMessage(''); }}
-                  className="flex-1 bg-gray-200 dark:bg-slate-600 text-gray-700 dark:text-gray-200 px-4 py-2 rounded-lg hover:bg-gray-300 dark:hover:bg-slate-500 transition-colors"
                 >
                   Cancel
                 </button>

@@ -734,7 +734,7 @@ async def _notify_planner_delivery_failure(
                 "message_sid": message_sid,
             },
             priority="high" if category == "account_level" else "medium",
-            action_url="/admin/reminders?tab=history",
+            action_url="/admin/communications/history",
         )
 
         await mongo.db["planner_notifications"].insert_one(notification)

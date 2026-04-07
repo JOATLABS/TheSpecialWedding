@@ -1,10 +1,11 @@
 import type { Metadata } from 'next';
 import SaasNav from '../components/saas/SaasNav';
+import { COMPARE_AUDIT_STAMP } from './data';
 
 export const metadata: Metadata = {
   title: 'Compare The Special Wedding | HoneyBook and Aisle Planner Alternatives',
   description:
-    'Side-by-side comparisons for wedding planners evaluating The Special Wedding against HoneyBook and Aisle Planner. Updated against official competitor sources reviewed on April 6, 2026.',
+    `Side-by-side comparisons for wedding planners evaluating The Special Wedding against HoneyBook and Aisle Planner. Updated against official competitor sources reviewed on ${COMPARE_AUDIT_STAMP}.`,
   keywords: [
     'HoneyBook alternative',
     'Aisle Planner alternative',

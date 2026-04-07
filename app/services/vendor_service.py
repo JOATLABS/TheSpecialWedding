@@ -368,12 +368,10 @@ class VendorService:
                     if new_val is not None and new_val != "":
                         update_fields[field] = new_val
 
-                # Update portfolio_urls only if we have a website and it's not already there
-                new_website = data.get("website")
-                if new_website:
-                    existing_urls = existing.get("portfolio_urls") or []
-                    if new_website not in existing_urls:
-                        update_fields["portfolio_urls"] = [new_website]
+                # Set portfolio_urls to the logo image URL (replace any old website URLs)
+                new_logo = data.get("logo_url")
+                if new_logo:
+                    update_fields["portfolio_urls"] = [new_logo]
 
                 await self.vendor_profiles.update_one(
                     {"_id": existing["_id"]},
@@ -400,7 +398,7 @@ class VendorService:
                 "service_subcategories": data.get("service_subcategories", []),
                 "service_description": data.get("service_description"),
                 "logo_url": data.get("logo_url"),
-                "portfolio_urls": [data["website"]] if data.get("website") else [],
+                "portfolio_urls": [data["logo_url"]] if data.get("logo_url") else [],
                 "typical_price_min": data.get("typical_price_min"),
                 "typical_price_max": data.get("typical_price_max"),
                 "currency": data.get("currency", "USD"),

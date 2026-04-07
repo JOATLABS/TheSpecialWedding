@@ -1,12 +1,12 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { ArrowRight, FileText, Sparkles } from 'lucide-react';
-import { comparePageData, COMPARE_AUDIT_QUALIFIER } from './data';
+import { comparePageData, COMPARE_AUDIT_QUALIFIER, COMPARE_AUDIT_STAMP } from './data';
 
 export const metadata: Metadata = {
   title: 'Compare The Special Wedding',
   description:
-    'Start here for comparison pages that position The Special Wedding against HoneyBook and Aisle Planner using official competitor sources reviewed on April 6, 2026.',
+    `Start here for comparison pages that position The Special Wedding against HoneyBook and Aisle Planner using official competitor sources reviewed on ${COMPARE_AUDIT_STAMP}.`,
   alternates: {
     canonical: '/compare',
   },
@@ -48,7 +48,7 @@ export default function CompareIndexPage() {
           Compare The Special Wedding against the tools planners are already searching for.
         </h1>
         <p className="mt-5 max-w-3xl text-lg leading-relaxed text-slate-300">
-          These pages are written from official competitor pricing and help-doc sources reviewed on April 6, 2026, so the comparison story stays explicit about what is confirmed, adjacent, or still missing.
+          These pages are written from official competitor pricing and help-doc sources reviewed on {COMPARE_AUDIT_STAMP}, so the comparison story stays explicit about what is confirmed, adjacent, or still missing.
         </p>
       </section>
 

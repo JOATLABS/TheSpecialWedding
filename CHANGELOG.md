@@ -5,6 +5,22 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.28.5] - 2026-04-07
+
+### Added
+
+- **Hidden communications workspace route tree for planner messaging** (`/app/admin/communications/layout.tsx`, `/app/admin/communications/page.tsx`, `/app/admin/communications/inbox/page.tsx`, `/app/admin/communications/invites/page.tsx`, `/app/admin/communications/reminders/page.tsx`, `/app/admin/communications/individual/page.tsx`, `/app/admin/communications/history/page.tsx`, `/app/admin/communications/components/CommunicationsTabs.tsx`) — Added the new route-backed `/admin/communications/*` workspace behind the scenes without changing planner navigation yet. This introduces the final communications URL structure early so the next nav-cutover slice can switch destinations without re-implementing inbox or reminders behavior a second time.
+
+### Changed
+
+- **Inbox/reminders ownership extracted into shared communications views** (`/app/admin/communications/components/CommunicationsInboxView.tsx`, `/app/admin/communications/components/CommunicationsRemindersView.tsx`, `/app/admin/inbox/page.tsx`, `/app/admin/reminders/page.tsx`) — Moved the existing planner inbox and reminders page implementations into shared communications view components, then turned the legacy `/admin/inbox` and `/admin/reminders` pages into thin wrappers over those shared views. The legacy reminders route now also respects the existing `?tab=` deep-link shape instead of ignoring it, while the new communications child routes mount the same behavior with route-forced tabs instead of forking the page logic.
+- **Planner navigation cut over to Communications** (`/app/admin/components/Sidebar.tsx`, `/app/admin/components/AdminHeader.tsx`, `/app/admin/planner/page.tsx`, `/app/admin/inbox/page.tsx`, `/app/admin/reminders/page.tsx`) — Replaced the standalone planner `Inbox` and `Reminders` destinations with a single `Communications` entry, pointed the planner dashboard quick action at the new `/admin/communications/reminders` route, and converted the legacy `/admin/inbox` and `/admin/reminders` pages into redirect shims so existing bookmarks and stale browser tabs still land on the canonical communications workspace.
+
+### Fixed
+
+- **Communication permission and wedding-access gaps on invite/reminder endpoints** (`/app/api/email_reminders.py`, `/app/api/reminder_utilities.py`, `/app/api/reminder_twilio.py`) — Added the missing `send_reminders` permission enforcement to individual email reminders, added `send_rsvp` permission enforcement plus wedding-access validation to personalized RSVP-link sending, and aligned the Twilio invite path with invite permissions instead of reminder permissions. This keeps the new communications workspace from inheriting the old silent permission drift between invite and reminder actions.
+- **Planner notification deep links now resolve to communications history** (`/app/services/planner_notification_service.py`, `/app/api/reminder_twilio.py`, `/app/api/twilio_webhooks.py`) — Updated delivery-failure and bulk-send notification action URLs to the new `/admin/communications/history` route so the nav cutover does not leave platform-generated planner links pointing at retired standalone reminder pages.
+
 ## [2.28.4] - 2026-04-06
 
 ### Added
@@ -3842,6 +3858,7 @@ Engineering alignment review across frontend, backend, database models, and endp
 - **Admin login double-attempt regression** (`/app/contexts/AdminContext.tsx`) — Removed the March 26, 2026 hard-refresh login handoff that was discarding the in-memory token before the destination admin route could hydrate, and now commits the authenticated token/profile atomically before using client-side navigation so successful admin sign-ins do not bounce back to `/admin/login` on the first attempt.
 - **SaaS ad-platform migration completion** (`/app/admin/saas/page.tsx`) — Restored the missing ad-platform settings that were left behind during the move from `/admin/ads`, including fraud detection, vendor signup controls, data export, and pipeline status, and corrected the SaaS tab to use the real backend config keys instead of partial placeholder names.
 - **Ad platform config source-of-truth cleanup** (`/app/admin/ads/page.tsx`, `/app/admin/saas/page.tsx`) — Removed the stale duplicate "Platform Config" tab from the root-admin ads page and added a direct deep link into the SaaS Management ad-platform tab so configuration now lives in one place instead of two diverging surfaces.
+- **Planner communications ownership cleanup** (`/app/admin/guests/page.tsx`, `/app/admin/import/page.tsx`, `/app/admin/communications/components/CommunicationsRemindersView.tsx`, `/app/admin/communications/components/CommunicationsTabs.tsx`) — Removed the duplicate guest-page import/reminder modals, routed guest reminder and bulk-message actions into the canonical Communications workspace, hydrated the import page from the selected wedding context, and upgraded individual communications to handle guest email-only recipients so the move does not regress planner messaging capability.
 - Separated admin token refresh rate limiting from login throttling so `/admin/token/refresh` no longer shares the 5-per-minute login bucket or throws a middleware exception group instead of a clean `429` response.
 - Deduplicated client-side admin auth bootstrap refresh calls so concurrent mounts reuse one in-flight refresh request instead of stampeding the refresh endpoint.
 ### Security
