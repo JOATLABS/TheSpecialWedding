@@ -512,112 +512,118 @@ class PackageService:
 
     async def pause_planner_payment_links(self, planner_id: str, planner_email: str) -> Dict[str, Any]:
         """
-        Pause all active payment links for a planner when their subscription is cancelled.
+        Pause all active payment links AND scheduled payments for a planner
+        when their subscription is cancelled.
 
-        Finds all active contracts/packages for this planner that have pending payment schedule items,
-        deactivates their Stripe payment links, and updates local records with pause metadata.
+        Targets two separate payment systems:
+        1. `payment_links` collection — standalone Stripe Payment Links created via
+           vendor_service (field: `stripe_payment_link_id`). Deactivated via Stripe API.
+        2. `scheduled_payments` collection — autopilot contract payments (field:
+           `stripe_payment_intent_id`). Marked as paused locally (no Stripe link to deactivate).
 
         Args:
             planner_id: The planner's user ID
             planner_email: The planner's email address
 
         Returns:
-            Dict with keys:
-                - payment_links_deactivated: Number of payment links successfully deactivated
-                - contracts_paused: Number of contracts affected
-                - errors: List of error details for failed operations
+            Dict with payment_links_deactivated, scheduled_payments_paused, contracts_paused, errors
         """
+        from app.core.database import mongo
+
         try:
-            deactivated_count = 0
+            now = datetime.now(timezone.utc)
+            links_deactivated = 0
+            scheduled_paused = 0
             contracts_paused = set()
             errors = []
 
-            # Find all active contracts for this planner
-            active_contracts = await self.contracts.find(
+            # ── Part 1: Deactivate Stripe Payment Links (payment_links collection) ──
+            # These are standalone links created by the planner via vendor_service.
+            # Model: PaymentLink (vendor.py) — has `stripe_payment_link_id`, `created_by`.
+            payment_links_coll = mongo.db["payment_links"]
+            active_links = await payment_links_coll.find(
+                {
+                    "created_by": planner_email,
+                    "status": {"$in": ["draft", "sent", "viewed"]},
+                    "stripe_payment_link_id": {"$exists": True, "$ne": None}
+                }
+            ).to_list(length=10000)
+
+            for link in active_links:
+                stripe_pl_id = link.get("stripe_payment_link_id")
+                try:
+                    # Retrieve current state to avoid modifying already-inactive links
+                    # (Stripe best practice: check state before mutating)
+                    try:
+                        pl_obj = stripe.PaymentLink.retrieve(stripe_pl_id)
+                        if not pl_obj.get("active", True) if isinstance(pl_obj, dict) else not getattr(pl_obj, "active", True):
+                            logger.info(f"PaymentLink {stripe_pl_id} already inactive, skipping")
+                            links_deactivated += 1
+                            continue
+                    except stripe.error.StripeError as retrieve_err:
+                        logger.warning(f"Could not retrieve PaymentLink {stripe_pl_id}, attempting modify anyway: {retrieve_err}")
+
+                    stripe.PaymentLink.modify(stripe_pl_id, active=False)
+                    links_deactivated += 1
+                    logger.info(f"Deactivated Stripe PaymentLink {stripe_pl_id}")
+                except stripe.error.InvalidRequestError as e:
+                    # Link may already be inactive or deleted — log and continue
+                    logger.warning(f"Stripe InvalidRequestError deactivating PaymentLink {stripe_pl_id}: {e}")
+                    errors.append({"payment_link_id": stripe_pl_id, "error": str(e), "recoverable": True})
+                except stripe.error.StripeError as e:
+                    error_msg = f"Stripe API error deactivating PaymentLink {stripe_pl_id}: {str(e)}"
+                    logger.warning(error_msg)
+                    errors.append({"payment_link_id": stripe_pl_id, "error": str(e), "recoverable": False})
+                except Exception as e:
+                    error_msg = f"Unexpected error deactivating PaymentLink {stripe_pl_id}: {str(e)}"
+                    logger.error(error_msg)
+                    errors.append({"payment_link_id": stripe_pl_id, "error": str(e), "recoverable": False})
+
+            # Bulk-stamp all matched links as paused
+            if active_links:
+                link_ids = [link["_id"] for link in active_links]
+                await payment_links_coll.update_many(
+                    {"_id": {"$in": link_ids}},
+                    {"$set": {
+                        "payment_paused_at": now,
+                        "payment_paused_reason": "planner_subscription_cancelled",
+                        "updated_at": now,
+                    }}
+                )
+
+            # ── Part 2: Pause scheduled payments (scheduled_payments collection) ──
+            # These are autopilot contract payments (ScheduledPayment model in autopilot.py).
+            # They use `stripe_payment_intent_id`, NOT payment links.
+            # We mark them as paused locally so the autopilot cron skips them.
+            scheduled_result = await self.scheduled_payments.update_many(
                 {
                     "planner_id": planner_id,
-                    "status": {"$in": ["active", "signed", "viewed"]}
-                }
-            ).to_list(length=None)
+                    "status": {"$in": ["scheduled", "processing"]}
+                },
+                {"$set": {
+                    "payment_paused_at": now,
+                    "payment_paused_reason": "planner_subscription_cancelled",
+                }}
+            )
+            scheduled_paused = scheduled_result.modified_count
 
-            if not active_contracts:
-                logger.info(f"No active contracts found for planner {planner_id}")
-                return {
-                    "payment_links_deactivated": 0,
-                    "contracts_paused": 0,
-                    "errors": []
-                }
-
-            # TODO: Confirm exact field name for Stripe payment link ID in scheduled_payments collection
-            # Currently searching for stripe_payment_link_id or similar fields.
-            # Payment link IDs may be stored in scheduled_payments documents linked via contract_id.
-
-            for contract in active_contracts:
-                contract_id = str(contract.get("_id"))
-
-                # Find scheduled payments for this contract that have payment links
-                scheduled_payments = await self.scheduled_payments.find(
-                    {
-                        "contract_id": contract_id,
-                        "status": {"$in": ["scheduled", "processing"]}
-                    }
-                ).to_list(length=None)
-
-                if not scheduled_payments:
-                    continue
-
-                for payment in scheduled_payments:
-                    # TODO: Update field name based on actual schema for stripe payment link ID
-                    payment_link_id = payment.get("stripe_payment_link_id")
-
-                    if not payment_link_id:
-                        continue
-
-                    # Attempt to deactivate the payment link in Stripe
-                    try:
-                        stripe.PaymentLink.modify(payment_link_id, active=False)
-                        deactivated_count += 1
-                        logger.info(
-                            f"Deactivated payment link {payment_link_id} for contract {contract_id}"
-                        )
-                    except stripe.error.StripeError as e:
-                        error_msg = f"Failed to deactivate payment link {payment_link_id}: {str(e)}"
-                        logger.error(error_msg)
-                        errors.append({
-                            "payment_link_id": payment_link_id,
-                            "contract_id": contract_id,
-                            "error": str(e)
-                        })
-                        continue
-
-                    # Update local record to mark payment as paused
-                    try:
-                        await self.scheduled_payments.update_one(
-                            {"_id": payment.get("_id")},
-                            {
-                                "$set": {
-                                    "payment_paused_at": datetime.now(timezone.utc),
-                                    "payment_paused_reason": "planner_subscription_cancelled"
-                                }
-                            }
-                        )
-                    except Exception as e:
-                        error_msg = f"Failed to update payment record {payment.get('_id')}: {str(e)}"
-                        logger.error(error_msg)
-                        errors.append({
-                            "payment_id": str(payment.get("_id")),
-                            "contract_id": contract_id,
-                            "error": str(e)
-                        })
-
-                contracts_paused.add(contract_id)
+            # Gather affected contract IDs for reporting
+            if scheduled_paused > 0:
+                paused_docs = await self.scheduled_payments.find(
+                    {"planner_id": planner_id, "payment_paused_reason": "planner_subscription_cancelled"},
+                    {"contract_id": 1}
+                ).to_list(length=10000)
+                contracts_paused = {doc.get("contract_id") for doc in paused_docs if doc.get("contract_id")}
 
             logger.info(
-                f"Paused {deactivated_count} payment links across {len(contracts_paused)} contracts for planner {planner_id}"
+                f"Paused payments for planner {planner_id}: "
+                f"{links_deactivated} payment links, {scheduled_paused} scheduled payments, "
+                f"{len(contracts_paused)} contracts affected"
             )
 
             return {
-                "payment_links_deactivated": deactivated_count,
+                "payment_links_deactivated": links_deactivated,
+                "scheduled_payments_paused": scheduled_paused,
                 "contracts_paused": len(contracts_paused),
                 "errors": errors
             }
@@ -628,114 +634,95 @@ class PackageService:
 
     async def resume_planner_payment_links(self, planner_id: str, planner_email: str) -> Dict[str, Any]:
         """
-        Resume all paused payment links for a planner when their subscription is reactivated.
+        Resume all paused payment links AND scheduled payments for a planner
+        when their subscription is reactivated.
 
-        Finds all paused contracts/payments for this planner, reactivates their Stripe payment links,
-        and clears pause metadata.
+        Reverses the actions of `pause_planner_payment_links`.
 
         Args:
             planner_id: The planner's user ID
             planner_email: The planner's email address
 
         Returns:
-            Dict with keys:
-                - payment_links_reactivated: Number of payment links successfully reactivated
-                - contracts_resumed: Number of contracts affected
-                - errors: List of error details for failed operations
+            Dict with payment_links_reactivated, scheduled_payments_resumed, contracts_resumed, errors
         """
+        from app.core.database import mongo
+
         try:
-            reactivated_count = 0
-            contracts_resumed = set()
+            now = datetime.now(timezone.utc)
+            links_reactivated = 0
+            scheduled_resumed = 0
             errors = []
 
-            # Find all contracts with paused payments for this planner
-            paused_contracts = await self.contracts.find(
+            # ── Part 1: Reactivate Stripe Payment Links ──
+            payment_links_coll = mongo.db["payment_links"]
+            paused_links = await payment_links_coll.find(
+                {
+                    "created_by": planner_email,
+                    "payment_paused_reason": "planner_subscription_cancelled",
+                    "stripe_payment_link_id": {"$exists": True, "$ne": None}
+                }
+            ).to_list(length=10000)
+
+            for link in paused_links:
+                stripe_pl_id = link.get("stripe_payment_link_id")
+                try:
+                    # Retrieve current state to avoid modifying already-active links
+                    try:
+                        pl_obj = stripe.PaymentLink.retrieve(stripe_pl_id)
+                        if pl_obj.get("active", False) if isinstance(pl_obj, dict) else getattr(pl_obj, "active", False):
+                            logger.info(f"PaymentLink {stripe_pl_id} already active, skipping")
+                            links_reactivated += 1
+                            continue
+                    except stripe.error.StripeError as retrieve_err:
+                        logger.warning(f"Could not retrieve PaymentLink {stripe_pl_id}, attempting modify anyway: {retrieve_err}")
+
+                    stripe.PaymentLink.modify(stripe_pl_id, active=True)
+                    links_reactivated += 1
+                    logger.info(f"Reactivated Stripe PaymentLink {stripe_pl_id}")
+                except stripe.error.InvalidRequestError as e:
+                    logger.warning(f"Stripe InvalidRequestError reactivating PaymentLink {stripe_pl_id}: {e}")
+                    errors.append({"payment_link_id": stripe_pl_id, "error": str(e), "recoverable": True})
+                except stripe.error.StripeError as e:
+                    error_msg = f"Stripe API error reactivating PaymentLink {stripe_pl_id}: {str(e)}"
+                    logger.warning(error_msg)
+                    errors.append({"payment_link_id": stripe_pl_id, "error": str(e), "recoverable": False})
+                except Exception as e:
+                    error_msg = f"Unexpected error reactivating PaymentLink {stripe_pl_id}: {str(e)}"
+                    logger.error(error_msg)
+                    errors.append({"payment_link_id": stripe_pl_id, "error": str(e), "recoverable": False})
+
+            # Clear pause fields from payment links
+            if paused_links:
+                link_ids = [link["_id"] for link in paused_links]
+                await payment_links_coll.update_many(
+                    {"_id": {"$in": link_ids}},
+                    {
+                        "$unset": {"payment_paused_at": "", "payment_paused_reason": ""},
+                        "$set": {"updated_at": now}
+                    }
+                )
+
+            # ── Part 2: Resume scheduled payments ──
+            scheduled_result = await self.scheduled_payments.update_many(
                 {
                     "planner_id": planner_id,
-                    "status": {"$in": ["active", "signed", "viewed"]}
+                    "payment_paused_reason": "planner_subscription_cancelled",
+                },
+                {
+                    "$unset": {"payment_paused_at": "", "payment_paused_reason": ""},
                 }
-            ).to_list(length=None)
-
-            if not paused_contracts:
-                logger.info(f"No contracts found for planner {planner_id}")
-                return {
-                    "payment_links_reactivated": 0,
-                    "contracts_resumed": 0,
-                    "errors": []
-                }
-
-            # TODO: Confirm exact field name for Stripe payment link ID in scheduled_payments collection
-            # Currently searching for stripe_payment_link_id or similar fields.
-            # Payment link IDs may be stored in scheduled_payments documents linked via contract_id.
-
-            for contract in paused_contracts:
-                contract_id = str(contract.get("_id"))
-
-                # Find paused scheduled payments for this contract
-                paused_payments = await self.scheduled_payments.find(
-                    {
-                        "contract_id": contract_id,
-                        "payment_paused_reason": "planner_subscription_cancelled",
-                        "payment_paused_at": {"$exists": True}
-                    }
-                ).to_list(length=None)
-
-                if not paused_payments:
-                    continue
-
-                for payment in paused_payments:
-                    # TODO: Update field name based on actual schema for stripe payment link ID
-                    payment_link_id = payment.get("stripe_payment_link_id")
-
-                    if not payment_link_id:
-                        continue
-
-                    # Attempt to reactivate the payment link in Stripe
-                    try:
-                        stripe.PaymentLink.modify(payment_link_id, active=True)
-                        reactivated_count += 1
-                        logger.info(
-                            f"Reactivated payment link {payment_link_id} for contract {contract_id}"
-                        )
-                    except stripe.error.StripeError as e:
-                        error_msg = f"Failed to reactivate payment link {payment_link_id}: {str(e)}"
-                        logger.error(error_msg)
-                        errors.append({
-                            "payment_link_id": payment_link_id,
-                            "contract_id": contract_id,
-                            "error": str(e)
-                        })
-                        continue
-
-                    # Clear pause fields from local record
-                    try:
-                        await self.scheduled_payments.update_one(
-                            {"_id": payment.get("_id")},
-                            {
-                                "$unset": {
-                                    "payment_paused_at": "",
-                                    "payment_paused_reason": ""
-                                }
-                            }
-                        )
-                    except Exception as e:
-                        error_msg = f"Failed to update payment record {payment.get('_id')}: {str(e)}"
-                        logger.error(error_msg)
-                        errors.append({
-                            "payment_id": str(payment.get("_id")),
-                            "contract_id": contract_id,
-                            "error": str(e)
-                        })
-
-                contracts_resumed.add(contract_id)
+            )
+            scheduled_resumed = scheduled_result.modified_count
 
             logger.info(
-                f"Resumed {reactivated_count} payment links across {len(contracts_resumed)} contracts for planner {planner_id}"
+                f"Resumed payments for planner {planner_id}: "
+                f"{links_reactivated} payment links, {scheduled_resumed} scheduled payments"
             )
 
             return {
-                "payment_links_reactivated": reactivated_count,
-                "contracts_resumed": len(contracts_resumed),
+                "payment_links_reactivated": links_reactivated,
+                "scheduled_payments_resumed": scheduled_resumed,
                 "errors": errors
             }
 

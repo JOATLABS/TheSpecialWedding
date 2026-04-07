@@ -333,7 +333,7 @@ class SubscriptionService:
             raise HTTPException(status_code=500, detail=f"Error retrieving subscription: {str(e)}")
 
     async def cancel_subscription(self, user_id: str, reason: str = "") -> dict:
-        """Cancel user subscription in both local DB and Stripe"""
+        """Cancel user subscription in both local DB and Stripe, with cleanup orchestration"""
         try:
             now = datetime.now(timezone.utc)
 
@@ -344,6 +344,13 @@ class SubscriptionService:
 
             if not subscription:
                 raise HTTPException(status_code=404, detail="No active subscription found")
+
+            # Fetch user document for email and other data
+            user = await self.users_collection.find_one({"_id": to_object_id(user_id, "user_id")})
+            if not user:
+                raise HTTPException(status_code=404, detail="User not found")
+
+            user_email = user.get("email", "")
 
             # Cancel in Stripe if there's a Stripe subscription
             stripe_sub_id = subscription.get("stripe_subscription_id")
@@ -356,27 +363,138 @@ class SubscriptionService:
                     logger.error(f"Failed to cancel Stripe subscription {stripe_sub_id}: {str(e)}")
                     # Still proceed with local cancellation to avoid inconsistent state
 
-            # Update local subscription
-            await self.subscriptions_collection.update_one(
-                {"_id": subscription["_id"]},
-                {"$set": {
-                    "status": "cancelled",
-                    "cancelled_at": now,
-                    "updated_at": now,
-                    "cancellation_reason": reason
-                }}
+            # Update local subscription with optimistic locking
+            subscription_version = subscription.get("version", 1)
+            result = await self.subscriptions_collection.update_one(
+                {
+                    "_id": subscription["_id"],
+                    "version": subscription_version
+                },
+                {
+                    "$set": {
+                        "status": "cancelled",
+                        "cancelled_at": now,
+                        "updated_at": now,
+                        "cancellation_reason": reason,
+                        "cancellation_cleanup_completed": True,
+                        "cancellation_cleanup_at": now
+                    },
+                    "$inc": {"version": 1}
+                }
             )
 
-            # Update user status
+            if result.matched_count == 0:
+                logger.warning(
+                    f"Subscription {subscription['_id']} version mismatch (concurrent modification detected). "
+                    f"Proceeding with local-only cancellation."
+                )
+
+            # Update user status and set is_active to False
             await self.users_collection.update_one(
                 {"_id": to_object_id(user_id, "user_id")},
                 {"$set": {
                     "subscription_status": "cancelled",
+                    "is_active": False,
                     "updated_at": now
                 }}
             )
 
-            return {"message": "Subscription cancelled successfully"}
+            logger.info(f"Core cancellation complete for user {user_id}")
+
+            # Initialize cleanup results
+            cleanup_results = {
+                "team_members_deactivated": 0,
+                "data_suspended": {},
+                "payments_paused": {},
+                "email_sent": False,
+                "couples_notified": 0
+            }
+
+            # Phase 1: Deactivate team members
+            try:
+                from app.services.team_management_service import TeamManagementService
+                team_service = TeamManagementService()
+                team_result = await team_service.bulk_deactivate_by_owner(user_id, "owner_subscription_cancelled")
+                cleanup_results["team_members_deactivated"] = team_result.get("deactivated_count", 0)
+                logger.info(f"Deactivated team members for user {user_id}: {team_result}")
+            except Exception as e:
+                logger.warning(f"Failed to deactivate team members for user {user_id}: {str(e)}")
+
+            # Phase 2: Suspend planner data
+            try:
+                from app.services.cascade_delete_service import cascade_delete_service
+                suspend_result = await cascade_delete_service.suspend_planner_data(user_id, user_email)
+                cleanup_results["data_suspended"] = suspend_result
+                logger.info(f"Suspended planner data for user {user_id}: {suspend_result}")
+            except Exception as e:
+                logger.warning(f"Failed to suspend planner data for user {user_id}: {str(e)}")
+
+            # Phase 3: Pause couple payments
+            try:
+                from app.services.package_service import package_service
+                payments_result = await package_service.pause_planner_payment_links(user_id, user_email)
+                cleanup_results["payments_paused"] = payments_result
+                logger.info(f"Paused payment links for user {user_id}: {payments_result}")
+            except Exception as e:
+                logger.warning(f"Failed to pause payment links for user {user_id}: {str(e)}")
+
+            # Phase 4: Send cancellation email to planner
+            try:
+                from app.services.email_service_resend import ResendEmailService
+                email_service = ResendEmailService()
+                email_sent = await email_service.send_subscription_cancelled_email(user)
+                cleanup_results["email_sent"] = email_sent
+                logger.info(f"Sent cancellation email to user {user_id}: {email_sent}")
+            except Exception as e:
+                logger.warning(f"Failed to send cancellation email to user {user_id}: {str(e)}")
+
+            # Phase 5: Notify affected couples
+            # Couples are stored in the `couple_users` collection with a `planner_id`
+            # field (indexed). Query directly instead of going through weddings.
+            try:
+                from app.services.email_service_resend import ResendEmailService
+                from app.core.database import mongo
+
+                couple_users_collection = mongo.db["couple_users"]
+                couples = await couple_users_collection.find(
+                    {"planner_id": user_id, "is_active": True}
+                ).to_list(length=10000)
+
+                if couples:
+                    email_service = ResendEmailService()
+                    couples_notified = 0
+
+                    # Build a wedding lookup map for the notification template
+                    wedding_ids = list({c.get("wedding_id") for c in couples if c.get("wedding_id")})
+                    weddings_list = await self.weddings_collection.find(
+                        {"_id": {"$in": wedding_ids}}
+                    ).to_list(length=10000)
+                    weddings_map = {str(w["_id"]): w for w in weddings_list}
+
+                    for couple in couples:
+                        try:
+                            wedding = weddings_map.get(couple.get("wedding_id"), {})
+                            couple_notification_sent = await email_service.send_planner_cancelled_couple_notification(
+                                couple=couple,
+                                planner=user,
+                                wedding=wedding
+                            )
+                            if couple_notification_sent:
+                                couples_notified += 1
+                        except Exception as e:
+                            logger.warning(
+                                f"Failed to notify couple {couple.get('email')} for wedding {couple.get('wedding_id')}: {str(e)}"
+                            )
+
+                    cleanup_results["couples_notified"] = couples_notified
+                    logger.info(f"Notified {couples_notified} couples about planner {user_id} cancellation")
+            except Exception as e:
+                logger.warning(f"Failed to notify couples for user {user_id}: {str(e)}")
+
+            return {
+                "message": "Subscription cancelled successfully",
+                "cleanup": cleanup_results
+            }
 
         except HTTPException:
             raise

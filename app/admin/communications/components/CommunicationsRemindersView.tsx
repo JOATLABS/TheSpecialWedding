@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import Link from 'next/link';
-import { useSearchParams } from 'next/navigation';
+import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { getApiBaseUrl } from '@/utils/env';
 import { useAdmin } from '@/contexts/AdminContext';
 import { formatDateTime } from '@/utils/dateFormat';
@@ -91,6 +91,8 @@ export default function CommunicationsRemindersView({
  forcedTab,
 }: CommunicationsRemindersViewProps) {
  const { token } = useAdmin();
+ const router = useRouter();
+ const pathname = usePathname();
  const searchParams = useSearchParams();
  const lastAppliedTemplateRef = useRef<string | null>(null);
  const [weddings, setWeddings] = useState<Wedding[]>([]);
@@ -267,6 +269,16 @@ export default function CommunicationsRemindersView({
  setSelectedWedding(requestedWeddingId);
  }
  }, [requestedWeddingId, selectedWedding]);
+
+ useEffect(() => {
+ if (!selectedWedding || !pathname) return;
+ if (requestedWeddingId === selectedWedding) return;
+
+ const params = new URLSearchParams(searchParams.toString());
+ params.set('wedding_id', selectedWedding);
+ const nextUrl = `${pathname}?${params.toString()}`;
+ router.replace(nextUrl, { scroll: false });
+ }, [pathname, requestedWeddingId, router, searchParams, selectedWedding]);
 
  useEffect(() => {
  if (selectedWedding && token) {

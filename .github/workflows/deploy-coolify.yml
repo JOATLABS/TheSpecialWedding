@@ -12,9 +12,8 @@ on:
   workflow_dispatch:
     inputs:
       image-tag:
-        description: "Image tag to deploy to staging (default: current commit SHA)"
-        required: false
-        default: ""
+        description: "Existing GHCR image tag to deploy to staging (for example: 1a2b3c4)"
+        required: true
       service:
         description: "Which service to deploy"
         required: false
@@ -27,6 +26,7 @@ on:
 
 permissions:
   contents: read
+  packages: read
 
 jobs:
   prepare:
@@ -40,12 +40,17 @@ jobs:
       - name: Determine image tag
         id: tag
         run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ -n "${{ github.event.inputs.image-tag }}" ]; then
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
             TAG="${{ github.event.inputs.image-tag }}"
+            if [ -z "$TAG" ]; then
+              echo "Manual staging deploys require an explicit existing image tag."
+              exit 1
+            fi
           elif [ "${{ github.event_name }}" = "workflow_run" ]; then
             TAG="${{ github.event.workflow_run.head_sha }}"
           else
-            TAG="${{ github.sha }}"
+            echo "Unsupported trigger: ${{ github.event_name }}"
+            exit 1
           fi
 
           if [ "${#TAG}" -gt 12 ]; then
@@ -59,6 +64,27 @@ jobs:
         run: |
           SERVICE="${{ github.event.inputs.service || 'both' }}"
           echo "value=$SERVICE" >> "$GITHUB_OUTPUT"
+
+      - name: Verify staged image tag exists in GHCR
+        env:
+          TAG: ${{ steps.tag.outputs.tag }}
+          SERVICE: ${{ steps.service.outputs.value }}
+        run: |
+          set -euo pipefail
+
+          echo "${{ github.token }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin >/dev/null 2>&1
+
+          case "$SERVICE" in
+            both|backend)
+              docker manifest inspect "ghcr.io/${{ github.repository_owner }}/wedding-app-backend:${TAG}" >/dev/null
+              ;;
+          esac
+
+          case "$SERVICE" in
+            both|frontend)
+              docker manifest inspect "ghcr.io/${{ github.repository_owner }}/wedding-app-frontend:${TAG}" >/dev/null
+              ;;
+          esac
 
   deploy:
     needs: prepare

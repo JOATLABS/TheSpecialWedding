@@ -5,6 +5,34 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.28.7] - 2026-04-07
+
+### Changed
+
+- **Deployment workflow hardening** (`/.github/workflows/ci.yml`, `/.github/workflows/deploy-coolify.yml`, `/.github/workflows-disabled/deploy-kubernetes.yml.disabled`) — Disabled the legacy DOKS deploy workflow so `main` no longer fans out into an unintended Kubernetes production deploy, made manual staging deploys require an explicit existing GHCR image tag, validated that tag before handing it to Coolify, and switched the shared frontend image build to a neutral placeholder `FRONTEND_URL` so staging no longer bakes the production domain into the image.
+
+### Fixed
+
+- **Communications inbox wedding-context handoff** (`/app/admin/communications/components/CommunicationsInboxView.tsx`, `/app/admin/communications/components/CommunicationsRemindersView.tsx`) — Fixed the new communications workspace dropping planners back to `All Weddings` when they moved from a wedding-scoped communications tab into `Inbox`. Reminders now persist the selected wedding into the URL as `?wedding_id=...`, and the inbox view now hydrates and preserves that query param instead of stripping it during its initial render/validation cycle.
+
+## [2.28.6] - 2026-04-07
+
+### Added
+
+- **Subscription cancellation cleanup orchestration** (`/app/services/subscription_service.py`, `/app/services/stripe_service.py`) — Both the admin cancellation path (`DELETE /users/{user_id}/subscription`) and the Stripe webhook path (`customer.subscription.deleted`) now execute a 5-phase cleanup: (1) team member bulk deactivation, (2) planner data suspension on weddings/packages/contracts, (3) payment link and scheduled payment pausing, (4) cancellation confirmation email to planner, (5) notification emails to affected couples. Optimistic locking via `version` field and a `cancellation_cleanup_completed` flag prevent double-execution when both paths fire for the same cancellation.
+- **Cancellation email notifications** (`/app/services/email_service_resend.py`) — Added `send_subscription_cancelled_email()` confirming cancellation with 30-day data retention notice and resubscribe link, and `send_planner_cancelled_couple_notification()` informing couples their planner is inactive with payments paused.
+- **Team member bulk deactivation/reactivation** (`/app/services/team_management_service.py`) — Added `bulk_deactivate_by_owner()` and `bulk_reactivate_by_owner()` methods that suspend or restore all team members and their user accounts when owner subscription status changes, including auth cache invalidation.
+- **Planner data suspension/unsuspension** (`/app/services/cascade_delete_service.py`) — Added `suspend_planner_data()` and `unsuspend_planner_data()` methods that stamp/remove `data_access_suspended_at` and `data_access_suspended_reason` on weddings, packages, and contracts.
+- **Subscription reactivation cleanup** (`/app/services/stripe_service.py`) — Added `_handle_reactivation_cleanup()` method that automatically reverses all cancellation suspension when a subscription transitions from cancelled/expired to active/trial. Wired into `_sync_subscription_state()` with previous-status detection so reactivation triggers on both new checkout and Stripe Customer Portal resubscription paths.
+
+### Fixed
+
+- **Couple notification lookup** (`/app/services/subscription_service.py`, `/app/services/stripe_service.py`) — Fixed couple notification to query the `couple_users` collection by `planner_id` instead of the non-existent `wedding.couple_id` field, which would have silently skipped all couple notifications.
+- **Payment link pause/resume targeting both payment systems** (`/app/services/package_service.py`) — Rewrote `pause_planner_payment_links()` and `resume_planner_payment_links()` to correctly target both the `payment_links` collection (Stripe PaymentLinks deactivated via `stripe.PaymentLink.modify`) and the `scheduled_payments` collection (autopilot contract payments paused via status update), instead of only handling one collection with the wrong field name.
+- **Stripe best practices: PaymentLink state verification before modify** (`/app/services/package_service.py`) — Added `stripe.PaymentLink.retrieve()` before `modify()` calls to skip already-inactive/already-active links, preventing Stripe API errors from duplicate webhook deliveries. Added granular `stripe.error.InvalidRequestError` vs `stripe.error.StripeError` exception handling per Stripe error-handling best practices.
+- **Stripe best practices: atomic cancellation cleanup guard** (`/app/services/stripe_service.py`) — Replaced the non-atomic check-then-act cleanup guard with an atomic `find_one_and_update` that claims cleanup ownership in a single MongoDB operation, preventing race conditions when concurrent `customer.subscription.deleted` webhooks arrive for the same subscription.
+- **Stripe best practices: reactivation idempotency guard** (`/app/services/stripe_service.py`) — Added atomic `find_one_and_update` guard to `_handle_reactivation_cleanup()` to prevent duplicate reactivation runs when both `customer.subscription.updated` and `checkout.session.completed` webhooks fire concurrently for the same resubscription.
+
 ## [2.28.5] - 2026-04-07
 
 ### Added
