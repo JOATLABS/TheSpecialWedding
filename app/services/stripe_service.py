@@ -13,6 +13,7 @@ import logging
 
 from app.models.subscription import SubscriptionStatus, normalize_subscription_status
 from app.services.email_service_resend import ResendEmailService
+from app.utils.id_utils import to_object_id
 
 logger = logging.getLogger(__name__)
 
@@ -38,6 +39,7 @@ class StripeService:
         self.users_collection = mongo.get_users_collection()
         self.plans_collection = mongo.db["subscription_plans"]
         self.stripe_customers_collection = mongo.db["stripe_customers"]
+        self.weddings_collection = mongo.db["weddings"]
         self.email_service = ResendEmailService()
 
     def _ensure_stripe_enabled(self):
@@ -723,6 +725,7 @@ class StripeService:
         # fall back to user_id so we update the record created at checkout
         # initiation (which won't have a stripe_subscription_id yet).
         query: Dict[str, Any] = {}
+        previous_status = None  # Track for reactivation detection
         if stripe_subscription_id and user_id:
             # Try stripe_subscription_id first; if no doc exists, fall back to user_id
             existing = await self.subscriptions_collection.find_one(
@@ -730,9 +733,15 @@ class StripeService:
             )
             if existing:
                 query["stripe_subscription_id"] = stripe_subscription_id
+                previous_status = existing.get("status")
             else:
                 # Fall back: find by user_id (pre-existing record from checkout init)
                 query["user_id"] = user_id
+                fallback_existing = await self.subscriptions_collection.find_one(
+                    {"user_id": user_id}, {"status": 1}
+                )
+                if fallback_existing:
+                    previous_status = fallback_existing.get("status")
         elif stripe_subscription_id:
             query["stripe_subscription_id"] = stripe_subscription_id
         elif user_id:
@@ -859,6 +868,37 @@ class StripeService:
                 logger.error(f"Unexpected error in subscription sync transaction: {str(txn_err)}")
                 raise
 
+        # ── Reactivation detection ──────────────────────────────────
+        # If the subscription transitioned FROM a cancelled/blocked state
+        # TO active or trial, trigger reactivation cleanup to undo the
+        # suspension that was applied during cancellation.
+        CANCELLED_STATUSES = {
+            SubscriptionStatus.CANCELLED.value,
+            SubscriptionStatus.EXPIRED.value,
+        }
+        ACTIVE_STATUSES = {
+            SubscriptionStatus.ACTIVE.value,
+            SubscriptionStatus.TRIAL.value,
+        }
+        if (
+            previous_status in CANCELLED_STATUSES
+            and internal_status in ACTIVE_STATUSES
+            and user_id
+        ):
+            logger.info(
+                "Subscription reactivation detected for user %s: %s → %s. "
+                "Triggering reactivation cleanup.",
+                user_id, previous_status, internal_status,
+            )
+            try:
+                await self._handle_reactivation_cleanup(user_id)
+            except Exception as reactivation_err:
+                # Fire-and-forget: don't block the sync on reactivation failure
+                logger.error(
+                    "Reactivation cleanup failed for user %s: %s",
+                    user_id, str(reactivation_err),
+                )
+
         return {
             "status": internal_status,
             "stripe_status": stripe_status,
@@ -866,6 +906,113 @@ class StripeService:
             "user_id": user_id,
             "stripe_subscription_id": stripe_subscription_id,
         }
+
+    async def _handle_reactivation_cleanup(self, user_id: str) -> None:
+        """
+        Undo the suspension applied during cancellation.
+
+        Phases (fire-and-forget per phase):
+          1. Reactivate team members
+          2. Unsuspend planner data (weddings, packages, contracts)
+          3. Resume paused payment links & scheduled payments
+          4. Clear cancellation_cleanup_completed flag on subscription
+
+        Each phase is wrapped in try/except so a single failure
+        does not prevent the remaining phases from executing.
+        """
+        # Atomic guard: prevent duplicate reactivation runs from concurrent
+        # webhooks (e.g. subscription.updated + checkout.session.completed).
+        try:
+            claim = await self.subscriptions_collection.find_one_and_update(
+                {
+                    "user_id": user_id,
+                    "cancellation_cleanup_completed": True,
+                },
+                {"$set": {
+                    "reactivation_cleanup_in_progress": True,
+                    "reactivation_cleanup_started_at": datetime.now(timezone.utc),
+                }},
+                return_document=False,
+            )
+            if claim is None:
+                logger.info(
+                    "[Reactivation] No cancelled subscription with cleanup flag for user %s, "
+                    "skipping (already reactivated or never cancelled)",
+                    user_id,
+                )
+                return
+        except Exception as e:
+            logger.warning("[Reactivation] Could not claim reactivation for user %s: %s", user_id, str(e))
+            # Proceed anyway — duplicate reactivation is less harmful than skipped reactivation
+
+        user = await self.users_collection.find_one({"_id": ObjectId(user_id)})
+        if not user:
+            logger.warning("[Reactivation] User %s not found, skipping cleanup", user_id)
+            return
+
+        user_email = user.get("email", "")
+
+        # Phase 1: Reactivate team members
+        try:
+            from app.services.team_management_service import TeamManagementService
+            team_service = TeamManagementService()
+            team_result = await team_service.bulk_reactivate_by_owner(owner_id=user_id)
+            logger.info(
+                "[Reactivation] Phase 1 complete: reactivated %d team members for user %s",
+                team_result.get("reactivated_count", 0), user_id,
+            )
+        except Exception as e:
+            logger.error("[Reactivation] Phase 1 (team reactivation) failed for user %s: %s", user_id, str(e))
+
+        # Phase 2: Unsuspend planner data
+        try:
+            from app.services.cascade_delete_service import CascadeDeleteService
+            cascade_service = CascadeDeleteService()
+            data_result = await cascade_service.unsuspend_planner_data(
+                planner_id=user_id, planner_email=user_email
+            )
+            logger.info(
+                "[Reactivation] Phase 2 complete: unsuspended data for user %s — %s",
+                user_id, str(data_result),
+            )
+        except Exception as e:
+            logger.error("[Reactivation] Phase 2 (data unsuspend) failed for user %s: %s", user_id, str(e))
+
+        # Phase 3: Resume payment links & scheduled payments
+        try:
+            from app.services.package_service import PackageService
+            package_service = PackageService()
+            payment_result = await package_service.resume_planner_payment_links(
+                planner_id=user_id, planner_email=user_email
+            )
+            logger.info(
+                "[Reactivation] Phase 3 complete: resumed payments for user %s — %s",
+                user_id, str(payment_result),
+            )
+        except Exception as e:
+            logger.error("[Reactivation] Phase 3 (payment resume) failed for user %s: %s", user_id, str(e))
+
+        # Phase 4: Clear the cancellation and reactivation-in-progress flags
+        try:
+            await self.subscriptions_collection.update_many(
+                {"user_id": user_id},
+                {
+                    "$unset": {
+                        "cancellation_cleanup_completed": "",
+                        "cancellation_cleanup_at": "",
+                        "reactivation_cleanup_in_progress": "",
+                        "reactivation_cleanup_started_at": "",
+                    },
+                    "$set": {
+                        "reactivation_cleanup_completed_at": datetime.now(timezone.utc),
+                    },
+                },
+            )
+            logger.info("[Reactivation] Phase 4 complete: cleared cancellation flags for user %s", user_id)
+        except Exception as e:
+            logger.error("[Reactivation] Phase 4 (clear flags) failed for user %s: %s", user_id, str(e))
+
+        logger.info("[Reactivation] All phases complete for user %s", user_id)
 
     # ==================== SUBSCRIPTION MODIFICATIONS ====================
 
@@ -1379,24 +1526,146 @@ class StripeService:
         return {"status": "success", "subscription_id": subscription.get("id")}
 
     async def _handle_subscription_deleted(self, subscription: Dict[str, Any]) -> Dict[str, Any]:
-        """Handle subscription cancellation/deletion"""
+        """Handle subscription cancellation/deletion with cleanup orchestration"""
         stripe_sub_id = subscription["id"]
+        now = datetime.now(timezone.utc)
 
+        # Sync subscription state first
         result = await self._sync_subscription_state(
             user_id=subscription.get("metadata", {}).get("user_id"),
             subscription=subscription,
             customer_id=subscription.get("customer"),
             extra_updates={
                 "status": SubscriptionStatus.CANCELLED.value,
-                "cancelled_at": datetime.now(timezone.utc),
+                "cancelled_at": now,
             }
         )
 
+        user_id = result.get("user_id")
         logger.info(
             "Subscription %s cancelled (user=%s)",
             stripe_sub_id,
-            result.get("user_id")
+            user_id
         )
+
+        # Atomic guard: claim cleanup ownership using findOneAndUpdate.
+        # This prevents a race where two concurrent webhooks both pass a
+        # non-atomic check-then-act and run cleanup in parallel (Stripe
+        # best practice: webhook event ordering is not guaranteed).
+        try:
+            claim_result = await self.subscriptions_collection.find_one_and_update(
+                {
+                    "stripe_subscription_id": stripe_sub_id,
+                    "cancellation_cleanup_completed": {"$ne": True},
+                },
+                {"$set": {
+                    "cancellation_cleanup_completed": True,
+                    "cancellation_cleanup_at": now,
+                }},
+                return_document=False,  # return the ORIGINAL (pre-update) document
+            )
+            if claim_result is None:
+                # Either the doc doesn't exist or it was already claimed
+                logger.info(f"Cleanup already performed for subscription {stripe_sub_id}, skipping")
+                return {"status": "success", "subscription_id": stripe_sub_id}
+        except Exception as e:
+            logger.warning(f"Failed to claim cleanup for subscription {stripe_sub_id}: {str(e)}")
+            # If we can't claim, err on the side of running cleanup
+            # (duplicate cleanup is less harmful than skipped cleanup)
+
+        # If we don't have user_id, we can't proceed with cleanup
+        if not user_id:
+            logger.warning(f"No user_id found for subscription {stripe_sub_id}, skipping cleanup")
+            return {"status": "success", "subscription_id": stripe_sub_id}
+
+        # Fetch user document for email and other data
+        try:
+            user = await self.users_collection.find_one({"_id": to_object_id(user_id, "user_id")})
+            if not user:
+                logger.warning(f"User {user_id} not found for subscription {stripe_sub_id}, skipping cleanup")
+                return {"status": "success", "subscription_id": stripe_sub_id}
+            user_email = user.get("email", "")
+        except Exception as e:
+            logger.warning(f"Failed to fetch user {user_id}: {str(e)}")
+            return {"status": "success", "subscription_id": stripe_sub_id}
+
+        # Phase 1: Deactivate team members
+        try:
+            from app.services.team_management_service import TeamManagementService
+            team_service = TeamManagementService()
+            team_result = await team_service.bulk_deactivate_by_owner(user_id, "webhook_subscription_cancelled")
+            logger.info(f"Deactivated team members for user {user_id}: {team_result}")
+        except Exception as e:
+            logger.warning(f"Failed to deactivate team members for user {user_id}: {str(e)}")
+
+        # Phase 2: Suspend planner data
+        try:
+            from app.services.cascade_delete_service import cascade_delete_service
+            suspend_result = await cascade_delete_service.suspend_planner_data(user_id, user_email)
+            logger.info(f"Suspended planner data for user {user_id}: {suspend_result}")
+        except Exception as e:
+            logger.warning(f"Failed to suspend planner data for user {user_id}: {str(e)}")
+
+        # Phase 3: Pause couple payments
+        try:
+            from app.services.package_service import package_service
+            payments_result = await package_service.pause_planner_payment_links(user_id, user_email)
+            logger.info(f"Paused payment links for user {user_id}: {payments_result}")
+        except Exception as e:
+            logger.warning(f"Failed to pause payment links for user {user_id}: {str(e)}")
+
+        # Phase 4: Send cancellation email to planner
+        try:
+            from app.services.email_service_resend import ResendEmailService
+            email_service = ResendEmailService()
+            email_sent = await email_service.send_subscription_cancelled_email(user)
+            logger.info(f"Sent cancellation email to user {user_id}: {email_sent}")
+        except Exception as e:
+            logger.warning(f"Failed to send cancellation email to user {user_id}: {str(e)}")
+
+        # Phase 5: Notify affected couples
+        # Couples are stored in `couple_users` collection with `planner_id` field (indexed).
+        try:
+            from app.services.email_service_resend import ResendEmailService
+
+            couple_users_collection = mongo.db["couple_users"]
+            couples = await couple_users_collection.find(
+                {"planner_id": user_id, "is_active": True}
+            ).to_list(length=10000)
+
+            if couples:
+                email_service = ResendEmailService()
+
+                # Build wedding lookup map for notification template
+                wedding_ids = list({c.get("wedding_id") for c in couples if c.get("wedding_id")})
+                weddings_list = await self.weddings_collection.find(
+                    {"_id": {"$in": wedding_ids}}
+                ).to_list(length=10000)
+                weddings_map = {str(w["_id"]): w for w in weddings_list}
+
+                for couple in couples:
+                    try:
+                        wedding = weddings_map.get(couple.get("wedding_id"), {})
+                        couple_notification_sent = await email_service.send_planner_cancelled_couple_notification(
+                            couple=couple,
+                            planner=user,
+                            wedding=wedding
+                        )
+                        if couple_notification_sent:
+                            logger.info(f"Notified couple {couple.get('email')} about planner {user_id} cancellation")
+                    except Exception as e:
+                        logger.warning(
+                            f"Failed to notify couple {couple.get('email')} for wedding {couple.get('wedding_id')}: {str(e)}"
+                        )
+
+                logger.info(f"Completed couple notifications for planner {user_id}")
+        except Exception as e:
+            logger.warning(f"Failed to notify couples for user {user_id}: {str(e)}")
+
+        # Note: cancellation_cleanup_completed flag was already set atomically
+        # at the top of this method by the find_one_and_update guard.
+        logger.info(f"Cancellation cleanup complete for subscription {stripe_sub_id}")
+
         return {"status": "success", "subscription_id": stripe_sub_id}
 
     async def _handle_subscription_trial_will_end(self, subscription: Dict[str, Any]) -> Dict[str, Any]:

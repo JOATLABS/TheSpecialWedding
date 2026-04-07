@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { useAdmin } from '@/contexts/AdminContext';
 import { formatDate } from '@/utils/dateFormat';
 import {
@@ -107,11 +108,15 @@ interface InboxItem {
 
 export default function CommunicationsInboxView() {
   const { token } = useAdmin();
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
   const baseUrl = getApiBaseUrl();
+  const requestedWeddingId = searchParams.get('wedding_id') || 'all';
 
   // ---- Weddings for filter ----
   const [weddings, setWeddings] = useState<Wedding[]>([]);
-  const [selectedWeddingId, setSelectedWeddingId] = useState<string>('all');
+  const [selectedWeddingId, setSelectedWeddingId] = useState<string>(() => requestedWeddingId);
   const [showWeddingDropdown, setShowWeddingDropdown] = useState(false);
   const weddingDropdownRef = useRef<HTMLDivElement>(null);
 
@@ -161,6 +166,34 @@ export default function CommunicationsInboxView() {
     document.addEventListener('mousedown', handler);
     return () => document.removeEventListener('mousedown', handler);
   }, []);
+
+  useEffect(() => {
+    setSelectedWeddingId((current) => (current === requestedWeddingId ? current : requestedWeddingId));
+  }, [requestedWeddingId]);
+
+  useEffect(() => {
+    if (!weddings.length) return;
+    if (selectedWeddingId === 'all') return;
+    if (!weddings.some((wedding) => wedding._id === selectedWeddingId)) {
+      setSelectedWeddingId('all');
+    }
+  }, [selectedWeddingId, weddings]);
+
+  useEffect(() => {
+    if (!pathname) return;
+    if (selectedWeddingId === requestedWeddingId) return;
+
+    const params = new URLSearchParams(searchParams.toString());
+    if (selectedWeddingId === 'all') {
+      params.delete('wedding_id');
+    } else {
+      params.set('wedding_id', selectedWeddingId);
+    }
+
+    const nextQuery = params.toString();
+    const nextUrl = nextQuery ? `${pathname}?${nextQuery}` : pathname;
+    router.replace(nextUrl, { scroll: false });
+  }, [pathname, requestedWeddingId, router, searchParams, selectedWeddingId]);
 
   const handleMouseDown = useCallback((e: React.MouseEvent) => {
     e.preventDefault();
