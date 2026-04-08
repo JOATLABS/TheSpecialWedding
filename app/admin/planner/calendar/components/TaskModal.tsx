@@ -1,34 +1,49 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
-  DialogFooter,
-  DialogDescription,
 } from '@/components/ui/Dialog';
 import {
+  CalendarConnection,
+  CATEGORY_LABELS,
+  CalendarSyncPolicy,
+  createMeeting,
+  createTask,
+  InviteDeliveryMode,
   PlannerTask,
-  CreateTaskInput,
-  UpdateTaskInput,
+  PRIORITY_CONFIG,
+  ScheduleItemPayload,
   TaskCategory,
   TaskPriority,
-  CATEGORY_LABELS,
-  PRIORITY_CONFIG,
-  createTask,
+  updateMeeting,
   updateTask,
+  VisibilityMode,
 } from '@/services/calendarApi';
 import { useAdmin } from '@/contexts/AdminContext';
+
+interface StaffOption {
+  id: string;
+  email: string;
+  label: string;
+}
 
 interface TaskModalProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  task?: PlannerTask | null; // If provided, we're editing
+  task?: PlannerTask | null;
   weddings?: Array<{ id: string; couple_names: string }>;
   defaultDate?: Date;
-  onSuccess?: (task: PlannerTask) => void;
+  defaultCategory?: TaskCategory;
+  connections?: CalendarConnection[];
+  staffOptions?: StaffOption[];
+  onSuccess?: () => void;
+  onDelete?: (task: PlannerTask) => Promise<void> | void;
 }
 
 const CATEGORIES: TaskCategory[] = [
@@ -53,6 +68,40 @@ const CATEGORIES: TaskCategory[] = [
 ];
 
 const PRIORITIES: TaskPriority[] = ['low', 'medium', 'high', 'urgent'];
+const VISIBILITY_OPTIONS: Array<{ value: VisibilityMode; label: string }> = [
+  { value: 'details', label: 'Full details' },
+  { value: 'busy_only', label: 'Busy/free only' },
+];
+const SYNC_POLICY_OPTIONS: Array<{ value: CalendarSyncPolicy; label: string }> = [
+  { value: 'assigned_only', label: 'Assigned staff only' },
+  { value: 'owner_only', label: 'Owner only' },
+  { value: 'owner_and_assigned', label: 'Owner and assigned staff' },
+  { value: 'custom', label: 'Custom targets' },
+];
+const INVITE_OPTIONS: Array<{ value: InviteDeliveryMode; label: string }> = [
+  { value: 'email_ics', label: 'Email + ICS' },
+  { value: 'portal_only', label: 'Portal only' },
+];
+
+function toDateInput(value?: string | null) {
+  if (!value) return '';
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? '' : date.toISOString().slice(0, 10);
+}
+
+function toTimeInput(value?: string | null) {
+  if (!value) return '09:00';
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? '09:00' : date.toISOString().slice(11, 16);
+}
+
+function buildIso(date: string, time: string, allDay: boolean, endOfDay: boolean = false) {
+  if (!date) return '';
+  if (allDay) {
+    return `${date}T${endOfDay ? '23:59:59' : '00:00:00'}Z`;
+  }
+  return `${date}T${time}:00Z`;
+}
 
 export default function TaskModal({
   open,
@@ -60,12 +109,15 @@ export default function TaskModal({
   task,
   weddings = [],
   defaultDate,
+  defaultCategory = 'other',
+  connections = [],
+  staffOptions = [],
   onSuccess,
+  onDelete,
 }: TaskModalProps) {
   const { token } = useAdmin();
-  const isEditing = !!task;
+  const isEditing = Boolean(task);
 
-  // Form state
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [weddingId, setWeddingId] = useState('');
@@ -81,125 +133,157 @@ export default function TaskModal({
   const [notes, setNotes] = useState('');
   const [color, setColor] = useState('');
   const [syncToGoogle, setSyncToGoogle] = useState(true);
-
-  // Recurrence state
   const [isRecurring, setIsRecurring] = useState(false);
   const [recurrencePreset, setRecurrencePreset] = useState<'weekly' | 'biweekly' | 'monthly'>('weekly');
   const [recurrenceCount, setRecurrenceCount] = useState(8);
-
+  const [assignedUserIds, setAssignedUserIds] = useState<string[]>([]);
+  const [coupleAttendeeEmails, setCoupleAttendeeEmails] = useState('');
+  const [timezone, setTimezone] = useState('UTC');
+  const [visibilityMode, setVisibilityMode] = useState<VisibilityMode>('details');
+  const [calendarSyncPolicy, setCalendarSyncPolicy] = useState<CalendarSyncPolicy>('owner_only');
+  const [inviteDeliveryMode, setInviteDeliveryMode] = useState<InviteDeliveryMode>('email_ics');
+  const [conferenceProvider, setConferenceProvider] = useState('');
+  const [conferenceUrl, setConferenceUrl] = useState('');
+  const [customTargetsEnabled, setCustomTargetsEnabled] = useState(false);
+  const [selectedConnectionIds, setSelectedConnectionIds] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
-  // Reset form when modal opens/closes or task changes
+  const writableConnections = useMemo(
+    () =>
+      connections.filter(
+        (connection) =>
+          connection.is_writable &&
+          connection.sync_enabled &&
+          connection.connection_status === 'active'
+      ),
+    [connections]
+  );
+
+  const isMeetingMode =
+    category === 'meeting' || task?.schedule_item_type === 'meeting' || task?.category === 'meeting';
+
   useEffect(() => {
-    if (open) {
-      if (task) {
-        // Editing existing task
-        setTitle(task.title);
-        setDescription(task.description || '');
-        setWeddingId(task.wedding_id || '');
-        setCategory((task.category as TaskCategory) || 'other');
-        setPriority((task.priority as TaskPriority) || 'medium');
-        setAllDay(task.all_day);
-        setNotes(task.notes || '');
-        setColor(task.color || '');
-        setSyncToGoogle(task.synced_to_google);
+    if (!open) return;
 
-        // Parse dates
-        if (task.start_date) {
-          const start = new Date(task.start_date);
-          setStartDate(start.toISOString().split('T')[0]);
-          setStartTime(start.toTimeString().slice(0, 5));
-        }
-        if (task.end_date) {
-          const end = new Date(task.end_date);
-          setEndDate(end.toISOString().split('T')[0]);
-          setEndTime(end.toTimeString().slice(0, 5));
-        }
-        if (task.due_date) {
-          const due = new Date(task.due_date);
-          setDueDate(due.toISOString().split('T')[0]);
-        }
-        if (task.reminder_minutes) {
-          setReminderMinutes(task.reminder_minutes);
-        }
-        // Load recurrence
-        setIsRecurring(task.is_recurring || false);
-        if (task.recurrence_rule) {
-          // Parse existing RRULE to determine preset
-          const rule = task.recurrence_rule;
-          if (rule.includes('INTERVAL=2')) {
-            setRecurrencePreset('biweekly');
-          } else if (rule.includes('FREQ=MONTHLY')) {
-            setRecurrencePreset('monthly');
-          } else {
-            setRecurrencePreset('weekly');
-          }
-          const countMatch = rule.match(/COUNT=(\d+)/);
-          if (countMatch) {
-            setRecurrenceCount(parseInt(countMatch[1]));
-          }
-        }
-      } else {
-        // Creating new task
-        resetForm();
-        if (defaultDate) {
-          setStartDate(defaultDate.toISOString().split('T')[0]);
-          setEndDate(defaultDate.toISOString().split('T')[0]);
+    const initialDate = defaultDate ? defaultDate.toISOString().slice(0, 10) : new Date().toISOString().slice(0, 10);
+    const browserTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
+
+    if (task) {
+      setTitle(task.title);
+      setDescription(task.description || task.notes || '');
+      setWeddingId(task.wedding_id || '');
+      setCategory((task.category as TaskCategory) || 'other');
+      setPriority((task.priority as TaskPriority) || 'medium');
+      setStartDate(toDateInput(task.start_date));
+      setStartTime(toTimeInput(task.start_date));
+      setEndDate(toDateInput(task.end_date || task.start_date));
+      setEndTime(toTimeInput(task.end_date || task.start_date));
+      setAllDay(task.all_day);
+      setDueDate(toDateInput(task.due_date));
+      setReminderMinutes(task.reminder_minutes ?? '');
+      setNotes(task.notes || '');
+      setColor(task.color || '');
+      setSyncToGoogle(task.synced_to_google);
+      setIsRecurring(task.is_recurring || false);
+      setAssignedUserIds(task.assigned_user_ids || []);
+      setCoupleAttendeeEmails((task.couple_attendee_emails || []).join(', '));
+      setTimezone(task.timezone || browserTimezone);
+      setVisibilityMode((task.visibility_mode as VisibilityMode) || 'details');
+      setCalendarSyncPolicy((task.calendar_sync_policy as CalendarSyncPolicy) || 'owner_only');
+      setInviteDeliveryMode((task.invite_delivery_mode as InviteDeliveryMode) || 'email_ics');
+      setConferenceProvider(task.conference_provider || '');
+      setConferenceUrl(task.conference_url || '');
+      setCustomTargetsEnabled(false);
+      setSelectedConnectionIds([]);
+
+      if (task.recurrence_rule) {
+        if (task.recurrence_rule.includes('INTERVAL=2')) {
+          setRecurrencePreset('biweekly');
+        } else if (task.recurrence_rule.includes('FREQ=MONTHLY')) {
+          setRecurrencePreset('monthly');
         } else {
-          const today = new Date().toISOString().split('T')[0];
-          setStartDate(today);
-          setEndDate(today);
+          setRecurrencePreset('weekly');
         }
+        const countMatch = task.recurrence_rule.match(/COUNT=(\d+)/);
+        setRecurrenceCount(countMatch ? Number.parseInt(countMatch[1], 10) : 8);
+      } else {
+        setRecurrencePreset('weekly');
+        setRecurrenceCount(8);
       }
+    } else {
+      setTitle('');
+      setDescription('');
+      setWeddingId('');
+      setCategory(defaultCategory);
+      setPriority('medium');
+      setStartDate(initialDate);
+      setStartTime('09:00');
+      setEndDate(initialDate);
+      setEndTime('10:00');
+      setAllDay(false);
+      setDueDate('');
+      setReminderMinutes('');
+      setNotes('');
+      setColor('');
+      setSyncToGoogle(true);
+      setIsRecurring(false);
+      setRecurrencePreset('weekly');
+      setRecurrenceCount(8);
+      setAssignedUserIds([]);
+      setCoupleAttendeeEmails('');
+      setTimezone(browserTimezone);
+      setVisibilityMode('details');
+      setCalendarSyncPolicy('owner_only');
+      setInviteDeliveryMode('email_ics');
+      setConferenceProvider('');
+      setConferenceUrl('');
+      setCustomTargetsEnabled(false);
+      setSelectedConnectionIds([]);
     }
-  }, [open, task, defaultDate]);
 
-  const resetForm = () => {
-    setTitle('');
-    setDescription('');
-    setWeddingId('');
-    setCategory('other');
-    setPriority('medium');
-    setStartDate('');
-    setStartTime('09:00');
-    setEndDate('');
-    setEndTime('10:00');
-    setAllDay(false);
-    setDueDate('');
-    setReminderMinutes('');
-    setNotes('');
-    setColor('');
-    setSyncToGoogle(true);
-    setIsRecurring(false);
-    setRecurrencePreset('weekly');
-    setRecurrenceCount(8);
     setError('');
-  };
+  }, [defaultCategory, open, task, defaultDate]);
 
-  // Build iCal RRULE string from preset options
-  const buildRecurrenceRule = (): string | undefined => {
+  useEffect(() => {
+    if (category !== 'meeting') {
+      setCalendarSyncPolicy('owner_only');
+      setInviteDeliveryMode('email_ics');
+      setVisibilityMode('details');
+      setCustomTargetsEnabled(false);
+      setSelectedConnectionIds([]);
+    } else if (assignedUserIds.length > 0 && calendarSyncPolicy === 'owner_only') {
+      setCalendarSyncPolicy('assigned_only');
+    }
+  }, [category, assignedUserIds, calendarSyncPolicy]);
+
+  const buildRecurrenceRule = () => {
     if (!isRecurring) return undefined;
-    const dayMap: Record<string, string> = {
-      '0': 'SU', '1': 'MO', '2': 'TU', '3': 'WE', '4': 'TH', '5': 'FR', '6': 'SA',
-    };
-    const startDayOfWeek = startDate
-      ? dayMap[new Date(`${startDate}T${startTime || '09:00'}`).getDay().toString()] || 'MO'
-      : 'MO';
+
+    const start = startDate ? new Date(`${startDate}T${startTime || '09:00'}`) : new Date();
+    const byDay = ['SU', 'MO', 'TU', 'WE', 'TH', 'FR', 'SA'][start.getDay()] || 'MO';
+
     switch (recurrencePreset) {
-      case 'weekly':
-        return `FREQ=WEEKLY;BYDAY=${startDayOfWeek};COUNT=${recurrenceCount}`;
       case 'biweekly':
-        return `FREQ=WEEKLY;INTERVAL=2;BYDAY=${startDayOfWeek};COUNT=${recurrenceCount}`;
+        return `FREQ=WEEKLY;INTERVAL=2;BYDAY=${byDay};COUNT=${recurrenceCount}`;
       case 'monthly':
         return `FREQ=MONTHLY;COUNT=${recurrenceCount}`;
+      case 'weekly':
       default:
-        return `FREQ=WEEKLY;BYDAY=${startDayOfWeek};COUNT=${recurrenceCount}`;
+        return `FREQ=WEEKLY;BYDAY=${byDay};COUNT=${recurrenceCount}`;
     }
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const toggleArrayValue = (
+    value: string,
+    values: string[],
+    setter: React.Dispatch<React.SetStateAction<string[]>>
+  ) => {
+    setter(values.includes(value) ? values.filter((item) => item !== value) : [...values, value]);
+  };
+
+  const handleSubmit = async (event: React.FormEvent) => {
+    event.preventDefault();
 
     if (!token) {
       setError('Not authenticated');
@@ -216,67 +300,62 @@ export default function TaskModal({
       return;
     }
 
+    const startDateTime = buildIso(startDate, startTime, allDay);
+    const endDateTime = buildIso(endDate || startDate, endTime, allDay, allDay);
+    const attendeeEmails = coupleAttendeeEmails
+      .split(',')
+      .map((entry) => entry.trim())
+      .filter(Boolean);
+
+    const payload: ScheduleItemPayload = {
+      title: title.trim(),
+      description: description.trim() || undefined,
+      wedding_id: weddingId || undefined,
+      category,
+      priority,
+      start_date: startDateTime,
+      end_date: endDateTime,
+      all_day: allDay,
+      due_date: dueDate ? `${dueDate}T23:59:59Z` : undefined,
+      reminder_minutes: reminderMinutes || undefined,
+      is_recurring: isRecurring,
+      recurrence_rule: buildRecurrenceRule(),
+      color: color || undefined,
+      notes: notes || undefined,
+      assigned_user_ids: isMeetingMode ? assignedUserIds : undefined,
+      schedule_item_type: isMeetingMode ? 'meeting' : 'task',
+      visibility_mode: isMeetingMode ? visibilityMode : undefined,
+      calendar_sync_policy: isMeetingMode ? calendarSyncPolicy : undefined,
+      timezone: timezone || undefined,
+      couple_attendee_emails: isMeetingMode ? attendeeEmails : undefined,
+      conference_provider: isMeetingMode ? conferenceProvider || undefined : undefined,
+      conference_url: isMeetingMode ? conferenceUrl || undefined : undefined,
+      invite_delivery_mode: isMeetingMode ? inviteDeliveryMode : undefined,
+      sync_target_connection_ids:
+        isMeetingMode && customTargetsEnabled ? selectedConnectionIds : undefined,
+      sync_to_google: !isMeetingMode ? syncToGoogle : undefined,
+    };
+
     setLoading(true);
     setError('');
 
     try {
-      // Build datetime strings
-      const startDateTime = allDay
-        ? `${startDate}T00:00:00Z`
-        : `${startDate}T${startTime}:00Z`;
-
-      const endDateTime = allDay
-        ? (endDate ? `${endDate}T23:59:59Z` : `${startDate}T23:59:59Z`)
-        : (endDate ? `${endDate}T${endTime}:00Z` : startDateTime);
-
-      if (isEditing && task) {
-        // Update existing task
-        const updates: UpdateTaskInput = {
-          title,
-          description: description || undefined,
-          wedding_id: weddingId || undefined,
-          category,
-          priority,
-          start_date: startDateTime,
-          end_date: endDateTime,
-          all_day: allDay,
-          due_date: dueDate ? `${dueDate}T23:59:59Z` : undefined,
-          reminder_minutes: reminderMinutes || undefined,
-          is_recurring: isRecurring,
-          recurrence_rule: buildRecurrenceRule(),
-          notes: notes || undefined,
-          color: color || undefined,
-        };
-
-        const updatedTask = await updateTask(token, task.id, updates);
-        onSuccess?.(updatedTask);
+      if (isMeetingMode) {
+        if (task) {
+          await updateMeeting(token, task.id, payload);
+        } else {
+          await createMeeting(token, payload);
+        }
+      } else if (task) {
+        await updateTask(token, task.id, payload);
       } else {
-        // Create new task
-        const newTask: CreateTaskInput = {
-          title,
-          description: description || undefined,
-          wedding_id: weddingId || undefined,
-          category,
-          priority,
-          start_date: startDateTime,
-          end_date: endDateTime,
-          all_day: allDay,
-          due_date: dueDate ? `${dueDate}T23:59:59Z` : undefined,
-          reminder_minutes: reminderMinutes || undefined,
-          is_recurring: isRecurring,
-          recurrence_rule: buildRecurrenceRule(),
-          notes: notes || undefined,
-          color: color || undefined,
-          sync_to_google: syncToGoogle,
-        };
-
-        const createdTask = await createTask(token, newTask);
-        onSuccess?.(createdTask);
+        await createTask(token, payload);
       }
 
+      onSuccess?.();
       onOpenChange(false);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to save task');
+      setError(err instanceof Error ? err.message : 'Failed to save schedule item');
     } finally {
       setLoading(false);
     }
@@ -309,173 +388,477 @@ export default function TaskModal({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-3xl">
+      <DialogContent className="max-h-[92vh] max-w-4xl overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>
-            {isEditing ? 'Edit Task' : 'Create New Task'}
-          </DialogTitle>
+          <DialogTitle>{isEditing ? 'Edit Schedule Item' : 'Create Schedule Item'}</DialogTitle>
+          <DialogDescription>
+            Tasks stay internal by default. Meetings use the planner-business scheduling flow and
+            sync to explicit external calendar targets.
+          </DialogDescription>
         </DialogHeader>
 
-        <form onSubmit={handleSubmit} className="space-y-3 mt-3">
+        <form onSubmit={handleSubmit} className="space-y-5">
           {error && (
-            <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-2">
-              <p className="text-red-600 dark:text-red-400 text-sm">{error}</p>
+            <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
+              {error}
             </div>
           )}
 
-          {/* Row 1: Title */}
-          <input
-            type="text"
-            value={title}
-            onChange={(e) => setTitle(e.target.value)}
-            placeholder="Task title *"
-            className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 dark:bg-gray-700 dark:text-gray-100"
-            required
-          />
-
-          {/* Row 2: Wedding, Category, Priority, Color */}
-          <div className="grid grid-cols-4 gap-3">
-            <select
-              value={weddingId}
-              onChange={(e) => setWeddingId(e.target.value)}
-              className="px-2 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg dark:bg-gray-700 dark:text-gray-100"
-            >
-              <option value="">No wedding</option>
-              {weddings.map((w, idx) => (
-                <option key={w.id || `wedding-${idx}`} value={w.id}>{w.couple_names}</option>
-              ))}
-            </select>
-            <select
-              value={category}
-              onChange={(e) => setCategory(e.target.value as TaskCategory)}
-              className="px-2 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg dark:bg-gray-700 dark:text-gray-100"
-            >
-              {CATEGORIES.map((cat) => (
-                <option key={cat} value={cat}>{CATEGORY_LABELS[cat]}</option>
-              ))}
-            </select>
-            <select
-              value={priority}
-              onChange={(e) => setPriority(e.target.value as TaskPriority)}
-              className="px-2 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg dark:bg-gray-700 dark:text-gray-100"
-            >
-              {PRIORITIES.map((p) => (
-                <option key={p} value={p}>{PRIORITY_CONFIG[p].label}</option>
-              ))}
-            </select>
-            <select
-              value={color}
-              onChange={(e) => setColor(e.target.value)}
-              className="px-2 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg dark:bg-gray-700 dark:text-gray-100"
-            >
-              {colorOptions.map((opt) => (
-                <option key={opt.value} value={opt.value}>{opt.label}</option>
-              ))}
-            </select>
-          </div>
-
-          {/* Row 3: Start date/time, End date/time, All-day */}
-          <div className="flex items-end gap-3">
-            <div className="flex-1">
-              <label className="block text-xs text-gray-500 dark:text-gray-400 mb-0.5">Start *</label>
-              <div className="flex gap-1.5">
-                <input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)}
-                  className="flex-1 px-2 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg dark:bg-gray-700 dark:text-gray-100" required />
-                {!allDay && <input type="time" value={startTime} onChange={(e) => setStartTime(e.target.value)}
-                  className="w-32 px-2 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg dark:bg-gray-700 dark:text-gray-100" />}
-              </div>
+          <div className="grid gap-4 md:grid-cols-2">
+            <div className="md:col-span-2">
+              <label className="mb-1.5 block text-sm font-medium text-slate-700">Title</label>
+              <input
+                type="text"
+                value={title}
+                onChange={(event) => setTitle(event.target.value)}
+                className="w-full rounded-xl border border-slate-300 px-3 py-2.5 text-sm text-slate-900"
+                placeholder="Planning call, venue walkthrough, checklist review..."
+                required
+              />
             </div>
-            <div className="flex-1">
-              <label className="block text-xs text-gray-500 dark:text-gray-400 mb-0.5">End</label>
-              <div className="flex gap-1.5">
-                <input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)}
-                  className="flex-1 px-2 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg dark:bg-gray-700 dark:text-gray-100" />
-                {!allDay && <input type="time" value={endTime} onChange={(e) => setEndTime(e.target.value)}
-                  className="w-32 px-2 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg dark:bg-gray-700 dark:text-gray-100" />}
-              </div>
-            </div>
-            <label className="flex items-center gap-1.5 pb-1.5 whitespace-nowrap cursor-pointer">
-              <input type="checkbox" checked={allDay} onChange={(e) => setAllDay(e.target.checked)}
-                className="w-4 h-4 text-indigo-600 border-gray-300 rounded" />
-              <span className="text-xs text-gray-600 dark:text-gray-400">All-day</span>
+
+            <label className="text-sm">
+              <span className="mb-1.5 block font-medium text-slate-700">Wedding</span>
+              <select
+                value={weddingId}
+                onChange={(event) => setWeddingId(event.target.value)}
+                className="w-full rounded-xl border border-slate-300 px-3 py-2.5 text-slate-900"
+              >
+                <option value="">No wedding</option>
+                {weddings.map((wedding) => (
+                  <option key={wedding.id} value={wedding.id}>
+                    {wedding.couple_names}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <label className="text-sm">
+              <span className="mb-1.5 block font-medium text-slate-700">Type</span>
+              <select
+                value={category}
+                onChange={(event) => setCategory(event.target.value as TaskCategory)}
+                className="w-full rounded-xl border border-slate-300 px-3 py-2.5 text-slate-900"
+              >
+                {CATEGORIES.map((item) => (
+                  <option key={item} value={item}>
+                    {CATEGORY_LABELS[item]}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <label className="text-sm">
+              <span className="mb-1.5 block font-medium text-slate-700">Priority</span>
+              <select
+                value={priority}
+                onChange={(event) => setPriority(event.target.value as TaskPriority)}
+                className="w-full rounded-xl border border-slate-300 px-3 py-2.5 text-slate-900"
+              >
+                {PRIORITIES.map((item) => (
+                  <option key={item} value={item}>
+                    {PRIORITY_CONFIG[item].label}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <label className="text-sm">
+              <span className="mb-1.5 block font-medium text-slate-700">Timezone</span>
+              <input
+                type="text"
+                value={timezone}
+                onChange={(event) => setTimezone(event.target.value)}
+                className="w-full rounded-xl border border-slate-300 px-3 py-2.5 text-slate-900"
+                placeholder="America/Chicago"
+              />
             </label>
           </div>
 
-          {/* Row 4: Due date, Reminder, Google sync */}
-          <div className="flex items-end gap-3">
-            <div className="flex-1">
-              <label className="block text-xs text-gray-500 dark:text-gray-400 mb-0.5">Due date</label>
-              <input type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)}
-                className="w-full px-2 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg dark:bg-gray-700 dark:text-gray-100" />
+          <div className="grid gap-4 md:grid-cols-2">
+            <div className="space-y-2">
+              <label className="block text-sm font-medium text-slate-700">Start</label>
+              <div className="flex gap-2">
+                <input
+                  type="date"
+                  value={startDate}
+                  onChange={(event) => setStartDate(event.target.value)}
+                  className="w-full rounded-xl border border-slate-300 px-3 py-2.5 text-sm text-slate-900"
+                  required
+                />
+                {!allDay && (
+                  <input
+                    type="time"
+                    value={startTime}
+                    onChange={(event) => setStartTime(event.target.value)}
+                    className="w-36 rounded-xl border border-slate-300 px-3 py-2.5 text-sm text-slate-900"
+                  />
+                )}
+              </div>
             </div>
-            <div className="flex-1">
-              <label className="block text-xs text-gray-500 dark:text-gray-400 mb-0.5">Reminder</label>
-              <select value={reminderMinutes} onChange={(e) => setReminderMinutes(e.target.value ? Number(e.target.value) : '')}
-                className="w-full px-2 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg dark:bg-gray-700 dark:text-gray-100">
-                {reminderOptions.map((opt) => (
-                  <option key={opt.value} value={opt.value}>{opt.label}</option>
+
+            <div className="space-y-2">
+              <label className="block text-sm font-medium text-slate-700">End</label>
+              <div className="flex gap-2">
+                <input
+                  type="date"
+                  value={endDate}
+                  onChange={(event) => setEndDate(event.target.value)}
+                  className="w-full rounded-xl border border-slate-300 px-3 py-2.5 text-sm text-slate-900"
+                />
+                {!allDay && (
+                  <input
+                    type="time"
+                    value={endTime}
+                    onChange={(event) => setEndTime(event.target.value)}
+                    className="w-36 rounded-xl border border-slate-300 px-3 py-2.5 text-sm text-slate-900"
+                  />
+                )}
+              </div>
+            </div>
+          </div>
+
+          <div className="grid gap-4 md:grid-cols-4">
+            <label className="flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-sm text-slate-700">
+              <input
+                type="checkbox"
+                checked={allDay}
+                onChange={(event) => setAllDay(event.target.checked)}
+                className="h-4 w-4 rounded border-slate-300 text-slate-900"
+              />
+              All day
+            </label>
+
+            <label className="text-sm md:col-span-2">
+              <span className="mb-1.5 block font-medium text-slate-700">Reminder</span>
+              <select
+                value={reminderMinutes}
+                onChange={(event) =>
+                  setReminderMinutes(event.target.value ? Number(event.target.value) : '')
+                }
+                className="w-full rounded-xl border border-slate-300 px-3 py-2.5 text-slate-900"
+              >
+                {reminderOptions.map((option) => (
+                  <option key={String(option.value)} value={option.value}>
+                    {option.label}
+                  </option>
                 ))}
               </select>
-            </div>
-            {!isEditing && (
-              <label className="flex items-center gap-1.5 pb-1.5 whitespace-nowrap cursor-pointer">
-                <input type="checkbox" checked={syncToGoogle} onChange={(e) => setSyncToGoogle(e.target.checked)}
-                  className="w-4 h-4 text-indigo-600 border-gray-300 rounded" />
-                <span className="text-xs text-gray-600 dark:text-gray-400">Google Cal</span>
+            </label>
+
+            <label className="text-sm">
+              <span className="mb-1.5 block font-medium text-slate-700">Color</span>
+              <select
+                value={color}
+                onChange={(event) => setColor(event.target.value)}
+                className="w-full rounded-xl border border-slate-300 px-3 py-2.5 text-slate-900"
+              >
+                {colorOptions.map((option) => (
+                  <option key={option.value || 'default'} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
+
+          <div className="grid gap-4 md:grid-cols-2">
+            <label className="text-sm">
+              <span className="mb-1.5 block font-medium text-slate-700">Due date</span>
+              <input
+                type="date"
+                value={dueDate}
+                onChange={(event) => setDueDate(event.target.value)}
+                className="w-full rounded-xl border border-slate-300 px-3 py-2.5 text-slate-900"
+              />
+            </label>
+
+            {!isMeetingMode && !isEditing && (
+              <label className="flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-sm text-slate-700">
+                <input
+                  type="checkbox"
+                  checked={syncToGoogle}
+                  onChange={(event) => setSyncToGoogle(event.target.checked)}
+                  className="h-4 w-4 rounded border-slate-300 text-slate-900"
+                />
+                Sync this task to the default writable calendar
               </label>
             )}
           </div>
 
-          {/* Row 5: Recurrence */}
-          <div className="flex items-center gap-3">
-            <label className="flex items-center gap-1.5 cursor-pointer">
-              <input type="checkbox" checked={isRecurring} onChange={(e) => setIsRecurring(e.target.checked)}
-                className="w-4 h-4 text-indigo-600 border-gray-300 rounded" />
-              <span className="text-xs text-gray-600 dark:text-gray-400">Recurring</span>
-            </label>
-            {isRecurring && (
-              <>
-                <select value={recurrencePreset} onChange={(e) => setRecurrencePreset(e.target.value as 'weekly' | 'biweekly' | 'monthly')}
-                  className="px-2 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg dark:bg-gray-700 dark:text-gray-100">
-                  <option value="weekly">Weekly</option>
-                  <option value="biweekly">Every 2 weeks</option>
-                  <option value="monthly">Monthly</option>
-                </select>
-                <div className="flex items-center gap-1.5">
-                  <input type="number" value={recurrenceCount} onChange={(e) => setRecurrenceCount(Math.max(1, Math.min(52, parseInt(e.target.value) || 1)))}
-                    min={1} max={52}
-                    className="w-16 px-2 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg dark:bg-gray-700 dark:text-gray-100" />
-                  <span className="text-xs text-gray-500 dark:text-gray-400">occurrences</span>
-                </div>
-              </>
-            )}
+          <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+            <div className="flex flex-wrap items-center gap-4">
+              <label className="flex items-center gap-2 text-sm text-slate-700">
+                <input
+                  type="checkbox"
+                  checked={isRecurring}
+                  onChange={(event) => setIsRecurring(event.target.checked)}
+                  className="h-4 w-4 rounded border-slate-300 text-slate-900"
+                />
+                Recurring
+              </label>
+              {isRecurring && (
+                <>
+                  <select
+                    value={recurrencePreset}
+                    onChange={(event) =>
+                      setRecurrencePreset(event.target.value as 'weekly' | 'biweekly' | 'monthly')
+                    }
+                    className="rounded-xl border border-slate-300 px-3 py-2 text-sm text-slate-900"
+                  >
+                    <option value="weekly">Weekly</option>
+                    <option value="biweekly">Every 2 weeks</option>
+                    <option value="monthly">Monthly</option>
+                  </select>
+                  <input
+                    type="number"
+                    min={1}
+                    max={52}
+                    value={recurrenceCount}
+                    onChange={(event) =>
+                      setRecurrenceCount(
+                        Math.max(1, Math.min(52, Number.parseInt(event.target.value || '1', 10)))
+                      )
+                    }
+                    className="w-28 rounded-xl border border-slate-300 px-3 py-2 text-sm text-slate-900"
+                  />
+                </>
+              )}
+            </div>
           </div>
 
-          {/* Row 6: Description (single field, replaces both Description + Notes) */}
-          <textarea
-            value={description}
-            onChange={(e) => setDescription(e.target.value)}
-            placeholder="Description / notes..."
-            rows={2}
-            className="w-full px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg dark:bg-gray-700 dark:text-gray-100"
-          />
+          <div className="space-y-2">
+            <label className="block text-sm font-medium text-slate-700">Description</label>
+            <textarea
+              value={description}
+              onChange={(event) => setDescription(event.target.value)}
+              rows={3}
+              className="w-full rounded-xl border border-slate-300 px-3 py-2.5 text-sm text-slate-900"
+              placeholder="Agenda, context, next steps, or task notes..."
+            />
+          </div>
 
-          {/* Hidden notes field to preserve data for existing tasks */}
-          {isEditing && notes && (
-            <input type="hidden" value={notes} />
+          {isMeetingMode && (
+            <section className="space-y-4 rounded-2xl border border-slate-200 bg-white p-4">
+              <div>
+                <h3 className="text-sm font-semibold text-slate-900">Meeting delivery and sync</h3>
+                <p className="mt-1 text-xs leading-6 text-slate-500">
+                  Default target resolution is: explicit override, else assigned staff default
+                  writable calendar if allowed, else owner default writable calendar if allowed,
+                  else internal-only with sync marked not configured.
+                </p>
+              </div>
+
+              <div className="grid gap-4 md:grid-cols-2">
+                <div className="space-y-2">
+                  <label className="block text-sm font-medium text-slate-700">Assigned staff</label>
+                  <div className="space-y-2 rounded-2xl border border-slate-200 bg-slate-50 p-3">
+                    {staffOptions.length === 0 ? (
+                      <p className="text-xs text-slate-500">No staff options available.</p>
+                    ) : (
+                      staffOptions.map((staff) => (
+                        <label
+                          key={staff.id}
+                          className="flex items-center gap-2 text-sm text-slate-700"
+                        >
+                          <input
+                            type="checkbox"
+                            checked={assignedUserIds.includes(staff.id)}
+                            onChange={() =>
+                              toggleArrayValue(staff.id, assignedUserIds, setAssignedUserIds)
+                            }
+                            className="h-4 w-4 rounded border-slate-300 text-slate-900"
+                          />
+                          {staff.label}
+                        </label>
+                      ))
+                    )}
+                  </div>
+                </div>
+
+                <div className="space-y-4">
+                  <label className="text-sm">
+                    <span className="mb-1.5 block font-medium text-slate-700">
+                      Couple attendee emails
+                    </span>
+                    <textarea
+                      value={coupleAttendeeEmails}
+                      onChange={(event) => setCoupleAttendeeEmails(event.target.value)}
+                      rows={4}
+                      className="w-full rounded-xl border border-slate-300 px-3 py-2.5 text-sm text-slate-900"
+                      placeholder="comma-separated emails"
+                    />
+                  </label>
+
+                  <label className="text-sm">
+                    <span className="mb-1.5 block font-medium text-slate-700">Invite delivery</span>
+                    <select
+                      value={inviteDeliveryMode}
+                      onChange={(event) =>
+                        setInviteDeliveryMode(event.target.value as InviteDeliveryMode)
+                      }
+                      className="w-full rounded-xl border border-slate-300 px-3 py-2.5 text-slate-900"
+                    >
+                      {INVITE_OPTIONS.map((option) => (
+                        <option key={option.value} value={option.value}>
+                          {option.label}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                </div>
+              </div>
+
+              <div className="grid gap-4 md:grid-cols-2">
+                <label className="text-sm">
+                  <span className="mb-1.5 block font-medium text-slate-700">Sync policy</span>
+                  <select
+                    value={calendarSyncPolicy}
+                    onChange={(event) =>
+                      setCalendarSyncPolicy(event.target.value as CalendarSyncPolicy)
+                    }
+                    className="w-full rounded-xl border border-slate-300 px-3 py-2.5 text-slate-900"
+                  >
+                    {SYNC_POLICY_OPTIONS.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+
+                <label className="text-sm">
+                  <span className="mb-1.5 block font-medium text-slate-700">Internal visibility</span>
+                  <select
+                    value={visibilityMode}
+                    onChange={(event) => setVisibilityMode(event.target.value as VisibilityMode)}
+                    className="w-full rounded-xl border border-slate-300 px-3 py-2.5 text-slate-900"
+                  >
+                    {VISIBILITY_OPTIONS.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              </div>
+
+              <div className="grid gap-4 md:grid-cols-2">
+                <label className="text-sm">
+                  <span className="mb-1.5 block font-medium text-slate-700">
+                    Conference provider
+                  </span>
+                  <input
+                    type="text"
+                    value={conferenceProvider}
+                    onChange={(event) => setConferenceProvider(event.target.value)}
+                    className="w-full rounded-xl border border-slate-300 px-3 py-2.5 text-slate-900"
+                    placeholder="Zoom, Google Meet, phone call..."
+                  />
+                </label>
+
+                <label className="text-sm">
+                  <span className="mb-1.5 block font-medium text-slate-700">Conference URL</span>
+                  <input
+                    type="url"
+                    value={conferenceUrl}
+                    onChange={(event) => setConferenceUrl(event.target.value)}
+                    className="w-full rounded-xl border border-slate-300 px-3 py-2.5 text-slate-900"
+                    placeholder="https://..."
+                  />
+                </label>
+              </div>
+
+              <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                <label className="flex items-center gap-2 text-sm font-medium text-slate-700">
+                  <input
+                    type="checkbox"
+                    checked={customTargetsEnabled}
+                    onChange={(event) => {
+                      setCustomTargetsEnabled(event.target.checked);
+                      if (!event.target.checked) {
+                        setSelectedConnectionIds([]);
+                      }
+                    }}
+                    className="h-4 w-4 rounded border-slate-300 text-slate-900"
+                  />
+                  Use explicit calendar target override
+                </label>
+
+                {customTargetsEnabled && (
+                  <div className="mt-3 space-y-2">
+                    {writableConnections.length === 0 ? (
+                      <p className="text-xs text-slate-500">
+                        No writable active calendar connections are available.
+                      </p>
+                    ) : (
+                      writableConnections.map((connection) => (
+                        <label
+                          key={connection.id}
+                          className="flex items-center gap-2 text-sm text-slate-700"
+                        >
+                          <input
+                            type="checkbox"
+                            checked={selectedConnectionIds.includes(connection.id)}
+                            onChange={() =>
+                              toggleArrayValue(
+                                connection.id,
+                                selectedConnectionIds,
+                                setSelectedConnectionIds
+                              )
+                            }
+                            className="h-4 w-4 rounded border-slate-300 text-slate-900"
+                          />
+                          <span>
+                            {connection.calendar_name || connection.calendar_id || 'Calendar'} •{' '}
+                            {connection.user_email || connection.provider_account_email || 'Unknown user'}
+                          </span>
+                        </label>
+                      ))
+                    )}
+                    <p className="text-xs leading-6 text-slate-500">
+                      Only targets allowed by permission and sync policy will be honored. If none
+                      are allowed, the meeting stays internal-only.
+                    </p>
+                  </div>
+                )}
+              </div>
+            </section>
           )}
 
-          {/* Row 6: Actions */}
-          <DialogFooter className="pt-2 border-t border-gray-200 dark:border-gray-700">
-            <button type="button" onClick={() => onOpenChange(false)}
-              className="px-4 py-2 text-sm text-gray-700 dark:text-gray-300 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
-              disabled={loading}>
-              Cancel
-            </button>
-            <button type="submit" disabled={loading}
-              className="px-4 py-2 text-sm bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors disabled:opacity-50">
-              {loading ? 'Saving...' : isEditing ? 'Save Changes' : 'Create Task'}
-            </button>
+          <DialogFooter className="border-t border-slate-200 pt-4">
+            <div className="flex w-full flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                {isEditing && task && onDelete && (
+                  <button
+                    type="button"
+                    onClick={() => void onDelete(task)}
+                    disabled={loading}
+                    className="rounded-xl border border-rose-300 px-4 py-2 text-sm font-medium text-rose-700 transition hover:bg-rose-50 disabled:opacity-60"
+                  >
+                    Delete
+                  </button>
+                )}
+              </div>
+
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => onOpenChange(false)}
+                  disabled={loading}
+                  className="rounded-xl border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50 disabled:opacity-60"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={loading}
+                  className="rounded-xl bg-slate-900 px-4 py-2 text-sm font-medium text-white transition hover:bg-slate-700 disabled:opacity-60"
+                >
+                  {loading ? 'Saving...' : isEditing ? 'Save changes' : 'Create'}
+                </button>
+              </div>
+            </div>
           </DialogFooter>
         </form>
       </DialogContent>

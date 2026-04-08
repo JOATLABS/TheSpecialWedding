@@ -3896,6 +3896,7 @@ Engineering alignment review across frontend, backend, database models, and endp
 
 ### Fixed
 
+- **Planner calendar scope typing cleanup** (`/app/dependencies/auth_extended.py`, `/app/api/planner_calendar.py`) — Replaced the loose calendar-scope return type with a dedicated `TypedDict` so `accessible_wedding_ids` is inferred as `list[str] | None` instead of `object | None` at shared-calendar aggregation call sites.
 - **Forms API typing cleanup** (`/app/api/forms.py`) — Replaced the loose owner-scope dictionary type with a dedicated `TypedDict`, made the optional `Request` annotation explicit on `get_forms()`, and split the static template catalog into a typed helper so repeated Pylance/mypy errors from `owner_scope[...]` and template lookups no longer cascade across the file.
 - **Admin login double-attempt regression** (`/app/contexts/AdminContext.tsx`) — Removed the March 26, 2026 hard-refresh login handoff that was discarding the in-memory token before the destination admin route could hydrate, and now commits the authenticated token/profile atomically before using client-side navigation so successful admin sign-ins do not bounce back to `/admin/login` on the first attempt.
 - **SaaS ad-platform migration completion** (`/app/admin/saas/page.tsx`) — Restored the missing ad-platform settings that were left behind during the move from `/admin/ads`, including fraud detection, vendor signup controls, data export, and pipeline status, and corrected the SaaS tab to use the real backend config keys instead of partial placeholder names.

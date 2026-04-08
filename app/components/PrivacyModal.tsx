@@ -11,7 +11,11 @@ interface PrivacyModalProps {
   weddingName?: string;
 }
 
-export default function PrivacyModal({ isOpen, onClose, weddingName = "The Special Wedding" }: PrivacyModalProps) {
+export default function PrivacyModal({
+  isOpen,
+  onClose,
+  weddingName = 'The Special Wedding',
+}: PrivacyModalProps) {
   const lastUpdated = useMemo(() => formatDate(new Date()), []);
 
   return (
@@ -26,7 +30,7 @@ export default function PrivacyModal({ isOpen, onClose, weddingName = "The Speci
           leaveFrom="opacity-100"
           leaveTo="opacity-0"
         >
-          <div className="fixed inset-0 bg-black bg-opacity-25" />
+          <div className="fixed inset-0 bg-black/25" />
         </Transition.Child>
 
         <div className="fixed inset-0 overflow-y-auto">
@@ -40,133 +44,69 @@ export default function PrivacyModal({ isOpen, onClose, weddingName = "The Speci
               leaveFrom="opacity-100 scale-100"
               leaveTo="opacity-0 scale-95"
             >
-              <Dialog.Panel className="w-full max-w-3xl transform overflow-hidden rounded-2xl bg-white p-6 text-left align-middle shadow-xl transition-all">
-                <Dialog.Title as="div" className="flex justify-between items-center mb-4">
-                  <h3 className="text-2xl font-bold text-gray-900">Privacy Policy</h3>
-                  <button
-                    onClick={onClose}
-                    className="rounded-md p-2 hover:bg-gray-100 transition-colors"
-                  >
-                    <XMarkIcon className="h-5 w-5" />
+              <Dialog.Panel className="w-full max-w-3xl transform overflow-hidden rounded-3xl bg-white p-6 text-left align-middle shadow-xl transition-all">
+                <Dialog.Title as="div" className="mb-4 flex items-center justify-between">
+                  <div>
+                    <h3 className="text-2xl font-bold text-slate-900">Privacy Policy</h3>
+                    <p className="mt-1 text-sm text-slate-500">Last updated: {lastUpdated}</p>
+                  </div>
+                  <button onClick={onClose} className="rounded-md p-2 transition-colors hover:bg-slate-100">
+                    <XMarkIcon className="h-5 w-5 text-slate-600" />
                   </button>
                 </Dialog.Title>
-                
-                <div className="mt-2 max-h-[60vh] overflow-y-auto prose prose-sm">
-                  <p className="text-sm text-gray-500 mb-4">Last updated: {lastUpdated}</p>
-                  
-                  <h4 className="text-lg font-semibold mt-4">1. Information We Collect</h4>
+
+                <div className="prose prose-sm max-h-[60vh] overflow-y-auto text-slate-700">
                   <p>
-                    When you RSVP or interact with our wedding website, we may collect:
+                    {weddingName} uses The Special Wedding as a planner platform. Planner owners and
+                    permitted team members can manage internal schedule items, connect Google
+                    calendars, and deliver meetings to couples through the portal plus email/ICS.
                   </p>
+
+                  <h4>What data is collected</h4>
                   <ul>
-                    <li>Your name and contact information</li>
-                    <li>Phone number (if you opt-in to SMS notifications)</li>
-                    <li>Email address</li>
-                    <li>Dietary restrictions or preferences</li>
-                    <li>Plus-one information</li>
-                    <li>Event attendance selections</li>
+                    <li>Planner and team-member account information</li>
+                    <li>Wedding metadata, couple contact details, and meeting details</li>
+                    <li>Connected Google account email, calendar metadata, and connection health state</li>
+                    <li>Encrypted OAuth tokens required to maintain calendar sync</li>
                   </ul>
 
-                  <h4 className="text-lg font-semibold mt-4">2. How We Use Your Information</h4>
+                  <h4>How calendar data is used</h4>
                   <p>
-                    We use the information collected to:
-                  </p>
-                  <ul>
-                    <li>Manage wedding guest lists and RSVPs</li>
-                    <li>Send event reminders and updates (if opted-in)</li>
-                    <li>Plan catering and seating arrangements</li>
-                    <li>Share important wedding-related information</li>
-                    <li>Contact you in case of event changes</li>
-                  </ul>
-
-                  <h4 className="text-lg font-semibold mt-4">3. SMS/Mobile Information</h4>
-                  <p className="font-semibold text-red-600">
-                    We will not share or sell your mobile information with third parties for marketing purposes.
-                  </p>
-                  <p>
-                    If you opt-in to receive SMS notifications:
-                  </p>
-                  <ul>
-                    <li>Your phone number will only be used for wedding-related communications</li>
-                    <li>You can opt-out at any time by replying STOP</li>
-                    <li>Message frequency may vary but typically won’t exceed 5 messages per month</li>
-                    <li>Standard message and data rates may apply</li>
-                  </ul>
-
-                  <h4 className="text-lg font-semibold mt-4">4. Data Sharing and Disclosure</h4>
-                  <p>
-                    We do not sell, trade, or rent your personal information. We may share your information only:
-                  </p>
-                  <ul>
-                    <li>With wedding vendors (caterers, venues) as necessary for event planning</li>
-                    <li>When required by law or legal process</li>
-                    <li>To protect the rights and safety of our guests</li>
-                  </ul>
-
-                  <h4 className="text-lg font-semibold mt-4">5. Data Security</h4>
-                  <p>
-                    We implement reasonable security measures to protect your personal information. However, no method of transmission over the internet is 100% secure.
+                    Internal tasks and meetings remain the canonical records. Connected Google
+                    calendars are downstream projections used for shared planner visibility,
+                    assigned-staff scheduling, and availability coordination.
                   </p>
 
-                  <h4 className="text-lg font-semibold mt-4">6. Data Retention</h4>
+                  <h4>Privacy defaults</h4>
                   <p>
-                    We will retain your information for the duration needed to fulfill the wedding event purposes, typically up to 6 months after the wedding date. After this period, personal information will be deleted or anonymized.
+                    Shared external calendars are opt-in. Personal external events render as
+                    busy/free by default and only show full details when the planner owner enables
+                    that on a specific connection.
                   </p>
 
-                  <h4 className="text-lg font-semibold mt-4">7. Your Rights</h4>
+                  <h4>Couples and OAuth</h4>
                   <p>
-                    You have the right to:
-                  </p>
-                  <ul>
-                    <li>Access the personal information we have about you</li>
-                    <li>Request correction of any inaccurate information</li>
-                    <li>Request deletion of your information (subject to event planning needs)</li>
-                    <li>Opt-out of SMS communications at any time</li>
-                  </ul>
-
-                  <h4 className="text-lg font-semibold mt-4">8. Children’s Privacy</h4>
-                  <p>
-                    Our website is not intended for children under 13. We do not knowingly collect information from children under 13.
+                    Couples do not connect personal calendars through OAuth in v1. Meetings are
+                    shown in the couple portal and can also be delivered through email plus ICS.
                   </p>
 
-                  <h4 className="text-lg font-semibold mt-4">9. Cookies and Tracking</h4>
+                  <h4>Disconnect and deletion</h4>
                   <p>
-                    We use cookies to improve your experience and remember your RSVP status. You can disable cookies in your browser settings.
+                    Disconnecting Google Calendar removes local connection records used for sync and
+                    revokes Google access when applicable. Internal meetings remain in the platform.
                   </p>
 
-                  <h4 className="text-lg font-semibold mt-4">10. Third-Party Services</h4>
                   <p>
-                    We use third-party services for:
-                  </p>
-                  <ul>
-                    <li>SMS messaging (Telnyx/Twilio)</li>
-                    <li>Email communications (Resend)</li>
-                    <li>Website hosting and analytics</li>
-                  </ul>
-                  <p>
-                    These services have their own privacy policies governing the use of your information.
-                  </p>
-
-                  <h4 className="text-lg font-semibold mt-4">11. Changes to This Policy</h4>
-                  <p>
-                    We may update this privacy policy from time to time. We will notify you of any changes by posting the new policy on this page.
-                  </p>
-
-                  <h4 className="text-lg font-semibold mt-4">12. Contact Us</h4>
-                  <p>
-                    If you have questions about this privacy policy or your personal information, please contact us at:
-                  </p>
-                  <p>
-                    Email: support@thespecialwedding.com<br />
-                    Phone: (319) 529-6088<br />
-                    Website: thespecialwedding.com
+                    Read the full public privacy page at <a href="/privacy">/privacy</a>, review
+                    Google deletion details at <a href="/google-data-deletion">/google-data-deletion</a>,
+                    or contact <a href="mailto:support@thespecialwedding.io">support@thespecialwedding.io</a>.
                   </p>
                 </div>
 
                 <div className="mt-6">
                   <button
                     type="button"
-                    className="w-full justify-center rounded-md border border-transparent bg-wedding-rose px-4 py-2 text-sm font-medium text-white hover:bg-wedding-rose-dark focus:outline-none focus-visible:ring-2 focus-visible:ring-wedding-rose focus-visible:ring-offset-2"
+                    className="w-full rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-medium text-white transition hover:bg-slate-700"
                     onClick={onClose}
                   >
                     Close

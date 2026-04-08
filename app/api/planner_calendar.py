@@ -755,12 +755,13 @@ async def create_task(
 
     now = datetime.now(UTC)
     owner_context = get_calendar_owner_identity(current_user)
+    owner_email = _calendar_owner_email(current_user)
 
     # Build task document
     task_doc = {
-        "planner_email": current_user.email,
+        "planner_email": owner_email,
         "owner_planner_id": owner_context.get("owner_id"),
-        "owner_planner_email": owner_context.get("owner_email") or current_user.email,
+        "owner_planner_email": owner_email,
         "created_by_user_id": owner_context.get("user_id"),
         "created_by_email": current_user.email,
         "assigned_user_ids": task_data.assigned_user_ids,
@@ -804,25 +805,29 @@ async def create_task(
 
     # Sync to Google Calendar if requested and connected
     if task_data.sync_to_google:
-        status = await google_calendar_service.get_connection_status(current_user.email)
-        if status.get("connected"):
-            google_event_id = await google_calendar_service.create_google_event(
-                current_user.email,
-                task_doc,
+        sync_status = await calendar_sync_service.sync_schedule_item(task_doc)
+        successful_sync = next(
+            (
+                item
+                for item in sync_status
+                if item.get("sync_status") == CalendarSyncStatus.SYNCED.value
+                and item.get("external_event_id")
+            ),
+            None,
+        )
+        if successful_sync:
+            await tasks_collection.update_one(
+                {"_id": result.inserted_id},
+                {
+                    "$set": {
+                        "google_event_id": successful_sync.get("external_event_id"),
+                        "synced_to_google": True,
+                        "last_google_sync": now,
+                    }
+                },
             )
-            if google_event_id:
-                await tasks_collection.update_one(
-                    {"_id": result.inserted_id},
-                    {
-                        "$set": {
-                            "google_event_id": google_event_id,
-                            "synced_to_google": True,
-                            "last_google_sync": now,
-                        }
-                    },
-                )
-                task_doc["google_event_id"] = google_event_id
-                task_doc["synced_to_google"] = True
+            task_doc["google_event_id"] = successful_sync.get("external_event_id")
+            task_doc["synced_to_google"] = True
 
     wedding_name = await _get_wedding_name(task_data.wedding_id)
 
@@ -866,7 +871,7 @@ async def list_tasks(
     category = validated_string_filter(category, max_length=50)
 
     # Build query
-    query: dict[str, Any] = {"planner_email": current_user.email}
+    query: dict[str, Any] = _build_task_scope_query(current_user)
 
     if wedding_id:
         query["wedding_id"] = wedding_id
@@ -937,10 +942,7 @@ async def get_task(
         raise HTTPException(status_code=400, detail="Invalid task ID format")
 
     task = await tasks_collection.find_one(
-        {
-            "_id": oid,
-            "planner_email": current_user.email,
-        }
+        {"$and": [{"_id": oid}, _build_task_scope_query(current_user)]}
     )
 
     if not task:
@@ -977,10 +979,7 @@ async def update_task(
 
     # Get existing task
     task = await tasks_collection.find_one(
-        {
-            "_id": oid,
-            "planner_email": current_user.email,
-        }
+        {"$and": [{"_id": oid}, _build_task_scope_query(current_user)]}
     )
 
     if not task:
@@ -1000,14 +999,32 @@ async def update_task(
     elif updates.status and updates.status != "completed":
         update_doc["completed_at"] = None
 
+    updated_task_doc = {**task, **update_doc, "_id": oid}
+
     await tasks_collection.update_one({"_id": oid}, {"$set": update_doc})
 
-    # Sync to Google Calendar if connected and task was synced
-    if task.get("synced_to_google") and task.get("google_event_id"):
-        await google_calendar_service.update_google_event(
-            current_user.email,
-            task["google_event_id"],
-            {**task, **update_doc},
+    if task.get("synced_to_google") or task.get("google_event_id"):
+        sync_status = await calendar_sync_service.sync_schedule_item(updated_task_doc)
+        successful_sync = next(
+            (
+                item
+                for item in sync_status
+                if item.get("sync_status") == CalendarSyncStatus.SYNCED.value
+                and item.get("external_event_id")
+            ),
+            None,
+        )
+        await tasks_collection.update_one(
+            {"_id": oid},
+            {
+                "$set": {
+                    "google_event_id": successful_sync.get("external_event_id")
+                    if successful_sync
+                    else None,
+                    "synced_to_google": bool(successful_sync),
+                    "last_google_sync": datetime.now(UTC) if successful_sync else None,
+                }
+            },
         )
 
     # Fetch updated task
@@ -1043,21 +1060,14 @@ async def delete_task(
 
     # Get existing task
     task = await tasks_collection.find_one(
-        {
-            "_id": oid,
-            "planner_email": current_user.email,
-        }
+        {"$and": [{"_id": oid}, _build_task_scope_query(current_user)]}
     )
 
     if not task:
         raise HTTPException(status_code=404, detail="Task not found")
 
     # Delete from Google Calendar if synced
-    if task.get("synced_to_google") and task.get("google_event_id"):
-        await google_calendar_service.delete_google_event(
-            current_user.email,
-            task["google_event_id"],
-        )
+    await calendar_sync_service.delete_schedule_item_syncs(task_id)
 
     await tasks_collection.delete_one({"_id": oid})
 
@@ -1083,7 +1093,7 @@ async def sync_task_to_google(
     """
     enforce_team_permission(current_user, "manage_wedding_settings")
     # Check if Google Calendar is connected
-    status = await google_calendar_service.get_connection_status(current_user.email)
+    status = await google_calendar_service.get_connection_status(_calendar_owner_email(current_user))
     if not status.get("connected"):
         raise HTTPException(
             status_code=400,
@@ -1098,25 +1108,39 @@ async def sync_task_to_google(
         raise HTTPException(status_code=400, detail="Invalid task ID format")
 
     task = await tasks_collection.find_one(
-        {
-            "_id": oid,
-            "planner_email": current_user.email,
-        }
+        {"$and": [{"_id": oid}, _build_task_scope_query(current_user)]}
     )
 
     if not task:
         raise HTTPException(status_code=404, detail="Task not found")
 
     # Sync to Google
-    success = await google_calendar_service.sync_task_to_google(
-        current_user.email,
-        task_id,
+    sync_status = await calendar_sync_service.sync_schedule_item(task)
+    successful_sync = next(
+        (
+            item
+            for item in sync_status
+            if item.get("sync_status") == CalendarSyncStatus.SYNCED.value
+            and item.get("external_event_id")
+        ),
+        None,
     )
 
-    if not success:
+    if not successful_sync:
         raise HTTPException(
             status_code=500, detail="Failed to sync task to Google Calendar"
         )
+
+    await tasks_collection.update_one(
+        {"_id": oid},
+        {
+            "$set": {
+                "google_event_id": successful_sync.get("external_event_id"),
+                "synced_to_google": True,
+                "last_google_sync": datetime.now(UTC),
+            }
+        },
+    )
 
     # Fetch updated task
     updated_task = await tasks_collection.find_one({"_id": oid})
@@ -1172,7 +1196,7 @@ async def bulk_update_task_status(
     result = await tasks_collection.update_many(
         {
             "_id": {"$in": oids},
-            "planner_email": current_user.email,
+            **_build_task_scope_query(current_user),
         },
         {"$set": update_doc},
     )
@@ -1217,8 +1241,9 @@ async def get_month_tasks(
         end_of_month = datetime(year, month + 1, 1, tzinfo=UTC)
 
     query = {
-        "planner_email": current_user.email,
-        "$or": [
+        "$and": [
+            _build_task_scope_query(current_user),
+            {"$or": [
             # Tasks that start in this month
             {"start_date": {"$gte": start_of_month, "$lt": end_of_month}},
             # Tasks that end in this month
@@ -1228,7 +1253,8 @@ async def get_month_tasks(
                 "start_date": {"$lt": start_of_month},
                 "end_date": {"$gte": end_of_month},
             },
-        ],
+            ]},
+        ]
     }
 
     tasks = await tasks_collection.find(query).sort("start_date", 1).to_list(length=500)
@@ -1271,9 +1297,13 @@ async def get_upcoming_tasks(
     end_date = now + timedelta(days=days)
 
     query = {
-        "planner_email": current_user.email,
-        "status": {"$ne": "completed"},
-        "start_date": {"$gte": now, "$lte": end_date},
+        "$and": [
+            _build_task_scope_query(current_user),
+            {
+                "status": {"$ne": "completed"},
+                "start_date": {"$gte": now, "$lte": end_date},
+            },
+        ]
     }
 
     tasks = (

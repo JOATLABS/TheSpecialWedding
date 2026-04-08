@@ -1,89 +1,31 @@
 'use client';
 
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { getApiBaseUrl } from '@/utils/env';
-import { useAdmin } from '@/contexts/AdminContext';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { formatDate, formatDateTime, formatAdminDate, DEFAULT_TIMEZONE } from '@/utils/dateFormat';
-import {
-  PlannerTask,
-  getMonthTasks,
-  getUpcomingTasks,
-  updateTask,
-  deleteTask,
-  CATEGORY_LABELS,
-  PRIORITY_CONFIG,
-  STATUS_CONFIG,
-  TaskCategory,
-} from '@/services/calendarApi';
+import { toast } from 'sonner';
+import { useAdmin } from '@/contexts/AdminContext';
 import { useConfirmDialog } from '@/components/ui/ConfirmDialog';
+import PageHeader from '../../components/PageHeader';
 import TaskModal from './components/TaskModal';
 import GoogleCalendarConnect from './components/GoogleCalendarConnect';
-import { toast } from 'sonner';
-import { Calendar as CalendarIcon, Plus, Repeat, Clock, Trash2, Loader2, X } from 'lucide-react';
-import PageHeader from '../../components/PageHeader';
-
-// AI Types
-interface TaskPrioritization {
-  priority_tasks: Array<{
-    task: string;
-    urgency: string;
-    due_by: string;
-    reason: string;
-    category: string;
-  }>;
-  weekly_focus: string;
-  warnings: string[];
-  upcoming_milestones: Array<{
-    milestone: string;
-    date: string;
-    importance: string;
-  }>;
-}
-
-interface TimelineData {
-  timeline: Array<{
-    phase: string;
-    start_date: string;
-    end_date: string;
-    milestones: Array<{
-      task: string;
-      category: string;
-      deadline: string;
-      priority: string;
-      notes: string;
-    }>;
-  }>;
-  key_dates: Array<{
-    date: string;
-    event: string;
-    importance: string;
-  }>;
-  cultural_considerations: string[];
-  budget_tips: string[];
-}
-
-// Helper to generate calendar grid
-function generateCalendarDays(year: number, month: number) {
-  const firstDay = new Date(year, month, 1);
-  const lastDay = new Date(year, month + 1, 0);
-  const daysInMonth = lastDay.getDate();
-  const startingDay = firstDay.getDay(); // 0 = Sunday
-
-  const days: (number | null)[] = [];
-
-  // Add empty cells for days before the 1st
-  for (let i = 0; i < startingDay; i++) {
-    days.push(null);
-  }
-
-  // Add all days in the month
-  for (let i = 1; i <= daysInMonth; i++) {
-    days.push(i);
-  }
-
-  return days;
-}
+import {
+  CalendarConnection,
+  CATEGORY_LABELS,
+  deleteMeeting,
+  deleteTask,
+  getSharedCalendarView,
+  getStaffAvailability,
+  getTask,
+  listCalendarConnections,
+  listPlannerWeddings,
+  listTeamMembers,
+  PlannerTask,
+  PRIORITY_CONFIG,
+  SharedCalendarEvent,
+  TeamMemberSummary,
+  WeddingSummary,
+} from '@/services/calendarApi';
+import { formatAdminDate, formatDateTime, DEFAULT_TIMEZONE } from '@/utils/dateFormat';
 
 const MONTH_NAMES = [
   'January',
@@ -102,107 +44,268 @@ const MONTH_NAMES = [
 
 const DAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
-interface Wedding {
-  id: string;
-  couple_names: string;
+type ViewMode = 'calendar' | 'list';
+type SourceFilter = 'all' | 'internal_task' | 'internal_meeting' | 'external_google';
+type VisibilityFilter = 'all' | 'details' | 'busy_only';
+
+function buildCalendarDays(year: number, month: number) {
+  const firstDay = new Date(Date.UTC(year, month, 1));
+  const lastDay = new Date(Date.UTC(year, month + 1, 0));
+  const days: Array<number | null> = [];
+
+  for (let index = 0; index < firstDay.getUTCDay(); index += 1) {
+    days.push(null);
+  }
+
+  for (let day = 1; day <= lastDay.getUTCDate(); day += 1) {
+    days.push(day);
+  }
+
+  return days;
+}
+
+function eventTone(event: SharedCalendarEvent) {
+  if (event.source_type === 'external_google') {
+    return 'border-slate-300 bg-slate-100 text-slate-700';
+  }
+  if (event.source_type === 'internal_meeting') {
+    return 'border-teal-200 bg-teal-50 text-teal-700';
+  }
+  const priority = String(event.details.priority || '');
+  if (priority === 'urgent') return 'border-rose-200 bg-rose-50 text-rose-700';
+  if (priority === 'high') return 'border-amber-200 bg-amber-50 text-amber-700';
+  return 'border-blue-200 bg-blue-50 text-blue-700';
+}
+
+function eventDisplayTitle(event: SharedCalendarEvent) {
+  if (event.source_type === 'external_google' && event.visibility_mode === 'busy_only') {
+    return 'Busy';
+  }
+  return event.title || 'Untitled item';
 }
 
 export default function PlannerCalendarPage() {
-  const { token, userProfile, fetchUserProfile } = useAdmin();
+  const { token, userProfile, fetchUserProfile, isLoading: authLoading } = useAdmin();
   const router = useRouter();
   const { confirm } = useConfirmDialog();
 
-  // Calendar state
   const [currentYear, setCurrentYear] = useState(new Date().getFullYear());
   const [currentMonth, setCurrentMonth] = useState(new Date().getMonth());
-  const [tasks, setTasks] = useState<PlannerTask[]>([]);
-  const [upcomingTasks, setUpcomingTasks] = useState<PlannerTask[]>([]);
-  const [weddings, setWeddings] = useState<Wedding[]>([]);
+  const [viewMode, setViewMode] = useState<ViewMode>('calendar');
+  const [weddings, setWeddings] = useState<WeddingSummary[]>([]);
+  const [teamMembers, setTeamMembers] = useState<TeamMemberSummary[]>([]);
+  const [connections, setConnections] = useState<CalendarConnection[]>([]);
+  const [events, setEvents] = useState<SharedCalendarEvent[]>([]);
+  const [availability, setAvailability] = useState<{
+    available_windows: Array<{ start: string; end: string }>;
+    busy_events: SharedCalendarEvent[];
+  } | null>(null);
+  const [selectedAvailabilityStaffIds, setSelectedAvailabilityStaffIds] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-
-  // Modal state
   const [taskModalOpen, setTaskModalOpen] = useState(false);
   const [selectedTask, setSelectedTask] = useState<PlannerTask | null>(null);
   const [selectedDate, setSelectedDate] = useState<Date | undefined>();
+  const [filterWedding, setFilterWedding] = useState<string>('all');
+  const [filterStaff, setFilterStaff] = useState<string>('all');
+  const [filterSource, setFilterSource] = useState<SourceFilter>('all');
+  const [filterVisibility, setFilterVisibility] = useState<VisibilityFilter>('all');
 
-  // Filter state
-  const [filterWedding, setFilterWedding] = useState<string>('');
-  const [filterCategory, setFilterCategory] = useState<string>('');
-  const [viewMode, setViewMode] = useState<'calendar' | 'list'>('calendar');
+  const canViewCalendar =
+    !!userProfile &&
+    (userProfile.is_root_admin ||
+      userProfile.is_wedding_planner ||
+      userProfile.team_permissions?.view_shared_calendar);
+  const canViewAvailability =
+    !!userProfile &&
+    (userProfile.is_root_admin ||
+      userProfile.is_wedding_planner ||
+      userProfile.team_permissions?.view_team_availability);
+  const canCreateItems =
+    !!userProfile &&
+    (userProfile.is_root_admin ||
+      userProfile.is_wedding_planner ||
+      userProfile.team_permissions?.schedule_meetings ||
+      userProfile.team_permissions?.edit_meetings ||
+      userProfile.team_permissions?.manage_wedding_settings);
+  const canManageGeneralTasks =
+    !!userProfile &&
+    (userProfile.is_root_admin ||
+      userProfile.is_wedding_planner ||
+      userProfile.team_permissions?.manage_wedding_settings);
+  const defaultCreateCategory: 'meeting' | 'other' =
+    canManageGeneralTasks ? 'other' : 'meeting';
 
-  // AI State
-  const [showAiPanel, setShowAiPanel] = useState(false);
-  const [aiPrioritization, setAiPrioritization] = useState<TaskPrioritization | null>(null);
-  const [aiTimeline, setAiTimeline] = useState<TimelineData | null>(null);
-  const [aiLoading, setAiLoading] = useState(false);
-  const [aiActiveTab, setAiActiveTab] = useState<'prioritize' | 'timeline'>('prioritize');
+  const ownerStaffOption = useMemo(() => {
+    if (!userProfile) return null;
 
-  // AI Functions
-  const fetchAiPrioritization = async (weddingId: string) => {
-    if (!token || !weddingId) return;
+    const ownerId = userProfile.is_team_member
+      ? userProfile.parent_planner_id || userProfile.team_member_id || userProfile.id
+      : userProfile.id;
+    const ownerEmail = userProfile.is_team_member
+      ? userProfile.team_owner_email || userProfile.email
+      : userProfile.email;
+    if (!ownerId || !ownerEmail) return null;
 
-    setAiLoading(true);
-    try {
-      const baseUrl = getApiBaseUrl();
-      const response = await fetch(`${baseUrl}/admin/ai/weddings/${weddingId}/prioritize-tasks`, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json',
-        },
+    return {
+      id: ownerId,
+      email: ownerEmail,
+      label: userProfile.is_team_member ? `Planner Owner (${ownerEmail})` : `Me (${ownerEmail})`,
+    };
+  }, [userProfile]);
+
+  const staffOptions = useMemo(() => {
+    const map = new Map<string, { id: string; email: string; label: string }>();
+
+    if (ownerStaffOption) {
+      map.set(ownerStaffOption.id, ownerStaffOption);
+    }
+
+    teamMembers
+      .filter((member) => member.status === 'active' && member.user_id && member.email)
+      .forEach((member) => {
+        const label =
+          [member.first_name, member.last_name].filter(Boolean).join(' ') || member.email;
+        map.set(member.user_id as string, {
+          id: member.user_id as string,
+          email: member.email,
+          label,
+        });
       });
 
-      if (response.status === 402) {
-        toast.error('Insufficient AI credits');
-        return;
-      }
-
-      if (!response.ok) throw new Error('Failed to get prioritization');
-
-      const data = await response.json();
-      setAiPrioritization(data.prioritization);
-      toast.success(`Got prioritization! Used ${data.credits_used} credits`);
-    } catch {
-      toast.error('Failed to prioritize tasks');
-    } finally {
-      setAiLoading(false);
-    }
-  };
-
-  const fetchAiTimeline = async (weddingId: string) => {
-    if (!token || !weddingId) return;
-
-    setAiLoading(true);
-    try {
-      const baseUrl = getApiBaseUrl();
-      const response = await fetch(`${baseUrl}/admin/ai/generate-timeline`, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ wedding_id: weddingId }),
+    if (userProfile?.is_team_member && userProfile.id && userProfile.email) {
+      map.set(userProfile.id, {
+        id: userProfile.id,
+        email: userProfile.email,
+        label:
+          [userProfile.first_name, userProfile.last_name].filter(Boolean).join(' ') ||
+          `${userProfile.email} (Me)`,
       });
-
-      if (response.status === 402) {
-        toast.error('Insufficient AI credits');
-        return;
-      }
-
-      if (!response.ok) throw new Error('Failed to generate timeline');
-
-      const data = await response.json();
-      setAiTimeline(data.timeline);
-      toast.success(`Generated timeline! Used ${data.credits_used} credits`);
-    } catch {
-      toast.error('Failed to generate timeline');
-    } finally {
-      setAiLoading(false);
     }
-  };
 
-  // Auth check
+    return Array.from(map.values());
+  }, [ownerStaffOption, teamMembers, userProfile]);
+
+  const monthStart = useMemo(
+    () => new Date(Date.UTC(currentYear, currentMonth, 1)),
+    [currentMonth, currentYear]
+  );
+  const monthEnd = useMemo(
+    () => new Date(Date.UTC(currentYear, currentMonth + 1, 1)),
+    [currentMonth, currentYear]
+  );
+
+  const filteredEvents = useMemo(() => {
+    return events.filter((event) => {
+      if (filterWedding !== 'all' && event.wedding_id !== filterWedding) return false;
+      if (filterSource !== 'all' && event.source_type !== filterSource) return false;
+      if (filterVisibility !== 'all' && event.visibility_mode !== filterVisibility) return false;
+      if (filterStaff !== 'all' && !event.assigned_user_ids.includes(filterStaff)) return false;
+      return true;
+    });
+  }, [events, filterSource, filterStaff, filterVisibility, filterWedding]);
+
+  const eventsByDay = useMemo(() => {
+    const grouped: Record<number, SharedCalendarEvent[]> = {};
+
+    filteredEvents.forEach((event) => {
+      if (!event.start_date) return;
+      const date = new Date(event.start_date);
+      if (Number.isNaN(date.getTime())) return;
+      if (date.getUTCFullYear() !== currentYear || date.getUTCMonth() !== currentMonth) return;
+      const day = date.getUTCDate();
+      grouped[day] = [...(grouped[day] || []), event];
+    });
+
+    Object.values(grouped).forEach((group) =>
+      group.sort((left, right) => (left.start_date || '').localeCompare(right.start_date || ''))
+    );
+
+    return grouped;
+  }, [currentMonth, currentYear, filteredEvents]);
+
+  const upcomingEvents = useMemo(() => {
+    const now = new Date().toISOString();
+    return filteredEvents
+      .filter((event) => (event.start_date || '') >= now)
+      .sort((left, right) => (left.start_date || '').localeCompare(right.start_date || ''))
+      .slice(0, 8);
+  }, [filteredEvents]);
+
+  const calendarDays = useMemo(
+    () => buildCalendarDays(currentYear, currentMonth),
+    [currentMonth, currentYear]
+  );
+
+  const fetchReferenceData = useCallback(async () => {
+    if (!token) return;
+
+    const [weddingsResult, connectionsResult, teamResult] = await Promise.allSettled([
+      listPlannerWeddings(token),
+      listCalendarConnections(token),
+      listTeamMembers(token),
+    ]);
+
+    if (weddingsResult.status === 'fulfilled') {
+      setWeddings(weddingsResult.value);
+    }
+
+    if (connectionsResult.status === 'fulfilled') {
+      setConnections(connectionsResult.value);
+    }
+
+    if (teamResult.status === 'fulfilled') {
+      setTeamMembers(teamResult.value);
+    } else if (userProfile?.is_team_member) {
+      setTeamMembers([]);
+    }
+  }, [token, userProfile?.is_team_member]);
+
+  const fetchEvents = useCallback(async () => {
+    if (!token) return;
+
+    const sharedEvents = await getSharedCalendarView(token, {
+      start: monthStart.toISOString(),
+      end: monthEnd.toISOString(),
+    });
+
+    setEvents(sharedEvents);
+  }, [monthEnd, monthStart, token]);
+
+  const refreshAll = useCallback(async () => {
+    if (!token) return;
+
+    setLoading(true);
+    setError('');
+    try {
+      await Promise.all([fetchReferenceData(), fetchEvents()]);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to load planner calendar');
+    } finally {
+      setLoading(false);
+    }
+  }, [fetchEvents, fetchReferenceData, token]);
+
+  const loadAvailability = useCallback(async () => {
+    if (!token || !canViewAvailability || selectedAvailabilityStaffIds.length === 0) {
+      setAvailability(null);
+      return;
+    }
+
+    try {
+      const result = await getStaffAvailability(
+        token,
+        selectedAvailabilityStaffIds,
+        monthStart.toISOString(),
+        monthEnd.toISOString()
+      );
+      setAvailability(result);
+    } catch (err) {
+      setAvailability(null);
+      toast.error(err instanceof Error ? err.message : 'Failed to load availability');
+    }
+  }, [canViewAvailability, monthEnd, monthStart, selectedAvailabilityStaffIds, token]);
+
   useEffect(() => {
     if (!token) {
       router.push('/admin/login');
@@ -210,187 +313,117 @@ export default function PlannerCalendarPage() {
     }
 
     if (!userProfile) {
-      fetchUserProfile();
+      void fetchUserProfile();
       return;
     }
 
-    if (userProfile && !userProfile.is_wedding_planner && !userProfile.is_root_admin) {
+    if (!canViewCalendar) {
       router.push('/admin');
+    }
+  }, [canViewCalendar, fetchUserProfile, router, token, userProfile]);
+
+  useEffect(() => {
+    if (!token || !userProfile || !canViewCalendar) return;
+    void refreshAll();
+  }, [canViewCalendar, refreshAll, token, userProfile]);
+
+  useEffect(() => {
+    if (!selectedAvailabilityStaffIds.length && staffOptions.length > 0) {
+      setSelectedAvailabilityStaffIds([staffOptions[0].id]);
+    }
+  }, [staffOptions, selectedAvailabilityStaffIds.length]);
+
+  useEffect(() => {
+    if (!canViewAvailability) return;
+    void loadAvailability();
+  }, [canViewAvailability, loadAvailability]);
+
+  const openCreateModal = (date?: Date) => {
+    setSelectedTask(null);
+    setSelectedDate(date);
+    setTaskModalOpen(true);
+  };
+
+  const openExistingItem = async (event: SharedCalendarEvent) => {
+    if (!token) return;
+
+    if (event.source_type === 'external_google') {
+      toast.message('External Google events are read-only here. Change sharing or sync settings from the connection panel.');
       return;
     }
-  }, [token, userProfile, fetchUserProfile, router]);
-
-  // Fetch weddings for dropdown
-  useEffect(() => {
-    if (!token) return;
-
-    const fetchWeddings = async () => {
-      try {
-        const baseUrl = getApiBaseUrl();
-        const response = await fetch(`${baseUrl}/admin/planner/weddings`, {
-          headers: {
-            Authorization: `Bearer ${token}`,
-            'Content-Type': 'application/json',
-          },
-        });
-
-        if (response.ok) {
-          const data = await response.json();
-          setWeddings(data.map((w: any) => ({ id: w.id, couple_names: w.couple_names })));
-        }
-      } catch (err) {
-        console.error('Failed to fetch weddings:', err);
-      }
-    };
-
-    fetchWeddings();
-  }, [token]);
-
-  // Fetch tasks for current month
-  const fetchTasks = useCallback(async () => {
-    if (!token) return;
 
     try {
-      setLoading(true);
-      const monthTasks = await getMonthTasks(token, currentYear, currentMonth + 1);
-      setTasks(monthTasks);
+      const task = await getTask(token, event.id);
+      setSelectedTask(task);
+      setSelectedDate(undefined);
+      setTaskModalOpen(true);
     } catch (err) {
-      setError('Failed to load tasks');
-      console.error(err);
-    } finally {
-      setLoading(false);
+      toast.error(err instanceof Error ? err.message : 'Failed to load schedule item');
     }
-  }, [token, currentYear, currentMonth]);
+  };
 
-  // Fetch upcoming tasks for sidebar
-  const fetchUpcoming = useCallback(async () => {
+  const handleDelete = async (task: PlannerTask) => {
     if (!token) return;
 
+    const confirmed = await confirm({
+      title: task.schedule_item_type === 'meeting' || task.category === 'meeting' ? 'Delete meeting' : 'Delete task',
+      message:
+        task.schedule_item_type === 'meeting' || task.category === 'meeting'
+          ? 'Delete this meeting and all external calendar projections?'
+          : 'Delete this task?',
+      variant: 'danger',
+      confirmText: 'Delete',
+      cancelText: 'Cancel',
+    });
+
+    if (!confirmed) return;
+
     try {
-      const upcoming = await getUpcomingTasks(token, 14, 10);
-      setUpcomingTasks(upcoming);
-    } catch (err) {
-      console.error('Failed to fetch upcoming tasks:', err);
-    }
-  }, [token]);
-
-  useEffect(() => {
-    fetchTasks();
-  }, [fetchTasks]);
-
-  useEffect(() => {
-    fetchUpcoming();
-  }, [fetchUpcoming]);
-
-  // Generate calendar days
-  const calendarDays = useMemo(
-    () => generateCalendarDays(currentYear, currentMonth),
-    [currentYear, currentMonth]
-  );
-
-  // Filter tasks
-  const filteredTasks = useMemo(() => {
-    return tasks.filter((task) => {
-      if (filterWedding && task.wedding_id !== filterWedding) return false;
-      if (filterCategory && task.category !== filterCategory) return false;
-      return true;
-    });
-  }, [tasks, filterWedding, filterCategory]);
-
-  // Group tasks by day
-  const tasksByDay = useMemo(() => {
-    const grouped: Record<number, PlannerTask[]> = {};
-
-    filteredTasks.forEach((task) => {
-      const taskDate = new Date(task.start_date);
-      if (
-        taskDate.getFullYear() === currentYear &&
-        taskDate.getMonth() === currentMonth
-      ) {
-        const day = taskDate.getDate();
-        if (!grouped[day]) grouped[day] = [];
-        grouped[day].push(task);
+      if (task.schedule_item_type === 'meeting' || task.category === 'meeting') {
+        await deleteMeeting(token, task.id);
+      } else {
+        await deleteTask(token, task.id);
       }
-    });
+      setTaskModalOpen(false);
+      setSelectedTask(null);
+      await refreshAll();
+      await loadAvailability();
+      toast.success('Schedule item deleted');
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to delete item');
+    }
+  };
 
-    return grouped;
-  }, [filteredTasks, currentYear, currentMonth]);
+  const toggleAvailabilityStaff = (staffId: string) => {
+    setSelectedAvailabilityStaffIds((current) =>
+      current.includes(staffId)
+        ? current.filter((value) => value !== staffId)
+        : [...current, staffId]
+    );
+  };
 
-  // Navigation
   const goToPreviousMonth = () => {
     if (currentMonth === 0) {
       setCurrentMonth(11);
-      setCurrentYear(currentYear - 1);
-    } else {
-      setCurrentMonth(currentMonth - 1);
+      setCurrentYear((value) => value - 1);
+      return;
     }
+    setCurrentMonth((value) => value - 1);
   };
 
   const goToNextMonth = () => {
     if (currentMonth === 11) {
       setCurrentMonth(0);
-      setCurrentYear(currentYear + 1);
-    } else {
-      setCurrentMonth(currentMonth + 1);
+      setCurrentYear((value) => value + 1);
+      return;
     }
+    setCurrentMonth((value) => value + 1);
   };
 
   const goToToday = () => {
-    const today = new Date();
-    setCurrentYear(today.getFullYear());
-    setCurrentMonth(today.getMonth());
-  };
-
-  // Task handlers
-  const handleDayClick = (day: number) => {
-    setSelectedTask(null);
-    setSelectedDate(new Date(currentYear, currentMonth, day));
-    setTaskModalOpen(true);
-  };
-
-  const handleTaskClick = (task: PlannerTask, e: React.MouseEvent) => {
-    e.stopPropagation();
-    setSelectedTask(task);
-    setSelectedDate(undefined);
-    setTaskModalOpen(true);
-  };
-
-  const handleTaskSuccess = (task: PlannerTask) => {
-    fetchTasks();
-    fetchUpcoming();
-  };
-
-  const handleQuickStatusChange = async (task: PlannerTask, newStatus: string) => {
-    if (!token) return;
-
-    try {
-      await updateTask(token, task.id, { status: newStatus as any });
-      fetchTasks();
-      fetchUpcoming();
-    } catch (err) {
-      console.error('Failed to update task status:', err);
-    }
-  };
-
-  const handleDeleteTask = async (task: PlannerTask) => {
-    if (!token) return;
-
-    const confirmed = await confirm({
-      title: 'Delete Task',
-      message: 'Are you sure you want to delete this task?',
-      variant: 'danger',
-      confirmText: 'Delete',
-      cancelText: 'Cancel',
-    });
-    if (!confirmed) return;
-
-    try {
-      await deleteTask(token, task.id);
-      fetchTasks();
-      fetchUpcoming();
-    } catch (err) {
-      console.error('Failed to delete task:', err);
-    }
+    const now = new Date();
+    setCurrentYear(now.getFullYear());
+    setCurrentMonth(now.getMonth());
   };
 
   const today = new Date();
@@ -399,700 +432,479 @@ export default function PlannerCalendarPage() {
     currentMonth === today.getMonth() &&
     currentYear === today.getFullYear();
 
-  if (!token || !userProfile) {
+  if (!token || authLoading || !userProfile) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600"></div>
+      <div className="flex min-h-screen items-center justify-center">
+        <div className="h-10 w-10 animate-spin rounded-full border-2 border-slate-200 border-t-slate-900" />
       </div>
     );
+  }
+
+  if (!canViewCalendar) {
+    return null;
   }
 
   return (
     <div className="space-y-6">
       <PageHeader
-        title="Planning Calendar"
-        description="Manage your tasks and schedule"
+        title="Shared Planner Calendar"
+        description="Business-owned meetings, team visibility, and explicit Google calendar projections."
       >
-        <div className="flex items-center gap-2">
+        {canCreateItems && (
           <button
-            onClick={() => {
-              setSelectedTask(null);
-              setSelectedDate(new Date());
-              setTaskModalOpen(true);
-            }}
-            className="inline-flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors"
+            onClick={() => openCreateModal(new Date())}
+            className="inline-flex items-center gap-2 rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-medium text-white transition hover:bg-slate-700"
           >
-            <svg
-              className="w-5 h-5"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M12 4v16m8-8H4"
-              />
-            </svg>
-            New Task
+            New schedule item
           </button>
-        </div>
+        )}
       </PageHeader>
 
-      {/* Google Calendar Connection */}
-      <GoogleCalendarConnect />
-
-      <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
-        {/* Calendar Section */}
-        <div className="lg:col-span-3">
-          <div className="bg-white dark:bg-slate-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700">
-            {/* Calendar Header */}
-            <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-4">
-                  <button
-                    onClick={goToPreviousMonth}
-                    className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
-                  >
-                    <svg
-                      className="w-5 h-5 text-gray-600 dark:text-gray-400"
-                      fill="none"
-                      stroke="currentColor"
-                      viewBox="0 0 24 24"
-                    >
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        strokeWidth={2}
-                        d="M15 19l-7-7 7-7"
-                      />
-                    </svg>
-                  </button>
-
-                  <h2 className="text-xl font-semibold text-gray-900 dark:text-gray-100">
-                    {MONTH_NAMES[currentMonth]} {currentYear}
-                  </h2>
-
-                  <button
-                    onClick={goToNextMonth}
-                    className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
-                  >
-                    <svg
-                      className="w-5 h-5 text-gray-600 dark:text-gray-400"
-                      fill="none"
-                      stroke="currentColor"
-                      viewBox="0 0 24 24"
-                    >
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        strokeWidth={2}
-                        d="M9 5l7 7-7 7"
-                      />
-                    </svg>
-                  </button>
-
-                  <button
-                    onClick={goToToday}
-                    className="px-3 py-1 text-sm text-indigo-600 dark:text-indigo-400 border border-indigo-300 dark:border-indigo-700 rounded-lg hover:bg-indigo-50 dark:hover:bg-indigo-900/20 transition-colors"
-                  >
-                    Today
-                  </button>
-                </div>
-
-                {/* Filters */}
-                <div className="flex items-center gap-2">
-                  <select
-                    value={filterWedding}
-                    onChange={(e) => setFilterWedding(e.target.value)}
-                    className="text-sm px-3 py-1.5 border border-gray-300 dark:border-gray-600 rounded-lg dark:bg-gray-700 dark:text-gray-100"
-                  >
-                    <option value="">All Weddings</option>
-                    {weddings.map((w, index) => (
-                      <option key={w.id || `wedding-${index}`} value={w.id}>
-                        {w.couple_names}
-                      </option>
-                    ))}
-                  </select>
-
-                  <select
-                    value={filterCategory}
-                    onChange={(e) => setFilterCategory(e.target.value)}
-                    className="text-sm px-3 py-1.5 border border-gray-300 dark:border-gray-600 rounded-lg dark:bg-gray-700 dark:text-gray-100"
-                  >
-                    <option value="">All Categories</option>
-                    {Object.entries(CATEGORY_LABELS).map(([key, label]) => (
-                      <option key={key} value={key}>
-                        {label}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              </div>
-            </div>
-
-            {/* Calendar Grid */}
-            <div className="p-4">
-              {loading ? (
-                <div className="flex items-center justify-center h-96">
-                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600"></div>
-                </div>
-              ) : (
-                <>
-                  {/* Day Headers */}
-                  <div className="grid grid-cols-7 gap-1 mb-2">
-                    {DAY_NAMES.map((day) => (
-                      <div
-                        key={day}
-                        className="text-center text-sm font-medium text-gray-500 dark:text-gray-400 py-2"
-                      >
-                        {day}
-                      </div>
-                    ))}
-                  </div>
-
-                  {/* Calendar Days */}
-                  <div className="grid grid-cols-7 gap-1">
-                    {calendarDays.map((day, index) => (
-                      <div
-                        key={index}
-                        onClick={() => day && handleDayClick(day)}
-                        className={`
-                          min-h-24 p-1 border rounded-lg transition-colors cursor-pointer
-                          ${
-                            day
-                              ? 'border-gray-200 dark:border-gray-700 hover:border-indigo-300 dark:hover:border-indigo-700 hover:bg-indigo-50 dark:hover:bg-indigo-900/10'
-                              : 'border-transparent bg-gray-50 dark:bg-gray-800/50'
-                          }
-                          ${
-                            day && isToday(day)
-                              ? 'bg-indigo-50 dark:bg-indigo-900/20 border-indigo-300 dark:border-indigo-700'
-                              : ''
-                          }
-                        `}
-                      >
-                        {day && (
-                          <>
-                            <div
-                              className={`text-sm font-medium mb-1 ${
-                                isToday(day)
-                                  ? 'text-indigo-600 dark:text-indigo-400'
-                                  : 'text-gray-700 dark:text-gray-300'
-                              }`}
-                            >
-                              {day}
-                            </div>
-
-                            {/* Tasks for this day */}
-                            <div className="space-y-0.5 overflow-hidden max-h-16">
-                              {tasksByDay[day]?.slice(0, 3).map((task) => (
-                                <div
-                                  key={task.id}
-                                  onClick={(e) => handleTaskClick(task, e)}
-                                  className={`
-                                    text-xs px-1 py-0.5 rounded truncate cursor-pointer
-                                    ${
-                                      task.status === 'completed'
-                                        ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 line-through'
-                                        : task.priority === 'urgent'
-                                        ? 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400'
-                                        : task.priority === 'high'
-                                        ? 'bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-400'
-                                        : 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400'
-                                    }
-                                  `}
-                                  style={
-                                    task.color
-                                      ? { backgroundColor: `${task.color}30`, borderLeft: `3px solid ${task.color}` }
-                                      : undefined
-                                  }
-                                >
-                                  {task.title}
-                                </div>
-                              ))}
-                              {tasksByDay[day]?.length > 3 && (
-                                <div className="text-xs text-gray-500 dark:text-gray-400 pl-1">
-                                  +{tasksByDay[day].length - 3} more
-                                </div>
-                              )}
-                            </div>
-                          </>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                </>
-              )}
-            </div>
-          </div>
+      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+        <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+          <p className="text-xs uppercase tracking-[0.24em] text-slate-400">Internal meetings</p>
+          <p className="mt-3 text-3xl font-semibold text-slate-900">
+            {events.filter((event) => event.source_type === 'internal_meeting').length}
+          </p>
         </div>
-
-        {/* Sidebar - Upcoming Tasks */}
-        <div className="lg:col-span-1">
-          <div className="bg-white dark:bg-slate-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 p-4">
-            <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-4">
-              Upcoming Tasks
-            </h3>
-
-            {upcomingTasks.length === 0 ? (
-              <p className="text-sm text-gray-500 dark:text-gray-400">
-                No upcoming tasks in the next 2 weeks
-              </p>
-            ) : (
-              <div className="space-y-3">
-                {upcomingTasks.map((task) => (
-                  <div
-                    key={task.id}
-                    className="p-3 border border-gray-200 dark:border-gray-700 rounded-lg hover:border-indigo-300 dark:hover:border-indigo-700 cursor-pointer transition-colors"
-                    onClick={() => {
-                      setSelectedTask(task);
-                      setTaskModalOpen(true);
-                    }}
-                  >
-                    <div className="flex items-start justify-between">
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm font-medium text-gray-900 dark:text-gray-100 truncate">
-                          {task.title}
-                        </p>
-                        <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
-                          {task.all_day
-                            ? formatAdminDate(task.start_date)
-                            : formatDateTime(task.start_date, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }, 'en-US', DEFAULT_TIMEZONE)}
-                        </p>
-                        {task.wedding_name && (
-                          <p className="text-xs text-indigo-600 dark:text-indigo-400 mt-0.5">
-                            {task.wedding_name}
-                          </p>
-                        )}
-                      </div>
-
-                      <span
-                        className={`ml-2 px-1.5 py-0.5 text-xs rounded ${
-                          PRIORITY_CONFIG[task.priority as keyof typeof PRIORITY_CONFIG]?.bgColor || 'bg-gray-100'
-                        } ${
-                          PRIORITY_CONFIG[task.priority as keyof typeof PRIORITY_CONFIG]?.color || 'text-gray-600'
-                        }`}
-                      >
-                        {task.priority}
-                      </span>
-                    </div>
-
-                    {/* Quick status buttons */}
-                    <div className="mt-2 flex items-center gap-1">
-                      {task.status !== 'completed' && (
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleQuickStatusChange(task, 'completed');
-                          }}
-                          className="text-xs text-green-600 dark:text-green-400 hover:text-green-700 px-2 py-0.5 bg-green-50 dark:bg-green-900/20 rounded"
-                        >
-                          Complete
-                        </button>
-                      )}
-                      {task.status === 'pending' && (
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleQuickStatusChange(task, 'in_progress');
-                          }}
-                          className="text-xs text-blue-600 dark:text-blue-400 hover:text-blue-700 px-2 py-0.5 bg-blue-50 dark:bg-blue-900/20 rounded"
-                        >
-                          Start
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-
-          {/* Category Legend */}
-          <div className="mt-4 bg-white dark:bg-slate-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 p-4">
-            <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100 mb-3">
-              Priority Legend
-            </h3>
-            <div className="space-y-2">
-              {Object.entries(PRIORITY_CONFIG).map(([key, config]) => (
-                <div key={key} className="flex items-center gap-2">
-                  <div
-                    className={`w-3 h-3 rounded ${config.bgColor}`}
-                  />
-                  <span className="text-sm text-gray-600 dark:text-gray-400">
-                    {config.label}
-                  </span>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          {/* AI Assistant Card */}
-          <div className="mt-4 bg-gradient-to-br from-indigo-50 to-purple-50 dark:from-indigo-900/20 dark:to-purple-900/20 rounded-lg border border-indigo-200 dark:border-indigo-800 p-4">
-            <div className="flex items-center gap-2 mb-3">
-              <div className="w-8 h-8 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-lg flex items-center justify-center">
-                <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
-                </svg>
-              </div>
-              <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100">
-                AI Planning Assistant
-              </h3>
-            </div>
-            <p className="text-xs text-gray-600 dark:text-gray-400 mb-3">
-              Get AI-powered task prioritization and timeline suggestions
-            </p>
-            <button
-              onClick={() => setShowAiPanel(true)}
-              disabled={weddings.length === 0}
-              className="w-full px-3 py-2 bg-gradient-to-r from-indigo-500 to-purple-600 text-white text-sm font-medium rounded-lg hover:opacity-90 disabled:opacity-50 flex items-center justify-center gap-2"
-            >
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
-              </svg>
-              AI Prioritize
-            </button>
-          </div>
+        <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+          <p className="text-xs uppercase tracking-[0.24em] text-slate-400">Shared calendars</p>
+          <p className="mt-3 text-3xl font-semibold text-slate-900">
+            {connections.filter((connection) => connection.is_shared_in_team_view).length}
+          </p>
+        </div>
+        <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+          <p className="text-xs uppercase tracking-[0.24em] text-slate-400">Busy/free imports</p>
+          <p className="mt-3 text-3xl font-semibold text-slate-900">
+            {
+              events.filter(
+                (event) => event.source_type === 'external_google' && event.visibility_mode === 'busy_only'
+              ).length
+            }
+          </p>
+        </div>
+        <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+          <p className="text-xs uppercase tracking-[0.24em] text-slate-400">Visible items</p>
+          <p className="mt-3 text-3xl font-semibold text-slate-900">{filteredEvents.length}</p>
         </div>
       </div>
 
-      {/* AI Panel Modal */}
-      {showAiPanel && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white dark:bg-slate-800 rounded-2xl w-full max-w-3xl max-h-[90vh] overflow-hidden flex flex-col">
-            {/* Header */}
-            <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-700 bg-gradient-to-r from-indigo-500 to-purple-600">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 bg-white/20 rounded-lg flex items-center justify-center">
-                    <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
-                    </svg>
-                  </div>
-                  <div>
-                    <h3 className="text-lg font-semibold text-white">AI Planning Assistant</h3>
-                    <p className="text-sm text-indigo-100">Get prioritized tasks and timeline suggestions</p>
-                  </div>
-                </div>
+      <GoogleCalendarConnect connections={connections} loading={loading} onRefresh={refreshAll} />
+
+      <div className="grid gap-6 xl:grid-cols-[minmax(0,1.7fr)_minmax(320px,0.95fr)]">
+        <section className="rounded-2xl border border-slate-200 bg-white shadow-sm">
+          <div className="border-b border-slate-200 px-6 py-5">
+            <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
+              <div className="flex flex-wrap items-center gap-3">
                 <button
-                  onClick={() => {
-                    setShowAiPanel(false);
-                    setAiPrioritization(null);
-                    setAiTimeline(null);
-                  }}
-                  className="p-2 text-white/80 hover:text-white hover:bg-white/10 rounded-lg transition-colors"
+                  onClick={goToPreviousMonth}
+                  className="rounded-xl border border-slate-300 px-3 py-2 text-sm text-slate-700 transition hover:bg-slate-50"
                 >
-                  <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                  </svg>
+                  Prev
+                </button>
+                <h2 className="text-xl font-semibold text-slate-900">
+                  {MONTH_NAMES[currentMonth]} {currentYear}
+                </h2>
+                <button
+                  onClick={goToNextMonth}
+                  className="rounded-xl border border-slate-300 px-3 py-2 text-sm text-slate-700 transition hover:bg-slate-50"
+                >
+                  Next
+                </button>
+                <button
+                  onClick={goToToday}
+                  className="rounded-xl border border-slate-300 px-3 py-2 text-sm text-slate-700 transition hover:bg-slate-50"
+                >
+                  Today
+                </button>
+              </div>
+
+              <div className="flex flex-wrap gap-2">
+                <button
+                  onClick={() => setViewMode('calendar')}
+                  className={`rounded-xl px-3 py-2 text-sm font-medium transition ${
+                    viewMode === 'calendar'
+                      ? 'bg-slate-900 text-white'
+                      : 'border border-slate-300 text-slate-700 hover:bg-slate-50'
+                  }`}
+                >
+                  Calendar
+                </button>
+                <button
+                  onClick={() => setViewMode('list')}
+                  className={`rounded-xl px-3 py-2 text-sm font-medium transition ${
+                    viewMode === 'list'
+                      ? 'bg-slate-900 text-white'
+                      : 'border border-slate-300 text-slate-700 hover:bg-slate-50'
+                  }`}
+                >
+                  Agenda
                 </button>
               </div>
             </div>
 
-            {/* Tab Buttons */}
-            <div className="px-6 py-3 border-b border-gray-200 dark:border-gray-700 flex gap-2">
-              <button
-                onClick={() => setAiActiveTab('prioritize')}
-                className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-                  aiActiveTab === 'prioritize'
-                    ? 'bg-indigo-100 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-400'
-                    : 'text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-slate-700'
-                }`}
+            <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+              <select
+                value={filterWedding}
+                onChange={(event) => setFilterWedding(event.target.value)}
+                className="rounded-xl border border-slate-300 px-3 py-2.5 text-sm text-slate-900"
               >
-                Task Prioritization
-              </button>
-              <button
-                onClick={() => setAiActiveTab('timeline')}
-                className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-                  aiActiveTab === 'timeline'
-                    ? 'bg-indigo-100 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-400'
-                    : 'text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-slate-700'
-                }`}
+                <option value="all">All weddings</option>
+                {weddings.map((wedding) => (
+                  <option key={wedding.id} value={wedding.id}>
+                    {wedding.couple_names}
+                  </option>
+                ))}
+              </select>
+
+              <select
+                value={filterStaff}
+                onChange={(event) => setFilterStaff(event.target.value)}
+                className="rounded-xl border border-slate-300 px-3 py-2.5 text-sm text-slate-900"
               >
-                Timeline Generator
-              </button>
-            </div>
+                <option value="all">All staff</option>
+                {staffOptions.map((staff) => (
+                  <option key={staff.id} value={staff.id}>
+                    {staff.label}
+                  </option>
+                ))}
+              </select>
 
-            {/* Body */}
-            <div className="flex-1 overflow-y-auto p-6">
-              {/* Wedding Selector */}
-              <div className="mb-4">
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                  Select Wedding
-                </label>
-                <select
-                  value={filterWedding}
-                  onChange={(e) => setFilterWedding(e.target.value)}
-                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100"
-                >
-                  <option value="">Select a wedding...</option>
-                  {weddings.map((w) => (
-                    <option key={w.id} value={w.id}>{w.couple_names}</option>
-                  ))}
-                </select>
-              </div>
+              <select
+                value={filterSource}
+                onChange={(event) => setFilterSource(event.target.value as SourceFilter)}
+                className="rounded-xl border border-slate-300 px-3 py-2.5 text-sm text-slate-900"
+              >
+                <option value="all">All sources</option>
+                <option value="internal_task">Internal tasks</option>
+                <option value="internal_meeting">Internal meetings</option>
+                <option value="external_google">Google calendars</option>
+              </select>
 
-              {aiActiveTab === 'prioritize' && (
-                <div>
-                  {!aiPrioritization && (
-                    <button
-                      onClick={() => filterWedding && fetchAiPrioritization(filterWedding)}
-                      disabled={aiLoading || !filterWedding}
-                      className="w-full px-4 py-3 bg-gradient-to-r from-indigo-500 to-purple-600 text-white rounded-lg font-medium hover:opacity-90 disabled:opacity-50 flex items-center justify-center gap-2"
-                    >
-                      {aiLoading ? (
-                        <>
-                          <svg className="animate-spin h-5 w-5" fill="none" viewBox="0 0 24 24">
-                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-                          </svg>
-                          Analyzing tasks...
-                        </>
-                      ) : (
-                        <>
-                          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 10h16M4 14h16M4 18h16" />
-                          </svg>
-                          Prioritize Tasks (2 credits)
-                        </>
-                      )}
-                    </button>
-                  )}
-
-                  {aiPrioritization && (
-                    <div className="space-y-6">
-                      {/* Weekly Focus */}
-                      {aiPrioritization.weekly_focus && (
-                        <div className="p-4 bg-indigo-50 dark:bg-indigo-900/20 rounded-lg border border-indigo-200 dark:border-indigo-800">
-                          <h4 className="font-semibold text-gray-900 dark:text-gray-100 mb-2 flex items-center gap-2">
-                            <svg className="w-5 h-5 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
-                            </svg>
-                            This Week&apos;s Focus
-                          </h4>
-                          <p className="text-gray-700 dark:text-gray-300">{aiPrioritization.weekly_focus}</p>
-                        </div>
-                      )}
-
-                      {/* Warnings */}
-                      {aiPrioritization.warnings?.length > 0 && (
-                        <div className="p-4 bg-red-50 dark:bg-red-900/20 rounded-lg border border-red-200 dark:border-red-800">
-                          <h4 className="font-semibold text-red-700 dark:text-red-400 mb-2 flex items-center gap-2">
-                            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-                            </svg>
-                            Warnings
-                          </h4>
-                          <ul className="space-y-1">
-                            {aiPrioritization.warnings.map((warning, i) => (
-                              <li key={i} className="text-red-700 dark:text-red-400 flex items-start gap-2">
-                                <span>•</span> {warning}
-                              </li>
-                            ))}
-                          </ul>
-                        </div>
-                      )}
-
-                      {/* Priority Tasks */}
-                      {aiPrioritization.priority_tasks?.length > 0 && (
-                        <div>
-                          <h4 className="font-semibold text-gray-900 dark:text-gray-100 mb-3">Priority Tasks</h4>
-                          <div className="space-y-2">
-                            {aiPrioritization.priority_tasks.map((task, i) => (
-                              <div key={i} className="p-3 bg-gray-50 dark:bg-slate-700 rounded-lg">
-                                <div className="flex items-center justify-between mb-1">
-                                  <span className="font-medium text-gray-900 dark:text-gray-100">{task.task}</span>
-                                  <span className={`text-xs px-2 py-0.5 rounded-full ${
-                                    task.urgency === 'critical' ? 'bg-red-100 text-red-700' :
-                                    task.urgency === 'high' ? 'bg-orange-100 text-orange-700' :
-                                    task.urgency === 'medium' ? 'bg-yellow-100 text-yellow-700' :
-                                    'bg-green-100 text-green-700'
-                                  }`}>
-                                    {task.urgency}
-                                  </span>
-                                </div>
-                                <div className="text-sm text-gray-600 dark:text-gray-400">
-                                  <span className="mr-3">Due: {task.due_by}</span>
-                                  <span className="text-gray-400">|</span>
-                                  <span className="ml-3">{task.category}</span>
-                                </div>
-                                <p className="text-xs text-gray-500 mt-1">{task.reason}</p>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      )}
-
-                      {/* Milestones */}
-                      {aiPrioritization.upcoming_milestones?.length > 0 && (
-                        <div>
-                          <h4 className="font-semibold text-gray-900 dark:text-gray-100 mb-3">Upcoming Milestones</h4>
-                          <div className="space-y-2">
-                            {aiPrioritization.upcoming_milestones.map((m, i) => (
-                              <div key={i} className="flex items-start gap-3 p-3 bg-purple-50 dark:bg-purple-900/20 rounded-lg">
-                                <div className="w-8 h-8 bg-purple-100 dark:bg-purple-900/30 rounded-lg flex items-center justify-center text-purple-600 text-sm font-bold">
-                                  {new Date(m.date).getDate()}
-                                </div>
-                                <div>
-                                  <p className="font-medium text-gray-900 dark:text-gray-100">{m.milestone}</p>
-                                  <p className="text-sm text-gray-600 dark:text-gray-400">{m.importance}</p>
-                                </div>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      )}
-
-                      <button
-                        onClick={() => setAiPrioritization(null)}
-                        className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-50 dark:hover:bg-slate-700"
-                      >
-                        Re-analyze
-                      </button>
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {aiActiveTab === 'timeline' && (
-                <div>
-                  {!aiTimeline && (
-                    <button
-                      onClick={() => filterWedding && fetchAiTimeline(filterWedding)}
-                      disabled={aiLoading || !filterWedding}
-                      className="w-full px-4 py-3 bg-gradient-to-r from-indigo-500 to-purple-600 text-white rounded-lg font-medium hover:opacity-90 disabled:opacity-50 flex items-center justify-center gap-2"
-                    >
-                      {aiLoading ? (
-                        <>
-                          <svg className="animate-spin h-5 w-5" fill="none" viewBox="0 0 24 24">
-                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-                          </svg>
-                          Generating timeline...
-                        </>
-                      ) : (
-                        <>
-                          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                          </svg>
-                          Generate Timeline (2 credits)
-                        </>
-                      )}
-                    </button>
-                  )}
-
-                  {aiTimeline && (
-                    <div className="space-y-6">
-                      {/* Cultural Considerations */}
-                      {aiTimeline.cultural_considerations?.length > 0 && (
-                        <div className="p-4 bg-amber-50 dark:bg-amber-900/20 rounded-lg border border-amber-200 dark:border-amber-800">
-                          <h4 className="font-semibold text-gray-900 dark:text-gray-100 mb-2">Cultural Considerations</h4>
-                          <ul className="space-y-1 text-sm text-gray-700 dark:text-gray-300">
-                            {aiTimeline.cultural_considerations.map((c, i) => (
-                              <li key={i} className="flex items-start gap-2">
-                                <span className="text-amber-500">•</span> {c}
-                              </li>
-                            ))}
-                          </ul>
-                        </div>
-                      )}
-
-                      {/* Key Dates */}
-                      {aiTimeline.key_dates?.length > 0 && (
-                        <div>
-                          <h4 className="font-semibold text-gray-900 dark:text-gray-100 mb-3">Key Dates</h4>
-                          <div className="space-y-2">
-                            {aiTimeline.key_dates.map((d, i) => (
-                              <div key={i} className="flex items-center gap-3 p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg">
-                                <div className="w-16 text-center">
-                                  <div className="text-xs text-gray-500">{formatDate(d.date, { month: 'short' }, 'en-US', DEFAULT_TIMEZONE)}</div>
-                                  <div className="text-lg font-bold text-blue-600">{formatDate(d.date, { day: 'numeric' }, 'en-US', DEFAULT_TIMEZONE)}</div>
-                                </div>
-                                <div>
-                                  <p className="font-medium text-gray-900 dark:text-gray-100">{d.event}</p>
-                                  <p className="text-sm text-gray-600 dark:text-gray-400">{d.importance}</p>
-                                </div>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      )}
-
-                      {/* Timeline Phases */}
-                      {aiTimeline.timeline?.length > 0 && (
-                        <div>
-                          <h4 className="font-semibold text-gray-900 dark:text-gray-100 mb-3">Planning Phases</h4>
-                          <div className="space-y-4">
-                            {aiTimeline.timeline.map((phase, i) => (
-                              <div key={i} className="border border-gray-200 dark:border-gray-700 rounded-lg overflow-hidden">
-                                <div className="bg-gray-50 dark:bg-slate-700 px-4 py-2 flex items-center justify-between">
-                                  <span className="font-medium text-gray-900 dark:text-gray-100">{phase.phase}</span>
-                                  <span className="text-sm text-gray-500">
-                                    {formatAdminDate(phase.start_date)} - {formatAdminDate(phase.end_date)}
-                                  </span>
-                                </div>
-                                <div className="p-4 space-y-2">
-                                  {phase.milestones?.slice(0, 5).map((m, j) => (
-                                    <div key={j} className="flex items-center justify-between text-sm">
-                                      <span className="text-gray-700 dark:text-gray-300">{m.task}</span>
-                                      <span className={`text-xs px-2 py-0.5 rounded ${
-                                        m.priority === 'critical' ? 'bg-red-100 text-red-700' :
-                                        m.priority === 'high' ? 'bg-orange-100 text-orange-700' :
-                                        'bg-gray-100 text-gray-700'
-                                      }`}>
-                                        {m.priority}
-                                      </span>
-                                    </div>
-                                  ))}
-                                </div>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      )}
-
-                      {/* Budget Tips */}
-                      {aiTimeline.budget_tips?.length > 0 && (
-                        <div className="p-4 bg-green-50 dark:bg-green-900/20 rounded-lg border border-green-200 dark:border-green-800">
-                          <h4 className="font-semibold text-gray-900 dark:text-gray-100 mb-2">Budget Tips</h4>
-                          <ul className="space-y-1 text-sm text-gray-700 dark:text-gray-300">
-                            {aiTimeline.budget_tips.map((tip, i) => (
-                              <li key={i} className="flex items-start gap-2">
-                                <span className="text-green-500">•</span> {tip}
-                              </li>
-                            ))}
-                          </ul>
-                        </div>
-                      )}
-
-                      <button
-                        onClick={() => setAiTimeline(null)}
-                        className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-50 dark:hover:bg-slate-700"
-                      >
-                        Generate New Timeline
-                      </button>
-                    </div>
-                  )}
-                </div>
-              )}
+              <select
+                value={filterVisibility}
+                onChange={(event) => setFilterVisibility(event.target.value as VisibilityFilter)}
+                className="rounded-xl border border-slate-300 px-3 py-2.5 text-sm text-slate-900"
+              >
+                <option value="all">All visibility</option>
+                <option value="details">Full details</option>
+                <option value="busy_only">Busy/free only</option>
+              </select>
             </div>
           </div>
-        </div>
-      )}
 
-      {/* Task Modal */}
+          <div className="p-4">
+            {loading ? (
+              <div className="flex h-80 items-center justify-center">
+                <div className="h-10 w-10 animate-spin rounded-full border-2 border-slate-200 border-t-slate-900" />
+              </div>
+            ) : error ? (
+              <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
+                {error}
+              </div>
+            ) : viewMode === 'calendar' ? (
+              <>
+                <div className="mb-3 grid grid-cols-7 gap-2">
+                  {DAY_NAMES.map((day) => (
+                    <div key={day} className="px-2 py-1 text-center text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">
+                      {day}
+                    </div>
+                  ))}
+                </div>
+
+                <div className="grid grid-cols-7 gap-2">
+                  {calendarDays.map((day, index) => (
+                    <div
+                      key={`${day ?? 'empty'}-${index}`}
+                      onClick={() => day && canCreateItems && openCreateModal(new Date(Date.UTC(currentYear, currentMonth, day)))}
+                      className={`min-h-[130px] rounded-2xl border p-2 transition ${
+                        day
+                          ? 'cursor-pointer border-slate-200 bg-slate-50 hover:border-slate-300'
+                          : 'border-transparent bg-transparent'
+                      } ${day && isToday(day) ? 'ring-1 ring-slate-900/20' : ''}`}
+                    >
+                      {day && (
+                        <>
+                          <div className={`mb-2 text-sm font-semibold ${isToday(day) ? 'text-slate-900' : 'text-slate-500'}`}>
+                            {day}
+                          </div>
+                          <div className="space-y-1.5">
+                            {(eventsByDay[day] || []).slice(0, 4).map((event) => (
+                              <button
+                                key={event.id}
+                                onClick={(clickEvent) => {
+                                  clickEvent.stopPropagation();
+                                  void openExistingItem(event);
+                                }}
+                                className={`w-full rounded-xl border px-2 py-1.5 text-left text-[11px] font-medium ${eventTone(event)}`}
+                              >
+                                <div className="truncate">{eventDisplayTitle(event)}</div>
+                                <div className="truncate text-[10px] opacity-70">
+                                  {event.all_day
+                                    ? 'All day'
+                                    : event.start_date
+                                    ? formatDateTime(
+                                        event.start_date,
+                                        { hour: 'numeric', minute: '2-digit' },
+                                        'en-US',
+                                        DEFAULT_TIMEZONE
+                                      )
+                                    : 'Time TBD'}
+                                </div>
+                              </button>
+                            ))}
+                            {(eventsByDay[day] || []).length > 4 && (
+                              <div className="px-1 text-[11px] text-slate-500">
+                                +{(eventsByDay[day] || []).length - 4} more
+                              </div>
+                            )}
+                          </div>
+                        </>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </>
+            ) : (
+              <div className="space-y-3">
+                {filteredEvents.length === 0 ? (
+                  <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 px-6 py-10 text-center text-sm text-slate-500">
+                    No events match the current filters.
+                  </div>
+                ) : (
+                  filteredEvents
+                    .slice()
+                    .sort((left, right) => (left.start_date || '').localeCompare(right.start_date || ''))
+                    .map((event) => (
+                      <button
+                        key={`${event.source_type}-${event.id}`}
+                        onClick={() => void openExistingItem(event)}
+                        className="w-full rounded-2xl border border-slate-200 bg-slate-50 p-4 text-left transition hover:border-slate-300"
+                      >
+                        <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
+                          <div className="space-y-1">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <span className={`rounded-full border px-2.5 py-1 text-[11px] font-medium ${eventTone(event)}`}>
+                                {event.source_type.replace('_', ' ')}
+                              </span>
+                              <h3 className="text-sm font-semibold text-slate-900">
+                                {eventDisplayTitle(event)}
+                              </h3>
+                            </div>
+                            <p className="text-xs text-slate-500">
+                              {event.start_date
+                                ? formatDateTime(
+                                    event.start_date,
+                                    {
+                                      month: 'short',
+                                      day: 'numeric',
+                                      hour: event.all_day ? undefined : 'numeric',
+                                      minute: event.all_day ? undefined : '2-digit',
+                                    },
+                                    'en-US',
+                                    DEFAULT_TIMEZONE
+                                  )
+                                : 'Time TBD'}
+                            </p>
+                            {event.wedding_id && (
+                              <p className="text-xs text-slate-500">
+                                {
+                                  weddings.find((wedding) => wedding.id === event.wedding_id)?.couple_names ||
+                                  'Wedding'
+                                }
+                              </p>
+                            )}
+                          </div>
+                          <div className="text-xs text-slate-500">
+                            {event.assigned_user_emails.length > 0
+                              ? event.assigned_user_emails.join(', ')
+                              : event.owner_planner_email || 'Planner workspace'}
+                          </div>
+                        </div>
+                      </button>
+                    ))
+                )}
+              </div>
+            )}
+          </div>
+        </section>
+
+        <aside className="space-y-6">
+          <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+            <div className="flex items-center justify-between">
+              <h3 className="text-lg font-semibold text-slate-900">Upcoming</h3>
+              <button
+                onClick={() => void refreshAll()}
+                className="rounded-xl border border-slate-300 px-3 py-2 text-xs font-medium text-slate-700 transition hover:bg-slate-50"
+              >
+                Refresh
+              </button>
+            </div>
+            <div className="mt-4 space-y-3">
+              {upcomingEvents.length === 0 ? (
+                <p className="text-sm text-slate-500">No upcoming items in the current filtered view.</p>
+              ) : (
+                upcomingEvents.map((event) => (
+                  <button
+                    key={`upcoming-${event.id}`}
+                    onClick={() => void openExistingItem(event)}
+                    className="w-full rounded-2xl border border-slate-200 bg-slate-50 p-3 text-left transition hover:border-slate-300"
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-medium text-slate-900">
+                          {eventDisplayTitle(event)}
+                        </p>
+                        <p className="mt-1 text-xs text-slate-500">
+                          {event.start_date
+                            ? formatDateTime(
+                                event.start_date,
+                                {
+                                  month: 'short',
+                                  day: 'numeric',
+                                  hour: event.all_day ? undefined : 'numeric',
+                                  minute: event.all_day ? undefined : '2-digit',
+                                },
+                                'en-US',
+                                DEFAULT_TIMEZONE
+                              )
+                            : 'Time TBD'}
+                        </p>
+                      </div>
+                      <span className={`rounded-full border px-2 py-1 text-[11px] font-medium ${eventTone(event)}`}>
+                        {event.source_type === 'internal_meeting'
+                          ? 'Meeting'
+                          : event.source_type === 'external_google'
+                          ? 'Google'
+                          : 'Task'}
+                      </span>
+                    </div>
+                  </button>
+                ))
+              )}
+            </div>
+          </section>
+
+          <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+            <div className="flex items-center justify-between">
+              <div>
+                <h3 className="text-lg font-semibold text-slate-900">Availability</h3>
+                <p className="mt-1 text-xs text-slate-500">
+                  Busy blocks and open windows for selected staff in this month.
+                </p>
+              </div>
+              <button
+                onClick={() => void loadAvailability()}
+                disabled={!canViewAvailability}
+                className="rounded-xl border border-slate-300 px-3 py-2 text-xs font-medium text-slate-700 transition hover:bg-slate-50 disabled:opacity-50"
+              >
+                Refresh
+              </button>
+            </div>
+
+            {!canViewAvailability ? (
+              <p className="mt-4 text-sm text-slate-500">
+                Your role does not include team availability access.
+              </p>
+            ) : (
+              <>
+                <div className="mt-4 space-y-2">
+                  {staffOptions.map((staff) => (
+                    <label key={staff.id} className="flex items-center gap-2 text-sm text-slate-700">
+                      <input
+                        type="checkbox"
+                        checked={selectedAvailabilityStaffIds.includes(staff.id)}
+                        onChange={() => toggleAvailabilityStaff(staff.id)}
+                        className="h-4 w-4 rounded border-slate-300 text-slate-900"
+                      />
+                      {staff.label}
+                    </label>
+                  ))}
+                </div>
+
+                <div className="mt-4 space-y-3">
+                  {!availability || availability.available_windows.length === 0 ? (
+                    <p className="text-sm text-slate-500">
+                      No open windows found for the selected staff in this range.
+                    </p>
+                  ) : (
+                    availability.available_windows.slice(0, 5).map((window, index) => (
+                      <div
+                        key={`${window.start}-${index}`}
+                        className="rounded-2xl border border-emerald-200 bg-emerald-50 px-3 py-3"
+                      >
+                        <p className="text-xs font-semibold uppercase tracking-[0.18em] text-emerald-700">
+                          Available window
+                        </p>
+                        <p className="mt-1 text-sm font-medium text-slate-900">
+                          {formatDateTime(
+                            window.start,
+                            {
+                              month: 'short',
+                              day: 'numeric',
+                              hour: 'numeric',
+                              minute: '2-digit',
+                            },
+                            'en-US',
+                            DEFAULT_TIMEZONE
+                          )}
+                        </p>
+                        <p className="text-xs text-slate-500">
+                          until{' '}
+                          {formatDateTime(
+                            window.end,
+                            { hour: 'numeric', minute: '2-digit' },
+                            'en-US',
+                            DEFAULT_TIMEZONE
+                          )}
+                        </p>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </>
+            )}
+          </section>
+
+          <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+            <h3 className="text-lg font-semibold text-slate-900">Legend</h3>
+            <div className="mt-4 space-y-2 text-sm text-slate-600">
+              <div className="flex items-center gap-2">
+                <span className="inline-block h-3 w-3 rounded-full bg-blue-200" />
+                Internal task
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="inline-block h-3 w-3 rounded-full bg-teal-200" />
+                Internal meeting
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="inline-block h-3 w-3 rounded-full bg-slate-300" />
+                External Google event
+              </div>
+              <p className="pt-2 text-xs leading-6 text-slate-500">
+                External calendars show busy/free only unless the connection enables full details.
+                Couples receive email plus ICS for meetings; they do not connect calendars in v1.
+              </p>
+            </div>
+          </section>
+        </aside>
+      </div>
+
       <TaskModal
         open={taskModalOpen}
         onOpenChange={setTaskModalOpen}
         task={selectedTask}
         weddings={weddings}
         defaultDate={selectedDate}
-        onSuccess={handleTaskSuccess}
+        defaultCategory={defaultCreateCategory}
+        connections={connections}
+        staffOptions={staffOptions}
+        onSuccess={async () => {
+          await refreshAll();
+          await loadAvailability();
+        }}
+        onDelete={handleDelete}
       />
-
     </div>
   );
 }
-
-/* Meetings are now handled as tasks with category "meeting" — no separate modal needed. */

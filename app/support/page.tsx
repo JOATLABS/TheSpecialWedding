@@ -16,6 +16,10 @@ export default function SupportPage() {
           <p>Sales and onboarding: <a className="underline" href="mailto:hello@thespecialwedding.io">hello@thespecialwedding.io</a></p>
           <p>Calendar help: <a className="underline" href="/google-calendar">Google Calendar integration</a></p>
           <p>Google data deletion: <a className="underline" href="/google-data-deletion">Google data deletion</a></p>
+          <p>
+            Include the workspace email, affected wedding, and whether the issue involved an
+            owner calendar, team calendar, or couple invite so support can reproduce the flow.
+          </p>
         </section>
       </div>
     </main>

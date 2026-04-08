@@ -1,4 +1,4 @@
-from typing import Optional, List
+from typing import Optional, List, TypedDict
 from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from app.utils.auth_utils import verify_token
@@ -111,9 +111,17 @@ class ExtendedAuthUser:
         self.team_owner_email: Optional[str] = None
 
 
+class CalendarOwnerScope(TypedDict):
+    owner_id: Optional[str]
+    owner_email: Optional[str]
+    accessible_wedding_ids: Optional[List[str]]
+    is_owner: bool
+    is_team_member: bool
+
+
 async def get_current_user_extended(
     credentials: Optional[HTTPAuthorizationCredentials] = Depends(security),
-    request: Request = None,
+    request: Optional[Request] = None,
 ) -> ExtendedAuthUser:
     """Get current authenticated user supporting both legacy and new auth systems"""
     token = credentials.credentials if credentials else None
@@ -692,7 +700,7 @@ def get_calendar_owner_identity(user: ExtendedAuthUser) -> dict[str, Optional[st
     }
 
 
-def get_accessible_calendar_scope(user: ExtendedAuthUser) -> dict[str, Optional[object]]:
+def get_accessible_calendar_scope(user: ExtendedAuthUser) -> CalendarOwnerScope:
     """Return owner and wedding visibility scope for shared calendar queries."""
     owner_id, owner_email = get_owner_identity(user)
     return {

@@ -1,7 +1,7 @@
 export default function GoogleDataDeletionPage() {
   return (
     <main className="min-h-screen bg-white px-6 py-16 text-slate-900">
-      <div className="mx-auto max-w-4xl space-y-8">
+      <div className="mx-auto max-w-4xl space-y-10">
         <header className="space-y-3">
           <p className="text-sm uppercase tracking-[0.24em] text-slate-500">Data Deletion</p>
           <h1 className="text-4xl font-semibold tracking-tight">Google Data Deletion</h1>
@@ -13,11 +13,15 @@ export default function GoogleDataDeletionPage() {
           </p>
         </header>
 
-        <section className="space-y-4 text-sm leading-7 text-slate-700">
+        <section className="space-y-4 rounded-3xl border border-slate-200 bg-slate-50 p-8 text-sm leading-7 text-slate-700">
           <p>
             Internal meetings and tasks remain inside The Special Wedding as canonical records
             even after Google access is revoked. They are no longer projected to Google once
             the connection is removed.
+          </p>
+          <p>
+            Calendar connections are removed from the workspace, and future sync attempts will
+            fail closed until a user reconnects a valid writable calendar.
           </p>
           <p>
             If you need manual assistance, contact{' '}
