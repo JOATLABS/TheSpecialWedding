@@ -7,7 +7,7 @@ import uuid
 from datetime import UTC, datetime
 from typing import Any, Optional
 
-from icalendar import Calendar, Event
+from icalendar import Calendar, Event  # type: ignore[import-untyped]
 
 from app.core.config import settings
 from app.core.database import mongo
@@ -22,7 +22,9 @@ class MeetingInviteService:
         self.invites_collection = mongo.get_meeting_invites_collection()
         self.weddings_collection = mongo.get_weddings_collection()
 
-    def _build_ics_attachment(self, task: dict, wedding: Optional[dict]) -> dict[str, str]:
+    def _build_ics_attachment(
+        self, task: dict[str, Any], wedding: Optional[dict[str, Any]]
+    ) -> dict[str, Any]:
         calendar = Calendar()
         calendar.add("prodid", "-//The Special Wedding//Shared Planner Calendar//EN")
         calendar.add("version", "2.0")
@@ -47,9 +49,15 @@ class MeetingInviteService:
         calendar.add_component(event)
 
         encoded = base64.b64encode(calendar.to_ical()).decode("utf-8")
-        return {"uid": uid, "attachment": {"filename": "meeting-invite.ics", "content": encoded}}
+        return {
+            "uid": uid,
+            "attachment": {
+                "filename": "meeting-invite.ics",
+                "content": encoded,
+            },
+        }
 
-    async def send_invites(self, task: dict) -> list[dict]:
+    async def send_invites(self, task: dict[str, Any]) -> list[dict[str, Any]]:
         """Send email plus ICS invites to couple attendees for one meeting."""
         recipient_emails = task.get("couple_attendee_emails", [])
         if not recipient_emails:
@@ -63,7 +71,7 @@ class MeetingInviteService:
         frontend_url = settings.FRONTEND_URL or settings.GOOGLE_APP_PUBLIC_HOME_URL or "https://thespecialwedding.io"
         email_service = ResendEmailService()
         ics_payload = self._build_ics_attachment(task, wedding)
-        sent_results: list[dict] = []
+        sent_results: list[dict[str, Any]] = []
         now = datetime.now(UTC)
 
         for recipient_email in recipient_emails:

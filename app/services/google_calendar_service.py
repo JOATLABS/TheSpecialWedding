@@ -15,9 +15,9 @@ from cryptography.fernet import Fernet
 from fastapi import HTTPException
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
-from google_auth_oauthlib.flow import Flow
-from googleapiclient.discovery import build
-from googleapiclient.errors import HttpError
+from google_auth_oauthlib.flow import Flow  # type: ignore[import-untyped]
+from googleapiclient.discovery import build  # type: ignore[import-untyped]
+from googleapiclient.errors import HttpError  # type: ignore[import-untyped]
 
 from app.core.config import settings
 from app.core.database import mongo
@@ -235,6 +235,12 @@ class GoogleCalendarService:
             calendar_id = entry["id"]
             seen_calendar_ids.append(calendar_id)
             is_writable = entry.get("accessRole") in {"owner", "writer"}
+            connection_query = {
+                "user_id": user_id,
+                "provider_account_email": provider_account_email,
+                "calendar_id": calendar_id,
+            }
+            existing_doc = await self.connections_collection.find_one(connection_query)
             connection_doc = {
                 "owner_planner_id": owner_id,
                 "owner_planner_email": owner_email,
@@ -251,11 +257,31 @@ class GoogleCalendarService:
                 "is_writable": is_writable,
                 "is_primary": bool(entry.get("primary")),
                 "is_default_write_target": bool(
-                    is_writable and calendar_id == default_write_id
+                    is_writable
+                    and (
+                        existing_doc.get("is_default_write_target")
+                        if existing_doc is not None
+                        else calendar_id == default_write_id
+                    )
                 ),
-                "is_shared_in_team_view": False,
-                "details_visibility": VisibilityMode.BUSY_ONLY.value,
-                "sync_enabled": is_writable,
+                "is_shared_in_team_view": (
+                    existing_doc.get("is_shared_in_team_view", False)
+                    if existing_doc is not None
+                    else False
+                ),
+                "details_visibility": (
+                    existing_doc.get(
+                        "details_visibility",
+                        VisibilityMode.BUSY_ONLY.value,
+                    )
+                    if existing_doc is not None
+                    else VisibilityMode.BUSY_ONLY.value
+                ),
+                "sync_enabled": (
+                    existing_doc.get("sync_enabled", is_writable)
+                    if existing_doc is not None and is_writable
+                    else is_writable
+                ),
                 "connection_status": CalendarConnectionStatus.ACTIVE.value,
                 "access_token_encrypted": encrypted_access,
                 "refresh_token_encrypted": encrypted_refresh,
@@ -265,11 +291,7 @@ class GoogleCalendarService:
                 "updated_at": now,
             }
             await self.connections_collection.update_one(
-                {
-                    "user_id": user_id,
-                    "provider_account_email": provider_account_email,
-                    "calendar_id": calendar_id,
-                },
+                connection_query,
                 {"$set": connection_doc, "$setOnInsert": {"created_at": now}},
                 upsert=True,
             )
@@ -281,6 +303,30 @@ class GoogleCalendarService:
                 "calendar_id": {"$nin": seen_calendar_ids},
             }
         )
+
+        existing_default = await self.connections_collection.find_one(
+            {
+                "user_id": user_id,
+                "provider_account_email": provider_account_email,
+                "is_writable": True,
+                "is_default_write_target": True,
+            }
+        )
+        if not existing_default and default_write_id:
+            await self.connections_collection.update_one(
+                {
+                    "user_id": user_id,
+                    "provider_account_email": provider_account_email,
+                    "calendar_id": default_write_id,
+                    "is_writable": True,
+                },
+                {
+                    "$set": {
+                        "is_default_write_target": True,
+                        "updated_at": now,
+                    }
+                },
+            )
 
         # Keep the legacy collection updated for smooth backward compatibility.
         await self.tokens_collection.update_one(
@@ -519,7 +565,7 @@ class GoogleCalendarService:
         if not token:
             return
         try:
-            import requests
+            import requests  # type: ignore[import-untyped]
 
             requests.post(
                 "https://oauth2.googleapis.com/revoke",
@@ -537,6 +583,21 @@ class GoogleCalendarService:
             "provider_account_email": connection_doc["provider_account_email"],
         }
         sibling_count = await self.connections_collection.count_documents(account_query)
+        now = datetime.now(UTC)
+        await self.syncs_collection.update_many(
+            {"calendar_connection_id": connection_id},
+            {
+                "$set": {
+                    "sync_status": CalendarSyncStatusValue.ORPHANED.value,
+                    "last_error": "Calendar connection disconnected",
+                    "updated_at": now,
+                },
+                "$unset": {
+                    "calendar_connection_id": "",
+                    "calendar_id": "",
+                },
+            },
+        )
         await self.connections_collection.delete_one({"_id": connection_doc["_id"]})
 
         if sibling_count <= 1:
@@ -557,7 +618,7 @@ class GoogleCalendarService:
             if replacement:
                 await self.connections_collection.update_one(
                     {"_id": replacement["_id"]},
-                    {"$set": {"is_default_write_target": True, "updated_at": datetime.now(UTC)}},
+                    {"$set": {"is_default_write_target": True, "updated_at": now}},
                 )
 
         return {"disconnected": True, "connection_id": connection_id}
@@ -625,6 +686,14 @@ class GoogleCalendarService:
         )
         return {"disconnected": True, "message": "Google Calendar disconnected"}
 
+    def _coerce_datetime(self, value: Any, field_name: str) -> datetime:
+        """Normalize persisted schedule fields into datetimes before provider sync."""
+        if isinstance(value, datetime):
+            return value
+        if isinstance(value, str):
+            return datetime.fromisoformat(value.replace("Z", "+00:00"))
+        raise ValueError(f"Task is missing a valid {field_name}")
+
     def _build_event_body(
         self,
         task: Dict[str, Any],
@@ -636,8 +705,11 @@ class GoogleCalendarService:
             "description": task.get("description") or task.get("notes") or "",
         }
         timezone_name = task.get("timezone") or settings.GOOGLE_CALENDAR_DEFAULT_TIMEZONE
-        start_date = task.get("start_date")
-        end_date = task.get("end_date") or start_date
+        start_date = self._coerce_datetime(task.get("start_date"), "start_date")
+        end_date = self._coerce_datetime(
+            task.get("end_date") or task.get("start_date"),
+            "end_date",
+        )
 
         if task.get("all_day"):
             event_body["start"] = {"date": start_date.strftime("%Y-%m-%d")}

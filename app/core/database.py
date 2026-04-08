@@ -159,6 +159,12 @@ class MongoConnector:
             raise RuntimeError("Database not connected")
         return self.db["forms"]
 
+    def get_couple_users_collection(self):
+        """Couple portal account records."""
+        if self.db is None:
+            raise RuntimeError("Database not connected")
+        return self.db["couple_users"]
+
     def get_form_responses_collection(self):
         """Form responses collection - form submissions"""
         if self.db is None:

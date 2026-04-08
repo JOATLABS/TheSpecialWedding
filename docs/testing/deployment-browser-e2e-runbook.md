@@ -8,6 +8,11 @@
 
 **Secondary Smoke Browser:** Safari latest on macOS or iOS, or Firefox latest if Safari is unavailable
 
+## Related Runbooks
+
+1. [Couple + Team Access E2E Runbook](./couple-team-access-e2e-runbook.md)
+   Use this for planner ownership, couple lifecycle, team permissions, and `Communications` validation after the couple/team access refactor.
+
 ## 1. Scope
 
 Run this test plan before promoting a build from staging to production when any of these areas changed:

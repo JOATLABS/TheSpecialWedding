@@ -45,7 +45,7 @@ async def send_invite_links(
         raise HTTPException(status_code=403, detail="Access to this wedding denied")
 
     result = await reminder_helper.send_personalized_rsvp_links(
-        slug=payload.slug, custom_message=payload.custom_message
+        slug=payload.slug, custom_message=payload.custom_message or ""
     )
 
     # Broadcast invite status change so planner UI refreshes

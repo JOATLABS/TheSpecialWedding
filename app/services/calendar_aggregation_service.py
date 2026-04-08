@@ -68,6 +68,16 @@ class CalendarAggregationService:
         schedule_item_type = task.get("schedule_item_type") or (
             "meeting" if task.get("category") == "meeting" else "task"
         )
+        assigned_user_ids = task.get("assigned_user_ids", [])
+        assigned_user_emails = task.get("assigned_user_emails", [])
+        if not assigned_user_ids and task.get("owner_planner_id"):
+            assigned_user_ids = [task.get("owner_planner_id")]
+        if not assigned_user_emails and (
+            task.get("owner_planner_email") or task.get("planner_email")
+        ):
+            assigned_user_emails = [
+                task.get("owner_planner_email") or task.get("planner_email")
+            ]
         return {
             "id": str(task["_id"]),
             "source_type": f"internal_{schedule_item_type}",
@@ -77,8 +87,8 @@ class CalendarAggregationService:
             "all_day": task.get("all_day", False),
             "wedding_id": task.get("wedding_id"),
             "owner_planner_email": task.get("owner_planner_email") or task.get("planner_email"),
-            "assigned_user_ids": task.get("assigned_user_ids", []),
-            "assigned_user_emails": task.get("assigned_user_emails", []),
+            "assigned_user_ids": assigned_user_ids,
+            "assigned_user_emails": assigned_user_emails,
             "visibility_mode": task.get("visibility_mode", VisibilityMode.DETAILS.value),
             "details": {
                 "description": task.get("description"),
@@ -160,6 +170,8 @@ class CalendarAggregationService:
             )
             for connection in connections:
                 if not connection.get("is_shared_in_team_view") and connection.get("user_id") != current_user_id:
+                    continue
+                if staff_ids and connection.get("user_id") not in staff_ids:
                     continue
                 events = await google_calendar_service.fetch_google_events_for_connection(
                     connection["id"],
