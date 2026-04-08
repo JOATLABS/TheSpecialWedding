@@ -143,8 +143,18 @@ async def test_platform_metrics_compiles_expected_totals(mongo_fixture):
     subscriptions = db.get_collection("user_subscriptions")
     subscriptions.insert_many(
         [
-            {"_id": "sub1", "plan_id": "plan_basic", "status": "active", "billing_interval": "monthly"},
-            {"_id": "sub2", "plan_id": "plan_basic", "status": "trial", "billing_interval": "monthly"},
+            {
+                "_id": "sub1",
+                "plan_id": "plan_basic",
+                "status": "active",
+                "billing_interval": "monthly",
+            },
+            {
+                "_id": "sub2",
+                "plan_id": "plan_basic",
+                "status": "trial",
+                "billing_interval": "monthly",
+            },
         ]
     )
 
@@ -169,8 +179,10 @@ async def test_platform_metrics_compiles_expected_totals(mongo_fixture):
         ]
     )
 
-    fake_mongo.get_guest_collection().insert_many([{ "_id": "guest1" }, { "_id": "guest2" }])
-    fake_mongo.get_rsvps_collection().insert_many([{ "_id": "rsvp1" }, { "_id": "rsvp2" }])
+    fake_mongo.get_guest_collection().insert_many(
+        [{"_id": "guest1"}, {"_id": "guest2"}]
+    )
+    fake_mongo.get_rsvps_collection().insert_many([{"_id": "rsvp1"}, {"_id": "rsvp2"}])
 
     forms = fake_mongo.get_forms_collection()
     forms.insert_one(
@@ -266,7 +278,7 @@ def test_metrics_snapshot_endpoints_handle_empty(snapshot_test_client, monkeypat
         return {
             "health": {"status": "healthy"},
             "metrics": {},
-            "timestamp": "2024-01-01T00:00:00Z"
+            "timestamp": "2024-01-01T00:00:00Z",
         }
 
     monkeypatch.setattr(
@@ -280,7 +292,11 @@ def test_metrics_snapshot_endpoints_handle_empty(snapshot_test_client, monkeypat
     # Admin endpoint should fall back to live health data (200), not 404
     admin_response = client.get("/admin/platform/metrics")
     assert admin_response.status_code == 200
-    assert admin_response.json()["metrics"] == {"health": {"status": "healthy"}, "metrics": {}, "timestamp": "2024-01-01T00:00:00Z"}
+    assert admin_response.json()["metrics"] == {
+        "health": {"status": "healthy"},
+        "metrics": {},
+        "timestamp": "2024-01-01T00:00:00Z",
+    }
 
     history_response = client.get("/admin/platform/metrics/history")
     assert history_response.status_code == 200
