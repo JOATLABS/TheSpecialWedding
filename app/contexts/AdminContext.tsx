@@ -350,6 +350,47 @@ export const AdminProvider = ({ children }: { children: React.ReactNode }) => {
         };
     }, [authStatus, expireSession, pathname, revalidateSession, token, userProfile]);
 
+    // ---- Periodic subscription status check for planners ----
+    // Polls every 2 minutes to detect mid-session subscription changes
+    // (e.g., cancellation via Stripe Portal while user is on dashboard).
+    // This also keeps AdminRouteGuard's cached profile fresh (Finding #6).
+    useEffect(() => {
+        if (!token || !userProfile?.is_wedding_planner) return;
+
+        const POLL_INTERVAL_MS = 2 * 60 * 1000; // 2 minutes
+
+        const checkSubscriptionStatus = async () => {
+            try {
+                const baseUrl = getApiBaseUrl();
+                const res = await fetch(`${baseUrl}/admin/profile`, {
+                    headers: {
+                        'Authorization': `Bearer ${token}`,
+                        'Cache-Control': 'no-cache',
+                        'Pragma': 'no-cache',
+                    },
+                    credentials: 'include',
+                });
+                if (!res.ok) return;
+                const data = await res.json();
+                const freshStatus = normalizeSubscriptionStatus(
+                    data.user_data?.subscription_status || data.subscription_status || ''
+                );
+                const currentStatus = normalizeSubscriptionStatus(
+                    userProfile.subscription_status || ''
+                );
+                // Only trigger full refresh if status actually changed
+                if (freshStatus && freshStatus !== currentStatus) {
+                    fetchUserProfile();
+                }
+            } catch {
+                // Silently ignore network errors — transient failures are fine
+            }
+        };
+
+        const intervalId = setInterval(checkSubscriptionStatus, POLL_INTERVAL_MS);
+        return () => clearInterval(intervalId);
+    }, [token, userProfile?.is_wedding_planner, userProfile?.subscription_status, fetchUserProfile]);
+
     const login = async (email: string, password: string, rememberMe = true) => {
         try {
         // SECURITY: Clear any existing sessions first to prevent session mixing
@@ -447,17 +488,48 @@ export const AdminProvider = ({ children }: { children: React.ReactNode }) => {
                     setAuthStatus('authenticated');
                 });
 
+                // ── RACE CONDITION FIX (Prong 2): Verify subscription status ──
+                // If webhook hasn't updated users collection yet, the subscription
+                // endpoint may have fresher data. Fetch it to override the profile if needed.
+                let billingBlocked = false;
+                try {
+                    const subResponse = await fetch(`${baseUrl}/stripe/subscription`, {
+                        method: 'GET',
+                        headers: {
+                            'Authorization': `Bearer ${activeToken}`,
+                            'Content-Type': 'application/json',
+                        },
+                        credentials: 'include',
+                    });
+
+                    if (subResponse.ok) {
+                        const subData = await subResponse.json();
+                        const freshStatus = normalizeSubscriptionStatus(subData.status || subData.subscription_status);
+                        if (isBlockedSubscriptionStatus(freshStatus)) {
+                            console.info(`Subscription verification: endpoint returned blocked status '${freshStatus}', overriding profile`);
+                            billingBlocked = true;
+                        }
+                    }
+                } catch (error) {
+                    // Network error or endpoint unavailable — fall back to profile data
+                    console.debug(`Could not verify subscription status: ${error}`);
+                }
+
+                // If subscription verification didn't set billingBlocked, check profile flags
+                if (!billingBlocked) {
+                    const subscriptionStatus =
+                        normalizeSubscriptionStatus(
+                            profile.user_data?.subscription_status ||
+                            profile.subscription_status
+                        );
+                    billingBlocked =
+                        profile._subscription_blocked ||
+                        isBlockedSubscriptionStatus(subscriptionStatus);
+                }
+
                 // Use a client-side transition here. A hard browser reload
                 // throws away the in-memory access token before the destination
                 // route can hydrate, which caused the first-login bounce loop.
-                const subscriptionStatus =
-                    normalizeSubscriptionStatus(
-                        profile.user_data?.subscription_status ||
-                        profile.subscription_status
-                    );
-                const billingBlocked =
-                    profile._subscription_blocked ||
-                    isBlockedSubscriptionStatus(subscriptionStatus);
 
                 if (profile.is_root_admin) {
                     router.replace('/admin');

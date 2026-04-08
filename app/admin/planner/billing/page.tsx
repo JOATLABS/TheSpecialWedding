@@ -116,7 +116,8 @@ export default function PlannerBillingPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const handledCheckoutSessionRef = useRef<string | null>(null);
-  const { userProfile, token } = useAdmin();
+  const portalRetryCountRef = useRef(0);
+  const { userProfile, token, fetchUserProfile } = useAdmin();
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<'subscription' | 'client_payments'>('subscription');
   const [plans, setPlans] = useState<SubscriptionPlan[]>([]);
@@ -139,6 +140,7 @@ export default function PlannerBillingPage() {
   const requestedInterval = searchParams.get('interval') === 'yearly' ? 'yearly' : 'monthly';
   const checkoutSucceeded = searchParams.get('success') === 'true';
   const checkoutSessionId = searchParams.get('session_id');
+  const portalReturned = searchParams.get('from_portal') === '1';
   // Access control - only for wedding planners
   useEffect(() => {
     if (userProfile && !userProfile.is_wedding_planner && !userProfile.is_root_admin) {
@@ -179,6 +181,18 @@ export default function PlannerBillingPage() {
           }
         );
 
+        // 402 = subscription expired/blocked — trigger profile refresh to update subscription status
+        if (stripeSubResponse.status === 402) {
+          if (portalRetryCountRef.current < 1) {
+            portalRetryCountRef.current += 1;
+            await fetchUserProfile();
+            // Exit early; profile update will trigger loadData again via useEffect
+            return;
+          }
+          // If we've already retried once, don't retry again to avoid infinite loop
+          return;
+        }
+
         if (stripeSubResponse.ok) {
           const subData = normalizeSubscription(await stripeSubResponse.json());
           if (subData && subData.plan_id) {
@@ -208,6 +222,18 @@ export default function PlannerBillingPage() {
               credentials: 'include'
             }
           );
+
+          // 402 = subscription expired/blocked — trigger profile refresh
+          if (subResponse.status === 402) {
+            if (portalRetryCountRef.current < 1) {
+              portalRetryCountRef.current += 1;
+              await fetchUserProfile();
+              // Exit early; profile update will trigger loadData again via useEffect
+              return;
+            }
+            // If we've already retried once, don't retry again to avoid infinite loop
+            return;
+          }
 
           if (subResponse.ok) {
             const subData = normalizeSubscription(await subResponse.json());
@@ -257,6 +283,18 @@ export default function PlannerBillingPage() {
             credentials: 'include'
           }
         );
+
+        // 402 = subscription expired/blocked — trigger profile refresh
+        if (weddingsResponse.status === 402) {
+          if (portalRetryCountRef.current < 1) {
+            portalRetryCountRef.current += 1;
+            await fetchUserProfile();
+            // Exit early; profile update will trigger loadData again via useEffect
+            return;
+          }
+          // If we've already retried once, don't retry again to avoid infinite loop
+          return;
+        }
 
         if (weddingsResponse.ok) {
           const weddingsData = await weddingsResponse.json();
@@ -500,6 +538,48 @@ export default function PlannerBillingPage() {
     void reconcileCheckoutReturn();
   }, [checkoutSessionId, checkoutSucceeded, loadData, router, token]);
 
+  // Handle portal return: user returns from Stripe portal, poll for webhook updates
+  useEffect(() => {
+    if (!portalReturned || !token) {
+      return;
+    }
+
+    // Reset the retry count ref when returning from portal
+    portalRetryCountRef.current = 0;
+
+    const handlePortalReturn = async () => {
+      try {
+        // Wait 1.5s for webhook to process
+        await new Promise((resolve) => window.setTimeout(resolve, 1500));
+
+        // Load updated billing data
+        await loadData();
+
+        // Check if subscription status was updated by webhook
+        // If still stale, retry once more after 2s
+        const subscriptionStale = !currentSubscription ||
+          (currentSubscription.status &&
+           ['pending_checkout', 'pending_payment'].includes(
+             normalizeSubscriptionStatus(currentSubscription.status)
+           ));
+
+        if (subscriptionStale) {
+          await new Promise((resolve) => window.setTimeout(resolve, 2000));
+          await loadData();
+        }
+
+        // Clean up the URL param
+        router.replace('/admin/planner/billing');
+      } catch (error) {
+        console.error('Portal return handling failed:', error);
+        // Still clean up the URL even if there was an error
+        router.replace('/admin/planner/billing');
+      }
+    };
+
+    void handlePortalReturn();
+  }, [portalReturned, token, loadData, router, currentSubscription]);
+
   const openBillingPortal = async (flowType?: 'payment_method_update' | 'subscription_update' | 'subscription_cancel', loadingMessage?: string) => {
     try {
       const baseUrl = getApiBaseUrl();
@@ -521,7 +601,7 @@ export default function PlannerBillingPage() {
           },
           credentials: 'include',
           body: JSON.stringify({
-            return_url: `${window.location.origin}/admin/planner/billing`,
+            return_url: `${window.location.origin}/admin/planner/billing?from_portal=1`,
             flow_type: flowType
           })
         }

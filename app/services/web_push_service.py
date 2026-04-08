@@ -13,10 +13,15 @@ import json
 import logging
 from typing import Optional, Dict, Any, List
 from datetime import datetime, timezone
-from pywebpush import webpush, WebPushException
 from app.core.database import mongo
 
 logger = logging.getLogger(__name__)
+
+
+def _load_pywebpush():
+    from pywebpush import webpush, WebPushException
+
+    return webpush, WebPushException
 
 
 class WebPushService:
@@ -196,6 +201,7 @@ class WebPushService:
                 continue
 
             try:
+                webpush, WebPushException = _load_pywebpush()
                 webpush(
                     subscription_info=subscription,
                     data=payload,
