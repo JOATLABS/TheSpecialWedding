@@ -93,6 +93,24 @@ class MongoConnector:
             raise RuntimeError("Database not connected")
         return self.db["calendar_tokens"]
 
+    def get_calendar_connections_collection(self):
+        """Connected external calendar identities and settings."""
+        if self.db is None:
+            raise RuntimeError("Database not connected")
+        return self.db["calendar_connections"]
+
+    def get_calendar_event_syncs_collection(self):
+        """Per-target external calendar sync mappings."""
+        if self.db is None:
+            raise RuntimeError("Database not connected")
+        return self.db["calendar_event_syncs"]
+
+    def get_meeting_invites_collection(self):
+        """Couple-facing invite delivery records for meetings."""
+        if self.db is None:
+            raise RuntimeError("Database not connected")
+        return self.db["meeting_invites"]
+
     def get_planner_tasks_collection(self):
         """Planner-specific tasks and calendar events"""
         if self.db is None:

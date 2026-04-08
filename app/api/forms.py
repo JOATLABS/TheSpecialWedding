@@ -7,6 +7,8 @@ from app.models.form import (
     SubmitFormRequest,
     DuplicateFormRequest,
     FormViewUpdateRequest,
+    FormField,
+    FormSettings,
 )
 from app.services.form_service import FormService
 from app.dependencies.auth_extended import (
@@ -22,7 +24,7 @@ from app.services.security_audit_service import (
     SecurityEventType,
     SecuritySeverity,
 )
-from typing import Optional
+from typing import Optional, TypedDict
 import logging
 import html
 
@@ -32,9 +34,40 @@ router = APIRouter()
 form_service = FormService()
 
 
+class FormOwnerScope(TypedDict):
+    owner_email: str
+    owner_alias_emails: list[str]
+
+
+class FormTemplateFieldDataRequired(TypedDict):
+    id: str
+    label: str
+    type: str
+    required: bool
+    order: int
+
+
+class FormTemplateFieldData(FormTemplateFieldDataRequired, total=False):
+    description: str
+    placeholder: str
+    options: list[str]
+
+
+class FormTemplateDefinition(TypedDict):
+    id: str
+    name: str
+    description: str
+    category: str
+    fields: list[FormTemplateFieldData]
+
+
+class FormTemplateResponse(TypedDict):
+    templates: list[FormTemplateDefinition]
+
+
 async def _resolve_form_owner_scope(
     current_user: ExtendedAuthUser,
-) -> dict[str, list[str] | str]:
+) -> FormOwnerScope:
     """Resolve shared planner ownership for forms while preserving legacy team-created records."""
     owner_email = normalize_planner_email(
         current_user.team_owner_email
@@ -65,11 +98,10 @@ async def _resolve_form_owner_scope(
             )
             .to_list(length=None)
         )
-        owner_alias_emails.update(
-            normalize_planner_email(member.get("email"))
-            for member in team_members
-            if member.get("email")
-        )
+        for member in team_members:
+            normalized_member_email = normalize_planner_email(member.get("email"))
+            if normalized_member_email:
+                owner_alias_emails.add(normalized_member_email)
 
     return {
         "owner_email": owner_email or current_user.email.lower().strip(),
@@ -149,7 +181,6 @@ async def create_form(
 @router.get("/forms", tags=["Forms"])
 async def get_forms(
     wedding_id: Optional[str] = None,
-    request: Request = None,
     current_user: ExtendedAuthUser = Depends(require_team_or_planner),
 ):
     """Get all forms for the current user with security validation"""
@@ -377,7 +408,7 @@ async def delete_form(
                 )
 
         # Log deletion attempt
-        client_ip = getattr(request.client, "host", None) if request.client else None
+        client_ip: str = getattr(request.client, "host", "unknown") if request.client else "unknown"
         logger.warning(
             f"Form deletion attempt: id={form_id}, user={current_user.email}, "
             f"ip={client_ip}"
@@ -558,7 +589,7 @@ async def export_form_responses_csv(
                 )
             raise
         # Log CSV export attempt for security audit
-        client_ip = getattr(request.client, "host", None) if request.client else None
+        client_ip: str = getattr(request.client, "host", "unknown") if request.client else "unknown"
         logger.info(
             f"CSV export attempt: form_id={form_id}, user={current_user.email}, "
             f"ip={client_ip}, date_from={date_from}, date_to={date_to}, "
@@ -725,9 +756,7 @@ async def submit_form(
     """Submit a form response with enhanced security validation"""
     try:
         # Get client information
-        client_ip = (
-            getattr(request.client, "host", None) if request.client else "unknown"
-        )
+        client_ip: str = getattr(request.client, "host", "unknown") if request.client else "unknown"
         user_agent = request.headers.get("user-agent", "")
 
         # Enhanced rate limiting for form submissions
@@ -802,12 +831,9 @@ async def submit_form(
 
 
 # Form template endpoints
-@router.get("/form-templates", tags=["Form Templates"])
-def get_form_templates(
-    current_user: ExtendedAuthUser = Depends(require_team_or_planner),
-):
-    """Get available form templates"""
-    templates = [
+def _get_form_templates() -> list[FormTemplateDefinition]:
+    """Build the static form template catalog exposed by the API."""
+    templates: list[FormTemplateDefinition] = [
         {
             "id": "wedding_feedback",
             "name": "Wedding Feedback Form",
@@ -1080,7 +1106,15 @@ def get_form_templates(
             ],
         },
     ]
-    return {"templates": templates}
+    return templates
+
+
+@router.get("/form-templates", tags=["Form Templates"])
+def get_form_templates(
+    current_user: ExtendedAuthUser = Depends(require_team_or_planner),
+) -> FormTemplateResponse:
+    """Get available form templates"""
+    return {"templates": _get_form_templates()}
 
 
 @router.post("/forms/from-template/{template_id}", tags=["Form Templates"])
@@ -1094,27 +1128,28 @@ async def create_form_from_template(
     enforce_team_permission(current_user, "manage_forms")
 
     # Get templates
-    templates_response = get_form_templates(current_user)
-    templates = templates_response["templates"]
+    templates = _get_form_templates()
 
     # Find the template
     template = next((t for t in templates if t["id"] == template_id), None)
     if not template:
         raise HTTPException(status_code=404, detail="Template not found")
     # Create form from template
+    template_fields = [FormField.model_validate(field) for field in template["fields"]]
     form_data = CreateFormRequest(
         name=form_name,
-        settings={
-            "title": template["name"],
-            "description": template["description"],
-            "submit_button_text": "Submit",
-            "success_message": "Thank you for your feedback!",
-            "allow_multiple_submissions": False,
-            "collect_email": True,
-            "is_public": True,
-            "requires_auth": False,
-        },
-        fields=template["fields"],
+        settings=FormSettings(
+            title=template["name"],
+            description=template["description"],
+            submit_button_text="Submit",
+            success_message="Thank you for your feedback!",
+            redirect_url=None,
+            allow_multiple_submissions=False,
+            collect_email=True,
+            is_public=True,
+            requires_auth=False,
+        ),
+        fields=template_fields,
         wedding_id=wedding_id,
         template_type=template_id,
     )

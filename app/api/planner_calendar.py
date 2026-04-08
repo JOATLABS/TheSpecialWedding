@@ -7,12 +7,19 @@ from datetime import datetime, timedelta, UTC
 from typing import List, Optional, Any
 
 from bson import ObjectId
-from fastapi import APIRouter, HTTPException, Depends, Query
-from pydantic import BaseModel
+from fastapi import APIRouter, HTTPException, Depends, Query, Path
+from pydantic import BaseModel, Field
 
 from app.core.database import mongo
 from app.dependencies.auth_extended import (
     ExtendedAuthUser,
+    can_view_calendar_details,
+    check_wedding_access,
+    get_accessible_calendar_scope,
+    get_calendar_owner_identity,
+    require_calendar_access,
+    require_calendar_permission,
+    require_team_or_planner,
     require_wedding_planner,
     enforce_team_permission,
 )
@@ -25,8 +32,17 @@ from app.models.calendar import (
     CalendarEventCreate,
     CalendarEventUpdate,
     CalendarSyncStatus,
+    CalendarSyncPolicy,
+    InviteDeliveryMode,
+    MeetingLifecycleStatus,
+    ScheduleItemType,
+    VisibilityMode,
 )
+from app.models.calendar_connection import CalendarConnectionUpdateRequest
+from app.services.calendar_aggregation_service import calendar_aggregation_service
+from app.services.calendar_sync_service import calendar_sync_service
 from app.services.google_calendar_service import google_calendar_service
+from app.services.meeting_invite_service import meeting_invite_service
 
 logger = logging.getLogger(__name__)
 
@@ -61,6 +77,21 @@ class TaskResponse(BaseModel):
     recurrence_rule: Optional[str] = None
     color: Optional[str] = None
     notes: Optional[str] = None
+    owner_planner_id: Optional[str] = None
+    owner_planner_email: Optional[str] = None
+    created_by_user_id: Optional[str] = None
+    created_by_email: Optional[str] = None
+    assigned_user_ids: list[str] = Field(default_factory=list)
+    assigned_user_emails: list[str] = Field(default_factory=list)
+    schedule_item_type: Optional[str] = None
+    visibility_mode: Optional[str] = None
+    calendar_sync_policy: Optional[str] = None
+    timezone: Optional[str] = None
+    couple_attendee_emails: list[str] = Field(default_factory=list)
+    conference_provider: Optional[str] = None
+    conference_url: Optional[str] = None
+    invite_delivery_mode: Optional[str] = None
+    meeting_status: Optional[str] = None
     created_at: str
     updated_at: str
     completed_at: Optional[str] = None
@@ -88,6 +119,60 @@ class GoogleCallbackResponse(BaseModel):
     connected: bool
     calendar_id: Optional[str] = None
     message: str
+
+
+class CalendarConnectionResponse(BaseModel):
+    """Serialized external calendar connection."""
+
+    id: str
+    owner_planner_id: Optional[str] = None
+    owner_planner_email: Optional[str] = None
+    user_id: Optional[str] = None
+    user_email: Optional[str] = None
+    provider: str
+    provider_account_email: Optional[str] = None
+    provider_account_name: Optional[str] = None
+    calendar_id: Optional[str] = None
+    calendar_name: Optional[str] = None
+    access_role: Optional[str] = None
+    is_writable: bool = False
+    is_primary: bool = False
+    is_default_write_target: bool = False
+    is_shared_in_team_view: bool = False
+    details_visibility: str = VisibilityMode.BUSY_ONLY.value
+    sync_enabled: bool = False
+    connection_status: str
+    token_expiry: Optional[datetime] = None
+    last_sync_at: Optional[datetime] = None
+    last_healthcheck_at: Optional[datetime] = None
+    last_error: Optional[str] = None
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
+
+
+class SharedCalendarEventResponse(BaseModel):
+    """Unified event shape for the shared planner calendar view."""
+
+    id: str
+    source_type: str
+    title: Optional[str] = None
+    start_date: Optional[str] = None
+    end_date: Optional[str] = None
+    all_day: bool = False
+    wedding_id: Optional[str] = None
+    owner_planner_email: Optional[str] = None
+    assigned_user_ids: list[str] = Field(default_factory=list)
+    assigned_user_emails: list[str] = Field(default_factory=list)
+    visibility_mode: str = VisibilityMode.DETAILS.value
+    details: dict[str, Any] = Field(default_factory=dict)
+
+
+class MeetingUpsertResponse(BaseModel):
+    """Response payload for create/update meeting endpoints."""
+
+    meeting: dict[str, Any]
+    sync_status: list[dict[str, Any]] = Field(default_factory=list)
+    invite_status: list[dict[str, Any]] = Field(default_factory=list)
 
 
 # ============================================================================
@@ -142,10 +227,146 @@ def _serialize_task(task: dict, wedding_name: Optional[str] = None) -> TaskRespo
         recurrence_rule=task.get("recurrence_rule"),
         color=task.get("color"),
         notes=task.get("notes"),
+        owner_planner_id=task.get("owner_planner_id"),
+        owner_planner_email=task.get("owner_planner_email"),
+        created_by_user_id=task.get("created_by_user_id"),
+        created_by_email=task.get("created_by_email"),
+        assigned_user_ids=task.get("assigned_user_ids", []),
+        assigned_user_emails=task.get("assigned_user_emails", []),
+        schedule_item_type=task.get("schedule_item_type"),
+        visibility_mode=task.get("visibility_mode"),
+        calendar_sync_policy=task.get("calendar_sync_policy"),
+        timezone=task.get("timezone"),
+        couple_attendee_emails=task.get("couple_attendee_emails", []),
+        conference_provider=task.get("conference_provider"),
+        conference_url=task.get("conference_url"),
+        invite_delivery_mode=task.get("invite_delivery_mode"),
+        meeting_status=task.get("meeting_status"),
         created_at=_isoformat(task.get("created_at")) or "",
         updated_at=_isoformat(task.get("updated_at")) or "",
         completed_at=_isoformat(task.get("completed_at")),
     )
+
+
+def _calendar_owner_email(current_user: ExtendedAuthUser) -> str:
+    context = get_calendar_owner_identity(current_user)
+    return str(context.get("owner_email") or current_user.email)
+
+
+def _calendar_user_id(current_user: ExtendedAuthUser) -> Optional[str]:
+    context = get_calendar_owner_identity(current_user)
+    user_id = context.get("user_id")
+    return str(user_id) if user_id else None
+
+
+def _build_task_scope_query(current_user: ExtendedAuthUser) -> dict[str, Any]:
+    owner_email = _calendar_owner_email(current_user)
+    owner_scope = {
+        "$or": [
+            {"owner_planner_email": owner_email},
+            {"planner_email": owner_email},
+        ]
+    }
+
+    if not current_user.is_team_member or current_user.team_wedding_access != "assigned":
+        return owner_scope
+
+    accessible_wedding_ids = current_user.team_assigned_wedding_ids or []
+    actor_user_id = _calendar_user_id(current_user)
+    access_filters: list[dict[str, Any]] = [{"wedding_id": {"$in": accessible_wedding_ids}}]
+    if actor_user_id:
+        access_filters.extend(
+            [
+                {"assigned_user_ids": actor_user_id},
+                {"created_by_user_id": actor_user_id},
+            ]
+        )
+
+    return {
+        "$and": [
+            owner_scope,
+            {"$or": access_filters},
+        ]
+    }
+
+
+async def _resolve_user_emails(user_ids: list[str]) -> list[str]:
+    """Resolve internal user ids to emails for denormalized task storage."""
+    if not user_ids:
+        return []
+    resolved: list[str] = []
+    users_collection = mongo.get_users_collection()
+    for user_id in user_ids:
+        try:
+            oid = ObjectId(user_id) if ObjectId.is_valid(user_id) else user_id
+            user_doc = await users_collection.find_one({"_id": oid}, {"email": 1})
+            if user_doc and user_doc.get("email"):
+                resolved.append(user_doc["email"])
+        except Exception:
+            continue
+    return resolved
+
+
+async def _resolve_couple_attendee_emails(
+    wedding_id: Optional[str],
+    requested_emails: Optional[list[str]] = None,
+) -> list[str]:
+    """Use explicit couple attendee emails, falling back to wedding couple accounts."""
+    normalized = [email for email in (requested_emails or []) if email]
+    if normalized:
+        return normalized
+    if not wedding_id:
+        return []
+    cursor = mongo.db["couple_users"].find({"wedding_id": wedding_id}, {"email": 1})
+    emails: list[str] = []
+    async for couple_doc in cursor:
+        if couple_doc.get("email"):
+            emails.append(couple_doc["email"])
+    return emails
+
+
+def _serialize_shared_event(row: dict) -> SharedCalendarEventResponse:
+    """Convert aggregation rows to the shared calendar response model."""
+    return SharedCalendarEventResponse(
+        id=str(row.get("id")),
+        source_type=row.get("source_type", "internal_task"),
+        title=row.get("title"),
+        start_date=_isoformat(row.get("start_date")),
+        end_date=_isoformat(row.get("end_date")),
+        all_day=row.get("all_day", False),
+        wedding_id=row.get("wedding_id"),
+        owner_planner_email=row.get("owner_planner_email"),
+        assigned_user_ids=row.get("assigned_user_ids", []),
+        assigned_user_emails=row.get("assigned_user_emails", []),
+        visibility_mode=row.get("visibility_mode", VisibilityMode.DETAILS.value),
+        details=row.get("details", {}),
+    )
+
+
+def _serialize_meeting_payload(task: dict) -> dict[str, Any]:
+    """Shared meeting serializer for planner-side responses."""
+    return {
+        "id": str(task.get("_id")),
+        "title": task.get("title"),
+        "description": task.get("description"),
+        "wedding_id": task.get("wedding_id"),
+        "start_date": _isoformat(task.get("start_date")),
+        "end_date": _isoformat(task.get("end_date")),
+        "all_day": task.get("all_day", False),
+        "schedule_item_type": task.get("schedule_item_type", ScheduleItemType.MEETING.value),
+        "meeting_status": task.get("meeting_status"),
+        "timezone": task.get("timezone"),
+        "assigned_user_ids": task.get("assigned_user_ids", []),
+        "assigned_user_emails": task.get("assigned_user_emails", []),
+        "couple_attendee_emails": task.get("couple_attendee_emails", []),
+        "calendar_sync_policy": task.get("calendar_sync_policy"),
+        "invite_delivery_mode": task.get("invite_delivery_mode"),
+        "conference_provider": task.get("conference_provider"),
+        "conference_url": task.get("conference_url"),
+        "created_by_email": task.get("created_by_email"),
+        "owner_planner_email": task.get("owner_planner_email") or task.get("planner_email"),
+        "status": task.get("status"),
+    }
 
 
 # ============================================================================
@@ -159,7 +380,7 @@ def _serialize_task(task: dict, wedding_name: Optional[str] = None) -> TaskRespo
     response_model=GoogleAuthUrlResponse,
 )
 async def get_google_auth_url(
-    current_user: ExtendedAuthUser = Depends(require_wedding_planner),
+    current_user: ExtendedAuthUser = Depends(require_calendar_permission("connect_personal_calendar")),
 ) -> GoogleAuthUrlResponse:
     """
     Get Google OAuth authorization URL to connect Google Calendar.
@@ -167,7 +388,13 @@ async def get_google_auth_url(
     Redirects the user to Google's consent screen to authorize
     calendar access. After consent, user is redirected to the callback URL.
     """
-    auth_url = google_calendar_service.get_authorization_url(current_user.email)
+    context = get_calendar_owner_identity(current_user)
+    auth_url = await google_calendar_service.get_authorization_url(
+        user_id=context.get("user_id") or "",
+        user_email=context.get("user_email") or current_user.email,
+        owner_id=context.get("owner_id") or context.get("user_id") or "",
+        owner_email=context.get("owner_email") or current_user.email,
+    )
 
     return GoogleAuthUrlResponse(
         auth_url=auth_url,
@@ -183,6 +410,9 @@ async def get_google_auth_url(
 async def google_oauth_callback(
     code: str = Query(..., description="Authorization code from Google"),
     state: str = Query(..., description="State parameter containing user email"),
+    current_user: ExtendedAuthUser = Depends(
+        require_calendar_permission("connect_personal_calendar")
+    ),
 ) -> GoogleCallbackResponse:
     """
     Handle Google OAuth callback after user grants consent.
@@ -190,7 +420,15 @@ async def google_oauth_callback(
     This endpoint is called by Google after user authorizes access.
     The authorization code is exchanged for access/refresh tokens.
     """
-    result = await google_calendar_service.handle_oauth_callback(code, state)
+    context = get_calendar_owner_identity(current_user)
+    result = await google_calendar_service.handle_oauth_callback(
+        code=code,
+        state=state,
+        current_user_context={
+            "user_id": context.get("user_id"),
+            "user_email": context.get("user_email"),
+        },
+    )
 
     return GoogleCallbackResponse(
         connected=result.get("connected", False),
@@ -205,7 +443,7 @@ async def google_oauth_callback(
     response_model=CalendarSyncStatus,
 )
 async def get_google_calendar_status(
-    current_user: ExtendedAuthUser = Depends(require_wedding_planner),
+    current_user: ExtendedAuthUser = Depends(require_calendar_access),
 ) -> CalendarSyncStatus:
     """
     Check if Google Calendar is connected for the current user.
@@ -228,14 +466,15 @@ async def get_google_calendar_status(
     tags=["Planner Calendar"],
 )
 async def disconnect_google_calendar(
-    current_user: ExtendedAuthUser = Depends(require_wedding_planner),
+    current_user: ExtendedAuthUser = Depends(
+        require_calendar_permission("connect_personal_calendar")
+    ),
 ) -> dict:
     """
     Disconnect Google Calendar for the current user.
 
     Removes stored OAuth tokens. Tasks are preserved but sync is disabled.
     """
-    enforce_team_permission(current_user, "manage_wedding_settings")
     result = await google_calendar_service.disconnect(current_user.email)
     return result
 
@@ -245,7 +484,7 @@ async def disconnect_google_calendar(
     tags=["Planner Calendar"],
 )
 async def fetch_google_events(
-    current_user: ExtendedAuthUser = Depends(require_wedding_planner),
+    current_user: ExtendedAuthUser = Depends(require_calendar_access),
     days_ahead: int = Query(
         default=30, ge=1, le=365, description="Days ahead to fetch"
     ),
@@ -265,6 +504,230 @@ async def fetch_google_events(
     )
 
     return events
+
+
+@router.get(
+    "/planner/calendar/connections",
+    tags=["Planner Calendar"],
+    response_model=list[CalendarConnectionResponse],
+)
+async def list_calendar_connections(
+    current_user: ExtendedAuthUser = Depends(require_calendar_access),
+) -> list[CalendarConnectionResponse]:
+    """List visible Google calendar connections in the planner owner scope."""
+    scope = get_accessible_calendar_scope(current_user)
+    connections = await google_calendar_service.list_connections(
+        owner_id=str(scope.get("owner_id") or ""),
+        current_user_id=get_calendar_owner_identity(current_user).get("user_id"),
+        include_all_owner_connections=bool(scope.get("is_owner")),
+    )
+    return [CalendarConnectionResponse(**connection) for connection in connections]
+
+
+@router.post(
+    "/planner/calendar/connections/google/connect",
+    tags=["Planner Calendar"],
+    response_model=GoogleAuthUrlResponse,
+)
+async def get_google_connection_auth_url(
+    current_user: ExtendedAuthUser = Depends(
+        require_calendar_permission("connect_personal_calendar")
+    ),
+) -> GoogleAuthUrlResponse:
+    """Connection-aware alias for the Google OAuth connect flow."""
+    return await get_google_auth_url(current_user=current_user)
+
+
+@router.get(
+    "/planner/calendar/connections/google/callback",
+    tags=["Planner Calendar"],
+    response_model=GoogleCallbackResponse,
+)
+async def google_connection_oauth_callback(
+    code: str = Query(...),
+    state: str = Query(...),
+    current_user: ExtendedAuthUser = Depends(
+        require_calendar_permission("connect_personal_calendar")
+    ),
+) -> GoogleCallbackResponse:
+    """Connection-aware alias for the Google OAuth callback."""
+    return await google_oauth_callback(code=code, state=state, current_user=current_user)
+
+
+@router.patch(
+    "/planner/calendar/connections/{connection_id}",
+    tags=["Planner Calendar"],
+    response_model=CalendarConnectionResponse,
+)
+async def update_calendar_connection(
+    connection_id: str,
+    body: CalendarConnectionUpdateRequest,
+    current_user: ExtendedAuthUser = Depends(require_calendar_access),
+) -> CalendarConnectionResponse:
+    """Update mutable connection settings for a calendar row."""
+    connection_doc = await google_calendar_service._get_connection_doc(connection_id)
+    current_context = get_calendar_owner_identity(current_user)
+    is_owner = current_user.is_root_admin or current_user.is_wedding_planner
+    is_connection_owner = connection_doc.get("user_id") == current_context.get("user_id")
+    can_manage_all = bool(
+        current_user.team_permissions
+        and current_user.team_permissions.get("manage_calendar_connections", False)
+    )
+
+    updates = body.model_dump(exclude_none=True)
+    if not (is_owner or can_manage_all or is_connection_owner):
+        raise HTTPException(status_code=403, detail="Cannot manage this calendar connection")
+
+    if not (is_owner or can_manage_all):
+        restricted_fields = {"is_shared_in_team_view", "details_visibility"}
+        if restricted_fields.intersection(updates.keys()):
+            raise HTTPException(
+                status_code=403,
+                detail="Only planner owners can change team-sharing visibility",
+            )
+
+    updated = await google_calendar_service.update_connection(connection_id, updates)
+    return CalendarConnectionResponse(**updated)
+
+
+@router.delete(
+    "/planner/calendar/connections/{connection_id}",
+    tags=["Planner Calendar"],
+)
+async def delete_calendar_connection(
+    connection_id: str,
+    current_user: ExtendedAuthUser = Depends(require_calendar_access),
+) -> dict:
+    """Disconnect one calendar connection, revoking provider access when appropriate."""
+    connection_doc = await google_calendar_service._get_connection_doc(connection_id)
+    current_context = get_calendar_owner_identity(current_user)
+    is_owner = current_user.is_root_admin or current_user.is_wedding_planner
+    can_manage_all = bool(
+        current_user.team_permissions
+        and current_user.team_permissions.get("manage_calendar_connections", False)
+    )
+    if not (
+        is_owner
+        or can_manage_all
+        or connection_doc.get("user_id") == current_context.get("user_id")
+    ):
+        raise HTTPException(status_code=403, detail="Cannot disconnect this calendar connection")
+    return await google_calendar_service.disconnect_connection(connection_id)
+
+
+@router.post(
+    "/planner/calendar/connections/{connection_id}/healthcheck",
+    tags=["Planner Calendar"],
+    response_model=CalendarConnectionResponse,
+)
+async def healthcheck_calendar_connection(
+    connection_id: str,
+    current_user: ExtendedAuthUser = Depends(require_calendar_access),
+) -> CalendarConnectionResponse:
+    """Validate a connection against Google and return updated health metadata."""
+    connection_doc = await google_calendar_service._get_connection_doc(connection_id)
+    current_context = get_calendar_owner_identity(current_user)
+    if not (
+        current_user.is_root_admin
+        or current_user.is_wedding_planner
+        or connection_doc.get("user_id") == current_context.get("user_id")
+    ):
+        raise HTTPException(status_code=403, detail="Cannot healthcheck this calendar connection")
+    result = await google_calendar_service.healthcheck_connection(connection_id)
+    return CalendarConnectionResponse(**result)
+
+
+@router.get(
+    "/planner/calendar/view",
+    tags=["Planner Calendar"],
+    response_model=list[SharedCalendarEventResponse],
+)
+async def get_shared_calendar_view(
+    current_user: ExtendedAuthUser = Depends(require_calendar_access),
+    start: Optional[datetime] = Query(None),
+    end: Optional[datetime] = Query(None),
+    wedding_ids: Optional[List[str]] = Query(None),
+    staff_ids: Optional[List[str]] = Query(None),
+    source_types: Optional[List[str]] = Query(None),
+) -> list[SharedCalendarEventResponse]:
+    """Return a unified internal plus external shared calendar feed."""
+    scope = get_accessible_calendar_scope(current_user)
+    context = get_calendar_owner_identity(current_user)
+    events = await calendar_aggregation_service.build_shared_view(
+        owner_id=str(scope.get("owner_id") or ""),
+        owner_email=str(scope.get("owner_email") or ""),
+        current_user_id=context.get("user_id"),
+        include_all_owner_connections=bool(scope.get("is_owner")),
+        can_view_details=can_view_calendar_details(current_user),
+        accessible_wedding_ids=scope.get("accessible_wedding_ids"),
+        start=start,
+        end=end,
+        wedding_ids=wedding_ids,
+        staff_ids=staff_ids,
+        source_types=source_types,
+    )
+    return [_serialize_shared_event(event) for event in events]
+
+
+@router.get("/planner/calendar/availability", tags=["Planner Calendar"])
+async def get_staff_availability(
+    current_user: ExtendedAuthUser = Depends(
+        require_calendar_permission("view_team_availability")
+    ),
+    staff_ids: List[str] = Query(...),
+    start: datetime = Query(...),
+    end: datetime = Query(...),
+) -> dict:
+    """Return busy blocks plus naive available windows for selected staff."""
+    scope = get_accessible_calendar_scope(current_user)
+    context = get_calendar_owner_identity(current_user)
+    events = await calendar_aggregation_service.build_shared_view(
+        owner_id=str(scope.get("owner_id") or ""),
+        owner_email=str(scope.get("owner_email") or ""),
+        current_user_id=context.get("user_id"),
+        include_all_owner_connections=bool(scope.get("is_owner")),
+        can_view_details=can_view_calendar_details(current_user),
+        accessible_wedding_ids=scope.get("accessible_wedding_ids"),
+        start=start,
+        end=end,
+        staff_ids=staff_ids,
+    )
+    busy_events = [
+        event
+        for event in events
+        if set(event.get("assigned_user_ids", [])) & set(staff_ids)
+        or event.get("source_type") == "external_google"
+    ]
+    busy_ranges = []
+    for event in busy_events:
+        event_start = event.get("start_date")
+        event_end = event.get("end_date")
+        if event_start and event_end:
+            busy_ranges.append((datetime.fromisoformat(str(event_start)), datetime.fromisoformat(str(event_end))))
+    busy_ranges.sort(key=lambda row: row[0])
+
+    available_windows = []
+    cursor = start
+    for busy_start, busy_end in busy_ranges:
+        if busy_start > cursor:
+            available_windows.append(
+                {
+                    "start": cursor.isoformat(),
+                    "end": busy_start.isoformat(),
+                }
+            )
+        if busy_end > cursor:
+            cursor = busy_end
+    if cursor < end:
+        available_windows.append({"start": cursor.isoformat(), "end": end.isoformat()})
+
+    return {
+        "staff_ids": staff_ids,
+        "start": start.isoformat(),
+        "end": end.isoformat(),
+        "busy_events": [_serialize_shared_event(event) for event in busy_events],
+        "available_windows": available_windows,
+    }
 
 
 # ============================================================================
@@ -291,20 +754,37 @@ async def create_task(
     tasks_collection = mongo.get_planner_tasks_collection()
 
     now = datetime.now(UTC)
+    owner_context = get_calendar_owner_identity(current_user)
 
     # Build task document
     task_doc = {
         "planner_email": current_user.email,
+        "owner_planner_id": owner_context.get("owner_id"),
+        "owner_planner_email": owner_context.get("owner_email") or current_user.email,
+        "created_by_user_id": owner_context.get("user_id"),
+        "created_by_email": current_user.email,
+        "assigned_user_ids": task_data.assigned_user_ids,
+        "assigned_user_emails": task_data.assigned_user_emails,
         "wedding_id": task_data.wedding_id,
         "title": task_data.title,
         "description": task_data.description,
         "category": task_data.category,
         "priority": task_data.priority,
         "status": "pending",
+        "schedule_item_type": task_data.schedule_item_type,
+        "visibility_mode": task_data.visibility_mode,
+        "calendar_sync_policy": task_data.calendar_sync_policy,
         "start_date": task_data.start_date,
         "end_date": task_data.end_date or task_data.start_date,
         "all_day": task_data.all_day,
         "due_date": task_data.due_date,
+        "timezone": task_data.timezone,
+        "couple_attendee_emails": task_data.couple_attendee_emails,
+        "external_attendees": [],
+        "conference_provider": task_data.conference_provider,
+        "conference_url": task_data.conference_url,
+        "invite_delivery_mode": task_data.invite_delivery_mode,
+        "meeting_status": task_data.meeting_status,
         "reminder_minutes": task_data.reminder_minutes,
         "is_recurring": task_data.is_recurring,
         "recurrence_rule": task_data.recurrence_rule,
@@ -381,7 +861,7 @@ async def list_tasks(
     # Validate filter parameters
     wedding_id = validated_string_filter(wedding_id, max_length=100)
     status = validated_status_filter(
-        status, ["pending", "in_progress", "completed", "on_hold"]
+        status, ["pending", "in_progress", "completed", "cancelled"]
     )
     category = validated_string_filter(category, max_length=50)
 
@@ -819,3 +1299,286 @@ async def get_upcoming_tasks(
                 pass
 
     return [_serialize_task(t, wedding_names.get(t.get("wedding_id"))) for t in tasks]
+
+
+# ============================================================================
+# Shared Meeting Endpoints
+# ============================================================================
+
+
+@router.post(
+    "/planner/calendar/meetings",
+    tags=["Planner Calendar"],
+    response_model=MeetingUpsertResponse,
+)
+async def create_meeting(
+    data: CalendarEventCreate,
+    current_user: ExtendedAuthUser = Depends(
+        require_calendar_permission("schedule_meetings")
+    ),
+) -> MeetingUpsertResponse:
+    """Create a canonical meeting inside planner_tasks and sync projections explicitly."""
+    if data.wedding_id and not await check_wedding_access(current_user, data.wedding_id):
+        raise HTTPException(status_code=403, detail="You don't have access to this wedding")
+
+    owner_context = get_calendar_owner_identity(current_user)
+    assigned_user_ids = data.assigned_user_ids or []
+    assigned_user_emails = data.assigned_user_emails or await _resolve_user_emails(
+        assigned_user_ids
+    )
+    couple_attendee_emails = await _resolve_couple_attendee_emails(
+        data.wedding_id,
+        data.couple_attendee_emails,
+    )
+    sync_policy = (
+        CalendarSyncPolicy.ASSIGNED_ONLY.value
+        if assigned_user_ids and data.calendar_sync_policy == CalendarSyncPolicy.OWNER_ONLY.value
+        else data.calendar_sync_policy
+    )
+    invite_mode = (
+        data.invite_delivery_mode
+        if data.invite_delivery_mode != InviteDeliveryMode.NONE.value
+        else (
+            InviteDeliveryMode.EMAIL_ICS.value
+            if couple_attendee_emails
+            else InviteDeliveryMode.PORTAL_ONLY.value
+        )
+    )
+    now = datetime.now(UTC)
+    task_doc = {
+        "planner_email": owner_context.get("owner_email") or current_user.email,
+        "owner_planner_id": owner_context.get("owner_id"),
+        "owner_planner_email": owner_context.get("owner_email") or current_user.email,
+        "created_by_user_id": owner_context.get("user_id"),
+        "created_by_email": current_user.email,
+        "assigned_user_ids": assigned_user_ids,
+        "assigned_user_emails": assigned_user_emails,
+        "wedding_id": data.wedding_id,
+        "title": data.title,
+        "description": data.description,
+        "category": "meeting",
+        "priority": data.priority,
+        "status": "pending",
+        "schedule_item_type": ScheduleItemType.MEETING.value,
+        "visibility_mode": data.visibility_mode,
+        "calendar_sync_policy": sync_policy,
+        "start_date": data.start_date,
+        "end_date": data.end_date or data.start_date,
+        "all_day": data.all_day,
+        "due_date": data.due_date,
+        "timezone": data.timezone,
+        "couple_attendee_emails": couple_attendee_emails,
+        "external_attendees": [],
+        "conference_provider": data.conference_provider,
+        "conference_url": data.conference_url,
+        "invite_delivery_mode": invite_mode,
+        "meeting_status": MeetingLifecycleStatus.SCHEDULED.value,
+        "reminder_minutes": data.reminder_minutes,
+        "google_event_id": None,
+        "synced_to_google": False,
+        "last_google_sync": None,
+        "is_recurring": data.is_recurring,
+        "recurrence_rule": data.recurrence_rule if data.is_recurring else None,
+        "color": data.color,
+        "notes": data.notes,
+        "attachments": [],
+        "created_at": now,
+        "updated_at": now,
+        "completed_at": None,
+    }
+    result = await mongo.get_planner_tasks_collection().insert_one(task_doc)
+    task_doc["_id"] = result.inserted_id
+
+    sync_status = await calendar_sync_service.sync_schedule_item(
+        task_doc,
+        explicit_connection_ids=data.sync_target_connection_ids,
+    )
+    first_synced = next(
+        (row for row in sync_status if row.get("sync_status") == "synced" and row.get("external_event_id")),
+        None,
+    )
+    if first_synced:
+        await mongo.get_planner_tasks_collection().update_one(
+            {"_id": result.inserted_id},
+            {
+                "$set": {
+                    "google_event_id": first_synced.get("external_event_id"),
+                    "synced_to_google": True,
+                    "last_google_sync": datetime.now(UTC),
+                }
+            },
+        )
+        task_doc["google_event_id"] = first_synced.get("external_event_id")
+        task_doc["synced_to_google"] = True
+
+    invite_status = []
+    if invite_mode == InviteDeliveryMode.EMAIL_ICS.value and couple_attendee_emails:
+        invite_status = await meeting_invite_service.send_invites(task_doc)
+
+    return MeetingUpsertResponse(
+        meeting=_serialize_meeting_payload(task_doc),
+        sync_status=sync_status,
+        invite_status=invite_status,
+    )
+
+
+@router.patch(
+    "/planner/calendar/meetings/{meeting_id}",
+    tags=["Planner Calendar"],
+    response_model=MeetingUpsertResponse,
+)
+async def update_meeting(
+    meeting_id: str,
+    updates: CalendarEventUpdate,
+    current_user: ExtendedAuthUser = Depends(
+        require_calendar_permission("edit_meetings")
+    ),
+) -> MeetingUpsertResponse:
+    """Update a canonical meeting and re-sync its external projections."""
+    try:
+        oid = ObjectId(meeting_id)
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid meeting ID format")
+
+    tasks_collection = mongo.get_planner_tasks_collection()
+    task = await tasks_collection.find_one(
+        {"_id": oid, "$or": [{"schedule_item_type": "meeting"}, {"category": "meeting"}]}
+    )
+    if not task:
+        raise HTTPException(status_code=404, detail="Meeting not found")
+    if task.get("wedding_id") and not await check_wedding_access(current_user, task["wedding_id"]):
+        raise HTTPException(status_code=403, detail="You don't have access to this wedding")
+
+    update_doc = {"updated_at": datetime.now(UTC)}
+    update_fields = updates.model_dump(exclude_unset=True)
+    if "assigned_user_ids" in update_fields and update_fields["assigned_user_ids"] is not None:
+        update_doc["assigned_user_ids"] = update_fields["assigned_user_ids"]
+        update_doc["assigned_user_emails"] = await _resolve_user_emails(
+            update_fields["assigned_user_ids"]
+        )
+    if "couple_attendee_emails" in update_fields and update_fields["couple_attendee_emails"] is not None:
+        update_doc["couple_attendee_emails"] = await _resolve_couple_attendee_emails(
+            task.get("wedding_id"),
+            update_fields["couple_attendee_emails"],
+        )
+    for key, value in update_fields.items():
+        if key in {"assigned_user_ids", "couple_attendee_emails"}:
+            continue
+        if value is not None:
+            update_doc[key] = value
+
+    await tasks_collection.update_one({"_id": oid}, {"$set": update_doc})
+    updated_task = await tasks_collection.find_one({"_id": oid})
+    sync_status = await calendar_sync_service.sync_schedule_item(
+        updated_task,
+        explicit_connection_ids=update_fields.get("sync_target_connection_ids"),
+    )
+    return MeetingUpsertResponse(
+        meeting=_serialize_meeting_payload(updated_task),
+        sync_status=sync_status,
+        invite_status=[],
+    )
+
+
+@router.delete(
+    "/planner/calendar/meetings/{meeting_id}",
+    tags=["Planner Calendar"],
+)
+async def delete_meeting(
+    meeting_id: str,
+    current_user: ExtendedAuthUser = Depends(
+        require_calendar_permission("cancel_meetings")
+    ),
+) -> dict:
+    """Delete a canonical meeting and all external projections."""
+    try:
+        oid = ObjectId(meeting_id)
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid meeting ID format")
+
+    tasks_collection = mongo.get_planner_tasks_collection()
+    task = await tasks_collection.find_one(
+        {"_id": oid, "$or": [{"schedule_item_type": "meeting"}, {"category": "meeting"}]}
+    )
+    if not task:
+        raise HTTPException(status_code=404, detail="Meeting not found")
+    if task.get("wedding_id") and not await check_wedding_access(current_user, task["wedding_id"]):
+        raise HTTPException(status_code=403, detail="You don't have access to this wedding")
+
+    await calendar_sync_service.delete_schedule_item_syncs(meeting_id)
+    await mongo.get_meeting_invites_collection().delete_many({"task_id": meeting_id})
+    await tasks_collection.delete_one({"_id": oid})
+    return {"deleted": True, "meeting_id": meeting_id}
+
+
+@router.post(
+    "/planner/calendar/meetings/{meeting_id}/send-invites",
+    tags=["Planner Calendar"],
+)
+async def send_meeting_invites(
+    meeting_id: str,
+    current_user: ExtendedAuthUser = Depends(
+        require_calendar_permission("send_meeting_invites")
+    ),
+) -> dict:
+    """Send or resend ICS email invites for a meeting."""
+    try:
+        oid = ObjectId(meeting_id)
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid meeting ID format")
+    task = await mongo.get_planner_tasks_collection().find_one(
+        {"_id": oid, "$or": [{"schedule_item_type": "meeting"}, {"category": "meeting"}]}
+    )
+    if not task:
+        raise HTTPException(status_code=404, detail="Meeting not found")
+    if task.get("wedding_id") and not await check_wedding_access(current_user, task["wedding_id"]):
+        raise HTTPException(status_code=403, detail="You don't have access to this wedding")
+    invites = await meeting_invite_service.send_invites(task)
+    return {"meeting_id": meeting_id, "invite_status": invites}
+
+
+@router.post(
+    "/planner/calendar/meetings/{meeting_id}/sync",
+    tags=["Planner Calendar"],
+)
+async def sync_meeting(
+    meeting_id: str,
+    current_user: ExtendedAuthUser = Depends(
+        require_calendar_permission("edit_meetings")
+    ),
+) -> dict:
+    """Force a re-sync of all eligible external targets for a canonical meeting."""
+    try:
+        oid = ObjectId(meeting_id)
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid meeting ID format")
+    task = await mongo.get_planner_tasks_collection().find_one(
+        {"_id": oid, "$or": [{"schedule_item_type": "meeting"}, {"category": "meeting"}]}
+    )
+    if not task:
+        raise HTTPException(status_code=404, detail="Meeting not found")
+    sync_status = await calendar_sync_service.sync_schedule_item(task)
+    return {"meeting_id": meeting_id, "sync_status": sync_status}
+
+
+@router.get(
+    "/planner/calendar/meetings/{meeting_id}/sync-status",
+    tags=["Planner Calendar"],
+)
+async def get_meeting_sync_status(
+    meeting_id: str,
+    current_user: ExtendedAuthUser = Depends(require_calendar_access),
+) -> dict:
+    """Return per-target sync rows for a canonical meeting."""
+    try:
+        oid = ObjectId(meeting_id)
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid meeting ID format")
+    task = await mongo.get_planner_tasks_collection().find_one(
+        {"_id": oid, "$or": [{"schedule_item_type": "meeting"}, {"category": "meeting"}]}
+    )
+    if not task:
+        raise HTTPException(status_code=404, detail="Meeting not found")
+    if task.get("wedding_id") and not await check_wedding_access(current_user, task["wedding_id"]):
+        raise HTTPException(status_code=403, detail="You don't have access to this wedding")
+    return {"meeting_id": meeting_id, "sync_status": await calendar_sync_service.get_sync_status(meeting_id)}

@@ -20,7 +20,9 @@ from typing import Optional, List, Any
 from datetime import datetime, timezone
 from app.core.database import mongo
 from app.services.couple_portal_service import couple_portal_service
+from app.services.calendar_sync_service import calendar_sync_service
 from app.services.guest_export_service import guest_export_service
+from app.services.meeting_invite_service import meeting_invite_service
 from app.services.web_push_service import web_push_service
 from app.services.sse_manager import sse_manager
 from app.dependencies.auth_extended import (
@@ -49,6 +51,41 @@ import os
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
+
+
+async def _resolve_internal_user_emails(user_ids: list[str]) -> list[str]:
+    """Resolve internal user ids to emails for denormalized meeting storage."""
+    if not user_ids:
+        return []
+    resolved: list[str] = []
+    users_collection = mongo.get_users_collection()
+    for user_id in user_ids:
+        try:
+            query_id = ObjectId(user_id) if ObjectId.is_valid(user_id) else user_id
+            user_doc = await users_collection.find_one({"_id": query_id}, {"email": 1})
+            if user_doc and user_doc.get("email"):
+                resolved.append(user_doc["email"])
+        except Exception:
+            continue
+    return resolved
+
+
+async def _resolve_meeting_couple_attendee_emails(
+    wedding_id: Optional[str],
+    requested_emails: Optional[list[str]] = None,
+) -> list[str]:
+    """Use explicit couple attendee emails, otherwise fall back to couple account emails."""
+    normalized = [email for email in (requested_emails or []) if email]
+    if normalized:
+        return normalized
+    if not wedding_id:
+        return []
+    cursor = mongo.db["couple_users"].find({"wedding_id": wedding_id}, {"email": 1})
+    emails: list[str] = []
+    async for couple_doc in cursor:
+        if couple_doc.get("email"):
+            emails.append(couple_doc["email"])
+    return emails
 
 
 def _enforce_manage_couple_portal(current_user: ExtendedAuthUser) -> None:
@@ -109,9 +146,11 @@ async def _resolve_custom_template_owner_scope(
             .to_list(length=None)
         )
         legacy_emails.update(
-            normalize_planner_email(member.get("email"))
+            email
             for member in team_members
             if member.get("email")
+            for email in [normalize_planner_email(member.get("email"))]
+            if email
         )
 
     if owner_email and legacy_emails:
@@ -2134,6 +2173,11 @@ class ScheduleMeetingRequest(BaseModel):
     )
     reminder_minutes: Optional[int] = Field(None, ge=0, le=40320)
     sync_to_google: bool = True
+    assigned_user_ids: List[str] = Field(default_factory=list)
+    couple_attendee_emails: List[str] = Field(default_factory=list)
+    timezone: str = Field(default="UTC")
+    calendar_sync_policy: Optional[str] = None
+    sync_target_connection_ids: List[str] = Field(default_factory=list)
 
 
 @router.post("/couple-portal/meetings", tags=["Couple Portal - Meetings"])
@@ -2174,20 +2218,46 @@ async def schedule_meeting(
         or current_user.team_owner_email
         or current_user.email
     )
+    owner_planner_id = owner_identity.get("planner_id")
+    assigned_user_ids = data.assigned_user_ids or []
+    assigned_user_emails = await _resolve_internal_user_emails(assigned_user_ids)
+    couple_attendee_emails = await _resolve_meeting_couple_attendee_emails(
+        data.wedding_id,
+        data.couple_attendee_emails,
+    )
+    calendar_sync_policy = data.calendar_sync_policy or (
+        "assigned_only" if assigned_user_ids else "owner_only"
+    )
 
     task_doc: dict[str, Any] = {
         "planner_email": planner_email,
+        "owner_planner_id": owner_planner_id,
+        "owner_planner_email": planner_email,
+        "created_by_user_id": current_user.user_data.get("_id"),
+        "created_by_email": current_user.email,
         "scheduled_by_email": current_user.email,
+        "assigned_user_ids": assigned_user_ids,
+        "assigned_user_emails": assigned_user_emails,
         "wedding_id": data.wedding_id,
         "title": data.title,
         "description": data.description,
         "category": "meeting",
         "priority": "medium",
         "status": "pending",
+        "schedule_item_type": "meeting",
+        "visibility_mode": "details",
+        "calendar_sync_policy": calendar_sync_policy,
         "start_date": data.start_date,
         "end_date": data.end_date or data.start_date,
         "all_day": False,
         "due_date": None,
+        "timezone": data.timezone,
+        "couple_attendee_emails": couple_attendee_emails,
+        "external_attendees": [],
+        "conference_provider": None,
+        "conference_url": None,
+        "invite_delivery_mode": "email_ics" if couple_attendee_emails else "portal_only",
+        "meeting_status": "scheduled",
         "reminder_minutes": data.reminder_minutes,
         "is_recurring": data.is_recurring,
         "recurrence_rule": data.recurrence_rule if data.is_recurring else None,
@@ -2206,32 +2276,38 @@ async def schedule_meeting(
     result = await tasks_collection.insert_one(task_doc)
     task_doc["_id"] = result.inserted_id
 
-    # Sync to Google Calendar if requested
+    sync_status = []
     if data.sync_to_google:
-        try:
-            from app.services.google_calendar_service import google_calendar_service
-
-            status = await google_calendar_service.get_connection_status(
-                current_user.email
+        sync_status = await calendar_sync_service.sync_schedule_item(
+            task_doc,
+            explicit_connection_ids=data.sync_target_connection_ids,
+        )
+        first_synced = next(
+            (
+                row
+                for row in sync_status
+                if row.get("sync_status") == "synced"
+                and row.get("external_event_id")
+            ),
+            None,
+        )
+        if first_synced:
+            await tasks_collection.update_one(
+                {"_id": result.inserted_id},
+                {
+                    "$set": {
+                        "google_event_id": first_synced.get("external_event_id"),
+                        "synced_to_google": True,
+                        "last_google_sync": now,
+                    }
+                },
             )
-            if status.get("connected"):
-                google_event_id = await google_calendar_service.create_google_event(
-                    current_user.email, task_doc
-                )
-                if google_event_id:
-                    await tasks_collection.update_one(
-                        {"_id": result.inserted_id},
-                        {
-                            "$set": {
-                                "google_event_id": google_event_id,
-                                "synced_to_google": True,
-                                "last_google_sync": now,
-                            }
-                        },
-                    )
-                    task_doc["synced_to_google"] = True
-        except Exception as e:
-            logger.error(f"Failed to sync meeting to Google Calendar: {e}")
+            task_doc["synced_to_google"] = True
+            task_doc["google_event_id"] = first_synced.get("external_event_id")
+
+    invite_status = []
+    if task_doc["invite_delivery_mode"] == "email_ics" and couple_attendee_emails:
+        invite_status = await meeting_invite_service.send_invites(task_doc)
 
     logger.info(
         f"Planner {current_user.email} scheduled meeting '{data.title}' for wedding {data.wedding_id}"
@@ -2240,6 +2316,8 @@ async def schedule_meeting(
     return {
         "message": "Meeting scheduled",
         "meeting": _serialize_meeting(task_doc),
+        "sync_status": sync_status,
+        "invite_status": invite_status,
     }
 
 
@@ -2325,18 +2403,8 @@ async def cancel_meeting(
     if not task:
         raise HTTPException(status_code=404, detail="Meeting not found")
 
-    # Remove from Google Calendar if synced
-    if task.get("synced_to_google") and task.get("google_event_id"):
-        try:
-            from app.services.google_calendar_service import google_calendar_service
-
-            await google_calendar_service.delete_google_event(
-                task.get("scheduled_by_email") or current_user.email,
-                task["google_event_id"],
-            )
-        except Exception as e:
-            logger.error(f"Failed to delete meeting from Google Calendar: {e}")
-
+    await calendar_sync_service.delete_schedule_item_syncs(meeting_id)
+    await mongo.get_meeting_invites_collection().delete_many({"task_id": meeting_id})
     await tasks_collection.delete_one({"_id": ObjectId(meeting_id)})
 
     logger.info(f"Planner {current_user.email} cancelled meeting {meeting_id}")

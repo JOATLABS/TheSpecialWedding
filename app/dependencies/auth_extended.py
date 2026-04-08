@@ -681,6 +681,41 @@ def get_owner_identity(user: ExtendedAuthUser) -> tuple[Optional[str], Optional[
     return None, None
 
 
+def get_calendar_owner_identity(user: ExtendedAuthUser) -> dict[str, Optional[str]]:
+    """Return owner identity payload for calendar-scoped routes."""
+    owner_id, owner_email = get_owner_identity(user)
+    return {
+        "owner_id": owner_id,
+        "owner_email": owner_email,
+        "user_id": normalize_planner_id(user.user_data.get("_id")),
+        "user_email": normalize_planner_email(user.email),
+    }
+
+
+def get_accessible_calendar_scope(user: ExtendedAuthUser) -> dict[str, Optional[object]]:
+    """Return owner and wedding visibility scope for shared calendar queries."""
+    owner_id, owner_email = get_owner_identity(user)
+    return {
+        "owner_id": owner_id,
+        "owner_email": owner_email,
+        "accessible_wedding_ids": get_accessible_wedding_ids(user),
+        "is_owner": user.is_root_admin or user.is_wedding_planner,
+        "is_team_member": user.is_team_member,
+    }
+
+
+def can_view_calendar_details(user: ExtendedAuthUser) -> bool:
+    """Whether the current user may see full shared-calendar details by default."""
+    if user.is_root_admin or user.is_wedding_planner:
+        return True
+    if user.is_team_member:
+        return bool(
+            user.team_permissions
+            and user.team_permissions.get("view_calendar_details", False)
+        )
+    return False
+
+
 def enforce_team_permission(user: ExtendedAuthUser, permission: str) -> None:
     """
     Inline permission check for team members.
@@ -712,3 +747,42 @@ def enforce_team_permission(user: ExtendedAuthUser, permission: str) -> None:
         status_code=status.HTTP_403_FORBIDDEN,
         detail="Access denied",
     )
+
+
+async def require_calendar_access(
+    current_user: ExtendedAuthUser = Depends(require_team_or_planner),
+) -> ExtendedAuthUser:
+    """Allow access to shared calendar surfaces for planners and permitted team members."""
+    if current_user.is_root_admin or current_user.is_wedding_planner:
+        return current_user
+    if current_user.is_team_member and current_user.team_permissions:
+        if current_user.team_permissions.get("view_shared_calendar", False):
+            return current_user
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You do not have the 'view shared calendar' permission.",
+        )
+    raise HTTPException(
+        status_code=status.HTTP_403_FORBIDDEN,
+        detail="Calendar access denied",
+    )
+
+
+def require_calendar_permission(permission_name: str):
+    """Dependency factory for calendar-specific permissions."""
+
+    async def _check_permission(
+        current_user: ExtendedAuthUser = Depends(require_calendar_access),
+    ) -> ExtendedAuthUser:
+        if current_user.is_root_admin or current_user.is_wedding_planner:
+            return current_user
+        if current_user.team_permissions and current_user.team_permissions.get(
+            permission_name, False
+        ):
+            return current_user
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=f"You do not have the '{permission_name.replace('_', ' ')}' permission.",
+        )
+
+    return _check_permission
