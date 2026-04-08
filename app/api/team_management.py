@@ -316,6 +316,8 @@ async def get_my_permissions(
                     "manage_wedding_settings",
                     "manage_contracts",
                     "manage_packages",
+                    "manage_couple_portal",
+                    "message_couples",
                 ]
             },
             "wedding_access": "all",

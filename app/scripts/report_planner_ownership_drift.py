@@ -78,7 +78,9 @@ class OwnerResolver:
         return self._id_to_email[normalized_id]
 
 
-async def build_wedding_owner_map(db, resolver: OwnerResolver, apply: bool, verbose: bool):
+async def build_wedding_owner_map(
+    db, resolver: OwnerResolver, apply: bool, verbose: bool
+):
     weddings = db["weddings"]
     counters = Counter()
     wedding_owner_map: dict[str, tuple[Optional[str], Optional[str]]] = {}
@@ -160,7 +162,9 @@ async def sync_couples(
             counters["couples_missing_wedding"] += 1
             continue
 
-        resolved_id, resolved_email = wedding_owner_map.get(str(wedding_id), (None, None))
+        resolved_id, resolved_email = wedding_owner_map.get(
+            str(wedding_id), (None, None)
+        )
         if not resolved_id and not resolved_email:
             counters["couples_owner_unresolved"] += 1
             continue

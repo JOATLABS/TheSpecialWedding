@@ -29,6 +29,8 @@ const PERMISSION_LABELS: Record<string, string> = {
   manage_wedding_settings: 'Wedding Settings',
   manage_contracts: 'Manage Contracts',
   manage_packages: 'Manage Packages',
+  manage_couple_portal: 'Manage Couple Portal',
+  message_couples: 'Message Couples',
 };
 
 const pageBackgroundClass =

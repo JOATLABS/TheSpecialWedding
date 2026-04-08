@@ -5,6 +5,7 @@ import { getApiBaseUrl } from '@/utils/env';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useAdmin } from '@/contexts/AdminContext';
+import { canManageCouplePortal } from '@/admin/utils/teamAccess';
 import { extractGuestList } from '@/admin/utils/guestListResponse';
 import { Wedding, WeddingEvent, RegistryItem, FAQItem, OurStory, WeddingPartyMember, PrivacySettings, WeddingPartySyncSettings } from '@/types/wedding';
 import { formatAdminTimestamp, DEFAULT_TIMEZONE } from '@/utils/dateFormat';
@@ -65,6 +66,7 @@ export default function WeddingDetailsPage() {
  const [syncing, setSyncing] = useState(false);
  const [guests, setGuests] = useState<Guest[]>([]);
  const [showAdRail, setShowAdRail] = useState(false);
+ const canViewCoupleTab = canManageCouplePortal(userProfile);
 
  const fetchWedding = useCallback(async () => {
  try {
@@ -139,6 +141,12 @@ export default function WeddingDetailsPage() {
 
  fetchWedding();
 	 }, [authLoading, fetchWedding, router, userProfile]);
+
+ useEffect(() => {
+ if (activeTab === 'couple' && !canViewCoupleTab) {
+ setActiveTab('events');
+ }
+ }, [activeTab, canViewCoupleTab]);
 
 	 const buildEventTimeErrors = (events: WeddingEvent[]): Record<number, string> => {
 	 return events.reduce<Record<number, string>>((acc, event, index) => {
@@ -528,7 +536,16 @@ const addEvent = () => {
  <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-xl overflow-hidden mb-8">
  <div className="border-b border-gray-200 dark:border-gray-700">
  <nav className="flex overflow-x-auto scrollbar-hide">
- {(['events', 'rsvp', 'privacy', 'registry', 'faq', 'theme', 'story', 'couple'] as const).map((tab) => (
+ {([
+ 'events',
+ 'rsvp',
+ 'privacy',
+ 'registry',
+ 'faq',
+ 'theme',
+ 'story',
+ ...(canViewCoupleTab ? (['couple'] as const) : []),
+ ] as const).map((tab) => (
  <button
  key={tab}
  onClick={() => setActiveTab(tab)}
@@ -1588,7 +1605,7 @@ const addEvent = () => {
  )}
 
  {/* Couple Tab */}
- {activeTab === 'couple' && (
+ {canViewCoupleTab && activeTab === 'couple' && (
  <CoupleTab weddingId={weddingId} token={token || ''} />
  )}
 

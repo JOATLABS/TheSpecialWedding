@@ -75,9 +75,8 @@ class WeddingService:
 
             wedding_dict = self._normalize_event_times(wedding_dict)
 
-            if (
-                wedding_dict.get("assigned_planner_id")
-                or wedding_dict.get("assigned_planner_email")
+            if wedding_dict.get("assigned_planner_id") or wedding_dict.get(
+                "assigned_planner_email"
             ):
                 owner_identity = await resolve_planner_identity(
                     wedding_dict.get("assigned_planner_id"),
@@ -313,9 +312,8 @@ class WeddingService:
             wedding_data.pop("_id", None)
             wedding_data = self._normalize_event_times(wedding_data)
 
-            if (
-                wedding_data.get("assigned_planner_id")
-                or wedding_data.get("assigned_planner_email")
+            if wedding_data.get("assigned_planner_id") or wedding_data.get(
+                "assigned_planner_email"
             ):
                 owner_identity = await resolve_planner_identity(
                     wedding_data.get("assigned_planner_id"),

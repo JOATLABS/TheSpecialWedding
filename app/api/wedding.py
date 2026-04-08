@@ -16,7 +16,10 @@ from app.services.stripe_service import stripe_service
 from app.models.subscription import SubscriptionStatus
 from app.services.sse_manager import sse_manager
 from app.core.database import mongo
-from app.utils.planner_ownership import extract_wedding_owner_identity, normalize_query_id
+from app.utils.planner_ownership import (
+    extract_wedding_owner_identity,
+    normalize_query_id,
+)
 from datetime import datetime, timezone
 from typing import Optional
 
@@ -27,7 +30,9 @@ wedding_service = WeddingService()
 subscription_service = SubscriptionService()
 
 
-def _get_planner_scope(current_user: ExtendedAuthUser) -> tuple[Optional[str], Optional[str]]:
+def _get_planner_scope(
+    current_user: ExtendedAuthUser,
+) -> tuple[Optional[str], Optional[str]]:
     if current_user.is_team_member:
         return current_user.parent_planner_id, current_user.team_owner_email
     return current_user.user_data.get("_id"), current_user.email
@@ -303,7 +308,9 @@ async def delete_wedding_admin(
     - Should only be used for compliance, testing, or data cleanup
     - WARNING: This is IRREVERSIBLE
     """
-    wedding = await mongo.db["weddings"].find_one({"_id": normalize_query_id(wedding_id)})
+    wedding = await mongo.db["weddings"].find_one(
+        {"_id": normalize_query_id(wedding_id)}
+    )
     if not wedding:
         raise HTTPException(status_code=404, detail="Wedding not found")
 

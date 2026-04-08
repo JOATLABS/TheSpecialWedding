@@ -4,6 +4,10 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { useAdmin } from '@/contexts/AdminContext';
 import { useSSE } from '@/hooks/useSSE';
+import {
+  canAccessGuestCommunications,
+  canMessageCouples,
+} from '@/admin/utils/teamAccess';
 import { formatDate } from '@/utils/dateFormat';
 import {
   Mail,
@@ -117,11 +121,8 @@ export default function CommunicationsInboxView() {
   const baseUrl = getApiBaseUrl();
   const requestedWeddingId = searchParams.get('wedding_id') || 'all';
   const requestedConversation = searchParams.get('conversation');
-  const canAccessCoupleMessages = Boolean(
-    userProfile?.is_root_admin ||
-    userProfile?.is_wedding_planner ||
-    userProfile?.team_permissions?.manage_contracts
-  );
+  const canAccessGuestInbox = canAccessGuestCommunications(userProfile);
+  const canAccessCoupleMessages = canMessageCouples(userProfile);
 
   // ---- Weddings for filter ----
   const [weddings, setWeddings] = useState<Wedding[]>([]);
@@ -250,6 +251,14 @@ export default function CommunicationsInboxView() {
 
   const fetchEmails = useCallback(async () => {
     if (!token) return;
+    if (!canAccessGuestInbox) {
+      setEmails([]);
+      setTotal(0);
+      setPages(0);
+      setUnreadCount(0);
+      setEmailLoading(false);
+      return;
+    }
     try {
       setEmailLoading(true);
       const params = new URLSearchParams({
@@ -274,7 +283,7 @@ export default function CommunicationsInboxView() {
     } finally {
       setEmailLoading(false);
     }
-  }, [token, baseUrl, page, filterUnread]);
+  }, [token, canAccessGuestInbox, baseUrl, page, filterUnread]);
 
   const markCoupleConversationRead = useCallback(async (weddingId: string) => {
     if (!token || !canAccessCoupleMessages) return;
@@ -353,7 +362,7 @@ export default function CommunicationsInboxView() {
   }, [baseUrl, token]);
 
   const fetchCoupleMessages = useCallback(async (weddingId: string, options?: { markRead?: boolean }) => {
-    if (!token) return;
+    if (!token || !canAccessCoupleMessages) return;
     try {
       setDetailLoading(true);
       const response = await fetch(
@@ -372,7 +381,7 @@ export default function CommunicationsInboxView() {
     } finally {
       setDetailLoading(false);
     }
-  }, [baseUrl, markCoupleConversationRead, token]);
+  }, [baseUrl, canAccessCoupleMessages, markCoupleConversationRead, token]);
 
   // Auto-scroll to bottom for couple chat
   useEffect(() => {
@@ -380,6 +389,17 @@ export default function CommunicationsInboxView() {
       messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
     }
   }, [coupleMessages, selectedItem]);
+
+  useEffect(() => {
+    if (selectedItem?.type === 'email' && !canAccessGuestInbox) {
+      setSelectedItem(null);
+      setSelectedEmailDetail(null);
+    }
+    if (selectedItem?.type === 'couple' && !canAccessCoupleMessages) {
+      setSelectedItem(null);
+      setCoupleMessages([]);
+    }
+  }, [canAccessCoupleMessages, canAccessGuestInbox, selectedItem]);
 
   // ==================== BUILD UNIFIED LIST ====================
 
@@ -460,6 +480,7 @@ export default function CommunicationsInboxView() {
 
   const loading = emailLoading || conversationsLoading;
   const totalUnread = unreadCount + coupleConversations.reduce((totalUnreadCount, conversation) => totalUnreadCount + (conversation.unread_count || 0), 0);
+  const hasAnyInboxAccess = canAccessGuestInbox || canAccessCoupleMessages;
 
   const selectedWeddingLabel = selectedWeddingId === 'all'
     ? 'All Weddings'
@@ -506,7 +527,7 @@ export default function CommunicationsInboxView() {
   }, [fetchCoupleMessages, fetchEmailDetail]);
 
   const handleMarkAllRead = async () => {
-    if (!token) return;
+    if (!token || !canAccessGuestInbox) return;
     try {
       await fetch(`${baseUrl}/admin/inbound-emails/read-all`, {
         method: 'PUT',
@@ -523,6 +544,7 @@ export default function CommunicationsInboxView() {
     if (!token || !selectedItem || !replyText.trim()) return;
 
     if (selectedItem.type === 'email' && selectedItem.email) {
+      if (!canAccessGuestInbox) return;
       try {
         setSending(true);
         const response = await fetch(`${baseUrl}/admin/inbound-emails/${selectedItem.email.id}/reply`, {
@@ -556,6 +578,7 @@ export default function CommunicationsInboxView() {
         setSending(false);
       }
     } else if (selectedItem.type === 'couple' && selectedItem.couple) {
+      if (!canAccessCoupleMessages) return;
       try {
         setSending(true);
         const response = await fetch(`${baseUrl}/couple-portal/messages`, {
@@ -806,14 +829,20 @@ export default function CommunicationsInboxView() {
           <div ref={messagesEndRef} />
         </div>
 
-        <ChatInput
-          value={replyText}
-          onChange={setReplyText}
-          onSend={handleSendReply}
-          sending={sending}
-          placeholder={`Message ${coupleName}...`}
-          accentColor="rose"
-        />
+        {canAccessCoupleMessages ? (
+          <ChatInput
+            value={replyText}
+            onChange={setReplyText}
+            onSend={handleSendReply}
+            sending={sending}
+            placeholder={`Message ${coupleName}...`}
+            accentColor="rose"
+          />
+        ) : (
+          <div className="border-t border-gray-100 dark:border-slate-800 px-4 py-3 text-sm text-gray-500 dark:text-gray-400">
+            You can view this conversation, but you do not have permission to message couples.
+          </div>
+        )}
       </>
     );
   };
@@ -931,13 +960,15 @@ export default function CommunicationsInboxView() {
               ) : filteredItems.length === 0 ? (
                 <div className="p-12 text-center text-gray-400">
                   <Inbox className="w-12 h-12 mx-auto mb-3 opacity-40" />
-                  <p className="font-medium mb-1">No messages</p>
+                  <p className="font-medium mb-1">{hasAnyInboxAccess ? 'No messages' : 'No inbox access'}</p>
                   <p className="text-sm">
-                    {filterUnread
-                      ? 'No unread messages. Try showing all.'
-                      : selectedWeddingId !== 'all'
-                        ? 'No messages for this wedding yet.'
-                        : 'Guest replies and couple messages will appear here.'}
+                    {!hasAnyInboxAccess
+                      ? 'Your team role does not include guest inbox or couple messaging access.'
+                      : filterUnread
+                        ? 'No unread messages. Try showing all.'
+                        : selectedWeddingId !== 'all'
+                          ? 'No messages for this wedding yet.'
+                          : 'Guest replies and couple messages will appear here.'}
                   </p>
                 </div>
               ) : (
