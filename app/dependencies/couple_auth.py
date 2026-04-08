@@ -7,7 +7,24 @@ Used by couple_portal.py and couple_auth.py endpoints.
 
 from fastapi import HTTPException, Request
 from app.core.database import mongo
+from app.services.couple_lifecycle_service import couple_lifecycle_service
 from app.utils.auth_utils import verify_token
+from app.utils.planner_ownership import normalize_wedding_query_id
+
+
+async def _load_couple_wedding(couple: dict) -> dict | None:
+    wedding_id = couple.get("wedding_id")
+    if not wedding_id:
+        return None
+
+    return await mongo.get_weddings_collection().find_one(
+        {"_id": normalize_wedding_query_id(wedding_id)},
+        {
+            "assigned_planner_id": 1,
+            "assigned_planner_email": 1,
+            "data_access_suspended_reason": 1,
+        },
+    )
 
 
 async def require_couple_auth(request: Request) -> dict:
@@ -43,10 +60,16 @@ async def require_couple_auth(request: Request) -> dict:
     if role != "couple":
         raise HTTPException(status_code=403, detail="Couple access required")
 
-    couple = await mongo.db["couple_users"].find_one(
-        {"email": email, "is_active": True}
-    )
+    couple = await mongo.db["couple_users"].find_one({"email": email})
     if not couple:
         raise HTTPException(status_code=404, detail="Couple account not found")
+
+    wedding = await _load_couple_wedding(couple)
+    access = await couple_lifecycle_service.resolve_effective_state(couple, wedding)
+    if access.get("blocked"):
+        raise HTTPException(status_code=403, detail=access["detail"])
+
+    couple["_portal_access_state"] = access["state"]
+    couple["_portal_access_detail"] = access.get("detail")
 
     return couple

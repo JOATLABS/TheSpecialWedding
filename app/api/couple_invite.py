@@ -14,6 +14,17 @@ from app.dependencies.auth_extended import (
     require_team_or_planner,
     enforce_team_permission,
     check_wedding_access,
+    get_accessible_wedding_ids,
+    get_owner_identity,
+)
+from app.utils.planner_ownership import (
+    extract_wedding_owner_identity,
+    list_wedding_ids_for_owner,
+    normalize_query_id,
+)
+from app.services.couple_lifecycle_service import (
+    COUPLE_PORTAL_STATE_PENDING_SETUP,
+    couple_lifecycle_service,
 )
 from bson import ObjectId
 import secrets
@@ -68,12 +79,17 @@ async def invite_couple(
         )
 
     # Get wedding details for the email
-    wedding = await mongo.get_weddings_collection().find_one({"_id": data.wedding_id})
+    wedding = await mongo.get_weddings_collection().find_one(
+        {"_id": normalize_query_id(data.wedding_id)}
+    )
     if not wedding:
         raise HTTPException(status_code=404, detail="Wedding not found")
 
     # Get planner info
-    planner_id = str((current_user.user_data or {}).get("_id") or current_user.email)
+    planner_id, planner_email = extract_wedding_owner_identity(wedding)
+    actor_owner_id, actor_owner_email = get_owner_identity(current_user)
+    planner_id = planner_id or actor_owner_id or ""
+    planner_email = planner_email or actor_owner_email or current_user.email
     planner_name = f"{(current_user.user_data or {}).get('first_name', '')} {(current_user.user_data or {}).get('last_name', '')}".strip()
     if not planner_name:
         planner_name = (current_user.user_data or {}).get(
@@ -91,12 +107,18 @@ async def invite_couple(
         "phone": data.phone,
         "wedding_id": data.wedding_id,
         "planner_id": planner_id,
-        "planner_email": current_user.email,
+        "planner_email": planner_email,
         "invite_token": invite_token,
         "invite_token_expires": invite_expires,
         "is_active": False,
+        "access_state": COUPLE_PORTAL_STATE_PENDING_SETUP,
         "setup_completed": False,
         "password_hash": None,
+        "revoked_at": None,
+        "revoked_by": None,
+        "owner_cancelled_at": None,
+        "owner_cancelled_by_planner_id": None,
+        "owner_cancelled_by_planner_email": None,
         "created_at": datetime.now(timezone.utc),
         "updated_at": datetime.now(timezone.utc),
         "last_login": None,
@@ -110,9 +132,18 @@ async def invite_couple(
                 "$set": {
                     "invite_token": invite_token,
                     "invite_token_expires": invite_expires,
+                    "planner_id": planner_id,
+                    "planner_email": planner_email,
                     "partner1_name": data.partner1_name,
                     "partner2_name": data.partner2_name,
                     "phone": data.phone,
+                    "is_active": False,
+                    "access_state": COUPLE_PORTAL_STATE_PENDING_SETUP,
+                    "revoked_at": None,
+                    "revoked_by": None,
+                    "owner_cancelled_at": None,
+                    "owner_cancelled_by_planner_id": None,
+                    "owner_cancelled_by_planner_email": None,
                     "updated_at": datetime.now(timezone.utc),
                 }
             },
@@ -124,7 +155,7 @@ async def invite_couple(
 
     # Also update the wedding to track the couple link
     await mongo.get_weddings_collection().update_one(
-        {"_id": data.wedding_id},
+        {"_id": normalize_query_id(data.wedding_id)},
         {
             "$set": {
                 "couple_portal_email": data.email.lower().strip(),
@@ -182,7 +213,7 @@ async def invite_couple(
 
         <p style="color: #999; font-size: 12px; text-align: center;">
             Wedding: {wedding.get("couple_names", "Your Wedding")}<br/>
-            Planner: {planner_name} ({current_user.email})
+            Planner: {planner_name} ({planner_email or current_user.email})
         </p>
     </div>
     """
@@ -316,11 +347,33 @@ async def list_couples(
     current_user: ExtendedAuthUser = Depends(require_team_or_planner),
 ):
     """List all couples for the planner's weddings."""
-    planner_id = str((current_user.user_data or {}).get("_id") or current_user.email)
-
-    query = {"planner_id": planner_id}
     if wedding_id:
-        query["wedding_id"] = wedding_id
+        if not await check_wedding_access(current_user, wedding_id):
+            raise HTTPException(
+                status_code=403, detail="You don't have access to this wedding"
+            )
+        query = {"wedding_id": wedding_id}
+    elif current_user.is_root_admin:
+        query = {}
+    else:
+        planner_id = (
+            current_user.parent_planner_id
+            if current_user.is_team_member
+            else (current_user.user_data or {}).get("_id")
+        )
+        planner_email = (
+            current_user.team_owner_email
+            if current_user.is_team_member
+            else current_user.email
+        )
+        wedding_ids = await list_wedding_ids_for_owner(
+            planner_id=planner_id,
+            planner_email=planner_email,
+            accessible_wedding_ids=get_accessible_wedding_ids(current_user),
+        )
+        if not wedding_ids:
+            return {"couples": [], "count": 0}
+        query = {"wedding_id": {"$in": wedding_ids}}
 
     couples = []
     async for couple in mongo.db["couple_users"].find(query).sort("created_at", -1):
@@ -335,7 +388,9 @@ async def list_couples(
                 "partner2_name": couple.get("partner2_name"),
                 "wedding_id": couple.get("wedding_id"),
                 "is_active": couple.get("is_active", False),
+                "access_state": couple_lifecycle_service.infer_stored_state(couple),
                 "setup_completed": couple.get("setup_completed", False),
+                "wedding_archived": couple.get("wedding_archived", False),
                 "last_login": couple.get("last_login").isoformat()
                 if couple.get("last_login")
                 else None,

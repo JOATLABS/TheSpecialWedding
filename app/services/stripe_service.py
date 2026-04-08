@@ -13,7 +13,17 @@ import logging
 
 from app.models.subscription import SubscriptionStatus, normalize_subscription_status
 from app.services.email_service_resend import ResendEmailService
+from app.services.couple_lifecycle_service import (
+    COUPLE_PORTAL_STATE_REVOKED,
+    couple_lifecycle_service,
+)
 from app.utils.id_utils import to_object_id
+from app.utils.planner_ownership import (
+    build_wedding_owner_query,
+    extract_wedding_owner_identity,
+    normalize_query_id,
+    resolve_planner_email,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -1020,9 +1030,10 @@ class StripeService:
 
         Phases (fire-and-forget per phase):
           1. Reactivate team members
-          2. Unsuspend planner data (weddings, packages, contracts)
-          3. Resume paused payment links & scheduled payments
-          4. Clear cancellation_cleanup_completed flag on subscription
+          2. Restore couple portal access previously blocked by owner cancellation
+          3. Unsuspend planner data (weddings, packages, contracts)
+          4. Resume paused payment links & scheduled payments
+          5. Clear cancellation_cleanup_completed flag on subscription
 
         Each phase is wrapped in try/except so a single failure
         does not prevent the remaining phases from executing.
@@ -1085,7 +1096,25 @@ class StripeService:
                 str(e),
             )
 
-        # Phase 2: Unsuspend planner data
+        # Phase 2: Restore couple portal access previously blocked by owner cancellation
+        try:
+            couple_result = await couple_lifecycle_service.bulk_restore_owner_cancelled(
+                planner_id=user_id,
+                planner_email=user_email,
+            )
+            logger.info(
+                "[Reactivation] Phase 2 complete: restored %d couple accounts for user %s",
+                couple_result.get("updated_count", 0),
+                user_id,
+            )
+        except Exception as e:
+            logger.error(
+                "[Reactivation] Phase 2 (couple restore) failed for user %s: %s",
+                user_id,
+                str(e),
+            )
+
+        # Phase 3: Unsuspend planner data
         try:
             from app.services.cascade_delete_service import CascadeDeleteService
 
@@ -1094,18 +1123,18 @@ class StripeService:
                 planner_id=user_id, planner_email=user_email
             )
             logger.info(
-                "[Reactivation] Phase 2 complete: unsuspended data for user %s — %s",
+                "[Reactivation] Phase 3 complete: unsuspended data for user %s — %s",
                 user_id,
                 str(data_result),
             )
         except Exception as e:
             logger.error(
-                "[Reactivation] Phase 2 (data unsuspend) failed for user %s: %s",
+                "[Reactivation] Phase 3 (data unsuspend) failed for user %s: %s",
                 user_id,
                 str(e),
             )
 
-        # Phase 3: Resume payment links & scheduled payments
+        # Phase 4: Resume payment links & scheduled payments
         try:
             from app.services.package_service import PackageService
 
@@ -1114,18 +1143,18 @@ class StripeService:
                 planner_id=user_id, planner_email=user_email
             )
             logger.info(
-                "[Reactivation] Phase 3 complete: resumed payments for user %s — %s",
+                "[Reactivation] Phase 4 complete: resumed payments for user %s — %s",
                 user_id,
                 str(payment_result),
             )
         except Exception as e:
             logger.error(
-                "[Reactivation] Phase 3 (payment resume) failed for user %s: %s",
+                "[Reactivation] Phase 4 (payment resume) failed for user %s: %s",
                 user_id,
                 str(e),
             )
 
-        # Phase 4: Clear the cancellation and reactivation-in-progress flags
+        # Phase 5: Clear the cancellation and reactivation-in-progress flags
         try:
             await self.subscriptions_collection.update_many(
                 {"user_id": user_id},
@@ -1850,7 +1879,23 @@ class StripeService:
                 f"Failed to deactivate team members for user {user_id}: {str(e)}"
             )
 
-        # Phase 2: Suspend planner data
+        # Phase 2: Block couple portal access for owned weddings
+        try:
+            couple_result = await couple_lifecycle_service.bulk_mark_owner_cancelled(
+                planner_id=user_id,
+                planner_email=user_email,
+            )
+            logger.info(
+                "Blocked couple portal access for user %s: %s",
+                user_id,
+                str(couple_result),
+            )
+        except Exception as e:
+            logger.warning(
+                f"Failed to block couple portal access for user {user_id}: {str(e)}"
+            )
+
+        # Phase 3: Suspend planner data
         try:
             from app.services.cascade_delete_service import cascade_delete_service
 
@@ -1863,7 +1908,7 @@ class StripeService:
                 f"Failed to suspend planner data for user {user_id}: {str(e)}"
             )
 
-        # Phase 3: Pause couple payments
+        # Phase 4: Pause couple payments
         try:
             from app.services.package_service import package_service
 
@@ -1876,7 +1921,7 @@ class StripeService:
                 f"Failed to pause payment links for user {user_id}: {str(e)}"
             )
 
-        # Phase 4: Send cancellation email to planner
+        # Phase 5: Send cancellation email to planner
         try:
             from app.services.email_service_resend import ResendEmailService
 
@@ -1888,15 +1933,28 @@ class StripeService:
                 f"Failed to send cancellation email to user {user_id}: {str(e)}"
             )
 
-        # Phase 5: Notify affected couples
-        # Couples are stored in `couple_users` collection with `planner_id` field (indexed).
+        # Phase 6: Notify affected couples
         try:
             from app.services.email_service_resend import ResendEmailService
 
             couple_users_collection = mongo.db["couple_users"]
-            couples = await couple_users_collection.find(
-                {"planner_id": user_id, "is_active": True}
-            ).to_list(length=10000)
+            weddings_query = build_wedding_owner_query(user_id, user_email)
+            wedding_ids = []
+            if weddings_query:
+                planner_weddings = await self.weddings_collection.find(
+                    weddings_query,
+                    {"_id": 1},
+                ).to_list(length=10000)
+                wedding_ids = [str(wedding["_id"]) for wedding in planner_weddings]
+
+            couples = []
+            if wedding_ids:
+                couples = await couple_users_collection.find(
+                    {
+                        "wedding_id": {"$in": wedding_ids},
+                        "setup_completed": True,
+                    }
+                ).to_list(length=10000)
 
             if couples:
                 email_service = ResendEmailService()
@@ -1906,11 +1964,23 @@ class StripeService:
                     {c.get("wedding_id") for c in couples if c.get("wedding_id")}
                 )
                 weddings_list = await self.weddings_collection.find(
-                    {"_id": {"$in": wedding_ids}}
+                    {
+                        "_id": {
+                            "$in": [
+                                normalize_query_id(wedding_id)
+                                for wedding_id in wedding_ids
+                            ]
+                        }
+                    }
                 ).to_list(length=10000)
                 weddings_map = {str(w["_id"]): w for w in weddings_list}
 
                 for couple in couples:
+                    if (
+                        couple_lifecycle_service.infer_stored_state(couple)
+                        == COUPLE_PORTAL_STATE_REVOKED
+                    ):
+                        continue
                     try:
                         wedding = weddings_map.get(couple.get("wedding_id"), {})
                         couple_notification_sent = await email_service.send_planner_cancelled_couple_notification(
@@ -2789,13 +2859,13 @@ class StripeService:
             if invoice_pdf_url:
                 buttons.append(
                     f'<a href="{invoice_pdf_url}" style="display: inline-block; background: #2563eb; color: #ffffff; '
-                    f'text-decoration: none; padding: 10px 18px; border-radius: 8px; font-size: 14px; '
+                    f"text-decoration: none; padding: 10px 18px; border-radius: 8px; font-size: 14px; "
                     f'font-weight: 500; margin-right: 8px;">Download Invoice PDF</a>'
                 )
             if hosted_invoice_url:
                 buttons.append(
                     f'<a href="{hosted_invoice_url}" style="display: inline-block; background: #ffffff; color: #2563eb; '
-                    f'text-decoration: none; padding: 10px 18px; border-radius: 8px; font-size: 14px; '
+                    f"text-decoration: none; padding: 10px 18px; border-radius: 8px; font-size: 14px; "
                     f'font-weight: 500; border: 1px solid #2563eb;">View Invoice Online</a>'
                 )
             invoice_links_html = (
@@ -3003,9 +3073,16 @@ class StripeService:
             if not planner_email:
                 # Try to get planner from wedding
                 if wedding_id:
-                    wedding = await mongo.db["weddings"].find_one({"_id": wedding_id})
+                    wedding = await mongo.db["weddings"].find_one(
+                        {"_id": normalize_query_id(wedding_id)}
+                    )
                     if wedding:
-                        planner_email = wedding.get("assigned_planner_email")
+                        planner_id, wedding_planner_email = (
+                            extract_wedding_owner_identity(wedding)
+                        )
+                        planner_email = await resolve_planner_email(
+                            planner_id, wedding_planner_email
+                        )
 
             if not planner_email:
                 logger.debug(f"No planner found for payment {payment_intent_id}")

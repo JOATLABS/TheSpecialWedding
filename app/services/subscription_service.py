@@ -1,6 +1,11 @@
 import logging
 from fastapi import HTTPException
 from app.core.database import mongo
+from app.utils.planner_ownership import build_wedding_owner_query, normalize_query_id
+from app.services.couple_lifecycle_service import (
+    COUPLE_PORTAL_STATE_REVOKED,
+    couple_lifecycle_service,
+)
 from app.services.stripe_service import stripe_service
 from typing import List, Optional
 from datetime import datetime, timedelta, timezone
@@ -457,6 +462,7 @@ class SubscriptionService:
             # Initialize cleanup results
             cleanup_results = {
                 "team_members_deactivated": 0,
+                "couples_blocked": 0,
                 "data_suspended": {},
                 "payments_paused": {},
                 "email_sent": False,
@@ -482,7 +488,26 @@ class SubscriptionService:
                     f"Failed to deactivate team members for user {user_id}: {str(e)}"
                 )
 
-            # Phase 2: Suspend planner data
+            # Phase 2: Block couple portal access for owned weddings
+            try:
+                couple_result = (
+                    await couple_lifecycle_service.bulk_mark_owner_cancelled(
+                        planner_id=user_id,
+                        planner_email=user_email,
+                    )
+                )
+                cleanup_results["couples_blocked"] = couple_result.get(
+                    "updated_count", 0
+                )
+                logger.info(
+                    f"Blocked couple portal access for user {user_id}: {couple_result}"
+                )
+            except Exception as e:
+                logger.warning(
+                    f"Failed to block couple portal access for user {user_id}: {str(e)}"
+                )
+
+            # Phase 3: Suspend planner data
             try:
                 from app.services.cascade_delete_service import cascade_delete_service
 
@@ -498,7 +523,7 @@ class SubscriptionService:
                     f"Failed to suspend planner data for user {user_id}: {str(e)}"
                 )
 
-            # Phase 3: Pause couple payments
+            # Phase 4: Pause couple payments
             try:
                 from app.services.package_service import package_service
 
@@ -514,7 +539,7 @@ class SubscriptionService:
                     f"Failed to pause payment links for user {user_id}: {str(e)}"
                 )
 
-            # Phase 4: Send cancellation email to planner
+            # Phase 5: Send cancellation email to planner
             try:
                 from app.services.email_service_resend import ResendEmailService
 
@@ -527,17 +552,29 @@ class SubscriptionService:
                     f"Failed to send cancellation email to user {user_id}: {str(e)}"
                 )
 
-            # Phase 5: Notify affected couples
-            # Couples are stored in the `couple_users` collection with a `planner_id`
-            # field (indexed). Query directly instead of going through weddings.
+            # Phase 6: Notify affected couples
             try:
                 from app.services.email_service_resend import ResendEmailService
                 from app.core.database import mongo
 
                 couple_users_collection = mongo.db["couple_users"]
-                couples = await couple_users_collection.find(
-                    {"planner_id": user_id, "is_active": True}
-                ).to_list(length=10000)
+                weddings_query = build_wedding_owner_query(user_id, user_email)
+                wedding_ids = []
+                if weddings_query:
+                    planner_weddings = await self.weddings_collection.find(
+                        weddings_query,
+                        {"_id": 1},
+                    ).to_list(length=10000)
+                    wedding_ids = [str(wedding["_id"]) for wedding in planner_weddings]
+
+                couples = []
+                if wedding_ids:
+                    couples = await couple_users_collection.find(
+                        {
+                            "wedding_id": {"$in": wedding_ids},
+                            "setup_completed": True,
+                        }
+                    ).to_list(length=10000)
 
                 if couples:
                     email_service = ResendEmailService()
@@ -548,11 +585,23 @@ class SubscriptionService:
                         {c.get("wedding_id") for c in couples if c.get("wedding_id")}
                     )
                     weddings_list = await self.weddings_collection.find(
-                        {"_id": {"$in": wedding_ids}}
+                        {
+                            "_id": {
+                                "$in": [
+                                    normalize_query_id(wedding_id)
+                                    for wedding_id in wedding_ids
+                                ]
+                            }
+                        }
                     ).to_list(length=10000)
                     weddings_map = {str(w["_id"]): w for w in weddings_list}
 
                     for couple in couples:
+                        if (
+                            couple_lifecycle_service.infer_stored_state(couple)
+                            == COUPLE_PORTAL_STATE_REVOKED
+                        ):
+                            continue
                         try:
                             wedding = weddings_map.get(couple.get("wedding_id"), {})
                             couple_notification_sent = await email_service.send_planner_cancelled_couple_notification(

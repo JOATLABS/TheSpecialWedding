@@ -16,6 +16,7 @@ import logging
 from datetime import datetime, timezone
 from typing import Dict, List
 from app.core.database import mongo
+from app.utils.planner_ownership import build_wedding_owner_query
 
 logger = logging.getLogger(__name__)
 
@@ -462,13 +463,14 @@ class CascadeDeleteService:
             }
 
             # Suspend weddings assigned to this planner
+            wedding_query = build_wedding_owner_query(
+                planner_id=planner_id,
+                planner_email=planner_email,
+            )
+            if not wedding_query:
+                raise ValueError("Planner identity is required to suspend wedding data")
             weddings_result = await mongo.db["weddings"].update_many(
-                {
-                    "$or": [
-                        {"planner_id": planner_id},
-                        {"assigned_planner_email": planner_email},
-                    ]
-                },
+                wedding_query,
                 {"$set": suspension_data},
             )
 
@@ -526,12 +528,17 @@ class CascadeDeleteService:
             )
 
             # Unsuspend weddings
+            wedding_query = build_wedding_owner_query(
+                planner_id=planner_id,
+                planner_email=planner_email,
+            )
+            if not wedding_query:
+                raise ValueError(
+                    "Planner identity is required to unsuspend wedding data"
+                )
             weddings_result = await mongo.db["weddings"].update_many(
                 {
-                    "$or": [
-                        {"planner_id": planner_id},
-                        {"assigned_planner_email": planner_email},
-                    ],
+                    **wedding_query,
                     "data_access_suspended_reason": "planner_subscription_cancelled",
                 },
                 {

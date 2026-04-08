@@ -133,6 +133,13 @@ async def create_wedding_indexes():
         )
         logger.info("Created index: idx_assigned_planner")
 
+        await collection.create_index(
+            [("assigned_planner_id", ASCENDING)],
+            name="idx_assigned_planner_id",
+            sparse=True,
+        )
+        logger.info("Created index: idx_assigned_planner_id")
+
         # 3. Date-based sorting
         await collection.create_index([("date", ASCENDING)], name="idx_wedding_date")
         logger.info("Created index: idx_wedding_date")

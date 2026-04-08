@@ -939,15 +939,15 @@ class ResendEmailService:
 
                     <p><strong>What this means for your wedding:</strong></p>
                     <ul style="margin: 15px 0; padding-left: 20px;">
-                        <li>Your wedding details and planning information for <span class="highlight">{wedding_title}</span> remain fully accessible to you</li>
+                        <li>Your wedding details and planning information for <span class="highlight">{wedding_title}</span> remain preserved on The Special Wedding</li>
                         <li>Any scheduled payments or recurring charges have been paused</li>
-                        <li>You retain full access to your data and can manage your wedding planning independently</li>
+                        <li>Your couple portal access is currently paused while your planner's account is inactive</li>
                     </ul>
 
                     <p><strong>Next Steps:</strong></p>
-                    <p>We recommend reaching out to {planner_company} directly to discuss the transition of your wedding planning services. If you need assistance or have questions, our support team is here to help.</p>
+                    <p>We recommend reaching out to {planner_company} directly to discuss the transition of your wedding planning services. If your planner reactivates their account, access to your portal can be restored. If you need assistance or have questions, our support team is here to help.</p>
 
-                    <p>Your wedding details are safe and secure with us. Thank you for using The Special Wedding to plan your special day.</p>
+                    <p>Your wedding details remain safely preserved by The Special Wedding even while portal access is paused.</p>
                 </div>
                 <div class="footer">
                     <p>Questions? Contact support@thespecialwedding.com</p>

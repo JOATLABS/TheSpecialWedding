@@ -27,6 +27,7 @@ from app.models.team_member import (
     TeamMemberStatus,
     ROLE_PRESETS,
 )
+from app.utils.planner_ownership import build_wedding_owner_query
 from app.dependencies.auth_extended import (
     invalidate_team_cache,
     invalidate_team_cache_by_owner,
@@ -146,7 +147,10 @@ class TeamManagementService:
         return base
 
     async def _validate_wedding_ownership(
-        self, owner_email: str, wedding_ids: Optional[List[str]]
+        self,
+        owner_id: Optional[str],
+        owner_email: Optional[str],
+        wedding_ids: Optional[List[str]],
     ) -> None:
         """
         Validate that all provided wedding IDs belong to the planner.
@@ -175,15 +179,21 @@ class TeamManagementService:
                 detail="Invalid wedding ID format",
             )
 
+        query = build_wedding_owner_query(owner_id, owner_email)
+        if not query:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Planner ownership context is missing for this request",
+            )
+        query["_id"] = {"$in": oids}
+
         # Single $in query to check all weddings at once
-        count = await self.weddings_collection.count_documents(
-            {"_id": {"$in": oids}, "assigned_planner_email": owner_email}
-        )
+        count = await self.weddings_collection.count_documents(query)
 
         if count != len(oids):
             # Find which ones are invalid
             valid_docs = await self.weddings_collection.find(
-                {"_id": {"$in": oids}, "assigned_planner_email": owner_email},
+                query,
                 {"_id": 1},
             ).to_list(length=len(oids))
             valid_ids = {str(d["_id"]) for d in valid_docs}
@@ -406,7 +416,9 @@ class TeamManagementService:
 
         # 4. Validate assigned weddings belong to the planner
         if wedding_access == "assigned" and assigned_wedding_ids:
-            await self._validate_wedding_ownership(owner_email, assigned_wedding_ids)
+            await self._validate_wedding_ownership(
+                owner_id, owner_email, assigned_wedding_ids
+            )
 
         # 5. Resolve permissions
         resolved_perms = self._resolve_permissions(role, custom_permissions)
@@ -974,7 +986,9 @@ class TeamManagementService:
                 if assigned_ids:
                     assigned_ids = list(dict.fromkeys(assigned_ids))
                 # Validate that assigned wedding IDs belong to the planner
-                await self._validate_wedding_ownership(owner_email, assigned_ids)
+                await self._validate_wedding_ownership(
+                    owner_id, owner_email, assigned_ids
+                )
                 set_fields["assigned_wedding_ids"] = assigned_ids
 
         if "assigned_wedding_ids" in updates and "wedding_access" not in set_fields:
@@ -983,7 +997,7 @@ class TeamManagementService:
             if assigned_ids:
                 assigned_ids = list(dict.fromkeys(assigned_ids))
             # Validate that assigned wedding IDs belong to the planner
-            await self._validate_wedding_ownership(owner_email, assigned_ids)
+            await self._validate_wedding_ownership(owner_id, owner_email, assigned_ids)
             set_fields["assigned_wedding_ids"] = assigned_ids
 
         await self.team_collection.update_one(
@@ -1132,7 +1146,9 @@ class TeamManagementService:
         if doc.get("wedding_access") == "assigned" and doc.get("assigned_wedding_ids"):
             try:
                 await self._validate_wedding_ownership(
-                    doc.get("owner_email", ""), doc["assigned_wedding_ids"]
+                    doc.get("owner_id", ""),
+                    doc.get("owner_email", ""),
+                    doc["assigned_wedding_ids"],
                 )
             except HTTPException:
                 raise HTTPException(
@@ -1336,7 +1352,7 @@ class TeamManagementService:
                 },
                 {
                     "$set": {
-                        "status": "suspended_owner_cancelled",
+                        "status": TeamMemberStatus.SUSPENDED_OWNER_CANCELLED.value,
                         "suspended_at": now,
                         "suspension_reason": reason,
                         "updated_at": now,
@@ -1372,7 +1388,7 @@ class TeamManagementService:
                 await self.team_collection.update_many(
                     {
                         "owner_id": owner_id,
-                        "status": "suspended_owner_cancelled",
+                        "status": TeamMemberStatus.SUSPENDED_OWNER_CANCELLED.value,
                     },
                     {
                         "$set": {
@@ -1435,7 +1451,7 @@ class TeamManagementService:
         team_members = await self.team_collection.find(
             {
                 "owner_id": owner_id,
-                "status": "suspended_owner_cancelled",
+                "status": TeamMemberStatus.SUSPENDED_OWNER_CANCELLED.value,
             }
         ).to_list(length=None)
 
@@ -1450,7 +1466,7 @@ class TeamManagementService:
             await self.team_collection.update_many(
                 {
                     "owner_id": owner_id,
-                    "status": "suspended_owner_cancelled",
+                    "status": TeamMemberStatus.SUSPENDED_OWNER_CANCELLED.value,
                 },
                 {
                     "$set": {
@@ -1494,7 +1510,7 @@ class TeamManagementService:
                     },
                     {
                         "$set": {
-                            "status": "suspended_owner_cancelled",
+                            "status": TeamMemberStatus.SUSPENDED_OWNER_CANCELLED.value,
                             "suspended_at": now,
                             "suspension_reason": "owner_subscription_cancelled",
                             "updated_at": now,

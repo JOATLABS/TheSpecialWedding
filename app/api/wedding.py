@@ -16,6 +16,7 @@ from app.services.stripe_service import stripe_service
 from app.models.subscription import SubscriptionStatus
 from app.services.sse_manager import sse_manager
 from app.core.database import mongo
+from app.utils.planner_ownership import extract_wedding_owner_identity, normalize_query_id
 from datetime import datetime, timezone
 from typing import Optional
 
@@ -24,6 +25,34 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 wedding_service = WeddingService()
 subscription_service = SubscriptionService()
+
+
+def _get_planner_scope(current_user: ExtendedAuthUser) -> tuple[Optional[str], Optional[str]]:
+    if current_user.is_team_member:
+        return current_user.parent_planner_id, current_user.team_owner_email
+    return current_user.user_data.get("_id"), current_user.email
+
+
+async def _sync_couple_owner_mirrors(wedding_id: str) -> None:
+    """Keep couple ownership mirrors aligned after wedding ownership writes."""
+    wedding = await mongo.db["weddings"].find_one(
+        {"_id": normalize_query_id(wedding_id)},
+        {"assigned_planner_id": 1, "assigned_planner_email": 1},
+    )
+    owner_id, owner_email = extract_wedding_owner_identity(wedding)
+    set_fields = {"updated_at": datetime.now(timezone.utc)}
+    if owner_id:
+        set_fields["planner_id"] = owner_id
+    if owner_email:
+        set_fields["planner_email"] = owner_email
+
+    if len(set_fields) == 1:
+        return
+
+    await mongo.db["couple_users"].update_many(
+        {"wedding_id": wedding_id},
+        {"$set": set_fields},
+    )
 
 
 @router.get("/weddings", tags=["Admin"])
@@ -44,10 +73,12 @@ async def list_weddings(
 
     # Get accessible wedding IDs for team members
     accessible_ids = get_accessible_wedding_ids(current_user)
+    planner_id, planner_email = _get_planner_scope(current_user)
     if accessible_ids is not None:
         # Team member with "assigned" access - filter by their assigned weddings
         return await wedding_service.list_weddings_for_planner(
-            current_user.email,
+            planner_id=planner_id,
+            planner_email=planner_email,
             accessible_ids=accessible_ids,
             page=page,
             limit=limit,
@@ -56,7 +87,11 @@ async def list_weddings(
 
     # Planner owner or team member with "all" access
     return await wedding_service.list_weddings_for_planner(
-        current_user.email, page=page, limit=limit, search=search
+        planner_id=planner_id,
+        planner_email=planner_email,
+        page=page,
+        limit=limit,
+        search=search,
     )
 
 
@@ -67,9 +102,10 @@ async def create_wedding(
 ):
     """Create a new wedding with subscription metering"""
     enforce_team_permission(current_user, "manage_wedding_settings")
+    owner_id, owner_email = _get_planner_scope(current_user)
     # Enforce limits for planners
     if not current_user.is_root_admin:
-        user_id = current_user.user_data.get("_id")
+        user_id = owner_id
         if user_id:
             limits_check = await subscription_service.check_usage_limits(
                 user_id, "weddings", 1
@@ -84,18 +120,17 @@ async def create_wedding(
 
     wedding_data = wedding.dict(by_alias=True)
     wedding_data["created_by"] = current_user.email
-    if current_user.is_wedding_planner:
-        # Use direct assignment if None, since setdefault won't override existing None values
-        if not wedding_data.get("assigned_planner_email"):
-            wedding_data["assigned_planner_email"] = current_user.email
-        if not wedding_data.get("assigned_planner_id"):
-            wedding_data["assigned_planner_id"] = current_user.user_data.get("_id", "")
+    if not current_user.is_root_admin:
+        if owner_email and not wedding_data.get("assigned_planner_email"):
+            wedding_data["assigned_planner_email"] = owner_email
+        if owner_id and not wedding_data.get("assigned_planner_id"):
+            wedding_data["assigned_planner_id"] = owner_id
 
     result = await wedding_service.create_wedding(wedding_data)
 
     # Increment usage and meter (idempotent per period)
-    if not current_user.is_root_admin and current_user.user_data.get("_id"):
-        user_id = current_user.user_data["_id"]
+    if not current_user.is_root_admin and owner_id:
+        user_id = owner_id
         await subscription_service.increment_usage(user_id, "weddings", 1)
 
         try:
@@ -224,8 +259,15 @@ async def update_wedding_admin(
 
     # Add update metadata
     wedding["updated_by"] = current_user.email
+    if not current_user.is_root_admin:
+        owner_id, owner_email = _get_planner_scope(current_user)
+        if owner_email:
+            wedding["assigned_planner_email"] = owner_email
+        if owner_id:
+            wedding["assigned_planner_id"] = owner_id
 
     result = await wedding_service.update_wedding(wedding_id, wedding)
+    await _sync_couple_owner_mirrors(wedding_id)
 
     # Broadcast SSE data-change so planner UI updates
     await sse_manager.broadcast_data_change(
@@ -261,7 +303,7 @@ async def delete_wedding_admin(
     - Should only be used for compliance, testing, or data cleanup
     - WARNING: This is IRREVERSIBLE
     """
-    wedding = await mongo.db["weddings"].find_one({"_id": wedding_id})
+    wedding = await mongo.db["weddings"].find_one({"_id": normalize_query_id(wedding_id)})
     if not wedding:
         raise HTTPException(status_code=404, detail="Wedding not found")
 
@@ -286,13 +328,16 @@ async def delete_wedding_admin(
     # Perform soft delete with meter handling
     try:
         # Attempt meter reversal only once per period to keep billing accurate without enabling avoidance
-        planner_email = wedding.get("assigned_planner_email")
-        if planner_email:
+        planner_id, planner_email = extract_wedding_owner_identity(wedding)
+        planner = None
+        if planner_id:
+            planner = await mongo.get_users_collection().find_one(
+                {"_id": normalize_query_id(planner_id)}
+            )
+        if not planner and planner_email:
             planner = await mongo.get_users_collection().find_one(
                 {"email": planner_email}
             )
-        else:
-            planner = None
 
         if planner:
             user_id = str(planner.get("_id"))
@@ -323,7 +368,7 @@ async def delete_wedding_admin(
                         )
                         reversal_success = reverse_result.get("status") == "success"
                         await mongo.db["weddings"].update_one(
-                            {"_id": wedding_id},
+                            {"_id": normalize_query_id(wedding_id)},
                             {
                                 "$set": {
                                     "meter_reversed_period": current_period
@@ -345,7 +390,7 @@ async def delete_wedding_admin(
 
         # Also mark wedding status as cancelled for backward compatibility
         await mongo.db["weddings"].update_one(
-            {"_id": wedding_id},
+            {"_id": normalize_query_id(wedding_id)},
             {
                 "$set": {
                     "status": "cancelled",
