@@ -2761,6 +2761,51 @@ class StripeService:
         billing_url = f"{settings.frontend_url}/admin/planner/billing"
         invoice_date = datetime.now(timezone.utc).strftime("%B %d, %Y")
 
+        # ── Fetch the latest invoice for PDF/hosted links ──────────────
+        invoice_pdf_url: Optional[str] = None
+        hosted_invoice_url: Optional[str] = None
+        invoice_number: Optional[str] = None
+        subscription_id = session.get("subscription")
+        if subscription_id:
+            try:
+                invoices = stripe.Invoice.list(
+                    subscription=subscription_id,
+                    limit=1,
+                )
+                if invoices.data:
+                    latest_invoice = invoices.data[0]
+                    invoice_pdf_url = latest_invoice.invoice_pdf
+                    hosted_invoice_url = latest_invoice.hosted_invoice_url
+                    invoice_number = latest_invoice.number
+            except Exception as inv_err:
+                logger.warning(
+                    f"Could not fetch invoice for checkout completion email (sub {subscription_id}): {inv_err}"
+                )
+
+        # Build invoice section for emails (reused across trial and paid paths)
+        invoice_links_html = ""
+        if invoice_pdf_url or hosted_invoice_url:
+            buttons = []
+            if invoice_pdf_url:
+                buttons.append(
+                    f'<a href="{invoice_pdf_url}" style="display: inline-block; background: #2563eb; color: #ffffff; '
+                    f'text-decoration: none; padding: 10px 18px; border-radius: 8px; font-size: 14px; '
+                    f'font-weight: 500; margin-right: 8px;">Download Invoice PDF</a>'
+                )
+            if hosted_invoice_url:
+                buttons.append(
+                    f'<a href="{hosted_invoice_url}" style="display: inline-block; background: #ffffff; color: #2563eb; '
+                    f'text-decoration: none; padding: 10px 18px; border-radius: 8px; font-size: 14px; '
+                    f'font-weight: 500; border: 1px solid #2563eb;">View Invoice Online</a>'
+                )
+            invoice_links_html = (
+                f'<div style="margin: 20px 0;">{"".join(buttons)}</div>'
+            )
+
+        invoice_number_line = ""
+        if invoice_number:
+            invoice_number_line = f'<p style="margin: 0 0 8px;"><strong>Invoice:</strong> {invoice_number}</p>'
+
         if stripe_status == "trialing" and trial_end:
             trial_end_label = trial_end.strftime("%B %d, %Y")
             subject = f"{plan_name} Trial Activated"
@@ -2770,9 +2815,11 @@ class StripeService:
               <p>Hi {user_name},</p>
               <p>Your subscription checkout is complete and your <strong>{plan_name}</strong> trial is now active.</p>
               <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 12px; padding: 18px; margin: 20px 0;">
+                {invoice_number_line}
                 <p style="margin: 0 0 8px;"><strong>Trial end date:</strong> {trial_end_label}</p>
                 <p style="margin: 0;"><strong>Billing begins after:</strong> {trial_end_label}</p>
               </div>
+              {invoice_links_html}
               <p>Your saved payment method will be used automatically when the trial ends unless you change or cancel the subscription first.</p>
               <p><a href="{billing_url}" style="display: inline-block; background: #111827; color: #ffffff; text-decoration: none; padding: 12px 18px; border-radius: 999px;">Manage billing</a></p>
             </div>
@@ -2789,9 +2836,11 @@ class StripeService:
               <p>Hi {user_name},</p>
               <p>Your checkout completed successfully and your subscription is ready to use.</p>
               <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 12px; padding: 18px; margin: 20px 0;">
+                {invoice_number_line}
                 <p style="margin: 0 0 8px;"><strong>Amount received:</strong> ${amount:.2f} {currency}</p>
                 <p style="margin: 0;"><strong>Processed on:</strong> {invoice_date}</p>
               </div>
+              {invoice_links_html}
               <p>You can manage your payment method, billing history, and plan from your billing page any time.</p>
               <p><a href="{billing_url}" style="display: inline-block; background: #111827; color: #ffffff; text-decoration: none; padding: 12px 18px; border-radius: 999px;">Open billing</a></p>
             </div>

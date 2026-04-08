@@ -443,7 +443,9 @@ class PlatformMetricsService:
                 upcoming += 1
 
             created_at = self._parse_datetime(wedding.get("created_at"))
-            if created_at and created_at >= period_start:
+            if created_at and self._normalize_to_utc(
+                created_at
+            ) >= self._normalize_to_utc(period_start):
                 created += 1
 
         guest_total = await self._count_documents(

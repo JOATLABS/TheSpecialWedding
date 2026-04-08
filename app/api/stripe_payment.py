@@ -217,26 +217,100 @@ async def get_checkout_session(
     Retrieve details of a Stripe Checkout Session
 
     Useful for verifying payment completion on the success page.
+    Returns enriched data including plan details, invoice links, and next billing date.
     """
     try:
         import stripe
         from app.core.settings import settings
+        from app.core.database import mongo
 
         stripe.api_key = settings.stripe_secret_key
         session = stripe.checkout.Session.retrieve(session_id)
 
+        result: dict = {
+            "id": session.id,
+            "payment_status": session.payment_status,
+            "customer": session.customer,
+            "subscription": session.subscription,
+            "amount_total": session.amount_total / 100
+            if session.amount_total
+            else 0,
+            "currency": session.currency,
+        }
+
+        # ── Enrich with subscription details (next billing date, trial info) ──
+        if session.subscription:
+            try:
+                sub = stripe.Subscription.retrieve(session.subscription)
+                result["subscription_status"] = sub.status
+                sub_metadata = getattr(sub, "metadata", {}) or {}
+                result["billing_interval"] = (
+                    sub_metadata.get("billing_interval", "monthly")
+                    if isinstance(sub_metadata, dict)
+                    else dict(sub_metadata).get("billing_interval", "monthly")
+                )
+
+                if sub.current_period_end:
+                    result["next_billing_date"] = sub.current_period_end  # Unix ts
+
+                if sub.trial_end:
+                    result["trial_end"] = sub.trial_end  # Unix ts
+            except Exception as sub_err:
+                logger.warning(
+                    f"Could not enrich subscription details for session {session_id}: {sub_err}"
+                )
+
+        # ── Enrich with plan details from local DB ──
+        session_metadata = getattr(session, "metadata", None) or {}
+        plan_id = (
+            session_metadata.get("plan_id")
+            if isinstance(session_metadata, dict)
+            else dict(session_metadata).get("plan_id")
+        ) if session_metadata else None
+        if plan_id:
+            try:
+                plan = await mongo.db["subscription_plans"].find_one({"_id": plan_id})
+                if plan:
+                    result["plan"] = {
+                        "name": plan.get("name"),
+                        "description": plan.get("description"),
+                        "max_weddings": plan.get("max_weddings"),
+                        "max_guests_per_wedding": plan.get("max_guests_per_wedding"),
+                        "ai_credits_monthly": plan.get("ai_credits_monthly"),
+                        "storage_gb": plan.get("storage_gb"),
+                        "staff_seats": plan.get("staff_seats", 0),
+                        "features": plan.get("features", {}),
+                    }
+            except Exception as plan_err:
+                logger.warning(
+                    f"Could not enrich plan details for session {session_id}: {plan_err}"
+                )
+
+        # ── Enrich with latest invoice (PDF + hosted URL) ──
+        if session.subscription:
+            try:
+                invoices = stripe.Invoice.list(
+                    subscription=session.subscription,
+                    limit=1,
+                )
+                if invoices.data:
+                    latest = invoices.data[0]
+                    result["invoice"] = {
+                        "id": latest.id,
+                        "number": latest.number,
+                        "invoice_pdf": latest.invoice_pdf,
+                        "hosted_invoice_url": latest.hosted_invoice_url,
+                        "status": latest.status,
+                        "amount_paid": latest.amount_paid / 100 if latest.amount_paid else 0,
+                    }
+            except Exception as inv_err:
+                logger.warning(
+                    f"Could not fetch invoice for session {session_id}: {inv_err}"
+                )
+
         return {
             "status": "success",
-            "session": {
-                "id": session.id,
-                "payment_status": session.payment_status,
-                "customer": session.customer,
-                "subscription": session.subscription,
-                "amount_total": session.amount_total / 100
-                if session.amount_total
-                else 0,
-                "currency": session.currency,
-            },
+            "session": result,
         }
 
     except Exception as e:

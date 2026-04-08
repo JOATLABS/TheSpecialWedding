@@ -188,6 +188,33 @@ async def get_current_user_extended(
             if sub_status:
                 user_data["subscription_status"] = sub_status
 
+            # ── RACE CONDITION FIX (Prong 1): Cross-check user_subscriptions ──
+            # If webhook hasn't updated users collection yet but has updated
+            # user_subscriptions, trust the more recent subscription status.
+            user_id_str = str(user_data.get("_id", ""))
+            if user_id_str and role == "wedding_planner":
+                try:
+                    subscription_record = await mongo.db["user_subscriptions"].find_one(
+                        {"user_id": user_id_str},
+                        {"status": 1, "updated_at": 1}
+                    )
+                    if subscription_record:
+                        sub_record_status = subscription_record.get("status")
+                        # If subscription says "cancelled" but users says "active",
+                        # trust the subscription record (it's more recent)
+                        if (sub_record_status in PLANNER_BLOCKED_SUBSCRIPTION_STATUSES
+                            and sub_status not in PLANNER_BLOCKED_SUBSCRIPTION_STATUSES):
+                            logger.info(
+                                f"Webhook race detected: user_subscriptions has '{sub_record_status}' "
+                                f"but users has '{sub_status}' for user {email}. "
+                                f"Trusting user_subscriptions."
+                            )
+                            sub_status = sub_record_status
+                            user_data["subscription_status"] = sub_status
+                except Exception as e:
+                    logger.warning(f"Failed to cross-check user_subscriptions for {email}: {e}")
+                    # Non-fatal: proceed with user_data subscription status
+
             if (
                 role == "wedding_planner"
                 and sub_status in PLANNER_BLOCKED_SUBSCRIPTION_STATUSES
