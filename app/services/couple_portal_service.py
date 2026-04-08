@@ -11,6 +11,7 @@ from typing import Optional, Dict, Any, List
 from app.core.database import mongo
 from app.core.cache import cache, CacheKeys
 from app.services.guest_media_service import guest_media_service
+from app.utils.planner_ownership import resolve_wedding_owner_identity
 import logging
 
 logger = logging.getLogger(__name__)
@@ -57,13 +58,15 @@ class CouplePortalService:
                 "events": 1,
                 "registries": 1,
                 "faqs": 1,
+                "assigned_planner_id": 1,
                 "assigned_planner_email": 1,
             },
         )
         if not wedding:
             return None
 
-        planner_email = wedding.get("assigned_planner_email")
+        owner_identity = await resolve_wedding_owner_identity(wedding)
+        planner_email = owner_identity.get("planner_email")
         planner_task = (
             mongo.get_users_collection().find_one(
                 {"email": planner_email},
@@ -618,6 +621,8 @@ class CouplePortalService:
 
             # Build archive document
             wedding["_id"] = str(wedding["_id"])
+            owner_identity = await resolve_wedding_owner_identity(wedding)
+            planner_email = owner_identity.get("planner_email")
             archive_doc = {
                 "original_wedding_id": wedding_id,
                 "wedding": wedding,
@@ -630,11 +635,11 @@ class CouplePortalService:
                 "form_submissions": form_submissions,
                 "updates": updates,
                 "archived_at": datetime.now(timezone.utc),
-                "archived_by": wedding.get("assigned_planner_email"),
+                "archived_by": planner_email,
                 # Analytics-friendly fields
                 "wedding_date": wedding.get("date"),
                 "couple_names": wedding.get("couple_names"),
-                "planner_email": wedding.get("assigned_planner_email"),
+                "planner_email": planner_email,
                 "cultural_style": wedding.get("cultural_style"),
                 "region": wedding.get("region"),
                 "total_budget": budget.get("total_budget") if budget else None,

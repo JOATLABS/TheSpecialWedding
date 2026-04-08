@@ -32,16 +32,39 @@ from app.dependencies.auth_extended import (
 )
 from app.dependencies.couple_auth import require_couple_auth
 from app.utils.couple_realtime import couple_sse_channel
+from app.services.couple_lifecycle_service import couple_lifecycle_service
+from app.utils.planner_ownership import (
+    build_team_owner_query,
+    list_wedding_ids_for_owner,
+    normalize_planner_email,
+    normalize_wedding_query_id,
+    resolve_wedding_owner_identity,
+)
 from bson import ObjectId
 from bson.errors import InvalidId
 import uuid
 import copy
 import logging
 import os
-import re
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
+
+
+async def _resolve_couple_planner_email(
+    couple: dict, wedding: Optional[dict] = None
+) -> Optional[str]:
+    """Resolve planner contact from canonical wedding ownership before couple mirrors."""
+    if wedding is None and couple.get("wedding_id"):
+        wedding = await mongo.get_weddings_collection().find_one(
+            {"_id": normalize_wedding_query_id(couple["wedding_id"])},
+            {"assigned_planner_id": 1, "assigned_planner_email": 1},
+        )
+
+    owner_identity = await resolve_wedding_owner_identity(wedding)
+    if owner_identity.get("planner_email"):
+        return owner_identity["planner_email"]
+    return normalize_planner_email(couple.get("planner_email"))
 
 
 # Auth dependency: use require_couple_auth from app.dependencies.couple_auth
@@ -223,7 +246,7 @@ async def submit_form(
 
     # Notify planner via planner_notification_service (SSE + push included)
     try:
-        planner_email = couple.get("planner_email")
+        planner_email = await _resolve_couple_planner_email(couple)
         if planner_email:
             from app.services.planner_notification_service import (
                 planner_notification_service,
@@ -719,9 +742,7 @@ async def add_item_note(
 async def _notify_planner_of_note(couple: dict, wedding: dict, title: str, text: str):
     """Send a planner notification when the couple leaves a note. Uses planner_notification_service for SSE + push."""
     try:
-        planner_email = couple.get("planner_email") or wedding.get(
-            "assigned_planner_email"
-        )
+        planner_email = await _resolve_couple_planner_email(couple, wedding)
         if not planner_email:
             return
         from app.services.planner_notification_service import (
@@ -856,7 +877,7 @@ async def revoke_couple_access(
     couple_id: str = Path(...),
     current_user: ExtendedAuthUser = Depends(require_team_or_planner),
 ):
-    """Revoke a couple's portal access. Sets is_active=False."""
+    """Revoke a couple's portal access."""
     enforce_team_permission(current_user, "manage_contracts")
 
     couple = await mongo.db["couple_users"].find_one({"_id": ObjectId(couple_id)})
@@ -870,14 +891,7 @@ async def revoke_couple_access(
 
     await mongo.db["couple_users"].update_one(
         {"_id": ObjectId(couple_id)},
-        {
-            "$set": {
-                "is_active": False,
-                "revoked_at": datetime.now(timezone.utc),
-                "revoked_by": current_user.email,
-                "updated_at": datetime.now(timezone.utc),
-            }
-        },
+        {"$set": couple_lifecycle_service.build_revoke_update(current_user.email)},
     )
 
     logger.info(f"Couple access revoked for {couple['email']} by {current_user.email}")
@@ -904,14 +918,7 @@ async def restore_couple_access(
 
     await mongo.db["couple_users"].update_one(
         {"_id": ObjectId(couple_id)},
-        {
-            "$set": {
-                "is_active": True,
-                "revoked_at": None,
-                "revoked_by": None,
-                "updated_at": datetime.now(timezone.utc),
-            }
-        },
+        {"$set": couple_lifecycle_service.build_manual_restore_update(couple)},
     )
 
     return {"message": "Couple access restored"}
@@ -945,9 +952,7 @@ class PlannerMarkMessagesReadRequest(BaseModel):
 
 def _normalize_query_id(value: str) -> str | ObjectId:
     """Normalize a wedding identifier for Mongo queries."""
-    if re.match(r"^[0-9a-fA-F]{24}$", value):
-        return ObjectId(value)
-    return value.strip()
+    return normalize_wedding_query_id(value)
 
 
 async def _get_message_broadcast_recipients(wedding_id: str) -> set[str]:
@@ -956,15 +961,18 @@ async def _get_message_broadcast_recipients(wedding_id: str) -> set[str]:
 
     wedding = await mongo.get_weddings_collection().find_one(
         {"_id": _normalize_query_id(wedding_id)},
-        {"assigned_planner_email": 1},
+        {"assigned_planner_id": 1, "assigned_planner_email": 1},
     )
-    owner_email = wedding.get("assigned_planner_email") if wedding else None
+    owner_identity = await resolve_wedding_owner_identity(wedding)
+    owner_email = owner_identity.get("planner_email")
+    owner_id = owner_identity.get("planner_id")
     if owner_email:
         recipients.add(owner_email)
 
+        team_query = build_team_owner_query(owner_id, owner_email)
         async for team_member in mongo.db["team_members"].find(
             {
-                "owner_email": owner_email,
+                **team_query,
                 "status": "active",
                 "custom_permissions.manage_contracts": True,
             },
@@ -1032,8 +1040,6 @@ async def _get_accessible_couple_wedding_ids(
     wedding_id: Optional[str] = None,
 ) -> list[str]:
     """Resolve wedding IDs the current user can access for couple conversations."""
-    weddings_collection = mongo.get_weddings_collection()
-
     if wedding_id:
         if not await check_wedding_access(current_user, wedding_id):
             raise HTTPException(
@@ -1041,26 +1047,28 @@ async def _get_accessible_couple_wedding_ids(
             )
         return [wedding_id]
 
-    query: dict = {}
     if current_user.is_root_admin:
-        query = {}
-    elif current_user.is_wedding_planner:
-        query = {"assigned_planner_email": current_user.email}
-    elif current_user.is_team_member:
-        owner_email = current_user.team_owner_email
-        if not owner_email:
-            return []
-        query = {"assigned_planner_email": owner_email}
-        accessible_ids = get_accessible_wedding_ids(current_user)
-        if accessible_ids is not None:
-            query["_id"] = {
-                "$in": [_normalize_query_id(value) for value in accessible_ids]
-            }
-    else:
-        return []
+        weddings = (
+            await mongo.get_weddings_collection()
+            .find({}, {"_id": 1})
+            .to_list(length=None)
+        )
+        return [str(wedding["_id"]) for wedding in weddings]
 
-    weddings = await weddings_collection.find(query, {"_id": 1}).to_list(length=None)
-    return [str(wedding["_id"]) for wedding in weddings]
+    if current_user.is_wedding_planner:
+        return await list_wedding_ids_for_owner(
+            planner_id=current_user.user_data.get("_id"),
+            planner_email=current_user.email,
+        )
+
+    if current_user.is_team_member:
+        return await list_wedding_ids_for_owner(
+            planner_id=current_user.parent_planner_id,
+            planner_email=current_user.team_owner_email,
+            accessible_wedding_ids=get_accessible_wedding_ids(current_user),
+        )
+
+    return []
 
 
 # --- Couple-side messaging ---
@@ -1109,7 +1117,7 @@ async def couple_send_message(
 
     # Notify planner via planner_notification_service (SSE + push included)
     try:
-        planner_email = couple.get("planner_email")
+        planner_email = await _resolve_couple_planner_email(couple)
         if planner_email:
             from app.services.planner_notification_service import (
                 planner_notification_service,
@@ -1128,7 +1136,9 @@ async def couple_send_message(
         logger.error(f"Failed to notify planner of couple message: {e}")
 
     try:
-        planner_targets = _collect_email_targets(couple.get("planner_email"))
+        planner_targets = _collect_email_targets(
+            await _resolve_couple_planner_email(couple)
+        )
         await _broadcast_couple_message_change(
             wedding_id,
             action="created",
@@ -1684,7 +1694,7 @@ async def unarchive_wedding(
 ):
     """
     Planner reverses an archival — removes the archive snapshot and
-    restores couple accounts to active state.
+    restores the archived wedding view for eligible couple accounts.
     """
     enforce_team_permission(current_user, "manage_contracts")
 
@@ -1708,7 +1718,9 @@ async def unarchive_wedding(
 
     logger.info(f"Wedding {wedding_id} unarchived by {current_user.email}")
 
-    return {"message": "Wedding unarchived — couple portal restored to active state"}
+    return {
+        "message": "Wedding unarchived — eligible couple portal access is restored based on the current account lifecycle state"
+    }
 
 
 # ============================================================================
@@ -2255,14 +2267,15 @@ async def list_meetings_couple(couple: dict = Depends(require_couple_auth)):
         return {"meetings": [], "count": 0}
 
     wedding_id = couple.get("wedding_id")
-    planner_email = couple.get("planner_email")
+    planner_email = await _resolve_couple_planner_email(couple)
 
     if not planner_email:
         # Fallback: look up from wedding
         wedding = await mongo.get_weddings_collection().find_one(
-            {"_id": wedding_id}, {"assigned_planner_email": 1}
+            {"_id": wedding_id}, {"assigned_planner_id": 1, "assigned_planner_email": 1}
         )
-        planner_email = wedding.get("assigned_planner_email") if wedding else None
+        owner_identity = await resolve_wedding_owner_identity(wedding)
+        planner_email = owner_identity.get("planner_email")
 
     if not planner_email:
         return {"meetings": [], "count": 0}

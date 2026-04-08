@@ -4,10 +4,14 @@ from app.models.wedding import WeddingModel
 from app.utils.event_time import normalize_optional_event_time
 from app.utils.serializers import serialize_mongo_doc
 from app.utils.id_utils import normalize_doc_id
+from app.utils.planner_ownership import (
+    build_wedding_owner_query,
+    combine_mongo_filters,
+    normalize_query_id,
+    resolve_planner_identity,
+)
 from typing import List, Dict, Any, Union, Optional
 from datetime import datetime, timezone
-from bson import ObjectId
-
 # import re
 
 
@@ -70,6 +74,21 @@ class WeddingService:
                 wedding_dict = wedding.model_dump(by_alias=True)
 
             wedding_dict = self._normalize_event_times(wedding_dict)
+
+            if (
+                wedding_dict.get("assigned_planner_id")
+                or wedding_dict.get("assigned_planner_email")
+            ):
+                owner_identity = await resolve_planner_identity(
+                    wedding_dict.get("assigned_planner_id"),
+                    wedding_dict.get("assigned_planner_email"),
+                )
+                if owner_identity.get("planner_id"):
+                    wedding_dict["assigned_planner_id"] = owner_identity["planner_id"]
+                if owner_identity.get("planner_email"):
+                    wedding_dict["assigned_planner_email"] = owner_identity[
+                        "planner_email"
+                    ]
 
             # Normalize _id to string for storage consistency
             if "_id" in wedding_dict and not isinstance(wedding_dict["_id"], str):
@@ -148,7 +167,8 @@ class WeddingService:
 
     async def list_weddings_for_planner(
         self,
-        planner_email: str,
+        planner_id: Optional[str],
+        planner_email: Optional[str],
         accessible_ids: Optional[List[str]] = None,
         page: int = 1,
         limit: int = 50,
@@ -158,7 +178,8 @@ class WeddingService:
         List weddings assigned to a specific planner with pagination.
 
         Args:
-            planner_email: Email of the planner
+            planner_id: Canonical planner user ID
+            planner_email: Planner email mirror for legacy compatibility
             accessible_ids: Optional list of wedding IDs to filter by (for team members with "assigned" access)
             page: Page number for pagination (default 1)
             limit: Number of items per page (default 50)
@@ -167,22 +188,34 @@ class WeddingService:
         try:
             from math import ceil
 
-            query = {"assigned_planner_email": planner_email}
-            # Apply team member wedding scope filter if provided
-            if accessible_ids is not None:
-                query["_id"] = {
-                    "$in": [
-                        ObjectId(id) if len(id) == 24 else id for id in accessible_ids
-                    ]
+            owner_query = build_wedding_owner_query(planner_id, planner_email)
+            if not owner_query:
+                return {
+                    "weddings": [],
+                    "total": 0,
+                    "page": page,
+                    "pages": 1,
+                    "limit": limit,
                 }
 
-            # Add search filter if provided
+            filters: List[Dict[str, Any]] = [owner_query]
+            if accessible_ids is not None:
+                filters.append(
+                    {"_id": {"$in": [normalize_query_id(id) for id in accessible_ids]}}
+                )
+
             if search:
-                query["$or"] = [
-                    {"name": {"$regex": search, "$options": "i"}},
-                    {"couple_name": {"$regex": search, "$options": "i"}},
-                    {"venue": {"$regex": search, "$options": "i"}},
-                ]
+                filters.append(
+                    {
+                        "$or": [
+                            {"name": {"$regex": search, "$options": "i"}},
+                            {"couple_name": {"$regex": search, "$options": "i"}},
+                            {"venue": {"$regex": search, "$options": "i"}},
+                        ]
+                    }
+                )
+
+            query = combine_mongo_filters(*filters)
 
             # Count total matching documents
             total = await self.collection.count_documents(query)
@@ -279,6 +312,21 @@ class WeddingService:
             # Remove _id from update data if present
             wedding_data.pop("_id", None)
             wedding_data = self._normalize_event_times(wedding_data)
+
+            if (
+                wedding_data.get("assigned_planner_id")
+                or wedding_data.get("assigned_planner_email")
+            ):
+                owner_identity = await resolve_planner_identity(
+                    wedding_data.get("assigned_planner_id"),
+                    wedding_data.get("assigned_planner_email"),
+                )
+                if owner_identity.get("planner_id"):
+                    wedding_data["assigned_planner_id"] = owner_identity["planner_id"]
+                if owner_identity.get("planner_email"):
+                    wedding_data["assigned_planner_email"] = owner_identity[
+                        "planner_email"
+                    ]
 
             result = await self.collection.update_one(
                 {"_id": wedding_id}, {"$set": wedding_data}

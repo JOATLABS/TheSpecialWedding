@@ -26,6 +26,7 @@ class TeamMemberStatus(str, Enum):
     PENDING = "pending"
     ACTIVE = "active"
     DEACTIVATED = "deactivated"
+    SUSPENDED_OWNER_CANCELLED = "suspended_owner_cancelled"
 
 
 class WeddingAccessType(str, Enum):

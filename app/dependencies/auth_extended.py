@@ -1,4 +1,4 @@
-from typing import Optional, Union, List
+from typing import Optional, List
 from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from app.utils.auth_utils import verify_token
@@ -11,6 +11,12 @@ from app.core.database import mongo
 from app.models.subscription import (
     PLANNER_BLOCKED_SUBSCRIPTION_STATUSES,
     normalize_subscription_status,
+)
+from app.utils.planner_ownership import (
+    normalize_planner_email,
+    normalize_planner_id,
+    normalize_wedding_query_id,
+    wedding_belongs_to_owner,
 )
 from bson import ObjectId
 
@@ -319,8 +325,12 @@ async def get_current_user_extended(
                     auth_user.team_assigned_wedding_ids = team_doc.get(
                         "assigned_wedding_ids", []
                     )
-                    auth_user.team_owner_email = team_doc.get("owner_email")
-                    auth_user.parent_planner_id = team_doc.get("owner_id")
+                    auth_user.team_owner_email = normalize_planner_email(
+                        team_doc.get("owner_email")
+                    )
+                    auth_user.parent_planner_id = normalize_planner_id(
+                        team_doc.get("owner_id")
+                    )
 
                     # Update last_active_at with throttle (only if > 5 minutes old)
                     last_active = team_doc.get("last_active_at")
@@ -495,8 +505,6 @@ async def check_wedding_access(user: ExtendedAuthUser, wedding_id: str) -> bool:
 
     if user.is_wedding_planner:
         # Check if this wedding is assigned to this planner
-        import re
-
         # Validate and sanitize wedding_id
         if not wedding_id or not isinstance(wedding_id, str):
             return False
@@ -506,23 +514,14 @@ async def check_wedding_access(user: ExtendedAuthUser, wedding_id: str) -> bool:
             return False
 
         try:
-            query_id: Union[str, ObjectId]
-            # Handle both string and ObjectId formats
-            if isinstance(wedding_id, str):
-                # Check if it looks like a valid ObjectId (24 hex characters)
-                if re.match(r"^[0-9a-fA-F]{24}$", wedding_id):
-                    query_id = ObjectId(wedding_id)
-                else:
-                    # Use as string for slug-based lookups, but sanitize
-                    query_id = wedding_id.strip()
-            else:
-                query_id = wedding_id
-
-            # Use await for find_one since db is async
-            wedding = await mongo.get_weddings_collection().find_one({"_id": query_id})
-
-            if wedding:
-                return wedding.get("assigned_planner_email") == user.email
+            wedding = await mongo.get_weddings_collection().find_one(
+                {"_id": normalize_wedding_query_id(wedding_id)}
+            )
+            return wedding_belongs_to_owner(
+                wedding,
+                planner_id=user.user_data.get("_id"),
+                planner_email=user.email,
+            )
         except Exception as e:
             logger.warning(f"Error checking wedding access for user {user.email}: {e}")
             return False
@@ -531,8 +530,6 @@ async def check_wedding_access(user: ExtendedAuthUser, wedding_id: str) -> bool:
     if user.is_team_member:
         if user.team_wedding_access == "all":
             # Team member with "all" access: check if the wedding belongs to their owner planner
-            import re
-
             if (
                 not wedding_id
                 or not isinstance(wedding_id, str)
@@ -540,17 +537,14 @@ async def check_wedding_access(user: ExtendedAuthUser, wedding_id: str) -> bool:
             ):
                 return False
             try:
-                if re.match(r"^[0-9a-fA-F]{24}$", wedding_id):
-                    query_id = ObjectId(wedding_id)
-                else:
-                    query_id = wedding_id.strip()
                 wedding = await mongo.get_weddings_collection().find_one(
-                    {"_id": query_id}
+                    {"_id": normalize_wedding_query_id(wedding_id)}
                 )
-                if wedding and user.team_owner_email:
-                    return (
-                        wedding.get("assigned_planner_email") == user.team_owner_email
-                    )
+                return wedding_belongs_to_owner(
+                    wedding,
+                    planner_id=user.parent_planner_id,
+                    planner_email=user.team_owner_email,
+                )
             except Exception as e:
                 logger.warning(
                     f"Error checking team wedding access for user {user.email}: {e}"
@@ -658,6 +652,21 @@ def get_accessible_wedding_ids(user: ExtendedAuthUser) -> Optional[List[str]]:
             return None  # Access all of their owner's weddings
         return user.team_assigned_wedding_ids or []
     return []  # No access
+
+
+def get_owner_identity(user: ExtendedAuthUser) -> tuple[Optional[str], Optional[str]]:
+    """Return the planner owner identity behind a planner or team-member session."""
+    if user.is_wedding_planner:
+        return (
+            normalize_planner_id(user.user_data.get("_id")),
+            normalize_planner_email(user.email),
+        )
+    if user.is_team_member:
+        return (
+            normalize_planner_id(user.parent_planner_id),
+            normalize_planner_email(user.team_owner_email),
+        )
+    return None, None
 
 
 def enforce_team_permission(user: ExtendedAuthUser, permission: str) -> None:

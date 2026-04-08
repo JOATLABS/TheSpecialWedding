@@ -22,6 +22,12 @@ from app.utils.auth_utils import (
     verify_password,
 )
 from app.dependencies.couple_auth import require_couple_auth
+from app.services.couple_lifecycle_service import (
+    COUPLE_PORTAL_STATE_ARCHIVED,
+    COUPLE_PORTAL_STATE_PENDING_SETUP,
+    couple_lifecycle_service,
+)
+from app.utils.planner_ownership import normalize_wedding_query_id
 import secrets
 import logging
 
@@ -107,6 +113,29 @@ def _set_couple_session_cookie(response: Response, email: str) -> str:
     return access_token
 
 
+async def _load_wedding_for_couple(couple: dict) -> dict | None:
+    wedding_id = couple.get("wedding_id")
+    if not wedding_id:
+        return None
+
+    return await mongo.get_weddings_collection().find_one(
+        {"_id": normalize_wedding_query_id(wedding_id)},
+        {
+            "assigned_planner_id": 1,
+            "assigned_planner_email": 1,
+            "data_access_suspended_reason": 1,
+        },
+    )
+
+
+async def _resolve_portal_access(couple: dict) -> tuple[dict | None, dict]:
+    wedding = await _load_wedding_for_couple(couple)
+    access = await couple_lifecycle_service.resolve_effective_state(
+        couple, wedding=wedding
+    )
+    return wedding, access
+
+
 # ============================================================================
 # PUBLIC ENDPOINTS (No auth required)
 # ============================================================================
@@ -132,25 +161,29 @@ async def setup_couple_password(data: CoupleSetupPasswordRequest, response: Resp
             detail="Invalid or expired invitation link. Please ask your planner to resend the invitation.",
         )
 
+    _, access = await _resolve_portal_access(couple)
+    if access.get("blocked"):
+        raise HTTPException(status_code=403, detail=access["detail"])
+    if access["state"] == COUPLE_PORTAL_STATE_ARCHIVED:
+        raise HTTPException(
+            status_code=403,
+            detail="This wedding has already been archived. New couple portal setup is unavailable.",
+        )
+
     # Hash password and activate account
     password_hash = get_password_hash(data.password)
+    update_fields = {
+        "password_hash": password_hash,
+        **couple_lifecycle_service.build_setup_completed_update(),
+    }
 
     await mongo.db["couple_users"].update_one(
         {"_id": couple["_id"]},
-        {
-            "$set": {
-                "password_hash": password_hash,
-                "is_active": True,
-                "setup_completed": True,
-                "setup_completed_at": datetime.now(timezone.utc),
-                "invite_token": None,  # Invalidate the token
-                "invite_token_expires": None,
-                "updated_at": datetime.now(timezone.utc),
-            }
-        },
+        {"$set": update_fields},
     )
 
     access_token = _set_couple_session_cookie(response, couple["email"])
+    updated_couple = {**couple, **update_fields}
 
     logger.info(f"Couple account setup completed: {couple['email']}")
 
@@ -158,7 +191,7 @@ async def setup_couple_password(data: CoupleSetupPasswordRequest, response: Resp
         "message": "Account setup complete! Welcome to your wedding portal.",
         "access_token": access_token,
         "token_type": "bearer",
-        "couple": _serialize_couple_payload(couple),
+        "couple": _serialize_couple_payload(updated_couple),
     }
 
 
@@ -176,20 +209,24 @@ async def couple_login(data: CoupleLoginRequest, response: Response):
         verify_password("dummy_password", DUMMY_PASSWORD_HASH)
         raise HTTPException(status_code=401, detail="Invalid email or password")
 
-    if not couple.get("is_active", False):
-        raise HTTPException(
-            status_code=401,
-            detail="Account is not active. Please contact your planner.",
-        )
+    if not verify_password(data.password, couple["password_hash"]):
+        raise HTTPException(status_code=401, detail="Invalid email or password")
 
-    if not couple.get("setup_completed", False):
+    _, access = await _resolve_portal_access(couple)
+    if access["state"] == COUPLE_PORTAL_STATE_PENDING_SETUP:
         raise HTTPException(
             status_code=401,
             detail="Please complete your account setup using the invitation link from your planner.",
         )
-
-    if not verify_password(data.password, couple["password_hash"]):
-        raise HTTPException(status_code=401, detail="Invalid email or password")
+    if access.get("blocked"):
+        raise HTTPException(status_code=403, detail=access["detail"])
+    if access["state"] == COUPLE_PORTAL_STATE_ARCHIVED and not couple.get(
+        "setup_completed", False
+    ):
+        raise HTTPException(
+            status_code=403,
+            detail="This wedding has been archived. Couple portal login is unavailable for accounts that were never set up.",
+        )
 
     # Update last login
     await mongo.db["couple_users"].update_one(
@@ -227,6 +264,15 @@ async def verify_invite_token(token: str):
             status_code=400, detail="Invalid or expired invitation link."
         )
 
+    _, access = await _resolve_portal_access(couple)
+    if access.get("blocked"):
+        raise HTTPException(status_code=403, detail=access["detail"])
+    if access["state"] == COUPLE_PORTAL_STATE_ARCHIVED:
+        raise HTTPException(
+            status_code=403,
+            detail="This wedding has already been archived. New couple portal setup is unavailable.",
+        )
+
     return {
         "valid": True,
         "email": couple["email"],
@@ -256,6 +302,10 @@ async def get_couple_profile(couple: dict = Depends(require_couple_auth)):
         "wedding_id": couple.get("wedding_id"),
         "planner_id": couple.get("planner_id"),
         "is_active": couple.get("is_active", False),
+        "access_state": couple.get("access_state")
+        or couple_lifecycle_service.infer_stored_state(couple),
+        "portal_access_state": couple.get("_portal_access_state"),
+        "portal_access_detail": couple.get("_portal_access_detail"),
         "setup_completed": couple.get("setup_completed", False),
         "last_login": couple.get("last_login", "").isoformat()
         if couple.get("last_login")
@@ -329,7 +379,12 @@ async def couple_forgot_password(data: CoupleForgotPasswordRequest):
         # Account not set up yet — shouldn't reset password
         return success_message
 
-    if not couple.get("is_active", False):
+    _, access = await _resolve_portal_access(couple)
+    if access.get("blocked"):
+        return success_message
+    if access["state"] == COUPLE_PORTAL_STATE_ARCHIVED and not couple.get(
+        "setup_completed", False
+    ):
         return success_message
 
     # Generate reset token (mirrors planner pattern: 32 hex chars, 1-hour expiry)
@@ -448,6 +503,17 @@ async def validate_couple_reset_token(token: str):
             detail="Password reset token has expired. Please request a new one.",
         )
 
+    _, access = await _resolve_portal_access(couple)
+    if access.get("blocked"):
+        raise HTTPException(status_code=403, detail=access["detail"])
+    if access["state"] == COUPLE_PORTAL_STATE_ARCHIVED and not couple.get(
+        "setup_completed", False
+    ):
+        raise HTTPException(
+            status_code=403,
+            detail="This wedding has been archived. Password reset is unavailable for accounts that were never set up.",
+        )
+
     # Mask email for privacy (mirrors planner pattern)
     email = couple["email"]
     email_parts = email.split("@")
@@ -470,6 +536,44 @@ async def couple_reset_password(data: CoupleResetPasswordRequest, response: Resp
     Uses atomic compare-and-swap to consume the token in a single operation,
     preventing reuse and race conditions.
     """
+    couple = await mongo.db["couple_users"].find_one(
+        {"password_reset_token": data.token}
+    )
+    if not couple:
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid or expired reset token. Please request a new one.",
+        )
+
+    if couple.get("password_reset_expires") and couple[
+        "password_reset_expires"
+    ] < datetime.now(timezone.utc):
+        await mongo.db["couple_users"].update_one(
+            {"_id": couple["_id"]},
+            {
+                "$unset": {
+                    "password_reset_token": "",
+                    "password_reset_expires": "",
+                    "password_reset_requested_at": "",
+                }
+            },
+        )
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid or expired reset token. Please request a new one.",
+        )
+
+    _, access = await _resolve_portal_access(couple)
+    if access.get("blocked"):
+        raise HTTPException(status_code=403, detail=access["detail"])
+    if access["state"] == COUPLE_PORTAL_STATE_ARCHIVED and not couple.get(
+        "setup_completed", False
+    ):
+        raise HTTPException(
+            status_code=403,
+            detail="This wedding has been archived. Password reset is unavailable for accounts that were never set up.",
+        )
+
     # Hash new password before the atomic update
     password_hash = get_password_hash(data.password)
 
