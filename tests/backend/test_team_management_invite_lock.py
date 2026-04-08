@@ -54,6 +54,51 @@ class FakeUsersCollection:
         return SimpleNamespace(deleted_count=1)
 
 
+class FakeCursor:
+    def __init__(self, docs: list[dict]):
+        self.docs = deepcopy(docs)
+
+    async def to_list(self, length: int | None = None):
+        if length is None:
+            return deepcopy(self.docs)
+        return deepcopy(self.docs[:length])
+
+
+class FakeWeddingsCollection:
+    def __init__(self, docs: list[dict]):
+        self.docs = deepcopy(docs)
+
+    async def count_documents(self, query):
+        expected_ids = set(query["_id"]["$in"])
+        owner_id = query.get("assigned_planner_id")
+        owner_email = query.get("assigned_planner_email")
+        count = 0
+        for doc in self.docs:
+            if doc["_id"] not in expected_ids:
+                continue
+            if owner_id is not None and doc.get("assigned_planner_id") != owner_id:
+                continue
+            if owner_email is not None and doc.get("assigned_planner_email") != owner_email:
+                continue
+            count += 1
+        return count
+
+    def find(self, query, _projection):
+        expected_ids = set(query["_id"]["$in"])
+        owner_id = query.get("assigned_planner_id")
+        owner_email = query.get("assigned_planner_email")
+        docs = []
+        for doc in self.docs:
+            if doc["_id"] not in expected_ids:
+                continue
+            if owner_id is not None and doc.get("assigned_planner_id") != owner_id:
+                continue
+            if owner_email is not None and doc.get("assigned_planner_email") != owner_email:
+                continue
+            docs.append({"_id": doc["_id"]})
+        return FakeCursor(docs)
+
+
 @pytest.mark.asyncio
 async def test_accept_invite_restores_pending_status_when_validation_raises_http_error():
     now = datetime.now(timezone.utc)
@@ -89,3 +134,47 @@ async def test_accept_invite_restores_pending_status_when_validation_raises_http
     assert exc_info.value.status_code == 400
     assert service.team_collection.doc["status"] == TeamMemberStatus.PENDING.value
     assert service.team_collection.doc["invite_token"] == "invite-token"
+
+
+@pytest.mark.asyncio
+async def test_validate_wedding_ownership_accepts_string_wedding_ids():
+    service = object.__new__(TeamManagementService)
+    service.weddings_collection = FakeWeddingsCollection(
+        [
+            {
+                "_id": "wedding_alpha",
+                "assigned_planner_id": "planner_123",
+                "assigned_planner_email": "planner@example.com",
+            }
+        ]
+    )
+
+    await service._validate_wedding_ownership(
+        owner_id="planner_123",
+        owner_email="planner@example.com",
+        wedding_ids=["wedding_alpha"],
+    )
+
+
+@pytest.mark.asyncio
+async def test_validate_wedding_ownership_rejects_unknown_string_wedding_ids():
+    service = object.__new__(TeamManagementService)
+    service.weddings_collection = FakeWeddingsCollection(
+        [
+            {
+                "_id": "wedding_alpha",
+                "assigned_planner_id": "planner_123",
+                "assigned_planner_email": "planner@example.com",
+            }
+        ]
+    )
+
+    with pytest.raises(HTTPException) as exc_info:
+        await service._validate_wedding_ownership(
+            owner_id="planner_123",
+            owner_email="planner@example.com",
+            wedding_ids=["wedding_missing"],
+        )
+
+    assert exc_info.value.status_code == 400
+    assert "wedding_missing" in exc_info.value.detail

@@ -11,6 +11,7 @@ from app.utils.id_utils import normalize_doc_id
 from app.utils.planner_ownership import (
     build_wedding_owner_query,
     combine_mongo_filters,
+    normalize_query_id,
     resolve_planner_identity,
 )
 from app.utils.serializers import serialize_mongo_doc

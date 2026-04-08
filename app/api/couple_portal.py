@@ -80,7 +80,9 @@ async def _resolve_custom_template_owner_scope(
 ) -> dict[str, Any]:
     """Resolve canonical owner scope and migrate legacy team-scoped templates."""
     owner_email = normalize_planner_email(
-        current_user.team_owner_email if current_user.is_team_member else current_user.email
+        current_user.team_owner_email
+        if current_user.is_team_member
+        else current_user.email
     )
     legacy_emails = {
         email
@@ -98,10 +100,14 @@ async def _resolve_custom_template_owner_scope(
     )
     team_query = build_team_owner_query(owner_id, owner_email)
     if team_query:
-        team_members = await mongo.db["team_members"].find(
-            team_query,
-            {"email": 1},
-        ).to_list(length=None)
+        team_members = (
+            await mongo.db["team_members"]
+            .find(
+                team_query,
+                {"email": 1},
+            )
+            .to_list(length=None)
+        )
         legacy_emails.update(
             normalize_planner_email(member.get("email"))
             for member in team_members

@@ -176,8 +176,8 @@ async def recalculate_payment_schedules(
 
 
 @router.get("/status")
-async def get_autopilot_status(_: bool = Depends(verify_cron_auth)) -> Dict[str, Any]:
-    """Get autopilot status and metrics."""
+async def _build_autopilot_status_payload() -> Dict[str, Any]:
+    """Build autopilot status metrics for planner and root-admin visibility."""
     try:
         # Get counts of payments in various states
         scheduled_count = await autopilot_service.scheduled_payments.count_documents(
@@ -226,61 +226,27 @@ async def get_autopilot_status(_: bool = Depends(verify_cron_auth)) -> Dict[str,
         }
 
 
+@router.get("/status")
+async def get_autopilot_status(
+    current_user: ExtendedAuthUser = Depends(require_admin_or_planner),
+) -> Dict[str, Any]:
+    """Get autopilot status and metrics for authenticated admin/planner users."""
+    return await _build_autopilot_status_payload()
+
+
 @router.get("/admin-status")
 async def get_autopilot_admin_status(
     current_user: ExtendedAuthUser = Depends(require_admin_or_planner),
 ) -> Dict[str, Any]:
-    """Get autopilot status and metrics (admin/planner-facing, uses Bearer auth)."""
-    try:
-        scheduled_count = await autopilot_service.scheduled_payments.count_documents(
-            {"status": "scheduled"}
-        )
-        failed_count = await autopilot_service.scheduled_payments.count_documents(
-            {"status": "failed", "max_retries_reached": {"$ne": True}}
-        )
-        pending_retry_count = (
-            await autopilot_service.scheduled_payments.count_documents(
-                {
-                    "status": "failed",
-                    "next_retry_at": {"$exists": True},
-                    "max_retries_reached": {"$ne": True},
-                }
-            )
-        )
-        succeeded_today = await autopilot_service.scheduled_payments.count_documents(
-            {
-                "status": "succeeded",
-                "paid_at": {
-                    "$gte": datetime.now(timezone.utc).replace(
-                        hour=0, minute=0, second=0, microsecond=0
-                    )
-                },
-            }
-        )
-
-        return {
-            "status": "active",
-            "metrics": {
-                "scheduled_payments": scheduled_count,
-                "failed_pending_retry": failed_count,
-                "pending_retries": pending_retry_count,
-                "succeeded_today": succeeded_today,
-            },
-            "timestamp": datetime.now(timezone.utc).isoformat(),
-        }
-
-    except Exception as e:
-        logger.error(f"Error getting autopilot admin status: {str(e)}")
-        return {
-            "status": "error",
-            "error": str(e),
-            "timestamp": datetime.now(timezone.utc).isoformat(),
-        }
+    """Backward-compatible alias for authenticated autopilot status."""
+    return await _build_autopilot_status_payload()
 
 
 @router.get("/due-payments")
-async def get_due_payments(_: bool = Depends(verify_cron_auth)) -> Dict[str, Any]:
-    """Get list of payments due today."""
+async def get_due_payments(
+    current_user: ExtendedAuthUser = Depends(require_admin_or_planner),
+) -> Dict[str, Any]:
+    """Get list of payments due today for authenticated admin/planner users."""
     try:
         due_payments = await autopilot_service.get_due_payments()
         return {
@@ -323,8 +289,10 @@ async def get_upcoming_reminders(
 
 
 @router.get("/failed-payments")
-async def get_failed_payments(_: bool = Depends(verify_cron_auth)) -> Dict[str, Any]:
-    """Get list of failed payments pending retry."""
+async def get_failed_payments(
+    current_user: ExtendedAuthUser = Depends(require_admin_or_planner),
+) -> Dict[str, Any]:
+    """Get list of failed payments pending retry for authenticated admin/planner users."""
     try:
         failed = await autopilot_service.get_payments_for_retry()
         return {

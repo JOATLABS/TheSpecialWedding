@@ -27,7 +27,10 @@ from app.services.couple_lifecycle_service import (
     COUPLE_PORTAL_STATE_PENDING_SETUP,
     couple_lifecycle_service,
 )
-from app.utils.planner_ownership import normalize_wedding_query_id, resolve_wedding_owner_identity
+from app.utils.planner_ownership import (
+    normalize_wedding_query_id,
+    resolve_wedding_owner_identity,
+)
 import secrets
 import logging
 

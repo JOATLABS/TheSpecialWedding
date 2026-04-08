@@ -768,7 +768,7 @@ class VendorService:
             )
             if existing:
                 raise HTTPException(
-                    status_code=400, detail="Vendor already assigned to this wedding"
+                    status_code=409, detail="Vendor already assigned to this wedding"
                 )
 
             assignment = {
