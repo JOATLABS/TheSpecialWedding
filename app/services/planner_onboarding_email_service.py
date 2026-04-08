@@ -1012,6 +1012,10 @@ class PlannerOnboardingEmailService:
     ) -> tuple[str, str]:
         subject = "Welcome to The Special Wedding — your 18-tool command center"
         intro = f"Hi {self._display_name(user)}, welcome to <strong>The Special Wedding</strong>. Your account is live and you now have access to the planner workspace."
+        company_name = user.get("company_name")
+        company_html = (
+            f" at <strong>{_esc(str(company_name))}</strong>" if company_name else ""
+        )
         body_html = f"""
         <div class="card">
           <p><strong>What you can do right now:</strong></p>
@@ -1023,7 +1027,7 @@ class PlannerOnboardingEmailService:
             <li><strong>Seating, budget, payments, vendor CRM, and forms</strong> in one workspace</li>
           </ul>
         </div>
-        <p>As a <strong>{self._role_label(user)}</strong>{f" at <strong>{_esc(str(user.get("company_name")))}</strong>" if user.get("company_name") else ""}, you have the tools you need to run weddings from one system.</p>
+        <p>As a <strong>{self._role_label(user)}</strong>{company_html}, you have the tools you need to run weddings from one system.</p>
         """
         outro = "Tomorrow we will focus on the fastest activation step: creating your first wedding."
         return subject, self._email_wrapper(

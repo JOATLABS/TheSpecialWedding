@@ -34,8 +34,26 @@ class OTPService:
     def __init__(self):
         self.otp_collection = mongo.db["otps"]
         self.guest_collection = mongo.get_guest_collection()
-        self.twilio_service = TwilioReminderService()
         self.email_service = ResendEmailService()
+        self.twilio_service = None
+        self._twilio_unavailable_error: str | None = None
+
+    def _get_twilio_service(self) -> TwilioReminderService | None:
+        """Lazily initialize Twilio so read-only flows don't crash app startup."""
+        if self.twilio_service is not None:
+            return self.twilio_service
+
+        if self._twilio_unavailable_error is not None:
+            return None
+
+        try:
+            self.twilio_service = TwilioReminderService()
+        except RuntimeError as exc:
+            self._twilio_unavailable_error = str(exc)
+            logger.warning("OTP SMS unavailable: %s", exc)
+            return None
+
+        return self.twilio_service
 
     @staticmethod
     def _serialize_guest_response(guest: dict | None) -> dict | None:
@@ -196,45 +214,58 @@ class OTPService:
         sms_error_code = None
         if has_phone:
             message = f"Your verification code is: {otp}"
-            result = self.twilio_service._send_sms(guest["phone"], message)
-            status = result.get("status") if isinstance(result, dict) else result
-            sms_error_code = (
-                result.get("error_code") if isinstance(result, dict) else None
-            )
-
-            if status == "success":
-                return {
-                    "success": True,
-                    "contact_type": "phone",
-                    "fallback_used": False,
-                }
-            else:
-                logger.error(
-                    f"Failed to send OTP SMS to guest_id {guest_id}: {status} (error_code: {sms_error_code})"
+            twilio_service = self._get_twilio_service()
+            if twilio_service:
+                result = twilio_service._send_sms(guest["phone"], message)
+                status = result.get("status") if isinstance(result, dict) else result
+                sms_error_code = (
+                    result.get("error_code") if isinstance(result, dict) else None
                 )
 
-                # If SMS fails and we have email, try email fallback
-                if has_email:
-                    logger.info(
-                        f"SMS failed ({sms_error_code}), attempting email fallback for guest_id: {guest_id}"
-                    )
-                    # Update OTP record with correct contact_type for fallback
-                    otp_collection = mongo.db["otps"]
-                    await otp_collection.update_one(
-                        {"guest_id": guest_id}, {"$set": {"contact_type": "email"}}
-                    )
-                else:
-                    # No email fallback — return specific error based on SMS failure type
-                    user_error = self._get_user_friendly_sms_error(sms_error_code)
+                if status == "success":
                     return {
-                        "success": False,
-                        "error": user_error,
-                        "error_code": sms_error_code or "sms_failed",
-                        "retry_after": 30
-                        if sms_error_code
-                        in ("rate_limited", "daily_limit", "service_unavailable")
-                        else None,
+                        "success": True,
+                        "contact_type": "phone",
+                        "fallback_used": False,
                     }
+
+                logger.error(
+                    "Failed to send OTP SMS to guest_id %s: %s (error_code: %s)",
+                    guest_id,
+                    status,
+                    sms_error_code,
+                )
+            else:
+                sms_error_code = "not_configured"
+                logger.info(
+                    "SMS OTP skipped for guest_id %s because Twilio is not configured",
+                    guest_id,
+                )
+
+            # If SMS fails and we have email, try email fallback
+            if has_email:
+                logger.info(
+                    "SMS failed (%s), attempting email fallback for guest_id: %s",
+                    sms_error_code,
+                    guest_id,
+                )
+                # Update OTP record with correct contact_type for fallback
+                otp_collection = mongo.db["otps"]
+                await otp_collection.update_one(
+                    {"guest_id": guest_id}, {"$set": {"contact_type": "email"}}
+                )
+            else:
+                # No email fallback — return specific error based on SMS failure type
+                user_error = self._get_user_friendly_sms_error(sms_error_code)
+                return {
+                    "success": False,
+                    "error": user_error,
+                    "error_code": sms_error_code or "sms_failed",
+                    "retry_after": 30
+                    if sms_error_code
+                    in ("rate_limited", "daily_limit", "service_unavailable")
+                    else None,
+                }
 
         # Send via email (either as primary or fallback)
         if has_email:
@@ -506,7 +537,15 @@ class OTPService:
             if not phone.startswith("+"):
                 phone = f"+1{phone}"
 
-            result = self.twilio_service._send_sms(phone, message)
+            twilio_service = self._get_twilio_service()
+            if not twilio_service:
+                return {
+                    "success": False,
+                    "error": self._get_user_friendly_sms_error("not_configured"),
+                    "error_code": "not_configured",
+                }
+
+            result = twilio_service._send_sms(phone, message)
             status = result.get("status") if isinstance(result, dict) else result
             sms_error_code = (
                 result.get("error_code") if isinstance(result, dict) else None

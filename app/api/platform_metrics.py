@@ -93,10 +93,10 @@ async def get_admin_metrics_overview(
 
     try:
         # Import here to avoid circular imports
-        from app.api.admin_platform_metrics import get_platform_health
+        from app.api.admin_platform_metrics import build_platform_health_payload
 
         # Get live health data from the comprehensive health endpoint
-        live_health = await get_platform_health(current_user=current_user)
+        live_health = await build_platform_health_payload()
 
         # Format as a snapshot response for dashboard compatibility
         now = datetime.now(timezone.utc)

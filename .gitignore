@@ -62,6 +62,7 @@ tests/backend/*
 !tests/backend/test_couple_lifecycle_service.py
 !tests/backend/test_couple_auth_lifecycle.py
 !tests/backend/test_couple_permission_contract.py
+!tests/backend/test_couple_owner_identity_cleanup.py
 !tests/backend/test_public_checkout_gating.py
 !tests/backend/test_contract_payment_methods.py
 !tests/backend/test_payment_intent_summary.py

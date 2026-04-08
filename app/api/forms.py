@@ -15,6 +15,7 @@ from app.dependencies.auth_extended import (
     enforce_team_permission,
     require_team_or_planner,
 )
+from app.utils.planner_ownership import build_team_owner_query, normalize_planner_email
 from app.utils.security_utils import InputSanitizer, SecurityHeaders, rate_limiter
 from app.services.security_audit_service import (
     security_audit,
@@ -29,6 +30,43 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter()
 form_service = FormService()
+
+
+async def _resolve_form_owner_scope(current_user: ExtendedAuthUser) -> dict[str, list[str] | str]:
+    """Resolve shared planner ownership for forms while preserving legacy team-created records."""
+    owner_email = normalize_planner_email(
+        current_user.team_owner_email if current_user.is_team_member else current_user.email
+    )
+    owner_alias_emails = {
+        email
+        for email in (
+            owner_email,
+            normalize_planner_email(current_user.email),
+        )
+        if email
+    }
+
+    owner_id = (
+        current_user.parent_planner_id
+        if current_user.is_team_member
+        else current_user.user_data.get("_id")
+    )
+    team_query = build_team_owner_query(owner_id, owner_email)
+    if team_query:
+        team_members = await form_service.forms_collection.database["team_members"].find(
+            team_query,
+            {"email": 1},
+        ).to_list(length=None)
+        owner_alias_emails.update(
+            normalize_planner_email(member.get("email"))
+            for member in team_members
+            if member.get("email")
+        )
+
+    return {
+        "owner_email": owner_email or current_user.email.lower().strip(),
+        "owner_alias_emails": sorted(owner_alias_emails),
+    }
 
 
 # Admin endpoints (require authentication)
@@ -61,7 +99,12 @@ async def create_form(
     )
 
     try:
-        result = await form_service.create_form(form_data, current_user.email)
+        owner_scope = await _resolve_form_owner_scope(current_user)
+        result = await form_service.create_form(
+            form_data,
+            owner_scope["owner_email"],
+            actor_email=current_user.email,
+        )
 
         # Log successful creation
         logger.info(
@@ -119,8 +162,13 @@ async def get_forms(
             )
 
     try:
+        owner_scope = await _resolve_form_owner_scope(current_user)
         forms = await form_service.get_forms(
-            current_user.email, wedding_id, current_user.is_root_admin
+            owner_scope["owner_email"],
+            wedding_id,
+            current_user.is_root_admin,
+            viewer_email=current_user.email,
+            owner_alias_emails=owner_scope["owner_alias_emails"],
         )
 
         # Log access
@@ -156,7 +204,12 @@ async def get_form(
         raise HTTPException(status_code=400, detail="Invalid form ID")
 
     try:
-        form = await form_service.get_form(form_id, current_user.email)
+        owner_scope = await _resolve_form_owner_scope(current_user)
+        form = await form_service.get_form(
+            form_id,
+            owner_scope["owner_email"],
+            owner_alias_emails=owner_scope["owner_alias_emails"],
+        )
 
         # Additional wedding access check if form has wedding_id
         if form.get("wedding_id") and not await check_wedding_access(
@@ -206,7 +259,12 @@ async def update_form(
 
     # Get existing form to check wedding access
     try:
-        existing_form = await form_service.get_form(form_id, current_user.email)
+        owner_scope = await _resolve_form_owner_scope(current_user)
+        existing_form = await form_service.get_form(
+            form_id,
+            owner_scope["owner_email"],
+            owner_alias_emails=owner_scope["owner_alias_emails"],
+        )
 
         # Check wedding access if form has wedding_id
         if existing_form.get("wedding_id"):
@@ -229,7 +287,12 @@ async def update_form(
             f"ip={client_ip}"
         )
 
-        result = await form_service.update_form(form_id, form_data, current_user.email)
+        result = await form_service.update_form(
+            form_id,
+            form_data,
+            owner_scope["owner_email"],
+            owner_alias_emails=owner_scope["owner_alias_emails"],
+        )
 
         # Log successful update
         logger.info(
@@ -272,6 +335,7 @@ async def delete_form(
     logger.info(f"Form ID after sanitization: {form_id}")
 
     try:
+        owner_scope = await _resolve_form_owner_scope(current_user)
         logger.info("About to get existing form for access check...")
 
         # For ROOT_ADMIN, get form without created_by constraint
@@ -281,7 +345,11 @@ async def delete_form(
             )  # No created_by for ROOT_ADMIN
             logger.info("ROOT_ADMIN form retrieval successful")
         else:
-            existing_form = await form_service.get_form(form_id, current_user.email)
+            existing_form = await form_service.get_form(
+                form_id,
+                owner_scope["owner_email"],
+                owner_alias_emails=owner_scope["owner_alias_emails"],
+            )
             logger.info("Regular user form retrieval successful")
         # Check wedding access if form has wedding_id
         if existing_form.get("wedding_id"):
@@ -309,7 +377,10 @@ async def delete_form(
 
         logger.info("About to call form_service.delete_form...")
         result = await form_service.delete_form(
-            form_id, current_user.email, current_user.is_root_admin
+            form_id,
+            owner_scope["owner_email"],
+            current_user.is_root_admin,
+            owner_alias_emails=owner_scope["owner_alias_emails"],
         )
 
         # Log successful deletion
@@ -338,7 +409,13 @@ async def send_form(
 ):
     """Send form to recipients via email"""
     enforce_team_permission(current_user, "manage_forms")
-    return await form_service.send_form(form_id, send_data, current_user.email)
+    owner_scope = await _resolve_form_owner_scope(current_user)
+    return await form_service.send_form(
+        form_id,
+        send_data,
+        owner_scope["owner_email"],
+        owner_alias_emails=owner_scope["owner_alias_emails"],
+    )
 
 
 @router.get("/forms/{form_id}/responses", tags=["Forms"])
@@ -346,8 +423,12 @@ async def get_form_responses(
     form_id: str, current_user: ExtendedAuthUser = Depends(require_team_or_planner)
 ):
     """Get all responses for a form"""
-
-    return await form_service.get_form_responses(form_id, current_user.email)
+    owner_scope = await _resolve_form_owner_scope(current_user)
+    return await form_service.get_form_responses(
+        form_id,
+        owner_scope["owner_email"],
+        owner_alias_emails=owner_scope["owner_alias_emails"],
+    )
 
 
 @router.post("/forms/{form_id}/views", tags=["Forms"])
@@ -358,12 +439,14 @@ async def mark_form_view(
 ):
     """Update the planner's last viewed timestamp for a form scope."""
     enforce_team_permission(current_user, "manage_forms")
+    owner_scope = await _resolve_form_owner_scope(current_user)
 
     return await form_service.mark_form_viewed(
         form_id,
         current_user.email,
         payload.scope,
         submission_count=payload.submission_count,
+        owner_alias_emails=owner_scope["owner_alias_emails"],
         is_root_admin=current_user.is_root_admin,
     )
 
@@ -373,7 +456,12 @@ async def get_form_analytics(
     form_id: str, current_user: ExtendedAuthUser = Depends(require_team_or_planner)
 ):
     """Get analytics for a form"""
-    return await form_service.get_form_analytics(form_id, current_user.email)
+    owner_scope = await _resolve_form_owner_scope(current_user)
+    return await form_service.get_form_analytics(
+        form_id,
+        owner_scope["owner_email"],
+        owner_alias_emails=owner_scope["owner_alias_emails"],
+    )
 
 
 @router.get("/forms/{form_id}/export/csv", tags=["Forms"])
@@ -425,6 +513,7 @@ async def export_form_responses_csv(
     """
     try:
         enforce_team_permission(current_user, "manage_forms")
+        owner_scope = await _resolve_form_owner_scope(current_user)
 
         # Validate form_id format
         if not form_id or not isinstance(form_id, str):
@@ -436,7 +525,11 @@ async def export_form_responses_csv(
 
         # Get form to check wedding access before export
         try:
-            form = await form_service.get_form(form_id, current_user.email)
+            form = await form_service.get_form(
+                form_id,
+                owner_scope["owner_email"],
+                owner_alias_emails=owner_scope["owner_alias_emails"],
+            )
 
             # Additional wedding access check if form has wedding_id
             if form.get("wedding_id") and not await check_wedding_access(
@@ -470,6 +563,8 @@ async def export_form_responses_csv(
             date_from=date_from,
             date_to=date_to,
             include_metadata=include_metadata,
+            owner_alias_emails=owner_scope["owner_alias_emails"],
+            exported_by=current_user.email,
         )
         # Log successful export for audit
         await security_audit.log_security_event(
@@ -1016,7 +1111,12 @@ async def create_form_from_template(
         template_type=template_id,
     )
 
-    return await form_service.create_form(form_data, current_user.email)
+    owner_scope = await _resolve_form_owner_scope(current_user)
+    return await form_service.create_form(
+        form_data,
+        owner_scope["owner_email"],
+        actor_email=current_user.email,
+    )
 
 
 @router.post("/forms/{form_id}/duplicate", tags=["Forms"])
@@ -1027,7 +1127,12 @@ async def duplicate_form(
 ):
     """Duplicate an existing form for the authenticated planner."""
     enforce_team_permission(current_user, "manage_forms")
+    owner_scope = await _resolve_form_owner_scope(current_user)
 
     return await form_service.duplicate_form(
-        form_id, duplicate_request, current_user.email
+        form_id,
+        duplicate_request,
+        owner_scope["owner_email"],
+        owner_alias_emails=owner_scope["owner_alias_emails"],
+        actor_email=current_user.email,
     )

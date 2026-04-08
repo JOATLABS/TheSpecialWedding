@@ -33,8 +33,41 @@ class FormService:
     def _planner_state_key(email: str) -> str:
         return email.replace(".", "_")
 
+    @staticmethod
+    def _normalize_owner_alias_emails(
+        owner_alias_emails: Optional[List[str]],
+    ) -> List[str]:
+        normalized: list[str] = []
+        for email in owner_alias_emails or []:
+            if not email:
+                continue
+            candidate = email.lower().strip()
+            if candidate and candidate not in normalized:
+                normalized.append(candidate)
+        return normalized
+
+    def _build_creator_query(
+        self,
+        created_by: Optional[str],
+        owner_alias_emails: Optional[List[str]] = None,
+    ) -> dict[str, Any]:
+        if created_by is None:
+            return {}
+
+        aliases = self._normalize_owner_alias_emails(owner_alias_emails)
+        if aliases:
+            return {"created_by": {"$in": aliases}}
+
+        if not InputSanitizer.validate_email(created_by):
+            raise HTTPException(status_code=400, detail="Invalid creator email")
+        return {"created_by": created_by.lower().strip()}
+
     async def create_form(
-        self, form_data: CreateFormRequest, created_by: str
+        self,
+        form_data: CreateFormRequest,
+        created_by: str,
+        *,
+        actor_email: Optional[str] = None,
     ) -> Dict[str, Any]:
         """Create a new form with enhanced security validation"""
         try:
@@ -97,6 +130,8 @@ class FormService:
                 "submission_count": 0,
                 "planner_state": planner_state,
             }
+            if actor_email and actor_email.lower().strip() != creator_email:
+                form_doc["created_by_actor"] = actor_email.lower().strip()
 
             # Insert form
             result = await self.forms_collection.insert_one(form_doc)
@@ -115,12 +150,22 @@ class FormService:
             )
 
     async def duplicate_form(
-        self, source_form_id: str, payload: DuplicateFormRequest, created_by: str
+        self,
+        source_form_id: str,
+        payload: DuplicateFormRequest,
+        created_by: str,
+        *,
+        owner_alias_emails: Optional[List[str]] = None,
+        actor_email: Optional[str] = None,
     ) -> Dict[str, Any]:
         """Create a copy of an existing form for the same planner."""
         try:
             # Ensure the user can access the source form
-            original_form = await self.get_form(source_form_id, created_by)
+            original_form = await self.get_form(
+                source_form_id,
+                created_by,
+                owner_alias_emails=owner_alias_emails,
+            )
 
             # Build the new form payload using the original structure
             duplicated_fields = deepcopy(original_form.get("fields", []))
@@ -134,7 +179,11 @@ class FormService:
                 template_type=original_form.get("template_type"),
             )
 
-            return await self.create_form(new_form_request, created_by)
+            return await self.create_form(
+                new_form_request,
+                created_by,
+                actor_email=actor_email,
+            )
 
         except HTTPException:
             raise
@@ -152,13 +201,18 @@ class FormService:
         created_by: str,
         wedding_id: Optional[str] = None,
         is_root_admin: bool = False,
+        *,
+        viewer_email: Optional[str] = None,
+        owner_alias_emails: Optional[List[str]] = None,
     ) -> List[Dict[str, Any]]:
         """Get forms for a user"""
         try:
             # ROOT_ADMIN can see all forms, others see only their own
             query: Dict[str, Any] = {"is_active": True}
             if not is_root_admin:
-                query["created_by"] = created_by
+                query.update(
+                    self._build_creator_query(created_by, owner_alias_emails)
+                )
             if wedding_id:
                 query["wedding_id"] = wedding_id
 
@@ -171,8 +225,8 @@ class FormService:
             # Convert ObjectId to string and format response
             viewer_key = None
             raw_viewer_email = None
-            if created_by and not is_root_admin:
-                raw_viewer_email = created_by.lower().strip()
+            if not is_root_admin:
+                raw_viewer_email = (viewer_email or created_by).lower().strip()
                 viewer_key = self._planner_state_key(raw_viewer_email)
 
             for form in forms:
@@ -208,7 +262,11 @@ class FormService:
             )
 
     async def get_form(
-        self, form_id: str, created_by: Optional[str] = None
+        self,
+        form_id: str,
+        created_by: Optional[str] = None,
+        *,
+        owner_alias_emails: Optional[List[str]] = None,
     ) -> Dict[str, Any]:
         """Get a specific form with security validation"""
         try:
@@ -227,10 +285,9 @@ class FormService:
             query = {"_id": form_id, "is_active": True}
             if created_by is not None:
                 logger.info(f"Validating created_by email: {created_by}")
-                # Validate and sanitize created_by email
-                if not InputSanitizer.validate_email(created_by):
-                    raise HTTPException(status_code=400, detail="Invalid creator email")
-                query["created_by"] = created_by.lower().strip()
+                query.update(
+                    self._build_creator_query(created_by, owner_alias_emails)
+                )
             logger.info(f"Database query: {query}")
             form = await self.forms_collection.find_one(query)
             logger.info(f"Form found: {form is not None}")
@@ -280,7 +337,12 @@ class FormService:
             )
 
     async def update_form(
-        self, form_id: str, form_data: UpdateFormRequest, created_by: str
+        self,
+        form_id: str,
+        form_data: UpdateFormRequest,
+        created_by: str,
+        *,
+        owner_alias_emails: Optional[List[str]] = None,
     ) -> Dict[str, Any]:
         """Update an existing form with security validation"""
         try:
@@ -298,8 +360,8 @@ class FormService:
             existing_form = await self.forms_collection.find_one(
                 {
                     "_id": form_id,
-                    "created_by": created_by.lower().strip(),
                     "is_active": True,
+                    **self._build_creator_query(created_by, owner_alias_emails),
                 }
             )
 
@@ -373,7 +435,12 @@ class FormService:
             )
 
     async def delete_form(
-        self, form_id: str, created_by: str, is_root_admin: bool = False
+        self,
+        form_id: str,
+        created_by: str,
+        is_root_admin: bool = False,
+        *,
+        owner_alias_emails: Optional[List[str]] = None,
     ) -> Dict[str, Any]:
         """Soft delete a form"""
         try:
@@ -385,7 +452,10 @@ class FormService:
                 query = {"_id": form_id}
                 logger.info(f"Using ROOT_ADMIN query: {query}")
             else:
-                query = {"_id": form_id, "created_by": created_by}
+                query = {
+                    "_id": form_id,
+                    **self._build_creator_query(created_by, owner_alias_emails),
+                }
                 logger.info(f"Using regular user query: {query}")
             # First, check if form exists
             existing_form = await self.forms_collection.find_one({"_id": form_id})
@@ -428,12 +498,21 @@ class FormService:
             )
 
     async def send_form(
-        self, form_id: str, send_data: SendFormRequest, created_by: str
+        self,
+        form_id: str,
+        send_data: SendFormRequest,
+        created_by: str,
+        *,
+        owner_alias_emails: Optional[List[str]] = None,
     ) -> Dict[str, Any]:
         """Send form to recipients via email"""
         try:
             # Get form
-            form = await self.get_form(form_id, created_by)
+            form = await self.get_form(
+                form_id,
+                created_by,
+                owner_alias_emails=owner_alias_emails,
+            )
 
             # Generate form URL
             frontend_url = os.getenv("FRONTEND_URL")
@@ -687,12 +766,20 @@ class FormService:
             )
 
     async def get_form_responses(
-        self, form_id: str, created_by: str
+        self,
+        form_id: str,
+        created_by: str,
+        *,
+        owner_alias_emails: Optional[List[str]] = None,
     ) -> List[Dict[str, Any]]:
         """Get all responses for a form"""
         try:
             # Verify user owns the form
-            await self.get_form(form_id, created_by)
+            await self.get_form(
+                form_id,
+                created_by,
+                owner_alias_emails=owner_alias_emails,
+            )
 
             responses = (
                 await self.responses_collection.find({"form_id": form_id})
@@ -722,6 +809,7 @@ class FormService:
         scope: str,
         submission_count: Optional[int] = None,
         *,
+        owner_alias_emails: Optional[List[str]] = None,
         is_root_admin: bool = False,
     ) -> Dict[str, Any]:
         """Persist when a planner last viewed responses or analytics for a form."""
@@ -757,7 +845,7 @@ class FormService:
                 {
                     "_id": sanitized_form_id,
                     "is_active": True,
-                    "created_by": normalized_email,
+                    **self._build_creator_query(normalized_email, owner_alias_emails),
                 },
                 base_projection,
             )
@@ -813,11 +901,21 @@ class FormService:
             "unread_responses": unread_after_update,
         }
 
-    async def get_form_analytics(self, form_id: str, created_by: str) -> Dict[str, Any]:
+    async def get_form_analytics(
+        self,
+        form_id: str,
+        created_by: str,
+        *,
+        owner_alias_emails: Optional[List[str]] = None,
+    ) -> Dict[str, Any]:
         """Get analytics for a form"""
         try:
             # Verify user owns the form
-            form = await self.get_form(form_id, created_by)
+            form = await self.get_form(
+                form_id,
+                created_by,
+                owner_alias_emails=owner_alias_emails,
+            )
 
             # Get response count
             response_count = await self.responses_collection.count_documents(
@@ -954,6 +1052,9 @@ class FormService:
         date_from: Optional[str] = None,
         date_to: Optional[str] = None,
         include_metadata: bool = True,
+        *,
+        owner_alias_emails: Optional[List[str]] = None,
+        exported_by: Optional[str] = None,
     ) -> Dict[str, Any]:
         """
         Export form responses to CSV format with enhanced security validation.
@@ -994,12 +1095,20 @@ class FormService:
                 raise HTTPException(status_code=400, detail="Invalid form ID")
 
             # Get form (this also verifies user ownership)
-            form = await self.get_form(form_id, created_by)
+            form = await self.get_form(
+                form_id,
+                created_by,
+                owner_alias_emails=owner_alias_emails,
+            )
             if not form:
                 raise HTTPException(status_code=404, detail="Form not found")
 
             # Get all responses for the form
-            responses = await self.get_form_responses(form_id, created_by)
+            responses = await self.get_form_responses(
+                form_id,
+                created_by,
+                owner_alias_emails=owner_alias_emails,
+            )
 
             # Validate date parameters
             parsed_date_from = None
@@ -1080,7 +1189,7 @@ class FormService:
                 {
                     "form_id": form_id,
                     "form_name": form.get("name", "Unknown Form"),
-                    "exported_by": created_by,
+                    "exported_by": exported_by or created_by,
                     "request_params": {
                         "date_from": date_from,
                         "date_to": date_to,

@@ -182,6 +182,21 @@ class VendorService:
 
         return normalized
 
+    @staticmethod
+    def _omit_empty_google_place_id(data: Dict[str, Any]) -> Dict[str, Any]:
+        normalized = dict(data)
+        google_place_id = normalized.get("google_place_id")
+
+        if isinstance(google_place_id, str):
+            google_place_id = google_place_id.strip() or None
+
+        if google_place_id:
+            normalized["google_place_id"] = google_place_id
+        else:
+            normalized.pop("google_place_id", None)
+
+        return normalized
+
     async def _get_planner_contract_settings(
         self, planner_email: str
     ) -> Dict[str, Any]:
@@ -287,7 +302,9 @@ class VendorService:
     async def create_vendor_profile(self, data: dict, created_by: str) -> dict:
         """Create a new vendor in the directory"""
         try:
-            data = self._normalize_vendor_category_data(data)
+            data = self._omit_empty_google_place_id(
+                self._normalize_vendor_category_data(data)
+            )
             vendor = {
                 **data,
                 "created_by": created_by,
@@ -416,37 +433,41 @@ class VendorService:
                 return existing
 
             # -- Insert new scraped vendor --
-            vendor = {
-                "business_name": business_name,
-                "email": data.get("email", ""),
-                "phone": data.get("phone"),
-                "website": data.get("website"),
-                "address": data.get("address"),
-                "city": city,
-                "state": data.get("state"),
-                "country": data.get("country", "US"),
-                "postal_code": data.get("postal_code"),
-                "service_category": service_category,
-                "custom_service_category": data.get("custom_service_category"),
-                "service_subcategories": data.get("service_subcategories", []),
-                "service_description": data.get("service_description"),
-                "logo_url": data.get("logo_url"),
-                "portfolio_urls": [data["logo_url"]] if data.get("logo_url") else [],
-                "typical_price_min": data.get("typical_price_min"),
-                "typical_price_max": data.get("typical_price_max"),
-                "currency": data.get("currency", "USD"),
-                "tags": data.get("tags", []),
-                "source": "scraped",
-                "google_place_id": google_place_id,
-                "scraped_at": now,
-                "scraped_from_state": data.get("scraped_from_state"),
-                "created_by": SYSTEM_CREATED_BY,
-                "weddings_count": 0,
-                "total_revenue": 0.0,
-                "is_active": True,
-                "created_at": now,
-                "updated_at": now,
-            }
+            vendor = self._omit_empty_google_place_id(
+                {
+                    "business_name": business_name,
+                    "email": data.get("email", ""),
+                    "phone": data.get("phone"),
+                    "website": data.get("website"),
+                    "address": data.get("address"),
+                    "city": city,
+                    "state": data.get("state"),
+                    "country": data.get("country", "US"),
+                    "postal_code": data.get("postal_code"),
+                    "service_category": service_category,
+                    "custom_service_category": data.get("custom_service_category"),
+                    "service_subcategories": data.get("service_subcategories", []),
+                    "service_description": data.get("service_description"),
+                    "logo_url": data.get("logo_url"),
+                    "portfolio_urls": [data["logo_url"]]
+                    if data.get("logo_url")
+                    else [],
+                    "typical_price_min": data.get("typical_price_min"),
+                    "typical_price_max": data.get("typical_price_max"),
+                    "currency": data.get("currency", "USD"),
+                    "tags": data.get("tags", []),
+                    "source": "scraped",
+                    "google_place_id": google_place_id,
+                    "scraped_at": now,
+                    "scraped_from_state": data.get("scraped_from_state"),
+                    "created_by": SYSTEM_CREATED_BY,
+                    "weddings_count": 0,
+                    "total_revenue": 0.0,
+                    "is_active": True,
+                    "created_at": now,
+                    "updated_at": now,
+                }
+            )
 
             result = await self.vendor_profiles.insert_one(vendor)
             vendor["_id"] = str(result.inserted_id)

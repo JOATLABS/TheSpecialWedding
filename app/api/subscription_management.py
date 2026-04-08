@@ -210,11 +210,11 @@ async def reset_monthly_usage(
 
 
 @router.get("/analytics/subscriptions", tags=["ROOT_ADMIN"])
-def get_subscription_analytics(
+async def get_subscription_analytics(
     current_user: ExtendedAuthUser = Depends(require_root_admin),
 ):
     """Get platform-wide subscription analytics - ROOT_ADMIN only"""
-    return subscription_service.get_subscription_analytics()
+    return await subscription_service.get_subscription_analytics()
 
 
 @router.get("/subscriptions", tags=["ROOT_ADMIN"])

@@ -2,23 +2,55 @@
 
 import Link from 'next/link';
 import { usePathname, useSearchParams } from 'next/navigation';
+import { useAdmin } from '@/contexts/AdminContext';
+import {
+  canAccessGuestCommunications,
+  canMessageCouples,
+  canSendReminders,
+  canSendRsvp,
+} from '@/admin/utils/teamAccess';
 
 const COMMUNICATION_TABS = [
-  { href: '/admin/communications/inbox', label: 'Inbox' },
-  { href: '/admin/communications/invites', label: 'Invites' },
-  { href: '/admin/communications/reminders', label: 'Reminders' },
-  { href: '/admin/communications/individual', label: 'Individual' },
-  { href: '/admin/communications/history', label: 'History' },
-];
+  { href: '/admin/communications/inbox', label: 'Inbox', permission: 'inbox' },
+  { href: '/admin/communications/invites', label: 'Invites', permission: 'invites' },
+  { href: '/admin/communications/reminders', label: 'Reminders', permission: 'reminders' },
+  { href: '/admin/communications/individual', label: 'Individual', permission: 'individual' },
+  { href: '/admin/communications/history', label: 'History', permission: 'history' },
+] as const;
 
 export default function CommunicationsTabs() {
+  const { userProfile } = useAdmin();
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const weddingId = searchParams.get('wedding_id');
+  const hasInboxAccess = canAccessGuestCommunications(userProfile) || canMessageCouples(userProfile);
+  const canAccessInvites = canSendRsvp(userProfile);
+  const canAccessReminders = canSendReminders(userProfile);
+  const canAccessHistory = canAccessInvites || canAccessReminders;
+
+  const visibleTabs = COMMUNICATION_TABS.filter((tab) => {
+    switch (tab.permission) {
+      case 'inbox':
+        return hasInboxAccess;
+      case 'invites':
+        return canAccessInvites;
+      case 'reminders':
+      case 'individual':
+        return canAccessReminders;
+      case 'history':
+        return canAccessHistory;
+      default:
+        return false;
+    }
+  });
+
+  if (!visibleTabs.length) {
+    return null;
+  }
 
   return (
     <div className="flex flex-wrap gap-3">
-      {COMMUNICATION_TABS.map((tab) => {
+      {visibleTabs.map((tab) => {
         const isActive = pathname === tab.href;
         const href = weddingId ? `${tab.href}?wedding_id=${encodeURIComponent(weddingId)}` : tab.href;
 

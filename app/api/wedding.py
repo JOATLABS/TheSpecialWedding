@@ -1,6 +1,6 @@
 import logging
 from fastapi import APIRouter, Depends, HTTPException, Query
-from app.models.wedding import WeddingModel
+from app.models.wedding import WeddingCreateModel
 from app.services.wedding_service import WeddingService
 from app.services.cascade_delete_service import cascade_delete_service
 from app.dependencies.auth_extended import (
@@ -102,7 +102,7 @@ async def list_weddings(
 
 @router.post("/weddings", tags=["Admin"])
 async def create_wedding(
-    wedding: WeddingModel,
+    wedding: WeddingCreateModel,
     current_user: ExtendedAuthUser = Depends(require_team_or_planner),
 ):
     """Create a new wedding with subscription metering"""
@@ -123,7 +123,7 @@ async def create_wedding(
                     ),
                 )
 
-    wedding_data = wedding.dict(by_alias=True)
+    wedding_data = wedding.model_dump(by_alias=True, exclude_none=True)
     wedding_data["created_by"] = current_user.email
     if not current_user.is_root_admin:
         if owner_email and not wedding_data.get("assigned_planner_email"):

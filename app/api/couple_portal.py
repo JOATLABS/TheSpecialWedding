@@ -64,7 +64,7 @@ def _enforce_message_couples(current_user: ExtendedAuthUser) -> None:
 async def _resolve_couple_planner_email(
     couple: dict, wedding: Optional[dict] = None
 ) -> Optional[str]:
-    """Resolve planner contact from canonical wedding ownership before couple mirrors."""
+    """Resolve planner contact from canonical wedding ownership only."""
     if wedding is None and couple.get("wedding_id"):
         wedding = await mongo.get_weddings_collection().find_one(
             {"_id": normalize_wedding_query_id(couple["wedding_id"])},
@@ -72,9 +72,53 @@ async def _resolve_couple_planner_email(
         )
 
     owner_identity = await resolve_wedding_owner_identity(wedding)
-    if owner_identity.get("planner_email"):
-        return owner_identity["planner_email"]
-    return normalize_planner_email(couple.get("planner_email"))
+    return owner_identity.get("planner_email")
+
+
+async def _resolve_custom_template_owner_scope(
+    current_user: ExtendedAuthUser,
+) -> dict[str, Any]:
+    """Resolve canonical owner scope and migrate legacy team-scoped templates."""
+    owner_email = normalize_planner_email(
+        current_user.team_owner_email if current_user.is_team_member else current_user.email
+    )
+    legacy_emails = {
+        email
+        for email in (
+            owner_email,
+            normalize_planner_email(current_user.email),
+        )
+        if email
+    }
+
+    owner_id = (
+        current_user.parent_planner_id
+        if current_user.is_team_member
+        else current_user.user_data.get("_id")
+    )
+    team_query = build_team_owner_query(owner_id, owner_email)
+    if team_query:
+        team_members = await mongo.db["team_members"].find(
+            team_query,
+            {"email": 1},
+        ).to_list(length=None)
+        legacy_emails.update(
+            normalize_planner_email(member.get("email"))
+            for member in team_members
+            if member.get("email")
+        )
+
+    if owner_email and legacy_emails:
+        migration_emails = [email for email in legacy_emails if email != owner_email]
+        if migration_emails:
+            await mongo.db["custom_form_templates"].update_many(
+                {"planner_email": {"$in": migration_emails}},
+                {"$set": {"planner_email": owner_email}},
+            )
+
+    return {
+        "owner_email": owner_email,
+    }
 
 
 # Auth dependency: use require_couple_auth from app.dependencies.couple_auth
@@ -1787,8 +1831,10 @@ async def save_form_as_template(
                 status_code=403, detail="You don't have access to this form"
             )
 
+    template_scope = await _resolve_custom_template_owner_scope(current_user)
     template_doc = {
-        "planner_email": current_user.email,
+        "planner_email": template_scope["owner_email"],
+        "created_by_email": current_user.email,
         "name": data.template_name,
         "description": data.description,
         "category": data.category,
@@ -1819,10 +1865,11 @@ async def list_custom_templates(
 ):
     """List all custom form templates saved by this planner."""
     _enforce_manage_couple_portal(current_user)
+    template_scope = await _resolve_custom_template_owner_scope(current_user)
     templates = []
     async for tpl in (
         mongo.db["custom_form_templates"]
-        .find({"planner_email": current_user.email})
+        .find({"planner_email": template_scope["owner_email"]})
         .sort("created_at", -1)
     ):
         templates.append(
@@ -1862,11 +1909,12 @@ async def create_form_from_custom_template(
             status_code=403, detail="You don't have access to this wedding"
         )
 
+    template_scope = await _resolve_custom_template_owner_scope(current_user)
     # Get template
     template = await mongo.db["custom_form_templates"].find_one(
         {
             "_id": ObjectId(data.template_id),
-            "planner_email": current_user.email,
+            "planner_email": template_scope["owner_email"],
         }
     )
     if not template:
@@ -1915,10 +1963,11 @@ async def delete_custom_template(
     except (InvalidId, Exception):
         raise HTTPException(status_code=400, detail="Invalid template ID format")
 
+    template_scope = await _resolve_custom_template_owner_scope(current_user)
     result = await mongo.db["custom_form_templates"].delete_one(
         {
             "_id": ObjectId(template_id),
-            "planner_email": current_user.email,
+            "planner_email": template_scope["owner_email"],
         }
     )
 
@@ -2100,15 +2149,29 @@ async def schedule_meeting(
     wedding_oid = data.wedding_id
 
     wedding = await mongo.get_weddings_collection().find_one(
-        {"_id": wedding_oid}, {"couple_names": 1}
+        {
+            "_id": wedding_oid,
+        },
+        {
+            "couple_names": 1,
+            "assigned_planner_id": 1,
+            "assigned_planner_email": 1,
+        },
     )
     if not wedding:
         raise HTTPException(status_code=404, detail="Wedding not found")
 
     now = datetime.now(timezone.utc)
+    owner_identity = await resolve_wedding_owner_identity(wedding)
+    planner_email = (
+        owner_identity.get("planner_email")
+        or current_user.team_owner_email
+        or current_user.email
+    )
 
     task_doc: dict[str, Any] = {
-        "planner_email": current_user.email,
+        "planner_email": planner_email,
+        "scheduled_by_email": current_user.email,
         "wedding_id": data.wedding_id,
         "title": data.title,
         "description": data.description,
@@ -2213,7 +2276,6 @@ async def list_meetings_planner(
     query = {
         "wedding_id": wedding_id,
         "category": "meeting",
-        "planner_email": current_user.email,
     }
     total = await tasks_collection.count_documents(query)
     cursor = tasks_collection.find(query).sort("start_date", 1).skip(skip).limit(limit)
@@ -2250,7 +2312,6 @@ async def cancel_meeting(
     task = await tasks_collection.find_one(
         {
             "_id": ObjectId(meeting_id),
-            "planner_email": current_user.email,
             "wedding_id": wedding_id,
             "category": "meeting",
         }
@@ -2264,7 +2325,8 @@ async def cancel_meeting(
             from app.services.google_calendar_service import google_calendar_service
 
             await google_calendar_service.delete_google_event(
-                current_user.email, task["google_event_id"]
+                task.get("scheduled_by_email") or current_user.email,
+                task["google_event_id"],
             )
         except Exception as e:
             logger.error(f"Failed to delete meeting from Google Calendar: {e}")
@@ -2285,17 +2347,7 @@ async def list_meetings_couple(couple: dict = Depends(require_couple_auth)):
         return {"meetings": [], "count": 0}
 
     wedding_id = couple.get("wedding_id")
-    planner_email = await _resolve_couple_planner_email(couple)
-
-    if not planner_email:
-        # Fallback: look up from wedding
-        wedding = await mongo.get_weddings_collection().find_one(
-            {"_id": wedding_id}, {"assigned_planner_id": 1, "assigned_planner_email": 1}
-        )
-        owner_identity = await resolve_wedding_owner_identity(wedding)
-        planner_email = owner_identity.get("planner_email")
-
-    if not planner_email:
+    if not wedding_id:
         return {"meetings": [], "count": 0}
 
     tasks_collection = mongo.get_planner_tasks_collection()
@@ -2305,7 +2357,6 @@ async def list_meetings_couple(couple: dict = Depends(require_couple_auth)):
             {
                 "wedding_id": wedding_id,
                 "category": "meeting",
-                "planner_email": planner_email,
                 "start_date": {"$gte": now},
             }
         )

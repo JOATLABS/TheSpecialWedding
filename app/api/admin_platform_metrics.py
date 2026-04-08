@@ -601,19 +601,12 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/platform", tags=["ROOT_ADMIN", "Monitoring"])
 
 
-@router.get("/health")
-async def get_platform_health(
-    days: int = Query(1, ge=1, le=90, description="Error summary window in days"),
-    current_user: ExtendedAuthUser = Depends(require_root_admin),
-) -> Dict[str, Any]:
-    """
-    Get comprehensive platform metrics for ROOT_ADMIN dashboard
+async def build_platform_health_payload(days: int = 1) -> Dict[str, Any]:
+    """Build the ROOT_ADMIN platform health payload with plain Python inputs.
 
-    Returns:
-        - System health (database, disk, memory, CPU)
-        - Error statistics (selected window)
-        - Business metrics (users, subscriptions, MRR/ARR)
-        - Performance metrics (slow endpoints)
+    This helper keeps the business logic separate from the FastAPI route layer so
+    other admin endpoints and snapshot jobs can safely reuse the same metrics path
+    without leaking `Query(...)` defaults into runtime execution.
     """
     now = datetime.now(timezone.utc)
     day_ago = now - timedelta(days=1)
@@ -1105,6 +1098,23 @@ async def get_platform_health(
         )
 
 
+@router.get("/health")
+async def get_platform_health(
+    days: int = Query(1, ge=1, le=90, description="Error summary window in days"),
+    current_user: ExtendedAuthUser = Depends(require_root_admin),
+) -> Dict[str, Any]:
+    """
+    Get comprehensive platform metrics for ROOT_ADMIN dashboard
+
+    Returns:
+        - System health (database, disk, memory, CPU)
+        - Error statistics (selected window)
+        - Business metrics (users, subscriptions, MRR/ARR)
+        - Performance metrics (slow endpoints)
+    """
+    return await build_platform_health_payload(days)
+
+
 @router.get("/metrics/history")
 async def get_metrics_history(
     days: int = Query(7, ge=1, le=90, description="Number of days of history"),
@@ -1169,7 +1179,7 @@ async def save_metrics_snapshot(
     to build historical data for trends/charts.
     """
     # Get current metrics
-    metrics = await get_platform_health(current_user=current_user)
+    metrics = await build_platform_health_payload()
 
     # Save to platform_metrics collection
     snapshot = {**metrics, "snapshot_time": datetime.now(timezone.utc)}

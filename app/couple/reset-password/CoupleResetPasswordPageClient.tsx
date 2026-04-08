@@ -5,8 +5,16 @@ import Link from 'next/link';
 import { Heart, Lock, Loader2, ArrowLeft, AlertCircle } from 'lucide-react';
 import { toast } from 'sonner';
 
-import { clearLegacyCoupleStorage } from '@/couple/lib/auth';
+import { clearLegacyCoupleStorage, extractApiErrorMessage } from '@/couple/lib/auth';
 import { getApiBaseUrl } from '@/utils/env';
+
+function getResetErrorHeading(message: string | null): string {
+  const normalized = message?.toLowerCase() ?? '';
+  if (normalized.includes('inactive') || normalized.includes('unavailable') || normalized.includes('revoked')) {
+    return 'Portal Unavailable';
+  }
+  return 'Invalid or Expired Link';
+}
 
 export default function CoupleResetPasswordPageClient({ initialToken }: { initialToken: string | null }) {
   const token = initialToken ?? '';
@@ -17,6 +25,7 @@ export default function CoupleResetPasswordPageClient({ initialToken }: { initia
   const [validating, setValidating] = useState(true);
   const [tokenValid, setTokenValid] = useState(false);
   const [maskedEmail, setMaskedEmail] = useState('');
+  const [validationError, setValidationError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!token) {
@@ -31,9 +40,20 @@ export default function CoupleResetPasswordPageClient({ initialToken }: { initia
           const data = await res.json();
           setTokenValid(true);
           setMaskedEmail(data.email || '');
+          setValidationError(null);
+          return;
         }
+
+        setValidationError(
+          await extractApiErrorMessage(
+            res,
+            'This password reset link is invalid or has expired. Please request a new one.',
+          ),
+        );
       } catch {
-        // Invalid token
+        setValidationError(
+          'We could not validate this reset link right now. Please try again or request a new one.',
+        );
       } finally {
         setValidating(false);
       }
@@ -64,14 +84,14 @@ export default function CoupleResetPasswordPageClient({ initialToken }: { initia
         credentials: 'include',
       });
 
-      const data = await res.json();
-
       if (res.ok) {
         clearLegacyCoupleStorage();
         toast.success('Password reset successfully!');
         window.location.assign('/couple/dashboard');
       } else {
-        toast.error(data.detail || 'Failed to reset password');
+        const detail = await extractApiErrorMessage(res, 'Failed to reset password');
+        setValidationError(detail);
+        toast.error(detail);
       }
     } catch {
       toast.error('Failed to connect to server');
@@ -92,6 +112,7 @@ export default function CoupleResetPasswordPageClient({ initialToken }: { initia
   }
 
   if (!token || !tokenValid) {
+    const errorHeading = getResetErrorHeading(validationError);
     return (
       <div className="min-h-screen flex items-center justify-center px-4 py-12">
         <div className="w-full max-w-md">
@@ -102,9 +123,9 @@ export default function CoupleResetPasswordPageClient({ initialToken }: { initia
           </div>
           <div className="bg-white rounded-2xl shadow-lg border border-gray-100 p-8 text-center">
             <AlertCircle className="w-12 h-12 text-red-400 mx-auto mb-4" />
-            <h2 className="text-xl font-semibold text-gray-800 mb-2">Invalid or Expired Link</h2>
+            <h2 className="text-xl font-semibold text-gray-800 mb-2">{errorHeading}</h2>
             <p className="text-sm text-gray-500 mb-6">
-              This password reset link is invalid or has expired. Please request a new one.
+              {validationError || 'This password reset link is invalid or has expired. Please request a new one.'}
             </p>
             <Link
               href="/couple/forgot-password"

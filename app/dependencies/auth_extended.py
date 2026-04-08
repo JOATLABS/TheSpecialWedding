@@ -12,6 +12,7 @@ from app.models.subscription import (
     PLANNER_BLOCKED_SUBSCRIPTION_STATUSES,
     normalize_subscription_status,
 )
+from app.models.team_member import resolve_team_permissions
 from app.utils.planner_ownership import (
     normalize_planner_email,
     normalize_planner_id,
@@ -321,7 +322,10 @@ async def get_current_user_extended(
                         await _set_team_cache(team_member_id, team_doc)
 
                 if team_doc:
-                    auth_user.team_permissions = team_doc.get("custom_permissions", {})
+                    auth_user.team_permissions = resolve_team_permissions(
+                        team_doc.get("role", "viewer"),
+                        team_doc.get("custom_permissions", {}),
+                    )
                     auth_user.team_wedding_access = team_doc.get(
                         "wedding_access", "all"
                     )
@@ -490,8 +494,13 @@ async def require_any_admin(
 async def require_wedding_planner_only(
     current_user: ExtendedAuthUser = Depends(get_current_user_extended),
 ) -> ExtendedAuthUser:
-    """Require wedding planner or team member access (excludes root admin)"""
-    if current_user.is_wedding_planner:
+    """
+    Legacy dependency name retained for planner-scoped admin routes.
+
+    ROOT_ADMIN already has full wedding access elsewhere in this module, so this
+    gate must stay aligned and allow root-admin support workflows too.
+    """
+    if current_user.is_root_admin or current_user.is_wedding_planner:
         return current_user
     if current_user.is_team_member and current_user.team_permissions is not None:
         return current_user

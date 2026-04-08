@@ -91,6 +91,19 @@ ROLE_PRESETS: Dict[str, Dict[str, bool]] = {
     },
 }
 
+
+def resolve_team_permissions(
+    role: str, custom_permissions: Optional[Dict[str, bool]] = None
+) -> Dict[str, bool]:
+    """Merge a stored permission blob with the current role preset."""
+    base = dict(ROLE_PRESETS.get(role, ROLE_PRESETS["viewer"]))
+    if custom_permissions:
+        for key, value in custom_permissions.items():
+            if key in base:
+                base[key] = value
+    return base
+
+
 # All valid permission keys (used for validation)
 ALL_PERMISSION_KEYS = list(ROLE_PRESETS["admin"].keys())
 
@@ -120,7 +133,7 @@ class TeamPermissions(BaseModel):
     @classmethod
     def from_role(cls, role: str) -> "TeamPermissions":
         """Create permissions from a role preset"""
-        preset = ROLE_PRESETS.get(role, ROLE_PRESETS["viewer"])
+        preset = resolve_team_permissions(role)
         return cls(**preset)
 
     def has_permission(self, permission_name: str) -> bool:

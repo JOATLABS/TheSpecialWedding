@@ -185,5 +185,44 @@ def test_couple_login_allows_archived_readonly_accounts(monkeypatch, sample_coup
     assert fake_mongo.db["couple_users"].update_calls
 
 
+def test_couple_profile_uses_canonical_wedding_owner_for_planner_id(
+    monkeypatch, sample_couple_doc
+):
+    monkeypatch.setattr(
+        couple_auth_module,
+        "_load_wedding_for_couple",
+        AsyncMock(
+            return_value={
+                "_id": "wedding-1",
+                "assigned_planner_id": "planner-canonical",
+                "assigned_planner_email": "planner@example.com",
+            }
+        ),
+    )
+    monkeypatch.setattr(
+        couple_auth_module,
+        "resolve_wedding_owner_identity",
+        AsyncMock(
+            return_value={
+                "planner_id": "planner-canonical",
+                "planner_email": "planner@example.com",
+            }
+        ),
+    )
+
+    result = asyncio.run(
+        couple_auth_module.get_couple_profile(
+            {
+                **sample_couple_doc,
+                "planner_id": "planner-stale-mirror",
+                "_portal_access_state": "active",
+                "_portal_access_detail": None,
+            }
+        )
+    )
+
+    assert result["planner_id"] == "planner-canonical"
+
+
 class ResponseStub:
     headers = None

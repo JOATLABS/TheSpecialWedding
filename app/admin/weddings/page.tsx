@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback, useMemo } from 'react';
 import { getApiBaseUrl } from '@/utils/env';
 import Link from 'next/link';
 import { useAdmin } from '@/contexts/AdminContext';
+import { canManageCouplePortal } from '@/admin/utils/teamAccess';
 import { formatDate, formatAdminTimestamp, DEFAULT_TIMEZONE } from '@/utils/dateFormat';
 import { EVENT_TIME_FORMAT_HINT, getEventTimeValidationMessage, normalizeEventTimeInput } from '@/utils/eventTime';
 import {
@@ -124,6 +125,7 @@ interface WeddingEvent {
 
 export default function AdminWeddingsPage() {
   const { token, userProfile, fetchUserProfile } = useAdmin();
+  const canManageCouplePortalAccess = canManageCouplePortal(userProfile);
   const [weddings, setWeddings] = useState<Wedding[]>([]);
   const [allWeddings, setAllWeddings] = useState<Wedding[]>([]);
   const [planners, setPlanners] = useState<PlannerOption[]>([]);
@@ -520,11 +522,13 @@ export default function AdminWeddingsPage() {
   };
 
   const openProgramModal = (wedding: Wedding) => {
+    if (!canManageCouplePortalAccess) return;
     setProgramModalWedding(wedding);
     fetchWeddingEvents(wedding._id);
   };
 
   const openNotesModal = (wedding: Wedding) => {
+    if (!canManageCouplePortalAccess) return;
     setNotesModalWedding(wedding);
     fetchWeddingEvents(wedding._id);
   };
@@ -1156,18 +1160,22 @@ export default function AdminWeddingsPage() {
                       )}
                     </div>
                     <div className="flex gap-2 ml-4 flex-wrap">
-                      <button
-                        onClick={() => openProgramModal(wedding)}
-                        className="px-3 py-1 text-sm bg-indigo-500 text-white rounded hover:bg-indigo-600 transition"
-                      >
-                        Program
-                      </button>
-                      <button
-                        onClick={() => openNotesModal(wedding)}
-                        className="px-3 py-1 text-sm bg-amber-500 text-white rounded hover:bg-amber-600 transition"
-                      >
-                        Notes
-                      </button>
+                      {canManageCouplePortalAccess && (
+                        <>
+                          <button
+                            onClick={() => openProgramModal(wedding)}
+                            className="px-3 py-1 text-sm bg-indigo-500 text-white rounded hover:bg-indigo-600 transition"
+                          >
+                            Program
+                          </button>
+                          <button
+                            onClick={() => openNotesModal(wedding)}
+                            className="px-3 py-1 text-sm bg-amber-500 text-white rounded hover:bg-amber-600 transition"
+                          >
+                            Notes
+                          </button>
+                        </>
+                      )}
                       {!userProfile?.is_root_admin && (
                         <Link
                           href={`/admin/weddings/${wedding._id}`}

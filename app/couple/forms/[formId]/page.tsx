@@ -4,7 +4,12 @@ import { useState, useEffect } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { toast } from 'sonner';
 import { ArrowLeft, Loader2, Send, CheckCircle } from 'lucide-react';
-import { coupleFetch } from '@/couple/lib/auth';
+import {
+  buildCoupleLoginRedirect,
+  coupleFetch,
+  extractApiErrorMessage,
+  logoutCoupleSession,
+} from '@/couple/lib/auth';
 
 interface FormField {
   id: string;
@@ -45,12 +50,24 @@ export default function CoupleFormPage() {
         const res = await coupleFetch(`/couple/portal/forms/${formId}`);
 
         if (res.status === 401) {
-          router.push('/couple/login');
+          await logoutCoupleSession();
+          router.replace(buildCoupleLoginRedirect('Session expired. Please sign in again.'));
+          return;
+        }
+
+        if (res.status === 403) {
+          const detail = await extractApiErrorMessage(
+            res,
+            'This wedding portal is currently unavailable. Please contact your planner.',
+          );
+          await logoutCoupleSession();
+          router.replace(buildCoupleLoginRedirect(detail));
           return;
         }
 
         if (!res.ok) {
-          toast.error('Failed to load form');
+          const detail = await extractApiErrorMessage(res, 'Failed to load form');
+          toast.error(detail);
           return;
         }
 
@@ -79,9 +96,25 @@ export default function CoupleFormPage() {
         body: JSON.stringify({ form_id: formId, responses }),
       });
 
+      if (res.status === 401) {
+        await logoutCoupleSession();
+        router.replace(buildCoupleLoginRedirect('Session expired. Please sign in again.'));
+        return;
+      }
+
+      if (res.status === 403) {
+        const detail = await extractApiErrorMessage(
+          res,
+          'This wedding portal is currently unavailable. Please contact your planner.',
+        );
+        await logoutCoupleSession();
+        router.replace(buildCoupleLoginRedirect(detail));
+        return;
+      }
+
       if (!res.ok) {
-        const err = await res.json();
-        toast.error(err.detail || 'Failed to submit form');
+        const detail = await extractApiErrorMessage(res, 'Failed to submit form');
+        toast.error(detail);
         return;
       }
 

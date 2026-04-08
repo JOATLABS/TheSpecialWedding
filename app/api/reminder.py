@@ -14,7 +14,16 @@ import logging
 router = APIRouter()
 logger = logging.getLogger(__name__)
 
-reminder_service = ReminderService()
+
+def get_reminder_service() -> ReminderService:
+    """Lazily construct the SMS reminder service for configured environments only."""
+    try:
+        return ReminderService()
+    except RuntimeError as exc:
+        logger.warning("Reminder service unavailable: %s", exc)
+        raise HTTPException(
+            status_code=503, detail="SMS reminders are not configured"
+        ) from exc
 
 
 @router.post("/reminders/send", tags=["Admin"])
@@ -23,13 +32,17 @@ async def send_reminder(
     message: str,
     target_group: str,
     current_user: ExtendedAuthUser = Depends(require_team_or_planner),
+    reminder_service: ReminderService = Depends(get_reminder_service),
 ):
     enforce_team_permission(current_user, "send_reminders")
     return await reminder_service.send_reminders(event_type, message, target_group)
 
 
 @router.get("/reminders/logs", tags=["Admin"])
-async def get_logs(current_user: ExtendedAuthUser = Depends(require_team_or_planner)):
+async def get_logs(
+    current_user: ExtendedAuthUser = Depends(require_team_or_planner),
+    reminder_service: ReminderService = Depends(get_reminder_service),
+):
     return await reminder_service.get_logs()
 
 
