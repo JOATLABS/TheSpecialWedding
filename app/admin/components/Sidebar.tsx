@@ -5,6 +5,7 @@ import Link from 'next/link';
 import NextImage from 'next/image';
 import { usePathname } from 'next/navigation';
 import { useAdmin } from '@/contexts/AdminContext';
+import { getAllowedTeamNavNames } from '@/admin/utils/teamAccess';
 import {
   Bell,
   Calendar,
@@ -97,22 +98,6 @@ export default function Sidebar({ isOpen, setIsOpen, isMobile }: SidebarProps) {
     return false;
   };
 
-  // Map permissions to nav item names for team member filtering
-  const permissionNavMap: Record<string, string[]> = {
-    manage_guests: ['Guests'],
-    manage_budget: ['Budget'],
-    manage_gallery: ['Gallery'],
-    manage_seating: ['Seating'],
-    manage_vendors: ['Vendors'],
-    manage_forms: ['Forms'],
-    manage_contracts: ['Vendors'],
-    manage_packages: ['Packages'],
-    send_rsvp: ['Guests', 'Communications'],
-    send_reminders: ['Communications'],
-    view_analytics: [],
-    manage_wedding_settings: ['Weddings'],
-  };
-
   // Determine which navigation items to show based on user role
   const getNavItems = (): NavItem[] => {
     if (!userProfile) return [];
@@ -129,14 +114,7 @@ export default function Sidebar({ isOpen, setIsOpen, isMobile }: SidebarProps) {
 
     // Team members get filtered navigation based on their permissions
     if (userProfile.is_team_member && userProfile.team_permissions) {
-      const allowedNavNames = new Set(['Dashboard', 'Calendar', 'Notifications', 'Communications', 'Support']);
-      const perms = userProfile.team_permissions;
-
-      for (const [permKey, navNames] of Object.entries(permissionNavMap)) {
-        if (perms[permKey]) {
-          navNames.forEach((name) => allowedNavNames.add(name));
-        }
-      }
+      const allowedNavNames = getAllowedTeamNavNames(userProfile);
 
       return plannerNavItems.filter(
         (item) => !item.plannerOnly && allowedNavNames.has(item.name)

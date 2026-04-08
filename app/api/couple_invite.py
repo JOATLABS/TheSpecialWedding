@@ -34,6 +34,11 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
+def _enforce_manage_couple_portal(current_user: ExtendedAuthUser) -> None:
+    """Require explicit couple-portal management access for team members."""
+    enforce_team_permission(current_user, "manage_couple_portal")
+
+
 class InviteCoupleRequest(BaseModel):
     """Request to invite a couple to the portal."""
 
@@ -59,7 +64,7 @@ async def invite_couple(
     Invite a couple to the wedding portal.
     Creates a couple_users record and sends a magic link email.
     """
-    enforce_team_permission(current_user, "manage_contracts")
+    _enforce_manage_couple_portal(current_user)
 
     # Verify wedding access
     if not await check_wedding_access(current_user, data.wedding_id):
@@ -247,7 +252,7 @@ async def resend_invite(
     current_user: ExtendedAuthUser = Depends(require_team_or_planner),
 ):
     """Resend the invitation email to a couple."""
-    enforce_team_permission(current_user, "manage_contracts")
+    _enforce_manage_couple_portal(current_user)
 
     couple = await mongo.db["couple_users"].find_one({"_id": ObjectId(data.couple_id)})
     if not couple:
@@ -347,6 +352,7 @@ async def list_couples(
     current_user: ExtendedAuthUser = Depends(require_team_or_planner),
 ):
     """List all couples for the planner's weddings."""
+    _enforce_manage_couple_portal(current_user)
     if wedding_id:
         if not await check_wedding_access(current_user, wedding_id):
             raise HTTPException(

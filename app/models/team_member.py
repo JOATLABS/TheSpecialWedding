@@ -54,6 +54,8 @@ ROLE_PRESETS: Dict[str, Dict[str, bool]] = {
         "manage_wedding_settings": True,
         "manage_contracts": True,
         "manage_packages": True,
+        "manage_couple_portal": True,
+        "message_couples": True,
     },
     "editor": {
         "manage_guests": True,
@@ -68,6 +70,8 @@ ROLE_PRESETS: Dict[str, Dict[str, bool]] = {
         "manage_wedding_settings": False,
         "manage_contracts": False,
         "manage_packages": False,
+        "manage_couple_portal": True,
+        "message_couples": False,
     },
     "viewer": {
         "manage_guests": False,
@@ -82,6 +86,8 @@ ROLE_PRESETS: Dict[str, Dict[str, bool]] = {
         "manage_wedding_settings": False,
         "manage_contracts": False,
         "manage_packages": False,
+        "manage_couple_portal": False,
+        "message_couples": False,
     },
 }
 
@@ -104,6 +110,8 @@ class TeamPermissions(BaseModel):
     manage_wedding_settings: bool = False
     manage_contracts: bool = False
     manage_packages: bool = False
+    manage_couple_portal: bool = False
+    message_couples: bool = False
 
     def to_dict(self) -> Dict[str, bool]:
         """Convert to plain dict for MongoDB storage"""

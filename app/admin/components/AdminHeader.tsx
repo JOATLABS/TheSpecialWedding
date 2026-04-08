@@ -1,6 +1,7 @@
 'use client';
 
 import { useAdmin } from '@/contexts/AdminContext';
+import { getAllowedTeamNavNames } from '@/admin/utils/teamAccess';
 import { usePathname } from 'next/navigation';
 import Link from 'next/link';
 import { useState, useEffect } from 'react';
@@ -23,37 +24,45 @@ export default function AdminHeader() {
   const getNavLinks = () => {
     if (!userProfile) return [];
 
-    const baseLinks = [
-      { href: '/admin', label: 'Dashboard', roles: ['ROOT_ADMIN', 'wedding_planner', 'vendor'] }
+    const adminBaseLinks = [
+      { href: '/admin', label: 'Dashboard', name: 'Dashboard', roles: ['ROOT_ADMIN', 'wedding_planner', 'vendor'] }
+    ];
+
+    const plannerHeaderLinks = [
+      { href: '/admin/planner', label: 'Dashboard', name: 'Dashboard' },
+      { href: '/admin/planner/calendar', label: 'Calendar', name: 'Calendar' },
+      { href: '/admin/weddings', label: 'My Weddings', name: 'Weddings' },
+      { href: '/admin/budget', label: 'Budget', name: 'Budget' },
+      { href: '/admin/forms', label: 'Forms', name: 'Forms' },
+      { href: '/admin/gallery/upload', label: 'Gallery', name: 'Gallery' },
+      { href: '/admin/guests', label: 'Guests', name: 'Guests' },
+      { href: '/admin/communications', label: 'Communications', name: 'Communications' },
+      { href: '/admin/notifications', label: 'Notifications', name: 'Notifications' },
+      { href: '/admin/support', label: 'Support', name: 'Support' },
+      { href: '/admin/profile', label: 'Profile', name: 'Profile' },
     ];
 
     if (userProfile.is_root_admin) {
       return [
-        ...baseLinks,
-        { href: '/admin/saas', label: 'SaaS Management', roles: ['ROOT_ADMIN'] },
-        { href: '/admin/notifications', label: 'Notifications', roles: ['ROOT_ADMIN'] },
-        { href: '/admin/support', label: 'Support', roles: ['ROOT_ADMIN'] },
+        ...adminBaseLinks,
+        { href: '/admin/saas', label: 'SaaS Management', name: 'SaaS Management', roles: ['ROOT_ADMIN'] },
+        { href: '/admin/notifications', label: 'Notifications', name: 'Notifications', roles: ['ROOT_ADMIN'] },
+        { href: '/admin/support', label: 'Support', name: 'Support', roles: ['ROOT_ADMIN'] },
       ];
     } else if (userProfile.is_wedding_planner) {
-      return [
-        ...baseLinks,
-        { href: '/admin/weddings', label: 'My Weddings', roles: ['wedding_planner'] },
-        { href: '/admin/budget', label: 'Budget', roles: ['wedding_planner'] },
-        { href: '/admin/forms', label: 'Forms', roles: ['wedding_planner'] },
-        { href: '/admin/gallery/upload', label: 'Gallery', roles: ['wedding_planner'] },
-        { href: '/admin/guests', label: 'Guests', roles: ['wedding_planner'] },
-        { href: '/admin/communications', label: 'Communications', roles: ['wedding_planner'] },
-        { href: '/admin/profile', label: 'Profile', roles: ['wedding_planner'] },
-      ];
+      return plannerHeaderLinks;
+    } else if (userProfile.is_team_member) {
+      const allowedNavNames = getAllowedTeamNavNames(userProfile);
+      return plannerHeaderLinks.filter((link) => link.name === 'Profile' || allowedNavNames.has(link.name));
     } else if (userProfile.is_vendor) {
       return [
-        ...baseLinks,
-        { href: '/admin/vendor', label: 'My Tasks', roles: ['vendor'] },
-        { href: '/portal/ads', label: 'Advertising', roles: ['vendor'] },
+        ...adminBaseLinks,
+        { href: '/admin/vendor', label: 'My Tasks', name: 'My Tasks', roles: ['vendor'] },
+        { href: '/portal/ads', label: 'Advertising', name: 'Advertising', roles: ['vendor'] },
       ];
     }
 
-    return baseLinks;
+    return adminBaseLinks;
   };
 
   const navLinks = getNavLinks();

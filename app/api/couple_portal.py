@@ -51,6 +51,16 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
+def _enforce_manage_couple_portal(current_user: ExtendedAuthUser) -> None:
+    """Require explicit couple-portal management access for team members."""
+    enforce_team_permission(current_user, "manage_couple_portal")
+
+
+def _enforce_message_couples(current_user: ExtendedAuthUser) -> None:
+    """Require explicit couple-messaging access for team members."""
+    enforce_team_permission(current_user, "message_couples")
+
+
 async def _resolve_couple_planner_email(
     couple: dict, wedding: Optional[dict] = None
 ) -> Optional[str]:
@@ -330,7 +340,7 @@ async def create_update(
     Planner creates an update for the couple's portal.
     Requires planner authentication + wedding access.
     """
-    enforce_team_permission(current_user, "manage_contracts")
+    _enforce_manage_couple_portal(current_user)
 
     # Verify planner has access to this wedding
     if not await check_wedding_access(current_user, data.wedding_id):
@@ -412,7 +422,7 @@ class DeleteOrderItemRequest(BaseModel):
 
 async def _get_wedding_for_planner(wedding_id: str, current_user: ExtendedAuthUser):
     """Helper: verify planner access and return the wedding document."""
-    enforce_team_permission(current_user, "manage_contracts")
+    _enforce_manage_couple_portal(current_user)
     if not await check_wedding_access(current_user, wedding_id):
         raise HTTPException(
             status_code=403, detail="You don't have access to this wedding"
@@ -878,7 +888,7 @@ async def revoke_couple_access(
     current_user: ExtendedAuthUser = Depends(require_team_or_planner),
 ):
     """Revoke a couple's portal access."""
-    enforce_team_permission(current_user, "manage_contracts")
+    _enforce_manage_couple_portal(current_user)
 
     couple = await mongo.db["couple_users"].find_one({"_id": ObjectId(couple_id)})
     if not couple:
@@ -905,7 +915,7 @@ async def restore_couple_access(
     current_user: ExtendedAuthUser = Depends(require_team_or_planner),
 ):
     """Restore a previously revoked couple's portal access."""
-    enforce_team_permission(current_user, "manage_contracts")
+    _enforce_manage_couple_portal(current_user)
 
     couple = await mongo.db["couple_users"].find_one({"_id": ObjectId(couple_id)})
     if not couple:
@@ -974,7 +984,7 @@ async def _get_message_broadcast_recipients(wedding_id: str) -> set[str]:
             {
                 **team_query,
                 "status": "active",
-                "custom_permissions.manage_contracts": True,
+                "custom_permissions.message_couples": True,
             },
             {"email": 1, "wedding_access": 1, "assigned_wedding_ids": 1},
         ):
@@ -1250,7 +1260,7 @@ async def planner_send_message(
     current_user: ExtendedAuthUser = Depends(require_team_or_planner),
 ):
     """Planner sends a message to the couple for a specific wedding."""
-    enforce_team_permission(current_user, "manage_contracts")
+    _enforce_message_couples(current_user)
 
     if not await check_wedding_access(current_user, data.wedding_id):
         raise HTTPException(
@@ -1327,7 +1337,7 @@ async def planner_get_messages(
     current_user: ExtendedAuthUser = Depends(require_team_or_planner),
 ):
     """Planner gets message history for a specific wedding's couple conversation."""
-    enforce_team_permission(current_user, "manage_contracts")
+    _enforce_message_couples(current_user)
 
     if not await check_wedding_access(current_user, wedding_id):
         raise HTTPException(
@@ -1369,7 +1379,7 @@ async def planner_mark_messages_read(
     current_user: ExtendedAuthUser = Depends(require_team_or_planner),
 ):
     """Mark couple messages as read for a planner-accessible wedding conversation."""
-    enforce_team_permission(current_user, "manage_contracts")
+    _enforce_message_couples(current_user)
 
     if not await check_wedding_access(current_user, data.wedding_id):
         raise HTTPException(
@@ -1409,7 +1419,7 @@ async def planner_unread_count(
     current_user: ExtendedAuthUser = Depends(require_team_or_planner),
 ):
     """Get count of unread messages from the couple for a specific wedding."""
-    enforce_team_permission(current_user, "manage_contracts")
+    _enforce_message_couples(current_user)
 
     if not await check_wedding_access(current_user, wedding_id):
         raise HTTPException(
@@ -1432,7 +1442,7 @@ async def planner_list_conversations(
     current_user: ExtendedAuthUser = Depends(require_team_or_planner),
 ):
     """List couple conversation summaries for weddings the current user can access."""
-    enforce_team_permission(current_user, "manage_contracts")
+    _enforce_message_couples(current_user)
 
     accessible_wedding_ids = await _get_accessible_couple_wedding_ids(
         current_user, wedding_id=wedding_id
@@ -1564,7 +1574,7 @@ async def trigger_couple_digest(
     new updates, upcoming payments, and pending forms.
     Reuses couple_portal_service for data aggregation and email_service for sending.
     """
-    enforce_team_permission(current_user, "manage_contracts")
+    _enforce_message_couples(current_user)
 
     if not await check_wedding_access(current_user, wedding_id):
         raise HTTPException(
@@ -1635,7 +1645,7 @@ async def archive_wedding(
     the archived_weddings collection and marks couple accounts as archived.
     Archived couples can still log in but see a read-only archived view.
     """
-    enforce_team_permission(current_user, "manage_contracts")
+    _enforce_manage_couple_portal(current_user)
 
     if not await check_wedding_access(current_user, wedding_id):
         raise HTTPException(
@@ -1696,7 +1706,7 @@ async def unarchive_wedding(
     Planner reverses an archival — removes the archive snapshot and
     restores the archived wedding view for eligible couple accounts.
     """
-    enforce_team_permission(current_user, "manage_contracts")
+    _enforce_manage_couple_portal(current_user)
 
     if not await check_wedding_access(current_user, wedding_id):
         raise HTTPException(
@@ -1756,7 +1766,7 @@ async def save_form_as_template(
     Save an existing form as a reusable custom template.
     Copies the form's fields and settings (not responses or wedding-specific data).
     """
-    enforce_team_permission(current_user, "manage_contracts")
+    _enforce_manage_couple_portal(current_user)
 
     try:
         ObjectId(data.form_id)
@@ -1808,6 +1818,7 @@ async def list_custom_templates(
     current_user: ExtendedAuthUser = Depends(require_team_or_planner),
 ):
     """List all custom form templates saved by this planner."""
+    _enforce_manage_couple_portal(current_user)
     templates = []
     async for tpl in (
         mongo.db["custom_form_templates"]
@@ -1838,7 +1849,7 @@ async def create_form_from_custom_template(
     current_user: ExtendedAuthUser = Depends(require_team_or_planner),
 ):
     """Create a new form from a saved custom template and assign it to a wedding."""
-    enforce_team_permission(current_user, "manage_contracts")
+    _enforce_manage_couple_portal(current_user)
 
     try:
         ObjectId(data.template_id)
@@ -1898,6 +1909,7 @@ async def delete_custom_template(
     current_user: ExtendedAuthUser = Depends(require_team_or_planner),
 ):
     """Delete a saved custom form template."""
+    _enforce_manage_couple_portal(current_user)
     try:
         ObjectId(template_id)
     except (InvalidId, Exception):
@@ -2078,6 +2090,8 @@ async def schedule_meeting(
     Planner schedules a meeting with the couple.
     Creates a planner task with category='meeting' and syncs to Google Calendar.
     """
+    _enforce_manage_couple_portal(current_user)
+
     if not await check_wedding_access(current_user, data.wedding_id):
         raise HTTPException(
             status_code=403, detail="You don't have access to this wedding"
@@ -2188,6 +2202,8 @@ async def list_meetings_planner(
     current_user: ExtendedAuthUser = Depends(require_team_or_planner),
 ):
     """Planner lists all meetings for a wedding. Supports pagination."""
+    _enforce_manage_couple_portal(current_user)
+
     if not await check_wedding_access(current_user, wedding_id):
         raise HTTPException(
             status_code=403, detail="You don't have access to this wedding"
@@ -2218,6 +2234,8 @@ async def cancel_meeting(
     current_user: ExtendedAuthUser = Depends(require_team_or_planner),
 ):
     """Planner cancels a scheduled meeting. Removes from Google Calendar if synced."""
+    _enforce_manage_couple_portal(current_user)
+
     if not await check_wedding_access(current_user, wedding_id):
         raise HTTPException(
             status_code=403, detail="You don't have access to this wedding"

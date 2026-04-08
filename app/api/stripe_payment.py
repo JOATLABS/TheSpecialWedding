@@ -232,9 +232,7 @@ async def get_checkout_session(
             "payment_status": session.payment_status,
             "customer": session.customer,
             "subscription": session.subscription,
-            "amount_total": session.amount_total / 100
-            if session.amount_total
-            else 0,
+            "amount_total": session.amount_total / 100 if session.amount_total else 0,
             "currency": session.currency,
         }
 
@@ -263,10 +261,14 @@ async def get_checkout_session(
         # ── Enrich with plan details from local DB ──
         session_metadata = getattr(session, "metadata", None) or {}
         plan_id = (
-            session_metadata.get("plan_id")
-            if isinstance(session_metadata, dict)
-            else dict(session_metadata).get("plan_id")
-        ) if session_metadata else None
+            (
+                session_metadata.get("plan_id")
+                if isinstance(session_metadata, dict)
+                else dict(session_metadata).get("plan_id")
+            )
+            if session_metadata
+            else None
+        )
         if plan_id:
             try:
                 plan = await mongo.db["subscription_plans"].find_one({"_id": plan_id})
@@ -301,7 +303,9 @@ async def get_checkout_session(
                         "invoice_pdf": latest.invoice_pdf,
                         "hosted_invoice_url": latest.hosted_invoice_url,
                         "status": latest.status,
-                        "amount_paid": latest.amount_paid / 100 if latest.amount_paid else 0,
+                        "amount_paid": latest.amount_paid / 100
+                        if latest.amount_paid
+                        else 0,
                     }
             except Exception as inv_err:
                 logger.warning(

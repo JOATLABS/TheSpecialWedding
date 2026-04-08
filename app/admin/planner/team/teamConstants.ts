@@ -18,6 +18,8 @@ export const ALL_PERMISSIONS = [
   { key: 'manage_wedding_settings', label: 'Wedding Settings' },
   { key: 'manage_contracts', label: 'Manage Contracts' },
   { key: 'manage_packages', label: 'Manage Packages' },
+  { key: 'manage_couple_portal', label: 'Manage Couple Portal' },
+  { key: 'message_couples', label: 'Message Couples' },
 ];
 
 // Default permissions per role
@@ -27,10 +29,12 @@ export const ROLE_DEFAULTS: Record<string, Record<string, boolean>> = {
     manage_guests: true, manage_budget: true, manage_gallery: true, manage_seating: true,
     manage_vendors: false, send_rsvp: false, send_reminders: false, manage_forms: true,
     view_analytics: true, manage_wedding_settings: false, manage_contracts: false, manage_packages: false,
+    manage_couple_portal: true, message_couples: false,
   },
   viewer: {
     manage_guests: false, manage_budget: false, manage_gallery: false, manage_seating: false,
     manage_vendors: false, send_rsvp: false, send_reminders: false, manage_forms: false,
     view_analytics: true, manage_wedding_settings: false, manage_contracts: false, manage_packages: false,
+    manage_couple_portal: false, message_couples: false,
   },
 };
