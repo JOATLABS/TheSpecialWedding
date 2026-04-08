@@ -139,7 +139,9 @@ class TeamManagementService:
         Custom permissions take precedence over the preset.
         """
         if custom_permissions:
-            unknown_keys = set(custom_permissions.keys()) - set(ROLE_PRESETS["admin"].keys())
+            unknown_keys = set(custom_permissions.keys()) - set(
+                ROLE_PRESETS["admin"].keys()
+            )
             for key in sorted(unknown_keys):
                 logger.warning("[TeamMgmt] Unknown permission key ignored: %s", key)
         return resolve_team_permissions(role, custom_permissions)
@@ -164,18 +166,14 @@ class TeamManagementService:
                 detail="Cannot assign more than 50 weddings to a single team member",
             )
 
-        try:
-            oids = [
-                to_object_id(wid, f"wedding_id[{i}]")
-                for i, wid in enumerate(wedding_ids)
-            ]
-        except HTTPException:
-            raise
-        except Exception:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Invalid wedding ID format",
-            )
+        normalized_ids = []
+        for i, wid in enumerate(wedding_ids):
+            if not isinstance(wid, str) or not wid.strip():
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"Invalid wedding_id[{i}]: {wid}",
+                )
+            normalized_ids.append(wid.strip())
 
         query = build_wedding_owner_query(owner_id, owner_email)
         if not query:
@@ -183,19 +181,19 @@ class TeamManagementService:
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Planner ownership context is missing for this request",
             )
-        query["_id"] = {"$in": oids}
+        query["_id"] = {"$in": normalized_ids}
 
         # Single $in query to check all weddings at once
         count = await self.weddings_collection.count_documents(query)
 
-        if count != len(oids):
+        if count != len(normalized_ids):
             # Find which ones are invalid
             valid_docs = await self.weddings_collection.find(
                 query,
                 {"_id": 1},
-            ).to_list(length=len(oids))
+            ).to_list(length=len(normalized_ids))
             valid_ids = {str(d["_id"]) for d in valid_docs}
-            invalid = [wid for wid in wedding_ids if wid not in valid_ids]
+            invalid = [wid for wid in normalized_ids if wid not in valid_ids]
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail=f"Wedding(s) not found or do not belong to you: {', '.join(invalid)}",

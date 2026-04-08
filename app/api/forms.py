@@ -32,10 +32,14 @@ router = APIRouter()
 form_service = FormService()
 
 
-async def _resolve_form_owner_scope(current_user: ExtendedAuthUser) -> dict[str, list[str] | str]:
+async def _resolve_form_owner_scope(
+    current_user: ExtendedAuthUser,
+) -> dict[str, list[str] | str]:
     """Resolve shared planner ownership for forms while preserving legacy team-created records."""
     owner_email = normalize_planner_email(
-        current_user.team_owner_email if current_user.is_team_member else current_user.email
+        current_user.team_owner_email
+        if current_user.is_team_member
+        else current_user.email
     )
     owner_alias_emails = {
         email
@@ -53,10 +57,14 @@ async def _resolve_form_owner_scope(current_user: ExtendedAuthUser) -> dict[str,
     )
     team_query = build_team_owner_query(owner_id, owner_email)
     if team_query:
-        team_members = await form_service.forms_collection.database["team_members"].find(
-            team_query,
-            {"email": 1},
-        ).to_list(length=None)
+        team_members = (
+            await form_service.forms_collection.database["team_members"]
+            .find(
+                team_query,
+                {"email": 1},
+            )
+            .to_list(length=None)
+        )
         owner_alias_emails.update(
             normalize_planner_email(member.get("email"))
             for member in team_members

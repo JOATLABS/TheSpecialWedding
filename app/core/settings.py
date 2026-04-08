@@ -47,6 +47,39 @@ def _parse_env_list(value: Any) -> list[str]:
     return value
 
 
+def _expand_loopback_origins(origins: list[str]) -> list[str]:
+    """
+    Normalize local development origins so localhost, 127.0.0.1, and ::1
+    work interchangeably on the same port.
+    """
+    expanded: list[str] = []
+
+    for origin in origins:
+        if origin not in expanded:
+            expanded.append(origin)
+
+        try:
+            parsed = urlparse(origin)
+        except Exception:
+            continue
+
+        hostname = parsed.hostname
+        if hostname not in {"localhost", "127.0.0.1", "::1"}:
+            continue
+
+        scheme = parsed.scheme or "http"
+        port = parsed.port
+        if port is None:
+            continue
+
+        for alias in ("localhost", "127.0.0.1", "[::1]"):
+            alias_origin = f"{scheme}://{alias}:{port}"
+            if alias_origin not in expanded:
+                expanded.append(alias_origin)
+
+    return expanded
+
+
 class Settings(BaseSettings):
     """
     Application settings with validation and type checking
@@ -102,7 +135,7 @@ class Settings(BaseSettings):
         """Ensure cors_origins is configured"""
         if not v:
             raise ValueError("CORS_ORIGINS must be configured with at least one origin")
-        return v
+        return _expand_loopback_origins(v)
 
     cors_credentials: bool = Field(default=True, alias="CORS_CREDENTIALS")
     cors_methods: Annotated[List[str], NoDecode] = Field(

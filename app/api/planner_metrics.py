@@ -4,10 +4,10 @@ from app.dependencies.auth_extended import (
     enforce_team_permission,
     require_team_or_planner,
     get_accessible_wedding_ids,
+    get_owner_identity,
 )
 from app.core.cache import cache, CacheKeys
 from app.core.database import mongo
-from bson import ObjectId
 from app.models.planner_metrics import (
     PlannerMetricsResponse,
     MetricsSummaryModel,
@@ -23,6 +23,12 @@ from typing import Any, Optional, List
 from math import ceil
 import hashlib
 import logging
+
+from app.utils.planner_ownership import (
+    build_wedding_owner_query,
+    combine_mongo_filters,
+    normalize_wedding_query_id,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -108,6 +114,53 @@ def _planner_weddings_scope_key(
     return CacheKeys.planner_weddings(":".join(scope_parts), include_cancelled)
 
 
+def _build_owned_weddings_query(
+    current_user: ExtendedAuthUser,
+    *,
+    include_cancelled: bool = False,
+) -> tuple[dict[str, Any], Optional[list[str]], Optional[str]]:
+    """
+    Build the canonical wedding-ownership query for planner and team sessions.
+
+    Returns:
+      - Mongo query
+      - accessible wedding ids if the session is assigned-scoped, otherwise None
+      - normalized owner email for planner/team sessions
+    """
+    if current_user.is_root_admin:
+        query: dict[str, Any] = {}
+        if not include_cancelled:
+            query["status"] = {"$ne": "cancelled"}
+        return query, None, None
+
+    owner_id, owner_email = get_owner_identity(current_user)
+    owner_query = build_wedding_owner_query(owner_id, owner_email)
+    if not owner_query:
+        raise HTTPException(
+            status_code=400,
+            detail="Planner ownership context is missing for this request",
+        )
+
+    accessible_ids = get_accessible_wedding_ids(current_user)
+    filters: list[dict[str, Any]] = [owner_query]
+
+    if accessible_ids is not None:
+        filters.append(
+            {
+                "_id": {
+                    "$in": [
+                        normalize_wedding_query_id(value) for value in accessible_ids
+                    ]
+                }
+            }
+        )
+
+    if not include_cancelled:
+        filters.append({"status": {"$ne": "cancelled"}})
+
+    return combine_mongo_filters(*filters), accessible_ids, owner_email
+
+
 def _normalize_cached_planner_wedding(payload: dict[str, Any]) -> dict[str, Any]:
     if "id" in payload:
         return payload
@@ -155,20 +208,7 @@ async def get_planner_metrics(
         guests_collection = mongo.get_guest_collection()
         rsvps_collection = mongo.get_rsvps_collection()
 
-        # Build query based on user role
-        # ROOT_ADMIN can see all weddings, planners only see their assigned weddings
-        # Team members use accessible_wedding_ids for filtering
-        if current_user.is_root_admin:
-            query: dict[str, Any] = {"status": {"$ne": "cancelled"}}
-        else:
-            query = {
-                "assigned_planner_email": current_user.email,
-                "status": {"$ne": "cancelled"},
-            }
-            # Apply team member wedding scope filter
-            accessible_ids = get_accessible_wedding_ids(current_user)
-            if accessible_ids is not None:
-                query["_id"] = {"$in": [ObjectId(id) for id in accessible_ids]}
+        query, accessible_ids, owner_email = _build_owned_weddings_query(current_user)
 
         # Safety cap: typical planner/admin has <5k weddings
         MAX_WEDDINGS = 5000
@@ -180,7 +220,13 @@ async def get_planner_metrics(
             activity_query: dict[str, Any] = {}
         else:
             assigned_weddings = await weddings_collection.find(
-                {"assigned_planner_email": current_user.email}, {"_id": 1}
+                combine_mongo_filters(
+                    build_wedding_owner_query(planner_email=owner_email),
+                    {"_id": {"$in": [wedding["_id"] for wedding in weddings]}}
+                    if weddings
+                    else None,
+                ),
+                {"_id": 1},
             ).to_list(length=MAX_WEDDINGS)
 
             wedding_id_values: list[Any] = []
@@ -193,10 +239,10 @@ async def get_planner_metrics(
 
             activity_query = {
                 "$or": [
-                    {"planner_email": current_user.email},
+                    {"planner_email": owner_email},
                     {"actor_email": current_user.email},
                     {"user_email": current_user.email},
-                    {"assigned_planner_email": current_user.email},
+                    {"assigned_planner_email": owner_email},
                     {"wedding_id": {"$in": wedding_id_values}},
                 ]
             }
@@ -639,10 +685,11 @@ async def get_activity_log(
             query: dict[str, Any] = {}
         else:
             weddings_collection = mongo.get_weddings_collection()
+            _, _, owner_email = _build_owned_weddings_query(current_user)
             # Safety cap: planner's assigned weddings (typically <1k)
             MAX_PLANNER_WEDDINGS = 1000
             assigned_weddings = await weddings_collection.find(
-                {"assigned_planner_email": current_user.email}, {"_id": 1}
+                build_wedding_owner_query(planner_email=owner_email), {"_id": 1}
             ).to_list(length=MAX_PLANNER_WEDDINGS)
 
             wedding_id_values: list[Any] = []
@@ -655,10 +702,10 @@ async def get_activity_log(
 
             query = {
                 "$or": [
-                    {"planner_email": current_user.email},
+                    {"planner_email": owner_email},
                     {"actor_email": current_user.email},
                     {"user_email": current_user.email},
-                    {"assigned_planner_email": current_user.email},
+                    {"assigned_planner_email": owner_email},
                     {"wedding_id": {"$in": wedding_id_values}},
                 ]
             }
@@ -745,19 +792,10 @@ async def get_planner_weddings(
         weddings_collection = mongo.get_weddings_collection()
 
         # Build query based on user role
-        accessible_ids: Optional[List[str]] = None
-        if current_user.is_root_admin:
-            query: dict[str, Any] = {}
-        else:
-            query = {"assigned_planner_email": current_user.email}
-            # Apply team member wedding scope filter
-            accessible_ids = get_accessible_wedding_ids(current_user)
-            if accessible_ids is not None:
-                query["_id"] = {"$in": [ObjectId(id) for id in accessible_ids]}
-
-        # Optionally exclude cancelled weddings
-        if not include_cancelled:
-            query["status"] = {"$ne": "cancelled"}
+        query, accessible_ids, _owner_email = _build_owned_weddings_query(
+            current_user,
+            include_cancelled=include_cancelled,
+        )
 
         cache_key = _planner_weddings_scope_key(
             current_user, include_cancelled, accessible_ids

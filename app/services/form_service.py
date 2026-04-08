@@ -210,9 +210,7 @@ class FormService:
             # ROOT_ADMIN can see all forms, others see only their own
             query: Dict[str, Any] = {"is_active": True}
             if not is_root_admin:
-                query.update(
-                    self._build_creator_query(created_by, owner_alias_emails)
-                )
+                query.update(self._build_creator_query(created_by, owner_alias_emails))
             if wedding_id:
                 query["wedding_id"] = wedding_id
 
@@ -285,9 +283,7 @@ class FormService:
             query = {"_id": form_id, "is_active": True}
             if created_by is not None:
                 logger.info(f"Validating created_by email: {created_by}")
-                query.update(
-                    self._build_creator_query(created_by, owner_alias_emails)
-                )
+                query.update(self._build_creator_query(created_by, owner_alias_emails))
             logger.info(f"Database query: {query}")
             form = await self.forms_collection.find_one(query)
             logger.info(f"Form found: {form is not None}")
