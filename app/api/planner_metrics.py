@@ -18,7 +18,7 @@ from app.models.planner_metrics import (
     ActivityItemModel,
     PlannerWeddingModel,
 )
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Optional, List
 from math import ceil
 import hashlib
@@ -40,12 +40,21 @@ def _safe_isoformat(value: Any) -> str:
     return ""
 
 
-def _parse_date_safe(date_str: Optional[str]) -> Optional[datetime]:
-    """Safely parse a date string to datetime."""
-    if not date_str:
+def _parse_date_safe(value: Optional[Any]) -> Optional[datetime]:
+    """Safely parse a date/datetime value and normalize it to UTC."""
+    if not value:
         return None
     try:
-        return datetime.fromisoformat(date_str)
+        if isinstance(value, datetime):
+            parsed = value
+        elif isinstance(value, str):
+            parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        else:
+            return None
+
+        if parsed.tzinfo is None:
+            return parsed.replace(tzinfo=timezone.utc)
+        return parsed.astimezone(timezone.utc)
     except (ValueError, TypeError):
         return None
 
@@ -109,6 +118,23 @@ def _normalize_cached_planner_wedding(payload: dict[str, Any]) -> dict[str, Any]
     return payload
 
 
+def _enforce_weddings_directory_access(current_user: ExtendedAuthUser) -> None:
+    """Require explicit wedding-directory access for team members."""
+    if not current_user.is_team_member:
+        return
+
+    permissions = current_user.team_permissions or {}
+    if permissions.get("manage_wedding_settings") or permissions.get(
+        "manage_couple_portal"
+    ):
+        return
+
+    raise HTTPException(
+        status_code=403,
+        detail="Access denied. You don't have permission to access weddings.",
+    )
+
+
 @router.get(
     "/planner/metrics", tags=["Wedding Planner"], response_model=PlannerMetricsResponse
 )
@@ -147,7 +173,7 @@ async def get_planner_metrics(
         # Safety cap: typical planner/admin has <5k weddings
         MAX_WEDDINGS = 5000
         weddings = await weddings_collection.find(query).to_list(length=MAX_WEDDINGS)
-        current_date = datetime.now()
+        current_date = datetime.now(timezone.utc)
 
         # Activity query used for both recent activity and /planner/activity-log
         if current_user.is_root_admin:
@@ -713,7 +739,7 @@ async def get_planner_weddings(
     Team members with "assigned" access see only their assigned weddings.
     """
 
-    enforce_team_permission(current_user, "view_analytics")
+    _enforce_weddings_directory_access(current_user)
 
     try:
         weddings_collection = mongo.get_weddings_collection()

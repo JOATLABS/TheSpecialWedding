@@ -122,9 +122,9 @@ export function CoupleSSEProvider({ children }: { children: React.ReactNode }) {
 
             void revalidateSession()
               .then(async (result) => {
-                if (result === 'unauthenticated') {
+                if (result.status === 'unauthenticated' || result.status === 'blocked') {
                   attempts.current = MAX_RECONNECT_ATTEMPTS;
-                  await expireSession();
+                  await expireSession(result.message ?? undefined);
                   return;
                 }
 

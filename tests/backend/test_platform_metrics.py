@@ -262,14 +262,17 @@ def test_metrics_snapshot_endpoints_handle_empty(snapshot_test_client, monkeypat
     headers = {"Authorization": "Bearer metrics-test-token"}
 
     # Mock live health generation to succeed
-    async def mock_get_health(current_user):
+    async def mock_get_health(days=1):
         return {
             "health": {"status": "healthy"},
             "metrics": {},
             "timestamp": "2024-01-01T00:00:00Z"
         }
 
-    monkeypatch.setattr("app.api.admin_platform_metrics.get_platform_health", mock_get_health)
+    monkeypatch.setattr(
+        "app.api.admin_platform_metrics.build_platform_health_payload",
+        mock_get_health,
+    )
 
     response = client.get("/metrics/snapshot", headers=headers)
     assert response.status_code == 404

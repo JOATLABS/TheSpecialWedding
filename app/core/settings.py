@@ -3,9 +3,9 @@ Centralized configuration management using Pydantic Settings
 """
 
 # Use pydantic-settings for proper Pydantic v2 compatibility
-from pydantic_settings import BaseSettings
+from pydantic_settings import BaseSettings, NoDecode
 from pydantic import Field, field_validator
-from typing import List, Optional, Dict, Any
+from typing import Annotated, List, Optional, Dict, Any
 from functools import lru_cache
 from enum import Enum
 import json
@@ -19,6 +19,32 @@ class Environment(str, Enum):
     STAGING = "staging"
     PRODUCTION = "production"
     TESTING = "testing"
+
+
+def _parse_env_list(value: Any) -> list[str]:
+    """Accept JSON arrays or comma-separated strings for list-like env vars."""
+    if value in (None, ""):
+        return []
+
+    if isinstance(value, str):
+        stripped = value.strip()
+        if not stripped:
+            return []
+
+        if stripped.startswith("["):
+            try:
+                parsed = json.loads(stripped)
+            except json.JSONDecodeError:
+                parsed = None
+            if isinstance(parsed, list):
+                return [str(item).strip() for item in parsed if str(item).strip()]
+
+        return [item.strip() for item in stripped.split(",") if item.strip()]
+
+    if isinstance(value, (list, tuple)):
+        return [str(item).strip() for item in value if str(item).strip()]
+
+    return value
 
 
 class Settings(BaseSettings):
@@ -55,7 +81,7 @@ class Settings(BaseSettings):
         default=180, alias="GUEST_ACCESS_SESSION_MINUTES"
     )
     # CORS
-    cors_origins: List[str] = Field(
+    cors_origins: Annotated[List[str], NoDecode] = Field(
         default=[], alias="CORS_ORIGINS"
     )  # Required - validated below
 
@@ -79,11 +105,11 @@ class Settings(BaseSettings):
         return v
 
     cors_credentials: bool = Field(default=True, alias="CORS_CREDENTIALS")
-    cors_methods: List[str] = Field(
+    cors_methods: Annotated[List[str], NoDecode] = Field(
         default=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
         alias="CORS_METHODS",
     )
-    cors_headers: List[str] = Field(
+    cors_headers: Annotated[List[str], NoDecode] = Field(
         default=[
             "Authorization",
             "Content-Type",
@@ -94,7 +120,9 @@ class Settings(BaseSettings):
         ],
         alias="CORS_HEADERS",
     )
-    allowed_hosts: List[str] = Field(default=[], alias="ALLOWED_HOSTS")
+    allowed_hosts: Annotated[List[str], NoDecode] = Field(
+        default=[], alias="ALLOWED_HOSTS"
+    )
     # Database
     mongo_uri: str = Field(default="mongodb://localhost:27017", alias="MONGO_URI")
     mongo_db: str = Field(default="wedding", alias="MONGO_DB")
@@ -232,45 +260,19 @@ class Settings(BaseSettings):
         "extra": "ignore",
     }
 
-    @field_validator("cors_origins", mode="before")
+    @field_validator(
+        "cors_origins", "cors_methods", "cors_headers", "allowed_hosts", mode="before"
+    )
     @classmethod
-    def parse_cors_origins(cls, v):
-        """Parse CORS origins from comma-separated string"""
-        if isinstance(v, str):
-            stripped = v.strip()
-            if stripped.startswith("["):
-                try:
-                    parsed = json.loads(stripped)
-                    if isinstance(parsed, list):
-                        return [
-                            str(origin).strip()
-                            for origin in parsed
-                            if str(origin).strip()
-                        ]
-                except json.JSONDecodeError:
-                    pass
-            return [origin.strip() for origin in v.split(",") if origin.strip()]
-        return v
+    def parse_string_lists(cls, v):
+        """Parse list-like env vars from JSON arrays or comma-separated strings."""
+        return _parse_env_list(v)
 
     @field_validator("allowed_hosts", mode="before")
     @classmethod
     def parse_allowed_hosts(cls, v):
         """Parse explicit host allowlist from JSON or comma-separated values."""
-        if v in (None, ""):
-            return []
-        if isinstance(v, str):
-            stripped = v.strip()
-            if stripped.startswith("["):
-                try:
-                    parsed = json.loads(stripped)
-                    if isinstance(parsed, list):
-                        return [
-                            str(host).strip() for host in parsed if str(host).strip()
-                        ]
-                except json.JSONDecodeError:
-                    pass
-            return [host.strip() for host in stripped.split(",") if host.strip()]
-        return v
+        return _parse_env_list(v)
 
     @field_validator("environment", mode="before")
     @classmethod

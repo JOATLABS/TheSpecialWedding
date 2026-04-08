@@ -51,13 +51,22 @@ async def setup_admin_user(auto_create: bool = False):
 
         if existing_user:
             print(f"[OK] Root admin user already exists: {admin_email}")
-            # Ensure role is ROOT_ADMIN (upgrade if needed)
+            # Always sync password hash and ensure role is ROOT_ADMIN
+            password_hash = get_password_hash(admin_password)
+            update_fields = {
+                "password_hash": password_hash,
+                "is_active": True,
+                "email_verified": True,
+                "updated_at": datetime.now(timezone.utc),
+            }
             if existing_user.get("role") != "ROOT_ADMIN":
-                await users_collection.update_one(
-                    {"email": admin_email},
-                    {"$set": {"role": "ROOT_ADMIN", "updated_at": datetime.now(timezone.utc)}}
-                )
+                update_fields["role"] = "ROOT_ADMIN"
                 print("[UPDATED] Upgraded user role to ROOT_ADMIN")
+            await users_collection.update_one(
+                {"email": admin_email},
+                {"$set": update_fields}
+            )
+            print("[SYNCED] Password hash and active status synced from environment")
             return True
 
         # Check if a ROOT_ADMIN exists with a different email (email migration)

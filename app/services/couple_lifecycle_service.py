@@ -68,13 +68,14 @@ class CoupleLifecycleService:
     async def _resolve_owner_identity(
         self, couple: dict, wedding: Optional[dict] = None
     ) -> dict:
+        if wedding is None and couple.get("wedding_id"):
+            wedding = await self.weddings_collection.find_one(
+                {"_id": normalize_query_id(couple["wedding_id"])},
+                {"assigned_planner_id": 1, "assigned_planner_email": 1},
+            )
+
         owner_id, owner_email = extract_wedding_owner_identity(wedding)
-        fallback_id = couple.get("planner_id")
-        fallback_email = couple.get("planner_email")
-        return await resolve_planner_identity(
-            owner_id or fallback_id,
-            owner_email or fallback_email,
-        )
+        return await resolve_planner_identity(owner_id, owner_email)
 
     async def _owner_is_blocked(
         self, couple: dict, wedding: Optional[dict] = None

@@ -3,10 +3,13 @@ import os
 import sys
 from unittest.mock import AsyncMock
 
+import pytest
+
 PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
 
+import app.services.couple_lifecycle_service as couple_lifecycle_module  # noqa: E402
 from app.models.team_member import TeamMemberStatus  # noqa: E402
 from app.services.couple_lifecycle_service import (  # noqa: E402
     COUPLE_PORTAL_STATE_ACTIVE,
@@ -90,3 +93,84 @@ def test_resolve_effective_state_marks_active_couple_owner_cancelled_when_owner_
 
     assert result["state"] == COUPLE_PORTAL_STATE_OWNER_CANCELLED
     assert result["blocked"] is True
+
+
+@pytest.mark.asyncio
+async def test_owner_identity_resolution_uses_canonical_wedding_owner(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    service = CoupleLifecycleService()
+
+    class FakeWeddingsCollection:
+        async def find_one(self, query, projection=None):
+            assert query == {"_id": "wedding-1"}
+            return {
+                "assigned_planner_id": "owner-1",
+                "assigned_planner_email": "owner@example.com",
+            }
+
+    captured: dict[str, str | None] = {}
+
+    async def fake_resolve(planner_id, planner_email):
+        captured["planner_id"] = planner_id
+        captured["planner_email"] = planner_email
+        return {"planner_id": planner_id, "planner_email": planner_email}
+
+    service.weddings_collection = FakeWeddingsCollection()
+    monkeypatch.setattr(couple_lifecycle_module, "resolve_planner_identity", fake_resolve)
+
+    result = await service._resolve_owner_identity(
+        {
+            "wedding_id": "wedding-1",
+            "planner_id": "stale-planner",
+            "planner_email": "stale@example.com",
+        }
+    )
+
+    assert captured == {
+        "planner_id": "owner-1",
+        "planner_email": "owner@example.com",
+    }
+    assert result == {
+        "planner_id": "owner-1",
+        "planner_email": "owner@example.com",
+    }
+
+
+@pytest.mark.asyncio
+async def test_owner_identity_resolution_does_not_fallback_to_couple_mirrors(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    service = CoupleLifecycleService()
+
+    class FakeWeddingsCollection:
+        async def find_one(self, query, projection=None):
+            assert query == {"_id": "wedding-2"}
+            return {}
+
+    captured: dict[str, str | None] = {}
+
+    async def fake_resolve(planner_id, planner_email):
+        captured["planner_id"] = planner_id
+        captured["planner_email"] = planner_email
+        return {"planner_id": planner_id, "planner_email": planner_email}
+
+    service.weddings_collection = FakeWeddingsCollection()
+    monkeypatch.setattr(couple_lifecycle_module, "resolve_planner_identity", fake_resolve)
+
+    result = await service._resolve_owner_identity(
+        {
+            "wedding_id": "wedding-2",
+            "planner_id": "stale-planner",
+            "planner_email": "stale@example.com",
+        }
+    )
+
+    assert captured == {
+        "planner_id": None,
+        "planner_email": None,
+    }
+    assert result == {
+        "planner_id": None,
+        "planner_email": None,
+    }

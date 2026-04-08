@@ -7,7 +7,7 @@ import { Heart, Loader2 } from 'lucide-react';
 import { GlassCard } from '@/components/ui/GlassCard';
 import { Button } from '@/components/ui/Button';
 import Link from 'next/link';
-import { clearLegacyCoupleStorage } from '@/couple/lib/auth';
+import { clearLegacyCoupleStorage, extractApiErrorMessage } from '@/couple/lib/auth';
 
 const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -26,6 +26,14 @@ const showcaseStats = [
   { value: 'Real-time', caption: 'Updates from your planner arrive instantly' },
   { value: 'Any device', caption: 'Access your portal from phone or desktop' },
 ];
+
+function getStatusHeading(message: string | null): string {
+  const normalized = message?.toLowerCase() ?? '';
+  if (normalized.includes('inactive') || normalized.includes('unavailable') || normalized.includes('paused')) {
+    return 'Portal access paused';
+  }
+  return 'Please sign in again';
+}
 
 function WelcomeShowcase() {
   return (
@@ -81,11 +89,12 @@ export default function CoupleLoginPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [statusMessage, setStatusMessage] = useState<string | null>(null);
 
   useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    const message = params.get('message');
+    const message = new URLSearchParams(window.location.search).get('message');
     if (message) {
+      setStatusMessage(message);
       toast.error(message);
     }
   }, []);
@@ -98,6 +107,7 @@ export default function CoupleLoginPage() {
 
     setLoading(true);
     setError(null);
+    setStatusMessage(null);
 
     try {
       const res = await fetch(`${getApiBaseUrl()}/couple/login`, {
@@ -107,10 +117,8 @@ export default function CoupleLoginPage() {
         credentials: 'include',
       });
 
-      const data = await res.json();
-
       if (!res.ok) {
-        setError(data.detail || 'Sign-in failed. Please check your email and password.');
+        setError(await extractApiErrorMessage(res, 'Sign-in failed. Please check your email and password.'));
         return;
       }
 
@@ -213,6 +221,18 @@ export default function CoupleLoginPage() {
                       <p role="alert" className="rounded-lg border border-wedding-rose/40 bg-wedding-rose/10 px-3 py-2 text-sm text-wedding-rose">
                         {error}
                       </p>
+                    )}
+
+                    {statusMessage && !error && (
+                      <div
+                        role="status"
+                        className="rounded-lg border border-amber-300/70 bg-amber-50 px-3 py-3 text-sm text-amber-800"
+                      >
+                        <p className="font-semibold">
+                          {getStatusHeading(statusMessage)}
+                        </p>
+                        <p className="mt-1">{statusMessage}</p>
+                      </div>
                     )}
 
                     <Button

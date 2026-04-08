@@ -1,23 +1,34 @@
 from fastapi import HTTPException
+import re
+from datetime import datetime, timezone
+from typing import Any, Dict, List, Optional, Union
+from uuid import uuid4
+
 from app.core.database import mongo
-from app.models.wedding import WeddingModel
+from app.models.wedding import WeddingCreateModel, WeddingModel
 from app.utils.event_time import normalize_optional_event_time
-from app.utils.serializers import serialize_mongo_doc
 from app.utils.id_utils import normalize_doc_id
 from app.utils.planner_ownership import (
     build_wedding_owner_query,
     combine_mongo_filters,
-    normalize_query_id,
     resolve_planner_identity,
 )
-from typing import List, Dict, Any, Union, Optional
-from datetime import datetime, timezone
-# import re
+from app.utils.serializers import serialize_mongo_doc
 
 
 class WeddingService:
     def __init__(self):
         self.collection = mongo.db["weddings"]
+
+    @staticmethod
+    def _generate_wedding_id() -> str:
+        return f"wedding_{uuid4().hex[:12]}"
+
+    @staticmethod
+    def _slugify_couple_names(couple_names: str) -> str:
+        slug = re.sub(r"[^a-z0-9\s]", "", couple_names.lower())
+        slug = re.sub(r"\s+", "-", slug).strip("-")
+        return slug[:50] or "wedding"
 
     def _normalize_event_times(self, wedding_data: Dict[str, Any]) -> Dict[str, Any]:
         events = wedding_data.get("events")
@@ -65,7 +76,9 @@ class WeddingService:
 
         return slug
 
-    async def create_wedding(self, wedding: Union[WeddingModel, Dict[str, Any]]):
+    async def create_wedding(
+        self, wedding: Union[WeddingCreateModel, WeddingModel, Dict[str, Any]]
+    ):
         """Create a new wedding"""
         try:
             if isinstance(wedding, dict):
@@ -89,9 +102,19 @@ class WeddingService:
                         "planner_email"
                     ]
 
-            # Normalize _id to string for storage consistency
-            if "_id" in wedding_dict and not isinstance(wedding_dict["_id"], str):
-                wedding_dict["_id"] = str(wedding_dict["_id"])
+            # Normalize _id to string for storage consistency while treating null
+            # payload aliases as missing so we can generate a real identifier.
+            wedding_id = wedding_dict.get("_id")
+            if wedding_id in (None, ""):
+                wedding_dict["_id"] = self._generate_wedding_id()
+            elif not isinstance(wedding_id, str):
+                wedding_dict["_id"] = str(wedding_id)
+            if not wedding_dict.get("slug"):
+                wedding_dict["slug"] = self._slugify_couple_names(
+                    str(wedding_dict.get("couple_names") or "")
+                )
+            if not wedding_dict.get("created_at"):
+                wedding_dict["created_at"] = datetime.utcnow()
             # Track billing period marker
             if "billed_period" not in wedding_dict:
                 current_month = datetime.now(timezone.utc).strftime("%Y-%m")

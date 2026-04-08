@@ -5,6 +5,10 @@ import Link from 'next/link';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { getApiBaseUrl } from '@/utils/env';
 import { useAdmin } from '@/contexts/AdminContext';
+import {
+ canSendReminders,
+ canSendRsvp,
+} from '@/admin/utils/teamAccess';
 import { formatDateTime } from '@/utils/dateFormat';
 import { MultiSelect } from '@/components/ui/MultiSelect';
 import { MessageEnrichment } from '@/components/ui/MessageEnrichment';
@@ -90,7 +94,7 @@ export default function CommunicationsRemindersView({
  initialTab = 'invites',
  forcedTab,
 }: CommunicationsRemindersViewProps) {
- const { token } = useAdmin();
+ const { token, userProfile } = useAdmin();
  const router = useRouter();
  const pathname = usePathname();
  const searchParams = useSearchParams();
@@ -131,6 +135,9 @@ export default function CommunicationsRemindersView({
  [selectedWedding, weddings]
  );
  const activeTab = forcedTab ?? legacyActiveTab;
+ const canAccessInvites = canSendRsvp(userProfile);
+ const canAccessReminderTabs = canSendReminders(userProfile);
+ const canAccessHistory = canAccessInvites || canAccessReminderTabs;
  const requestedWeddingId = searchParams.get('wedding_id') || '';
  const requestedRecipients = searchParams.get('recipients') || '';
  const requestedTemplate = searchParams.get('template') || '';
@@ -142,6 +149,12 @@ export default function CommunicationsRemindersView({
  }
  return BUILT_IN_WEDDING_EVENT_OPTIONS.map((option) => ({ value: option.value, label: option.label }));
  }, [selectedWeddingData]);
+
+ const hasTabAccess = useMemo(() => {
+ if (activeTab === 'invites') return canAccessInvites;
+ if (activeTab === 'history') return canAccessHistory;
+ return canAccessReminderTabs;
+ }, [activeTab, canAccessHistory, canAccessInvites, canAccessReminderTabs]);
 
  const formatLogTimestamp = (timestamp: string) =>
    formatDateTime(timestamp, {
@@ -972,6 +985,27 @@ export default function CommunicationsRemindersView({
  );
  lastAppliedTemplateRef.current = templateKey;
  }, [activeTab, guestByToken, requestedTemplate, selectedGuests, selectedWeddingData]);
+
+ if (!hasTabAccess) {
+ return (
+   <div className="space-y-6">
+     <PageHeader
+       title="Communications"
+       description="Send invitations, reminders, and one-off messages while monitoring delivery history"
+     />
+     <div className="rounded-2xl border border-amber-200 bg-amber-50 p-6 text-amber-950">
+       <h2 className="text-lg font-semibold">Access restricted</h2>
+       <p className="mt-2 text-sm text-amber-900">
+         {activeTab === 'invites'
+           ? 'This area requires invite-sending access.'
+           : activeTab === 'history'
+             ? 'This area requires invite or reminder history access.'
+             : 'This area requires reminder-sending access.'}
+       </p>
+     </div>
+   </div>
+ );
+ }
 
  return (
  <div className="space-y-6">

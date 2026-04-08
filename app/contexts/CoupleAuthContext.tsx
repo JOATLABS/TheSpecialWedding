@@ -3,7 +3,7 @@
 import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
 import { usePathname } from 'next/navigation';
 
-import { coupleFetch, logoutCoupleSession } from '@/couple/lib/auth';
+import { coupleFetch, extractApiErrorMessage, logoutCoupleSession } from '@/couple/lib/auth';
 
 interface CoupleProfile {
   id: string;
@@ -11,21 +11,32 @@ interface CoupleProfile {
   partner1_name?: string;
   partner2_name?: string;
   wedding_id?: string;
+  access_state?: string;
+  portal_access_state?: string;
+  portal_access_detail?: string | null;
   onboarding_completed?: boolean;
   onboarding_completed_at?: string | null;
   onboarding_steps_completed?: string[];
 }
 
 type CoupleAuthStatus = 'loading' | 'authenticated' | 'unauthenticated';
+type CoupleAuthErrorKind = 'blocked' | 'unauthenticated';
+
+interface CoupleSessionResult {
+  status: 'success' | 'blocked' | 'unauthenticated' | 'error';
+  message?: string | null;
+}
 
 interface CoupleAuthContextType {
   authStatus: CoupleAuthStatus;
   isAuthenticated: boolean;
   isLoading: boolean;
   coupleProfile: CoupleProfile | null;
+  authErrorMessage: string | null;
+  authErrorKind: CoupleAuthErrorKind | null;
   logout: (options?: { redirectTo?: string }) => Promise<void>;
   expireSession: (message?: string) => Promise<void>;
-  revalidateSession: () => Promise<'success' | 'unauthenticated' | 'error'>;
+  revalidateSession: () => Promise<CoupleSessionResult>;
 }
 
 const CoupleAuthContext = createContext<CoupleAuthContextType | null>(null);
@@ -44,7 +55,9 @@ export function CoupleAuthProvider({ children }: { children: React.ReactNode }) 
   const [authStatus, setAuthStatus] = useState<CoupleAuthStatus>('loading');
   const [isLoading, setIsLoading] = useState(true);
   const [coupleProfile, setCoupleProfile] = useState<CoupleProfile | null>(null);
-  const sessionCheckRef = useRef<Promise<'success' | 'unauthenticated' | 'error'> | null>(null);
+  const [authErrorMessage, setAuthErrorMessage] = useState<string | null>(null);
+  const [authErrorKind, setAuthErrorKind] = useState<CoupleAuthErrorKind | null>(null);
+  const sessionCheckRef = useRef<Promise<CoupleSessionResult> | null>(null);
   const lastSessionCheckAtRef = useRef(0);
 
   const fetchCoupleProfile = useCallback(async () => {
@@ -57,18 +70,32 @@ export function CoupleAuthProvider({ children }: { children: React.ReactNode }) 
         const profile = await response.json();
         setCoupleProfile(profile);
         setAuthStatus('authenticated');
-        return 'success' as const;
+        setAuthErrorMessage(null);
+        setAuthErrorKind(null);
+        return { status: 'success', message: null } as const;
       }
 
       if (response.status === 401 || response.status === 403 || response.status === 404) {
+        const detail = await extractApiErrorMessage(
+          response,
+          response.status === 403
+            ? 'This wedding portal is currently unavailable.'
+            : 'Session expired. Please sign in again.',
+        );
+
         setCoupleProfile(null);
         setAuthStatus('unauthenticated');
-        return 'unauthenticated' as const;
+        setAuthErrorMessage(detail);
+        setAuthErrorKind(response.status === 403 ? 'blocked' : 'unauthenticated');
+        return {
+          status: response.status === 403 ? 'blocked' : 'unauthenticated',
+          message: detail,
+        } as const;
       }
 
-      return 'error' as const;
+      return { status: 'error', message: null } as const;
     } catch {
-      return 'error' as const;
+      return { status: 'error', message: null } as const;
     }
   }, []);
 
@@ -80,6 +107,8 @@ export function CoupleAuthProvider({ children }: { children: React.ReactNode }) 
     } finally {
       setCoupleProfile(null);
       setAuthStatus('unauthenticated');
+      setAuthErrorMessage(null);
+      setAuthErrorKind(null);
       window.location.replace(redirectTo);
     }
   }, []);
@@ -90,7 +119,7 @@ export function CoupleAuthProvider({ children }: { children: React.ReactNode }) 
     });
   }, [logout]);
 
-  const revalidateSession = useCallback(async (): Promise<'success' | 'unauthenticated' | 'error'> => {
+  const revalidateSession = useCallback(async (): Promise<CoupleSessionResult> => {
     if (sessionCheckRef.current) {
       return sessionCheckRef.current;
     }
@@ -125,7 +154,7 @@ export function CoupleAuthProvider({ children }: { children: React.ReactNode }) 
         return;
       }
 
-      if (result === 'error') {
+      if (result.status === 'error') {
         setAuthStatus((current) => (current === 'authenticated' ? current : 'unauthenticated'));
       }
 
@@ -160,8 +189,8 @@ export function CoupleAuthProvider({ children }: { children: React.ReactNode }) 
         }
 
         const result = await revalidateSession();
-        if (result === 'unauthenticated') {
-          await expireSession();
+        if (result.status === 'unauthenticated' || result.status === 'blocked') {
+          await expireSession(result.message ?? undefined);
         }
       })();
     };
@@ -190,6 +219,8 @@ export function CoupleAuthProvider({ children }: { children: React.ReactNode }) 
         isAuthenticated: authStatus === 'authenticated',
         isLoading,
         coupleProfile,
+        authErrorMessage,
+        authErrorKind,
         logout,
         expireSession,
         revalidateSession,

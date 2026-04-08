@@ -23,7 +23,8 @@ import {
   Gift, HelpCircle, QrCode, BellRing, Plus,
   Pencil, Trash2, ExternalLink, Download, BellOff,
 } from 'lucide-react';
-import { coupleFetch, logoutCoupleSession } from '@/couple/lib/auth';
+import { coupleFetch, extractApiErrorMessage, logoutCoupleSession } from '@/couple/lib/auth';
+import { useCoupleAuth } from '@/contexts/CoupleAuthContext';
 import { getWeddingEventLabel } from '@/utils/weddingEvents';
 
 // ============================================================================
@@ -251,6 +252,7 @@ function paymentStatusColor(status: string): string {
 
 export default function CoupleDashboardPage() {
   const router = useRouter();
+  const { logout } = useCoupleAuth();
   const [loading, setLoading] = useState(true);
   const [data, setData] = useState<DashboardData | null>(null);
   const [activeSection, setActiveSection] = useState<CoupleSection>('dashboard');
@@ -299,9 +301,17 @@ export default function CoupleDashboardPage() {
     try {
       const res = await coupleFetch('/couple/portal/dashboard');
 
-      if (res.status === 401) {
-        await logoutCoupleSession();
-        router.push('/couple/login');
+      if (res.status === 401 || res.status === 403) {
+        const detail = await extractApiErrorMessage(
+          res,
+          res.status === 403
+            ? 'This wedding portal is currently unavailable. Please contact your planner.'
+            : 'Session expired. Please sign in again.',
+        );
+        const accessQuery = res.status === 403 ? '&access=blocked' : '';
+        await logout({
+          redirectTo: `/couple/login?message=${encodeURIComponent(detail)}${accessQuery}`,
+        });
         return;
       }
 
@@ -334,7 +344,7 @@ export default function CoupleDashboardPage() {
     } finally {
       setLoading(false);
     }
-  }, [fetchUnreadMessageCount, hasUserDismissedOnboarding, router]);
+  }, [fetchUnreadMessageCount, hasUserDismissedOnboarding, logout]);
 
   useEffect(() => {
     fetchDashboard();

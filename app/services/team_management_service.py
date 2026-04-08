@@ -26,6 +26,7 @@ from app.models.subscription import ACTIVE_SUBSCRIPTION_STATUSES
 from app.models.team_member import (
     TeamMemberStatus,
     ROLE_PRESETS,
+    resolve_team_permissions,
 )
 from app.utils.planner_ownership import build_wedding_owner_query
 from app.dependencies.auth_extended import (
@@ -137,14 +138,11 @@ class TeamManagementService:
         Merge role preset with any custom permission overrides.
         Custom permissions take precedence over the preset.
         """
-        base = dict(ROLE_PRESETS.get(role, ROLE_PRESETS["viewer"]))
         if custom_permissions:
-            for key, value in custom_permissions.items():
-                if key in base:
-                    base[key] = value
-                else:
-                    logger.warning("[TeamMgmt] Unknown permission key ignored: %s", key)
-        return base
+            unknown_keys = set(custom_permissions.keys()) - set(ROLE_PRESETS["admin"].keys())
+            for key in sorted(unknown_keys):
+                logger.warning("[TeamMgmt] Unknown permission key ignored: %s", key)
+        return resolve_team_permissions(role, custom_permissions)
 
     async def _validate_wedding_ownership(
         self,
@@ -237,6 +235,10 @@ class TeamManagementService:
 
     def _format_team_member(self, doc: dict) -> dict:
         """Convert a raw MongoDB team_members doc to a safe response dict"""
+        resolved_permissions = self._resolve_permissions(
+            doc.get("role", "viewer"),
+            doc.get("custom_permissions", {}),
+        )
         return {
             "id": str(doc["_id"]),
             "owner_id": doc.get("owner_id", ""),
@@ -245,7 +247,7 @@ class TeamManagementService:
             "last_name": doc.get("last_name"),
             "status": doc.get("status", "pending"),
             "role": doc.get("role", "viewer"),
-            "permissions": doc.get("custom_permissions", {}),
+            "permissions": resolved_permissions,
             "wedding_access": doc.get("wedding_access", "all"),
             "assigned_wedding_ids": doc.get("assigned_wedding_ids", []),
             "invited_at": doc.get("invited_at"),
@@ -670,7 +672,10 @@ class TeamManagementService:
         return {
             "email": doc["email"],
             "role": doc["role"],
-            "permissions": doc.get("custom_permissions", {}),
+            "permissions": self._resolve_permissions(
+                doc.get("role", "viewer"),
+                doc.get("custom_permissions", {}),
+            ),
             "company_name": company_name,
             "planner_name": planner_name,
             "is_expired": bool(is_expired),
@@ -1578,7 +1583,10 @@ class TeamManagementService:
             "owner_id": doc["owner_id"],
             "owner_email": doc.get("owner_email", ""),
             "role": doc["role"],
-            "permissions": doc.get("custom_permissions", {}),
+            "permissions": self._resolve_permissions(
+                doc.get("role", "viewer"),
+                doc.get("custom_permissions", {}),
+            ),
             "wedding_access": doc.get("wedding_access", "all"),
             "assigned_wedding_ids": doc.get("assigned_wedding_ids", []),
         }

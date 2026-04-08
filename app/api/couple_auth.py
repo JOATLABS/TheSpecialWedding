@@ -27,7 +27,7 @@ from app.services.couple_lifecycle_service import (
     COUPLE_PORTAL_STATE_PENDING_SETUP,
     couple_lifecycle_service,
 )
-from app.utils.planner_ownership import normalize_wedding_query_id
+from app.utils.planner_ownership import normalize_wedding_query_id, resolve_wedding_owner_identity
 import secrets
 import logging
 
@@ -292,6 +292,8 @@ async def get_couple_profile(couple: dict = Depends(require_couple_auth)):
     couple_id = (
         str(couple["_id"]) if isinstance(couple["_id"], ObjectId) else couple["_id"]
     )
+    wedding = await _load_wedding_for_couple(couple)
+    owner_identity = await resolve_wedding_owner_identity(wedding)
 
     return {
         "id": couple_id,
@@ -300,7 +302,7 @@ async def get_couple_profile(couple: dict = Depends(require_couple_auth)):
         "partner2_name": couple.get("partner2_name"),
         "phone": couple.get("phone"),
         "wedding_id": couple.get("wedding_id"),
-        "planner_id": couple.get("planner_id"),
+        "planner_id": owner_identity.get("planner_id"),
         "is_active": couple.get("is_active", False),
         "access_state": couple.get("access_state")
         or couple_lifecycle_service.infer_stored_state(couple),

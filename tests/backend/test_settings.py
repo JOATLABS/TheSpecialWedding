@@ -86,6 +86,40 @@ def test_allowed_hosts_override_accepts_comma_separated_values():
     ]
 
 
+def test_env_cors_origins_accepts_comma_separated_values(monkeypatch):
+    monkeypatch.setenv(
+        "SECRET_KEY",
+        "test-secret-key-this-is-long-enough-for-validation-testing-purposes-2026",
+    )
+    monkeypatch.setenv("ENVIRONMENT", "testing")
+    monkeypatch.setenv("CORS_ORIGINS", "http://localhost:3000,http://localhost:8000")
+
+    settings = Settings(_env_file=None)
+
+    assert settings.cors_origins == [
+        "http://localhost:3000",
+        "http://localhost:8000",
+    ]
+
+
+def test_env_allowed_hosts_accepts_comma_separated_values(monkeypatch):
+    monkeypatch.setenv(
+        "SECRET_KEY",
+        "test-secret-key-this-is-long-enough-for-validation-testing-purposes-2026",
+    )
+    monkeypatch.setenv("ENVIRONMENT", "production")
+    monkeypatch.setenv("CORS_ORIGINS", "https://app.example.com")
+    monkeypatch.setenv("ALLOWED_HOSTS", "api.example.com,app.example.com,*.example.com")
+
+    settings = Settings(_env_file=None)
+
+    assert settings.trusted_hosts == [
+        "api.example.com",
+        "app.example.com",
+        "*.example.com",
+    ]
+
+
 def test_security_log_settings_default_to_repo_writable_paths():
     settings = build_settings()
 

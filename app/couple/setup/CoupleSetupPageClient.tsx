@@ -5,7 +5,7 @@ import { Heart, Lock, Loader2, CheckCircle, XCircle, ArrowRight, Eye, EyeOff } f
 import { toast } from 'sonner';
 
 import { GlassCard } from '@/components/ui/GlassCard';
-import { clearLegacyCoupleStorage } from '@/couple/lib/auth';
+import { clearLegacyCoupleStorage, extractApiErrorMessage } from '@/couple/lib/auth';
 import { getApiBaseUrl } from '@/utils/env';
 
 interface PasswordValidation {
@@ -25,6 +25,14 @@ const validatePassword = (password: string): PasswordValidation => ({
 const isPasswordValid = (validation: PasswordValidation): boolean =>
   validation.minLength && validation.hasUppercase && validation.hasLowercase && validation.hasNumber;
 
+function getSetupErrorHeading(message: string | null): string {
+  const normalized = message?.toLowerCase() ?? '';
+  if (normalized.includes('inactive') || normalized.includes('unavailable') || normalized.includes('revoked')) {
+    return 'Portal Unavailable';
+  }
+  return 'Invalid or Expired Link';
+}
+
 export default function CoupleSetupPageClient({ initialToken }: { initialToken: string | null }) {
   const token = initialToken;
 
@@ -40,6 +48,7 @@ export default function CoupleSetupPageClient({ initialToken }: { initialToken: 
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [verificationError, setVerificationError] = useState<string | null>(null);
 
   const validation = validatePassword(password);
 
@@ -52,13 +61,24 @@ export default function CoupleSetupPageClient({ initialToken }: { initialToken: 
     const verify = async () => {
       try {
         const res = await fetch(`${getApiBaseUrl()}/couple/verify-invite/${token}`);
-        const data = await res.json();
-        if (res.ok && data.valid) {
+        if (res.ok) {
+          const data = await res.json();
           setValid(true);
           setInviteData(data);
+          setVerificationError(null);
+          return;
         }
+
+        setVerificationError(
+          await extractApiErrorMessage(
+            res,
+            'This invitation link is no longer valid. Please ask your wedding planner to send a new invitation.',
+          ),
+        );
       } catch {
-        // Invalid token
+        setVerificationError(
+          'We could not verify this invitation right now. Please try again or ask your planner to send a new invitation.',
+        );
       } finally {
         setVerifying(false);
       }
@@ -89,10 +109,10 @@ export default function CoupleSetupPageClient({ initialToken }: { initialToken: 
         credentials: 'include',
       });
 
-      const data = await res.json();
-
       if (!res.ok) {
-        toast.error(data.detail || 'Setup failed');
+        const detail = await extractApiErrorMessage(res, 'Setup failed');
+        setVerificationError(detail);
+        toast.error(detail);
         return;
       }
 
@@ -118,6 +138,7 @@ export default function CoupleSetupPageClient({ initialToken }: { initialToken: 
   }
 
   if (!token || !valid) {
+    const errorHeading = getSetupErrorHeading(verificationError);
     return (
       <div className="min-h-screen flex items-center justify-center px-4">
         <div className="text-center max-w-md">
@@ -125,10 +146,10 @@ export default function CoupleSetupPageClient({ initialToken }: { initialToken: 
             <XCircle className="w-8 h-8 text-red-500" />
           </div>
           <h1 className="text-2xl font-heading font-semibold text-slate-900 dark:text-white mb-2">
-            Invalid or Expired Link
+            {errorHeading}
           </h1>
           <p className="text-slate-500 dark:text-slate-400 mb-6">
-            This invitation link is no longer valid. Please ask your wedding planner to send a new invitation.
+            {verificationError || 'This invitation link is no longer valid. Please ask your wedding planner to send a new invitation.'}
           </p>
           <a
             href="/couple/login"

@@ -17,7 +17,7 @@ function isPublicCouplePath(pathname: string): boolean {
 export default function CoupleRouteGuard({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
-  const { isAuthenticated, isLoading } = useCoupleAuth();
+  const { authErrorKind, authErrorMessage, isAuthenticated, isLoading } = useCoupleAuth();
 
   const isPublicPage = isPublicCouplePath(pathname);
 
@@ -27,9 +27,20 @@ export default function CoupleRouteGuard({ children }: { children: React.ReactNo
     }
 
     if (!isAuthenticated) {
-      router.replace('/couple/login');
+      const params = new URLSearchParams();
+      if (authErrorMessage) {
+        params.set('message', authErrorMessage);
+      }
+      if (authErrorKind === 'blocked') {
+        params.set('access', 'blocked');
+      }
+
+      const redirectTarget = params.toString()
+        ? `/couple/login?${params.toString()}`
+        : '/couple/login';
+      router.replace(redirectTarget);
     }
-  }, [isAuthenticated, isLoading, isPublicPage, router]);
+  }, [authErrorKind, authErrorMessage, isAuthenticated, isLoading, isPublicPage, router]);
 
   if (isPublicPage) {
     return <>{children}</>;

@@ -365,3 +365,11 @@ class WeddingModel(BaseModel):
                 ],
             }
         }
+
+
+class WeddingCreateModel(WeddingModel):
+    id: Optional[str] = Field(default=None, alias="_id")
+    slug: Optional[str] = Field(
+        default=None, description="URL-friendly slug for the wedding"
+    )
+    created_at: Optional[datetime] = Field(default=None)

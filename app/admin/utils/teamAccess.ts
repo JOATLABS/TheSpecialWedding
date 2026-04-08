@@ -44,6 +44,16 @@ export function canManageCouplePortal(userProfile?: UserProfile | null): boolean
   );
 }
 
+export function canAccessWeddings(userProfile?: UserProfile | null): boolean {
+  if (!userProfile) return false;
+  return Boolean(
+    userProfile.is_root_admin ||
+      userProfile.is_wedding_planner ||
+      userProfile.team_permissions?.manage_wedding_settings ||
+      userProfile.team_permissions?.manage_couple_portal
+  );
+}
+
 export function canMessageCouples(userProfile?: UserProfile | null): boolean {
   if (!userProfile) return false;
   return Boolean(
@@ -53,14 +63,26 @@ export function canMessageCouples(userProfile?: UserProfile | null): boolean {
   );
 }
 
-export function canAccessGuestCommunications(userProfile?: UserProfile | null): boolean {
+export function canSendRsvp(userProfile?: UserProfile | null): boolean {
   if (!userProfile) return false;
   return Boolean(
     userProfile.is_root_admin ||
       userProfile.is_wedding_planner ||
-      userProfile.team_permissions?.send_rsvp ||
+      userProfile.team_permissions?.send_rsvp
+  );
+}
+
+export function canSendReminders(userProfile?: UserProfile | null): boolean {
+  if (!userProfile) return false;
+  return Boolean(
+    userProfile.is_root_admin ||
+      userProfile.is_wedding_planner ||
       userProfile.team_permissions?.send_reminders
   );
+}
+
+export function canAccessGuestCommunications(userProfile?: UserProfile | null): boolean {
+  return canSendRsvp(userProfile) || canSendReminders(userProfile);
 }
 
 export function getAllowedTeamNavNames(userProfile?: UserProfile | null): Set<string> {
