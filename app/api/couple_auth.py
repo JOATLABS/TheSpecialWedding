@@ -81,11 +81,12 @@ class CoupleOnboardingUpdateRequest(BaseModel):
 
 
 def _serialize_onboarding_fields(couple: dict) -> dict:
+    completed_at = couple.get("onboarding_completed_at")
     return {
         "onboarding_completed": couple.get("onboarding_completed", False),
         "onboarding_completed_at": (
-            couple.get("onboarding_completed_at").isoformat()
-            if couple.get("onboarding_completed_at")
+            completed_at.isoformat()
+            if completed_at
             else None
         ),
         "onboarding_steps_completed": couple.get("onboarding_steps_completed", []),

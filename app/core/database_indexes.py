@@ -1860,6 +1860,120 @@ async def create_couple_portal_indexes():
         logger.error(f"Error creating couple portal indexes: {e}")
 
 
+async def create_calendar_indexes():
+    """
+    Create indexes for shared planner calendar collections.
+
+    Collections:
+    1. planner_tasks
+    2. calendar_connections
+    3. calendar_event_syncs
+    4. meeting_invites
+    """
+    try:
+        planner_tasks = mongo.get_planner_tasks_collection()
+        await planner_tasks.create_index(
+            [
+                ("owner_planner_id", ASCENDING),
+                ("schedule_item_type", ASCENDING),
+                ("start_date", ASCENDING),
+            ],
+            name="idx_planner_tasks_owner_type_start",
+            background=True,
+        )
+        await planner_tasks.create_index(
+            [("assigned_user_ids", ASCENDING), ("start_date", ASCENDING)],
+            name="idx_planner_tasks_assignee_start",
+            background=True,
+        )
+        await planner_tasks.create_index(
+            [
+                ("wedding_id", ASCENDING),
+                ("schedule_item_type", ASCENDING),
+                ("start_date", ASCENDING),
+            ],
+            name="idx_planner_tasks_wedding_type_start",
+            background=True,
+        )
+        await planner_tasks.create_index(
+            [
+                ("owner_planner_email", ASCENDING),
+                ("category", ASCENDING),
+                ("start_date", ASCENDING),
+            ],
+            name="idx_planner_tasks_owner_email_category_start",
+            background=True,
+        )
+
+        calendar_connections = mongo.get_calendar_connections_collection()
+        await calendar_connections.create_index(
+            [("owner_planner_id", ASCENDING), ("user_id", ASCENDING)],
+            name="idx_calendar_connections_owner_user",
+            background=True,
+        )
+        await calendar_connections.create_index(
+            [("user_id", ASCENDING), ("connection_status", ASCENDING)],
+            name="idx_calendar_connections_user_status",
+            background=True,
+        )
+        await calendar_connections.create_index(
+            [("owner_planner_id", ASCENDING), ("is_shared_in_team_view", ASCENDING)],
+            name="idx_calendar_connections_owner_shared",
+            background=True,
+        )
+        await calendar_connections.create_index(
+            [("provider", ASCENDING), ("provider_account_email", ASCENDING)],
+            name="idx_calendar_connections_provider_account",
+            background=True,
+        )
+        await calendar_connections.create_index(
+            [("user_id", ASCENDING), ("provider_account_email", ASCENDING), ("calendar_id", ASCENDING)],
+            name="idx_calendar_connections_user_account_calendar",
+            unique=True,
+            background=True,
+        )
+
+        calendar_event_syncs = mongo.get_calendar_event_syncs_collection()
+        await calendar_event_syncs.create_index(
+            [("task_id", ASCENDING), ("calendar_connection_id", ASCENDING)],
+            name="idx_calendar_syncs_task_connection",
+            unique=True,
+            sparse=True,
+            background=True,
+        )
+        await calendar_event_syncs.create_index(
+            [("target_user_id", ASCENDING), ("sync_status", ASCENDING), ("updated_at", DESCENDING)],
+            name="idx_calendar_syncs_target_status_updated",
+            background=True,
+        )
+        await calendar_event_syncs.create_index(
+            [("owner_planner_id", ASCENDING), ("task_id", ASCENDING)],
+            name="idx_calendar_syncs_owner_task",
+            background=True,
+        )
+
+        meeting_invites = mongo.get_meeting_invites_collection()
+        await meeting_invites.create_index(
+            [("task_id", ASCENDING), ("recipient_email", ASCENDING)],
+            name="idx_meeting_invites_task_recipient",
+            background=True,
+        )
+        await meeting_invites.create_index(
+            [("wedding_id", ASCENDING), ("delivery_status", ASCENDING)],
+            name="idx_meeting_invites_wedding_delivery_status",
+            background=True,
+        )
+        await meeting_invites.create_index(
+            [("wedding_id", ASCENDING), ("response_status", ASCENDING)],
+            name="idx_meeting_invites_wedding_response_status",
+            background=True,
+        )
+
+        logger.info("Shared planner calendar indexes created/verified")
+    except Exception as e:
+        logger.error(f"Error creating shared planner calendar indexes: {e}")
+
+
 async def create_guest_media_indexes():
     """
     Create indexes for guest-uploaded memories and export jobs.
@@ -1985,6 +2099,7 @@ async def create_all_indexes():
         await create_campaign_platform_indexes()  # Campaign platform (21 indexes)
         await create_billing_indexes()  # Billing collections (7 indexes)
         await create_couple_portal_indexes()  # Couple portal (6 indexes)
+        await create_calendar_indexes()  # Shared planner calendar
         await create_guest_media_indexes()  # Couple guest memories
         logger.info("All database indexes created/verified")
     except Exception as e:

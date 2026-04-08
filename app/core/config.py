@@ -42,11 +42,28 @@ class Settings:
     GOOGLE_CLIENT_ID: Optional[str] = os.getenv("GOOGLE_CLIENT_ID")
     GOOGLE_CLIENT_SECRET: Optional[str] = os.getenv("GOOGLE_CLIENT_SECRET")
     GOOGLE_REDIRECT_URI: Optional[str] = os.getenv("GOOGLE_REDIRECT_URI")
+    GOOGLE_OAUTH_STATE_SIGNING_KEY: Optional[str] = os.getenv(
+        "GOOGLE_OAUTH_STATE_SIGNING_KEY"
+    )
+    TOKEN_ENCRYPTION_KEY: Optional[str] = os.getenv("TOKEN_ENCRYPTION_KEY")
+    GOOGLE_CALENDAR_DEFAULT_TIMEZONE: str = os.getenv(
+        "GOOGLE_CALENDAR_DEFAULT_TIMEZONE", "UTC"
+    )
+    GOOGLE_APP_PUBLIC_HOME_URL: Optional[str] = os.getenv(
+        "GOOGLE_APP_PUBLIC_HOME_URL"
+    )
+    GOOGLE_APP_PRIVACY_URL: Optional[str] = os.getenv("GOOGLE_APP_PRIVACY_URL")
+    GOOGLE_APP_TERMS_URL: Optional[str] = os.getenv("GOOGLE_APP_TERMS_URL")
+    GOOGLE_APP_SUPPORT_URL: Optional[str] = os.getenv("GOOGLE_APP_SUPPORT_URL")
+    GOOGLE_APP_DATA_DELETION_URL: Optional[str] = os.getenv(
+        "GOOGLE_APP_DATA_DELETION_URL"
+    )
 
     # Scopes needed for calendar read/write access
     GOOGLE_CALENDAR_SCOPES: list = [
-        "https://www.googleapis.com/auth/calendar",
         "https://www.googleapis.com/auth/calendar.events",
+        "https://www.googleapis.com/auth/calendar.calendarlist.readonly",
+        "https://www.googleapis.com/auth/userinfo.email",
     ]
 
     # Web Push Notification Service (VAPID)

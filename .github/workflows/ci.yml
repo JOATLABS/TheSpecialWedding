@@ -173,12 +173,21 @@ jobs:
           python-version: ${{ env.PYTHON_VERSION }}
           cache: "pip"
 
+      - name: Verify tracked integration test suite exists
+        run: |
+          if [ ! -d tests/integration ]; then
+            echo "tests/integration/ is missing from the checked-out commit."
+            echo "This suite must stay tracked because CI executes it directly."
+            exit 1
+          fi
+
       - name: Install test dependencies
         run: |
-          pip install pytest requests PyJWT
+          pip install -r requirements-test.txt "pyjwt[crypto]>=2.8.0"
 
       - name: Run integration tests
         run: |
+          mkdir -p test-results
           pytest tests/integration/ -v --tb=short -x \
             --junitxml=test-results/integration.xml \
             2>&1 | tee test-results/integration.log

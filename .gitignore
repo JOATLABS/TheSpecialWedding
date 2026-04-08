@@ -45,6 +45,8 @@ wedding-backend.service
 .secrets.baseline
 test-results/
 tests/*
+!tests/integration/
+!tests/integration/*.py
 !tests/backend/
 !tests/unit/
 tests/backend/*

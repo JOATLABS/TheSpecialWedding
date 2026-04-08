@@ -56,6 +56,15 @@ ROLE_PRESETS: Dict[str, Dict[str, bool]] = {
         "manage_packages": True,
         "manage_couple_portal": True,
         "message_couples": True,
+        "view_shared_calendar": True,
+        "view_calendar_details": True,
+        "connect_personal_calendar": True,
+        "manage_calendar_connections": True,
+        "schedule_meetings": True,
+        "edit_meetings": True,
+        "cancel_meetings": True,
+        "send_meeting_invites": True,
+        "view_team_availability": True,
     },
     "editor": {
         "manage_guests": True,
@@ -72,6 +81,15 @@ ROLE_PRESETS: Dict[str, Dict[str, bool]] = {
         "manage_packages": False,
         "manage_couple_portal": True,
         "message_couples": False,
+        "view_shared_calendar": True,
+        "view_calendar_details": True,
+        "connect_personal_calendar": True,
+        "manage_calendar_connections": False,
+        "schedule_meetings": True,
+        "edit_meetings": True,
+        "cancel_meetings": True,
+        "send_meeting_invites": True,
+        "view_team_availability": True,
     },
     "viewer": {
         "manage_guests": False,
@@ -88,6 +106,15 @@ ROLE_PRESETS: Dict[str, Dict[str, bool]] = {
         "manage_packages": False,
         "manage_couple_portal": False,
         "message_couples": False,
+        "view_shared_calendar": True,
+        "view_calendar_details": False,
+        "connect_personal_calendar": False,
+        "manage_calendar_connections": False,
+        "schedule_meetings": False,
+        "edit_meetings": False,
+        "cancel_meetings": False,
+        "send_meeting_invites": False,
+        "view_team_availability": False,
     },
 }
 
@@ -125,6 +152,15 @@ class TeamPermissions(BaseModel):
     manage_packages: bool = False
     manage_couple_portal: bool = False
     message_couples: bool = False
+    view_shared_calendar: bool = False
+    view_calendar_details: bool = False
+    connect_personal_calendar: bool = False
+    manage_calendar_connections: bool = False
+    schedule_meetings: bool = False
+    edit_meetings: bool = False
+    cancel_meetings: bool = False
+    send_meeting_invites: bool = False
+    view_team_availability: bool = False
 
     def to_dict(self) -> Dict[str, bool]:
         """Convert to plain dict for MongoDB storage"""
