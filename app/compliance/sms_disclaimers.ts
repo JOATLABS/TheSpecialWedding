@@ -28,7 +28,7 @@ Reply STOP to opt out. Reply HELP for help. Msg&data rates may apply.
     if (supportPhone) {
       return `Wedding reminders from ${weddingName}. Reply STOP to unsubscribe. For support, call ${supportPhone}. Msg&data rates may apply.`.trim();
     }
-    return `Wedding reminders from ${weddingName}. Reply STOP to unsubscribe. For support, visit thespecialwedding.com/support. Msg&data rates may apply.`.trim();
+    return `Wedding reminders from ${weddingName}. Reply STOP to unsubscribe. For support, visit thespecialwedding.io/support. Msg&data rates may apply.`.trim();
   },
 
   // Stop confirmation message

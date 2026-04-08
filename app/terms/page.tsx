@@ -1,7 +1,7 @@
 export default function TermsPage() {
   return (
     <main className="min-h-screen bg-white px-6 py-16 text-slate-900">
-      <div className="mx-auto max-w-4xl space-y-8">
+      <div className="mx-auto max-w-4xl space-y-10">
         <header className="space-y-3">
           <p className="text-sm uppercase tracking-[0.24em] text-slate-500">Terms</p>
           <h1 className="text-4xl font-semibold tracking-tight">Terms of Service</h1>
@@ -12,7 +12,7 @@ export default function TermsPage() {
           </p>
         </header>
 
-        <section className="space-y-4 text-sm leading-7 text-slate-700">
+        <section className="space-y-4 rounded-3xl border border-slate-200 bg-slate-50 p-8 text-sm leading-7 text-slate-700">
           <p>
             Planner accounts are responsible for the meetings, tasks, staff assignments, and
             external calendar connections created within their workspace. Team members may
@@ -34,6 +34,11 @@ export default function TermsPage() {
             and manage calendar events for the calendars you connect so the product can sync
             planner-side meetings and display shared availability according to your selected
             sharing settings.
+          </p>
+          <p>
+            The app does not treat external calendar data as the source of truth for planner
+            scheduling. If a projection fails or a connection is revoked, the internal meeting
+            record remains authoritative inside the workspace.
           </p>
           <p>
             Questions about these terms can be sent through the public support page at{' '}

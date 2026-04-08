@@ -1,13 +1,9 @@
 /**
- * Calendar API client for planner task management and Google Calendar integration.
+ * Calendar API client for planner scheduling, shared calendars, and Google connections.
  */
 import { getApiBaseUrl } from '@/utils/env';
 
 const BASE_URL = getApiBaseUrl();
-
-// ============================================================================
-// Types
-// ============================================================================
 
 export type TaskStatus = 'pending' | 'in_progress' | 'completed' | 'cancelled';
 export type TaskPriority = 'low' | 'medium' | 'high' | 'urgent';
@@ -30,6 +26,12 @@ export type TaskCategory =
   | 'guest_management'
   | 'meeting'
   | 'other';
+export type ScheduleItemType = 'task' | 'meeting' | 'blocked_time';
+export type VisibilityMode = 'details' | 'busy_only';
+export type CalendarSyncPolicy = 'owner_only' | 'assigned_only' | 'owner_and_assigned' | 'custom';
+export type InviteDeliveryMode = 'none' | 'email_ics' | 'portal_only' | 'google_attendee';
+export type ConnectionStatus = 'active' | 'expired' | 'revoked' | 'error';
+export type SyncStatusValue = 'pending' | 'synced' | 'failed' | 'orphaned' | 'not_configured';
 
 export interface PlannerTask {
   id: string;
@@ -52,6 +54,21 @@ export interface PlannerTask {
   recurrence_rule?: string | null;
   color?: string | null;
   notes?: string | null;
+  owner_planner_id?: string | null;
+  owner_planner_email?: string | null;
+  created_by_user_id?: string | null;
+  created_by_email?: string | null;
+  assigned_user_ids: string[];
+  assigned_user_emails: string[];
+  schedule_item_type?: string | null;
+  visibility_mode?: VisibilityMode | null;
+  calendar_sync_policy?: CalendarSyncPolicy | null;
+  timezone?: string | null;
+  couple_attendee_emails: string[];
+  conference_provider?: string | null;
+  conference_url?: string | null;
+  invite_delivery_mode?: InviteDeliveryMode | null;
+  meeting_status?: string | null;
   created_at: string;
   updated_at: string;
   completed_at?: string | null;
@@ -64,40 +81,80 @@ export interface TaskListResponse {
   page_size: number;
 }
 
-export interface CreateTaskInput {
-  title: string;
-  description?: string;
-  wedding_id?: string;
-  category?: TaskCategory;
-  priority?: TaskPriority;
-  start_date: string; // ISO datetime string
-  end_date?: string;
-  all_day?: boolean;
-  due_date?: string;
-  reminder_minutes?: number;
-  is_recurring?: boolean;
-  recurrence_rule?: string;
-  color?: string;
-  notes?: string;
-  sync_to_google?: boolean;
+export interface CalendarConnection {
+  id: string;
+  owner_planner_id?: string | null;
+  owner_planner_email?: string | null;
+  user_id?: string | null;
+  user_email?: string | null;
+  provider: string;
+  provider_account_email?: string | null;
+  provider_account_name?: string | null;
+  calendar_id?: string | null;
+  calendar_name?: string | null;
+  access_role?: string | null;
+  is_writable: boolean;
+  is_primary: boolean;
+  is_default_write_target: boolean;
+  is_shared_in_team_view: boolean;
+  details_visibility: VisibilityMode;
+  sync_enabled: boolean;
+  connection_status: ConnectionStatus | string;
+  token_expiry?: string | null;
+  last_sync_at?: string | null;
+  last_healthcheck_at?: string | null;
+  last_error?: string | null;
+  created_at?: string | null;
+  updated_at?: string | null;
 }
 
-export interface UpdateTaskInput {
-  title?: string;
-  description?: string;
-  wedding_id?: string;
-  category?: string;
-  priority?: string;
-  status?: TaskStatus;
-  start_date?: string;
-  end_date?: string;
-  all_day?: boolean;
-  due_date?: string;
-  reminder_minutes?: number;
-  is_recurring?: boolean;
-  recurrence_rule?: string;
-  color?: string;
-  notes?: string;
+export interface CalendarSyncStatusItem {
+  id: string;
+  task_id: string;
+  target_user_id?: string | null;
+  target_user_email?: string | null;
+  calendar_connection_id?: string | null;
+  provider?: string | null;
+  calendar_id?: string | null;
+  external_event_id?: string | null;
+  sync_status: SyncStatusValue | string;
+  last_sync_at?: string | null;
+  last_error?: string | null;
+  updated_at?: string | null;
+}
+
+export interface SharedCalendarEvent {
+  id: string;
+  source_type: 'internal_task' | 'internal_meeting' | 'external_google' | string;
+  title?: string | null;
+  start_date?: string | null;
+  end_date?: string | null;
+  all_day: boolean;
+  wedding_id?: string | null;
+  owner_planner_email?: string | null;
+  assigned_user_ids: string[];
+  assigned_user_emails: string[];
+  visibility_mode: VisibilityMode | string;
+  details: Record<string, unknown>;
+}
+
+export interface AvailabilityWindow {
+  start: string;
+  end: string;
+}
+
+export interface AvailabilityResponse {
+  staff_ids: string[];
+  start: string;
+  end: string;
+  busy_events: SharedCalendarEvent[];
+  available_windows: AvailabilityWindow[];
+}
+
+export interface MeetingUpsertResponse {
+  meeting: Record<string, unknown>;
+  sync_status: CalendarSyncStatusItem[];
+  invite_status: Array<Record<string, unknown>>;
 }
 
 export interface GoogleCalendarStatus {
@@ -123,306 +180,387 @@ export interface TaskFilters {
   page_size?: number;
 }
 
-// ============================================================================
-// API Functions
-// ============================================================================
+export interface SharedCalendarFilters {
+  start?: string;
+  end?: string;
+  wedding_ids?: string[];
+  staff_ids?: string[];
+  source_types?: string[];
+}
 
-/**
- * Get Google Calendar connection status for the current user.
- */
+export interface ScheduleItemPayload {
+  title: string;
+  description?: string;
+  wedding_id?: string;
+  category?: TaskCategory;
+  priority?: TaskPriority;
+  status?: TaskStatus;
+  start_date: string;
+  end_date?: string;
+  all_day?: boolean;
+  due_date?: string;
+  reminder_minutes?: number;
+  is_recurring?: boolean;
+  recurrence_rule?: string;
+  color?: string;
+  notes?: string;
+  sync_to_google?: boolean;
+  assigned_user_ids?: string[];
+  assigned_user_emails?: string[];
+  schedule_item_type?: ScheduleItemType;
+  visibility_mode?: VisibilityMode;
+  calendar_sync_policy?: CalendarSyncPolicy;
+  timezone?: string;
+  couple_attendee_emails?: string[];
+  conference_provider?: string;
+  conference_url?: string;
+  invite_delivery_mode?: InviteDeliveryMode;
+  meeting_status?: string;
+  sync_target_connection_ids?: string[];
+}
+
+export interface TeamMemberSummary {
+  id: string;
+  user_id?: string | null;
+  email: string;
+  first_name?: string | null;
+  last_name?: string | null;
+  status: string;
+  role: string;
+  permissions: Record<string, boolean>;
+  wedding_access?: 'all' | 'assigned';
+  assigned_wedding_ids?: string[];
+}
+
+export interface WeddingSummary {
+  id: string;
+  couple_names: string;
+}
+
+function buildQuery(params: Record<string, string | string[] | undefined>) {
+  const search = new URLSearchParams();
+  Object.entries(params).forEach(([key, value]) => {
+    if (value === undefined) return;
+    if (Array.isArray(value)) {
+      value.filter(Boolean).forEach((entry) => search.append(key, entry));
+      return;
+    }
+    if (value !== '') {
+      search.set(key, value);
+    }
+  });
+  const query = search.toString();
+  return query ? `?${query}` : '';
+}
+
+async function authFetch<T>(
+  token: string,
+  path: string,
+  init?: RequestInit
+): Promise<T> {
+  const response = await fetch(`${BASE_URL}${path}`, {
+    ...init,
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/json',
+      ...(init?.headers || {}),
+    },
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({}));
+    throw new Error(error.detail || error.message || 'Request failed');
+  }
+
+  if (response.status === 204) {
+    return undefined as T;
+  }
+
+  return response.json() as Promise<T>;
+}
+
 export async function getGoogleCalendarStatus(token: string): Promise<GoogleCalendarStatus> {
-  const response = await fetch(`${BASE_URL}/admin/planner/calendar/google/status`, {
-    headers: {
-      Authorization: `Bearer ${token}`,
-      'Content-Type': 'application/json',
-    },
-  });
-
-  if (!response.ok) {
-    throw new Error('Failed to get Google Calendar status');
-  }
-
-  return response.json();
+  return authFetch<GoogleCalendarStatus>(token, '/admin/planner/calendar/google/status');
 }
 
-/**
- * Get the Google OAuth authorization URL to connect calendar.
- */
 export async function getGoogleAuthUrl(token: string): Promise<GoogleAuthUrlResponse> {
-  const response = await fetch(`${BASE_URL}/admin/planner/calendar/google/connect`, {
-    headers: {
-      Authorization: `Bearer ${token}`,
-      'Content-Type': 'application/json',
-    },
-  });
-
-  if (!response.ok) {
-    throw new Error('Failed to get Google auth URL');
-  }
-
-  return response.json();
+  return authFetch<GoogleAuthUrlResponse>(token, '/admin/planner/calendar/google/connect');
 }
 
-/**
- * Disconnect Google Calendar for the current user.
- */
 export async function disconnectGoogleCalendar(token: string): Promise<void> {
-  const response = await fetch(`${BASE_URL}/admin/planner/calendar/google/disconnect`, {
+  await authFetch<void>(token, '/admin/planner/calendar/google/disconnect', {
     method: 'DELETE',
-    headers: {
-      Authorization: `Bearer ${token}`,
-      'Content-Type': 'application/json',
-    },
   });
-
-  if (!response.ok) {
-    throw new Error('Failed to disconnect Google Calendar');
-  }
 }
 
-/**
- * Fetch events from connected Google Calendar.
- */
 export async function fetchGoogleEvents(
   token: string,
   daysAhead: number = 30
 ): Promise<unknown[]> {
-  const response = await fetch(
-    `${BASE_URL}/admin/planner/calendar/google/events?days_ahead=${daysAhead}`,
-    {
-      headers: {
-        Authorization: `Bearer ${token}`,
-        'Content-Type': 'application/json',
-      },
-    }
+  return authFetch<unknown[]>(
+    token,
+    `/admin/planner/calendar/google/events?days_ahead=${daysAhead}`
   );
-
-  if (!response.ok) {
-    throw new Error('Failed to fetch Google events');
-  }
-
-  return response.json();
 }
 
-/**
- * Create a new task/event.
- */
-export async function createTask(token: string, task: CreateTaskInput): Promise<PlannerTask> {
-  const response = await fetch(`${BASE_URL}/admin/planner/calendar/tasks`, {
+export async function createTask(token: string, task: ScheduleItemPayload): Promise<PlannerTask> {
+  return authFetch<PlannerTask>(token, '/admin/planner/calendar/tasks', {
     method: 'POST',
-    headers: {
-      Authorization: `Bearer ${token}`,
-      'Content-Type': 'application/json',
-    },
     body: JSON.stringify(task),
   });
-
-  if (!response.ok) {
-    const error = await response.json().catch(() => ({}));
-    throw new Error(error.detail || 'Failed to create task');
-  }
-
-  return response.json();
 }
 
-/**
- * List tasks with optional filters.
- */
 export async function listTasks(
   token: string,
   filters: TaskFilters = {}
 ): Promise<TaskListResponse> {
-  const params = new URLSearchParams();
-
-  if (filters.wedding_id) params.set('wedding_id', filters.wedding_id);
-  if (filters.status) params.set('status', filters.status);
-  if (filters.category) params.set('category', filters.category);
-  if (filters.start_date) params.set('start_date', filters.start_date);
-  if (filters.end_date) params.set('end_date', filters.end_date);
-  if (filters.page) params.set('page', String(filters.page));
-  if (filters.page_size) params.set('page_size', String(filters.page_size));
-
-  const queryString = params.toString();
-  const url = `${BASE_URL}/admin/planner/calendar/tasks${queryString ? `?${queryString}` : ''}`;
-
-  const response = await fetch(url, {
-    headers: {
-      Authorization: `Bearer ${token}`,
-      'Content-Type': 'application/json',
-    },
-  });
-
-  if (!response.ok) {
-    throw new Error('Failed to list tasks');
-  }
-
-  return response.json();
+  return authFetch<TaskListResponse>(
+    token,
+    `/admin/planner/calendar/tasks${buildQuery({
+      wedding_id: filters.wedding_id,
+      status: filters.status,
+      category: filters.category,
+      start_date: filters.start_date,
+      end_date: filters.end_date,
+      page: filters.page ? String(filters.page) : undefined,
+      page_size: filters.page_size ? String(filters.page_size) : undefined,
+    })}`
+  );
 }
 
-/**
- * Get a single task by ID.
- */
 export async function getTask(token: string, taskId: string): Promise<PlannerTask> {
-  const response = await fetch(`${BASE_URL}/admin/planner/calendar/tasks/${taskId}`, {
-    headers: {
-      Authorization: `Bearer ${token}`,
-      'Content-Type': 'application/json',
-    },
-  });
-
-  if (!response.ok) {
-    throw new Error('Failed to get task');
-  }
-
-  return response.json();
+  return authFetch<PlannerTask>(token, `/admin/planner/calendar/tasks/${taskId}`);
 }
 
-/**
- * Update a task.
- */
 export async function updateTask(
   token: string,
   taskId: string,
-  updates: UpdateTaskInput
+  updates: Partial<ScheduleItemPayload>
 ): Promise<PlannerTask> {
-  const response = await fetch(`${BASE_URL}/admin/planner/calendar/tasks/${taskId}`, {
+  return authFetch<PlannerTask>(token, `/admin/planner/calendar/tasks/${taskId}`, {
     method: 'PATCH',
-    headers: {
-      Authorization: `Bearer ${token}`,
-      'Content-Type': 'application/json',
-    },
     body: JSON.stringify(updates),
   });
-
-  if (!response.ok) {
-    const error = await response.json().catch(() => ({}));
-    throw new Error(error.detail || 'Failed to update task');
-  }
-
-  return response.json();
 }
 
-/**
- * Delete a task.
- */
 export async function deleteTask(token: string, taskId: string): Promise<void> {
-  const response = await fetch(`${BASE_URL}/admin/planner/calendar/tasks/${taskId}`, {
+  await authFetch<void>(token, `/admin/planner/calendar/tasks/${taskId}`, {
     method: 'DELETE',
-    headers: {
-      Authorization: `Bearer ${token}`,
-      'Content-Type': 'application/json',
-    },
   });
-
-  if (!response.ok) {
-    throw new Error('Failed to delete task');
-  }
 }
 
-/**
- * Manually sync a task to Google Calendar.
- */
 export async function syncTaskToGoogle(token: string, taskId: string): Promise<PlannerTask> {
-  const response = await fetch(`${BASE_URL}/admin/planner/calendar/tasks/${taskId}/sync`, {
+  return authFetch<PlannerTask>(token, `/admin/planner/calendar/tasks/${taskId}/sync`, {
     method: 'POST',
-    headers: {
-      Authorization: `Bearer ${token}`,
-      'Content-Type': 'application/json',
-    },
   });
-
-  if (!response.ok) {
-    const error = await response.json().catch(() => ({}));
-    throw new Error(error.detail || 'Failed to sync task to Google Calendar');
-  }
-
-  return response.json();
 }
 
-/**
- * Bulk update task statuses.
- */
 export async function bulkUpdateTaskStatus(
   token: string,
   taskIds: string[],
   status: TaskStatus
 ): Promise<{ updated_count: number; status: string }> {
-  const params = new URLSearchParams();
-  params.set('status', status);
-
-  const response = await fetch(
-    `${BASE_URL}/admin/planner/calendar/tasks/bulk/status?${params.toString()}`,
+  return authFetch<{ updated_count: number; status: string }>(
+    token,
+    `/admin/planner/calendar/tasks/bulk/status?status=${encodeURIComponent(status)}`,
     {
       method: 'PATCH',
-      headers: {
-        Authorization: `Bearer ${token}`,
-        'Content-Type': 'application/json',
-      },
       body: JSON.stringify(taskIds),
     }
   );
-
-  if (!response.ok) {
-    throw new Error('Failed to bulk update tasks');
-  }
-
-  return response.json();
 }
 
-/**
- * Get tasks for a specific month (for calendar view).
- */
 export async function getMonthTasks(
   token: string,
   year: number,
   month: number
 ): Promise<PlannerTask[]> {
-  const response = await fetch(`${BASE_URL}/admin/planner/calendar/month/${year}/${month}`, {
-    headers: {
-      Authorization: `Bearer ${token}`,
-      'Content-Type': 'application/json',
-    },
-  });
-
-  if (!response.ok) {
-    throw new Error('Failed to get month tasks');
-  }
-
-  return response.json();
+  return authFetch<PlannerTask[]>(token, `/admin/planner/calendar/month/${year}/${month}`);
 }
 
-/**
- * Get upcoming tasks for dashboard widget.
- */
 export async function getUpcomingTasks(
   token: string,
   days: number = 7,
   limit: number = 20
 ): Promise<PlannerTask[]> {
-  const response = await fetch(
-    `${BASE_URL}/admin/planner/calendar/upcoming?days=${days}&limit=${limit}`,
-    {
-      headers: {
-        Authorization: `Bearer ${token}`,
-        'Content-Type': 'application/json',
-      },
-    }
+  return authFetch<PlannerTask[]>(
+    token,
+    `/admin/planner/calendar/upcoming?days=${days}&limit=${limit}`
   );
-
-  if (!response.ok) {
-    throw new Error('Failed to get upcoming tasks');
-  }
-
-  return response.json();
 }
 
-// ============================================================================
-// Utility Functions
-// ============================================================================
+export async function listPlannerWeddings(token: string): Promise<WeddingSummary[]> {
+  const data = await authFetch<Array<Record<string, unknown>>>(token, '/admin/planner/weddings');
+  return data.map((row) => ({
+    id: String(row.id || row._id || ''),
+    couple_names: String(row.couple_names || 'Untitled Wedding'),
+  }));
+}
 
-/**
- * Category display labels.
- */
+export async function listTeamMembers(token: string): Promise<TeamMemberSummary[]> {
+  const data = await authFetch<{ members: TeamMemberSummary[] }>(token, '/admin/team/members');
+  return data.members || [];
+}
+
+export async function listCalendarConnections(token: string): Promise<CalendarConnection[]> {
+  return authFetch<CalendarConnection[]>(token, '/admin/planner/calendar/connections');
+}
+
+export async function beginGoogleCalendarConnect(token: string): Promise<GoogleAuthUrlResponse> {
+  return authFetch<GoogleAuthUrlResponse>(
+    token,
+    '/admin/planner/calendar/connections/google/connect',
+    { method: 'POST' }
+  );
+}
+
+export async function completeGoogleCalendarCallback(
+  token: string,
+  code: string,
+  state: string
+): Promise<Record<string, unknown>> {
+  return authFetch<Record<string, unknown>>(
+    token,
+    `/admin/planner/calendar/connections/google/callback?code=${encodeURIComponent(code)}&state=${encodeURIComponent(state)}`
+  );
+}
+
+export async function updateCalendarConnection(
+  token: string,
+  connectionId: string,
+  updates: Partial<Pick<CalendarConnection, 'is_shared_in_team_view' | 'details_visibility' | 'sync_enabled' | 'is_default_write_target'>>
+): Promise<CalendarConnection> {
+  return authFetch<CalendarConnection>(
+    token,
+    `/admin/planner/calendar/connections/${connectionId}`,
+    {
+      method: 'PATCH',
+      body: JSON.stringify(updates),
+    }
+  );
+}
+
+export async function disconnectCalendarConnection(
+  token: string,
+  connectionId: string
+): Promise<void> {
+  await authFetch<void>(token, `/admin/planner/calendar/connections/${connectionId}`, {
+    method: 'DELETE',
+  });
+}
+
+export async function healthcheckCalendarConnection(
+  token: string,
+  connectionId: string
+): Promise<CalendarConnection> {
+  return authFetch<CalendarConnection>(
+    token,
+    `/admin/planner/calendar/connections/${connectionId}/healthcheck`,
+    {
+      method: 'POST',
+    }
+  );
+}
+
+export async function getSharedCalendarView(
+  token: string,
+  filters: SharedCalendarFilters = {}
+): Promise<SharedCalendarEvent[]> {
+  return authFetch<SharedCalendarEvent[]>(
+    token,
+    `/admin/planner/calendar/view${buildQuery({
+      start: filters.start,
+      end: filters.end,
+      wedding_ids: filters.wedding_ids,
+      staff_ids: filters.staff_ids,
+      source_types: filters.source_types,
+    })}`
+  );
+}
+
+export async function getStaffAvailability(
+  token: string,
+  staffIds: string[],
+  start: string,
+  end: string
+): Promise<AvailabilityResponse> {
+  return authFetch<AvailabilityResponse>(
+    token,
+    `/admin/planner/calendar/availability${buildQuery({
+      staff_ids: staffIds,
+      start,
+      end,
+    })}`
+  );
+}
+
+export async function createMeeting(
+  token: string,
+  payload: ScheduleItemPayload
+): Promise<MeetingUpsertResponse> {
+  return authFetch<MeetingUpsertResponse>(token, '/admin/planner/calendar/meetings', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function updateMeeting(
+  token: string,
+  meetingId: string,
+  payload: Partial<ScheduleItemPayload>
+): Promise<MeetingUpsertResponse> {
+  return authFetch<MeetingUpsertResponse>(
+    token,
+    `/admin/planner/calendar/meetings/${meetingId}`,
+    {
+      method: 'PATCH',
+      body: JSON.stringify(payload),
+    }
+  );
+}
+
+export async function deleteMeeting(token: string, meetingId: string): Promise<void> {
+  await authFetch<void>(token, `/admin/planner/calendar/meetings/${meetingId}`, {
+    method: 'DELETE',
+  });
+}
+
+export async function sendMeetingInvites(
+  token: string,
+  meetingId: string
+): Promise<Array<Record<string, unknown>>> {
+  return authFetch<Array<Record<string, unknown>>>(
+    token,
+    `/admin/planner/calendar/meetings/${meetingId}/send-invites`,
+    {
+      method: 'POST',
+    }
+  );
+}
+
+export async function syncMeeting(
+  token: string,
+  meetingId: string
+): Promise<CalendarSyncStatusItem[]> {
+  return authFetch<CalendarSyncStatusItem[]>(
+    token,
+    `/admin/planner/calendar/meetings/${meetingId}/sync`,
+    {
+      method: 'POST',
+    }
+  );
+}
+
+export async function getMeetingSyncStatus(
+  token: string,
+  meetingId: string
+): Promise<CalendarSyncStatusItem[]> {
+  return authFetch<CalendarSyncStatusItem[]>(
+    token,
+    `/admin/planner/calendar/meetings/${meetingId}/sync-status`
+  );
+}
+
 export const CATEGORY_LABELS: Record<TaskCategory, string> = {
   venue: 'Venue',
   catering: 'Catering',
@@ -444,29 +582,26 @@ export const CATEGORY_LABELS: Record<TaskCategory, string> = {
   other: 'Other',
 };
 
-/**
- * Priority display labels with colors.
- */
-export const PRIORITY_CONFIG: Record<TaskPriority, { label: string; color: string; bgColor: string }> = {
+export const PRIORITY_CONFIG: Record<
+  TaskPriority,
+  { label: string; color: string; bgColor: string }
+> = {
   low: { label: 'Low', color: 'text-gray-600', bgColor: 'bg-gray-100' },
   medium: { label: 'Medium', color: 'text-blue-600', bgColor: 'bg-blue-100' },
   high: { label: 'High', color: 'text-orange-600', bgColor: 'bg-orange-100' },
   urgent: { label: 'Urgent', color: 'text-red-600', bgColor: 'bg-red-100' },
 };
 
-/**
- * Status display labels with colors.
- */
-export const STATUS_CONFIG: Record<TaskStatus, { label: string; color: string; bgColor: string }> = {
+export const STATUS_CONFIG: Record<
+  TaskStatus,
+  { label: string; color: string; bgColor: string }
+> = {
   pending: { label: 'Pending', color: 'text-gray-600', bgColor: 'bg-gray-100' },
   in_progress: { label: 'In Progress', color: 'text-blue-600', bgColor: 'bg-blue-100' },
   completed: { label: 'Completed', color: 'text-green-600', bgColor: 'bg-green-100' },
   cancelled: { label: 'Cancelled', color: 'text-red-600', bgColor: 'bg-red-100' },
 };
 
-/**
- * Format a date for display.
- */
 export function formatTaskDate(dateString: string, includeTime: boolean = false): string {
   const date = new Date(dateString);
   const options: Intl.DateTimeFormatOptions = {
@@ -483,9 +618,6 @@ export function formatTaskDate(dateString: string, includeTime: boolean = false)
   return date.toLocaleDateString('en-US', options);
 }
 
-/**
- * Get days until a date.
- */
 export function getDaysUntil(dateString: string): number {
   const date = new Date(dateString);
   const now = new Date();

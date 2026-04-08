@@ -968,7 +968,7 @@ async def handle_twilio_incoming_message(
             if planner_support_phone:
                 help_msg = f"Wedding reminders from {wedding_name}. Reply STOP to unsubscribe. For support, call {planner_support_phone}. Msg&data rates may apply."
             else:
-                help_msg = f"Wedding reminders from {wedding_name}. Reply STOP to unsubscribe. For support, visit thespecialwedding.com/support. Msg&data rates may apply."
+                help_msg = f"Wedding reminders from {wedding_name}. Reply STOP to unsubscribe. For support, visit thespecialwedding.io/support. Msg&data rates may apply."
             sms_service.send_sms(from_number, help_msg)
 
             # Create help ticket for planner

@@ -83,6 +83,7 @@ class CalendarAggregationService:
             "details": {
                 "description": task.get("description"),
                 "category": task.get("category"),
+                "priority": task.get("priority"),
                 "status": task.get("status"),
                 "meeting_status": task.get("meeting_status"),
                 "conference_url": task.get("conference_url"),
