@@ -63,6 +63,8 @@ export interface PlannerTask {
   schedule_item_type?: string | null;
   visibility_mode?: VisibilityMode | null;
   calendar_sync_policy?: CalendarSyncPolicy | null;
+  sync_target_override_enabled?: boolean;
+  sync_target_connection_ids: string[];
   timezone?: string | null;
   couple_attendee_emails: string[];
   conference_provider?: string | null;
@@ -210,6 +212,7 @@ export interface ScheduleItemPayload {
   schedule_item_type?: ScheduleItemType;
   visibility_mode?: VisibilityMode;
   calendar_sync_policy?: CalendarSyncPolicy;
+  sync_target_override_enabled?: boolean;
   timezone?: string;
   couple_attendee_emails?: string[];
   conference_provider?: string;

@@ -9,9 +9,10 @@ These are webhook endpoints called by Twilio, NOT admin operations.
 """
 
 from fastapi import APIRouter, Request, HTTPException, Header
-from typing import Optional
+from typing import Any, Optional
 from datetime import datetime, timezone
 from bson import ObjectId
+from starlette.datastructures import FormData, UploadFile
 from app.core.database import mongo
 import logging
 import os
@@ -20,6 +21,8 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/webhook/twilio")
 
+TwilioWebhookParams = dict[str, str]
+
 
 def _to_object_id(id_value: str):
     """Safely convert a string to a BSON ObjectId, falling back to the original value."""
@@ -27,6 +30,51 @@ def _to_object_id(id_value: str):
         return ObjectId(id_value)
     except Exception:
         return id_value
+
+
+def _normalize_twilio_form_data(form_data: FormData) -> TwilioWebhookParams:
+    """Convert Starlette form data into the string-only payload Twilio documents."""
+    payload: TwilioWebhookParams = {}
+    for key, value in form_data.items():
+        if isinstance(value, str):
+            payload[key] = value
+            continue
+
+        if isinstance(value, UploadFile):
+            logger.warning(
+                "Ignoring unexpected uploaded file for Twilio webhook field %s (filename=%s)",
+                key,
+                value.filename,
+            )
+            continue
+
+        logger.warning(
+            "Ignoring unexpected non-string Twilio webhook field %s of type %s",
+            key,
+            type(value).__name__,
+        )
+
+    return payload
+
+
+def _parse_optional_int(raw_value: Optional[str], field_name: str) -> Optional[int]:
+    """Parse optional integer webhook fields without failing the webhook request."""
+    if raw_value is None:
+        return None
+
+    normalized = raw_value.strip()
+    if not normalized:
+        return None
+
+    try:
+        return int(normalized)
+    except ValueError:
+        logger.warning(
+            "Ignoring invalid integer value for Twilio webhook field %s: %r",
+            field_name,
+            raw_value,
+        )
+        return None
 
 
 # Twilio error code to human-readable message mapping
@@ -87,7 +135,7 @@ async def handle_twilio_status_callback(
     try:
         # Get form data (Twilio sends form-encoded data, not JSON)
         form_data = await request.form()
-        data = dict(form_data)
+        data = _normalize_twilio_form_data(form_data)
 
         # Validate webhook signature
         if not _validate_twilio_signature(request, x_twilio_signature, data):
@@ -98,6 +146,7 @@ async def handle_twilio_status_callback(
         message_sid = data.get("MessageSid")
         message_status = data.get("MessageStatus")
         error_code = data.get("ErrorCode")
+        parsed_error_code = _parse_optional_int(error_code, "ErrorCode")
         to_number = data.get("To")
 
         if not message_sid or not message_status:
@@ -117,11 +166,11 @@ async def handle_twilio_status_callback(
         status_event = {
             "status": message_status,
             "timestamp": now,
-            "error_code": int(error_code) if error_code else None,
+            "error_code": parsed_error_code,
         }
 
         # Prepare update operation
-        update_data = {
+        update_data: dict[str, dict[str, Any]] = {
             "$set": {
                 "delivery_status": message_status,
                 "delivery_status_updated_at": now,
@@ -130,11 +179,12 @@ async def handle_twilio_status_callback(
         }
 
         # Add error details if present
-        if error_code:
+        if parsed_error_code is not None:
+            error_code_key = error_code or str(parsed_error_code)
             error_message = TWILIO_ERROR_MESSAGES.get(
-                str(error_code), f"Unknown error (code: {error_code})"
+                error_code_key, f"Unknown error (code: {error_code_key})"
             )
-            update_data["$set"]["error_code"] = int(error_code)
+            update_data["$set"]["error_code"] = parsed_error_code
             update_data["$set"]["error_message"] = error_message
 
         # Find and update by message_sid
@@ -150,10 +200,10 @@ async def handle_twilio_status_callback(
         logger.info(f"Updated delivery status for {message_sid}: {message_status}")
 
         # Take error-based actions for failed/undelivered messages
-        if message_status in ("failed", "undelivered") and error_code:
+        if message_status in ("failed", "undelivered") and parsed_error_code is not None:
             await _handle_delivery_failure(
                 message_sid=message_sid,
-                error_code=int(error_code),
+                error_code=parsed_error_code,
                 to_number=to_number,
                 log_collection=log_collection,
             )
@@ -213,7 +263,7 @@ def _get_public_webhook_url(request: Request) -> str:
 
 
 def _validate_twilio_signature(
-    request: Request, signature: Optional[str], params: dict
+    request: Request, signature: Optional[str], params: TwilioWebhookParams
 ) -> bool:
     """
     Validate Twilio webhook signature using RequestValidator.
@@ -241,7 +291,7 @@ def _validate_twilio_signature(
         return True
 
     try:
-        from twilio.request_validator import RequestValidator
+        from twilio.request_validator import RequestValidator  # type: ignore[import-untyped]
 
         validator = RequestValidator(auth_token)
 
@@ -836,7 +886,7 @@ async def handle_twilio_incoming_message(
     try:
         # Twilio sends form-encoded data
         form_data = await request.form()
-        data = dict(form_data)
+        data = _normalize_twilio_form_data(form_data)
 
         # Validate webhook signature
         if not _validate_twilio_signature(request, x_twilio_signature, data):
@@ -844,7 +894,8 @@ async def handle_twilio_incoming_message(
             raise HTTPException(status_code=401, detail="Invalid signature")
 
         from_number = data.get("From", "")
-        body = data.get("Body", "").strip().upper()
+        body_text = data.get("Body", "")
+        body = body_text.strip().upper()
         message_sid = data.get("MessageSid")
 
         if not from_number:
@@ -1004,7 +1055,7 @@ async def handle_twilio_incoming_message(
             # Create support ticket routed to wedding planner
             support_ticket = {
                 "phone": from_number,
-                "message": data.get("Body", ""),
+                "message": body_text,
                 "guest_id": str(guest["_id"]) if guest else None,
                 "wedding_id": str(wedding_id) if wedding_id else None,
                 "wedding_name": wedding_name,

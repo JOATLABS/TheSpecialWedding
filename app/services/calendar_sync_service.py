@@ -31,6 +31,12 @@ class CalendarSyncService:
         owner_id = task.get("owner_planner_id")
         assigned_user_ids = [value for value in task.get("assigned_user_ids", []) if value]
         policy = task.get("calendar_sync_policy") or CalendarSyncPolicy.OWNER_ONLY.value
+        override_enabled = bool(task.get("sync_target_override_enabled"))
+        effective_explicit_ids = explicit_connection_ids
+        if effective_explicit_ids is None and override_enabled:
+            effective_explicit_ids = [
+                value for value in task.get("sync_target_connection_ids", []) if value
+            ]
 
         allowed_user_ids: list[str] = []
         if policy == CalendarSyncPolicy.OWNER_ONLY.value:
@@ -52,10 +58,10 @@ class CalendarSyncService:
         allowed_connections = await self._get_connection_docs(base_query)
         allowed_by_id = {str(doc["_id"]): doc for doc in allowed_connections}
 
-        if explicit_connection_ids is not None:
+        if effective_explicit_ids is not None:
             explicit_targets = [
                 allowed_by_id[connection_id]
-                for connection_id in explicit_connection_ids
+                for connection_id in effective_explicit_ids
                 if connection_id in allowed_by_id
             ]
             # Explicit overrides fail closed. If the scheduler selected targets

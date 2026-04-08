@@ -380,7 +380,7 @@ async def _notify_root_admin_support_ticket(ticket: dict):
     """Send notification to ROOT_ADMIN for tickets without assigned planner"""
     try:
         import os
-        import requests
+        import requests  # type: ignore[import-untyped]
 
         # Send Slack notification if webhook configured
         slack_webhook = os.getenv("SLACK_WEBHOOK")

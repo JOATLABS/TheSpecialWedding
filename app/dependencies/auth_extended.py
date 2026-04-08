@@ -121,7 +121,7 @@ class CalendarOwnerScope(TypedDict):
 
 async def get_current_user_extended(
     credentials: Optional[HTTPAuthorizationCredentials] = Depends(security),
-    request: Optional[Request] = None,
+    request: Request = None,  # type: ignore[assignment]
 ) -> ExtendedAuthUser:
     """Get current authenticated user supporting both legacy and new auth systems"""
     token = credentials.credentials if credentials else None

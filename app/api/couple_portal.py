@@ -15,7 +15,7 @@ Sprint 6: Registry CRUD, FAQ CRUD, QR code, push notifications
 
 from fastapi import APIRouter, HTTPException, Request, Query, Depends, Path
 from fastapi.responses import Response
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator, model_validator
 from typing import Optional, List, Any
 from datetime import datetime, timezone
 from app.core.database import mongo
@@ -25,6 +25,11 @@ from app.services.guest_export_service import guest_export_service
 from app.services.meeting_invite_service import meeting_invite_service
 from app.services.web_push_service import web_push_service
 from app.services.sse_manager import sse_manager
+from app.models.calendar import (
+    CalendarSyncPolicy,
+    InviteDeliveryMode,
+    attach_timezone_if_naive,
+)
 from app.dependencies.auth_extended import (
     ExtendedAuthUser,
     require_team_or_planner,
@@ -80,7 +85,17 @@ async def _resolve_meeting_couple_attendee_emails(
         return normalized
     if not wedding_id:
         return []
-    cursor = mongo.db["couple_users"].find({"wedding_id": wedding_id}, {"email": 1})
+    collection = None
+    if hasattr(mongo, "get_couple_users_collection"):
+        collection = mongo.get_couple_users_collection()
+    elif hasattr(mongo, "get_collection"):
+        collection = mongo.get_collection("couple_users")
+    elif hasattr(mongo, "db"):
+        collection = mongo.db["couple_users"]
+    if collection is None:
+        return []
+
+    cursor = collection.find({"wedding_id": wedding_id}, {"email": 1})
     emails: list[str] = []
     async for couple_doc in cursor:
         if couple_doc.get("email"):
@@ -96,6 +111,24 @@ def _enforce_manage_couple_portal(current_user: ExtendedAuthUser) -> None:
 def _enforce_message_couples(current_user: ExtendedAuthUser) -> None:
     """Require explicit couple-messaging access for team members."""
     enforce_team_permission(current_user, "message_couples")
+
+
+def _enforce_calendar_permission(
+    current_user: ExtendedAuthUser,
+    permission: str,
+) -> None:
+    """Require calendar-specific permissions for team members."""
+    enforce_team_permission(current_user, permission)
+
+
+def _can_send_meeting_invites(current_user: ExtendedAuthUser) -> bool:
+    """Whether the actor may send outbound meeting invites."""
+    if current_user.is_root_admin or current_user.is_wedding_planner:
+        return True
+    return bool(
+        current_user.team_permissions
+        and current_user.team_permissions.get("send_meeting_invites", False)
+    )
 
 
 async def _resolve_couple_planner_email(
@@ -2177,7 +2210,27 @@ class ScheduleMeetingRequest(BaseModel):
     couple_attendee_emails: List[str] = Field(default_factory=list)
     timezone: str = Field(default="UTC")
     calendar_sync_policy: Optional[str] = None
+    sync_target_override_enabled: bool = False
     sync_target_connection_ids: List[str] = Field(default_factory=list)
+
+    @field_validator("recurrence_rule")
+    @classmethod
+    def validate_recurrence_rule(cls, value: Optional[str]) -> Optional[str]:
+        if value and "FREQ=" not in value:
+            raise ValueError("recurrence_rule must include FREQ=")
+        return value
+
+    @model_validator(mode="after")
+    def validate_dates(self):
+        self.start_date = attach_timezone_if_naive(self.start_date, self.timezone)
+        self.end_date = attach_timezone_if_naive(self.end_date, self.timezone)
+        if self.end_date and self.end_date < self.start_date:
+            raise ValueError("end_date must be greater than or equal to start_date")
+        if self.is_recurring and not self.recurrence_rule:
+            raise ValueError("recurrence_rule is required when is_recurring is true")
+        if not self.sync_target_override_enabled:
+            self.sync_target_connection_ids = []
+        return self
 
 
 @router.post("/couple-portal/meetings", tags=["Couple Portal - Meetings"])
@@ -2190,6 +2243,7 @@ async def schedule_meeting(
     Creates a planner task with category='meeting' and syncs to Google Calendar.
     """
     _enforce_manage_couple_portal(current_user)
+    _enforce_calendar_permission(current_user, "schedule_meetings")
 
     if not await check_wedding_access(current_user, data.wedding_id):
         raise HTTPException(
@@ -2226,8 +2280,11 @@ async def schedule_meeting(
         data.couple_attendee_emails,
     )
     calendar_sync_policy = data.calendar_sync_policy or (
-        "assigned_only" if assigned_user_ids else "owner_only"
+        CalendarSyncPolicy.ASSIGNED_ONLY.value
+        if assigned_user_ids
+        else CalendarSyncPolicy.OWNER_ONLY.value
     )
+    can_send_invites = _can_send_meeting_invites(current_user)
 
     task_doc: dict[str, Any] = {
         "planner_email": planner_email,
@@ -2247,6 +2304,10 @@ async def schedule_meeting(
         "schedule_item_type": "meeting",
         "visibility_mode": "details",
         "calendar_sync_policy": calendar_sync_policy,
+        "sync_target_override_enabled": data.sync_target_override_enabled,
+        "sync_target_connection_ids": (
+            data.sync_target_connection_ids if data.sync_target_override_enabled else []
+        ),
         "start_date": data.start_date,
         "end_date": data.end_date or data.start_date,
         "all_day": False,
@@ -2256,7 +2317,11 @@ async def schedule_meeting(
         "external_attendees": [],
         "conference_provider": None,
         "conference_url": None,
-        "invite_delivery_mode": "email_ics" if couple_attendee_emails else "portal_only",
+        "invite_delivery_mode": (
+            InviteDeliveryMode.EMAIL_ICS.value
+            if couple_attendee_emails and can_send_invites
+            else InviteDeliveryMode.PORTAL_ONLY.value
+        ),
         "meeting_status": "scheduled",
         "reminder_minutes": data.reminder_minutes,
         "is_recurring": data.is_recurring,
@@ -2280,7 +2345,9 @@ async def schedule_meeting(
     if data.sync_to_google:
         sync_status = await calendar_sync_service.sync_schedule_item(
             task_doc,
-            explicit_connection_ids=data.sync_target_connection_ids,
+            explicit_connection_ids=(
+                data.sync_target_connection_ids if data.sync_target_override_enabled else None
+            ),
         )
         first_synced = next(
             (
@@ -2306,7 +2373,11 @@ async def schedule_meeting(
             task_doc["google_event_id"] = first_synced.get("external_event_id")
 
     invite_status = []
-    if task_doc["invite_delivery_mode"] == "email_ics" and couple_attendee_emails:
+    if (
+        task_doc["invite_delivery_mode"] == InviteDeliveryMode.EMAIL_ICS.value
+        and can_send_invites
+        and couple_attendee_emails
+    ):
         invite_status = await meeting_invite_service.send_invites(task_doc)
 
     logger.info(
@@ -2381,6 +2452,7 @@ async def cancel_meeting(
 ):
     """Planner cancels a scheduled meeting. Removes from Google Calendar if synced."""
     _enforce_manage_couple_portal(current_user)
+    _enforce_calendar_permission(current_user, "cancel_meetings")
 
     if not await check_wedding_access(current_user, wedding_id):
         raise HTTPException(

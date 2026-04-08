@@ -93,6 +93,16 @@ class MeetingLifecycleStatus(str, Enum):
     COMPLETED = "completed"
 
 
+def attach_timezone_if_naive(
+    value: Optional[datetime],
+    timezone_name: str,
+) -> Optional[datetime]:
+    """Attach the requested IANA timezone when an incoming datetime is naive."""
+    if value is None or value.tzinfo is not None:
+        return value
+    return value.replace(tzinfo=ZoneInfo(timezone_name))
+
+
 class CalendarTokenModel(BaseModel):
     """Legacy Google Calendar OAuth tokens keyed by planner email."""
 
@@ -155,6 +165,11 @@ class PlannerTaskModel(BaseModel):
         default=CalendarSyncPolicy.OWNER_ONLY.value,
         description="How external sync targets are resolved",
     )
+    sync_target_override_enabled: bool = Field(
+        default=False,
+        description="Whether explicit connection targets should override default sync resolution",
+    )
+    sync_target_connection_ids: list[str] = Field(default_factory=list)
 
     # Scheduling fields
     start_date: datetime = Field(..., description="Task start date/time")
@@ -249,6 +264,7 @@ class CalendarEventCreate(BaseModel):
     conference_url: Optional[str] = None
     invite_delivery_mode: str = Field(default=InviteDeliveryMode.NONE.value)
     meeting_status: Optional[str] = None
+    sync_target_override_enabled: bool = False
     sync_to_google: bool = Field(
         default=True, description="Legacy compatibility toggle for task sync"
     )
@@ -272,12 +288,17 @@ class CalendarEventCreate(BaseModel):
 
     @model_validator(mode="after")
     def validate_dates(self):
+        self.start_date = attach_timezone_if_naive(self.start_date, self.timezone)
+        self.end_date = attach_timezone_if_naive(self.end_date, self.timezone)
+        self.due_date = attach_timezone_if_naive(self.due_date, self.timezone)
         if self.end_date and self.end_date < self.start_date:
             raise ValueError("end_date must be greater than or equal to start_date")
         if self.is_recurring and not self.recurrence_rule:
             raise ValueError("recurrence_rule is required when is_recurring is true")
         if self.schedule_item_type == ScheduleItemType.MEETING.value:
             self.meeting_status = self.meeting_status or MeetingLifecycleStatus.SCHEDULED.value
+        if not self.sync_target_override_enabled:
+            self.sync_target_connection_ids = []
         return self
 
 
@@ -310,6 +331,7 @@ class CalendarEventUpdate(BaseModel):
     conference_url: Optional[str] = None
     invite_delivery_mode: Optional[str] = None
     meeting_status: Optional[str] = None
+    sync_target_override_enabled: Optional[bool] = None
     sync_target_connection_ids: Optional[list[str]] = None
 
     @field_validator("timezone")
@@ -332,8 +354,14 @@ class CalendarEventUpdate(BaseModel):
 
     @model_validator(mode="after")
     def validate_dates(self):
+        timezone_name = self.timezone or "UTC"
+        self.start_date = attach_timezone_if_naive(self.start_date, timezone_name)
+        self.end_date = attach_timezone_if_naive(self.end_date, timezone_name)
+        self.due_date = attach_timezone_if_naive(self.due_date, timezone_name)
         if self.start_date and self.end_date and self.end_date < self.start_date:
             raise ValueError("end_date must be greater than or equal to start_date")
+        if self.sync_target_override_enabled is False:
+            self.sync_target_connection_ids = []
         return self
 
 

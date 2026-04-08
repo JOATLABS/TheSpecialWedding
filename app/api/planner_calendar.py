@@ -39,6 +39,7 @@ from app.models.calendar import (
     VisibilityMode,
 )
 from app.models.calendar_connection import CalendarConnectionUpdateRequest
+from app.models.calendar_sync import CalendarSyncStatusValue
 from app.services.calendar_aggregation_service import calendar_aggregation_service
 from app.services.calendar_sync_service import calendar_sync_service
 from app.services.google_calendar_service import google_calendar_service
@@ -86,6 +87,8 @@ class TaskResponse(BaseModel):
     schedule_item_type: Optional[str] = None
     visibility_mode: Optional[str] = None
     calendar_sync_policy: Optional[str] = None
+    sync_target_override_enabled: bool = False
+    sync_target_connection_ids: list[str] = Field(default_factory=list)
     timezone: Optional[str] = None
     couple_attendee_emails: list[str] = Field(default_factory=list)
     conference_provider: Optional[str] = None
@@ -236,6 +239,8 @@ def _serialize_task(task: dict, wedding_name: Optional[str] = None) -> TaskRespo
         schedule_item_type=task.get("schedule_item_type"),
         visibility_mode=task.get("visibility_mode"),
         calendar_sync_policy=task.get("calendar_sync_policy"),
+        sync_target_override_enabled=task.get("sync_target_override_enabled", False),
+        sync_target_connection_ids=task.get("sync_target_connection_ids", []),
         timezone=task.get("timezone"),
         couple_attendee_emails=task.get("couple_attendee_emails", []),
         conference_provider=task.get("conference_provider"),
@@ -248,6 +253,13 @@ def _serialize_task(task: dict, wedding_name: Optional[str] = None) -> TaskRespo
     )
 
 
+def _require_document(document: Any, detail: str) -> dict[str, Any]:
+    """Narrow Mongo results to the dict payloads expected by this module."""
+    if not isinstance(document, dict):
+        raise HTTPException(status_code=404, detail=detail)
+    return document
+
+
 def _calendar_owner_email(current_user: ExtendedAuthUser) -> str:
     context = get_calendar_owner_identity(current_user)
     return str(context.get("owner_email") or current_user.email)
@@ -257,6 +269,52 @@ def _calendar_user_id(current_user: ExtendedAuthUser) -> Optional[str]:
     context = get_calendar_owner_identity(current_user)
     user_id = context.get("user_id")
     return str(user_id) if user_id else None
+
+
+def _connection_matches_owner_scope(
+    connection_doc: dict[str, Any],
+    current_user: ExtendedAuthUser,
+) -> bool:
+    """Ensure a connection row belongs to the current planner-business scope."""
+    if current_user.is_root_admin:
+        return True
+
+    context = get_calendar_owner_identity(current_user)
+    owner_id = context.get("owner_id")
+    owner_email = context.get("owner_email")
+    connection_owner_id = connection_doc.get("owner_planner_id")
+    connection_owner_email = connection_doc.get("owner_planner_email")
+
+    if owner_id and connection_owner_id:
+        return str(owner_id) == str(connection_owner_id)
+    if owner_email and connection_owner_email:
+        return str(owner_email) == str(connection_owner_email)
+    return False
+
+
+def _can_send_meeting_invites(current_user: ExtendedAuthUser) -> bool:
+    """Whether the actor may send outbound couple meeting invites."""
+    if current_user.is_root_admin or current_user.is_wedding_planner:
+        return True
+    return bool(
+        current_user.team_permissions
+        and current_user.team_permissions.get("send_meeting_invites", False)
+    )
+
+
+def _coerce_event_datetime(value: Any) -> Optional[datetime]:
+    """Normalize serialized event timestamps into aware datetimes for availability math."""
+    if value is None:
+        return None
+    if isinstance(value, datetime):
+        return value if value.tzinfo is not None else value.replace(tzinfo=UTC)
+
+    raw = str(value)
+    if "T" not in raw:
+        return datetime.fromisoformat(raw).replace(tzinfo=UTC)
+
+    parsed = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+    return parsed if parsed.tzinfo is not None else parsed.replace(tzinfo=UTC)
 
 
 def _build_task_scope_query(current_user: ExtendedAuthUser) -> dict[str, Any]:
@@ -360,6 +418,8 @@ def _serialize_meeting_payload(task: dict) -> dict[str, Any]:
         "assigned_user_emails": task.get("assigned_user_emails", []),
         "couple_attendee_emails": task.get("couple_attendee_emails", []),
         "calendar_sync_policy": task.get("calendar_sync_policy"),
+        "sync_target_override_enabled": task.get("sync_target_override_enabled", False),
+        "sync_target_connection_ids": task.get("sync_target_connection_ids", []),
         "invite_delivery_mode": task.get("invite_delivery_mode"),
         "conference_provider": task.get("conference_provider"),
         "conference_url": task.get("conference_url"),
@@ -575,6 +635,9 @@ async def update_calendar_connection(
     )
 
     updates = body.model_dump(exclude_none=True)
+    if not _connection_matches_owner_scope(connection_doc, current_user):
+        raise HTTPException(status_code=403, detail="Cannot manage this calendar connection")
+
     if not (is_owner or can_manage_all or is_connection_owner):
         raise HTTPException(status_code=403, detail="Cannot manage this calendar connection")
 
@@ -606,6 +669,8 @@ async def delete_calendar_connection(
         current_user.team_permissions
         and current_user.team_permissions.get("manage_calendar_connections", False)
     )
+    if not _connection_matches_owner_scope(connection_doc, current_user):
+        raise HTTPException(status_code=403, detail="Cannot disconnect this calendar connection")
     if not (
         is_owner
         or can_manage_all
@@ -627,9 +692,16 @@ async def healthcheck_calendar_connection(
     """Validate a connection against Google and return updated health metadata."""
     connection_doc = await google_calendar_service._get_connection_doc(connection_id)
     current_context = get_calendar_owner_identity(current_user)
+    can_manage_all = bool(
+        current_user.team_permissions
+        and current_user.team_permissions.get("manage_calendar_connections", False)
+    )
+    if not _connection_matches_owner_scope(connection_doc, current_user):
+        raise HTTPException(status_code=403, detail="Cannot healthcheck this calendar connection")
     if not (
         current_user.is_root_admin
         or current_user.is_wedding_planner
+        or can_manage_all
         or connection_doc.get("user_id") == current_context.get("user_id")
     ):
         raise HTTPException(status_code=403, detail="Cannot healthcheck this calendar connection")
@@ -696,14 +768,13 @@ async def get_staff_availability(
         event
         for event in events
         if set(event.get("assigned_user_ids", [])) & set(staff_ids)
-        or event.get("source_type") == "external_google"
     ]
     busy_ranges = []
     for event in busy_events:
-        event_start = event.get("start_date")
-        event_end = event.get("end_date")
+        event_start = _coerce_event_datetime(event.get("start_date"))
+        event_end = _coerce_event_datetime(event.get("end_date"))
         if event_start and event_end:
-            busy_ranges.append((datetime.fromisoformat(str(event_start)), datetime.fromisoformat(str(event_end))))
+            busy_ranges.append((event_start, event_end))
     busy_ranges.sort(key=lambda row: row[0])
 
     available_windows = []
@@ -810,7 +881,7 @@ async def create_task(
             (
                 item
                 for item in sync_status
-                if item.get("sync_status") == CalendarSyncStatus.SYNCED.value
+                if item.get("sync_status") == CalendarSyncStatusValue.SYNCED.value
                 and item.get("external_event_id")
             ),
             None,
@@ -944,9 +1015,7 @@ async def get_task(
     task = await tasks_collection.find_one(
         {"$and": [{"_id": oid}, _build_task_scope_query(current_user)]}
     )
-
-    if not task:
-        raise HTTPException(status_code=404, detail="Task not found")
+    task = _require_document(task, "Task not found")
 
     wedding_name = await _get_wedding_name(task.get("wedding_id"))
 
@@ -981,9 +1050,7 @@ async def update_task(
     task = await tasks_collection.find_one(
         {"$and": [{"_id": oid}, _build_task_scope_query(current_user)]}
     )
-
-    if not task:
-        raise HTTPException(status_code=404, detail="Task not found")
+    task = _require_document(task, "Task not found")
 
     # Build update document
     update_doc: dict[str, Any] = {"updated_at": datetime.now(UTC)}
@@ -1009,7 +1076,7 @@ async def update_task(
             (
                 item
                 for item in sync_status
-                if item.get("sync_status") == CalendarSyncStatus.SYNCED.value
+                if item.get("sync_status") == CalendarSyncStatusValue.SYNCED.value
                 and item.get("external_event_id")
             ),
             None,
@@ -1029,6 +1096,7 @@ async def update_task(
 
     # Fetch updated task
     updated_task = await tasks_collection.find_one({"_id": oid})
+    updated_task = _require_document(updated_task, "Task not found after update")
     wedding_name = await _get_wedding_name(updated_task.get("wedding_id"))
 
     logger.info(f"Updated task {task_id} for planner {current_user.email}")
@@ -1062,9 +1130,7 @@ async def delete_task(
     task = await tasks_collection.find_one(
         {"$and": [{"_id": oid}, _build_task_scope_query(current_user)]}
     )
-
-    if not task:
-        raise HTTPException(status_code=404, detail="Task not found")
+    task = _require_document(task, "Task not found")
 
     # Delete from Google Calendar if synced
     await calendar_sync_service.delete_schedule_item_syncs(task_id)
@@ -1110,9 +1176,7 @@ async def sync_task_to_google(
     task = await tasks_collection.find_one(
         {"$and": [{"_id": oid}, _build_task_scope_query(current_user)]}
     )
-
-    if not task:
-        raise HTTPException(status_code=404, detail="Task not found")
+    task = _require_document(task, "Task not found")
 
     # Sync to Google
     sync_status = await calendar_sync_service.sync_schedule_item(task)
@@ -1120,7 +1184,7 @@ async def sync_task_to_google(
         (
             item
             for item in sync_status
-            if item.get("sync_status") == CalendarSyncStatus.SYNCED.value
+            if item.get("sync_status") == CalendarSyncStatusValue.SYNCED.value
             and item.get("external_event_id")
         ),
         None,
@@ -1144,6 +1208,7 @@ async def sync_task_to_google(
 
     # Fetch updated task
     updated_task = await tasks_collection.find_one({"_id": oid})
+    updated_task = _require_document(updated_task, "Task not found after sync")
     wedding_name = await _get_wedding_name(updated_task.get("wedding_id"))
 
     return _serialize_task(updated_task, wedding_name)
@@ -1360,17 +1425,26 @@ async def create_meeting(
         data.wedding_id,
         data.couple_attendee_emails,
     )
-    sync_policy = (
+    sync_policy = data.calendar_sync_policy or (
         CalendarSyncPolicy.ASSIGNED_ONLY.value
-        if assigned_user_ids and data.calendar_sync_policy == CalendarSyncPolicy.OWNER_ONLY.value
-        else data.calendar_sync_policy
+        if assigned_user_ids
+        else CalendarSyncPolicy.OWNER_ONLY.value
     )
+    can_send_invites = _can_send_meeting_invites(current_user)
+    if (
+        data.invite_delivery_mode == InviteDeliveryMode.EMAIL_ICS.value
+        and not can_send_invites
+    ):
+        raise HTTPException(
+            status_code=403,
+            detail="You do not have the 'send meeting invites' permission.",
+        )
     invite_mode = (
         data.invite_delivery_mode
         if data.invite_delivery_mode != InviteDeliveryMode.NONE.value
         else (
             InviteDeliveryMode.EMAIL_ICS.value
-            if couple_attendee_emails
+            if couple_attendee_emails and can_send_invites
             else InviteDeliveryMode.PORTAL_ONLY.value
         )
     )
@@ -1392,6 +1466,10 @@ async def create_meeting(
         "schedule_item_type": ScheduleItemType.MEETING.value,
         "visibility_mode": data.visibility_mode,
         "calendar_sync_policy": sync_policy,
+        "sync_target_override_enabled": data.sync_target_override_enabled,
+        "sync_target_connection_ids": (
+            data.sync_target_connection_ids if data.sync_target_override_enabled else []
+        ),
         "start_date": data.start_date,
         "end_date": data.end_date or data.start_date,
         "all_day": data.all_day,
@@ -1421,7 +1499,9 @@ async def create_meeting(
 
     sync_status = await calendar_sync_service.sync_schedule_item(
         task_doc,
-        explicit_connection_ids=data.sync_target_connection_ids,
+        explicit_connection_ids=(
+            data.sync_target_connection_ids if data.sync_target_override_enabled else None
+        ),
     )
     first_synced = next(
         (row for row in sync_status if row.get("sync_status") == "synced" and row.get("external_event_id")),
@@ -1442,7 +1522,11 @@ async def create_meeting(
         task_doc["synced_to_google"] = True
 
     invite_status = []
-    if invite_mode == InviteDeliveryMode.EMAIL_ICS.value and couple_attendee_emails:
+    if (
+        invite_mode == InviteDeliveryMode.EMAIL_ICS.value
+        and can_send_invites
+        and couple_attendee_emails
+    ):
         invite_status = await meeting_invite_service.send_invites(task_doc)
 
     return MeetingUpsertResponse(
@@ -1474,13 +1558,20 @@ async def update_meeting(
     task = await tasks_collection.find_one(
         {"_id": oid, "$or": [{"schedule_item_type": "meeting"}, {"category": "meeting"}]}
     )
-    if not task:
-        raise HTTPException(status_code=404, detail="Meeting not found")
+    task = _require_document(task, "Meeting not found")
     if task.get("wedding_id") and not await check_wedding_access(current_user, task["wedding_id"]):
         raise HTTPException(status_code=403, detail="You don't have access to this wedding")
 
-    update_doc = {"updated_at": datetime.now(UTC)}
+    update_doc: dict[str, Any] = {"updated_at": datetime.now(UTC)}
     update_fields = updates.model_dump(exclude_unset=True)
+    if (
+        update_fields.get("invite_delivery_mode") == InviteDeliveryMode.EMAIL_ICS.value
+        and not _can_send_meeting_invites(current_user)
+    ):
+        raise HTTPException(
+            status_code=403,
+            detail="You do not have the 'send meeting invites' permission.",
+        )
     if "assigned_user_ids" in update_fields and update_fields["assigned_user_ids"] is not None:
         update_doc["assigned_user_ids"] = update_fields["assigned_user_ids"]
         update_doc["assigned_user_emails"] = await _resolve_user_emails(
@@ -1496,12 +1587,19 @@ async def update_meeting(
             continue
         if value is not None:
             update_doc[key] = value
+    if update_fields.get("sync_target_override_enabled") is False:
+        update_doc["sync_target_connection_ids"] = []
 
     await tasks_collection.update_one({"_id": oid}, {"$set": update_doc})
     updated_task = await tasks_collection.find_one({"_id": oid})
+    updated_task = _require_document(updated_task, "Meeting not found after update")
     sync_status = await calendar_sync_service.sync_schedule_item(
         updated_task,
-        explicit_connection_ids=update_fields.get("sync_target_connection_ids"),
+        explicit_connection_ids=(
+            update_fields.get("sync_target_connection_ids")
+            if update_fields.get("sync_target_override_enabled") is True
+            else ([] if update_fields.get("sync_target_override_enabled") is False else None)
+        ),
     )
     return MeetingUpsertResponse(
         meeting=_serialize_meeting_payload(updated_task),
@@ -1530,8 +1628,7 @@ async def delete_meeting(
     task = await tasks_collection.find_one(
         {"_id": oid, "$or": [{"schedule_item_type": "meeting"}, {"category": "meeting"}]}
     )
-    if not task:
-        raise HTTPException(status_code=404, detail="Meeting not found")
+    task = _require_document(task, "Meeting not found")
     if task.get("wedding_id") and not await check_wedding_access(current_user, task["wedding_id"]):
         raise HTTPException(status_code=403, detail="You don't have access to this wedding")
 
@@ -1559,8 +1656,7 @@ async def send_meeting_invites(
     task = await mongo.get_planner_tasks_collection().find_one(
         {"_id": oid, "$or": [{"schedule_item_type": "meeting"}, {"category": "meeting"}]}
     )
-    if not task:
-        raise HTTPException(status_code=404, detail="Meeting not found")
+    task = _require_document(task, "Meeting not found")
     if task.get("wedding_id") and not await check_wedding_access(current_user, task["wedding_id"]):
         raise HTTPException(status_code=403, detail="You don't have access to this wedding")
     invites = await meeting_invite_service.send_invites(task)
@@ -1585,8 +1681,7 @@ async def sync_meeting(
     task = await mongo.get_planner_tasks_collection().find_one(
         {"_id": oid, "$or": [{"schedule_item_type": "meeting"}, {"category": "meeting"}]}
     )
-    if not task:
-        raise HTTPException(status_code=404, detail="Meeting not found")
+    task = _require_document(task, "Meeting not found")
     sync_status = await calendar_sync_service.sync_schedule_item(task)
     return {"meeting_id": meeting_id, "sync_status": sync_status}
 
@@ -1607,8 +1702,7 @@ async def get_meeting_sync_status(
     task = await mongo.get_planner_tasks_collection().find_one(
         {"_id": oid, "$or": [{"schedule_item_type": "meeting"}, {"category": "meeting"}]}
     )
-    if not task:
-        raise HTTPException(status_code=404, detail="Meeting not found")
+    task = _require_document(task, "Meeting not found")
     if task.get("wedding_id") and not await check_wedding_access(current_user, task["wedding_id"]):
         raise HTTPException(status_code=403, detail="You don't have access to this wedding")
     return {"meeting_id": meeting_id, "sync_status": await calendar_sync_service.get_sync_status(meeting_id)}

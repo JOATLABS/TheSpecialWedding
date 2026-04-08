@@ -83,24 +83,51 @@ const INVITE_OPTIONS: Array<{ value: InviteDeliveryMode; label: string }> = [
   { value: 'portal_only', label: 'Portal only' },
 ];
 
-function toDateInput(value?: string | null) {
-  if (!value) return '';
+function getZonedDateParts(value: string, timezone: string) {
   const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? '' : date.toISOString().slice(0, 10);
+  if (Number.isNaN(date.getTime())) return null;
+
+  const formatter = new Intl.DateTimeFormat('en-CA', {
+    timeZone: timezone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    hourCycle: 'h23',
+  });
+  const parts = formatter.formatToParts(date);
+  const map = new Map(parts.map((part) => [part.type, part.value]));
+
+  return {
+    year: map.get('year') || '0000',
+    month: map.get('month') || '01',
+    day: map.get('day') || '01',
+    hour: map.get('hour') || '00',
+    minute: map.get('minute') || '00',
+  };
 }
 
-function toTimeInput(value?: string | null) {
+function toDateInput(value?: string | null, timezone: string = 'UTC') {
+  if (!value) return '';
+  const parts = getZonedDateParts(value, timezone);
+  if (!parts) return '';
+  return `${parts.year}-${parts.month}-${parts.day}`;
+}
+
+function toTimeInput(value?: string | null, timezone: string = 'UTC') {
   if (!value) return '09:00';
-  const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? '09:00' : date.toISOString().slice(11, 16);
+  const parts = getZonedDateParts(value, timezone);
+  if (!parts) return '09:00';
+  return `${parts.hour}:${parts.minute}`;
 }
 
 function buildIso(date: string, time: string, allDay: boolean, endOfDay: boolean = false) {
   if (!date) return '';
   if (allDay) {
-    return `${date}T${endOfDay ? '23:59:59' : '00:00:00'}Z`;
+    return `${date}T${endOfDay ? '23:59:59' : '00:00:00'}`;
   }
-  return `${date}T${time}:00Z`;
+  return `${date}T${time}:00`;
 }
 
 export default function TaskModal({
@@ -146,6 +173,7 @@ export default function TaskModal({
   const [conferenceUrl, setConferenceUrl] = useState('');
   const [customTargetsEnabled, setCustomTargetsEnabled] = useState(false);
   const [selectedConnectionIds, setSelectedConnectionIds] = useState<string[]>([]);
+  const [syncPolicyTouched, setSyncPolicyTouched] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
@@ -170,17 +198,18 @@ export default function TaskModal({
     const browserTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
 
     if (task) {
+      const taskTimezone = task.timezone || browserTimezone;
       setTitle(task.title);
       setDescription(task.description || task.notes || '');
       setWeddingId(task.wedding_id || '');
       setCategory((task.category as TaskCategory) || 'other');
       setPriority((task.priority as TaskPriority) || 'medium');
-      setStartDate(toDateInput(task.start_date));
-      setStartTime(toTimeInput(task.start_date));
-      setEndDate(toDateInput(task.end_date || task.start_date));
-      setEndTime(toTimeInput(task.end_date || task.start_date));
+      setStartDate(toDateInput(task.start_date, taskTimezone));
+      setStartTime(toTimeInput(task.start_date, taskTimezone));
+      setEndDate(toDateInput(task.end_date || task.start_date, taskTimezone));
+      setEndTime(toTimeInput(task.end_date || task.start_date, taskTimezone));
       setAllDay(task.all_day);
-      setDueDate(toDateInput(task.due_date));
+      setDueDate(toDateInput(task.due_date, taskTimezone));
       setReminderMinutes(task.reminder_minutes ?? '');
       setNotes(task.notes || '');
       setColor(task.color || '');
@@ -188,14 +217,15 @@ export default function TaskModal({
       setIsRecurring(task.is_recurring || false);
       setAssignedUserIds(task.assigned_user_ids || []);
       setCoupleAttendeeEmails((task.couple_attendee_emails || []).join(', '));
-      setTimezone(task.timezone || browserTimezone);
+      setTimezone(taskTimezone);
       setVisibilityMode((task.visibility_mode as VisibilityMode) || 'details');
       setCalendarSyncPolicy((task.calendar_sync_policy as CalendarSyncPolicy) || 'owner_only');
       setInviteDeliveryMode((task.invite_delivery_mode as InviteDeliveryMode) || 'email_ics');
       setConferenceProvider(task.conference_provider || '');
       setConferenceUrl(task.conference_url || '');
-      setCustomTargetsEnabled(false);
-      setSelectedConnectionIds([]);
+      setCustomTargetsEnabled(Boolean(task.sync_target_override_enabled));
+      setSelectedConnectionIds(task.sync_target_connection_ids || []);
+      setSyncPolicyTouched(true);
 
       if (task.recurrence_rule) {
         if (task.recurrence_rule.includes('INTERVAL=2')) {
@@ -240,6 +270,7 @@ export default function TaskModal({
       setConferenceUrl('');
       setCustomTargetsEnabled(false);
       setSelectedConnectionIds([]);
+      setSyncPolicyTouched(false);
     }
 
     setError('');
@@ -252,10 +283,11 @@ export default function TaskModal({
       setVisibilityMode('details');
       setCustomTargetsEnabled(false);
       setSelectedConnectionIds([]);
-    } else if (assignedUserIds.length > 0 && calendarSyncPolicy === 'owner_only') {
-      setCalendarSyncPolicy('assigned_only');
+      setSyncPolicyTouched(false);
+    } else if (!syncPolicyTouched) {
+      setCalendarSyncPolicy(assignedUserIds.length > 0 ? 'assigned_only' : 'owner_only');
     }
-  }, [category, assignedUserIds, calendarSyncPolicy]);
+  }, [assignedUserIds.length, category, syncPolicyTouched]);
 
   const buildRecurrenceRule = () => {
     if (!isRecurring) return undefined;
@@ -316,7 +348,7 @@ export default function TaskModal({
       start_date: startDateTime,
       end_date: endDateTime,
       all_day: allDay,
-      due_date: dueDate ? `${dueDate}T23:59:59Z` : undefined,
+      due_date: dueDate ? `${dueDate}T23:59:59` : undefined,
       reminder_minutes: reminderMinutes || undefined,
       is_recurring: isRecurring,
       recurrence_rule: buildRecurrenceRule(),
@@ -326,6 +358,7 @@ export default function TaskModal({
       schedule_item_type: isMeetingMode ? 'meeting' : 'task',
       visibility_mode: isMeetingMode ? visibilityMode : undefined,
       calendar_sync_policy: isMeetingMode ? calendarSyncPolicy : undefined,
+      sync_target_override_enabled: isMeetingMode ? customTargetsEnabled : undefined,
       timezone: timezone || undefined,
       couple_attendee_emails: isMeetingMode ? attendeeEmails : undefined,
       conference_provider: isMeetingMode ? conferenceProvider || undefined : undefined,
@@ -714,9 +747,10 @@ export default function TaskModal({
                   <span className="mb-1.5 block font-medium text-slate-700">Sync policy</span>
                   <select
                     value={calendarSyncPolicy}
-                    onChange={(event) =>
-                      setCalendarSyncPolicy(event.target.value as CalendarSyncPolicy)
-                    }
+                    onChange={(event) => {
+                      setCalendarSyncPolicy(event.target.value as CalendarSyncPolicy);
+                      setSyncPolicyTouched(true);
+                    }}
                     className="w-full rounded-xl border border-slate-300 px-3 py-2.5 text-slate-900"
                   >
                     {SYNC_POLICY_OPTIONS.map((option) => (
