@@ -10,7 +10,7 @@ Couple/planner client contracts are handled separately under `/admin/client-cont
 
 import logging
 from datetime import datetime
-from typing import List, Optional
+from typing import Optional
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
 
