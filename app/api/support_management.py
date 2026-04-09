@@ -7,7 +7,9 @@ from app.dependencies.auth_extended import (
     require_admin_or_planner,
     ExtendedAuthUser,
 )
+from app.core.database import mongo
 from app.services.support_service import SupportService
+from app.utils.contact_sanitizer import sanitize_phone
 from app.utils.serializers import serialize_mongo_doc
 from app.utils.query_validation import validated_string_filter, validated_status_filter
 import logging
@@ -391,6 +393,101 @@ class SMSResponseModel(BaseModel):
     )
 
 
+def _phone_lookup_variants(phone: Optional[str]) -> list[str]:
+    sanitized = sanitize_phone(phone)
+    if not sanitized:
+        return []
+
+    digits_only = "".join(ch for ch in sanitized if ch.isdigit())
+    variants = {sanitized}
+
+    if digits_only:
+        variants.add(digits_only)
+        variants.add(f"+{digits_only}")
+
+        if len(digits_only) == 11 and digits_only.startswith("1"):
+            local_number = digits_only[1:]
+            variants.update({local_number, f"1{local_number}", f"+1{local_number}"})
+        elif len(digits_only) == 10:
+            variants.update({digits_only, f"1{digits_only}", f"+1{digits_only}"})
+
+    return [variant for variant in variants if variant]
+
+
+async def _resolve_guest_for_sms_ticket(ticket: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    from bson import ObjectId
+
+    guest_collection = mongo.get_guest_collection()
+    projection = {"_id": 1, "name": 1}
+
+    guest_id = ticket.get("guest_id")
+    if guest_id:
+        guest_id_str = str(guest_id)
+        if ObjectId.is_valid(guest_id_str):
+            guest = await guest_collection.find_one(
+                {"_id": ObjectId(guest_id_str)},
+                projection,
+            )
+            if guest:
+                return guest
+
+    phone_variants = _phone_lookup_variants(ticket.get("phone"))
+    if not phone_variants:
+        return None
+
+    phone_query = {"$or": [{"phone": variant} for variant in phone_variants]}
+    wedding_id = ticket.get("wedding_id")
+
+    if wedding_id:
+        wedding_id_str = str(wedding_id)
+        guest = await guest_collection.find_one(
+            {**phone_query, "wedding_id": wedding_id_str},
+            projection,
+        )
+        if guest:
+            return guest
+
+        if ObjectId.is_valid(wedding_id_str):
+            guest = await guest_collection.find_one(
+                {**phone_query, "wedding_id": ObjectId(wedding_id_str)},
+                projection,
+            )
+            if guest:
+                return guest
+
+    return await guest_collection.find_one(phone_query, projection)
+
+
+async def _enrich_sms_ticket_guest_context(ticket: Dict[str, Any]) -> Dict[str, Any]:
+    has_guest_name = bool((ticket.get("guest_name") or "").strip())
+    has_guest_id = bool(ticket.get("guest_id"))
+    if has_guest_name and has_guest_id:
+        return ticket
+
+    guest = await _resolve_guest_for_sms_ticket(ticket)
+    if not guest:
+        return ticket
+
+    updates: Dict[str, Any] = {}
+
+    if guest.get("name") and not has_guest_name:
+        ticket["guest_name"] = guest["name"]
+        updates["guest_name"] = guest["name"]
+
+    guest_id_str = str(guest["_id"]) if guest.get("_id") else None
+    if guest_id_str and not has_guest_id:
+        ticket["guest_id"] = guest_id_str
+        updates["guest_id"] = guest_id_str
+
+    if updates and ticket.get("_id"):
+        await mongo.db["support_tickets"].update_one(
+            {"_id": ticket["_id"]},
+            {"$set": updates},
+        )
+
+    return ticket
+
+
 @router.get("/sms-tickets", tags=["SMS Support"])
 async def get_sms_tickets(
     status: Optional[str] = Query(
@@ -414,10 +511,8 @@ async def get_sms_tickets(
             detail="status cannot be combined with active_only",
         )
 
-    from app.core.database import mongo
-
     # Build query
-    query = {"source": "sms"}
+    query: Dict[str, Any] = {"source": "sms"}
 
     if status:
         query["status"] = status
@@ -442,6 +537,7 @@ async def get_sms_tickets(
 
     # Convert ObjectId to string
     for ticket in tickets:
+        await _enrich_sms_ticket_guest_context(ticket)
         ticket["_id"] = str(ticket["_id"])
         if "guest_id" in ticket and ticket["guest_id"]:
             ticket["guest_id"] = str(ticket["guest_id"])
@@ -466,7 +562,6 @@ async def get_sms_ticket(
     ticket_id: str, current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
 ):
     """Get specific SMS ticket with full details and response history"""
-    from app.core.database import mongo
     from bson import ObjectId
 
     try:
@@ -497,6 +592,8 @@ async def get_sms_ticket(
             },
         )
         ticket["is_read"] = True
+
+    await _enrich_sms_ticket_guest_context(ticket)
 
     # Convert ObjectId to string
     ticket["_id"] = str(ticket["_id"])

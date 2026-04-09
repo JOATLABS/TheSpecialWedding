@@ -6,21 +6,23 @@ import { useRouter } from 'next/navigation';
 import PageHeader from '../components/PageHeader';
 import {
   getVendorDirectory,
-  getContracts,
-  getPaymentMilestones,
   getVendorDashboard,
   createVendorProfile,
   deleteVendorProfile,
   VENDOR_CATEGORIES,
   getCategoryLabel,
-  getContractStatusColor,
-  getPaymentStatusColor,
   type VendorProfile,
-  type VendorContract,
-  type PaymentMilestone,
   type VendorDashboard,
   type VendorCategory,
 } from '@/services/vendorManagementApi';
+import {
+  getContracts,
+  getPaymentMilestones,
+  getContractStatusColor,
+  getPaymentStatusColor,
+  type VendorContract,
+  type PaymentMilestone,
+} from '@/services/vendorContractsApi';
 import { toast } from 'sonner';
 import VendorImportModal from '@/components/vendor/VendorImportModal';
 import { VendorPaymentModal } from './components/VendorPaymentModal';

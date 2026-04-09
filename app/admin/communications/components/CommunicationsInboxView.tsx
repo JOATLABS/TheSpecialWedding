@@ -112,6 +112,7 @@ interface SMSSupportTicket {
   phone: string;
   message: string;
   guest_id?: string | null;
+  guest_name?: string | null;
   wedding_id?: string | null;
   wedding_name?: string;
   assigned_to?: string | null;
@@ -210,13 +211,17 @@ function getLatestSmsActivity(ticket: SMSSupportTicket): string {
   return latestResponse?.sent_at || ticket.updated_at || ticket.created_at;
 }
 
+function getSmsDisplayName(ticket: SMSSupportTicket): string {
+  return ticket.guest_name?.trim() || ticket.phone || ticket.wedding_name || 'Guest SMS';
+}
+
 function getSmsPreview(ticket: SMSSupportTicket): string {
   const responses = ticket.responses || [];
   const latestResponse = responses[responses.length - 1];
   if (latestResponse?.message) {
     return `You: ${latestResponse.message}`;
   }
-  return `${ticket.phone}: ${ticket.message}`;
+  return `${getSmsDisplayName(ticket)}: ${ticket.message}`;
 }
 
 function getPublicSupportComments(ticket: PlannerSupportTicket): SupportComment[] {
@@ -702,10 +707,14 @@ export default function CommunicationsInboxView() {
     }
 
     for (const ticket of smsTickets) {
+      if (ticket.type !== 'help_request') {
+        continue;
+      }
+
       items.push({
         id: `sms_support_${ticket._id}`,
         type: 'sms_support',
-        name: ticket.wedding_name || ticket.phone || 'Guest SMS',
+        name: getSmsDisplayName(ticket),
         preview: getSmsPreview(ticket),
         is_read: ticket.is_read ?? true,
         created_at: getLatestSmsActivity(ticket),
@@ -749,7 +758,10 @@ export default function CommunicationsInboxView() {
     : inboxItems;
 
   const loading = emailLoading || conversationsLoading || supportLoading;
-  const smsUnreadCount = smsTickets.reduce((count, ticket) => count + (ticket.is_read ? 0 : 1), 0);
+  const smsUnreadCount = smsTickets.reduce(
+    (count, ticket) => count + (ticket.type === 'help_request' && !ticket.is_read ? 1 : 0),
+    0
+  );
   const totalUnread = unreadCount + smsUnreadCount + coupleConversations.reduce(
     (count, conversation) => count + (conversation.unread_count || 0),
     0
@@ -862,7 +874,7 @@ export default function CommunicationsInboxView() {
         setSelectedItem({
           id: `sms_support_${ticket._id}`,
           type: 'sms_support',
-          name: ticket.wedding_name || ticket.phone || 'Guest SMS',
+          name: getSmsDisplayName(ticket),
           preview: getSmsPreview(ticket),
           is_read: ticket.is_read ?? true,
           created_at: getLatestSmsActivity(ticket),
@@ -1308,11 +1320,12 @@ export default function CommunicationsInboxView() {
     if (!selectedSmsTicketDetail) return null;
 
     const isResolved = ['resolved', 'closed'].includes(selectedSmsTicketDetail.status);
+    const guestDisplayName = getSmsDisplayName(selectedSmsTicketDetail);
     const responseThread = [
       {
         id: `sms-inbound-${selectedSmsTicketDetail._id}`,
         content: selectedSmsTicketDetail.message,
-        senderName: selectedSmsTicketDetail.phone,
+        senderName: guestDisplayName,
         isSelf: false,
         timestamp: selectedSmsTicketDetail.created_at,
       },
@@ -1342,10 +1355,11 @@ export default function CommunicationsInboxView() {
             </div>
             <div className="min-w-0">
               <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
-                {selectedSmsTicketDetail.wedding_name || 'SMS Support'}
+                {guestDisplayName}
               </h2>
               <p className="text-xs text-gray-400">
                 {selectedSmsTicketDetail.phone}
+                {selectedSmsTicketDetail.wedding_name ? ` · ${selectedSmsTicketDetail.wedding_name}` : ''}
                 {selectedSmsTicketDetail.type === 'help_request' ? ' · HELP request' : ''}
               </p>
             </div>
@@ -1405,7 +1419,7 @@ export default function CommunicationsInboxView() {
               onSend={handleSendReply}
               sending={sending}
               disabled={isResolved}
-              placeholder={isResolved ? 'This SMS support thread is resolved.' : `Reply to ${selectedSmsTicketDetail.phone}...`}
+              placeholder={isResolved ? 'This SMS support thread is resolved.' : `Reply to ${guestDisplayName}...`}
               accentColor="indigo"
             />
           </>
