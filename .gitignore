@@ -4,8 +4,6 @@ __pycache__
 *$py.class
 *.cpython-*.pyc
 
-# Test results
-test-results/
 
 # CSV files
 *.csv
@@ -43,40 +41,6 @@ start-wedding-backend.sh
 setup-auto-start.sh
 wedding-backend.service
 .secrets.baseline
-test-results/
-tests/*
-!tests/integration/
-!tests/integration/*.py
-!tests/backend/
-!tests/unit/
-tests/backend/*
-!tests/backend/test_blog_content_utils.py
-!tests/backend/test_guest_memories_service.py
-!tests/backend/test_knowledge_base_contract.py
-!tests/backend/test_settings.py
-!tests/backend/test_notification_stream_contract.py
-!tests/backend/test_setup_reset_token_transport_contract.py
-!tests/backend/test_guest_access_session_contract.py
-!tests/backend/test_behavioral_analytics_contract.py
-!tests/backend/test_team_management_invite_lock.py
-!tests/backend/test_gallery_storage_paths.py
-!tests/backend/test_planner_ownership.py
-!tests/backend/test_couple_lifecycle_service.py
-!tests/backend/test_couple_auth_lifecycle.py
-!tests/backend/test_couple_permission_contract.py
-!tests/backend/test_couple_owner_identity_cleanup.py
-!tests/backend/test_public_checkout_gating.py
-!tests/backend/test_contract_payment_methods.py
-!tests/backend/test_payment_intent_summary.py
-!tests/backend/test_planner_onboarding_email_service.py
-!tests/backend/test_vendor_contract_admin_api.py
-!tests/backend/test_vendor_contract_revisions.py
-tests/unit/*
-!tests/unit/blogRichText.test.ts
-!tests/unit/subscriptionStatus.test.ts
-!tests/unit/vendorContractsApi.test.ts
-!tests/unit/vendorContractPreview.test.tsx
-!tests/resources-blog-rendering.spec.ts
 
 ARCHITECTURAL_IMPROVEMENTS_COMPLETE.md
 app/middleware/security_headers.py

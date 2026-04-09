@@ -298,6 +298,10 @@ class CalendarEventCreate(BaseModel):
             raise ValueError("end_date must be greater than or equal to start_date")
         if self.is_recurring and not self.recurrence_rule:
             raise ValueError("recurrence_rule is required when is_recurring is true")
+        if self.invite_delivery_mode == InviteDeliveryMode.GOOGLE_ATTENDEE.value:
+            raise ValueError(
+                "invite_delivery_mode='google_attendee' is not available in v1"
+            )
         if self.schedule_item_type == ScheduleItemType.MEETING.value:
             self.meeting_status = (
                 self.meeting_status or MeetingLifecycleStatus.SCHEDULED.value
@@ -365,6 +369,10 @@ class CalendarEventUpdate(BaseModel):
         self.due_date = attach_timezone_if_naive(self.due_date, timezone_name)
         if self.start_date and self.end_date and self.end_date < self.start_date:
             raise ValueError("end_date must be greater than or equal to start_date")
+        if self.invite_delivery_mode == InviteDeliveryMode.GOOGLE_ATTENDEE.value:
+            raise ValueError(
+                "invite_delivery_mode='google_attendee' is not available in v1"
+            )
         if self.sync_target_override_enabled is False:
             self.sync_target_connection_ids = []
         return self

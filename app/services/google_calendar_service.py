@@ -36,6 +36,55 @@ class GoogleCalendarService:
         self.connections_collection = mongo.get_calendar_connections_collection()
         self.syncs_collection = mongo.get_calendar_event_syncs_collection()
         self.tasks_collection = mongo.get_planner_tasks_collection()
+        self._validate_security_configuration()
+
+    def _google_integration_configured(self) -> bool:
+        return bool(settings.GOOGLE_CLIENT_ID and settings.GOOGLE_CLIENT_SECRET)
+
+    def _is_production_environment(self) -> bool:
+        return settings.ENVIRONMENT.lower() == "production"
+
+    def _validate_security_configuration(self) -> None:
+        if not (self._google_integration_configured() and self._is_production_environment()):
+            return
+
+        missing_keys: list[str] = []
+        if not settings.GOOGLE_OAUTH_STATE_SIGNING_KEY:
+            missing_keys.append("GOOGLE_OAUTH_STATE_SIGNING_KEY")
+        if not settings.TOKEN_ENCRYPTION_KEY:
+            missing_keys.append("TOKEN_ENCRYPTION_KEY")
+        if missing_keys:
+            raise RuntimeError(
+                "Google Calendar integration requires explicit security keys in production: "
+                + ", ".join(missing_keys)
+            )
+
+    def _default_allowed_scheduler_user_ids(
+        self,
+        *,
+        owner_id: Optional[str],
+        user_id: Optional[str],
+    ) -> list[str]:
+        values = []
+        if user_id and owner_id and str(user_id) != str(owner_id):
+            values.append(user_id)
+        return list(dict.fromkeys(str(value) for value in values))
+
+    def _effective_allowed_scheduler_user_ids(
+        self,
+        connection_doc: dict[str, Any],
+    ) -> list[str]:
+        explicit_ids = [
+            str(value)
+            for value in connection_doc.get("allowed_scheduler_user_ids", [])
+            if value
+        ]
+        if explicit_ids:
+            return list(dict.fromkeys(explicit_ids))
+        return self._default_allowed_scheduler_user_ids(
+            owner_id=connection_doc.get("owner_planner_id"),
+            user_id=connection_doc.get("user_id"),
+        )
 
     def _get_client_config(self) -> Dict[str, Any]:
         """Build OAuth client configuration from settings."""
@@ -56,6 +105,10 @@ class GoogleCalendarService:
         }
 
     def _get_state_signing_key(self) -> str:
+        if self._is_production_environment() and not settings.GOOGLE_OAUTH_STATE_SIGNING_KEY:
+            raise RuntimeError(
+                "GOOGLE_OAUTH_STATE_SIGNING_KEY must be configured in production"
+            )
         return (
             settings.GOOGLE_OAUTH_STATE_SIGNING_KEY
             or settings.SECRET_KEY
@@ -63,6 +116,10 @@ class GoogleCalendarService:
         )
 
     def _get_fernet(self) -> Fernet:
+        if self._is_production_environment() and not settings.TOKEN_ENCRYPTION_KEY:
+            raise RuntimeError(
+                "TOKEN_ENCRYPTION_KEY must be configured in production"
+            )
         raw_key = (
             settings.TOKEN_ENCRYPTION_KEY or settings.SECRET_KEY or "dev-token-key"
         )
@@ -283,6 +340,13 @@ class GoogleCalendarService:
                         else calendar_id == default_write_id
                     )
                 ),
+                "allowed_scheduler_user_ids": self._effective_allowed_scheduler_user_ids(
+                    existing_doc
+                    or {
+                        "owner_planner_id": owner_id,
+                        "user_id": user_id,
+                    }
+                ),
                 "is_shared_in_team_view": (
                     existing_doc.get("is_shared_in_team_view", False)
                     if existing_doc is not None
@@ -390,6 +454,9 @@ class GoogleCalendarService:
             "is_writable": doc.get("is_writable", False),
             "is_primary": doc.get("is_primary", False),
             "is_default_write_target": doc.get("is_default_write_target", False),
+            "allowed_scheduler_user_ids": self._effective_allowed_scheduler_user_ids(
+                doc
+            ),
             "is_shared_in_team_view": doc.get("is_shared_in_team_view", False),
             "details_visibility": doc.get(
                 "details_visibility", VisibilityMode.BUSY_ONLY.value
@@ -526,6 +593,7 @@ class GoogleCalendarService:
             if k
             in {
                 "is_default_write_target",
+                "allowed_scheduler_user_ids",
                 "is_shared_in_team_view",
                 "details_visibility",
                 "sync_enabled",
@@ -534,6 +602,24 @@ class GoogleCalendarService:
         }
         if not set_doc:
             return self._serialize_connection(connection_doc)
+
+        if "allowed_scheduler_user_ids" in set_doc:
+            set_doc["allowed_scheduler_user_ids"] = list(
+                dict.fromkeys(
+                    str(value)
+                    for value in set_doc["allowed_scheduler_user_ids"]
+                    if value
+                )
+            )
+
+        if set_doc.get("is_default_write_target") and not (
+            connection_doc.get("is_writable")
+            and set_doc.get("sync_enabled", connection_doc.get("sync_enabled", False))
+        ):
+            raise HTTPException(
+                status_code=400,
+                detail="Only writable, sync-enabled calendars can be the default write target",
+            )
 
         if set_doc.get("is_default_write_target"):
             await self.connections_collection.update_many(
@@ -545,11 +631,39 @@ class GoogleCalendarService:
                 {"$set": {"is_default_write_target": False}},
             )
 
+        if set_doc.get("sync_enabled") is False and connection_doc.get(
+            "is_default_write_target"
+        ):
+            set_doc["is_default_write_target"] = False
+
         set_doc["updated_at"] = datetime.now(UTC)
         await self.connections_collection.update_one(
             {"_id": connection_doc["_id"]},
             {"$set": set_doc},
         )
+
+        if set_doc.get("sync_enabled") is False and connection_doc.get(
+            "is_default_write_target"
+        ):
+            replacement = await self.connections_collection.find_one(
+                {
+                    "user_id": connection_doc["user_id"],
+                    "provider_account_email": connection_doc["provider_account_email"],
+                    "_id": {"$ne": connection_doc["_id"]},
+                    "is_writable": True,
+                    "sync_enabled": True,
+                }
+            )
+            if replacement:
+                await self.connections_collection.update_one(
+                    {"_id": replacement["_id"]},
+                    {
+                        "$set": {
+                            "is_default_write_target": True,
+                            "updated_at": datetime.now(UTC),
+                        }
+                    },
+                )
         return self._serialize_connection(await self._get_connection_doc(connection_id))
 
     async def healthcheck_connection(self, connection_id: str) -> dict:

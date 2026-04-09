@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import base64
-import uuid
 from datetime import UTC, datetime
 from typing import Any, Optional
 
@@ -22,20 +21,31 @@ class MeetingInviteService:
         self.invites_collection = mongo.get_meeting_invites_collection()
         self.weddings_collection = mongo.get_weddings_collection()
 
+    def _build_ics_uid(self, task: dict[str, Any]) -> str:
+        return f"{task.get('_id')}@thespecialwedding.io"
+
     def _build_ics_attachment(
         self, task: dict[str, Any], wedding: Optional[dict[str, Any]]
     ) -> dict[str, Any]:
         calendar = Calendar()
         calendar.add("prodid", "-//The Special Wedding//Shared Planner Calendar//EN")
         calendar.add("version", "2.0")
+        calendar.add("method", "REQUEST")
 
         event = Event()
-        uid = f"{task.get('_id')}-{uuid.uuid4()}@thespecialwedding.io"
+        uid = self._build_ics_uid(task)
+        task_updated_at = task.get("updated_at")
+        sequence = (
+            int(task_updated_at.timestamp())
+            if isinstance(task_updated_at, datetime)
+            else 0
+        )
         event.add("uid", uid)
         event.add("summary", task.get("title"))
         if task.get("description"):
             event.add("description", task.get("description"))
         event.add("dtstamp", datetime.now(UTC))
+        event.add("sequence", sequence)
         if task.get("start_date"):
             event.add("dtstart", task["start_date"])
         if task.get("end_date"):

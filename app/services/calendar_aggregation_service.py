@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from datetime import UTC, datetime, timedelta
 from typing import Any, Optional
 
@@ -45,10 +46,23 @@ class CalendarAggregationService:
         if owner_filters:
             query["$and"] = [{"$or": owner_filters}]
 
-        if accessible_wedding_ids is not None:
-            query["wedding_id"] = {"$in": accessible_wedding_ids}
+        effective_wedding_ids = (
+            list(accessible_wedding_ids) if accessible_wedding_ids is not None else None
+        )
         if wedding_ids:
-            query["wedding_id"] = {"$in": wedding_ids}
+            requested_wedding_ids = list(wedding_ids)
+            effective_wedding_ids = (
+                [
+                    wedding_id
+                    for wedding_id in requested_wedding_ids
+                    if effective_wedding_ids is None
+                    or wedding_id in set(effective_wedding_ids)
+                ]
+                if effective_wedding_ids is not None
+                else requested_wedding_ids
+            )
+        if effective_wedding_ids is not None:
+            query["wedding_id"] = {"$in": effective_wedding_ids}
         if staff_ids:
             query["$or"] = query.get("$or", [])
             query["assigned_user_ids"] = {"$in": staff_ids}
@@ -179,6 +193,7 @@ class CalendarAggregationService:
                 current_user_id=current_user_id,
                 include_all_owner_connections=include_all_owner_connections,
             )
+            visible_connections = []
             for connection in connections:
                 if (
                     not connection.get("is_shared_in_team_view")
@@ -187,14 +202,23 @@ class CalendarAggregationService:
                     continue
                 if staff_ids and connection.get("user_id") not in staff_ids:
                     continue
-                events = (
-                    await google_calendar_service.fetch_google_events_for_connection(
+                visible_connections.append(connection)
+
+            fetched_events = await asyncio.gather(
+                *[
+                    google_calendar_service.fetch_google_events_for_connection(
                         connection["id"],
                         time_min=start,
                         time_max=end,
                         max_results=200,
                     )
-                )
+                    for connection in visible_connections
+                ]
+            )
+
+            for connection, events in zip(visible_connections, fetched_events):
+                for event in events:
+                    event["_connection"] = event.get("_connection") or connection
                 external_events.extend(
                     [
                         self._normalize_external(event, can_view_details)
