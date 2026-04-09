@@ -69,9 +69,11 @@ tests/backend/*
 !tests/backend/test_contract_payment_methods.py
 !tests/backend/test_payment_intent_summary.py
 !tests/backend/test_planner_onboarding_email_service.py
+!tests/backend/test_vendor_contract_admin_api.py
 tests/unit/*
 !tests/unit/blogRichText.test.ts
 !tests/unit/subscriptionStatus.test.ts
+!tests/unit/vendorContractsApi.test.ts
 !tests/resources-blog-rendering.spec.ts
 
 ARCHITECTURAL_IMPROVEMENTS_COMPLETE.md

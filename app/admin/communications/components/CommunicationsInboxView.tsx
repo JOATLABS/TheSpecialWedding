@@ -1630,12 +1630,12 @@ export default function CommunicationsInboxView() {
           </div>
         </div>
 
-        <div ref={containerRef} className="flex min-h-[600px] gap-0">
+        <div ref={containerRef} className="flex h-[calc(100vh-250px)] min-h-[600px] gap-0">
           <div
-            className={`bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-gray-200 dark:border-slate-700 overflow-hidden flex-shrink-0 ${mobileShowDetail ? 'hidden lg:block' : ''}`}
+            className={`bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-gray-200 dark:border-slate-700 overflow-hidden flex flex-col flex-shrink-0 h-full ${mobileShowDetail ? 'hidden lg:block' : ''}`}
             style={{ width: `${listWidthPercent}%` }}
           >
-            <div className="divide-y divide-gray-100 dark:divide-slate-800 max-h-[calc(100vh-250px)] overflow-y-auto">
+            <div className="flex-1 divide-y divide-gray-100 dark:divide-slate-800 overflow-y-auto">
               {loading ? (
                 <div className="p-8 text-center text-gray-400">
                   <RefreshCw className="w-6 h-6 mx-auto mb-2 animate-spin" />
@@ -1708,9 +1708,9 @@ export default function CommunicationsInboxView() {
             <GripVertical className="w-3.5 h-3.5 text-slate-300 dark:text-slate-600 group-hover:text-slate-500 dark:group-hover:text-slate-400 transition-colors" />
           </div>
 
-          <div className={`flex-1 min-w-0 ${!mobileShowDetail ? 'hidden lg:block' : ''}`}>
+          <div className={`flex-1 min-w-0 h-full ${!mobileShowDetail ? 'hidden lg:block' : ''}`}>
             {selectedItem ? (
-              <div className="bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-gray-200 dark:border-slate-700 flex flex-col h-[calc(100vh-250px)]">
+              <div className="bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-gray-200 dark:border-slate-700 flex flex-col h-full">
                 {selectedItem.type === 'email' && selectedEmailDetail
                   ? renderEmailDetail()
                   : selectedItem.type === 'couple'
@@ -1729,7 +1729,7 @@ export default function CommunicationsInboxView() {
                         )}
               </div>
             ) : (
-              <div className="bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-gray-200 dark:border-slate-700 flex items-center justify-center h-[calc(100vh-250px)]">
+              <div className="bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-gray-200 dark:border-slate-700 flex items-center justify-center h-full">
                 <div className="text-center text-gray-400">
                   <Inbox className="w-14 h-14 mx-auto mb-4 opacity-30" />
                   <p className="font-medium text-gray-500 dark:text-gray-400">Select a conversation</p>

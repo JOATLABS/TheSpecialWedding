@@ -16,6 +16,17 @@ from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
 
 from app.dependencies.auth_extended import ExtendedAuthUser, enforce_team_permission
 from app.dependencies.feature_gates import require_vendor_feature
+from app.models.vendor_contracts import (
+    ApplyVendorContractFormDataRequest,
+    CreateVendorContractRequest,
+    CreateVendorContractTemplateRequest,
+    CreateVendorPaymentMilestonesRequest,
+    RecordVendorMilestonePaymentRequest,
+    SendVendorContractRequest,
+    UpdateVendorContractRequest,
+    UpdateVendorContractSectionsRequest,
+    VendorContractFormDataResponse,
+)
 from app.models.vendor import (
     AssignVendorRequest,
     CreatePaymentLinkRequest,
@@ -203,12 +214,13 @@ async def list_contract_templates(
 
 @router.post("/templates", tags=["Contract Templates"])
 async def create_contract_template(
-    data: dict, current_user: ExtendedAuthUser = Depends(require_vendor_feature)
+    data: CreateVendorContractTemplateRequest,
+    current_user: ExtendedAuthUser = Depends(require_vendor_feature),
 ):
     """Create a new contract template"""
     enforce_team_permission(current_user, "manage_vendors")
     return await vendor_service.create_contract_template(
-        data=data, created_by=current_user.email
+        data=data.model_dump(exclude_none=True), created_by=current_user.email
     )
 
 
@@ -227,15 +239,7 @@ async def get_contract_template(
 
 @router.post("/contracts", tags=["Contracts"])
 async def create_contract(
-    wedding_id: str,
-    vendor_profile_id: str,
-    total_amount: float,
-    template_id: Optional[str] = None,
-    quote_id: Optional[str] = None,
-    deposit_percentage: Optional[float] = None,
-    service_date: Optional[datetime] = None,
-    service_location: Optional[str] = None,
-    custom_sections: Optional[List[dict]] = None,
+    data: CreateVendorContractRequest,
     current_user: ExtendedAuthUser = Depends(require_vendor_feature),
 ):
     """
@@ -244,17 +248,10 @@ async def create_contract(
     Placeholders in templates are auto-populated with vendor/wedding data.
     """
     enforce_team_permission(current_user, "manage_vendors")
+    payload = data.model_dump(exclude_none=True)
     return await vendor_service.create_contract(
-        wedding_id=wedding_id,
-        vendor_profile_id=vendor_profile_id,
         created_by=current_user.email,
-        template_id=template_id,
-        quote_id=quote_id,
-        total_amount=total_amount,
-        custom_sections=custom_sections,
-        deposit_percentage=deposit_percentage,
-        service_date=service_date,
-        service_location=service_location,
+        **payload,
     )
 
 
@@ -289,7 +286,7 @@ async def get_contract(
 @router.put("/contracts/{contract_id}", tags=["Contracts"])
 async def update_contract(
     contract_id: str,
-    data: dict,
+    data: UpdateVendorContractRequest,
     current_user: ExtendedAuthUser = Depends(require_vendor_feature),
 ):
     """
@@ -299,14 +296,16 @@ async def update_contract(
     """
     enforce_team_permission(current_user, "manage_vendors")
     return await vendor_service.update_contract(
-        contract_id=contract_id, data=data, updated_by=current_user.email
+        contract_id=contract_id,
+        data=data.model_dump(exclude_none=True),
+        updated_by=current_user.email,
     )
 
 
 @router.put("/contracts/{contract_id}/sections", tags=["Contracts"])
 async def update_contract_sections(
     contract_id: str,
-    sections: List[dict],
+    data: UpdateVendorContractSectionsRequest,
     current_user: ExtendedAuthUser = Depends(require_vendor_feature),
 ):
     """
@@ -315,12 +314,22 @@ async def update_contract_sections(
     Planners can add, remove, or modify any section.
     """
     enforce_team_permission(current_user, "manage_vendors")
+    payload = data.model_dump(exclude_none=True)
     return await vendor_service.update_contract_sections(
-        contract_id=contract_id, sections=sections, updated_by=current_user.email
+        contract_id=contract_id,
+        sections=payload["sections"],
+        terms_and_conditions=payload.get("terms_and_conditions"),
+        cancellation_policy=payload.get("cancellation_policy"),
+        custom_clauses=payload.get("custom_clauses"),
+        updated_by=current_user.email,
     )
 
 
-@router.get("/contracts/{contract_id}/form-data", tags=["Contracts"])
+@router.get(
+    "/contracts/{contract_id}/form-data",
+    tags=["Contracts"],
+    response_model=VendorContractFormDataResponse,
+)
 async def get_vendor_form_data_for_contract(
     contract_id: str, current_user: ExtendedAuthUser = Depends(require_vendor_feature)
 ):
@@ -336,8 +345,7 @@ async def get_vendor_form_data_for_contract(
 @router.post("/contracts/{contract_id}/apply-form-data", tags=["Contracts"])
 async def apply_form_data_to_contract(
     contract_id: str,
-    form_submission_id: str,
-    field_mappings: Optional[dict] = None,
+    data: ApplyVendorContractFormDataRequest,
     current_user: ExtendedAuthUser = Depends(require_vendor_feature),
 ):
     """
@@ -347,8 +355,8 @@ async def apply_form_data_to_contract(
     enforce_team_permission(current_user, "manage_vendors")
     return await vendor_service.apply_form_data_to_contract(
         contract_id=contract_id,
-        form_submission_id=form_submission_id,
-        field_mappings=field_mappings,
+        form_submission_id=data.form_submission_id,
+        field_mappings=data.field_mappings,
         applied_by=current_user.email,
     )
 
@@ -356,8 +364,7 @@ async def apply_form_data_to_contract(
 @router.post("/contracts/{contract_id}/send", tags=["Contracts"])
 async def send_contract_to_vendor(
     contract_id: str,
-    message: Optional[str] = None,
-    cc_emails: Optional[List[str]] = None,
+    data: SendVendorContractRequest,
     current_user: ExtendedAuthUser = Depends(require_vendor_feature),
 ):
     """
@@ -368,8 +375,8 @@ async def send_contract_to_vendor(
     return await vendor_service.send_contract(
         contract_id=contract_id,
         created_by=current_user.email,
-        message=message,
-        cc_emails=cc_emails or [],
+        message=data.message,
+        cc_emails=data.cc_emails,
     )
 
 
@@ -395,7 +402,7 @@ async def upload_contract_document(
 @router.post("/contracts/{contract_id}/milestones", tags=["Payment Milestones"])
 async def create_payment_milestones(
     contract_id: str,
-    milestones: List[dict],
+    data: CreateVendorPaymentMilestonesRequest,
     current_user: ExtendedAuthUser = Depends(require_vendor_feature),
 ):
     """
@@ -403,8 +410,11 @@ async def create_payment_milestones(
     Each milestone has a description, amount, and due date.
     """
     enforce_team_permission(current_user, "manage_vendors")
+    payload = data.model_dump(exclude_none=True)
     return await vendor_service.create_payment_milestones(
-        contract_id=contract_id, milestones=milestones, created_by=current_user.email
+        contract_id=contract_id,
+        milestones=payload["milestones"],
+        created_by=current_user.email,
     )
 
 
@@ -426,13 +436,7 @@ async def list_payment_milestones(
 @router.post("/milestones/{milestone_id}/pay", tags=["Payment Milestones"])
 async def record_milestone_payment(
     milestone_id: str,
-    amount: float,
-    payment_method: str = Query(
-        ..., description="cash, check, card, bank_transfer, stripe"
-    ),
-    payment_date: Optional[datetime] = None,
-    notes: Optional[str] = None,
-    receipt_url: Optional[str] = None,
+    data: RecordVendorMilestonePaymentRequest,
     current_user: ExtendedAuthUser = Depends(require_vendor_feature),
 ):
     """
@@ -442,12 +446,12 @@ async def record_milestone_payment(
     enforce_team_permission(current_user, "manage_vendors")
     return await vendor_service.record_payment(
         milestone_id=milestone_id,
-        amount=amount,
-        payment_method=payment_method,
+        amount=data.amount,
+        payment_method=data.payment_method,
         created_by=current_user.email,
-        payment_date=payment_date,
-        notes=notes,
-        receipt_url=receipt_url,
+        payment_date=data.payment_date,
+        notes=data.notes,
+        receipt_url=data.receipt_url,
     )
 
 

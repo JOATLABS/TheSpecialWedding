@@ -161,8 +161,10 @@ async def setup_couple_password(data: CoupleSetupPasswordRequest, response: Resp
             detail="Invalid or expired invitation link. Please ask your planner to resend the invitation.",
         )
 
+    # Resolve portal access — but allow pending_setup state through, since this
+    # endpoint is what transitions the couple OUT of pending_setup.
     _, access = await _resolve_portal_access(couple)
-    if access.get("blocked"):
+    if access.get("blocked") and access.get("state") != COUPLE_PORTAL_STATE_PENDING_SETUP:
         raise HTTPException(status_code=403, detail=access["detail"])
     if access["state"] == COUPLE_PORTAL_STATE_ARCHIVED:
         raise HTTPException(
@@ -264,8 +266,11 @@ async def verify_invite_token(token: str):
             status_code=400, detail="Invalid or expired invitation link."
         )
 
+    # Resolve portal access — but allow pending_setup state through, since that is
+    # the expected state for a couple who hasn't completed setup yet.  Only block
+    # on truly terminal states (revoked, owner_cancelled, owner subscription blocked).
     _, access = await _resolve_portal_access(couple)
-    if access.get("blocked"):
+    if access.get("blocked") and access.get("state") != COUPLE_PORTAL_STATE_PENDING_SETUP:
         raise HTTPException(status_code=403, detail=access["detail"])
     if access["state"] == COUPLE_PORTAL_STATE_ARCHIVED:
         raise HTTPException(
