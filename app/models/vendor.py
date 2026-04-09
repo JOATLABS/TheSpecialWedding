@@ -311,7 +311,7 @@ class VendorProfile(BaseModel):
     )
 
     @field_serializer("id", when_used="json")
-    def serialize_id(self, value) -> str:
+    def serialize_id(self, value) -> str | None:
         return str(value) if value else None
 
 
@@ -403,7 +403,7 @@ class ContractTemplate(BaseModel):
     )
 
     @field_serializer("id", when_used="json")
-    def serialize_id(self, value) -> str:
+    def serialize_id(self, value) -> str | None:
         return str(value) if value else None
 
 
@@ -538,7 +538,7 @@ class VendorContract(BaseModel):
     )
 
     @field_serializer("id", when_used="json")
-    def serialize_id(self, value) -> str:
+    def serialize_id(self, value) -> str | None:
         return str(value) if value else None
 
 
@@ -624,7 +624,7 @@ class VendorPaymentMilestone(BaseModel):
     )
 
     @field_serializer("id", when_used="json")
-    def serialize_id(self, value) -> str:
+    def serialize_id(self, value) -> str | None:
         return str(value) if value else None
 
 
@@ -695,7 +695,7 @@ class VendorAssignment(BaseModel):
     )
 
     @field_serializer("id", when_used="json")
-    def serialize_id(self, value) -> str:
+    def serialize_id(self, value) -> str | None:
         return str(value) if value else None
 
 
@@ -792,7 +792,7 @@ class PaymentLink(BaseModel):
     )
 
     @field_serializer("id", when_used="json")
-    def serialize_id(self, value) -> str:
+    def serialize_id(self, value) -> str | None:
         return str(value) if value else None
 
 
@@ -840,7 +840,7 @@ class VendorCommunication(BaseModel):
     )
 
     @field_serializer("id", when_used="json")
-    def serialize_id(self, value) -> str:
+    def serialize_id(self, value) -> str | None:
         return str(value) if value else None
 
 
