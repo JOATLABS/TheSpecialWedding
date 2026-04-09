@@ -6,6 +6,8 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { toast } from 'sonner';
 import { getApiBaseUrl } from '@/utils/env';
 import { formatAdminDate, formatDate, DEFAULT_TIMEZONE } from '@/utils/dateFormat';
+import ContractMarkdownRenderer from '@/components/contracts/ContractMarkdownRenderer';
+import VendorContractPreview from '@/components/contracts/VendorContractPreview';
 import {
   getVendorDirectory,
   type VendorProfile,
@@ -17,6 +19,7 @@ import {
   getContractTemplates,
   getContractTemplate,
   createContract,
+  updateContract,
   type ContractTemplate,
   type ContractSection,
 } from '@/services/vendorContractsApi';
@@ -41,6 +44,7 @@ const AVAILABLE_PLACEHOLDERS = [
 ];
 
 type Step = 'select-vendor' | 'select-template' | 'customize' | 'review';
+type ActiveDocumentTarget = string | 'terms' | 'cancellation' | 'custom-clauses';
 
 interface ContractDraft {
   vendorId: string;
@@ -62,7 +66,9 @@ interface Wedding {
   _id: string;
   couple_names?: string;
   partner1_name?: string;
+  partner2_name?: string;
   date: string;
+  venue?: string;
 }
 
 export default function ContractCanvasPage() {
@@ -100,7 +106,6 @@ export default function ContractCanvasPage() {
   // Editor state
   const [activeSection, setActiveSection] = useState<string | null>(null);
   const [showPlaceholders, setShowPlaceholders] = useState(false);
-  const [previewMode, setPreviewMode] = useState(false);
 
   // AI Generation state
   const [aiModalOpen, setAiModalOpen] = useState(false);
@@ -187,10 +192,13 @@ export default function ContractCanvasPage() {
 
   // Handle template selection
   const handleSelectTemplate = async (template: ContractTemplate | null) => {
+    let nextActiveSection: ActiveDocumentTarget = 'section-1';
+
     if (template) {
       // Load full template details
       try {
         const fullTemplate = await getContractTemplate(token!, template._id);
+        nextActiveSection = fullTemplate.sections[0]?.id || 'terms';
         setDraft((prev) => ({
           ...prev,
           templateId: template._id,
@@ -262,10 +270,12 @@ Contract Reference: {{contract_number}}`,
         ],
         termsAndConditions: '',
         cancellationPolicy: '',
+        customClauses: '',
       }));
+      nextActiveSection = 'section-1';
     }
     setCurrentStep('customize');
-    setActiveSection(null);
+    setActiveSection(nextActiveSection);
   };
 
   // Add new section
@@ -295,12 +305,13 @@ Contract Reference: {{contract_number}}`,
 
   // Delete section
   const handleDeleteSection = (sectionId: string) => {
+    const remainingSections = draft.sections.filter((s) => s.id !== sectionId);
     setDraft((prev) => ({
       ...prev,
-      sections: prev.sections.filter((s) => s.id !== sectionId),
+      sections: remainingSections,
     }));
     if (activeSection === sectionId) {
-      setActiveSection(null);
+      setActiveSection(remainingSections[0]?.id || 'terms');
     }
   };
 
@@ -326,16 +337,33 @@ Contract Reference: {{contract_number}}`,
     if (!activeSection) return;
 
     const textarea = document.querySelector(
-      `textarea[data-section-id="${activeSection}"]`
+      `textarea[data-editor-target="${activeSection}"]`
     ) as HTMLTextAreaElement;
     if (!textarea) return;
 
     const start = textarea.selectionStart;
     const end = textarea.selectionEnd;
-    const content = draft.sections.find((s) => s.id === activeSection)?.content || '';
+    let content = '';
+    if (activeSection === 'terms') {
+      content = draft.termsAndConditions;
+    } else if (activeSection === 'cancellation') {
+      content = draft.cancellationPolicy;
+    } else if (activeSection === 'custom-clauses') {
+      content = draft.customClauses;
+    } else {
+      content = draft.sections.find((s) => s.id === activeSection)?.content || '';
+    }
     const newContent = content.substring(0, start) + placeholder + content.substring(end);
 
-    handleUpdateSection(activeSection, 'content', newContent);
+    if (activeSection === 'terms') {
+      setDraft((prev) => ({ ...prev, termsAndConditions: newContent }));
+    } else if (activeSection === 'cancellation') {
+      setDraft((prev) => ({ ...prev, cancellationPolicy: newContent }));
+    } else if (activeSection === 'custom-clauses') {
+      setDraft((prev) => ({ ...prev, customClauses: newContent }));
+    } else {
+      handleUpdateSection(activeSection, 'content', newContent);
+    }
     setShowPlaceholders(false);
 
     // Refocus and set cursor position
@@ -407,6 +435,8 @@ Contract Reference: {{contract_number}}`,
       setDraft((prev) => ({ ...prev, termsAndConditions: aiGeneratedContent }));
     } else if (activeSection === 'cancellation') {
       setDraft((prev) => ({ ...prev, cancellationPolicy: aiGeneratedContent }));
+    } else if (activeSection === 'custom-clauses') {
+      setDraft((prev) => ({ ...prev, customClauses: aiGeneratedContent }));
     } else if (activeSection) {
       handleUpdateSection(activeSection, 'content', aiGeneratedContent);
     }
@@ -415,19 +445,24 @@ Contract Reference: {{contract_number}}`,
     toast.success('Content applied!');
   };
 
-  // Preview with placeholders replaced
-  const getPreviewContent = (content: string): string => {
-    let preview = content;
+  const getPreviewPlaceholderValues = (): Record<string, string> => ({
+      ...(function () {
+        const selectedWedding = weddings.find((wedding) => wedding._id === draft.weddingId);
+        const resolvedCoupleNames =
+          selectedWedding?.couple_names ||
+          [selectedWedding?.partner1_name, selectedWedding?.partner2_name].filter(Boolean).join(' & ') ||
+          'The Couple';
 
-    // Replace with sample data for preview
-    const sampleData: Record<string, string> = {
+        return {
+          '{{couple_names}}': resolvedCoupleNames,
+          '{{wedding_date}}': selectedWedding?.date || draft.serviceDate || 'TBD',
+          '{{wedding_venue}}': draft.serviceLocation || selectedWedding?.venue || 'Wedding Venue',
+        };
+      })(),
       '{{vendor_name}}': draft.vendor?.business_name || 'Vendor Name',
       '{{vendor_email}}': draft.vendor?.email || 'vendor@example.com',
       '{{vendor_phone}}': draft.vendor?.phone || '(555) 123-4567',
       '{{vendor_address}}': draft.vendor?.address || 'Vendor Address',
-      '{{couple_names}}': 'Sarah & Michael',
-      '{{wedding_date}}': draft.serviceDate || 'TBD',
-      '{{wedding_venue}}': draft.serviceLocation || 'Wedding Venue',
       '{{service_category}}': draft.vendor
         ? getCategoryLabel(draft.vendor.service_category, draft.vendor.custom_service_category)
         : 'Service',
@@ -438,13 +473,31 @@ Contract Reference: {{contract_number}}`,
       '{{planner_company}}': (userProfile?.user_data?.company_name as string) || 'Planning Company',
       '{{contract_date}}': formatDate(new Date().toISOString(), { year: 'numeric', month: 'long', day: 'numeric' }, 'en-US', DEFAULT_TIMEZONE),
       '{{contract_number}}': 'CON-PREVIEW-001',
+  });
+
+  const buildResolvedDocument = (placeholderValues: Record<string, string>) => {
+    const replacePlaceholders = (content: string) =>
+      Object.entries(placeholderValues).reduce(
+        (resolved, [placeholder, value]) => resolved.split(placeholder).join(value),
+        content
+      );
+
+    return {
+      sections: draft.sections.map((section) => ({
+        ...section,
+        content: replacePlaceholders(section.content),
+      })),
+      terms_and_conditions: replacePlaceholders(draft.termsAndConditions),
+      cancellation_policy: replacePlaceholders(draft.cancellationPolicy),
+      custom_clauses: replacePlaceholders(draft.customClauses),
     };
+  };
 
-    Object.entries(sampleData).forEach(([placeholder, value]) => {
-      preview = preview.replace(new RegExp(placeholder.replace(/[{}]/g, '\\$&'), 'g'), value);
-    });
-
-    return preview;
+  const getActiveDocumentTitle = (): string => {
+    if (activeSection === 'terms') return 'Terms & Conditions';
+    if (activeSection === 'cancellation') return 'Cancellation Policy';
+    if (activeSection === 'custom-clauses') return 'Custom Clauses';
+    return draft.sections.find((s) => s.id === activeSection)?.title || 'Select a section';
   };
 
   // Create contract
@@ -465,12 +518,19 @@ Contract Reference: {{contract_number}}`,
         wedding_id: draft.weddingId,
         vendor_profile_id: draft.vendorId,
         total_amount: draft.totalAmount,
-        template_id: draft.templateId,
+        template_id: draft.templateId || undefined,
         deposit_percentage: draft.depositPercentage,
         service_date: draft.serviceDate || undefined,
         service_location: draft.serviceLocation || undefined,
-        custom_sections: draft.sections,
+        custom_sections: draft.templateId ? [] : draft.sections,
       });
+
+      const persistedDocument = buildResolvedDocument({
+        ...getPreviewPlaceholderValues(),
+        '{{contract_number}}': contract.contract_number || 'CONTRACT',
+      });
+
+      await updateContract(token, contract._id, persistedDocument);
 
       toast.success('Contract created successfully!');
       router.push(`/admin/vendors/contracts/${contract._id}`);
@@ -823,6 +883,16 @@ Contract Reference: {{contract_number}}`,
                 >
                   Cancellation Policy
                 </button>
+                <button
+                  onClick={() => setActiveSection('custom-clauses')}
+                  className={`w-full text-left p-2 rounded-lg text-sm transition-colors ${
+                    activeSection === 'custom-clauses'
+                      ? 'bg-wedding-rose/10 text-wedding-rose'
+                      : 'text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-slate-700'
+                  }`}
+                >
+                  Custom Clauses
+                </button>
               </div>
             </div>
 
@@ -891,13 +961,7 @@ Contract Reference: {{contract_number}}`,
               {/* Section editor */}
               <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-xl p-6">
                 <div className="flex items-center justify-between mb-4">
-                  <h3 className="font-semibold text-gray-900 dark:text-gray-100">
-                    {activeSection === 'terms'
-                      ? 'Terms & Conditions'
-                      : activeSection === 'cancellation'
-                      ? 'Cancellation Policy'
-                      : draft.sections.find((s) => s.id === activeSection)?.title || 'Select a section'}
-                  </h3>
+                  <h3 className="font-semibold text-gray-900 dark:text-gray-100">{getActiveDocumentTitle()}</h3>
                   <div className="flex items-center gap-2">
                     {/* AI Generate Button */}
                     {activeSection && (
@@ -905,6 +969,7 @@ Contract Reference: {{contract_number}}`,
                         onClick={() => {
                           const sectionType = activeSection === 'terms' ? 'payment_terms' :
                             activeSection === 'cancellation' ? 'cancellation_policy' :
+                            activeSection === 'custom-clauses' ? 'custom' :
                             draft.sections.find((s) => s.id === activeSection)?.title?.toLowerCase().includes('payment') ? 'payment_terms' :
                             draft.sections.find((s) => s.id === activeSection)?.title?.toLowerCase().includes('scope') ? 'scope_of_work' :
                             draft.sections.find((s) => s.id === activeSection)?.title?.toLowerCase().includes('liability') ? 'liability' :
@@ -928,16 +993,6 @@ Contract Reference: {{contract_number}}`,
                       }`}
                     >
                       {'{{'} Placeholders {'}}'}
-                    </button>
-                    <button
-                      onClick={() => setPreviewMode(!previewMode)}
-                      className={`px-3 py-1.5 text-sm rounded-lg transition-colors ${
-                        previewMode
-                          ? 'bg-green-600 text-white'
-                          : 'bg-gray-100 dark:bg-slate-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200'
-                      }`}
-                    >
-                      {previewMode ? 'Edit' : 'Preview'}
                     </button>
                   </div>
                 </div>
@@ -963,73 +1018,95 @@ Contract Reference: {{contract_number}}`,
                   </div>
                 )}
 
-                {/* Editor content */}
-                {activeSection && activeSection !== 'terms' && activeSection !== 'cancellation' && (
-                  <>
-                    {/* Section title */}
-                    <div className="mb-4">
-                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                        Section Title
-                      </label>
-                      <input
-                        type="text"
-                        value={draft.sections.find((s) => s.id === activeSection)?.title || ''}
-                        onChange={(e) => handleUpdateSection(activeSection, 'title', e.target.value)}
-                        className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100"
-                      />
-                    </div>
+                {activeSection ? (
+                  <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)] gap-6">
+                    <div className="space-y-4">
+                      {activeSection !== 'terms' &&
+                        activeSection !== 'cancellation' &&
+                        activeSection !== 'custom-clauses' && (
+                          <div>
+                            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                              Section Title
+                            </label>
+                            <input
+                              type="text"
+                              value={draft.sections.find((s) => s.id === activeSection)?.title || ''}
+                              onChange={(e) => handleUpdateSection(activeSection, 'title', e.target.value)}
+                              className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100"
+                            />
+                          </div>
+                        )}
 
-                    {/* Section content */}
-                    {previewMode ? (
-                      <div className="prose dark:prose-invert max-w-none p-4 bg-gray-50 dark:bg-slate-700 rounded-lg min-h-[200px] whitespace-pre-wrap">
-                        {getPreviewContent(draft.sections.find((s) => s.id === activeSection)?.content || '')}
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                          Markdown Source
+                        </label>
+                        {activeSection === 'terms' && (
+                          <textarea
+                            data-editor-target="terms"
+                            value={draft.termsAndConditions}
+                            onChange={(e) => setDraft((prev) => ({ ...prev, termsAndConditions: e.target.value }))}
+                            rows={14}
+                            className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 font-mono text-sm resize-y"
+                            placeholder="Enter terms and conditions..."
+                          />
+                        )}
+                        {activeSection === 'cancellation' && (
+                          <textarea
+                            data-editor-target="cancellation"
+                            value={draft.cancellationPolicy}
+                            onChange={(e) => setDraft((prev) => ({ ...prev, cancellationPolicy: e.target.value }))}
+                            rows={14}
+                            className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 font-mono text-sm resize-y"
+                            placeholder="Enter cancellation policy..."
+                          />
+                        )}
+                        {activeSection === 'custom-clauses' && (
+                          <textarea
+                            data-editor-target="custom-clauses"
+                            value={draft.customClauses}
+                            onChange={(e) => setDraft((prev) => ({ ...prev, customClauses: e.target.value }))}
+                            rows={14}
+                            className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 font-mono text-sm resize-y"
+                            placeholder="Enter any custom clauses..."
+                          />
+                        )}
+                        {activeSection !== 'terms' &&
+                          activeSection !== 'cancellation' &&
+                          activeSection !== 'custom-clauses' && (
+                            <textarea
+                              data-editor-target={activeSection}
+                              value={draft.sections.find((s) => s.id === activeSection)?.content || ''}
+                              onChange={(e) => handleUpdateSection(activeSection, 'content', e.target.value)}
+                              rows={14}
+                              className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 font-mono text-sm resize-y"
+                              placeholder="Enter section content... Use {{placeholders}} for auto-fill data."
+                            />
+                          )}
                       </div>
-                    ) : (
-                      <textarea
-                        data-section-id={activeSection}
-                        value={draft.sections.find((s) => s.id === activeSection)?.content || ''}
-                        onChange={(e) => handleUpdateSection(activeSection, 'content', e.target.value)}
-                        rows={12}
-                        className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 font-mono text-sm resize-y"
-                        placeholder="Enter section content... Use {{placeholders}} for auto-fill data."
-                      />
-                    )}
-                  </>
-                )}
-
-                {activeSection === 'terms' && (
-                  previewMode ? (
-                    <div className="prose dark:prose-invert max-w-none p-4 bg-gray-50 dark:bg-slate-700 rounded-lg min-h-[200px] whitespace-pre-wrap">
-                      {getPreviewContent(draft.termsAndConditions)}
                     </div>
-                  ) : (
-                    <textarea
-                      value={draft.termsAndConditions}
-                      onChange={(e) => setDraft((prev) => ({ ...prev, termsAndConditions: e.target.value }))}
-                      rows={12}
-                      className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 font-mono text-sm resize-y"
-                      placeholder="Enter terms and conditions..."
-                    />
-                  )
-                )}
 
-                {activeSection === 'cancellation' && (
-                  previewMode ? (
-                    <div className="prose dark:prose-invert max-w-none p-4 bg-gray-50 dark:bg-slate-700 rounded-lg min-h-[200px] whitespace-pre-wrap">
-                      {getPreviewContent(draft.cancellationPolicy)}
+                    <div className="space-y-3">
+                      <div>
+                        <div className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                          Live Document Preview
+                        </div>
+                        <p className="text-xs text-gray-500 dark:text-gray-400">
+                          This uses the same contract rendering path the vendor will see.
+                        </p>
+                      </div>
+                      <div className="rounded-2xl border border-gray-200 dark:border-gray-700 bg-gray-50/80 dark:bg-slate-900/60 p-4 max-h-[720px] overflow-y-auto">
+                        <VendorContractPreview
+                          sections={draft.sections}
+                          termsAndConditions={draft.termsAndConditions}
+                          cancellationPolicy={draft.cancellationPolicy}
+                          customClauses={draft.customClauses}
+                          placeholderValues={getPreviewPlaceholderValues()}
+                        />
+                      </div>
                     </div>
-                  ) : (
-                    <textarea
-                      value={draft.cancellationPolicy}
-                      onChange={(e) => setDraft((prev) => ({ ...prev, cancellationPolicy: e.target.value }))}
-                      rows={12}
-                      className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 font-mono text-sm resize-y"
-                      placeholder="Enter cancellation policy..."
-                    />
-                  )
-                )}
-
-                {!activeSection && (
+                  </div>
+                ) : (
                   <div className="text-center py-12 text-gray-500 dark:text-gray-400">
                     <svg className="w-12 h-12 mx-auto mb-4 opacity-50" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
@@ -1108,40 +1185,13 @@ Contract Reference: {{contract_number}}`,
                     <span className="font-medium text-gray-700 dark:text-gray-300">Contract Preview</span>
                   </div>
                   <div className="p-6 max-h-[500px] overflow-y-auto">
-                    <div className="prose dark:prose-invert max-w-none">
-                      {draft.sections.map((section) => (
-                        <div key={section.id} className="mb-8">
-                          <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-2 pb-2 border-b">
-                            {section.title}
-                          </h3>
-                          <div className="whitespace-pre-wrap text-gray-700 dark:text-gray-300">
-                            {getPreviewContent(section.content)}
-                          </div>
-                        </div>
-                      ))}
-
-                      {draft.termsAndConditions && (
-                        <div className="mb-8">
-                          <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-2 pb-2 border-b">
-                            Terms & Conditions
-                          </h3>
-                          <div className="whitespace-pre-wrap text-gray-700 dark:text-gray-300">
-                            {getPreviewContent(draft.termsAndConditions)}
-                          </div>
-                        </div>
-                      )}
-
-                      {draft.cancellationPolicy && (
-                        <div className="mb-8">
-                          <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-2 pb-2 border-b">
-                            Cancellation Policy
-                          </h3>
-                          <div className="whitespace-pre-wrap text-gray-700 dark:text-gray-300">
-                            {getPreviewContent(draft.cancellationPolicy)}
-                          </div>
-                        </div>
-                      )}
-                    </div>
+                    <VendorContractPreview
+                      sections={draft.sections}
+                      termsAndConditions={draft.termsAndConditions}
+                      cancellationPolicy={draft.cancellationPolicy}
+                      customClauses={draft.customClauses}
+                      placeholderValues={getPreviewPlaceholderValues()}
+                    />
                   </div>
                 </div>
               </div>
@@ -1291,9 +1341,7 @@ Contract Reference: {{contract_number}}`,
                     </span>
                   </div>
                   <div className="p-4 max-h-[200px] overflow-y-auto">
-                    <div className="prose dark:prose-invert max-w-none text-sm whitespace-pre-wrap">
-                      {aiGeneratedContent}
-                    </div>
+                    <ContractMarkdownRenderer content={aiGeneratedContent} className="text-sm" />
                   </div>
                 </div>
               )}

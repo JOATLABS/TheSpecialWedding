@@ -162,6 +162,7 @@ export interface PublicContract {
   sections: ContractSection[];
   terms_and_conditions?: string;
   cancellation_policy?: string;
+  custom_clauses?: string;
   total_amount: number;
   deposit_amount?: number;
   currency: string;

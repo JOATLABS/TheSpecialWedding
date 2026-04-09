@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useParams, useSearchParams } from 'next/navigation';
 import { getApiBaseUrl } from '@/utils/env';
+import VendorContractPreview from '@/components/contracts/VendorContractPreview';
 
 interface ContractSection {
   id: string;
@@ -27,6 +28,7 @@ interface PublicContract {
   sections: ContractSection[];
   terms_and_conditions?: string;
   cancellation_policy?: string;
+  custom_clauses?: string;
   total_amount: number;
   deposit_amount?: number;
   currency: string;
@@ -308,34 +310,12 @@ export default function PublicContractPageClient() {
           </div>
 
           <div className="p-6 space-y-8">
-            {contract.sections
-              .sort((a, b) => a.order - b.order)
-              .map((section) => (
-                <div key={section.id} className="border-b border-gray-100 pb-6 last:border-0 last:pb-0">
-                  <h3 className="text-lg font-semibold text-gray-900 mb-3">{section.title}</h3>
-                  <div className="prose prose-gray max-w-none">
-                    <div className="whitespace-pre-wrap text-gray-700">{section.content}</div>
-                  </div>
-                </div>
-              ))}
-
-            {contract.terms_and_conditions && (
-              <div className="border-b border-gray-100 pb-6">
-                <h3 className="text-lg font-semibold text-gray-900 mb-3">Terms & Conditions</h3>
-                <div className="prose prose-gray max-w-none">
-                  <div className="whitespace-pre-wrap text-gray-700">{contract.terms_and_conditions}</div>
-                </div>
-              </div>
-            )}
-
-            {contract.cancellation_policy && (
-              <div>
-                <h3 className="text-lg font-semibold text-gray-900 mb-3">Cancellation Policy</h3>
-                <div className="prose prose-gray max-w-none">
-                  <div className="whitespace-pre-wrap text-gray-700">{contract.cancellation_policy}</div>
-                </div>
-              </div>
-            )}
+            <VendorContractPreview
+              sections={contract.sections}
+              termsAndConditions={contract.terms_and_conditions}
+              cancellationPolicy={contract.cancellation_policy}
+              customClauses={contract.custom_clauses}
+            />
           </div>
         </div>
 

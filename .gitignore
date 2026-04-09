@@ -74,6 +74,7 @@ tests/unit/*
 !tests/unit/blogRichText.test.ts
 !tests/unit/subscriptionStatus.test.ts
 !tests/unit/vendorContractsApi.test.ts
+!tests/unit/vendorContractPreview.test.tsx
 !tests/resources-blog-rendering.spec.ts
 
 ARCHITECTURAL_IMPROVEMENTS_COMPLETE.md

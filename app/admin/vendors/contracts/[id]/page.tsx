@@ -4,7 +4,8 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { useAdmin } from '@/contexts/AdminContext';
 import { useRouter, useParams } from 'next/navigation';
 import { toast } from 'sonner';
-import { formatAdminTimestamp, formatAdminDate, DEFAULT_TIMEZONE } from '@/utils/dateFormat';
+import { formatAdminTimestamp, formatAdminDate } from '@/utils/dateFormat';
+import VendorContractPreview from '@/components/contracts/VendorContractPreview';
 import {
   getCategoryLabel,
 } from '@/services/vendorManagementApi';
@@ -24,7 +25,7 @@ import {
 type TabId = 'details' | 'sections' | 'payments' | 'activity';
 
 export default function ContractDetailPage() {
-  const { token, userProfile } = useAdmin();
+  const { token } = useAdmin();
   const router = useRouter();
   const params = useParams();
   const contractId = params.id as string;
@@ -586,77 +587,114 @@ export default function ContractDetailPage() {
               )}
             </div>
 
-            <div className="space-y-6">
-              {(editMode ? editedSections : contract.sections).map((section, index) => (
-                <div
-                  key={section.id}
-                  className="border border-gray-200 dark:border-gray-700 rounded-xl overflow-hidden"
-                >
-                  <div className="bg-gray-50 dark:bg-slate-700 px-4 py-3 flex items-center justify-between">
-                    {editMode ? (
-                      <input
-                        type="text"
-                        value={section.title}
-                        onChange={(e) => handleUpdateSection(section.id, 'title', e.target.value)}
-                        className="font-medium bg-transparent border-none focus:outline-none focus:ring-0 text-gray-900 dark:text-gray-100"
-                      />
-                    ) : (
-                      <h3 className="font-medium text-gray-900 dark:text-gray-100">{section.title}</h3>
-                    )}
-                    {editMode && (
-                      <button
-                        onClick={() => handleDeleteSection(section.id)}
-                        className="text-gray-400 hover:text-red-500"
-                      >
-                        <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                        </svg>
-                      </button>
-                    )}
-                  </div>
-                  <div className="p-4">
-                    {editMode ? (
+            {editMode ? (
+              <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)] gap-6">
+                <div className="space-y-6">
+                  {editedSections.map((section) => (
+                    <div
+                      key={section.id}
+                      className="border border-gray-200 dark:border-gray-700 rounded-xl overflow-hidden"
+                    >
+                      <div className="bg-gray-50 dark:bg-slate-700 px-4 py-3 flex items-center justify-between">
+                        <input
+                          type="text"
+                          value={section.title}
+                          onChange={(e) => handleUpdateSection(section.id, 'title', e.target.value)}
+                          className="flex-1 font-medium bg-transparent border-none focus:outline-none focus:ring-0 text-gray-900 dark:text-gray-100"
+                        />
+                        <button
+                          onClick={() => handleDeleteSection(section.id)}
+                          className="text-gray-400 hover:text-red-500"
+                        >
+                          <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                          </svg>
+                        </button>
+                      </div>
+                      <div className="p-4">
+                        <textarea
+                          value={section.content}
+                          onChange={(e) => handleUpdateSection(section.id, 'content', e.target.value)}
+                          rows={6}
+                          className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 font-mono text-sm resize-y"
+                        />
+                      </div>
+                    </div>
+                  ))}
+
+                  <div className="border border-gray-200 dark:border-gray-700 rounded-xl overflow-hidden">
+                    <div className="bg-gray-50 dark:bg-slate-700 px-4 py-3">
+                      <h3 className="font-medium text-gray-900 dark:text-gray-100">Terms & Conditions</h3>
+                    </div>
+                    <div className="p-4">
                       <textarea
-                        value={section.content}
-                        onChange={(e) => handleUpdateSection(section.id, 'content', e.target.value)}
+                        value={editedContract.terms_and_conditions || ''}
+                        onChange={(e) => setEditedContract((prev) => ({ ...prev, terms_and_conditions: e.target.value }))}
                         rows={6}
                         className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 font-mono text-sm resize-y"
+                        placeholder="Enter terms and conditions..."
                       />
-                    ) : (
-                      <div className="whitespace-pre-wrap text-gray-700 dark:text-gray-300">
-                        {section.content}
-                      </div>
-                    )}
+                    </div>
                   </div>
-                </div>
-              ))}
 
-              {contract.terms_and_conditions && (
-                <div className="border border-gray-200 dark:border-gray-700 rounded-xl overflow-hidden">
-                  <div className="bg-gray-50 dark:bg-slate-700 px-4 py-3">
-                    <h3 className="font-medium text-gray-900 dark:text-gray-100">Terms & Conditions</h3>
+                  <div className="border border-gray-200 dark:border-gray-700 rounded-xl overflow-hidden">
+                    <div className="bg-gray-50 dark:bg-slate-700 px-4 py-3">
+                      <h3 className="font-medium text-gray-900 dark:text-gray-100">Cancellation Policy</h3>
+                    </div>
+                    <div className="p-4">
+                      <textarea
+                        value={editedContract.cancellation_policy || ''}
+                        onChange={(e) => setEditedContract((prev) => ({ ...prev, cancellation_policy: e.target.value }))}
+                        rows={6}
+                        className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 font-mono text-sm resize-y"
+                        placeholder="Enter cancellation policy..."
+                      />
+                    </div>
                   </div>
-                  <div className="p-4">
-                    <div className="whitespace-pre-wrap text-gray-700 dark:text-gray-300">
-                      {contract.terms_and_conditions}
+
+                  <div className="border border-gray-200 dark:border-gray-700 rounded-xl overflow-hidden">
+                    <div className="bg-gray-50 dark:bg-slate-700 px-4 py-3">
+                      <h3 className="font-medium text-gray-900 dark:text-gray-100">Custom Clauses</h3>
+                    </div>
+                    <div className="p-4">
+                      <textarea
+                        value={editedContract.custom_clauses || ''}
+                        onChange={(e) => setEditedContract((prev) => ({ ...prev, custom_clauses: e.target.value }))}
+                        rows={6}
+                        className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 font-mono text-sm resize-y"
+                        placeholder="Enter any custom clauses..."
+                      />
                     </div>
                   </div>
                 </div>
-              )}
 
-              {contract.cancellation_policy && (
-                <div className="border border-gray-200 dark:border-gray-700 rounded-xl overflow-hidden">
-                  <div className="bg-gray-50 dark:bg-slate-700 px-4 py-3">
-                    <h3 className="font-medium text-gray-900 dark:text-gray-100">Cancellation Policy</h3>
-                  </div>
-                  <div className="p-4">
-                    <div className="whitespace-pre-wrap text-gray-700 dark:text-gray-300">
-                      {contract.cancellation_policy}
+                <div className="space-y-3">
+                  <div>
+                    <div className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                      Live Document Preview
                     </div>
+                    <p className="text-xs text-gray-500 dark:text-gray-400">
+                      This uses the same contract rendering path the vendor sees.
+                    </p>
+                  </div>
+                  <div className="rounded-2xl border border-gray-200 dark:border-gray-700 bg-gray-50/80 dark:bg-slate-900/60 p-4 max-h-[900px] overflow-y-auto">
+                    <VendorContractPreview
+                      sections={editedSections}
+                      termsAndConditions={editedContract.terms_and_conditions || ''}
+                      cancellationPolicy={editedContract.cancellation_policy || ''}
+                      customClauses={editedContract.custom_clauses || ''}
+                    />
                   </div>
                 </div>
-              )}
-            </div>
+              </div>
+            ) : (
+              <VendorContractPreview
+                sections={contract.sections}
+                termsAndConditions={contract.terms_and_conditions}
+                cancellationPolicy={contract.cancellation_policy}
+                customClauses={contract.custom_clauses}
+              />
+            )}
           </div>
         )}
 
