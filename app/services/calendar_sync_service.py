@@ -5,6 +5,8 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from typing import Any, Dict, List
 
+from fastapi import HTTPException
+
 from app.core.database import mongo
 from app.models.calendar import CalendarSyncPolicy
 from app.models.calendar_sync import CalendarSyncStatusValue
@@ -67,6 +69,9 @@ class CalendarSyncService:
             # Explicit overrides fail closed. If the scheduler selected targets
             # that are no longer allowed by policy or permission, do not guess.
             return explicit_targets
+
+        if policy == CalendarSyncPolicy.CUSTOM.value:
+            return []
 
         selected_targets: list[dict] = []
         if (
@@ -231,14 +236,22 @@ class CalendarSyncService:
     async def delete_schedule_item_syncs(self, task_id: str) -> None:
         """Delete all external event projections and local mapping rows."""
         sync_docs = await self.syncs_collection.find({"task_id": task_id}).to_list(length=200)
+        failed_deletions: list[str] = []
         for sync_doc in sync_docs:
             connection_id = sync_doc.get("calendar_connection_id")
             external_event_id = sync_doc.get("external_event_id")
             if connection_id and external_event_id:
-                await google_calendar_service.delete_google_event_for_connection(
+                deleted = await google_calendar_service.delete_google_event_for_connection(
                     connection_id,
                     external_event_id,
                 )
+                if not deleted:
+                    failed_deletions.append(str(sync_doc.get("_id") or external_event_id))
+        if failed_deletions:
+            raise HTTPException(
+                status_code=502,
+                detail="Failed to delete one or more external calendar events. Internal record was preserved.",
+            )
         await self.syncs_collection.delete_many({"task_id": task_id})
 
     async def get_sync_status(self, task_id: str) -> list[dict]:

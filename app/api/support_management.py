@@ -130,9 +130,18 @@ async def get_tickets(
     assigned_to: Optional[str] = Query(None, description="Filter by assigned admin"),
     created_by: Optional[str] = Query(None, description="Filter by creator"),
     wedding_id: Optional[str] = Query(None, description="Filter by wedding ID"),
+    active_only: bool = Query(
+        False, description="Show only active ticket statuses for inbox surfaces"
+    ),
     current_user: ExtendedAuthUser = Depends(require_admin_or_planner),
 ):
     """Get support tickets with filtering - Authenticated users can see their own tickets, ROOT_ADMIN sees all"""
+    if active_only and status:
+        raise HTTPException(
+            status_code=400,
+            detail="status cannot be combined with active_only",
+        )
+
     # Validate filter parameters
     status = validated_status_filter(
         status, ["open", "in_progress", "resolved", "closed"]
@@ -163,7 +172,13 @@ async def get_tickets(
     if current_user.role != "ROOT_ADMIN":
         filters["created_by"] = current_user.email
 
-    return await support_service.get_tickets(page=page, limit=limit, filters=filters)
+    return await support_service.get_tickets(
+        page=page,
+        limit=limit,
+        filters=filters,
+        exclude_sms=True,
+        active_statuses=["open", "in_progress"] if active_only else None,
+    )
 
 
 @router.get("/tickets/{ticket_id}", tags=["Support"])
@@ -286,14 +301,29 @@ async def get_my_tickets(
     page: int = Query(1, ge=1, description="Page number"),
     limit: int = Query(10, ge=1, le=50, description="Items per page"),
     status: Optional[str] = Query(None, description="Filter by status"),
+    active_only: bool = Query(
+        False, description="Show only active ticket statuses for inbox surfaces"
+    ),
     current_user: ExtendedAuthUser = Depends(require_admin_or_planner),
 ):
     """Get current user's tickets"""
+    if active_only and status:
+        raise HTTPException(
+            status_code=400,
+            detail="status cannot be combined with active_only",
+        )
+
     filters = {"created_by": current_user.email}
     if status:
         filters["status"] = status
 
-    return await support_service.get_tickets(page=page, limit=limit, filters=filters)
+    return await support_service.get_tickets(
+        page=page,
+        limit=limit,
+        filters=filters,
+        exclude_sms=True,
+        active_statuses=["open", "in_progress"] if active_only else None,
+    )
 
 
 @router.get("/categories", tags=["Support"])
@@ -368,6 +398,9 @@ async def get_sms_tickets(
     ),
     page: int = Query(1, ge=1, description="Page number"),
     limit: int = Query(50, ge=1, le=100, description="Items per page"),
+    active_only: bool = Query(
+        False, description="Show only active ticket statuses for inbox surfaces"
+    ),
     current_user: ExtendedAuthUser = Depends(require_admin_or_planner),
 ):
     """
@@ -375,6 +408,12 @@ async def get_sms_tickets(
     - Wedding planners see only tickets for their assigned weddings
     - ROOT_ADMIN sees all tickets
     """
+    if active_only and status:
+        raise HTTPException(
+            status_code=400,
+            detail="status cannot be combined with active_only",
+        )
+
     from app.core.database import mongo
 
     # Build query
@@ -382,6 +421,8 @@ async def get_sms_tickets(
 
     if status:
         query["status"] = status
+    elif active_only:
+        query["status"] = {"$in": ["new", "in_progress"]}
 
     # Filter by assigned planner (multi-tenant security)
     if not current_user.is_root_admin:
@@ -436,14 +477,26 @@ async def get_sms_ticket(
 
     # Multi-tenant security: combine access check into query for non-root-admin users
     if current_user.is_root_admin:
-        query = {"_id": obj_id}
+        query = {"_id": obj_id, "source": "sms"}
     else:
-        query = {"_id": obj_id, "assigned_to": current_user.email}
+        query = {"_id": obj_id, "assigned_to": current_user.email, "source": "sms"}
 
     ticket = await mongo.db["support_tickets"].find_one(query)
 
     if not ticket:
         raise HTTPException(status_code=404, detail="Ticket not found")
+
+    if not ticket.get("is_read"):
+        await mongo.db["support_tickets"].update_one(
+            {"_id": obj_id},
+            {
+                "$set": {
+                    "is_read": True,
+                    "read_at": datetime.now(timezone.utc),
+                }
+            },
+        )
+        ticket["is_read"] = True
 
     # Convert ObjectId to string
     ticket["_id"] = str(ticket["_id"])
@@ -481,9 +534,9 @@ async def respond_to_sms_ticket(
 
     # Multi-tenant security: combine access check into query for non-root-admin users
     if current_user.is_root_admin:
-        query = {"_id": obj_id}
+        query = {"_id": obj_id, "source": "sms"}
     else:
-        query = {"_id": obj_id, "assigned_to": current_user.email}
+        query = {"_id": obj_id, "assigned_to": current_user.email, "source": "sms"}
 
     ticket = await mongo.db["support_tickets"].find_one(query)
 
@@ -530,18 +583,22 @@ async def respond_to_sms_ticket(
     # Set first response time if this is the first response
     if not ticket.get("first_response_at"):
         update["$set"]["first_response_at"] = now
-        if response_time_minutes:
+        if response_time_minutes is not None:
             update["$set"]["first_response_time_minutes"] = response_time_minutes
 
     # Mark as resolved if requested
     if response_data.mark_resolved:
         update["$set"]["status"] = "resolved"
         update["$set"]["resolved_at"] = now
-        if response_time_minutes:
+        if response_time_minutes is not None:
             update["$set"]["resolution_time_minutes"] = response_time_minutes
+    elif ticket.get("status") == "new":
+        update["$set"]["status"] = "in_progress"
 
     # Update ticket
     await mongo.db["support_tickets"].update_one({"_id": ObjectId(ticket_id)}, update)
+
+    next_status = update["$set"].get("status", ticket.get("status"))
 
     logger.info(f"SMS response sent for ticket {ticket_id} by {current_user.email}")
 
@@ -549,9 +606,7 @@ async def respond_to_sms_ticket(
         "success": True,
         "message": "SMS response sent successfully",
         "sms_result": result,
-        "ticket_status": "resolved"
-        if response_data.mark_resolved
-        else ticket.get("status"),
+        "ticket_status": next_status,
         "response_time_minutes": response_time_minutes,
     }
 
@@ -581,9 +636,9 @@ async def update_sms_ticket_status(
 
     # Multi-tenant security: combine access check into query for non-root-admin users
     if current_user.is_root_admin:
-        query = {"_id": obj_id}
+        query = {"_id": obj_id, "source": "sms"}
     else:
-        query = {"_id": obj_id, "assigned_to": current_user.email}
+        query = {"_id": obj_id, "assigned_to": current_user.email, "source": "sms"}
 
     ticket = await mongo.db["support_tickets"].find_one(query)
 
@@ -666,6 +721,13 @@ async def get_sms_ticket_stats(
     unread_count = await mongo.db["support_tickets"].count_documents(
         {**base_query, "is_read": False}
     )
+    urgent_count = await mongo.db["support_tickets"].count_documents(
+        {
+            **base_query,
+            "priority": "urgent",
+            "status": {"$in": ["new", "in_progress"]},
+        }
+    )
 
     return {
         "total": total_count,
@@ -680,4 +742,5 @@ async def get_sms_ticket_stats(
             "max_minutes": avg_response.get("max_response_time", 0),
         },
         "unread_count": unread_count,
+        "urgent_count": urgent_count,
     }

@@ -284,7 +284,10 @@ async def test_schedule_meeting_uses_canonical_owner_email_for_couple_visibility
     )
 
     current_user = ExtendedAuthUser("team@example.com", "team_member", {})
-    current_user.team_permissions = {"manage_couple_portal": True}
+    current_user.team_permissions = {
+        "manage_couple_portal": True,
+        "schedule_meetings": True,
+    }
     current_user.team_owner_email = "owner@example.com"
 
     await couple_portal_api.schedule_meeting(
@@ -292,7 +295,9 @@ async def test_schedule_meeting_uses_canonical_owner_email_for_couple_visibility
             wedding_id="wedding-1",
             title="Planning Call",
             description="Review checklist",
-            start_date="2026-04-08T12:00:00Z",
+            start_date=datetime(2026, 4, 8, 12, 0, tzinfo=timezone.utc),
+            recurrence_rule=None,
+            reminder_minutes=None,
             sync_to_google=False,
         ),
         current_user=current_user,
@@ -301,6 +306,32 @@ async def test_schedule_meeting_uses_canonical_owner_email_for_couple_visibility
     assert inserted_docs
     assert inserted_docs[0]["planner_email"] == "owner@example.com"
     assert inserted_docs[0]["scheduled_by_email"] == "team@example.com"
+
+
+@pytest.mark.asyncio
+async def test_schedule_meeting_requires_schedule_meetings_permission() -> None:
+    current_user = ExtendedAuthUser("team@example.com", "team_member", {})
+    current_user.team_permissions = {
+        "manage_couple_portal": True,
+        "schedule_meetings": False,
+    }
+
+    with pytest.raises(HTTPException) as exc_info:
+        await couple_portal_api.schedule_meeting(
+            couple_portal_api.ScheduleMeetingRequest(
+                wedding_id="wedding-1",
+                title="Planning Call",
+                description="Review checklist",
+                start_date=datetime(2026, 4, 8, 12, 0, tzinfo=timezone.utc),
+                recurrence_rule=None,
+                reminder_minutes=None,
+                sync_to_google=False,
+            ),
+            current_user=current_user,
+        )
+
+    assert exc_info.value.status_code == 403
+    assert "schedule meetings" in exc_info.value.detail.lower()
 
 
 @pytest.mark.asyncio
@@ -360,6 +391,8 @@ async def test_save_form_template_uses_owner_scope_for_team_members(
         couple_portal_api.SaveAsTemplateRequest(
             form_id="507f1f77bcf86cd799439011",
             template_name="Shared Questionnaire",
+            description=None,
+            category=None,
         ),
         current_user=current_user,
     )

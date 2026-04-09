@@ -1,11 +1,11 @@
 'use client';
 
 import React from 'react';
-import { Heart, Mail, Paperclip, Reply } from 'lucide-react';
+import { Heart, Mail, MessageSquare, Paperclip, Reply, Smartphone } from 'lucide-react';
 
 export interface InboxListItemProps {
   id: string;
-  type: 'email' | 'couple' | 'planner';
+  type: 'email' | 'couple' | 'planner' | 'sms_support' | 'support_ticket';
   name: string;
   preview: string;
   isRead: boolean;
@@ -49,6 +49,8 @@ const typeLabels: Record<string, string> = {
   email: 'Email',
   couple: 'Couple',
   planner: 'Planner',
+  sms_support: 'SMS Support',
+  support_ticket: 'Support',
 };
 
 export default function InboxListItem({
@@ -67,8 +69,19 @@ export default function InboxListItem({
 }: InboxListItemProps) {
   const colors = accentClasses[accentColor];
 
-  const IconComponent = type === 'email' ? Mail : Heart;
-  const typeBadgeClass = type === 'email' ? colors.typeBadgeEmail : colors.typeBadgeCouple;
+  const IconComponent =
+    type === 'email'
+      ? Mail
+      : type === 'sms_support'
+        ? Smartphone
+        : type === 'support_ticket'
+          ? MessageSquare
+          : Heart;
+  const typeBadgeClass = type === 'email'
+    ? colors.typeBadgeEmail
+    : type === 'sms_support' || type === 'support_ticket'
+      ? 'bg-indigo-50 text-indigo-600 dark:bg-indigo-900/20 dark:text-indigo-300'
+      : colors.typeBadgeCouple;
 
   return (
     <div

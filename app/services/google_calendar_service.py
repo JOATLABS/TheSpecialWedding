@@ -460,6 +460,11 @@ class GoogleCalendarService:
         try:
             if credentials.expired and credentials.refresh_token:
                 credentials.refresh(Request())
+                if not credentials.token:
+                    raise HTTPException(
+                        status_code=400,
+                        detail="Failed to refresh Google access token",
+                    )
                 await self._update_account_tokens(
                     connection_doc,
                     access_token=credentials.token,

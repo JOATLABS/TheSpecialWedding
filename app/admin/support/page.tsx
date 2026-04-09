@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
+import { useRouter } from 'next/navigation';
 import { useAdmin } from '@/contexts/AdminContext';
 import { formatDate } from '@/utils/dateFormat';
 import { Card } from '@/components/ui/Card';
@@ -35,6 +36,7 @@ interface SupportTicket {
   subject: string;
   description?: string;
   message?: string;
+  wedding_id?: string;
   category: 'technical' | 'billing' | 'feature_request' | 'bug_report' | 'general';
   priority: 'low' | 'medium' | 'high' | 'urgent';
   status: 'open' | 'in_progress' | 'resolved' | 'closed';
@@ -58,14 +60,27 @@ interface SupportMetrics {
   urgent_tickets?: number;
 }
 
+interface TicketCountResponse {
+  total?: number;
+}
+
+interface SmsSupportSummary {
+  total?: number;
+  urgent_count?: number;
+  by_status?: {
+    new?: number;
+    in_progress?: number;
+    resolved?: number;
+  };
+}
+
 export default function SupportPage() {
+  const router = useRouter();
   const { apiRequest, userProfile } = useAdmin();
   const [activeTab, setActiveTab] = useState<'tickets' | 'metrics' | 'knowledge_base' | 'blog'>('tickets');
   const [tickets, setTickets] = useState<SupportTicket[]>([]);
   const [metrics, setMetrics] = useState<SupportMetrics | null>(null);
   const [loading, setLoading] = useState(true);
-  const [selectedTicket, setSelectedTicket] = useState<SupportTicket | null>(null);
-  const [responseMessage, setResponseMessage] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
   const [priorityFilter, setPriorityFilter] = useState('all');
   const [searchQuery, setSearchQuery] = useState('');
@@ -136,14 +151,33 @@ export default function SupportPage() {
           });
         } catch (error) {
           console.warn('Support metrics endpoint not available');
-          setMetrics({
-            total_tickets: fetchedTicketTotal,
-            open_tickets: fetchedTickets.filter(t => t.status === 'open').length,
-            in_progress_tickets: fetchedTickets.filter(t => t.status === 'in_progress').length,
-            resolved_today: 0,
-            avg_resolution_time_hours: 0,
-            urgent_tickets: fetchedTickets.filter(t => t.priority === 'urgent' && ['open', 'in_progress'].includes(t.status)).length,
-          });
+          try {
+            const [openResponse, inProgressResponse, urgentResponse, smsSummary] = await Promise.all([
+              apiRequest<TicketCountResponse>('/admin/tickets?status=open&page=1&limit=1', 'GET'),
+              apiRequest<TicketCountResponse>('/admin/tickets?status=in_progress&page=1&limit=1', 'GET'),
+              apiRequest<TicketCountResponse>('/admin/tickets?priority=urgent&page=1&limit=1', 'GET'),
+              apiRequest<SmsSupportSummary>('/admin/sms-tickets/stats/summary', 'GET'),
+            ]);
+
+            setMetrics({
+              total_tickets: fetchedTicketTotal + (smsSummary?.total ?? 0),
+              open_tickets: (openResponse?.total ?? 0) + (smsSummary?.by_status?.new ?? 0),
+              in_progress_tickets: (inProgressResponse?.total ?? 0) + (smsSummary?.by_status?.in_progress ?? 0),
+              resolved_today: 0,
+              avg_resolution_time_hours: 0,
+              urgent_tickets: (urgentResponse?.total ?? 0) + (smsSummary?.urgent_count ?? 0),
+            });
+          } catch (fallbackError) {
+            console.warn('Support metrics fallback counts not available', fallbackError);
+            setMetrics({
+              total_tickets: fetchedTicketTotal,
+              open_tickets: fetchedTickets.filter(t => t.status === 'open').length,
+              in_progress_tickets: fetchedTickets.filter(t => t.status === 'in_progress').length,
+              resolved_today: 0,
+              avg_resolution_time_hours: 0,
+              urgent_tickets: fetchedTickets.filter(t => t.priority === 'urgent' && ['open', 'in_progress'].includes(t.status)).length,
+            });
+          }
         }
       }
     } catch (error) {
@@ -172,37 +206,16 @@ export default function SupportPage() {
     }
   };
 
-  const sendResponse = async () => {
-    if (!selectedTicket || !responseMessage.trim()) {
-      alert('Please enter a response message');
-      return;
+  const openTicketInInbox = useCallback((ticket: SupportTicket) => {
+    const params = new URLSearchParams({
+      conversation: 'support_ticket',
+      ticket_id: ticket._id,
+    });
+    if (ticket.wedding_id) {
+      params.set('wedding_id', ticket.wedding_id);
     }
-
-    try {
-      await apiRequest(`/admin/tickets/${selectedTicket._id}/comments`, 'POST', {
-        message: responseMessage,
-        is_internal: false
-      });
-
-      setTickets(tickets.map(ticket =>
-        ticket._id === selectedTicket._id
-          ? {
-              ...ticket,
-              status: 'in_progress',
-              response_count: (ticket.response_count || 0) + 1,
-              updated_at: new Date().toISOString()
-            }
-          : ticket
-      ));
-
-      setResponseMessage('');
-      setSelectedTicket(null);
-      alert('Response sent successfully!');
-    } catch (error) {
-      console.error('Error sending response:', error);
-      alert('Failed to send response');
-    }
-  };
+    router.push(`/admin/communications/inbox?${params.toString()}`);
+  }, [router]);
 
   const createTicket = async () => {
     if (!newTicket.subject.trim() || !newTicket.description.trim()) {
@@ -481,10 +494,10 @@ export default function SupportPage() {
                       <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
                         <div className="flex space-x-2">
                           <button
-                            onClick={() => setSelectedTicket(ticket)}
+                            onClick={() => openTicketInInbox(ticket)}
                             className="text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300"
                           >
-                            {isRootAdmin ? 'Respond' : 'View'}
+                            Open in Inbox
                           </button>
                           {isRootAdmin && ticket.status !== 'resolved' && (
                             <button
@@ -603,96 +616,6 @@ export default function SupportPage() {
       {/* Blog Tab */}
       {activeTab === 'blog' && isRootAdmin && (
         <BlogManager />
-      )}
-
-      {/* Response Modal */}
-      {selectedTicket && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white dark:bg-slate-800 rounded-lg w-full max-w-2xl max-h-[80vh] overflow-y-auto shadow-xl">
-            {/* Modal Header */}
-            <div className="flex items-center justify-between p-6 border-b border-gray-200 dark:border-slate-700">
-              <div>
-                <h2 className="text-xl font-semibold text-gray-900 dark:text-gray-100">
-                  {selectedTicket.subject}
-                </h2>
-                <p className="text-sm text-gray-500 dark:text-gray-400">
-                  {selectedTicket.ticket_number || `Ticket #${selectedTicket._id.slice(-6)}`}
-                </p>
-              </div>
-              <button
-                onClick={() => {
-                  setSelectedTicket(null);
-                  setResponseMessage('');
-                }}
-                className="p-2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            {/* Modal Body */}
-            <div className="p-6">
-              {/* Ticket Details */}
-              <div className="mb-6 p-4 bg-gray-50 dark:bg-slate-700/50 rounded-lg">
-                <div className="flex justify-between items-start mb-3">
-                  <div className="flex items-center gap-2">
-                    <span className={`px-2 py-1 text-xs font-semibold rounded-full ${getPriorityColor(selectedTicket.priority)}`}>
-                      {selectedTicket.priority}
-                    </span>
-                    <span className={`px-2 py-1 text-xs font-semibold rounded-full ${getStatusColor(selectedTicket.status)}`}>
-                      {selectedTicket.status.replace('_', ' ')}
-                    </span>
-                  </div>
-                  <span className="text-sm text-gray-500 dark:text-gray-400">
-                    {formatDate(selectedTicket.created_at)}
-                  </span>
-                </div>
-                <p className="text-gray-700 dark:text-gray-300 whitespace-pre-wrap">
-                  {selectedTicket.description || selectedTicket.message || 'No description provided'}
-                </p>
-              </div>
-
-              {/* Response Form (Admin only) */}
-              {isRootAdmin && (
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                    Your Response
-                  </label>
-                  <textarea
-                    value={responseMessage}
-                    onChange={(e) => setResponseMessage(e.target.value)}
-                    placeholder="Enter your response..."
-                    rows={6}
-                    className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none"
-                  />
-                </div>
-              )}
-            </div>
-
-            {/* Modal Footer */}
-            <div className="flex justify-end gap-3 p-6 border-t border-gray-200 dark:border-slate-700">
-              <button
-                onClick={() => {
-                  setSelectedTicket(null);
-                  setResponseMessage('');
-                }}
-                className="px-4 py-2 text-gray-700 dark:text-gray-300 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-slate-700 transition-colors"
-              >
-                Cancel
-              </button>
-              {isRootAdmin && (
-                <button
-                  onClick={sendResponse}
-                  disabled={!responseMessage.trim()}
-                  className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                >
-                  <Send className="w-4 h-4" />
-                  Send Response
-                </button>
-              )}
-            </div>
-          </div>
-        </div>
       )}
 
       {/* Create Ticket Modal */}

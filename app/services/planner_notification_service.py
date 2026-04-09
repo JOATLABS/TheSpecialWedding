@@ -14,6 +14,7 @@ from app.models.planner_notification import (
     PlannerNotificationTypes,
     NotificationType,
 )
+from app.utils.support_inbox_links import build_support_inbox_path
 from typing import Dict, Optional, Any
 from datetime import datetime, timezone
 from bson import ObjectId
@@ -704,7 +705,10 @@ class PlannerNotificationService:
                 "ticket_subject": ticket_subject,
             },
             priority="high",
-            action_url="/admin/support",
+            action_url=build_support_inbox_path(
+                "support_ticket",
+                ticket_id=ticket_id,
+            ),
         )
 
 

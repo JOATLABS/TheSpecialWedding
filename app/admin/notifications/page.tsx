@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { useSearchParams } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { useAdmin } from '@/contexts/AdminContext';
 import { formatDate } from '@/utils/dateFormat';
 import PageHeader from '../components/PageHeader';
@@ -52,6 +52,7 @@ interface PlannerNotification {
   created_at: string;
   metadata?: Record<string, unknown>;
   source?: 'platform' | 'activity';
+  action_url?: string;
 }
 
 const surfaceClass =
@@ -70,6 +71,7 @@ const secondaryButtonClass =
 
 export default function NotificationsPage() {
   const { apiRequest, userProfile } = useAdmin();
+  const router = useRouter();
   const searchParams = useSearchParams();
   const tabFromUrl = searchParams.get('tab');
 
@@ -236,6 +238,16 @@ export default function NotificationsPage() {
     }
   };
 
+  const handleNotificationClick = async (notification: PlannerNotification) => {
+    if (!notification.is_read) {
+      await markNotificationAsRead(notification._id, notification.source);
+    }
+
+    if (notification.action_url) {
+      router.push(notification.action_url);
+    }
+  };
+
   const handleCreateTemplate = async () => {
     if (!templateName || !templateSubject || !templateContent) {
       alert('Please fill in all template fields');
@@ -355,9 +367,11 @@ export default function NotificationsPage() {
               {plannerNotifications.map((notification) => (
                 <div
                   key={notification._id}
-                  onClick={() => !notification.is_read && markNotificationAsRead(notification._id, notification.source)}
+                  onClick={() => void handleNotificationClick(notification)}
                   className={`p-4 transition-colors hover:bg-slate-50 dark:hover:bg-slate-700 ${
-                    !notification.is_read ? 'cursor-pointer bg-blue-50/80 dark:bg-blue-900/20' : ''
+                    !notification.is_read ? 'bg-blue-50/80 dark:bg-blue-900/20' : ''
+                  } ${
+                    !notification.is_read || notification.action_url ? 'cursor-pointer' : ''
                   }`}
                 >
                   <div className="flex items-start justify-between">
@@ -514,9 +528,11 @@ export default function NotificationsPage() {
                 {plannerNotifications.map((notification) => (
                   <div
                     key={notification._id}
-                    onClick={() => !notification.is_read && markNotificationAsRead(notification._id, notification.source)}
+                    onClick={() => void handleNotificationClick(notification)}
                     className={`p-4 transition-colors hover:bg-slate-50 dark:hover:bg-slate-700 ${
-                      !notification.is_read ? 'cursor-pointer bg-blue-50/80 dark:bg-blue-900/20' : ''
+                      !notification.is_read ? 'bg-blue-50/80 dark:bg-blue-900/20' : ''
+                    } ${
+                      !notification.is_read || notification.action_url ? 'cursor-pointer' : ''
                     }`}
                   >
                     <div className="flex items-start justify-between">

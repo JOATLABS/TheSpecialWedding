@@ -16,12 +16,12 @@ class TestContracts:
 
     def test_list_contracts(self, api):
         """List contracts."""
-        resp = api.get("/contracts")
+        resp = api.get("/admin/client-contracts")
         assert resp.status_code == 200
 
     def test_contract_stats(self, api):
         """Get contract statistics."""
-        resp = api.get("/contracts/stats")
+        resp = api.get("/admin/client-contracts/stats")
         assert resp.status_code == 200
 
     def test_create_contract(self, api):
@@ -35,7 +35,7 @@ class TestContracts:
         wedding_id = weddings[0].get("id") or weddings[0].get("_id")
 
         resp = api.post(
-            "/contracts",
+            "/admin/client-contracts",
             json={
                 "wedding_id": wedding_id,
                 "vendor_name": "Test Vendor Co",

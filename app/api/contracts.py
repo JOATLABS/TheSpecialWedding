@@ -1,8 +1,12 @@
 """
-Contract API Routes
+Client contract API routes.
 
-Includes both admin endpoints (authenticated) and public endpoints (token-based).
-Public endpoints allow couples to view and sign contracts without authentication.
+This module intentionally separates:
+- authenticated planner/admin couple-contract routes
+- public couple-contract and portal routes
+- internal cron routes
+
+Vendor contract admin routes live in `app.api.vendor_management` under `/admin/contracts`.
 """
 
 from fastapi import APIRouter, HTTPException, Depends, Query, Request
@@ -20,7 +24,9 @@ from app.utils.query_validation import validated_status_filter
 import logging
 
 logger = logging.getLogger(__name__)
-router = APIRouter()
+client_contracts_admin_router = APIRouter(prefix="/client-contracts")
+client_contracts_public_router = APIRouter(prefix="/public")
+client_contracts_cron_router = APIRouter(prefix="/cron/contracts")
 
 
 def _resolve_couple_display_name(couple: Optional[dict]) -> str:
@@ -175,7 +181,7 @@ class RefundPaymentRequest(BaseModel):
 # ============================================================================
 
 
-@router.get("/contracts", tags=["Contracts"])
+@client_contracts_admin_router.get("", tags=["Contracts"])
 async def list_contracts(
     status: Optional[str] = Query(None, description="Filter by contract status"),
     limit: int = Query(50, ge=1, le=100, description="Items per page"),
@@ -209,7 +215,7 @@ async def list_contracts(
         raise HTTPException(status_code=500, detail="Failed to retrieve contracts")
 
 
-@router.get("/contracts/payments/overview", tags=["Contracts"])
+@client_contracts_admin_router.get("/payments/overview", tags=["Contracts"])
 async def get_contract_payments_overview(
     contract_statuses: Optional[str] = Query(
         "signed,active",
@@ -266,7 +272,7 @@ async def get_contract_payments_overview(
         )
 
 
-@router.post("/contracts", tags=["Contracts"])
+@client_contracts_admin_router.post("", tags=["Contracts"])
 async def create_contract(
     request: Request,
     wedding_id: str = Query(..., description="Wedding ID"),
@@ -322,7 +328,7 @@ async def create_contract(
         raise HTTPException(status_code=500, detail="Failed to create contract")
 
 
-@router.put("/contracts/{contract_id}", tags=["Contracts"])
+@client_contracts_admin_router.put("/{contract_id}", tags=["Contracts"])
 async def update_contract(
     contract_id: str,
     request: Request,
@@ -358,7 +364,7 @@ async def update_contract(
         raise HTTPException(status_code=500, detail="Failed to update contract")
 
 
-@router.put("/contracts/{contract_id}/sections", tags=["Contracts"])
+@client_contracts_admin_router.put("/{contract_id}/sections", tags=["Contracts"])
 async def update_contract_sections(
     contract_id: str,
     request: Request,
@@ -399,7 +405,7 @@ async def update_contract_sections(
         )
 
 
-@router.post("/contracts/{contract_id}/send", tags=["Contracts"])
+@client_contracts_admin_router.post("/{contract_id}/send", tags=["Contracts"])
 async def send_contract(
     contract_id: str,
     message: Optional[str] = Query(None, description="Personal message to include"),
@@ -429,7 +435,7 @@ async def send_contract(
         raise HTTPException(status_code=500, detail="Failed to send contract")
 
 
-@router.post("/contracts/{contract_id}/milestones", tags=["Contracts"])
+@client_contracts_admin_router.post("/{contract_id}/milestones", tags=["Contracts"])
 async def create_milestones(
     contract_id: str,
     request: Request,
@@ -465,7 +471,7 @@ async def create_milestones(
         raise HTTPException(status_code=500, detail="Failed to create milestones")
 
 
-@router.get("/contracts/{contract_id}/form-data", tags=["Contracts"])
+@client_contracts_admin_router.get("/{contract_id}/form-data", tags=["Contracts"])
 async def get_contract_form_data(
     contract_id: str, current_user: ExtendedAuthUser = Depends(require_team_or_planner)
 ):
@@ -491,7 +497,9 @@ async def get_contract_form_data(
         raise HTTPException(status_code=500, detail="Failed to get form data")
 
 
-@router.post("/contracts/{contract_id}/apply-form-data", tags=["Contracts"])
+@client_contracts_admin_router.post(
+    "/{contract_id}/apply-form-data", tags=["Contracts"]
+)
 async def apply_form_data_to_contract(
     contract_id: str,
     request: Request,
@@ -542,7 +550,7 @@ async def apply_form_data_to_contract(
         raise HTTPException(status_code=500, detail="Failed to apply form data")
 
 
-@router.get("/milestones", tags=["Contracts"])
+@client_contracts_admin_router.get("/milestones", tags=["Contracts"])
 async def list_milestones(
     contract_id: Optional[str] = Query(None),
     wedding_id: Optional[str] = Query(None),
@@ -573,7 +581,9 @@ async def list_milestones(
         raise HTTPException(status_code=500, detail="Failed to list milestones")
 
 
-@router.post("/milestones/{milestone_id}/pay", tags=["Contracts"])
+@client_contracts_admin_router.post(
+    "/milestones/{milestone_id}/pay", tags=["Contracts"]
+)
 async def record_milestone_payment(
     milestone_id: str,
     amount: float = Query(..., gt=0),
@@ -614,7 +624,7 @@ async def record_milestone_payment(
         raise HTTPException(status_code=500, detail="Failed to record payment")
 
 
-@router.get("/contracts/stats", tags=["Contracts"])
+@client_contracts_admin_router.get("/stats", tags=["Contracts"])
 async def get_contract_stats(
     current_user: ExtendedAuthUser = Depends(require_admin_or_planner),
 ):
@@ -638,7 +648,7 @@ async def get_contract_stats(
 # ============================================================================
 
 
-@router.get("/contracts/followup-drafts", tags=["Contracts"])
+@client_contracts_admin_router.get("/followup-drafts", tags=["Contracts"])
 async def get_followup_drafts(
     current_user: ExtendedAuthUser = Depends(require_admin_or_planner),
 ):
@@ -670,7 +680,9 @@ class UpdateDraftRequest(BaseModel):
     status: Optional[str] = Field(None, pattern="^(pending|dismissed)$")
 
 
-@router.put("/contracts/followup-drafts/{draft_id}", tags=["Contracts"])
+@client_contracts_admin_router.put(
+    "/followup-drafts/{draft_id}", tags=["Contracts"]
+)
 async def update_followup_draft(
     draft_id: str,
     update_data: UpdateDraftRequest,
@@ -707,7 +719,9 @@ async def update_followup_draft(
         raise HTTPException(status_code=500, detail="Failed to update draft")
 
 
-@router.post("/contracts/followup-drafts/{draft_id}/send", tags=["Contracts"])
+@client_contracts_admin_router.post(
+    "/followup-drafts/{draft_id}/send", tags=["Contracts"]
+)
 async def send_followup_draft(
     draft_id: str, current_user: ExtendedAuthUser = Depends(require_team_or_planner)
 ):
@@ -744,7 +758,7 @@ async def send_followup_draft(
 # ============================================================================
 
 
-@router.get("/contracts/{contract_id}", tags=["Contracts"])
+@client_contracts_admin_router.get("/{contract_id}", tags=["Contracts"])
 async def get_contract(
     contract_id: str, current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
 ):
@@ -772,7 +786,7 @@ async def get_contract(
         raise HTTPException(status_code=500, detail="Failed to retrieve contract")
 
 
-@router.put("/contracts/{contract_id}/wedding-date", tags=["Contracts"])
+@client_contracts_admin_router.put("/{contract_id}/wedding-date", tags=["Contracts"])
 async def update_wedding_date(
     contract_id: str,
     update_data: UpdateWeddingDateRequest,
@@ -808,7 +822,7 @@ async def update_wedding_date(
         raise HTTPException(status_code=500, detail="Failed to update wedding date")
 
 
-@router.post("/contracts/{contract_id}/cancel", tags=["Contracts"])
+@client_contracts_admin_router.post("/{contract_id}/cancel", tags=["Contracts"])
 async def cancel_contract(
     contract_id: str,
     cancel_data: CancelContractRequest,
@@ -838,7 +852,7 @@ async def cancel_contract(
         raise HTTPException(status_code=500, detail="Failed to cancel contract")
 
 
-@router.get("/contracts/{contract_id}/payments", tags=["Contracts"])
+@client_contracts_admin_router.get("/{contract_id}/payments", tags=["Contracts"])
 async def get_contract_payments(
     contract_id: str,
     status: Optional[str] = Query(
@@ -871,7 +885,9 @@ async def get_contract_payments(
         raise HTTPException(status_code=500, detail="Failed to retrieve payments")
 
 
-@router.post("/payments/{payment_id}/mark-paid-externally", tags=["Contracts"])
+@client_contracts_admin_router.post(
+    "/payments/{payment_id}/mark-paid-externally", tags=["Contracts"]
+)
 async def mark_payment_paid_externally(
     payment_id: str,
     request_data: MarkPaidExternallyRequest,
@@ -905,7 +921,7 @@ async def mark_payment_paid_externally(
         raise HTTPException(status_code=500, detail="Failed to update payment")
 
 
-@router.post("/payments/{payment_id}/refund", tags=["Contracts"])
+@client_contracts_admin_router.post("/payments/{payment_id}/refund", tags=["Contracts"])
 async def refund_payment(
     payment_id: str,
     request_data: RefundPaymentRequest,
@@ -945,7 +961,7 @@ async def refund_payment(
         raise HTTPException(status_code=500, detail="Failed to process refund")
 
 
-@router.post("/payments/{payment_id}/retry", tags=["Contracts"])
+@client_contracts_admin_router.post("/payments/{payment_id}/retry", tags=["Contracts"])
 async def retry_payment(
     payment_id: str, current_user: ExtendedAuthUser = Depends(require_team_or_planner)
 ):
@@ -991,7 +1007,7 @@ class CancelPaymentRequest(BaseModel):
     )
 
 
-@router.post("/payments/{payment_id}/cancel", tags=["Contracts"])
+@client_contracts_admin_router.post("/payments/{payment_id}/cancel", tags=["Contracts"])
 async def cancel_payment(
     payment_id: str,
     request_data: Optional[CancelPaymentRequest] = None,
@@ -1029,7 +1045,7 @@ async def cancel_payment(
 # ============================================================================
 
 
-@router.get("/public/contracts/{token}", tags=["Public Contracts"])
+@client_contracts_public_router.get("/contracts/{token}", tags=["Public Contracts"])
 async def get_public_contract(token: str, request: Request):
     """
     View a contract by token (public, no auth required).
@@ -1096,7 +1112,9 @@ async def get_public_contract(token: str, request: Request):
         raise HTTPException(status_code=500, detail="Failed to retrieve contract")
 
 
-@router.get("/public/contracts/{token}/status", tags=["Public Contracts"])
+@client_contracts_public_router.get(
+    "/contracts/{token}/status", tags=["Public Contracts"]
+)
 async def get_public_contract_status(token: str):
     """
     Get contract status by token (public, no auth required).
@@ -1122,7 +1140,9 @@ async def get_public_contract_status(token: str):
         raise HTTPException(status_code=500, detail="Failed to retrieve status")
 
 
-@router.post("/public/contracts/{token}/sign", tags=["Public Contracts"])
+@client_contracts_public_router.post(
+    "/contracts/{token}/sign", tags=["Public Contracts"]
+)
 async def sign_contract(token: str, sign_data: SignContractRequest, request: Request):
     """
     Sign a contract (public, no auth required).
@@ -1231,7 +1251,9 @@ async def sign_contract(token: str, sign_data: SignContractRequest, request: Req
         raise HTTPException(status_code=500, detail="Failed to sign contract")
 
 
-@router.get("/public/contracts/{token}/payments", tags=["Public Contracts"])
+@client_contracts_public_router.get(
+    "/contracts/{token}/payments", tags=["Public Contracts"]
+)
 async def get_public_contract_payments(token: str):
     """
     Get scheduled payments for a contract (public, no auth required).
@@ -1278,7 +1300,9 @@ async def get_public_contract_payments(token: str):
         raise HTTPException(status_code=500, detail="Failed to retrieve payments")
 
 
-@router.post("/public/contracts/{token}/setup-intent", tags=["Public Contracts"])
+@client_contracts_public_router.post(
+    "/contracts/{token}/setup-intent", tags=["Public Contracts"]
+)
 async def create_contract_setup_intent(token: str):
     """
     Create a Stripe SetupIntent for saving payment method.
@@ -1366,7 +1390,7 @@ async def create_contract_setup_intent(token: str):
 # ============================================================================
 
 
-@router.get("/public/portal/{token}", tags=["Couple Portal"])
+@client_contracts_public_router.get("/portal/{token}", tags=["Couple Portal"])
 async def get_portal_data(token: str):
     """
     Get complete portal data for couples.
@@ -1468,7 +1492,9 @@ async def get_portal_data(token: str):
         raise HTTPException(status_code=500, detail="Failed to load portal")
 
 
-@router.post("/public/portal/{token}/update-payment-method", tags=["Couple Portal"])
+@client_contracts_public_router.post(
+    "/portal/{token}/update-payment-method", tags=["Couple Portal"]
+)
 async def update_portal_payment_method(token: str, request: Request):
     """
     Create a SetupIntent for updating the payment method.
@@ -1536,7 +1562,9 @@ class UpdatePaymentMethodRequest(BaseModel):
     payment_method_brand: Optional[str] = Field(None, max_length=20)
 
 
-@router.put("/public/portal/{token}/payment-method", tags=["Couple Portal"])
+@client_contracts_public_router.put(
+    "/portal/{token}/payment-method", tags=["Couple Portal"]
+)
 async def confirm_payment_method_update(
     token: str, update_data: UpdatePaymentMethodRequest
 ):
@@ -1643,7 +1671,7 @@ async def confirm_payment_method_update(
 # ============================================================================
 
 
-@router.post("/cron/contracts/process-followups", tags=["Cron"])
+@client_contracts_cron_router.post("/process-followups", tags=["Cron"])
 async def process_contract_followups(
     request: Request, days_threshold: int = Query(default=3, ge=1, le=14)
 ):
@@ -1675,3 +1703,10 @@ async def process_contract_followups(
     except Exception as e:
         logger.error(f"Cron job failed: {str(e)}")
         raise HTTPException(status_code=500, detail="Cron job failed")
+
+
+__all__ = [
+    "client_contracts_admin_router",
+    "client_contracts_public_router",
+    "client_contracts_cron_router",
+]

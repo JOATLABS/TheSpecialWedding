@@ -288,7 +288,10 @@ class CalendarEventCreate(BaseModel):
 
     @model_validator(mode="after")
     def validate_dates(self):
-        self.start_date = attach_timezone_if_naive(self.start_date, self.timezone)
+        start_date = attach_timezone_if_naive(self.start_date, self.timezone)
+        if start_date is None:
+            raise ValueError("start_date is required")
+        self.start_date = start_date
         self.end_date = attach_timezone_if_naive(self.end_date, self.timezone)
         self.due_date = attach_timezone_if_naive(self.due_date, self.timezone)
         if self.end_date and self.end_date < self.start_date:

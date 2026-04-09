@@ -700,6 +700,75 @@ def get_calendar_owner_identity(user: ExtendedAuthUser) -> dict[str, Optional[st
     }
 
 
+async def resolve_owner_scoped_user_assignments(
+    owner_id: Optional[str],
+    owner_email: Optional[str],
+    user_ids: List[str],
+) -> tuple[List[str], List[str]]:
+    """Resolve assignee ids/emails and reject users outside the planner-owner scope."""
+    if not user_ids:
+        return [], []
+
+    normalized_owner_id = normalize_planner_id(owner_id)
+    normalized_owner_email = normalize_planner_email(owner_email)
+    users_collection = mongo.get_users_collection()
+
+    resolved_ids: List[str] = []
+    resolved_emails: List[str] = []
+    invalid_user_ids: List[str] = []
+
+    for user_id in user_ids:
+        try:
+            lookup_id = ObjectId(user_id) if ObjectId.is_valid(user_id) else user_id
+            user_doc = await users_collection.find_one(
+                {"_id": lookup_id},
+                {
+                    "email": 1,
+                    "role": 1,
+                    "parent_planner_id": 1,
+                    "is_active": 1,
+                },
+            )
+        except Exception:
+            user_doc = None
+
+        if not user_doc or user_doc.get("is_active") is False:
+            invalid_user_ids.append(user_id)
+            continue
+
+        resolved_user_id = normalize_planner_id(user_doc.get("_id"))
+        resolved_user_email = normalize_planner_email(user_doc.get("email"))
+        user_role = user_doc.get("role")
+        belongs_to_owner_scope = False
+
+        if normalized_owner_id and resolved_user_id == normalized_owner_id:
+            belongs_to_owner_scope = True
+        elif normalized_owner_email and resolved_user_email == normalized_owner_email:
+            belongs_to_owner_scope = True
+        elif (
+            user_role == "team_member"
+            and normalized_owner_id
+            and normalize_planner_id(user_doc.get("parent_planner_id")) == normalized_owner_id
+        ):
+            belongs_to_owner_scope = True
+
+        if not (belongs_to_owner_scope and resolved_user_id and resolved_user_email):
+            invalid_user_ids.append(user_id)
+            continue
+
+        if resolved_user_id not in resolved_ids:
+            resolved_ids.append(resolved_user_id)
+            resolved_emails.append(resolved_user_email)
+
+    if invalid_user_ids:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Assigned staff must belong to the planner business owner scope.",
+        )
+
+    return resolved_ids, resolved_emails
+
+
 def get_accessible_calendar_scope(user: ExtendedAuthUser) -> CalendarOwnerScope:
     """Return owner and wedding visibility scope for shared calendar queries."""
     owner_id, owner_email = get_owner_identity(user)
