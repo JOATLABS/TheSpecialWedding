@@ -5,8 +5,6 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 from typing import Any, Optional
 
-from bson import ObjectId
-
 from app.core.database import mongo
 from app.models.calendar import VisibilityMode
 from app.services.google_calendar_service import google_calendar_service
