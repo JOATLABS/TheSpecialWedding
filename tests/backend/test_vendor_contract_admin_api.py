@@ -12,6 +12,7 @@ from app.models.vendor import VendorCategory
 from app.models.vendor_contracts import (
     ApplyVendorContractFormDataRequest,
     CreateVendorContractRequest,
+    CreateVendorContractRevisionRequest,
     CreateVendorContractTemplateRequest,
     CreateVendorPaymentMilestonesRequest,
     PaymentMilestoneInput,
@@ -88,6 +89,62 @@ async def test_create_contract_uses_json_body_payload(
         total_amount=5000.0,
         deposit_percentage=50.0,
         custom_sections=[],
+    )
+
+
+@pytest.mark.asyncio
+async def test_create_contract_revision_forwards_typed_payload(
+    monkeypatch: pytest.MonkeyPatch,
+    planner_user: ExtendedAuthUser,
+) -> None:
+    create_mock = AsyncMock(return_value={"_id": "contract-2"})
+    monkeypatch.setattr(vendor_management_api.vendor_service, "create_contract_revision", create_mock)
+
+    request = CreateVendorContractRevisionRequest(
+        revision_kind="revision",
+        reason="Updated scope",
+    )
+
+    await vendor_management_api.create_contract_revision(
+        contract_id="contract-1",
+        data=request,
+        current_user=planner_user,
+    )
+
+    create_mock.assert_awaited_once_with(
+        contract_id="contract-1",
+        created_by="planner@example.com",
+        revision_kind="revision",
+        reason="Updated scope",
+        copy_sections=True,
+        copy_terms_and_conditions=True,
+        copy_cancellation_policy=True,
+        copy_custom_clauses=True,
+    )
+
+
+@pytest.mark.asyncio
+async def test_list_contract_revisions_forwards_to_service(
+    monkeypatch: pytest.MonkeyPatch,
+    planner_user: ExtendedAuthUser,
+) -> None:
+    revision_mock = AsyncMock(
+        return_value={
+            "current_contract_id": "contract-2",
+            "root_contract_id": "contract-1",
+            "versions": [],
+        }
+    )
+    monkeypatch.setattr(vendor_management_api.vendor_service, "get_contract_revision_history", revision_mock)
+
+    await vendor_management_api.list_contract_revisions(
+        contract_id="contract-1",
+        current_user=planner_user,
+    )
+
+    revision_mock.assert_awaited_once_with(
+        contract_id="contract-1",
+        created_by="planner@example.com",
     )
 
 

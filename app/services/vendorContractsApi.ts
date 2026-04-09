@@ -68,6 +68,8 @@ export type ContractStatus =
   | 'cancelled'
   | 'expired';
 
+export type ContractKind = 'original' | 'revision' | 'amendment';
+
 export interface VendorContract {
   _id: string;
   id?: string;
@@ -99,6 +101,15 @@ export interface VendorContract {
   form_submission_id?: string;
   form_submission_ids?: string[];
   form_data_mappings?: Record<string, string>;
+  version_number?: number;
+  root_contract_id?: string;
+  parent_contract_id?: string;
+  supersedes_contract_id?: string;
+  superseded_by_contract_id?: string;
+  is_current_version?: boolean;
+  contract_kind?: ContractKind;
+  amendment_reason?: string;
+  superseded_at?: string;
   created_at: string;
   updated_at: string;
 }
@@ -167,6 +178,11 @@ export interface PublicContract {
   deposit_amount?: number;
   currency: string;
   status: ContractStatus;
+  version_number?: number;
+  is_current_version?: boolean;
+  contract_kind?: ContractKind;
+  supersedes_contract_id?: string;
+  superseded_by_contract_id?: string;
   sent_at?: string;
   viewed_at?: string;
   signed_at?: string;
@@ -248,6 +264,36 @@ export interface RecordVendorMilestonePaymentRequest {
   payment_date?: string;
   notes?: string;
   receipt_url?: string;
+}
+
+export interface CreateVendorContractRevisionRequest {
+  revision_kind: Exclude<ContractKind, 'original'>;
+  reason?: string;
+  copy_sections?: boolean;
+  copy_terms_and_conditions?: boolean;
+  copy_cancellation_policy?: boolean;
+  copy_custom_clauses?: boolean;
+}
+
+export interface VendorContractRevisionSummary {
+  id: string;
+  contract_number?: string;
+  version_number: number;
+  contract_kind: ContractKind;
+  status: ContractStatus;
+  is_current_version: boolean;
+  parent_contract_id?: string | null;
+  supersedes_contract_id?: string | null;
+  superseded_by_contract_id?: string | null;
+  created_at: string;
+  sent_at?: string | null;
+  signed_at?: string | null;
+}
+
+export interface VendorContractRevisionHistoryResponse {
+  current_contract_id: string;
+  root_contract_id: string;
+  versions: VendorContractRevisionSummary[];
 }
 
 export async function getContractTemplates(
@@ -369,6 +415,44 @@ export async function getContract(
   if (!response.ok) {
     const error = await response.json().catch(() => ({}));
     throw new Error(extractErrorMessage(error, 'Failed to fetch contract'));
+  }
+
+  return response.json();
+}
+
+export async function createContractRevision(
+  token: string,
+  contractId: string,
+  data: CreateVendorContractRevisionRequest
+): Promise<VendorContract> {
+  const response = await fetch(`${API_BASE}/admin/contracts/${contractId}/revisions`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(data),
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({}));
+    throw new Error(extractErrorMessage(error, 'Failed to create contract revision'));
+  }
+
+  return response.json();
+}
+
+export async function getContractRevisions(
+  token: string,
+  contractId: string
+): Promise<VendorContractRevisionHistoryResponse> {
+  const response = await fetch(`${API_BASE}/admin/contracts/${contractId}/revisions`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({}));
+    throw new Error(extractErrorMessage(error, 'Failed to fetch contract revisions'));
   }
 
   return response.json();
@@ -637,6 +721,9 @@ export async function getPublicContract(
     if (response.status === 403) {
       throw new Error('Access denied - invalid or expired link');
     }
+    if (response.status === 410) {
+      throw new Error('This contract version has been replaced');
+    }
     throw new Error('Failed to fetch contract');
   }
 
@@ -665,6 +752,9 @@ export async function signPublicContract(
 
   if (!response.ok) {
     const error = await response.json().catch(() => ({}));
+    if (response.status === 410) {
+      throw new Error('This contract version has been replaced');
+    }
     throw new Error(extractErrorMessage(error, 'Failed to sign contract'));
   }
 

@@ -10,6 +10,7 @@ import re
 import secrets
 import string
 import logging
+from copy import deepcopy
 from datetime import datetime, timedelta, timezone
 from typing import List, Dict, Optional, Any
 from bson import ObjectId
@@ -24,6 +25,7 @@ from app.core.database import mongo
 from app.core.settings import settings
 from app.services.email_service_resend import ResendEmailService
 from app.models.vendor import (
+    ContractKind,
     ContractStatus,
     ContractType,
     PaymentMilestoneStatus,
@@ -136,6 +138,262 @@ class VendorService:
             doc["id"] = str(doc["_id"])
             doc["_id"] = str(doc["_id"])
         return doc
+
+    @staticmethod
+    def _stringify_id(value: Any) -> Optional[str]:
+        if value is None:
+            return None
+        return str(value)
+
+    def _attach_contract_version_metadata(self, contract: Dict[str, Any]) -> Dict[str, Any]:
+        """Backfill default lineage metadata for legacy contracts in API responses."""
+        contract_id = self._stringify_id(contract.get("_id") or contract.get("id"))
+        contract["version_number"] = int(contract.get("version_number") or 1)
+        contract["root_contract_id"] = self._stringify_id(
+            contract.get("root_contract_id")
+        ) or contract_id
+        contract["parent_contract_id"] = self._stringify_id(
+            contract.get("parent_contract_id")
+        )
+        contract["supersedes_contract_id"] = self._stringify_id(
+            contract.get("supersedes_contract_id")
+        )
+        contract["superseded_by_contract_id"] = self._stringify_id(
+            contract.get("superseded_by_contract_id")
+        )
+        contract["is_current_version"] = contract.get("is_current_version", True)
+
+        raw_contract_kind = contract.get("contract_kind", ContractKind.ORIGINAL.value)
+        if isinstance(raw_contract_kind, ContractKind):
+            raw_contract_kind = raw_contract_kind.value
+        contract["contract_kind"] = raw_contract_kind
+
+        contract.setdefault("amendment_reason", None)
+        contract.setdefault("superseded_at", None)
+        return contract
+
+    def _get_root_contract_id(self, contract: Dict[str, Any]) -> str:
+        """Resolve the root/original contract id for a lineage-aware contract document."""
+        root_contract_id = contract.get("root_contract_id")
+        if root_contract_id:
+            return str(root_contract_id)
+
+        contract_id = contract.get("_id") or contract.get("id")
+        if not contract_id:
+            raise HTTPException(status_code=500, detail="Contract is missing an id")
+        return str(contract_id)
+
+    @staticmethod
+    def _is_contract_current(contract: Dict[str, Any]) -> bool:
+        return contract.get("is_current_version", True)
+
+    @staticmethod
+    def _can_create_revision_from_status(status: str) -> bool:
+        return status in {
+            ContractStatus.SENT.value,
+            ContractStatus.VIEWED.value,
+            ContractStatus.SIGNED.value,
+        }
+
+    async def _ensure_contract_editable(self, contract: Dict[str, Any]) -> None:
+        """Allow edits only for active drafts or draft revisions based on the live version."""
+        if contract["status"] not in [
+            ContractStatus.DRAFT.value,
+            ContractStatus.PENDING_REVIEW.value,
+        ]:
+            raise HTTPException(
+                status_code=400,
+                detail="Contract cannot be modified after it has been sent",
+            )
+
+        if self._is_contract_current(contract):
+            return
+
+        supersedes_contract_id = contract.get("supersedes_contract_id")
+        if not supersedes_contract_id:
+            raise HTTPException(
+                status_code=400,
+                detail="Historical contract versions cannot be edited",
+            )
+
+        superseded_contract = await self.get_contract(
+            supersedes_contract_id,
+            created_by=contract["created_by"],
+        )
+        if not self._is_contract_current(superseded_contract):
+            raise HTTPException(
+                status_code=400,
+                detail="This draft is stale because a newer contract version is already live",
+            )
+
+    def _build_contract_lineage_query(
+        self, root_contract_id: str, created_by: Optional[str] = None
+    ) -> Dict[str, Any]:
+        root_object_id = validate_object_id(root_contract_id, "root contract ID")
+        lineage_query: Dict[str, Any] = {
+            "$or": [
+                {"root_contract_id": root_contract_id},
+                {"_id": root_object_id},
+            ]
+        }
+
+        if created_by:
+            lineage_query["created_by"] = created_by
+
+        return lineage_query
+
+    async def _get_contract_lineage(
+        self, root_contract_id: str, created_by: Optional[str] = None
+    ) -> List[Dict[str, Any]]:
+        """Fetch and normalize every contract in a lineage."""
+        query = self._build_contract_lineage_query(
+            root_contract_id=root_contract_id, created_by=created_by
+        )
+        contracts = await self.vendor_contracts.find(query).to_list(length=200)
+
+        for contract in contracts:
+            self._serialize_doc(contract)
+            self._attach_contract_version_metadata(contract)
+
+        contracts.sort(
+            key=lambda item: (
+                item.get("version_number", 1),
+                item.get("created_at") or datetime.min.replace(tzinfo=timezone.utc),
+            )
+        )
+        return contracts
+
+    async def _get_next_contract_version_number(
+        self, root_contract_id: str, created_by: Optional[str] = None
+    ) -> int:
+        lineage = await self._get_contract_lineage(
+            root_contract_id=root_contract_id, created_by=created_by
+        )
+        if not lineage:
+            return 1
+
+        return max(int(contract.get("version_number", 1)) for contract in lineage) + 1
+
+    def _build_contract_revision_copy(
+        self,
+        source_contract: Dict[str, Any],
+        revision_kind: str,
+        next_version_number: int,
+        token_expires_at: datetime,
+        reason: Optional[str] = None,
+        copy_sections: bool = True,
+        copy_terms_and_conditions: bool = True,
+        copy_cancellation_policy: bool = True,
+        copy_custom_clauses: bool = True,
+    ) -> Dict[str, Any]:
+        """Clone a live contract into a new editable child version."""
+        new_contract_id = ObjectId()
+        source_contract_id = self._stringify_id(
+            source_contract.get("_id") or source_contract.get("id")
+        )
+        root_contract_id = self._get_root_contract_id(source_contract)
+        now = datetime.now(timezone.utc)
+
+        revision_contract = {
+            "_id": new_contract_id,
+            "wedding_id": source_contract["wedding_id"],
+            "vendor_profile_id": source_contract.get("vendor_profile_id"),
+            "vendor_quote_id": source_contract.get("vendor_quote_id"),
+            "budget_category_id": source_contract.get("budget_category_id"),
+            "template_id": source_contract.get("template_id"),
+            "vendor_name": source_contract["vendor_name"],
+            "vendor_email": source_contract["vendor_email"],
+            "vendor_phone": source_contract.get("vendor_phone"),
+            "vendor_address": source_contract.get("vendor_address"),
+            "service_category": source_contract["service_category"],
+            "custom_service_category": source_contract.get("custom_service_category"),
+            "contract_title": source_contract["contract_title"],
+            "contract_number": source_contract.get("contract_number"),
+            "contract_type": source_contract.get(
+                "contract_type", ContractType.TEMPLATE.value
+            ),
+            "uploaded_pdf_url": source_contract.get("uploaded_pdf_url"),
+            "uploaded_pdf_name": source_contract.get("uploaded_pdf_name"),
+            "form_submission_id": source_contract.get("form_submission_id"),
+            "form_submission_ids": deepcopy(
+                source_contract.get("form_submission_ids") or []
+            ),
+            "form_data_applied": source_contract.get("form_data_applied", False),
+            "form_data_mappings": deepcopy(
+                source_contract.get("form_data_mappings") or {}
+            ),
+            "sections": deepcopy(source_contract.get("sections") or [])
+            if copy_sections
+            else [],
+            "terms_and_conditions": deepcopy(
+                source_contract.get("terms_and_conditions")
+            )
+            if copy_terms_and_conditions
+            else None,
+            "cancellation_policy": deepcopy(
+                source_contract.get("cancellation_policy")
+            )
+            if copy_cancellation_policy
+            else None,
+            "custom_clauses": deepcopy(source_contract.get("custom_clauses"))
+            if copy_custom_clauses
+            else None,
+            "total_amount": source_contract["total_amount"],
+            "currency": source_contract.get("currency", "USD"),
+            "deposit_amount": source_contract.get("deposit_amount"),
+            "deposit_due_date": source_contract.get("deposit_due_date"),
+            "status": ContractStatus.DRAFT.value,
+            "access_token": self._generate_token(),
+            "token_expires_at": token_expires_at,
+            "service_date": source_contract.get("service_date"),
+            "service_start_time": source_contract.get("service_start_time"),
+            "service_end_time": source_contract.get("service_end_time"),
+            "service_location": source_contract.get("service_location"),
+            "created_by": source_contract["created_by"],
+            "internal_notes": source_contract.get("internal_notes"),
+            "vendor_notes": source_contract.get("vendor_notes"),
+            "draft_document_url": source_contract.get("draft_document_url"),
+            "signed_document_url": None,
+            "attachments": deepcopy(source_contract.get("attachments") or []),
+            "sent_at": None,
+            "viewed_at": None,
+            "signed_at": None,
+            "signed_by_name": None,
+            "signed_by_email": None,
+            "signature_ip": None,
+            "completed_at": None,
+            "cancelled_at": None,
+            "cancellation_reason": None,
+            "version_number": next_version_number,
+            "root_contract_id": root_contract_id,
+            "parent_contract_id": source_contract_id,
+            "supersedes_contract_id": source_contract_id,
+            "superseded_by_contract_id": None,
+            "is_current_version": False,
+            "contract_kind": revision_kind,
+            "amendment_reason": reason,
+            "superseded_at": None,
+            "created_at": now,
+            "updated_at": now,
+        }
+
+        return revision_contract
+
+    async def _mark_contract_as_superseded(
+        self, contract_id: str, superseded_by_contract_id: str
+    ) -> None:
+        """Mark a once-live contract as historical without changing its status."""
+        await self.vendor_contracts.update_one(
+            {"_id": validate_object_id(contract_id, "contract ID")},
+            {
+                "$set": {
+                    "is_current_version": False,
+                    "superseded_at": datetime.now(timezone.utc),
+                    "superseded_by_contract_id": superseded_by_contract_id,
+                    "updated_at": datetime.now(timezone.utc),
+                }
+            },
+        )
 
     @staticmethod
     def _get_vendor_service_label(
@@ -989,6 +1247,7 @@ class VendorService:
     ) -> dict:
         """Create a new vendor contract"""
         try:
+            contract_id = ObjectId()
             # Get planner's contract settings (with fallback to system defaults)
             planner_settings = await self._get_planner_contract_settings(created_by)
 
@@ -1086,6 +1345,7 @@ class VendorService:
                 )
 
             contract = {
+                "_id": contract_id,
                 "wedding_id": wedding_id,
                 "vendor_profile_id": vendor_profile_id,
                 "vendor_quote_id": quote_id,
@@ -1113,13 +1373,22 @@ class VendorService:
                 "service_date": service_date,
                 "service_location": service_location,
                 "created_by": created_by,
+                "version_number": 1,
+                "root_contract_id": str(contract_id),
+                "parent_contract_id": None,
+                "supersedes_contract_id": None,
+                "superseded_by_contract_id": None,
+                "is_current_version": True,
+                "contract_kind": ContractKind.ORIGINAL.value,
+                "amendment_reason": None,
+                "superseded_at": None,
                 "created_at": datetime.now(timezone.utc),
                 "updated_at": datetime.now(timezone.utc),
             }
 
-            result = await self.vendor_contracts.insert_one(contract)
-            contract["_id"] = result.inserted_id
+            await self.vendor_contracts.insert_one(contract)
             self._serialize_doc(contract)
+            self._attach_contract_version_metadata(contract)
 
             # Update quote if converting from quote
             if quote_id:
@@ -1157,7 +1426,13 @@ class VendorService:
     ) -> List[dict]:
         """Get contracts for a planner"""
         try:
-            query = {"created_by": created_by}
+            query: Dict[str, Any] = {
+                "created_by": created_by,
+                "$or": [
+                    {"is_current_version": {"$exists": False}},
+                    {"is_current_version": True},
+                ],
+            }
 
             if wedding_id:
                 query["wedding_id"] = wedding_id
@@ -1176,6 +1451,7 @@ class VendorService:
 
             for c in contracts:
                 self._serialize_doc(c)
+                self._attach_contract_version_metadata(c)
 
             return contracts
 
@@ -1215,6 +1491,7 @@ class VendorService:
                 )
 
             self._serialize_doc(contract)
+            self._attach_contract_version_metadata(contract)
             return contract
 
         except HTTPException:
@@ -1238,6 +1515,15 @@ class VendorService:
                     status_code=404, detail="Contract not found or invalid token"
                 )
 
+            self._serialize_doc(contract)
+            self._attach_contract_version_metadata(contract)
+
+            if not self._is_contract_current(contract):
+                raise HTTPException(
+                    status_code=410,
+                    detail="This contract version has been replaced",
+                )
+
             # Check expiration
             if contract.get("token_expires_at") and contract[
                 "token_expires_at"
@@ -1258,8 +1544,6 @@ class VendorService:
                 contract["viewed_at"] = datetime.now(timezone.utc)
                 contract["status"] = ContractStatus.VIEWED.value
 
-            self._serialize_doc(contract)
-
             # Remove sensitive fields for vendor view
             contract.pop("access_token", None)
             contract.pop("internal_notes", None)
@@ -1271,6 +1555,136 @@ class VendorService:
         except Exception as e:
             logger.error(f"Error fetching contract by token: {str(e)}")
             raise HTTPException(status_code=500, detail="Failed to fetch contract")
+
+    async def create_contract_revision(
+        self,
+        contract_id: str,
+        created_by: str,
+        revision_kind: str,
+        reason: Optional[str] = None,
+        copy_sections: bool = True,
+        copy_terms_and_conditions: bool = True,
+        copy_cancellation_policy: bool = True,
+        copy_custom_clauses: bool = True,
+    ) -> dict:
+        """Create a new draft revision or amendment from the current live contract."""
+        try:
+            source_contract = await self.get_contract(contract_id, created_by=created_by)
+
+            if not self._is_contract_current(source_contract):
+                raise HTTPException(
+                    status_code=400,
+                    detail="Cannot create a revision from a historical contract version",
+                )
+
+            if not self._can_create_revision_from_status(source_contract["status"]):
+                raise HTTPException(
+                    status_code=400,
+                    detail="Only sent, viewed, or signed contracts can be revised",
+                )
+
+            if revision_kind not in {
+                ContractKind.REVISION.value,
+                ContractKind.AMENDMENT.value,
+            }:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Revision kind must be 'revision' or 'amendment'",
+                )
+
+            planner_settings = await self._get_planner_contract_settings(created_by)
+            root_contract_id = self._get_root_contract_id(source_contract)
+            next_version_number = await self._get_next_contract_version_number(
+                root_contract_id=root_contract_id,
+                created_by=created_by,
+            )
+
+            revision_contract = self._build_contract_revision_copy(
+                source_contract=source_contract,
+                revision_kind=revision_kind,
+                next_version_number=next_version_number,
+                token_expires_at=datetime.now(timezone.utc)
+                + timedelta(days=planner_settings["token_expiry_days"]),
+                reason=reason,
+                copy_sections=copy_sections,
+                copy_terms_and_conditions=copy_terms_and_conditions,
+                copy_cancellation_policy=copy_cancellation_policy,
+                copy_custom_clauses=copy_custom_clauses,
+            )
+
+            await self.vendor_contracts.insert_one(revision_contract)
+            self._serialize_doc(revision_contract)
+            self._attach_contract_version_metadata(revision_contract)
+            return revision_contract
+
+        except HTTPException:
+            raise
+        except Exception as e:
+            logger.error(f"Error creating contract revision: {str(e)}")
+            raise HTTPException(
+                status_code=500, detail="Failed to create contract revision"
+            )
+
+    async def get_contract_revision_history(
+        self, contract_id: str, created_by: str
+    ) -> dict:
+        """Return ordered version lineage for the contract chain containing this contract."""
+        try:
+            contract = await self.get_contract(contract_id, created_by=created_by)
+            root_contract_id = self._get_root_contract_id(contract)
+            lineage = await self._get_contract_lineage(
+                root_contract_id=root_contract_id,
+                created_by=created_by,
+            )
+
+            current_contract_id = next(
+                (
+                    lineage_contract["id"]
+                    for lineage_contract in lineage
+                    if lineage_contract.get("is_current_version", True)
+                ),
+                contract["id"],
+            )
+
+            versions = [
+                {
+                    "id": lineage_contract["id"],
+                    "contract_number": lineage_contract.get("contract_number"),
+                    "version_number": lineage_contract.get("version_number", 1),
+                    "contract_kind": lineage_contract.get(
+                        "contract_kind", ContractKind.ORIGINAL.value
+                    ),
+                    "status": lineage_contract["status"],
+                    "is_current_version": lineage_contract.get(
+                        "is_current_version", True
+                    ),
+                    "parent_contract_id": lineage_contract.get("parent_contract_id"),
+                    "supersedes_contract_id": lineage_contract.get(
+                        "supersedes_contract_id"
+                    ),
+                    "superseded_by_contract_id": lineage_contract.get(
+                        "superseded_by_contract_id"
+                    ),
+                    "created_at": lineage_contract["created_at"],
+                    "sent_at": lineage_contract.get("sent_at"),
+                    "signed_at": lineage_contract.get("signed_at"),
+                }
+                for lineage_contract in lineage
+            ]
+
+            return {
+                "current_contract_id": current_contract_id,
+                "root_contract_id": root_contract_id,
+                "versions": versions,
+            }
+
+        except HTTPException:
+            raise
+        except Exception as e:
+            logger.error(f"Error getting contract revision history: {str(e)}")
+            raise HTTPException(
+                status_code=500, detail="Failed to fetch contract revision history"
+            )
 
     async def send_contract(
         self,
@@ -1284,6 +1698,16 @@ class VendorService:
             # Authorization: verify contract belongs to this user
             contract = await self.get_contract(contract_id, created_by=created_by)
 
+            if (
+                contract.get("contract_kind", ContractKind.ORIGINAL.value)
+                in {ContractKind.REVISION.value, ContractKind.AMENDMENT.value}
+                and not contract.get("supersedes_contract_id")
+            ):
+                raise HTTPException(
+                    status_code=400,
+                    detail="Revision draft is missing its superseded contract reference",
+                )
+
             if contract["status"] not in [
                 ContractStatus.DRAFT.value,
                 ContractStatus.PENDING_REVIEW.value,
@@ -1291,6 +1715,28 @@ class VendorService:
                 raise HTTPException(
                     status_code=400, detail="Contract has already been sent"
                 )
+
+            superseded_contract: Optional[Dict[str, Any]] = None
+            if contract.get("contract_kind") in {
+                ContractKind.REVISION.value,
+                ContractKind.AMENDMENT.value,
+            }:
+                superseded_contract = await self.get_contract(
+                    contract["supersedes_contract_id"],
+                    created_by=created_by,
+                )
+
+                if not self._is_contract_current(superseded_contract):
+                    raise HTTPException(
+                        status_code=409,
+                        detail="This revision is based on an outdated contract version",
+                    )
+
+                if self._get_root_contract_id(superseded_contract) != self._get_root_contract_id(contract):
+                    raise HTTPException(
+                        status_code=400,
+                        detail="Revision lineage does not match the contract it supersedes",
+                    )
 
             # Get wedding info
             wedding = await self._get_wedding(contract["wedding_id"])
@@ -1367,17 +1813,35 @@ class VendorService:
             )
 
             if email_result.get("success"):
+                now = datetime.now(timezone.utc)
+
                 # Update contract status
+                send_update: Dict[str, Any] = {
+                    "status": ContractStatus.SENT.value,
+                    "sent_at": now,
+                    "updated_at": now,
+                    "root_contract_id": self._get_root_contract_id(contract),
+                    "version_number": contract.get("version_number", 1),
+                    "parent_contract_id": contract.get("parent_contract_id"),
+                    "supersedes_contract_id": contract.get("supersedes_contract_id"),
+                    "superseded_by_contract_id": None,
+                    "is_current_version": True,
+                    "contract_kind": contract.get(
+                        "contract_kind", ContractKind.ORIGINAL.value
+                    ),
+                    "amendment_reason": contract.get("amendment_reason"),
+                    "superseded_at": None,
+                }
                 await self.vendor_contracts.update_one(
                     {"_id": ObjectId(contract_id)},
-                    {
-                        "$set": {
-                            "status": ContractStatus.SENT.value,
-                            "sent_at": datetime.now(timezone.utc),
-                            "updated_at": datetime.now(timezone.utc),
-                        }
-                    },
+                    {"$set": send_update},
                 )
+
+                if superseded_contract:
+                    await self._mark_contract_as_superseded(
+                        contract_id=superseded_contract["id"],
+                        superseded_by_contract_id=contract_id,
+                    )
 
                 # Log communication
                 await self._log_communication(
@@ -1429,6 +1893,15 @@ class VendorService:
             if not contract:
                 raise HTTPException(
                     status_code=404, detail="Contract not found or invalid token"
+                )
+
+            self._serialize_doc(contract)
+            self._attach_contract_version_metadata(contract)
+
+            if not self._is_contract_current(contract):
+                raise HTTPException(
+                    status_code=410,
+                    detail="This contract version has been replaced",
                 )
 
             if contract["status"] == ContractStatus.SIGNED.value:
@@ -1523,15 +1996,7 @@ class VendorService:
         try:
             # Authorization: verify contract belongs to this user
             contract = await self.get_contract(contract_id, created_by=updated_by)
-
-            if contract["status"] not in [
-                ContractStatus.DRAFT.value,
-                ContractStatus.PENDING_REVIEW.value,
-            ]:
-                raise HTTPException(
-                    status_code=400,
-                    detail="Contract cannot be modified after it has been sent",
-                )
+            await self._ensure_contract_editable(contract)
 
             # Fields that can be updated
             allowed_fields = [
@@ -1580,15 +2045,7 @@ class VendorService:
         try:
             # Authorization: verify contract belongs to this user
             contract = await self.get_contract(contract_id, created_by=updated_by)
-
-            if contract["status"] not in [
-                ContractStatus.DRAFT.value,
-                ContractStatus.PENDING_REVIEW.value,
-            ]:
-                raise HTTPException(
-                    status_code=400,
-                    detail="Contract sections cannot be modified after it has been sent",
-                )
+            await self._ensure_contract_editable(contract)
 
             # Validate sections
             processed_sections = []

@@ -129,6 +129,14 @@ class ContractType(str, Enum):
     CUSTOM = "custom"
 
 
+class ContractKind(str, Enum):
+    """How a vendor contract relates to the rest of its lineage."""
+
+    ORIGINAL = "original"
+    REVISION = "revision"
+    AMENDMENT = "amendment"
+
+
 class VendorAssignmentStatus(str, Enum):
     """
     Vendor assignment lifecycle status.
@@ -503,6 +511,33 @@ class VendorContract(BaseModel):
     )
     cancelled_at: Optional[datetime] = Field(None, description="When cancelled")
     cancellation_reason: Optional[str] = Field(None, description="Why cancelled")
+
+    # Version Lineage
+    version_number: int = Field(1, ge=1, description="Revision number within lineage")
+    root_contract_id: Optional[str] = Field(
+        None, description="Root/original contract id for this lineage"
+    )
+    parent_contract_id: Optional[str] = Field(
+        None, description="Direct parent contract id"
+    )
+    supersedes_contract_id: Optional[str] = Field(
+        None, description="Current live contract this version replaces when sent"
+    )
+    superseded_by_contract_id: Optional[str] = Field(
+        None, description="Newer contract version that replaced this record"
+    )
+    is_current_version: bool = Field(
+        True, description="Whether this is the live contract version for the lineage"
+    )
+    contract_kind: ContractKind = Field(
+        ContractKind.ORIGINAL, description="original, revision, or amendment"
+    )
+    amendment_reason: Optional[str] = Field(
+        None, description="Planner-supplied reason for amendment/revision"
+    )
+    superseded_at: Optional[datetime] = Field(
+        None, description="When this version stopped being the live contract"
+    )
 
     # Documents
     draft_document_url: Optional[str] = Field(None, description="Draft PDF URL")
