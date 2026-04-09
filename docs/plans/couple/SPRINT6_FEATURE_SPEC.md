@@ -206,7 +206,7 @@ This section documents every existing component, service, endpoint, and pattern 
    - In `post_couple_update()` → push to couple
    - In `send_message()` (planner→couple direction) → push to couple
    - In `share_form_with_couple()` → push to couple
-   - In `schedule_meeting()` / `cancel_meeting()` → push to couple
+   - In the canonical planner calendar meeting create/delete flow (`create_meeting()` / `delete_meeting()`) → push to couple
    - In note reply endpoints → push to couple
 3. Frontend push subscription manager:
    - Check `Notification.permission` state on mount

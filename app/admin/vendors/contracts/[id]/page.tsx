@@ -6,17 +6,20 @@ import { useRouter, useParams } from 'next/navigation';
 import { toast } from 'sonner';
 import { formatAdminTimestamp, formatAdminDate, DEFAULT_TIMEZONE } from '@/utils/dateFormat';
 import {
+  getCategoryLabel,
+} from '@/services/vendorManagementApi';
+import {
   getContract,
   updateContract,
   sendContract,
   getContractFormData,
+  applyFormDataToContract,
   createPaymentMilestones,
   type VendorContract,
   type ContractSection,
   type FormDataForContract,
   getContractStatusColor,
-  getCategoryLabel,
-} from '@/services/vendorManagementApi';
+} from '@/services/vendorContractsApi';
 
 type TabId = 'details' | 'sections' | 'payments' | 'activity';
 
@@ -420,16 +423,18 @@ export default function ContractDetailPage() {
                       <button
                         onClick={() => {
                           if (formData && token && contractId) {
-                            import('@/services/vendorManagementApi').then(({ applyFormDataToContract }) => {
-                              applyFormDataToContract(token, contractId, (formData.vendor_submissions[0]?.data || {}) as Record<string, { value: unknown } | string>)
-                                .then((updated) => {
-                                  setContract(updated);
-                                  setEditedContract(updated);
-                                  setEditedSections(updated.sections || []);
-                                  toast.success('Form data applied to contract');
-                                })
-                                .catch(() => toast.error('Failed to apply form data'));
-                            });
+                            applyFormDataToContract(
+                              token,
+                              contractId,
+                              (formData.vendor_submissions[0]?.data || {}) as Record<string, { value: unknown } | string>
+                            )
+                              .then((updated) => {
+                                setContract(updated);
+                                setEditedContract(updated);
+                                setEditedSections(updated.sections || []);
+                                toast.success('Form data applied to contract');
+                              })
+                              .catch(() => toast.error('Failed to apply form data'));
                           }
                         }}
                         className="text-sm text-blue-600 dark:text-blue-400 font-medium mt-2 hover:underline"

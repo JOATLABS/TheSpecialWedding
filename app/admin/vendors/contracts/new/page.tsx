@@ -8,16 +8,18 @@ import { getApiBaseUrl } from '@/utils/env';
 import { formatAdminDate, formatDate, DEFAULT_TIMEZONE } from '@/utils/dateFormat';
 import {
   getVendorDirectory,
-  getContractTemplates,
-  getContractTemplate,
-  createContract,
   type VendorProfile,
-  type ContractTemplate,
-  type ContractSection,
   type VendorCategory,
   VENDOR_CATEGORIES,
   getCategoryLabel,
 } from '@/services/vendorManagementApi';
+import {
+  getContractTemplates,
+  getContractTemplate,
+  createContract,
+  type ContractTemplate,
+  type ContractSection,
+} from '@/services/vendorContractsApi';
 
 // Placeholder definitions for auto-fill
 const AVAILABLE_PLACEHOLDERS = [

@@ -89,7 +89,7 @@ cursor = tasks_collection.find({
 
 **Issue**: No compound index on `{wedding_id, category, planner_email, start_date}`. With N planner tasks across multiple weddings, this could scan many documents.
 
-**Comparison**: list_meetings_planner (lines 1562-1566) uses identical query pattern without sorting edge-case handling.
+**Historical note**: The same planner-side listing concern originally also applied to the retired `list_meetings_planner` alias. The current planner-side review target is the canonical planner calendar list/filter surface in `app/api/planner_calendar.py`, especially `list_tasks(..., category="meeting")`.
 
 **Recommendation**:
 1. Add compound index at application startup or via migration:
@@ -101,9 +101,9 @@ await tasks_collection.create_index([
     ("start_date", 1)
 ])
 ```
-2. Add pagination metadata (skip param) to list_meetings_planner for consistency.
+2. Keep planner-side meeting listing paginated on the canonical planner calendar surface when filtering `category="meeting"`.
 
-**Affected lines**: 1562-1566 (list_meetings_planner), 1646-1651 (list_meetings_couple)
+**Affected surfaces**: Historical planner meeting alias (now retired), canonical planner calendar task listing, and `list_meetings_couple()`
 
 ---
 
@@ -141,48 +141,29 @@ await mongo.get_weddings_collection().update_one(
 
 ## MEDIUM FINDINGS
 
-### 🟡 SECURITY: Missing wedding_id validation in cancel_meeting (Line 1589)
+### 🟡 SECURITY: Historical planner-side cancel alias trusted wedding_id too loosely
 
-**Issue**: `cancel_meeting()` accepts `wedding_id` as query parameter but doesn't validate it matches the retrieved task's `wedding_id`.
+**Issue**: This finding applied to the retired planner-side `/couple-portal/meetings/{meeting_id}` alias, which accepted `wedding_id` as a query parameter and did not bind cancellation tightly enough to the actual meeting record.
 
 **Current code** (lines 1587-1608):
 ```python
-@router.delete("/couple-portal/meetings/{meeting_id}", tags=["Couple Portal - Meetings"])
-async def cancel_meeting(
-    meeting_id: str = Path(...),
-    wedding_id: str = Query(...),  # <-- Trusts query param
-    current_user: ExtendedAuthUser = Depends(require_team_or_planner)
-):
-    """Planner cancels a scheduled meeting. Removes from Google Calendar if synced."""
-    if not await check_wedding_access(current_user, wedding_id):
+@router.delete("/planner/calendar/meetings/{meeting_id}", tags=["Planner Calendar"])
+async def delete_meeting(...):
+    task = await _get_scoped_meeting(ObjectId(meeting_id), current_user)
+    if task.get("wedding_id") and not await check_wedding_access(current_user, task["wedding_id"]):
         raise HTTPException(status_code=403, detail="You don't have access to this wedding")
-
-    try:
-        ObjectId(meeting_id)
-    except (InvalidId, Exception):
-        raise HTTPException(status_code=400, detail="Invalid meeting ID format")
-
-    tasks_collection = mongo.get_planner_tasks_collection()
-    task = await tasks_collection.find_one({
-        "_id": ObjectId(meeting_id),
-        "planner_email": current_user.email,
-        "category": "meeting",
-    })  # <-- Does NOT verify task.wedding_id == data.wedding_id
 ```
 
-**Attack vector**: A planner could request `DELETE /couple-portal/meetings/{id_from_wedding_A}?wedding_id=wedding_B` and if they have access to wedding_B, the access check passes. Then deletion proceeds based on `meeting_id` alone.
+**Attack vector**: A planner could request `DELETE /couple-portal/meetings/{id_from_wedding_A}?wedding_id=wedding_B` and, if they had access to wedding B, the old alias could be tricked into acting on the wrong record. That route has now been retired; the canonical planner-side delete flow should continue to rely on scoped meeting lookup instead of query-param-driven targeting.
 
-**Recommendation**: Add assertion after task retrieval:
+**Recommendation**: Keep cancellation bound to the canonical planner calendar delete path and scoped meeting lookup. Do not reintroduce query-param-based wedding targeting for planner-side meeting deletion.
 ```python
-task = await tasks_collection.find_one({
-    "_id": ObjectId(meeting_id),
-    "planner_email": current_user.email,
-    "category": "meeting",
-    "wedding_id": wedding_id,  # Add constraint here
-})
+task = await _get_scoped_meeting(ObjectId(meeting_id), current_user)
+if task.get("wedding_id") and not await check_wedding_access(current_user, task["wedding_id"]):
+    raise HTTPException(status_code=403, detail="You don't have access to this wedding")
 ```
 
-**Affected lines**: 1601-1608
+**Affected surface**: Historical planner-side cancel alias; current canonical surface is `delete_meeting()` in `app/api/planner_calendar.py`
 
 ---
 
@@ -264,11 +245,11 @@ return {
 
 ## LOW FINDINGS
 
-### 🟢 EDGE CASE: Missing end_date default in schedule_meeting (Line 1491)
+### 🟢 EDGE CASE: Historical meeting request model needed explicit end-date validation
 
-**Issue**: If `end_date` is null, defaults to `start_date`. No validation that end_date >= start_date.
+**Issue**: The historical `ScheduleMeetingRequest` meeting-write model defaulted `end_date` to `start_date`, but the important rule is broader: canonical meeting payload models must reject `end_date < start_date`.
 
-**Current code** (line 1491):
+**Historical code**:
 ```python
 "end_date": data.end_date or data.start_date,
 ```
@@ -277,18 +258,18 @@ return {
 
 **Impact**: Low (Google Calendar would reject it), but bad data quality.
 
-**Recommendation**: Add Pydantic validator:
+**Recommendation**: Keep this validation on the canonical planner calendar payload models (`CalendarEventCreate` and `CalendarEventUpdate`):
 ```python
-class ScheduleMeetingRequest(BaseModel):
+class CalendarEventCreate(BaseModel):
     # ...
-    @validator('end_date')
-    def validate_end_date(cls, v, values):
-        if v and v < values.get('start_date'):
+    @model_validator(mode="after")
+    def validate_dates(self):
+        if self.end_date and self.end_date < self.start_date:
             raise ValueError("end_date must be >= start_date")
-        return v
+        return self
 ```
 
-**Affected lines**: 1442-1454 (ScheduleMeetingRequest model)
+**Affected surface**: Historical `ScheduleMeetingRequest` alias model; current canonical meeting payload models in `app/models/calendar.py`
 
 ---
 
@@ -339,31 +320,31 @@ logger.info(f"Planner {current_user.email} replied to event note {note_id} on we
 
 ### ✅ Correct patterns observed:
 
-1. **Auth checks**: Both P1-6 and P1-2 use `require_team_or_planner` dependency correctly (lines 1352, 1460, 1555, 1590)
-2. **Couple auth**: `list_meetings_couple()` correctly uses `require_couple_auth` (line 1629)
+1. **Auth separation**: Couple-facing meeting reads stay on `require_couple_auth`, while planner-side meeting writes now belong to the canonical planner calendar endpoints with calendar-permission dependencies.
+2. **Couple auth**: `list_meetings_couple()` remains the correct couple-facing read surface.
 3. **Wedding access**: Both reply endpoints call `_get_wedding_for_planner()` which enforces access control (lines 1355, 1399)
 4. **Optimistic locking**: Note replies use `_save_wedding_events()` which applies optimistic concurrency check via updated_at (line 1379, 1428)
-5. **Input validation**: ReplyToNoteRequest and ScheduleMeetingRequest use Pydantic with proper constraints (lines 1338-1342, 1442-1454)
+5. **Input validation**: ReplyToNoteRequest remains Pydantic-backed, and canonical meeting validation now belongs to `CalendarEventCreate` / `CalendarEventUpdate` rather than the retired alias model.
 
 ### ❌ Inconsistencies:
 
 1. **Archived wedding checks**: Note endpoints check archived status (520, 561); reply endpoints don't (see critical finding #1)
 2. **ObjectId handling**: Both note operations and meeting operations use weak exception catching (see critical finding #2)
-3. **Google Calendar imports**: Importing inside try block is consistent across both endpoints (1515, 1613)
+3. **Route ownership**: Historical planner meeting behavior was split between `couple_portal.py` and the planner calendar surface; current canonical ownership should remain in `planner_calendar.py`
 
 ---
 
 ## RECOMMENDATIONS SUMMARY
 
-| Priority | Category | Lines | Action |
+| Priority | Category | Surface / Lines | Action |
 |----------|----------|-------|--------|
 | P0 | Security | 1354-1433 | Add archived wedding check to note reply endpoints |
-| P0 | Security | 1601-1608 | Add wedding_id constraint to cancel_meeting query |
+| P0 | Security | historical cancel alias / canonical planner delete path | Keep planner-side meeting deletion bound to scoped meeting lookup; do not reintroduce query-param-driven cancellation |
 | P1 | Correctness | 1375-1377, 1424-1426 | Use MongoDB atomic operators to avoid race on parent note status |
-| P1 | Performance | 1562-1651 | Create compound index on planner_tasks(wedding_id, category, planner_email, start_date) |
+| P1 | Performance | planner/couple meeting listing surfaces | Create compound index on `planner_tasks(wedding_id, category, planner_email, start_date)` or the owner-aware equivalent used by the canonical listing path |
 | P2 | Maintainability | 1348-1433 | Extract reply note creation logic to helper function |
-| P2 | Maintainability | 1512-1532, 1611-1618 | Return Google Calendar sync status in response; improve error specificity |
-| P3 | Edge case | 1442-1454 | Add Pydantic validator for end_date >= start_date |
+| P2 | Maintainability | historical alias responses / canonical meeting response | Return per-meeting sync status in planner-side meeting responses; improve error specificity |
+| P3 | Edge case | canonical meeting payload models | Keep validation enforcing `end_date >= start_date` on meeting create/update payloads |
 | P3 | Naming | 1366, 1415 | Use planner full_name instead of email for consistency |
 | P3 | Logging | 1383, 1432, 1534, 1622 | Add wedding_id to log messages for traceability |
 
@@ -374,7 +355,6 @@ logger.info(f"Planner {current_user.email} replied to event note {note_id} on we
 1. **Test archived wedding rejection**: POST to note reply endpoint with archived wedding → expect 403
 2. **Test concurrent note updates**: Simulate two planners replying to same note simultaneously
 3. **Test invalid ObjectIds**: Test with malformed IDs in meeting endpoints
-4. **Test wedding_id mismatch in cancel_meeting**: Request with mismatched wedding_id/meeting_id pair
-5. **Test Google Calendar sync failure**: Mock google_calendar_service exception, verify meeting created locally
-6. **Test end_date validation**: Create meeting with end_date < start_date
-
+4. **Test scoped delete authorization**: Attempt planner-side meeting deletion outside the accessible owner/wedding scope
+5. **Test Google Calendar sync failure**: Mock provider sync failure on the canonical planner calendar meeting-create path and verify the internal meeting remains valid
+6. **Test end_date validation**: Create or update a canonical meeting with `end_date < start_date`

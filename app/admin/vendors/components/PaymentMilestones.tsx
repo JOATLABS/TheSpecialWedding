@@ -9,14 +9,16 @@ import { Loader2, DollarSign, Plus, Send, Calendar, CheckCircle2, Clock, AlertCi
 import { toast } from 'sonner';
 import { formatAdminDate, DEFAULT_TIMEZONE } from '@/utils/dateFormat';
 import {
+  createPaymentLink,
+  sendPaymentLink,
+} from '@/services/vendorManagementApi';
+import {
   getPaymentMilestones,
   createPaymentMilestones,
   recordPayment,
-  createPaymentLink,
-  sendPaymentLink,
   getPaymentStatusColor,
   type PaymentMilestone,
-} from '@/services/vendorManagementApi';
+} from '@/services/vendorContractsApi';
 
 interface PaymentMilestonesProps {
   token: string;

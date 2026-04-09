@@ -1,4 +1,5 @@
 import os
+from typing import cast
 from fastapi import APIRouter, HTTPException, Depends, Request
 from app.services.reminder_service import ReminderService
 from app.dependencies.auth_extended import (
@@ -189,6 +190,7 @@ async def handle_sms_callback(request: Request):
                             "phone": from_number,
                             "message": "HELP request - Guest requested assistance",
                             "guest_id": str(guest["_id"]) if guest else None,
+                            "guest_name": guest.get("name") if guest else None,
                             "wedding_id": str(guest["wedding_id"])
                             if guest and guest.get("wedding_id")
                             else None,
@@ -330,9 +332,11 @@ async def _notify_planner_support_ticket(ticket: dict, planner_email: str):
 
         email_service = ResendEmailService()
 
-        frontend_url = settings.FRONTEND_URL or os.getenv(
-            "FRONTEND_URL", "https://thespecialwedding.io"
-        )
+        frontend_url = settings.FRONTEND_URL
+        if frontend_url is None:
+            raise ValueError("FRONTEND_URL must be configured")
+        frontend_url = cast(str, frontend_url)
+        
         inbox_url = build_support_inbox_url(
             frontend_url=frontend_url,
             conversation="sms_support",
@@ -456,20 +460,22 @@ async def _notify_planner_help_request(ticket: dict, planner_email: str):
 
         email_service = ResendEmailService()
 
-        frontend_url = settings.FRONTEND_URL or os.getenv(
-            "FRONTEND_URL", "https://thespecialwedding.io"
-        )
+        frontend_url = settings.FRONTEND_URL
+        if frontend_url is None:
+            raise ValueError("FRONTEND_URL must be configured")
+        frontend_url = cast(str, frontend_url)
+        
         inbox_url = build_support_inbox_url(
             frontend_url=frontend_url,
             conversation="sms_support",
             ticket_id=str(ticket["_id"]),
             wedding_id=ticket.get("wedding_id"),
         )
-        subject = f"🆘 Guest Needs Help: {ticket['wedding_name']}"
+        subject = f"Guest Needs Help: {ticket['wedding_name']}"
 
         html_content = f"""
         <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-            <h2 style="color: #dc2626;">🆘 Guest Requested Help</h2>
+            <h2 style="color: #dc2626;">Guest Requested Help</h2>
 
             <div style="background-color: #fef2f2; padding: 20px; border-radius: 8px; margin: 20px 0; border: 1px solid #fecaca;">
                 <p><strong>A guest has texted HELP and may need assistance.</strong></p>

@@ -524,9 +524,9 @@ Steps:
 
 Network to watch:
 
-1. `POST /admin/couple-portal/meetings`
+1. `POST /admin/planner/calendar/meetings`
 2. `GET /couple/portal/meetings`
-3. `GET /admin/couple-portal/meetings?wedding_id=<id>`
+3. `GET /admin/planner/calendar/tasks?wedding_id=<id>&category=meeting`
 
 Expected:
 

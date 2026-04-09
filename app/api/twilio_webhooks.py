@@ -1029,6 +1029,7 @@ async def handle_twilio_incoming_message(
                     "phone": from_number,
                     "message": "HELP request - Guest requested assistance",
                     "guest_id": str(guest["_id"]) if guest else None,
+                    "guest_name": guest.get("name") if guest else None,
                     "wedding_id": str(wedding_id) if wedding_id else None,
                     "wedding_name": wedding_name,
                     "assigned_to": assigned_planner_email,
