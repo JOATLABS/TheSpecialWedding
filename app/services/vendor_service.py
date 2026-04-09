@@ -875,12 +875,8 @@ class VendorService:
                 "sections": data.get("sections", []),
                 "terms_and_conditions": data.get("terms_and_conditions"),
                 "cancellation_policy": data.get("cancellation_policy"),
-                "default_deposit_percentage": data.get(
-                    "default_deposit_percentage"
-                ),
-                "default_payment_schedule": data.get(
-                    "default_payment_schedule", []
-                ),
+                "default_deposit_percentage": data.get("default_deposit_percentage"),
+                "default_payment_schedule": data.get("default_payment_schedule", []),
                 "created_by": created_by,
                 "is_system_template": False,
                 "is_public": data.get("is_public", False),
