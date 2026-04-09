@@ -249,6 +249,27 @@ class FormSubmissionRequest(BaseModel):
     responses: dict = Field(..., description="Form field responses keyed by field_id")
 
 
+def _parse_couple_form_id(form_id: str) -> ObjectId:
+    """Parse a couple-facing form id into an ObjectId with a stable client error."""
+    try:
+        return ObjectId(form_id)
+    except (InvalidId, TypeError):
+        raise HTTPException(status_code=400, detail="Invalid form ID format")
+
+
+def _build_couple_shared_form_query(form_object_id: ObjectId, couple: dict) -> dict:
+    """Return the canonical visibility query for a couple-facing form."""
+    return {
+        "_id": form_object_id,
+        "wedding_id": couple["wedding_id"],
+        "$or": [
+            {"shared_with_couple": True},
+            {"target_audience": "couple"},
+            {"couple_email": couple["email"]},
+        ],
+    }
+
+
 @router.post("/couple/portal/forms/submit", tags=["Couple Portal"])
 async def submit_form(
     data: FormSubmissionRequest, couple: dict = Depends(require_couple_auth)
@@ -261,17 +282,11 @@ async def submit_form(
             status_code=403, detail="Form submission is disabled for archived weddings"
         )
 
-    # Verify form exists and is shared with couple
+    form_object_id = _parse_couple_form_id(data.form_id)
+
+    # Verify form exists and is shared with couple.
     form = await mongo.db["forms"].find_one(
-        {
-            "_id": ObjectId(data.form_id),
-            "wedding_id": couple["wedding_id"],
-            "$or": [
-                {"shared_with_couple": True},
-                {"target_audience": "couple"},
-                {"couple_email": couple["email"]},
-            ],
-        }
+        _build_couple_shared_form_query(form_object_id, couple)
     )
 
     if not form:
@@ -340,13 +355,14 @@ async def submit_form(
 @router.get("/couple/portal/forms/{form_id}", tags=["Couple Portal"])
 async def get_form_details(form_id: str, couple: dict = Depends(require_couple_auth)):
     """Get a specific form with its fields for the couple to fill out."""
+    form_object_id = _parse_couple_form_id(form_id)
 
     form = await mongo.db["forms"].find_one(
-        {"_id": ObjectId(form_id), "wedding_id": couple["wedding_id"]}
+        _build_couple_shared_form_query(form_object_id, couple)
     )
 
     if not form:
-        raise HTTPException(status_code=404, detail="Form not found")
+        raise HTTPException(status_code=404, detail="Form not found or not shared with you")
 
     # Get existing submission if any
     submission = await mongo.db["form_submissions"].find_one(

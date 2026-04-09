@@ -43,6 +43,7 @@ class CalendarConnectionModel(BaseModel):
     is_writable: bool = False
     is_primary: bool = False
     is_default_write_target: bool = False
+    allowed_scheduler_user_ids: list[str] = Field(default_factory=list)
     is_shared_in_team_view: bool = False
     details_visibility: str = Field(default=VisibilityMode.BUSY_ONLY.value)
     sync_enabled: bool = True
@@ -65,6 +66,7 @@ class CalendarConnectionUpdateRequest(BaseModel):
     """Allowed mutable fields for a calendar connection."""
 
     is_default_write_target: Optional[bool] = None
+    allowed_scheduler_user_ids: Optional[list[str]] = None
     is_shared_in_team_view: Optional[bool] = None
     details_visibility: Optional[str] = None
     sync_enabled: Optional[bool] = None

@@ -2,9 +2,13 @@
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
+from typing import Any
+from uuid import uuid4
 
 from fastapi import HTTPException
+from pymongo import ReturnDocument
+from pymongo.errors import DuplicateKeyError
 
 from app.core.database import mongo
 from app.models.calendar import CalendarSyncPolicy
@@ -23,10 +27,122 @@ class CalendarSyncService:
     async def _get_connection_docs(self, query: dict) -> list[dict]:
         return await self.connections_collection.find(query).to_list(length=200)
 
+    def _actor_can_schedule_on_connection(
+        self,
+        connection_doc: dict[str, Any],
+        *,
+        actor_user_id: str | None,
+        actor_is_owner: bool,
+    ) -> bool:
+        if actor_is_owner:
+            return True
+        if not actor_user_id:
+            return False
+
+        explicit_allowed_scheduler_user_ids = [
+            str(value)
+            for value in connection_doc.get("allowed_scheduler_user_ids", [])
+            if value
+        ]
+        if explicit_allowed_scheduler_user_ids:
+            return actor_user_id in set(explicit_allowed_scheduler_user_ids)
+
+        owner_id = str(connection_doc.get("owner_planner_id") or "")
+        connection_user_id = str(connection_doc.get("user_id") or "")
+        if owner_id and connection_user_id and owner_id == connection_user_id:
+            return True
+        return actor_user_id == connection_user_id
+
+    def _sync_row_base(
+        self,
+        *,
+        task: dict[str, Any],
+        connection_doc: dict[str, Any],
+        now: datetime,
+    ) -> dict[str, Any]:
+        return {
+            "task_id": str(task["_id"]),
+            "owner_planner_id": task.get("owner_planner_id"),
+            "owner_planner_email": task.get("owner_planner_email")
+            or task.get("planner_email"),
+            "target_user_id": connection_doc.get("user_id"),
+            "target_user_email": connection_doc.get("user_email"),
+            "calendar_connection_id": str(connection_doc["_id"]),
+            "provider": connection_doc.get("provider", "google"),
+            "calendar_id": connection_doc.get("calendar_id"),
+            "sync_direction": "outbound",
+            "updated_at": now,
+        }
+
+    async def _claim_provider_create_slot(
+        self,
+        *,
+        task: dict[str, Any],
+        connection_doc: dict[str, Any],
+        now: datetime,
+    ) -> tuple[dict[str, Any] | None, str]:
+        claim_token = uuid4().hex
+        task_id = str(task["_id"])
+        connection_id = str(connection_doc["_id"])
+        stale_before = now - timedelta(minutes=5)
+        base_doc = self._sync_row_base(task=task, connection_doc=connection_doc, now=now)
+
+        try:
+            claimed_doc = await self.syncs_collection.find_one_and_update(
+                {
+                    "task_id": task_id,
+                    "calendar_connection_id": connection_id,
+                    "$and": [
+                        {
+                            "$or": [
+                                {"provider_create_claim_token": {"$exists": False}},
+                                {"provider_create_claim_token": None},
+                                {"provider_create_claimed_at": {"$lt": stale_before}},
+                            ]
+                        },
+                        {
+                            "$or": [
+                                {"external_event_id": {"$exists": False}},
+                                {"external_event_id": None},
+                            ]
+                        },
+                    ],
+                },
+                {
+                    "$set": {
+                        **base_doc,
+                        "sync_status": CalendarSyncStatusValue.PENDING.value,
+                        "last_error": None,
+                        "provider_create_claim_token": claim_token,
+                        "provider_create_claimed_at": now,
+                    },
+                    "$setOnInsert": {"created_at": now},
+                },
+                upsert=True,
+                return_document=ReturnDocument.AFTER,
+            )
+        except DuplicateKeyError:
+            claimed_doc = None
+
+        if claimed_doc is None:
+            existing_doc = await self.syncs_collection.find_one(
+                {
+                    "task_id": task_id,
+                    "calendar_connection_id": connection_id,
+                }
+            )
+            if isinstance(existing_doc, dict) and existing_doc.get("external_event_id"):
+                return existing_doc, ""
+            return None, ""
+        return claimed_doc, claim_token
+
     async def resolve_sync_targets(
         self,
         task: dict,
         explicit_connection_ids: list[str] | None = None,
+        *,
+        actor_user_id: str | None = None,
+        actor_is_owner: bool = False,
     ) -> list[dict]:
         """Resolve effective writable target connections for a canonical schedule item."""
         owner_id = task.get("owner_planner_id")
@@ -62,7 +178,16 @@ class CalendarSyncService:
             "sync_enabled": True,
             "is_writable": True,
         }
-        allowed_connections = await self._get_connection_docs(base_query)
+        owner_scope_connections = await self._get_connection_docs(base_query)
+        allowed_connections = [
+            doc
+            for doc in owner_scope_connections
+            if self._actor_can_schedule_on_connection(
+                doc,
+                actor_user_id=actor_user_id,
+                actor_is_owner=actor_is_owner,
+            )
+        ]
         allowed_by_id = {str(doc["_id"]): doc for doc in allowed_connections}
 
         if effective_explicit_ids is not None:
@@ -73,7 +198,7 @@ class CalendarSyncService:
             ]
             # Explicit overrides fail closed. If the scheduler selected targets
             # that are no longer allowed by policy or permission, do not guess.
-            return explicit_targets
+            return list({str(doc["_id"]): doc for doc in explicit_targets}.values())
 
         if policy == CalendarSyncPolicy.CUSTOM.value:
             return []
@@ -98,7 +223,7 @@ class CalendarSyncService:
                     selected_targets.append(default_connection)
 
         if selected_targets:
-            return selected_targets
+            return list({str(doc["_id"]): doc for doc in selected_targets}.values())
 
         if owner_id and policy in {
             CalendarSyncPolicy.OWNER_ONLY.value,
@@ -125,6 +250,8 @@ class CalendarSyncService:
         *,
         explicit_connection_ids: list[str] | None = None,
         attendee_emails: list[str] | None = None,
+        actor_user_id: str | None = None,
+        actor_is_owner: bool = False,
     ) -> list[dict]:
         """Create or update all required external sync mappings for a task."""
         task_id = str(task["_id"])
@@ -133,8 +260,14 @@ class CalendarSyncService:
             length=200
         )
         selected_connections = await self.resolve_sync_targets(
-            task, explicit_connection_ids
+            task,
+            explicit_connection_ids,
+            actor_user_id=actor_user_id,
+            actor_is_owner=actor_is_owner,
         )
+        existing_by_connection_id = {
+            sync_doc.get("calendar_connection_id"): sync_doc for sync_doc in existing_syncs
+        }
         selected_connection_ids = {str(doc["_id"]) for doc in selected_connections}
         updated_syncs: list[dict] = []
 
@@ -142,15 +275,28 @@ class CalendarSyncService:
             sync_connection_id = sync_doc.get("calendar_connection_id")
             if sync_connection_id and sync_connection_id not in selected_connection_ids:
                 if sync_doc.get("external_event_id"):
-                    await google_calendar_service.delete_google_event_for_connection(
+                    deleted = await google_calendar_service.delete_google_event_for_connection(
                         sync_connection_id,
                         sync_doc["external_event_id"],
                     )
+                    if not deleted:
+                        await self.syncs_collection.update_one(
+                            {"_id": sync_doc["_id"]},
+                            {
+                                "$set": {
+                                    "sync_status": CalendarSyncStatusValue.FAILED.value,
+                                    "last_error": "Failed to remove provider event for deselected calendar",
+                                    "updated_at": now,
+                                }
+                            },
+                        )
+                        continue
                 await self.syncs_collection.update_one(
                     {"_id": sync_doc["_id"]},
                     {
                         "$set": {
                             "sync_status": CalendarSyncStatusValue.ORPHANED.value,
+                            "last_error": None,
                             "updated_at": now,
                         }
                     },
@@ -186,14 +332,7 @@ class CalendarSyncService:
 
         for connection_doc in selected_connections:
             connection_id = str(connection_doc["_id"])
-            existing = next(
-                (
-                    sync_doc
-                    for sync_doc in existing_syncs
-                    if sync_doc.get("calendar_connection_id") == connection_id
-                ),
-                None,
-            )
+            existing = existing_by_connection_id.get(connection_id)
             if existing and existing.get("external_event_id"):
                 success = (
                     await google_calendar_service.update_google_event_for_connection(
@@ -206,16 +345,79 @@ class CalendarSyncService:
                 external_event_id = existing.get("external_event_id")
                 etag = existing.get("etag")
             else:
-                result = (
-                    await google_calendar_service.create_google_event_for_connection(
-                        connection_id,
-                        task,
-                        attendee_emails=attendee_emails,
-                    )
+                claimed_doc, claim_token = await self._claim_provider_create_slot(
+                    task=task,
+                    connection_doc=connection_doc,
+                    now=now,
                 )
-                success = bool(result)
-                external_event_id = result.get("id") if result else None
-                etag = result.get("etag") if result else None
+                if claimed_doc is None:
+                    continue
+                if claimed_doc.get("external_event_id"):
+                    success = (
+                        await google_calendar_service.update_google_event_for_connection(
+                            connection_id,
+                            claimed_doc["external_event_id"],
+                            task,
+                            attendee_emails=attendee_emails,
+                        )
+                    )
+                    external_event_id = claimed_doc.get("external_event_id")
+                    etag = claimed_doc.get("etag")
+                    existing = claimed_doc
+                else:
+                    result = (
+                        await google_calendar_service.create_google_event_for_connection(
+                            connection_id,
+                            task,
+                            attendee_emails=attendee_emails,
+                        )
+                    )
+                    success = bool(result)
+                    external_event_id = result.get("id") if result else None
+                    etag = result.get("etag") if result else None
+                    await self.syncs_collection.update_one(
+                        {
+                            "task_id": task_id,
+                            "calendar_connection_id": connection_id,
+                            "provider_create_claim_token": claim_token,
+                        },
+                        {
+                            "$set": {
+                                **self._sync_row_base(
+                                    task=task,
+                                    connection_doc=connection_doc,
+                                    now=now,
+                                ),
+                                "external_event_id": external_event_id,
+                                "sync_status": (
+                                    CalendarSyncStatusValue.SYNCED.value
+                                    if success and external_event_id
+                                    else CalendarSyncStatusValue.FAILED.value
+                                ),
+                                "last_sync_at": now if success else None,
+                                "last_error": (
+                                    None if success else "Failed to sync to provider"
+                                ),
+                                "etag": etag,
+                            },
+                            "$unset": {
+                                "provider_create_claim_token": "",
+                                "provider_create_claimed_at": "",
+                            },
+                            "$setOnInsert": {"created_at": now},
+                        },
+                        upsert=True,
+                    )
+                    existing_by_connection_id[connection_id] = (
+                        await self.syncs_collection.find_one(
+                            {
+                                "task_id": task_id,
+                                "calendar_connection_id": connection_id,
+                            }
+                        )
+                        or {}
+                    )
+                    continue
 
             sync_status = (
                 CalendarSyncStatusValue.SYNCED.value
@@ -242,6 +444,10 @@ class CalendarSyncService:
                         "last_error": None if success else "Failed to sync to provider",
                         "etag": etag,
                         "updated_at": now,
+                    },
+                    "$unset": {
+                        "provider_create_claim_token": "",
+                        "provider_create_claimed_at": "",
                     },
                     "$setOnInsert": {"created_at": now},
                 },

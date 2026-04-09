@@ -141,6 +141,7 @@ class CalendarConnectionResponse(BaseModel):
     is_writable: bool = False
     is_primary: bool = False
     is_default_write_target: bool = False
+    allowed_scheduler_user_ids: list[str] = Field(default_factory=list)
     is_shared_in_team_view: bool = False
     details_visibility: str = VisibilityMode.BUSY_ONLY.value
     sync_enabled: bool = False
@@ -687,12 +688,24 @@ async def update_calendar_connection(
         )
 
     if not (is_owner or can_manage_all):
-        restricted_fields = {"is_shared_in_team_view", "details_visibility"}
+        restricted_fields = {
+            "allowed_scheduler_user_ids",
+            "is_shared_in_team_view",
+            "details_visibility",
+        }
         if restricted_fields.intersection(updates.keys()):
             raise HTTPException(
                 status_code=403,
                 detail="Only planner owners can change team-sharing visibility",
             )
+
+    if "allowed_scheduler_user_ids" in updates:
+        resolved_ids, _ = await resolve_owner_scoped_user_assignments(
+            connection_doc.get("owner_planner_id"),
+            connection_doc.get("owner_planner_email"),
+            updates["allowed_scheduler_user_ids"],
+        )
+        updates["allowed_scheduler_user_ids"] = resolved_ids
 
     updated = await google_calendar_service.update_connection(connection_id, updates)
     return CalendarConnectionResponse(**updated)
@@ -940,7 +953,13 @@ async def create_task(
 
     # Sync to Google Calendar if requested and connected
     if task_data.sync_to_google:
-        sync_status = await calendar_sync_service.sync_schedule_item(task_doc)
+        sync_status = await calendar_sync_service.sync_schedule_item(
+            task_doc,
+            actor_user_id=_calendar_user_id(current_user),
+            actor_is_owner=bool(
+                current_user.is_root_admin or current_user.is_wedding_planner
+            ),
+        )
         successful_sync = next(
             (
                 item
@@ -1147,7 +1166,13 @@ async def update_task(
     await tasks_collection.update_one({"_id": oid}, {"$set": update_doc})
 
     if task.get("synced_to_google") or task.get("google_event_id"):
-        sync_status = await calendar_sync_service.sync_schedule_item(updated_task_doc)
+        sync_status = await calendar_sync_service.sync_schedule_item(
+            updated_task_doc,
+            actor_user_id=_calendar_user_id(current_user),
+            actor_is_owner=bool(
+                current_user.is_root_admin or current_user.is_wedding_planner
+            ),
+        )
         successful_sync = next(
             (
                 item
@@ -1257,7 +1282,13 @@ async def sync_task_to_google(
     task = _require_document(task, "Task not found")
 
     # Sync to Google
-    sync_status = await calendar_sync_service.sync_schedule_item(task)
+    sync_status = await calendar_sync_service.sync_schedule_item(
+        task,
+        actor_user_id=_calendar_user_id(current_user),
+        actor_is_owner=bool(
+            current_user.is_root_admin or current_user.is_wedding_planner
+        ),
+    )
     successful_sync = next(
         (
             item
@@ -1595,6 +1626,10 @@ async def create_meeting(
             if data.sync_target_override_enabled
             else None
         ),
+        actor_user_id=_calendar_user_id(current_user),
+        actor_is_owner=bool(
+            current_user.is_root_admin or current_user.is_wedding_planner
+        ),
     )
     first_synced = next(
         (
@@ -1717,6 +1752,10 @@ async def update_meeting(
                 else None
             )
         ),
+        actor_user_id=_calendar_user_id(current_user),
+        actor_is_owner=bool(
+            current_user.is_root_admin or current_user.is_wedding_planner
+        ),
     )
     return MeetingUpsertResponse(
         meeting=_serialize_meeting_payload(updated_task),
@@ -1798,7 +1837,13 @@ async def sync_meeting(
     except Exception:
         raise HTTPException(status_code=400, detail="Invalid meeting ID format")
     task = await _get_scoped_meeting(oid, current_user)
-    sync_status = await calendar_sync_service.sync_schedule_item(task)
+    sync_status = await calendar_sync_service.sync_schedule_item(
+        task,
+        actor_user_id=_calendar_user_id(current_user),
+        actor_is_owner=bool(
+            current_user.is_root_admin or current_user.is_wedding_planner
+        ),
+    )
     return {"meeting_id": meeting_id, "sync_status": sync_status}
 
 

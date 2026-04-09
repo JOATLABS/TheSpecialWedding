@@ -29,7 +29,7 @@ export type TaskCategory =
 export type ScheduleItemType = 'task' | 'meeting' | 'blocked_time';
 export type VisibilityMode = 'details' | 'busy_only';
 export type CalendarSyncPolicy = 'owner_only' | 'assigned_only' | 'owner_and_assigned' | 'custom';
-export type InviteDeliveryMode = 'none' | 'email_ics' | 'portal_only' | 'google_attendee';
+export type InviteDeliveryMode = 'none' | 'email_ics' | 'portal_only';
 export type ConnectionStatus = 'active' | 'expired' | 'revoked' | 'error';
 export type SyncStatusValue = 'pending' | 'synced' | 'failed' | 'orphaned' | 'not_configured';
 
@@ -98,6 +98,7 @@ export interface CalendarConnection {
   is_writable: boolean;
   is_primary: boolean;
   is_default_write_target: boolean;
+  allowed_scheduler_user_ids: string[];
   is_shared_in_team_view: boolean;
   details_visibility: VisibilityMode;
   sync_enabled: boolean;
