@@ -64,7 +64,10 @@ async def require_couple_auth(request: Request) -> dict:
     if not subject:
         raise HTTPException(status_code=401, detail="Invalid or expired token")
 
-    couple = await mongo.db["couple_users"].find_one(build_couple_lookup_query(subject))
+    lookup_query = build_couple_lookup_query(subject)
+    couple = None
+    if lookup_query:
+        couple = await mongo.db["couple_users"].find_one(lookup_query)
     if not couple:
         legacy_email = normalize_couple_email(subject)
         if legacy_email:
