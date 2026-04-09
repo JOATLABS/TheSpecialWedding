@@ -7,6 +7,7 @@ from unittest.mock import AsyncMock
 
 import pytest
 from bson import ObjectId
+from fastapi import HTTPException
 
 import app.services.vendor_service as vendor_service_module
 from app.models.vendor import ContractKind, ContractStatus
@@ -397,6 +398,99 @@ async def test_create_payment_milestones_and_record_payment_log_activity(
     assert activities.documents[-1]["activity_type"] == VendorContractActivityType.PAYMENT_RECORDED.value
     assert activities.documents[-1]["metadata"]["amount"] == 1200
     assert milestones.documents[0]["paid_amount"] == 1200
+
+
+@pytest.mark.asyncio
+async def test_create_payment_milestones_rejects_historical_contract_versions(
+    configured_vendor_service,
+) -> None:
+    service, contracts, activities, milestones, _, _, vendor_profile_id = configured_vendor_service
+    contract = make_contract_doc(
+        status=ContractStatus.SIGNED.value,
+        is_current_version=False,
+    )
+    contract["vendor_profile_id"] = vendor_profile_id
+    contracts.documents.append(deepcopy(contract))
+
+    with pytest.raises(HTTPException) as exc_info:
+        await service.create_payment_milestones(
+            contract_id=str(contract["_id"]),
+            milestones=[
+                {
+                    "description": "Final payment",
+                    "amount": 2500,
+                    "due_date": datetime(2026, 4, 25, tzinfo=timezone.utc),
+                }
+            ],
+            created_by="planner@example.com",
+        )
+
+    assert exc_info.value.status_code == 409
+    assert "historical contract version" in exc_info.value.detail
+    assert milestones.documents == []
+    assert activities.documents == []
+
+
+@pytest.mark.asyncio
+async def test_record_payment_rejects_historical_contract_versions(
+    configured_vendor_service,
+) -> None:
+    service, contracts, activities, milestones, assignments, budget_categories, vendor_profile_id = configured_vendor_service
+    contract = make_contract_doc(
+        status=ContractStatus.SIGNED.value,
+        is_current_version=False,
+    )
+    contract["vendor_profile_id"] = vendor_profile_id
+    contract["budget_category_id"] = str(ObjectId())
+    contracts.documents.append(deepcopy(contract))
+    assignments.documents.append(
+        {
+            "_id": ObjectId(),
+            "vendor_profile_id": "vendor-1",
+            "wedding_id": "wedding-1",
+            "paid_amount": 0,
+        }
+    )
+    budget_categories.documents.append(
+        {
+            "_id": ObjectId(contract["budget_category_id"]),
+            "actual_spent": 0,
+        }
+    )
+    milestones.documents.append(
+        {
+            "_id": ObjectId(),
+            "contract_id": str(contract["_id"]),
+            "wedding_id": contract["wedding_id"],
+            "vendor_profile_id": contract["vendor_profile_id"],
+            "budget_category_id": contract["budget_category_id"],
+            "description": "Final payment",
+            "amount": 2500,
+            "currency": "USD",
+            "status": "pending",
+            "paid_amount": 0,
+            "vendor_name": contract["vendor_name"],
+            "vendor_email": contract["vendor_email"],
+            "created_by": "planner@example.com",
+            "created_at": datetime.now(timezone.utc),
+            "updated_at": datetime.now(timezone.utc),
+        }
+    )
+
+    with pytest.raises(HTTPException) as exc_info:
+        await service.record_payment(
+            milestone_id=str(milestones.documents[0]["_id"]),
+            amount=1200,
+            payment_method="bank_transfer",
+            created_by="planner@example.com",
+        )
+
+    assert exc_info.value.status_code == 409
+    assert "historical contract version" in exc_info.value.detail
+    assert milestones.documents[0]["paid_amount"] == 0
+    assert assignments.documents[0]["paid_amount"] == 0
+    assert budget_categories.documents[0]["actual_spent"] == 0
+    assert activities.documents == []
 
 
 @pytest.mark.asyncio
