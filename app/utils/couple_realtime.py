@@ -1,6 +1,8 @@
 """Helpers for couple-portal realtime channels."""
 
+from app.utils.couple_identity import build_couple_principal_key
 
-def couple_sse_channel(email: str) -> str:
+
+def couple_sse_channel(couple_id: str) -> str:
     """Stable SSE channel key for couple-scoped realtime events."""
-    return f"couple::{email.strip().lower()}"
+    return build_couple_principal_key(couple_id)

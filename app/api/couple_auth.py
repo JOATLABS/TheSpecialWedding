@@ -27,6 +27,10 @@ from app.services.couple_lifecycle_service import (
     COUPLE_PORTAL_STATE_PENDING_SETUP,
     couple_lifecycle_service,
 )
+from app.utils.couple_identity import (
+    get_couple_record_id,
+    normalize_couple_email,
+)
 from app.utils.planner_ownership import (
     normalize_wedding_query_id,
     resolve_wedding_owner_identity,
@@ -99,8 +103,12 @@ def _serialize_couple_payload(couple: dict) -> dict:
     }
 
 
-def _set_couple_session_cookie(response: Response, email: str) -> str:
-    token_data = {"sub": email, "role": "couple"}
+def _set_couple_session_cookie(response: Response, couple: dict) -> str:
+    token_data = {
+        "sub": get_couple_record_id(couple),
+        "role": "couple",
+        "wedding_id": couple.get("wedding_id"),
+    }
     access_token = create_access_token(
         data=token_data, expires_delta=timedelta(hours=24)
     )
@@ -111,6 +119,119 @@ def _set_couple_session_cookie(response: Response, email: str) -> str:
         max_age=COUPLE_ACCESS_TOKEN_MAX_AGE,
     )
     return access_token
+
+
+async def _list_couples_by_email(email: str) -> list[dict]:
+    """Load all couple records for a normalized email address."""
+    return await mongo.db["couple_users"].find({"email": email}).to_list(length=None)
+
+
+def _is_archived_without_setup(couple: dict, access: dict) -> bool:
+    return access["state"] == COUPLE_PORTAL_STATE_ARCHIVED and not couple.get(
+        "setup_completed", False
+    )
+
+
+def _is_couple_portal_sign_in_allowed(couple: dict, access: dict) -> bool:
+    if access.get("blocked"):
+        return False
+    if access["state"] == COUPLE_PORTAL_STATE_PENDING_SETUP:
+        return False
+    if _is_archived_without_setup(couple, access):
+        return False
+    return True
+
+
+def _raise_couple_sign_in_error(couple: dict, access: dict) -> None:
+    if access["state"] == COUPLE_PORTAL_STATE_PENDING_SETUP:
+        raise HTTPException(
+            status_code=401,
+            detail="Please complete your account setup using the invitation link from your planner.",
+        )
+    if access.get("blocked"):
+        raise HTTPException(status_code=403, detail=access["detail"])
+    if _is_archived_without_setup(couple, access):
+        raise HTTPException(
+            status_code=403,
+            detail="This wedding has been archived. Couple portal login is unavailable for accounts that were never set up.",
+        )
+
+
+async def _select_login_candidate(email: str, password: str) -> tuple[dict, dict | None]:
+    """
+    Select the couple account to authenticate for a login attempt.
+
+    Couple emails are not globally unique in the current schema, so a single
+    email may map to multiple couple records. We accept the login only when the
+    password resolves to one account, or when multiple password matches collapse
+    to a single portal-eligible account after lifecycle checks.
+    """
+
+    couples = await _list_couples_by_email(email)
+    if not couples:
+        verify_password("dummy_password", DUMMY_PASSWORD_HASH)
+        raise HTTPException(status_code=401, detail="Invalid email or password")
+
+    password_matches: list[dict] = []
+    for couple in couples:
+        password_hash = couple.get("password_hash")
+        if password_hash and verify_password(password, password_hash):
+            password_matches.append(couple)
+
+    if not password_matches:
+        verify_password("dummy_password", DUMMY_PASSWORD_HASH)
+        raise HTTPException(status_code=401, detail="Invalid email or password")
+
+    if len(password_matches) == 1:
+        return password_matches[0], None
+
+    eligible_matches: list[tuple[dict, dict]] = []
+    for couple in password_matches:
+        _, access = await _resolve_portal_access(couple)
+        if _is_couple_portal_sign_in_allowed(couple, access):
+            eligible_matches.append((couple, access))
+
+    if len(eligible_matches) == 1:
+        return eligible_matches[0]
+
+    raise HTTPException(
+        status_code=409,
+        detail="This email is linked to multiple wedding portal accounts. Use the latest invitation link for the correct wedding or contact support.",
+    )
+
+
+async def _select_password_reset_candidate(email: str) -> dict | None:
+    """
+    Resolve a unique couple account for password reset.
+
+    If multiple eligible couple accounts share the same email, password reset is
+    intentionally suppressed rather than sending a reset token to an ambiguous
+    account.
+    """
+
+    couples = await _list_couples_by_email(email)
+    if not couples:
+        return None
+
+    eligible: list[dict] = []
+    for couple in couples:
+        if not couple.get("setup_completed", False):
+            continue
+
+        _, access = await _resolve_portal_access(couple)
+        if _is_couple_portal_sign_in_allowed(couple, access):
+            eligible.append(couple)
+
+    if len(eligible) == 1:
+        return eligible[0]
+
+    if len(eligible) > 1:
+        logger.warning(
+            "Skipped couple password reset for ambiguous email %s across %s eligible accounts",
+            email,
+            len(eligible),
+        )
+    return None
 
 
 async def _load_wedding_for_couple(couple: dict) -> dict | None:
@@ -187,7 +308,7 @@ async def setup_couple_password(data: CoupleSetupPasswordRequest, response: Resp
         {"$set": update_fields},
     )
 
-    access_token = _set_couple_session_cookie(response, couple["email"])
+    access_token = _set_couple_session_cookie(response, couple)
     updated_couple = {**couple, **update_fields}
 
     logger.info(f"Couple account setup completed: {couple['email']}")
@@ -205,40 +326,26 @@ async def couple_login(data: CoupleLoginRequest, response: Response):
     """
     Couple logs into their portal.
     """
-    couple = await mongo.db["couple_users"].find_one(
-        {"email": data.email.lower().strip()}
-    )
-
-    if not couple or not couple.get("password_hash"):
-        # Timing attack mitigation: always run a hash comparison even when user not found
+    normalized_email = normalize_couple_email(data.email)
+    if not normalized_email:
         verify_password("dummy_password", DUMMY_PASSWORD_HASH)
         raise HTTPException(status_code=401, detail="Invalid email or password")
 
-    if not verify_password(data.password, couple["password_hash"]):
-        raise HTTPException(status_code=401, detail="Invalid email or password")
+    couple, precomputed_access = await _select_login_candidate(
+        normalized_email, data.password
+    )
 
-    _, access = await _resolve_portal_access(couple)
-    if access["state"] == COUPLE_PORTAL_STATE_PENDING_SETUP:
-        raise HTTPException(
-            status_code=401,
-            detail="Please complete your account setup using the invitation link from your planner.",
-        )
-    if access.get("blocked"):
-        raise HTTPException(status_code=403, detail=access["detail"])
-    if access["state"] == COUPLE_PORTAL_STATE_ARCHIVED and not couple.get(
-        "setup_completed", False
-    ):
-        raise HTTPException(
-            status_code=403,
-            detail="This wedding has been archived. Couple portal login is unavailable for accounts that were never set up.",
-        )
+    if precomputed_access is None:
+        _, precomputed_access = await _resolve_portal_access(couple)
+
+    _raise_couple_sign_in_error(couple, precomputed_access)
 
     # Update last login
     await mongo.db["couple_users"].update_one(
         {"_id": couple["_id"]}, {"$set": {"last_login": datetime.now(timezone.utc)}}
     )
 
-    access_token = _set_couple_session_cookie(response, couple["email"])
+    access_token = _set_couple_session_cookie(response, couple)
 
     logger.info(f"Couple logged in: {couple['email']}")
 
@@ -382,22 +489,12 @@ async def couple_forgot_password(data: CoupleForgotPasswordRequest):
         "message": "If an account with this email exists, you will receive a password reset link shortly."
     }
 
-    email = data.email.lower().strip()
-    couple = await mongo.db["couple_users"].find_one({"email": email})
+    email = normalize_couple_email(data.email)
+    if not email:
+        return success_message
 
+    couple = await _select_password_reset_candidate(email)
     if not couple:
-        return success_message
-
-    if not couple.get("setup_completed", False):
-        # Account not set up yet — shouldn't reset password
-        return success_message
-
-    _, access = await _resolve_portal_access(couple)
-    if access.get("blocked"):
-        return success_message
-    if access["state"] == COUPLE_PORTAL_STATE_ARCHIVED and not couple.get(
-        "setup_completed", False
-    ):
         return success_message
 
     # Generate reset token (mirrors planner pattern: 32 hex chars, 1-hour expiry)
@@ -619,7 +716,7 @@ async def couple_reset_password(data: CoupleResetPasswordRequest, response: Resp
 
     couple = result
 
-    access_token = _set_couple_session_cookie(response, couple["email"])
+    access_token = _set_couple_session_cookie(response, couple)
 
     logger.info(f"Couple password reset completed: {couple['email']}")
 

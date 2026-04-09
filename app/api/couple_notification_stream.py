@@ -15,6 +15,7 @@ from fastapi.responses import StreamingResponse
 from app.dependencies.couple_auth import require_couple_auth
 from app.services.sse_manager import sse_manager
 from app.utils.couple_realtime import couple_sse_channel
+from app.utils.id_utils import to_str_id
 
 logger = logging.getLogger(__name__)
 
@@ -23,8 +24,8 @@ router = APIRouter()
 HEARTBEAT_INTERVAL = 30
 
 
-async def _event_stream(couple_email: str, request: Request):
-    queue = sse_manager.connect(couple_sse_channel(couple_email))
+async def _event_stream(couple_id: str, request: Request):
+    queue = sse_manager.connect(couple_sse_channel(couple_id))
 
     try:
         while True:
@@ -40,7 +41,7 @@ async def _event_stream(couple_email: str, request: Request):
     except asyncio.CancelledError:
         pass
     finally:
-        sse_manager.disconnect(couple_sse_channel(couple_email), queue)
+        sse_manager.disconnect(couple_sse_channel(couple_id), queue)
 
 
 @router.get("/couple/notifications/stream", tags=["Couple Notifications SSE"])
@@ -49,7 +50,7 @@ async def couple_notification_stream(
     couple: dict = Depends(require_couple_auth),
 ):
     return StreamingResponse(
-        _event_stream(couple["email"], request),
+        _event_stream(to_str_id(couple), request),
         media_type="text/event-stream",
         headers={
             "Cache-Control": "no-cache",
