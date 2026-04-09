@@ -1638,7 +1638,9 @@ interface CoupleUser {
   partner2_name?: string;
   wedding_id: string;
   is_active: boolean;
+  access_state?: 'pending_setup' | 'active' | 'revoked_by_planner' | 'owner_cancelled';
   setup_completed: boolean;
+  wedding_archived?: boolean;
   setup_link?: string | null;
   last_login?: string;
   created_at?: string;
@@ -1653,6 +1655,50 @@ function CoupleTab({ weddingId, token }: { weddingId: string; token: string }) {
   const [invitePartner2, setInvitePartner2] = useState('');
   const [inviting, setInviting] = useState(false);
   const [copyingCoupleId, setCopyingCoupleId] = useState<string | null>(null);
+
+  const resolveLifecycleState = (couple: CoupleUser) => {
+    if (couple.wedding_archived) return 'archived_readonly' as const;
+    if (couple.access_state) return couple.access_state;
+    if (!couple.setup_completed) return 'pending_setup' as const;
+    return couple.is_active ? 'active' as const : 'revoked_by_planner' as const;
+  };
+
+  const getLifecycleBadge = (couple: CoupleUser) => {
+    const state = resolveLifecycleState(couple);
+    switch (state) {
+      case 'active':
+        return {
+          label: 'Active',
+          avatarClass: 'bg-green-500',
+          badgeClass: 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400',
+        };
+      case 'revoked_by_planner':
+        return {
+          label: 'Revoked',
+          avatarClass: 'bg-red-400',
+          badgeClass: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400',
+        };
+      case 'owner_cancelled':
+        return {
+          label: 'Planner Inactive',
+          avatarClass: 'bg-slate-400',
+          badgeClass: 'bg-slate-200 text-slate-700 dark:bg-slate-700 dark:text-slate-300',
+        };
+      case 'archived_readonly':
+        return {
+          label: 'Archived Read-Only',
+          avatarClass: 'bg-amber-500',
+          badgeClass: 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400',
+        };
+      case 'pending_setup':
+      default:
+        return {
+          label: 'Pending Setup',
+          avatarClass: 'bg-amber-400',
+          badgeClass: 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400',
+        };
+    }
+  };
 
   const fetchCouples = useCallback(async () => {
     if (!token || !weddingId) return;
@@ -1827,10 +1873,13 @@ function CoupleTab({ weddingId, token }: { weddingId: string; token: string }) {
           <div className="space-y-3">
             {couples.map((couple) => (
               <div key={couple.id} className="bg-gray-50 dark:bg-slate-700/50 rounded-xl p-4 flex items-center justify-between">
+                {(() => {
+                  const lifecycle = resolveLifecycleState(couple);
+                  const badge = getLifecycleBadge(couple);
+                  return (
+                    <>
                 <div className="flex items-center gap-3">
-                  <div className={`w-10 h-10 rounded-full flex items-center justify-center text-white text-sm font-medium ${
-                    couple.is_active ? 'bg-green-500' : couple.setup_completed ? 'bg-red-400' : 'bg-amber-400'
-                  }`}>
+                  <div className={`w-10 h-10 rounded-full flex items-center justify-center text-white text-sm font-medium ${badge.avatarClass}`}>
                     {(couple.partner1_name || 'C').charAt(0)}
                   </div>
                   <div>
@@ -1841,17 +1890,11 @@ function CoupleTab({ weddingId, token }: { weddingId: string; token: string }) {
                   </div>
                 </div>
                 <div className="flex items-center gap-3">
-                  <span className={`text-xs px-2 py-1 rounded-full ${
-                    couple.is_active
-                      ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
-                      : couple.setup_completed
-                      ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'
-                      : 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400'
-                  }`}>
-                    {couple.is_active ? 'Active' : couple.setup_completed ? 'Revoked' : 'Pending Setup'}
+                  <span className={`text-xs px-2 py-1 rounded-full ${badge.badgeClass}`}>
+                    {badge.label}
                   </span>
 
-                  {!couple.setup_completed && (
+                  {lifecycle === 'pending_setup' && (
                     <>
                       <button
                         onClick={() => handleCopySetupLink(couple)}
@@ -1877,19 +1920,34 @@ function CoupleTab({ weddingId, token }: { weddingId: string; token: string }) {
                     </>
                   )}
 
-                  {couple.setup_completed && (
+                  {lifecycle === 'active' && (
                     <button
-                      onClick={() => handleToggleAccess(couple.id, couple.is_active)}
-                      className={`text-xs flex items-center gap-1 ${
-                        couple.is_active ? 'text-red-600 hover:text-red-700' : 'text-green-600 hover:text-green-700'
-                      }`}
+                      onClick={() => handleToggleAccess(couple.id, true)}
+                      className="text-xs flex items-center gap-1 text-red-600 hover:text-red-700"
                     >
-                      {couple.is_active ? (
-                        <><ShieldOff className="w-3 h-3" /> Revoke Access</>
-                      ) : (
-                        <><ShieldCheck className="w-3 h-3" /> Restore Access</>
-                      )}
+                      <><ShieldOff className="w-3 h-3" /> Revoke Access</>
                     </button>
+                  )}
+
+                  {lifecycle === 'revoked_by_planner' && (
+                    <button
+                      onClick={() => handleToggleAccess(couple.id, false)}
+                      className="text-xs flex items-center gap-1 text-green-600 hover:text-green-700"
+                    >
+                      <><ShieldCheck className="w-3 h-3" /> Restore Access</>
+                    </button>
+                  )}
+
+                  {lifecycle === 'owner_cancelled' && (
+                    <span className="text-xs text-slate-500 dark:text-slate-400">
+                      Planner subscription inactive
+                    </span>
+                  )}
+
+                  {lifecycle === 'archived_readonly' && (
+                    <span className="text-xs text-slate-500 dark:text-slate-400">
+                      Archived portal
+                    </span>
                   )}
 
                   {couple.last_login && (
@@ -1898,6 +1956,9 @@ function CoupleTab({ weddingId, token }: { weddingId: string; token: string }) {
                     </span>
                   )}
                 </div>
+                    </>
+                  );
+                })()}
               </div>
             ))}
           </div>

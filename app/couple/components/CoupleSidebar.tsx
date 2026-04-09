@@ -6,6 +6,7 @@ import NextImage from 'next/image';
 import {
   LayoutDashboard,
   Calendar,
+  Video,
   CreditCard,
   ClipboardList,
   Mail,
@@ -21,6 +22,7 @@ import {
 export type CoupleSection =
   | 'dashboard'
   | 'timeline'
+  | 'meetings'
   | 'payments'
   | 'forms'
   | 'inbox'
@@ -37,6 +39,7 @@ interface NavItem {
 const navItems: NavItem[] = [
   { key: 'dashboard', name: 'Dashboard', icon: LayoutDashboard },
   { key: 'timeline', name: 'Timeline', icon: Calendar },
+  { key: 'meetings', name: 'Meetings', icon: Video },
   { key: 'payments', name: 'Payments', icon: CreditCard },
   { key: 'forms', name: 'Forms', icon: ClipboardList },
   { key: 'inbox', name: 'Inbox', icon: Mail },

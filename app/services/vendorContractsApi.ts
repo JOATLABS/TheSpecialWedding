@@ -296,6 +296,42 @@ export interface VendorContractRevisionHistoryResponse {
   versions: VendorContractRevisionSummary[];
 }
 
+export type VendorContractActivityType =
+  | 'contract_created'
+  | 'contract_updated'
+  | 'form_data_applied'
+  | 'contract_sent'
+  | 'contract_viewed'
+  | 'contract_signed'
+  | 'milestones_created'
+  | 'payment_recorded'
+  | 'revision_created'
+  | 'contract_superseded';
+
+export interface VendorContractActivityActor {
+  type: 'planner' | 'vendor' | 'system';
+  identifier?: string | null;
+  display_name?: string | null;
+}
+
+export interface VendorContractActivityItem {
+  id: string;
+  contract_id: string;
+  root_contract_id: string;
+  activity_type: VendorContractActivityType;
+  title: string;
+  description?: string | null;
+  actor: VendorContractActivityActor;
+  metadata: Record<string, unknown>;
+  created_at: string;
+}
+
+export interface VendorContractActivityResponse {
+  contract_id: string;
+  root_contract_id: string;
+  items: VendorContractActivityItem[];
+}
+
 export async function getContractTemplates(
   token: string,
   category?: string
@@ -453,6 +489,22 @@ export async function getContractRevisions(
   if (!response.ok) {
     const error = await response.json().catch(() => ({}));
     throw new Error(extractErrorMessage(error, 'Failed to fetch contract revisions'));
+  }
+
+  return response.json();
+}
+
+export async function getContractActivity(
+  token: string,
+  contractId: string
+): Promise<VendorContractActivityResponse> {
+  const response = await fetch(`${API_BASE}/admin/contracts/${contractId}/activity`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({}));
+    throw new Error(extractErrorMessage(error, 'Failed to fetch contract activity'));
   }
 
   return response.json();

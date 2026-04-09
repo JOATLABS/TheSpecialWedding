@@ -289,7 +289,11 @@ export function PaymentMilestones({
       {milestones.length === 0 ? (
         <div className="text-center py-8 bg-gray-50 dark:bg-gray-800 rounded-lg">
           <Calendar className="h-10 w-10 mx-auto text-gray-400 mb-2" />
-          <p className="text-gray-500">No payment milestones yet</p>
+          <p className="text-gray-500">
+            {contractId && !weddingId
+              ? 'No payment milestones for this contract yet'
+              : 'No payment milestones yet'}
+          </p>
           {!readOnly && contractId && (
             <Button onClick={() => setShowAddModal(true)} variant="ghost" size="sm" className="mt-2">
               Add your first milestone

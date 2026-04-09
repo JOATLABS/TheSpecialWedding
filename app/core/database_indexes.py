@@ -660,6 +660,42 @@ async def create_activity_logs_indexes():
         return False
 
 
+async def create_vendor_contract_activity_indexes():
+    """
+    Create indexes for vendor_contract_activities collection.
+
+    Key queries:
+    1. Contract detail timeline by contract_id
+    2. Future lineage-wide activity by root_contract_id
+    3. Optional filtering by activity_type
+    """
+    collection = mongo.db["vendor_contract_activities"]
+    try:
+        await collection.create_index(
+            [("contract_id", ASCENDING), ("created_at", DESCENDING)],
+            name="idx_vendor_contract_activity_contract_created",
+        )
+        logger.info("Created index: idx_vendor_contract_activity_contract_created")
+
+        await collection.create_index(
+            [("root_contract_id", ASCENDING), ("created_at", DESCENDING)],
+            name="idx_vendor_contract_activity_root_created",
+        )
+        logger.info("Created index: idx_vendor_contract_activity_root_created")
+
+        await collection.create_index(
+            [("activity_type", ASCENDING), ("created_at", DESCENDING)],
+            name="idx_vendor_contract_activity_type_created",
+        )
+        logger.info("Created index: idx_vendor_contract_activity_type_created")
+
+        logger.info("All vendor_contract_activities indexes created successfully")
+        return True
+    except Exception as e:
+        logger.error(f"Error creating vendor_contract_activities indexes: {str(e)}")
+        return False
+
+
 async def create_audit_logs_indexes():
     """
     Create indexes for audit_logs collection (HTTP request auditing)
@@ -2096,6 +2132,7 @@ async def create_all_indexes():
             create_admin_activity_log_indexes()
         )  # Activity/Audit logging indexes with TTL for auto-pruning
         await create_activity_logs_indexes()
+        await create_vendor_contract_activity_indexes()
         await create_audit_logs_indexes()
         await create_security_audit_logs_indexes()
         await create_errors_indexes()

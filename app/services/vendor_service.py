@@ -32,6 +32,7 @@ from app.models.vendor import (
     QuoteStatus,
     PaymentLinkStatus,
 )
+from app.models.vendor_contracts import VendorContractActivityType
 
 logger = logging.getLogger(__name__)
 
@@ -83,6 +84,7 @@ class VendorService:
         self.vendor_profiles = mongo.db["vendor_profiles"]
         self.contract_templates = mongo.db["contract_templates"]
         self.vendor_contracts = mongo.db["vendor_contracts"]
+        self.vendor_contract_activities = mongo.db["vendor_contract_activities"]
         self.payment_milestones = mongo.db["vendor_payment_milestones"]
         self.vendor_assignments = mongo.db["vendor_assignments"]
         self.vendor_communications = mongo.db["vendor_communications"]
@@ -552,6 +554,176 @@ class VendorService:
             "created_at": datetime.now(timezone.utc),
         }
         await self.vendor_communications.insert_one(comm)
+
+    async def _log_contract_activity(
+        self,
+        contract_id: str,
+        root_contract_id: str,
+        activity_type: VendorContractActivityType | str,
+        title: str,
+        description: Optional[str],
+        actor_type: str,
+        actor_identifier: Optional[str],
+        actor_display_name: Optional[str] = None,
+        metadata: Optional[Dict[str, Any]] = None,
+        created_at: Optional[datetime] = None,
+    ) -> None:
+        """Persist one contract activity row for the detail page timeline."""
+        try:
+            normalized_type = (
+                activity_type.value
+                if isinstance(activity_type, VendorContractActivityType)
+                else activity_type
+            )
+            activity = {
+                "contract_id": contract_id,
+                "root_contract_id": root_contract_id,
+                "activity_type": normalized_type,
+                "title": title,
+                "description": description,
+                "actor": {
+                    "type": actor_type,
+                    "identifier": actor_identifier,
+                    "display_name": actor_display_name,
+                },
+                "metadata": metadata or {},
+                "created_at": created_at or datetime.now(timezone.utc),
+            }
+            await self.vendor_contract_activities.insert_one(activity)
+        except Exception as exc:
+            logger.warning(
+                "Failed to persist vendor contract activity %s for contract %s: %s",
+                activity_type,
+                contract_id,
+                exc,
+            )
+
+    def _serialize_contract_activity_item(self, doc: Dict[str, Any]) -> Dict[str, Any]:
+        """Normalize a raw activity document into the API response shape."""
+        return {
+            "id": str(doc.get("_id") or doc.get("id") or ""),
+            "contract_id": self._stringify_id(doc.get("contract_id")) or "",
+            "root_contract_id": self._stringify_id(doc.get("root_contract_id")) or "",
+            "activity_type": doc.get("activity_type"),
+            "title": doc.get("title", "Activity"),
+            "description": doc.get("description"),
+            "actor": doc.get("actor")
+            or {"type": "system", "identifier": None, "display_name": None},
+            "metadata": doc.get("metadata") or {},
+            "created_at": doc.get("created_at"),
+        }
+
+    def _build_synthesized_contract_activity(
+        self, contract: Dict[str, Any]
+    ) -> List[Dict[str, Any]]:
+        """Build fallback activity entries for legacy contracts with no explicit log rows."""
+        contract_id = self._stringify_id(contract.get("_id") or contract.get("id")) or ""
+        root_contract_id = self._get_root_contract_id(contract)
+        planner_identifier = contract.get("created_by")
+        vendor_identifier = contract.get("vendor_email")
+        vendor_display_name = (
+            contract.get("signed_by_name")
+            or contract.get("vendor_name")
+            or contract.get("vendor_email")
+        )
+
+        items: List[Dict[str, Any]] = [
+            {
+                "id": f"synth:{contract_id}:created",
+                "contract_id": contract_id,
+                "root_contract_id": root_contract_id,
+                "activity_type": VendorContractActivityType.CONTRACT_CREATED.value,
+                "title": "Contract created",
+                "description": None,
+                "actor": {
+                    "type": "planner",
+                    "identifier": planner_identifier,
+                    "display_name": planner_identifier,
+                },
+                "metadata": {},
+                "created_at": contract.get("created_at"),
+            }
+        ]
+
+        if contract.get("updated_at") and contract.get("updated_at") != contract.get(
+            "created_at"
+        ):
+            items.append(
+                {
+                    "id": f"synth:{contract_id}:updated",
+                    "contract_id": contract_id,
+                    "root_contract_id": root_contract_id,
+                    "activity_type": VendorContractActivityType.CONTRACT_UPDATED.value,
+                    "title": "Contract updated",
+                    "description": None,
+                    "actor": {
+                        "type": "planner",
+                        "identifier": planner_identifier,
+                        "display_name": planner_identifier,
+                    },
+                    "metadata": {},
+                    "created_at": contract.get("updated_at"),
+                }
+            )
+
+        if contract.get("sent_at"):
+            items.append(
+                {
+                    "id": f"synth:{contract_id}:sent",
+                    "contract_id": contract_id,
+                    "root_contract_id": root_contract_id,
+                    "activity_type": VendorContractActivityType.CONTRACT_SENT.value,
+                    "title": "Contract sent",
+                    "description": None,
+                    "actor": {
+                        "type": "planner",
+                        "identifier": planner_identifier,
+                        "display_name": planner_identifier,
+                    },
+                    "metadata": {},
+                    "created_at": contract.get("sent_at"),
+                }
+            )
+
+        if contract.get("viewed_at"):
+            items.append(
+                {
+                    "id": f"synth:{contract_id}:viewed",
+                    "contract_id": contract_id,
+                    "root_contract_id": root_contract_id,
+                    "activity_type": VendorContractActivityType.CONTRACT_VIEWED.value,
+                    "title": "Contract viewed",
+                    "description": None,
+                    "actor": {
+                        "type": "vendor",
+                        "identifier": vendor_identifier,
+                        "display_name": contract.get("vendor_name"),
+                    },
+                    "metadata": {},
+                    "created_at": contract.get("viewed_at"),
+                }
+            )
+
+        if contract.get("signed_at"):
+            items.append(
+                {
+                    "id": f"synth:{contract_id}:signed",
+                    "contract_id": contract_id,
+                    "root_contract_id": root_contract_id,
+                    "activity_type": VendorContractActivityType.CONTRACT_SIGNED.value,
+                    "title": "Contract signed",
+                    "description": None,
+                    "actor": {
+                        "type": "vendor",
+                        "identifier": contract.get("signed_by_email") or vendor_identifier,
+                        "display_name": vendor_display_name,
+                    },
+                    "metadata": {},
+                    "created_at": contract.get("signed_at"),
+                }
+            )
+
+        return [item for item in items if item.get("created_at")]
 
     # =========================================================================
     # VENDOR DIRECTORY (Master List)
@@ -1402,6 +1574,23 @@ class VendorService:
                     },
                 )
 
+            await self._log_contract_activity(
+                contract_id=str(contract_id),
+                root_contract_id=str(contract_id),
+                activity_type=VendorContractActivityType.CONTRACT_CREATED,
+                title="Contract created",
+                description=f"Created draft contract for {vendor['business_name']}.",
+                actor_type="planner",
+                actor_identifier=created_by,
+                actor_display_name=created_by,
+                metadata={
+                    "contract_number": contract["contract_number"],
+                    "contract_kind": ContractKind.ORIGINAL.value,
+                    "version_number": 1,
+                },
+                created_at=contract["created_at"],
+            )
+
             logger.info(
                 f"Created contract {contract['contract_number']} for vendor {vendor['business_name']}"
             )
@@ -1532,17 +1721,29 @@ class VendorService:
 
             # Mark as viewed if first time
             if not contract.get("viewed_at"):
+                first_viewed_at = datetime.now(timezone.utc)
                 await self.vendor_contracts.update_one(
                     {"_id": ObjectId(contract_id)},
                     {
                         "$set": {
-                            "viewed_at": datetime.now(timezone.utc),
+                            "viewed_at": first_viewed_at,
                             "status": ContractStatus.VIEWED.value,
                         }
                     },
                 )
-                contract["viewed_at"] = datetime.now(timezone.utc)
+                contract["viewed_at"] = first_viewed_at
                 contract["status"] = ContractStatus.VIEWED.value
+                await self._log_contract_activity(
+                    contract_id=contract_id,
+                    root_contract_id=self._get_root_contract_id(contract),
+                    activity_type=VendorContractActivityType.CONTRACT_VIEWED,
+                    title="Contract viewed",
+                    description=None,
+                    actor_type="vendor",
+                    actor_identifier=contract.get("vendor_email"),
+                    actor_display_name=contract.get("vendor_name"),
+                    created_at=first_viewed_at,
+                )
 
             # Remove sensitive fields for vendor view
             contract.pop("access_token", None)
@@ -1615,6 +1816,34 @@ class VendorService:
             await self.vendor_contracts.insert_one(revision_contract)
             self._serialize_doc(revision_contract)
             self._attach_contract_version_metadata(revision_contract)
+            await self._log_contract_activity(
+                contract_id=revision_contract["id"],
+                root_contract_id=root_contract_id,
+                activity_type=VendorContractActivityType.REVISION_CREATED,
+                title=(
+                    "Amendment draft created"
+                    if revision_kind == ContractKind.AMENDMENT.value
+                    else "Revision draft created"
+                ),
+                description=reason
+                or (
+                    "Created from the current contract version."
+                    if revision_kind == ContractKind.REVISION.value
+                    else "Created from the signed contract version."
+                ),
+                actor_type="planner",
+                actor_identifier=created_by,
+                actor_display_name=created_by,
+                metadata={
+                    "contract_kind": revision_kind,
+                    "version_number": next_version_number,
+                    "parent_contract_id": revision_contract.get("parent_contract_id"),
+                    "supersedes_contract_id": revision_contract.get(
+                        "supersedes_contract_id"
+                    ),
+                },
+                created_at=revision_contract["created_at"],
+            )
             return revision_contract
 
         except HTTPException:
@@ -1855,6 +2084,46 @@ class VendorService:
                     sent_to=contract["vendor_email"],
                 )
 
+                await self._log_contract_activity(
+                    contract_id=contract_id,
+                    root_contract_id=self._get_root_contract_id(contract),
+                    activity_type=VendorContractActivityType.CONTRACT_SENT,
+                    title="Contract sent",
+                    description=f"Sent to {contract['vendor_email']} for review and signature.",
+                    actor_type="planner",
+                    actor_identifier=created_by,
+                    actor_display_name=created_by,
+                    metadata={
+                        "status": ContractStatus.SENT.value,
+                        "cc_emails": cc_emails or [],
+                    },
+                    created_at=now,
+                )
+
+                if superseded_contract:
+                    await self._log_contract_activity(
+                        contract_id=superseded_contract["id"],
+                        root_contract_id=self._get_root_contract_id(superseded_contract),
+                        activity_type=VendorContractActivityType.CONTRACT_SUPERSEDED,
+                        title="Contract superseded",
+                        description=(
+                            f"Replaced by version {contract.get('version_number', 1)}."
+                        ),
+                        actor_type="planner",
+                        actor_identifier=created_by,
+                        actor_display_name=created_by,
+                        metadata={
+                            "superseded_by_contract_id": contract_id,
+                            "superseding_version_number": contract.get(
+                                "version_number", 1
+                            ),
+                            "superseding_contract_kind": contract.get(
+                                "contract_kind", ContractKind.ORIGINAL.value
+                            ),
+                        },
+                        created_at=now,
+                    )
+
                 return {
                     "message": "Contract sent successfully",
                     "sent_to": contract["vendor_email"],
@@ -1917,17 +2186,19 @@ class VendorService:
                     status_code=400, detail="Contract cannot be signed in current state"
                 )
 
+            signed_at = datetime.now(timezone.utc)
+
             # Update contract
             await self.vendor_contracts.update_one(
                 {"_id": ObjectId(contract_id)},
                 {
                     "$set": {
                         "status": ContractStatus.SIGNED.value,
-                        "signed_at": datetime.now(timezone.utc),
+                        "signed_at": signed_at,
                         "signed_by_name": signer_name,
                         "signed_by_email": signer_email,
                         "signature_ip": signature_ip,
-                        "updated_at": datetime.now(timezone.utc),
+                        "updated_at": signed_at,
                     }
                 },
             )
@@ -1960,7 +2231,7 @@ class VendorService:
                 <div style="background: #f3f4f6; padding: 15px; border-radius: 6px;">
                     <p><strong>Contract:</strong> {contract["contract_title"]}</p>
                     <p><strong>Signed by:</strong> {signer_name}</p>
-                    <p><strong>Signed at:</strong> {datetime.now(timezone.utc).strftime("%B %d, %Y at %H:%M UTC")}</p>
+                    <p><strong>Signed at:</strong> {signed_at.strftime("%B %d, %Y at %H:%M UTC")}</p>
                 </div>
                 <p>Log in to your dashboard to view the signed contract.</p>
             </body>
@@ -1974,9 +2245,22 @@ class VendorService:
                 from_name="Wedding Platform",
             )
 
+            await self._log_contract_activity(
+                contract_id=contract_id,
+                root_contract_id=self._get_root_contract_id(contract),
+                activity_type=VendorContractActivityType.CONTRACT_SIGNED,
+                title="Contract signed",
+                description=f"Signed by {signer_name}.",
+                actor_type="vendor",
+                actor_identifier=signer_email,
+                actor_display_name=signer_name,
+                metadata={"signature_ip": signature_ip},
+                created_at=signed_at,
+            )
+
             return {
                 "message": "Contract signed successfully",
-                "signed_at": datetime.now(timezone.utc).isoformat(),
+                "signed_at": signed_at.isoformat(),
             }
 
         except HTTPException:
@@ -2023,6 +2307,25 @@ class VendorService:
             await self.vendor_contracts.update_one(
                 {"_id": ObjectId(contract_id)}, {"$set": update_data}
             )
+
+            changed_fields = sorted(key for key in update_data.keys() if key != "updated_at")
+            if changed_fields:
+                await self._log_contract_activity(
+                    contract_id=contract_id,
+                    root_contract_id=self._get_root_contract_id(contract),
+                    activity_type=VendorContractActivityType.CONTRACT_UPDATED,
+                    title="Contract updated",
+                    description=(
+                        f"Updated {', '.join(changed_fields)}."
+                        if changed_fields
+                        else None
+                    ),
+                    actor_type="planner",
+                    actor_identifier=updated_by,
+                    actor_display_name=updated_by,
+                    metadata={"changed_fields": changed_fields},
+                    created_at=update_data["updated_at"],
+                )
 
             return await self.get_contract(contract_id, created_by=updated_by)
 
@@ -2076,6 +2379,30 @@ class VendorService:
             await self.vendor_contracts.update_one(
                 {"_id": ObjectId(contract_id)},
                 {"$set": update_data},
+            )
+
+            changed_parts = ["sections"]
+            if terms_and_conditions is not None:
+                changed_parts.append("terms_and_conditions")
+            if cancellation_policy is not None:
+                changed_parts.append("cancellation_policy")
+            if custom_clauses is not None:
+                changed_parts.append("custom_clauses")
+
+            await self._log_contract_activity(
+                contract_id=contract_id,
+                root_contract_id=self._get_root_contract_id(contract),
+                activity_type=VendorContractActivityType.CONTRACT_UPDATED,
+                title="Contract document updated",
+                description="Updated contract sections and document copy.",
+                actor_type="planner",
+                actor_identifier=updated_by,
+                actor_display_name=updated_by,
+                metadata={
+                    "changed_fields": changed_parts,
+                    "section_count": len(processed_sections),
+                },
+                created_at=update_data["updated_at"],
             )
 
             return await self.get_contract(contract_id, created_by=updated_by)
@@ -2356,6 +2683,23 @@ class VendorService:
                 },
             )
 
+            applied_at = datetime.now(timezone.utc)
+            await self._log_contract_activity(
+                contract_id=contract_id,
+                root_contract_id=self._get_root_contract_id(contract),
+                activity_type=VendorContractActivityType.FORM_DATA_APPLIED,
+                title="Vendor form data applied",
+                description="Applied submitted vendor data to the contract document.",
+                actor_type="planner",
+                actor_identifier=applied_by,
+                actor_display_name=applied_by,
+                metadata={
+                    "form_submission_id": form_submission_id,
+                    "field_mappings": normalized_mappings,
+                },
+                created_at=applied_at,
+            )
+
             return await self.get_contract(contract_id, created_by=applied_by)
 
         except HTTPException:
@@ -2404,6 +2748,20 @@ class VendorService:
                 milestone["_id"] = str(result.inserted_id)
                 created_milestones.append(milestone)
 
+            if created_milestones:
+                await self._log_contract_activity(
+                    contract_id=contract_id,
+                    root_contract_id=self._get_root_contract_id(contract),
+                    activity_type=VendorContractActivityType.MILESTONES_CREATED,
+                    title="Payment milestones created",
+                    description=f"Created {len(created_milestones)} payment milestone(s).",
+                    actor_type="planner",
+                    actor_identifier=created_by,
+                    actor_display_name=created_by,
+                    metadata={"milestone_count": len(created_milestones)},
+                    created_at=created_milestones[-1]["created_at"],
+                )
+
             return created_milestones
 
         except Exception as e:
@@ -2417,16 +2775,23 @@ class VendorService:
         contract_id: Optional[str] = None,
         wedding_id: Optional[str] = None,
         status: Optional[str] = None,
+        created_by: Optional[str] = None,
     ) -> List[dict]:
         """Get payment milestones"""
         try:
-            query = {}
+            query: Dict[str, Any] = {}
+
+            if contract_id and created_by:
+                await self.get_contract(contract_id, created_by=created_by)
+
             if contract_id:
                 query["contract_id"] = contract_id
             if wedding_id:
                 query["wedding_id"] = wedding_id
             if status:
                 query["status"] = status
+            if created_by and not contract_id:
+                query["created_by"] = created_by
 
             cursor = self.payment_milestones.find(query).sort("due_date", 1)
             milestones = await cursor.to_list(length=100)
@@ -2464,6 +2829,25 @@ class VendorService:
             logger.error(f"Error fetching milestones: {str(e)}")
             raise HTTPException(status_code=500, detail="Failed to fetch milestones")
 
+    async def _get_owned_payment_milestone(
+        self, milestone_id: str, created_by: str
+    ) -> Dict[str, Any]:
+        """Fetch one milestone and fail closed if it is not owned by this planner scope."""
+        milestone_object_id = validate_object_id(milestone_id, "milestone ID")
+        milestone = await self.payment_milestones.find_one({"_id": milestone_object_id})
+        if not milestone:
+            raise HTTPException(status_code=404, detail="Milestone not found")
+
+        if milestone.get("created_by") == created_by:
+            return milestone
+
+        contract_id = milestone.get("contract_id")
+        if contract_id:
+            await self.get_contract(contract_id, created_by=created_by)
+            return milestone
+
+        raise HTTPException(status_code=404, detail="Milestone not found")
+
     async def record_payment(
         self,
         milestone_id: str,
@@ -2484,11 +2868,10 @@ class VendorService:
         transactions for critical operations.
         """
         try:
-            milestone = await self.payment_milestones.find_one(
-                {"_id": ObjectId(milestone_id)}
+            milestone = await self._get_owned_payment_milestone(
+                milestone_id=milestone_id,
+                created_by=created_by,
             )
-            if not milestone:
-                raise HTTPException(status_code=404, detail="Milestone not found")
 
             new_paid_amount = milestone.get("paid_amount", 0) + amount
 
@@ -2550,6 +2933,30 @@ class VendorService:
                 )
             updated["_id"] = str(updated["_id"])
 
+            if milestone.get("contract_id"):
+                await self._log_contract_activity(
+                    contract_id=milestone["contract_id"],
+                    root_contract_id=self._get_root_contract_id(
+                        await self.get_contract(
+                            milestone["contract_id"], created_by=created_by
+                        )
+                    ),
+                    activity_type=VendorContractActivityType.PAYMENT_RECORDED,
+                    title="Payment recorded",
+                    description=(
+                        f"Recorded {amount:,.2f} via {payment_method.replace('_', ' ')}."
+                    ),
+                    actor_type="planner",
+                    actor_identifier=created_by,
+                    actor_display_name=created_by,
+                    metadata={
+                        "milestone_id": milestone_id,
+                        "amount": amount,
+                        "payment_method": payment_method,
+                    },
+                    created_at=update_data["paid_at"],
+                )
+
             return updated
 
         except HTTPException:
@@ -2557,6 +2964,53 @@ class VendorService:
         except Exception as e:
             logger.error(f"Error recording payment: {str(e)}")
             raise HTTPException(status_code=500, detail="Failed to record payment")
+
+    async def get_contract_activity(self, contract_id: str, created_by: str) -> dict:
+        """Return contract-scoped activity with synthesized fallback for legacy records."""
+        try:
+            contract = await self.get_contract(contract_id, created_by=created_by)
+            root_contract_id = self._get_root_contract_id(contract)
+
+            cursor = self.vendor_contract_activities.find(
+                {"contract_id": contract_id}
+            ).sort("created_at", -1)
+            explicit_items = await cursor.to_list(length=200)
+            serialized_items = [
+                self._serialize_contract_activity_item(activity)
+                for activity in explicit_items
+            ]
+
+            if explicit_items:
+                explicit_types = {
+                    item.get("activity_type") for item in explicit_items if item.get("activity_type")
+                }
+                synthesized_items = [
+                    item
+                    for item in self._build_synthesized_contract_activity(contract)
+                    if item.get("activity_type") not in explicit_types
+                ]
+            else:
+                synthesized_items = self._build_synthesized_contract_activity(contract)
+
+            items = [*serialized_items, *synthesized_items]
+            items.sort(
+                key=lambda item: item.get("created_at") or datetime.min.replace(tzinfo=timezone.utc),
+                reverse=True,
+            )
+
+            return {
+                "contract_id": contract["id"],
+                "root_contract_id": root_contract_id,
+                "items": items,
+            }
+
+        except HTTPException:
+            raise
+        except Exception as e:
+            logger.error(f"Error fetching contract activity: {str(e)}")
+            raise HTTPException(
+                status_code=500, detail="Failed to fetch contract activity"
+            )
 
     # =========================================================================
     # FILE STORAGE

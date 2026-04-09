@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { toast } from 'sonner';
-import { ArrowLeft, Loader2, Send, CheckCircle } from 'lucide-react';
+import { ArrowLeft, Loader2, Send, CheckCircle, Eye } from 'lucide-react';
 import {
   buildCoupleLoginRedirect,
   coupleFetch,
@@ -32,6 +32,9 @@ interface FormData {
   };
   existing_responses?: Record<string, any>;
   submitted_at?: string;
+  read_only?: boolean;
+  archived?: boolean;
+  read_only_reason?: string | null;
 }
 
 export default function CoupleFormPage() {
@@ -43,6 +46,7 @@ export default function CoupleFormPage() {
   const [submitting, setSubmitting] = useState(false);
   const [formData, setFormData] = useState<FormData | null>(null);
   const [responses, setResponses] = useState<Record<string, any>>({});
+  const isReadOnly = Boolean(formData?.read_only);
 
   useEffect(() => {
     const fetchForm = async () => {
@@ -88,6 +92,7 @@ export default function CoupleFormPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isReadOnly) return;
 
     setSubmitting(true);
     try {
@@ -107,8 +112,22 @@ export default function CoupleFormPage() {
           res,
           'This wedding portal is currently unavailable. Please contact your planner.',
         );
-        await logoutCoupleSession();
-        router.replace(buildCoupleLoginRedirect(detail));
+        if (detail.toLowerCase().includes('archived')) {
+          setFormData((current) =>
+            current
+              ? {
+                  ...current,
+                  read_only: true,
+                  archived: true,
+                  read_only_reason: detail,
+                }
+              : current,
+          );
+          toast.error(detail);
+        } else {
+          await logoutCoupleSession();
+          router.replace(buildCoupleLoginRedirect(detail));
+        }
         return;
       }
 
@@ -164,10 +183,22 @@ export default function CoupleFormPage() {
           {formData.form.description && (
             <p className="text-gray-500">{formData.form.description}</p>
           )}
-          {formData.submitted_at && (
+          {formData.read_only && (
+            <div className="mt-3 flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-700">
+              <Eye className="mt-0.5 h-4 w-4 flex-shrink-0" />
+              <span>{formData.read_only_reason || 'This form is view-only because the wedding has been archived.'}</span>
+            </div>
+          )}
+          {!formData.read_only && formData.submitted_at && (
             <div className="flex items-center gap-2 mt-3 text-sm text-green-600">
               <CheckCircle className="w-4 h-4" />
               Previously submitted — you can update your responses
+            </div>
+          )}
+          {formData.read_only && formData.submitted_at && (
+            <div className="flex items-center gap-2 mt-3 text-sm text-slate-500">
+              <CheckCircle className="w-4 h-4" />
+              Previously submitted — responses are shown below in read-only mode
             </div>
           )}
         </div>
@@ -193,6 +224,7 @@ export default function CoupleFormPage() {
                     onChange={(e) => updateResponse(field.id, e.target.value)}
                     placeholder={field.placeholder}
                     required={field.required}
+                    disabled={isReadOnly}
                     className="w-full px-4 py-2.5 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#1e3a5f]/20 focus:border-[#1e3a5f] text-gray-800"
                   />
                 )}
@@ -204,6 +236,7 @@ export default function CoupleFormPage() {
                     value={responses[field.id] || ''}
                     onChange={(e) => updateResponse(field.id, e.target.value)}
                     required={field.required}
+                    disabled={isReadOnly}
                     className="w-full px-4 py-2.5 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#1e3a5f]/20 focus:border-[#1e3a5f] text-gray-800"
                   />
                 )}
@@ -216,6 +249,7 @@ export default function CoupleFormPage() {
                     placeholder={field.placeholder}
                     required={field.required}
                     rows={4}
+                    disabled={isReadOnly}
                     className="w-full px-4 py-2.5 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#1e3a5f]/20 focus:border-[#1e3a5f] text-gray-800 resize-none"
                   />
                 )}
@@ -226,6 +260,7 @@ export default function CoupleFormPage() {
                     value={responses[field.id] || ''}
                     onChange={(e) => updateResponse(field.id, e.target.value)}
                     required={field.required}
+                    disabled={isReadOnly}
                     className="w-full px-4 py-2.5 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#1e3a5f]/20 focus:border-[#1e3a5f] text-gray-800"
                   >
                     <option value="">Select an option</option>
@@ -242,6 +277,7 @@ export default function CoupleFormPage() {
                       type="checkbox"
                       checked={responses[field.id] || false}
                       onChange={(e) => updateResponse(field.id, e.target.checked)}
+                      disabled={isReadOnly}
                       className="w-5 h-5 rounded border-gray-300 text-[#1e3a5f] focus:ring-[#1e3a5f]"
                     />
                     <span className="text-sm text-gray-600">{field.placeholder || 'Yes'}</span>
@@ -252,22 +288,28 @@ export default function CoupleFormPage() {
           </div>
 
           {/* Submit */}
-          <div className="mt-6">
-            <button
-              type="submit"
-              disabled={submitting}
-              className="w-full bg-[#1e3a5f] text-white py-3 rounded-xl font-medium hover:bg-[#2a4a6f] transition-all flex items-center justify-center gap-2 disabled:opacity-50"
-            >
-              {submitting ? (
-                <Loader2 className="w-5 h-5 animate-spin" />
-              ) : (
-                <>
-                  <Send className="w-4 h-4" />
-                  {formData.submitted_at ? 'Update Responses' : 'Submit Form'}
-                </>
-              )}
-            </button>
-          </div>
+          {formData.read_only ? (
+            <div className="mt-6 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
+              This form is view-only. New submissions and edits are disabled for archived weddings.
+            </div>
+          ) : (
+            <div className="mt-6">
+              <button
+                type="submit"
+                disabled={submitting}
+                className="w-full bg-[#1e3a5f] text-white py-3 rounded-xl font-medium hover:bg-[#2a4a6f] transition-all flex items-center justify-center gap-2 disabled:opacity-50"
+              >
+                {submitting ? (
+                  <Loader2 className="w-5 h-5 animate-spin" />
+                ) : (
+                  <>
+                    <Send className="w-4 h-4" />
+                    {formData.submitted_at ? 'Update Responses' : 'Submit Form'}
+                  </>
+                )}
+              </button>
+            </div>
+          )}
         </form>
       </div>
     </div>
