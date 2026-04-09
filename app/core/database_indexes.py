@@ -736,6 +736,73 @@ async def create_vendor_contract_activity_indexes():
         return False
 
 
+async def create_vendor_contract_security_indexes():
+    """
+    Create security and lineage integrity indexes for vendor contracts and milestones.
+    """
+    contracts = mongo.db["vendor_contracts"]
+    milestones = mongo.db["vendor_payment_milestones"]
+
+    try:
+        await contracts.create_index(
+            [("access_token_hash", ASCENDING)],
+            name="idx_vendor_contract_access_token_hash",
+            unique=True,
+            sparse=True,
+        )
+        logger.info("Created index: idx_vendor_contract_access_token_hash")
+
+        await contracts.create_index(
+            [("root_contract_id", ASCENDING), ("version_number", ASCENDING)],
+            name="idx_vendor_contract_root_version_unique",
+            unique=True,
+        )
+        logger.info("Created index: idx_vendor_contract_root_version_unique")
+
+        await contracts.create_index(
+            [("root_contract_id", ASCENDING)],
+            name="idx_vendor_contract_single_current_version",
+            unique=True,
+            partialFilterExpression={"is_current_version": True},
+        )
+        logger.info("Created index: idx_vendor_contract_single_current_version")
+
+        await contracts.create_index(
+            [
+                ("created_by", ASCENDING),
+                ("is_current_version", ASCENDING),
+                ("status", ASCENDING),
+                ("updated_at", DESCENDING),
+            ],
+            name="idx_vendor_contract_planner_current_status_updated",
+        )
+        logger.info("Created index: idx_vendor_contract_planner_current_status_updated")
+
+        await contracts.create_index(
+            [("wedding_id", ASCENDING), ("vendor_profile_id", ASCENDING)],
+            name="idx_vendor_contract_wedding_vendor",
+        )
+        logger.info("Created index: idx_vendor_contract_wedding_vendor")
+
+        await milestones.create_index(
+            [("contract_id", ASCENDING), ("status", ASCENDING), ("due_date", ASCENDING)],
+            name="idx_vendor_payment_milestones_contract_status_due",
+        )
+        logger.info("Created index: idx_vendor_payment_milestones_contract_status_due")
+
+        await milestones.create_index(
+            [("created_by", ASCENDING), ("status", ASCENDING), ("due_date", ASCENDING)],
+            name="idx_vendor_payment_milestones_created_by_status_due",
+        )
+        logger.info("Created index: idx_vendor_payment_milestones_created_by_status_due")
+
+        logger.info("All vendor contract security indexes created successfully")
+        return True
+    except Exception as e:
+        logger.error(f"Error creating vendor contract security indexes: {str(e)}")
+        return False
+
+
 async def create_audit_logs_indexes():
     """
     Create indexes for audit_logs collection (HTTP request auditing)
@@ -2175,6 +2242,7 @@ async def create_all_indexes():
         )  # Activity/Audit logging indexes with TTL for auto-pruning
         await create_activity_logs_indexes()
         await create_vendor_contract_activity_indexes()
+        await create_vendor_contract_security_indexes()
         await create_audit_logs_indexes()
         await create_security_audit_logs_indexes()
         await create_errors_indexes()
