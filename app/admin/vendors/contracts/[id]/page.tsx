@@ -6,20 +6,23 @@ import { useRouter, useParams } from 'next/navigation';
 import { toast } from 'sonner';
 import { formatAdminTimestamp, formatAdminDate } from '@/utils/dateFormat';
 import VendorContractPreview from '@/components/contracts/VendorContractPreview';
+import { PaymentMilestones } from '../../components/PaymentMilestones';
 import {
   getCategoryLabel,
 } from '@/services/vendorManagementApi';
 import {
   getContract,
   getContractRevisions,
+  getContractActivity,
   updateContract,
   sendContract,
   createContractRevision,
   getContractFormData,
   applyFormDataToContract,
-  createPaymentMilestones,
   type VendorContract,
   type ContractSection,
+  type VendorContractActivityItem,
+  type VendorContractActivityResponse,
   type VendorContractFormDataResponse,
   type VendorContractRevisionHistoryResponse,
   getContractStatusColor,
@@ -48,6 +51,9 @@ export default function ContractDetailPage() {
   const [revisionKind, setRevisionKind] = useState<'revision' | 'amendment'>('revision');
   const [revisionReason, setRevisionReason] = useState('');
   const [creatingRevision, setCreatingRevision] = useState(false);
+  const [activityLoading, setActivityLoading] = useState(false);
+  const [activity, setActivity] = useState<VendorContractActivityResponse | null>(null);
+  const [activityError, setActivityError] = useState<string | null>(null);
 
   // Editable state
   const [editedContract, setEditedContract] = useState<Partial<VendorContract>>({});
@@ -91,10 +97,29 @@ export default function ContractDetailPage() {
     }
   }, [token, contractId]);
 
+  const fetchActivity = useCallback(async () => {
+    if (!token || !contractId) return;
+
+    setActivityLoading(true);
+    setActivityError(null);
+    try {
+      const data = await getContractActivity(token, contractId);
+      setActivity(data);
+    } catch (error) {
+      console.error('Error fetching contract activity:', error);
+      setActivityError(
+        error instanceof Error ? error.message : 'Failed to load contract activity'
+      );
+    } finally {
+      setActivityLoading(false);
+    }
+  }, [token, contractId]);
+
   useEffect(() => {
     void fetchContract();
     void fetchRevisions();
-  }, [fetchContract, fetchRevisions]);
+    void fetchActivity();
+  }, [fetchActivity, fetchContract, fetchRevisions]);
 
   // Save changes
   const handleSave = async () => {
@@ -108,6 +133,7 @@ export default function ContractDetailPage() {
       });
       setContract(updatedContract);
       setEditMode(false);
+      void fetchActivity();
       toast.success('Contract saved successfully');
     } catch (error) {
       console.error('Error saving contract:', error);
@@ -129,6 +155,7 @@ export default function ContractDetailPage() {
       setSendMessage('');
       void fetchContract();
       void fetchRevisions();
+      void fetchActivity();
     } catch (error) {
       console.error('Error sending contract:', error);
       toast.error('Failed to send contract');
@@ -187,37 +214,6 @@ export default function ContractDetailPage() {
     setEditedSections((prev) => prev.filter((s) => s.id !== sectionId));
   };
 
-  // Create payment milestones
-  const handleCreateMilestones = async () => {
-    if (!token || !contract) return;
-
-    try {
-      const depositAmount = contract.deposit_amount || contract.total_amount * 0.5;
-      const balanceAmount = contract.total_amount - depositAmount;
-
-      const milestones = [
-        {
-          description: 'Deposit - Due upon signing',
-          amount: depositAmount,
-          due_date: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
-          percentage_of_total: (depositAmount / contract.total_amount) * 100,
-        },
-        {
-          description: 'Final Balance - Due before event',
-          amount: balanceAmount,
-          due_date: contract.service_date || new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
-          percentage_of_total: (balanceAmount / contract.total_amount) * 100,
-        },
-      ];
-
-      await createPaymentMilestones(token, contractId, milestones);
-      toast.success('Payment milestones created');
-    } catch (error) {
-      console.error('Error creating milestones:', error);
-      toast.error('Failed to create payment milestones');
-    }
-  };
-
   const buildSuggestedFieldMappings = (
     data: VendorContractFormDataResponse
   ): Record<string, string> => {
@@ -263,6 +259,41 @@ export default function ContractDetailPage() {
   const sortedRevisionHistory = [...(revisions?.versions || [])].sort(
     (left, right) => right.version_number - left.version_number
   );
+  const activityItems = activity?.items || [];
+  const keyDates = contract
+    ? ([
+        { label: 'Created', value: contract.created_at },
+        contract.sent_at ? { label: 'Sent', value: contract.sent_at } : null,
+        contract.viewed_at ? { label: 'Viewed', value: contract.viewed_at } : null,
+        contract.signed_at ? { label: 'Signed', value: contract.signed_at } : null,
+      ].filter(Boolean) as Array<{ label: string; value: string }>)
+    : [];
+
+  const getActivityAccentClass = (activityType: VendorContractActivityItem['activity_type']) => {
+    switch (activityType) {
+      case 'contract_signed':
+      case 'payment_recorded':
+        return 'bg-emerald-500';
+      case 'contract_sent':
+      case 'milestones_created':
+        return 'bg-blue-500';
+      case 'revision_created':
+      case 'contract_superseded':
+        return 'bg-amber-500';
+      case 'form_data_applied':
+        return 'bg-violet-500';
+      default:
+        return 'bg-slate-400';
+    }
+  };
+
+  const formatActivityActor = (item: VendorContractActivityItem) => {
+    if (item.actor.display_name) return item.actor.display_name;
+    if (item.actor.identifier) return item.actor.identifier;
+    if (item.actor.type === 'planner') return 'Planner';
+    if (item.actor.type === 'vendor') return 'Vendor';
+    return 'System';
+  };
 
   if (loading) {
     return (
@@ -565,6 +596,7 @@ export default function ContractDetailPage() {
                                 setContract(updated);
                                 setEditedContract(updated);
                                 setEditedSections(updated.sections || []);
+                                void fetchActivity();
                                 toast.success('Form data applied to contract');
                               })
                               .catch(() => toast.error('Failed to apply form data'));
@@ -670,67 +702,21 @@ export default function ContractDetailPage() {
                 </div>
               </div>
 
-              {/* Timeline */}
+              {/* Key Dates */}
               <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-xl p-6">
-                <h3 className="font-semibold text-gray-900 dark:text-gray-100 mb-4">Timeline</h3>
-                <div className="space-y-4">
-                  <div className="flex items-center gap-3">
-                    <div className="w-8 h-8 rounded-full bg-green-100 dark:bg-green-900 flex items-center justify-center">
-                      <svg className="w-4 h-4 text-green-600" fill="currentColor" viewBox="0 0 20 20">
-                        <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
-                      </svg>
+                <h3 className="font-semibold text-gray-900 dark:text-gray-100 mb-4">Key Dates</h3>
+                <div className="space-y-3">
+                  {keyDates.map((item) => (
+                    <div
+                      key={item.label}
+                      className="flex items-center justify-between gap-4 rounded-xl bg-gray-50 px-4 py-3 text-sm dark:bg-slate-900/60"
+                    >
+                      <span className="font-medium text-gray-700 dark:text-gray-300">{item.label}</span>
+                      <span className="text-right text-gray-500 dark:text-gray-400">
+                        {formatAdminTimestamp(item.value)}
+                      </span>
                     </div>
-                    <div>
-                      <div className="text-sm font-medium text-gray-900 dark:text-gray-100">Created</div>
-                      <div className="text-xs text-gray-500">{formatAdminTimestamp(contract.created_at)}</div>
-                    </div>
-                  </div>
-
-                  {contract.sent_at && (
-                    <div className="flex items-center gap-3">
-                      <div className="w-8 h-8 rounded-full bg-blue-100 dark:bg-blue-900 flex items-center justify-center">
-                        <svg className="w-4 h-4 text-blue-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
-                        </svg>
-                      </div>
-                      <div>
-                        <div className="text-sm font-medium text-gray-900 dark:text-gray-100">Sent</div>
-                        <div className="text-xs text-gray-500">{formatAdminTimestamp(contract.sent_at)}</div>
-                      </div>
-                    </div>
-                  )}
-
-                  {contract.viewed_at && (
-                    <div className="flex items-center gap-3">
-                      <div className="w-8 h-8 rounded-full bg-indigo-100 dark:bg-indigo-900 flex items-center justify-center">
-                        <svg className="w-4 h-4 text-indigo-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-                        </svg>
-                      </div>
-                      <div>
-                        <div className="text-sm font-medium text-gray-900 dark:text-gray-100">Viewed</div>
-                        <div className="text-xs text-gray-500">{formatAdminTimestamp(contract.viewed_at)}</div>
-                      </div>
-                    </div>
-                  )}
-
-                  {contract.signed_at && (
-                    <div className="flex items-center gap-3">
-                      <div className="w-8 h-8 rounded-full bg-emerald-100 dark:bg-emerald-900 flex items-center justify-center">
-                        <svg className="w-4 h-4 text-emerald-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                        </svg>
-                      </div>
-                      <div>
-                        <div className="text-sm font-medium text-gray-900 dark:text-gray-100">Signed</div>
-                        <div className="text-xs text-gray-500">{formatAdminTimestamp(contract.signed_at)}</div>
-                        {contract.signed_by_name && (
-                          <div className="text-xs text-gray-500">by {contract.signed_by_name}</div>
-                        )}
-                      </div>
-                    </div>
-                  )}
+                  ))}
                 </div>
               </div>
             </div>
@@ -866,25 +852,30 @@ export default function ContractDetailPage() {
         {/* Payments Tab */}
         {activeTab === 'payments' && (
           <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-xl p-6">
-            <div className="flex items-center justify-between mb-6">
+            <div className="mb-6">
               <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">Payment Milestones</h2>
-              <button
-                onClick={handleCreateMilestones}
-                className="px-4 py-2 bg-wedding-rose text-white rounded-lg font-medium hover:bg-wedding-rose/90"
-              >
-                Create Default Milestones
-              </button>
-            </div>
-
-            <div className="text-center py-12 border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-xl">
-              <svg className="w-12 h-12 text-gray-400 mx-auto mb-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-              </svg>
-              <h3 className="text-lg font-medium text-gray-900 dark:text-gray-100 mb-2">No payment milestones</h3>
-              <p className="text-gray-500 dark:text-gray-400">
-                Create payment milestones to track deposits and payments for this contract.
+              <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
+                Track deposits and payments for this contract.
               </p>
             </div>
+
+            {token ? (
+              <PaymentMilestones
+                token={token}
+                contractId={contractId}
+                vendorName={contract.vendor_name}
+                vendorEmail={contract.vendor_email}
+                totalAmount={contract.total_amount}
+                readOnly={contract.is_current_version === false}
+                onMilestoneUpdated={() => {
+                  void fetchActivity();
+                }}
+              />
+            ) : (
+              <div className="rounded-xl border border-dashed border-gray-300 px-4 py-8 text-center text-sm text-gray-500 dark:border-gray-700 dark:text-gray-400">
+                Admin session is required to manage payment milestones.
+              </div>
+            )}
           </div>
         )}
 
@@ -893,33 +884,45 @@ export default function ContractDetailPage() {
           <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-xl p-6">
             <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-6">Activity Log</h2>
 
-            <div className="space-y-4">
-              <div className="flex items-start gap-4">
-                <div className="w-8 h-8 rounded-full bg-green-100 flex items-center justify-center shrink-0">
-                  <svg className="w-4 h-4 text-green-600" fill="currentColor" viewBox="0 0 20 20">
-                    <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
-                  </svg>
-                </div>
-                <div>
-                  <p className="text-gray-900 dark:text-gray-100">Contract created</p>
-                  <p className="text-sm text-gray-500">{formatAdminTimestamp(contract.created_at)}</p>
+            {activityLoading ? (
+              <div className="flex items-center justify-center py-12">
+                <div className="text-center">
+                  <div className="mx-auto mb-4 h-10 w-10 animate-spin rounded-full border-b-2 border-wedding-rose" />
+                  <p className="text-sm text-gray-500 dark:text-gray-400">Loading activity...</p>
                 </div>
               </div>
-
-              {contract.updated_at !== contract.created_at && (
-                <div className="flex items-start gap-4">
-                  <div className="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center shrink-0">
-                    <svg className="w-4 h-4 text-blue-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-                    </svg>
+            ) : activityError ? (
+              <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-5 text-sm text-red-700 dark:border-red-900/60 dark:bg-red-900/20 dark:text-red-200">
+                {activityError}
+              </div>
+            ) : activityItems.length === 0 ? (
+              <div className="rounded-xl border border-dashed border-gray-300 px-4 py-8 text-center text-sm text-gray-500 dark:border-gray-700 dark:text-gray-400">
+                No contract activity yet.
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {activityItems.map((item) => (
+                  <div key={item.id} className="flex items-start gap-4">
+                    <div className={`mt-1 h-3 w-3 shrink-0 rounded-full ${getActivityAccentClass(item.activity_type)}`} />
+                    <div className="min-w-0 flex-1">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <p className="font-medium text-gray-900 dark:text-gray-100">{item.title}</p>
+                        <span className="text-xs text-gray-400 dark:text-gray-500">•</span>
+                        <p className="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                          {formatActivityActor(item)}
+                        </p>
+                      </div>
+                      {item.description && (
+                        <p className="mt-1 text-sm text-gray-600 dark:text-gray-300">{item.description}</p>
+                      )}
+                      <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                        {formatAdminTimestamp(item.created_at)}
+                      </p>
+                    </div>
                   </div>
-                  <div>
-                    <p className="text-gray-900 dark:text-gray-100">Contract updated</p>
-                    <p className="text-sm text-gray-500">{formatAdminTimestamp(contract.updated_at)}</p>
-                  </div>
-                </div>
-              )}
-            </div>
+                ))}
+              </div>
+            )}
           </div>
         )}
       </div>

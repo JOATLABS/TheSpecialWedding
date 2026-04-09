@@ -143,6 +143,162 @@ async def _resolve_custom_template_owner_scope(
 # ============================================================================
 
 
+def _isoformat_or_none(value: Any) -> Optional[str]:
+    if isinstance(value, datetime):
+        return value.isoformat()
+    if isinstance(value, str):
+        return value
+    return None
+
+
+def _default_archived_guest_stats() -> dict[str, Any]:
+    return {
+        "planned_total": 0,
+        "guest_list_total": 0,
+        "invited": 0,
+        "responded": 0,
+        "confirmed": 0,
+        "declined": 0,
+        "pending": 0,
+        "not_invited": 0,
+        "response_rate": 0.0,
+        "event_breakdown": [],
+    }
+
+
+def _default_archived_budget_summary() -> dict[str, Any]:
+    return {
+        "total_budget": 0,
+        "total_spent": 0,
+        "remaining": 0,
+    }
+
+
+def _default_archived_memories_summary() -> dict[str, Any]:
+    return {
+        "pending_count": 0,
+        "kept_count": 0,
+        "rejected_count": 0,
+        "processing_videos": 0,
+        "enabled": False,
+        "link_status": "closed",
+        "upload_closes_at": None,
+        "storage_ready": False,
+        "stream_configured": False,
+    }
+
+
+def _build_archived_dashboard_fallback(
+    archive: dict[str, Any], couple_email: str
+) -> dict[str, Any]:
+    """Return a dashboard-shaped archived payload when the live dashboard is unavailable."""
+    wedding_snapshot = archive.get("wedding") or {}
+    forms = archive.get("forms") or []
+    submissions = archive.get("form_submissions") or []
+    updates = archive.get("updates") or []
+    budget_doc = archive.get("budget") or {}
+
+    submission_map: dict[str, dict[str, Any]] = {}
+    for submission in submissions:
+        if submission.get("submitted_by") != couple_email:
+            continue
+        form_id = str(submission.get("form_id"))
+        if form_id and form_id not in submission_map:
+            submission_map[form_id] = submission
+
+    archived_forms: list[dict[str, Any]] = []
+    for form in forms:
+        if not (
+            form.get("shared_with_couple")
+            or form.get("target_audience") == "couple"
+            or form.get("couple_email") == couple_email
+        ):
+            continue
+
+        form_id = str(form.get("_id"))
+        submission = submission_map.get(form_id)
+        archived_forms.append(
+            {
+                "id": form_id,
+                "title": form.get("title"),
+                "description": form.get("description"),
+                "status": "submitted" if submission else "pending",
+                "submitted_at": _isoformat_or_none(
+                    submission.get("submitted_at") if submission else None
+                ),
+                "created_at": _isoformat_or_none(form.get("created_at")),
+            }
+        )
+
+    archived_updates = [
+        {
+            "id": str(update.get("_id")),
+            "type": update.get("type", "update"),
+            "title": update.get("title"),
+            "content": update.get("content"),
+            "category": update.get("category"),
+            "attachments": update.get("attachments", []),
+            "is_milestone": update.get("is_milestone", False),
+            "created_at": _isoformat_or_none(update.get("created_at")),
+            "created_by": update.get("created_by_name"),
+        }
+        for update in updates
+    ]
+
+    total_budget = budget_doc.get("total_budget") or 0
+    total_spent = budget_doc.get("total_spent") or budget_doc.get("spent_total") or 0
+    remaining = budget_doc.get("remaining")
+    if remaining is None:
+        remaining = max(total_budget - total_spent, 0)
+
+    wedding_id = archive.get("original_wedding_id") or wedding_snapshot.get("_id")
+    wedding_events = wedding_snapshot.get("events", []) or []
+
+    return {
+        "wedding": {
+            "id": str(wedding_id) if wedding_id is not None else "",
+            "couple_names": wedding_snapshot.get("couple_names"),
+            "date": wedding_snapshot.get("date"),
+            "timezone": wedding_snapshot.get("timezone", "America/Chicago"),
+            "venue": wedding_snapshot.get("venue"),
+            "cultural_style": wedding_snapshot.get("cultural_style"),
+            "theme_config": wedding_snapshot.get("theme_config"),
+            "events": [
+                {
+                    "type": event.get("type"),
+                    "custom_type_label": event.get("custom_type_label"),
+                    "date": event.get("date"),
+                    "details": event.get("details"),
+                    "order_of_events": event.get("order_of_events", []),
+                    "event_notes": event.get("event_notes", []),
+                }
+                for event in wedding_events
+            ],
+            "registries": wedding_snapshot.get("registries", []),
+            "faqs": wedding_snapshot.get("faqs", []),
+        },
+        "planner": {
+            "name": None,
+            "company": None,
+            "email": archive.get("planner_email"),
+            "phone": None,
+            "profile_image_url": None,
+        }
+        if archive.get("planner_email")
+        else None,
+        "guest_stats": _default_archived_guest_stats(),
+        "budget_summary": {
+            "total_budget": total_budget,
+            "total_spent": total_spent,
+            "remaining": remaining,
+        },
+        "contract": None,
+        "forms": archived_forms,
+        "updates": archived_updates,
+        "memories_summary": _default_archived_memories_summary(),
+    }
+
+
 @router.get("/couple/portal/dashboard", tags=["Couple Portal"])
 async def get_dashboard(couple: dict = Depends(require_couple_auth)):
     """Get the couple's portal dashboard with all data."""
@@ -151,27 +307,30 @@ async def get_dashboard(couple: dict = Depends(require_couple_auth)):
     if not wedding_id:
         raise HTTPException(status_code=404, detail="No wedding linked to this account")
 
-    # Check if archived
+    archive = None
     if couple.get("wedding_archived"):
-        # Return archived view
         archive = await mongo.db["archived_weddings"].find_one(
             {"original_wedding_id": wedding_id}
         )
-        if archive:
-            return {
-                "archived": True,
-                "wedding": archive.get("wedding"),
-                "archived_at": archive.get("archived_at").isoformat()
-                if archive.get("archived_at")
-                else None,
-                "message": "This wedding has been completed and archived. You can still view your wedding details.",
-            }
 
     dashboard = await couple_portal_service.get_portal_dashboard(
         wedding_id, couple["email"]
     )
+    if not dashboard and archive:
+        dashboard = _build_archived_dashboard_fallback(archive, couple["email"])
+
     if not dashboard:
         raise HTTPException(status_code=404, detail="Wedding data not found")
+
+    if couple.get("wedding_archived"):
+        return {
+            "archived": True,
+            **dashboard,
+            "archived_at": _isoformat_or_none(archive.get("archived_at"))
+            if archive
+            else _isoformat_or_none(couple.get("archived_at")),
+            "message": "This wedding has been completed and archived. You can still view your wedding details.",
+        }
 
     return {"archived": False, **dashboard}
 
@@ -383,6 +542,13 @@ async def get_form_details(form_id: str, couple: dict = Depends(require_couple_a
         "submitted_at": submission.get("submitted_at").isoformat()
         if submission and submission.get("submitted_at")
         else None,
+        "read_only": bool(couple.get("wedding_archived")),
+        "archived": bool(couple.get("wedding_archived")),
+        "read_only_reason": (
+            "This wedding has been archived. Forms are view-only."
+            if couple.get("wedding_archived")
+            else None
+        ),
     }
 
 
@@ -2147,6 +2313,7 @@ def _serialize_meeting(task: dict, include_planner_fields: bool = True) -> dict:
         if task.get("start_date")
         else None,
         "end_date": task["end_date"].isoformat() if task.get("end_date") else None,
+        "conference_url": task.get("conference_url"),
         "is_recurring": task.get("is_recurring", False),
         "recurrence_rule": task.get("recurrence_rule"),
         "status": task.get("status", "pending"),

@@ -296,4 +296,49 @@ describe('vendorContractsApi request normalization', () => {
     assert.equal(result.current_contract_id, 'contract_2');
     assert.equal(result.versions[1].version_number, 2);
   });
+
+  it('getContractActivity returns the normalized activity payload', async () => {
+    const fetchMock = mock.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      assert.equal(
+        input.toString(),
+        'https://api.example.com/admin/contracts/contract_1/activity'
+      );
+      assert.equal(init?.method, undefined);
+
+      return new Response(
+        JSON.stringify({
+          contract_id: 'contract_1',
+          root_contract_id: 'contract_1',
+          items: [
+            {
+              id: 'activity_1',
+              contract_id: 'contract_1',
+              root_contract_id: 'contract_1',
+              activity_type: 'contract_sent',
+              title: 'Contract sent',
+              description: 'Sent to vendor@example.com for review and signature.',
+              actor: {
+                type: 'planner',
+                identifier: 'planner@example.com',
+                display_name: 'planner@example.com',
+              },
+              metadata: {
+                cc_emails: [],
+              },
+              created_at: '2026-04-09T00:00:00.000Z',
+            },
+          ],
+        }),
+        { status: 200 }
+      );
+    });
+
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+
+    const result = await vendorContractsApi.getContractActivity('secret-token', 'contract_1');
+
+    assert.equal(fetchMock.mock.callCount(), 1);
+    assert.equal(result.items[0].activity_type, 'contract_sent');
+    assert.equal(result.items[0].actor.type, 'planner');
+  });
 });

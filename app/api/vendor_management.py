@@ -26,6 +26,7 @@ from app.models.vendor_contracts import (
     SendVendorContractRequest,
     UpdateVendorContractRequest,
     UpdateVendorContractSectionsRequest,
+    VendorContractActivityResponse,
     VendorContractFormDataResponse,
     VendorContractRevisionHistoryResponse,
 )
@@ -466,8 +467,12 @@ async def list_payment_milestones(
     current_user: ExtendedAuthUser = Depends(require_vendor_feature),
 ):
     """List payment milestones with optional filters"""
+    enforce_team_permission(current_user, "manage_vendors")
     return await vendor_service.get_payment_milestones(
-        contract_id=contract_id, wedding_id=wedding_id, status=status
+        contract_id=contract_id,
+        wedding_id=wedding_id,
+        status=status,
+        created_by=current_user.email,
     )
 
 
@@ -490,6 +495,23 @@ async def record_milestone_payment(
         payment_date=data.payment_date,
         notes=data.notes,
         receipt_url=data.receipt_url,
+    )
+
+
+@router.get(
+    "/contracts/{contract_id}/activity",
+    response_model=VendorContractActivityResponse,
+    tags=["Contracts"],
+)
+async def get_contract_activity(
+    contract_id: str,
+    current_user: ExtendedAuthUser = Depends(require_vendor_feature),
+):
+    """Return chronological activity for one vendor contract."""
+    enforce_team_permission(current_user, "manage_vendors")
+    return await vendor_service.get_contract_activity(
+        contract_id=contract_id,
+        created_by=current_user.email,
     )
 
 
@@ -537,7 +559,9 @@ async def get_vendor_management_dashboard(
     )
 
     upcoming_milestones = await vendor_service.get_payment_milestones(
-        wedding_id=wedding_id, status="pending"
+        wedding_id=wedding_id,
+        status="pending",
+        created_by=current_user.email,
     )
 
     return {

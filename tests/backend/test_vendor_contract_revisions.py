@@ -148,11 +148,13 @@ def make_contract_doc(
 def configured_vendor_service(monkeypatch: pytest.MonkeyPatch):
     vendor_id = ObjectId()
     contracts = FakeCollection([])
+    activities = FakeCollection([])
     assignments = FakeCollection([])
     templates = FakeCollection([])
     quotes = FakeCollection([])
 
     monkeypatch.setattr(vendor_service, "vendor_contracts", contracts)
+    monkeypatch.setattr(vendor_service, "vendor_contract_activities", activities)
     monkeypatch.setattr(vendor_service, "vendor_assignments", assignments)
     monkeypatch.setattr(vendor_service, "contract_templates", templates)
     monkeypatch.setattr(vendor_service, "vendor_quotes", quotes)

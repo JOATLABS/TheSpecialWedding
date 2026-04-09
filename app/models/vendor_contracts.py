@@ -6,6 +6,7 @@ Shared enums and persisted document models remain in `app.models.vendor`.
 """
 
 from datetime import datetime
+from enum import Enum
 from typing import Any, Dict, List, Literal, Optional
 
 from pydantic import BaseModel, Field
@@ -191,6 +192,51 @@ class VendorContractRevisionHistoryResponse(BaseModel):
     current_contract_id: str
     root_contract_id: str
     versions: List[VendorContractRevisionSummary] = Field(default_factory=list)
+
+
+class VendorContractActivityType(str, Enum):
+    """Normalized activity event types for contract-scoped timelines."""
+
+    CONTRACT_CREATED = "contract_created"
+    CONTRACT_UPDATED = "contract_updated"
+    FORM_DATA_APPLIED = "form_data_applied"
+    CONTRACT_SENT = "contract_sent"
+    CONTRACT_VIEWED = "contract_viewed"
+    CONTRACT_SIGNED = "contract_signed"
+    MILESTONES_CREATED = "milestones_created"
+    PAYMENT_RECORDED = "payment_recorded"
+    REVISION_CREATED = "revision_created"
+    CONTRACT_SUPERSEDED = "contract_superseded"
+
+
+class VendorContractActivityActor(BaseModel):
+    """Actor metadata attached to a contract activity entry."""
+
+    type: Literal["planner", "vendor", "system"]
+    identifier: Optional[str] = None
+    display_name: Optional[str] = None
+
+
+class VendorContractActivityItem(BaseModel):
+    """One contract activity timeline entry."""
+
+    id: str
+    contract_id: str
+    root_contract_id: str
+    activity_type: VendorContractActivityType
+    title: str
+    description: Optional[str] = None
+    actor: VendorContractActivityActor
+    metadata: Dict[str, Any] = Field(default_factory=dict)
+    created_at: datetime
+
+
+class VendorContractActivityResponse(BaseModel):
+    """Read-only contract-scoped activity response."""
+
+    contract_id: str
+    root_contract_id: str
+    items: List[VendorContractActivityItem] = Field(default_factory=list)
 
 
 class CreateContractFromQuoteRequest(BaseModel):

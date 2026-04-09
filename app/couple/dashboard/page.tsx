@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { toast } from 'sonner';
 import CoupleSidebar, { type CoupleSection } from '../components/CoupleSidebar';
 import CoupleTopHeader from '../components/CoupleTopHeader';
@@ -182,6 +182,18 @@ interface UpdateItem {
   created_by?: string;
 }
 
+interface MeetingItem {
+  id: string;
+  title: string;
+  description?: string;
+  start_date?: string | null;
+  end_date?: string | null;
+  conference_url?: string | null;
+  is_recurring?: boolean;
+  recurrence_rule?: string | null;
+  status?: string;
+}
+
 interface DashboardData {
   archived: boolean;
   archived_at?: string;
@@ -246,12 +258,29 @@ function paymentStatusColor(status: string): string {
   return colors[status] || 'bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-400';
 }
 
+const COUPLE_SECTIONS: CoupleSection[] = [
+  'dashboard',
+  'timeline',
+  'meetings',
+  'payments',
+  'forms',
+  'inbox',
+  'memories',
+  'registry',
+  'faq',
+];
+
+function isCoupleSection(value: string | null): value is CoupleSection {
+  return Boolean(value && COUPLE_SECTIONS.includes(value as CoupleSection));
+}
+
 // ============================================================================
 // MAIN COMPONENT
 // ============================================================================
 
 export default function CoupleDashboardPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { logout } = useCoupleAuth();
   const [loading, setLoading] = useState(true);
   const [data, setData] = useState<DashboardData | null>(null);
@@ -350,6 +379,12 @@ export default function CoupleDashboardPage() {
     fetchDashboard();
   }, [fetchDashboard]);
 
+  useEffect(() => {
+    const requestedSection = searchParams.get('section');
+    const nextSection = isCoupleSection(requestedSection) ? requestedSection : 'dashboard';
+    setActiveSection((current) => (current === nextSection ? current : nextSection));
+  }, [searchParams]);
+
   useCoupleSSE({
     resources: ['couple_message'],
     weddingId: data?.wedding?.id ?? null,
@@ -373,6 +408,22 @@ export default function CoupleDashboardPage() {
     await logoutCoupleSession();
     router.push('/couple/login');
   };
+
+  const handleSectionChange = useCallback((section: CoupleSection) => {
+    setActiveSection(section);
+
+    const nextParams = new URLSearchParams(searchParams.toString());
+    if (section === 'dashboard') {
+      nextParams.delete('section');
+    } else {
+      nextParams.set('section', section);
+    }
+
+    const nextUrl = nextParams.toString()
+      ? `/couple/dashboard?${nextParams.toString()}`
+      : '/couple/dashboard';
+    router.replace(nextUrl, { scroll: false });
+  }, [router, searchParams]);
 
   const handleOnboardingComplete = () => {
     setHasUserDismissedOnboarding(true);
@@ -425,7 +476,7 @@ export default function CoupleDashboardPage() {
         setIsOpen={setSidebarOpen}
         isMobile={isMobile}
         activeSection={activeSection}
-        onSectionChange={setActiveSection}
+        onSectionChange={handleSectionChange}
         onLogout={handleLogout}
         unreadInbox={unreadMessages}
         pendingForms={pendingForms}
@@ -456,9 +507,21 @@ export default function CoupleDashboardPage() {
 
         <main className="flex-1 p-4 sm:p-6 lg:p-8 space-y-6 overflow-x-hidden">
           {activeSection === 'dashboard' && <DashboardSection data={data} />}
-          {activeSection === 'timeline' && <TimelineSection events={data.wedding?.events || []} timezone={data.wedding?.timezone} onNoteAdded={fetchDashboard} />}
+          {activeSection === 'timeline' && (
+            <TimelineSection
+              events={data.wedding?.events || []}
+              timezone={data.wedding?.timezone}
+              archived={!!data.archived}
+              onNoteAdded={fetchDashboard}
+            />
+          )}
+          {activeSection === 'meetings' && (
+            <MeetingsSection archived={!!data.archived} />
+          )}
           {activeSection === 'payments' && <PaymentsSection contract={data.contract} />}
-          {activeSection === 'forms' && <FormsSection forms={data.forms || []} />}
+          {activeSection === 'forms' && (
+            <FormsSection forms={data.forms || []} archived={!!data.archived} />
+          )}
           {activeSection === 'inbox' && (
             <InboxSection
               updates={data.updates || []}
@@ -495,9 +558,34 @@ export default function CoupleDashboardPage() {
 
 function DashboardSection({ data }: { data: DashboardData }) {
   const days = data.wedding?.date ? daysUntil(data.wedding.date) : null;
-  const stats = data.guest_stats;
-  const budget = data.budget_summary;
-  const memories = data.memories_summary;
+  const stats = data.guest_stats ?? {
+    planned_total: 0,
+    guest_list_total: 0,
+    invited: 0,
+    responded: 0,
+    confirmed: 0,
+    declined: 0,
+    pending: 0,
+    not_invited: 0,
+    response_rate: 0,
+    event_breakdown: [],
+  };
+  const budget = data.budget_summary ?? {
+    total_budget: 0,
+    total_spent: 0,
+    remaining: 0,
+  };
+  const memories = data.memories_summary ?? {
+    pending_count: 0,
+    kept_count: 0,
+    rejected_count: 0,
+    processing_videos: 0,
+    enabled: false,
+    link_status: 'closed' as const,
+    upload_closes_at: null,
+    storage_ready: false,
+    stream_configured: false,
+  };
   const budgetPercent = budget.total_budget > 0 ? Math.min(100, (budget.total_spent / budget.total_budget) * 100) : 0;
   const guestTarget = stats.planned_total || stats.guest_list_total;
   const guestListProgress = guestTarget > 0 ? Math.min(100, (stats.guest_list_total / guestTarget) * 100) : 0;
@@ -505,7 +593,23 @@ function DashboardSection({ data }: { data: DashboardData }) {
 
   return (
     <div className="space-y-6">
-      <PageHeader title="Dashboard" description="Your wedding overview at a glance" />
+      <PageHeader
+        title="Dashboard"
+        description={data.archived ? 'Your archived wedding portal is available in read-only mode.' : 'Your wedding overview at a glance'}
+      />
+      {data.archived && (
+        <div className="rounded-xl border border-amber-200 bg-amber-50 p-5 text-amber-800 shadow-sm dark:border-amber-800/50 dark:bg-amber-950/30 dark:text-amber-200">
+          <div className="flex items-start gap-3">
+            <Archive className="mt-0.5 h-5 w-5 flex-shrink-0" />
+            <div>
+              <p className="font-medium">Read-only wedding portal</p>
+              <p className="mt-1 text-sm opacity-90">
+                Your timeline, forms, updates, and memories are still viewable, but edits and new submissions are disabled because this wedding has been archived.
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
       {/* Countdown */}
       {days !== null && days > 0 && !data.archived && (
         <div className="bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700 p-6">
@@ -1087,7 +1191,7 @@ function BudgetBreakdownCard({ weddingId }: { weddingId?: string }) {
 // SECTION: TIMELINE
 // ============================================================================
 
-function TimelineSection({ events, timezone, onNoteAdded }: { events: WeddingEvent[]; timezone?: string; onNoteAdded?: () => void }) {
+function TimelineSection({ events, timezone, archived, onNoteAdded }: { events: WeddingEvent[]; timezone?: string; archived: boolean; onNoteAdded?: () => void }) {
   const [expandedEvent, setExpandedEvent] = useState<number | null>(null);
   const [noteText, setNoteText] = useState('');
   const [noteTarget, setNoteTarget] = useState<{ eventIndex: number; itemId?: string } | null>(null);
@@ -1148,6 +1252,11 @@ function TimelineSection({ events, timezone, onNoteAdded }: { events: WeddingEve
   return (
     <div className="space-y-4">
       <PageHeader title="Timeline" description="Your wedding day schedule and events" />
+      {archived && (
+        <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-700 dark:border-amber-800/50 dark:bg-amber-950/30 dark:text-amber-300">
+          Timeline notes are read-only because this wedding has been archived.
+        </div>
+      )}
       {events.map((event, eventIdx) => {
         const orderItems = (event.order_of_events || []).sort((a, b) => a.order - b.order);
         const eventNotes = event.event_notes || [];
@@ -1218,13 +1327,15 @@ function TimelineSection({ events, timezone, onNoteAdded }: { events: WeddingEve
                               {item.description && <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">{item.description}</p>}
                               {item.duration_minutes && <p className="text-xs text-slate-400 dark:text-slate-500">{item.duration_minutes} min</p>}
                             </div>
-                            <button
-                              onClick={() => setNoteTarget({ eventIndex: eventIdx, itemId: item.id })}
-                              className="text-slate-400 dark:text-slate-500 hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors p-1"
-                              title="Leave a note for your planner"
-                            >
-                              <MessageSquare className="w-4 h-4" />
-                            </button>
+                            {!archived && (
+                              <button
+                                onClick={() => setNoteTarget({ eventIndex: eventIdx, itemId: item.id })}
+                                className="text-slate-400 dark:text-slate-500 hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors p-1"
+                                title="Leave a note for your planner"
+                              >
+                                <MessageSquare className="w-4 h-4" />
+                              </button>
+                            )}
                           </div>
 
                           {/* Item-level notes */}
@@ -1273,7 +1384,7 @@ function TimelineSection({ events, timezone, onNoteAdded }: { events: WeddingEve
                           })()}
 
                           {/* Inline note form */}
-                          {noteTarget?.eventIndex === eventIdx && noteTarget?.itemId === item.id && (
+                          {!archived && noteTarget?.eventIndex === eventIdx && noteTarget?.itemId === item.id && (
                             <div className="mt-2 ml-[72px] flex gap-2">
                               <input
                                 type="text"
@@ -1349,7 +1460,7 @@ function TimelineSection({ events, timezone, onNoteAdded }: { events: WeddingEve
                 })()}
 
                 {/* Add general event note */}
-                {noteTarget?.eventIndex === eventIdx && !noteTarget?.itemId ? (
+                {!archived && noteTarget?.eventIndex === eventIdx && !noteTarget?.itemId ? (
                   <div className="flex gap-2">
                     <input
                       type="text"
@@ -1369,7 +1480,7 @@ function TimelineSection({ events, timezone, onNoteAdded }: { events: WeddingEve
                     </button>
                     <button onClick={() => { setNoteTarget(null); setNoteText(''); }} className="text-slate-400 dark:text-slate-500 hover:text-slate-600 dark:hover:text-slate-300 text-sm">Cancel</button>
                   </div>
-                ) : (
+                ) : !archived ? (
                   <button
                     onClick={() => setNoteTarget({ eventIndex: eventIdx })}
                     className="w-full py-2 border border-dashed border-slate-300 dark:border-slate-600 rounded-lg text-sm text-slate-500 dark:text-slate-400 hover:border-indigo-400 dark:hover:border-indigo-500 hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors flex items-center justify-center gap-1"
@@ -1377,6 +1488,10 @@ function TimelineSection({ events, timezone, onNoteAdded }: { events: WeddingEve
                     <MessageSquare className="w-4 h-4" />
                     Add a note
                   </button>
+                ) : (
+                  <div className="w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/40 px-4 py-2 text-sm text-slate-500 dark:text-slate-400">
+                    Notes are view-only for archived weddings.
+                  </div>
                 )}
               </div>
             )}
@@ -1563,10 +1678,141 @@ function PaymentsSection({ contract }: { contract?: ContractInfo | null }) {
 
 
 // ============================================================================
+// SECTION: MEETINGS
+// ============================================================================
+
+function MeetingsSection({ archived }: { archived: boolean }) {
+  const [meetings, setMeetings] = useState<MeetingItem[]>([]);
+  const [loadingMeetings, setLoadingMeetings] = useState(true);
+
+  useEffect(() => {
+    const fetchMeetings = async () => {
+      try {
+        const res = await coupleFetch('/couple/portal/meetings', {
+          cache: 'no-store',
+        });
+
+        if (!res.ok) {
+          const detail = await extractApiErrorMessage(res, 'Failed to load meetings');
+          toast.error(detail);
+          return;
+        }
+
+        const payload = await res.json();
+        setMeetings(payload.meetings || []);
+      } catch {
+        toast.error('Failed to connect to server');
+      } finally {
+        setLoadingMeetings(false);
+      }
+    };
+
+    fetchMeetings();
+  }, []);
+
+  const formatMeetingDateTime = (dateValue?: string | null) => {
+    if (!dateValue) return 'TBD';
+    return new Date(dateValue).toLocaleString('en-US', {
+      month: 'short',
+      day: 'numeric',
+      year: 'numeric',
+      hour: 'numeric',
+      minute: '2-digit',
+    });
+  };
+
+  return (
+    <div className="space-y-4">
+      <PageHeader title="Meetings" description="Upcoming calls and planning sessions with your planner" />
+      {archived && (
+        <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-700 dark:border-amber-800/50 dark:bg-amber-950/30 dark:text-amber-300">
+          This wedding is archived, so new meeting activity is paused. Any saved details below remain view-only.
+        </div>
+      )}
+
+      {loadingMeetings ? (
+        <div className="flex items-center justify-center py-16">
+          <Loader2 className="h-8 w-8 animate-spin text-indigo-500" />
+        </div>
+      ) : meetings.length === 0 ? (
+        <div className="rounded-xl border border-slate-200 bg-white p-8 text-center shadow-sm dark:border-slate-700 dark:bg-slate-800">
+          <Calendar className="mx-auto mb-3 h-12 w-12 text-slate-300 dark:text-slate-600" />
+          <p className="font-medium text-slate-700 dark:text-slate-200">
+            {archived ? 'No active meetings are available for this archived wedding.' : 'No meetings scheduled yet'}
+          </p>
+          <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+            {archived
+              ? 'Your planner can still share archived details elsewhere in the portal.'
+              : 'When your planner schedules a call, it will appear here with the meeting link.'}
+          </p>
+        </div>
+      ) : (
+        meetings.map((meeting) => (
+          <div
+            key={meeting.id}
+            className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-700 dark:bg-slate-800"
+          >
+            <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+              <div className="space-y-2">
+                <div className="flex items-center gap-2">
+                  <h3 className="text-lg font-semibold text-slate-900 dark:text-white">{meeting.title}</h3>
+                  {meeting.is_recurring && (
+                    <span className="rounded-full bg-indigo-100 px-2 py-0.5 text-xs font-medium text-indigo-700 dark:bg-indigo-950/30 dark:text-indigo-300">
+                      Recurring
+                    </span>
+                  )}
+                </div>
+                {meeting.description && (
+                  <p className="text-sm text-slate-500 dark:text-slate-400">{meeting.description}</p>
+                )}
+                <div className="space-y-1 text-sm text-slate-600 dark:text-slate-300">
+                  <div className="flex items-center gap-2">
+                    <Calendar className="h-4 w-4 text-slate-400" />
+                    <span>{formatMeetingDateTime(meeting.start_date)}</span>
+                  </div>
+                  {meeting.end_date && (
+                    <div className="flex items-center gap-2">
+                      <Clock className="h-4 w-4 text-slate-400" />
+                      <span>Ends {formatMeetingDateTime(meeting.end_date)}</span>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              <div className="flex flex-col gap-2 sm:items-end">
+                <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-medium capitalize text-slate-600 dark:bg-slate-700 dark:text-slate-300">
+                  {meeting.status || 'scheduled'}
+                </span>
+                {meeting.conference_url ? (
+                  <a
+                    href={meeting.conference_url}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="inline-flex items-center gap-1.5 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-indigo-700"
+                  >
+                    Join meeting
+                    <ExternalLink className="h-4 w-4" />
+                  </a>
+                ) : (
+                  <span className="text-sm text-slate-400 dark:text-slate-500">
+                    Join link will appear here once your planner adds it.
+                  </span>
+                )}
+              </div>
+            </div>
+          </div>
+        ))
+      )}
+    </div>
+  );
+}
+
+
+// ============================================================================
 // SECTION: FORMS
 // ============================================================================
 
-function FormsSection({ forms }: { forms: FormItem[] }) {
+function FormsSection({ forms, archived }: { forms: FormItem[]; archived: boolean }) {
   const router = useRouter();
 
   if (!forms || forms.length === 0) {
@@ -1585,6 +1831,11 @@ function FormsSection({ forms }: { forms: FormItem[] }) {
   return (
     <div className="space-y-4">
       <PageHeader title="Forms" description="Questionnaires and forms from your planner" />
+      {archived && (
+        <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-700 dark:border-amber-800/50 dark:bg-amber-950/30 dark:text-amber-300">
+          Forms are view-only because this wedding has been archived.
+        </div>
+      )}
       {forms.map((form) => (
         <div key={form.id} className="bg-white dark:bg-slate-800 rounded-xl p-5 border border-slate-200 dark:border-slate-700 shadow-sm">
           <div className="flex items-center justify-between">
@@ -1605,7 +1856,7 @@ function FormsSection({ forms }: { forms: FormItem[] }) {
               onClick={() => router.push(`/couple/forms/${form.id}`)}
               className="ml-4 flex items-center gap-1.5 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-medium rounded-lg transition-colors"
             >
-              {form.status === 'submitted' ? 'Review' : 'Fill out'}
+              {archived ? (form.status === 'submitted' ? 'View Response' : 'View Form') : form.status === 'submitted' ? 'Review' : 'Fill out'}
               <ChevronRight className="w-4 h-4" />
             </button>
           </div>

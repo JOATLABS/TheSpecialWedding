@@ -11,8 +11,8 @@ from app.dependencies.auth_extended import ExtendedAuthUser
 from app.models.vendor import VendorCategory
 from app.models.vendor_contracts import (
     ApplyVendorContractFormDataRequest,
-    CreateVendorContractRequest,
     CreateVendorContractRevisionRequest,
+    CreateVendorContractRequest,
     CreateVendorContractTemplateRequest,
     CreateVendorPaymentMilestonesRequest,
     PaymentMilestoneInput,
@@ -20,6 +20,7 @@ from app.models.vendor_contracts import (
     SendVendorContractRequest,
     UpdateVendorContractRequest,
     UpdateVendorContractSectionsRequest,
+    VendorContractActivityResponse,
 )
 import app.services.vendor_service as vendor_service_module
 from app.services.vendor_service import vendor_service
@@ -328,6 +329,54 @@ async def test_record_milestone_payment_endpoint_uses_body_model(
         payment_date=datetime(2026, 4, 8, tzinfo=timezone.utc),
         notes="Paid in full",
         receipt_url="https://example.com/receipt.pdf",
+    )
+
+
+@pytest.mark.asyncio
+async def test_list_payment_milestones_endpoint_scopes_to_planner(
+    monkeypatch: pytest.MonkeyPatch,
+    planner_user: ExtendedAuthUser,
+) -> None:
+    list_mock = AsyncMock(return_value=[{"_id": "milestone-1"}])
+    monkeypatch.setattr(vendor_management_api.vendor_service, "get_payment_milestones", list_mock)
+
+    await vendor_management_api.list_payment_milestones(
+        contract_id="contract-1",
+        wedding_id=None,
+        status="pending",
+        current_user=planner_user,
+    )
+
+    list_mock.assert_awaited_once_with(
+        contract_id="contract-1",
+        wedding_id=None,
+        status="pending",
+        created_by="planner@example.com",
+    )
+
+
+@pytest.mark.asyncio
+async def test_get_contract_activity_endpoint_forwards_scoped_lookup(
+    monkeypatch: pytest.MonkeyPatch,
+    planner_user: ExtendedAuthUser,
+) -> None:
+    activity_mock = AsyncMock(
+        return_value=VendorContractActivityResponse(
+            contract_id="contract-1",
+            root_contract_id="contract-1",
+            items=[],
+        ).model_dump()
+    )
+    monkeypatch.setattr(vendor_management_api.vendor_service, "get_contract_activity", activity_mock)
+
+    await vendor_management_api.get_contract_activity(
+        contract_id="contract-1",
+        current_user=planner_user,
+    )
+
+    activity_mock.assert_awaited_once_with(
+        contract_id="contract-1",
+        created_by="planner@example.com",
     )
 
 

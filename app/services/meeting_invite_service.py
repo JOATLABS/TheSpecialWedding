@@ -24,6 +24,10 @@ class MeetingInviteService:
     def _build_ics_uid(self, task: dict[str, Any]) -> str:
         return f"{task.get('_id')}@thespecialwedding.io"
 
+    def _build_couple_meetings_url(self, frontend_url: str) -> str:
+        base_url = frontend_url.rstrip("/")
+        return f"{base_url}/couple/dashboard?section=meetings"
+
     def _build_ics_attachment(
         self, task: dict[str, Any], wedding: Optional[dict[str, Any]]
     ) -> dict[str, Any]:
@@ -83,6 +87,7 @@ class MeetingInviteService:
             or settings.GOOGLE_APP_PUBLIC_HOME_URL
             or "https://thespecialwedding.io"
         )
+        couple_meetings_url = self._build_couple_meetings_url(frontend_url)
         email_service = ResendEmailService()
         ics_payload = self._build_ics_attachment(task, wedding)
         sent_results: list[dict[str, Any]] = []
@@ -120,7 +125,7 @@ class MeetingInviteService:
                   <p>{task.get("description") or "A planner meeting has been scheduled for you."}</p>
                   <p><strong>When:</strong> {task.get("start_date")}</p>
                   <p><strong>Ends:</strong> {task.get("end_date")}</p>
-                  <p><strong>Portal:</strong> <a href="{frontend_url}/couple/portal/meetings">View your meetings</a></p>
+                  <p><strong>Portal:</strong> <a href="{couple_meetings_url}">View your meetings</a></p>
                   <p>An ICS calendar file is attached so you can add this meeting to your calendar.</p>
                 </div>
             """
