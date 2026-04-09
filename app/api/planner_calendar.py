@@ -465,6 +465,26 @@ def _serialize_meeting_payload(task: dict) -> dict[str, Any]:
     }
 
 
+def _meeting_invite_content_changed(update_fields: dict[str, Any]) -> bool:
+    """Whether a meeting edit should trigger an outward ICS update."""
+    return bool(
+        {
+            "all_day",
+            "conference_provider",
+            "conference_url",
+            "description",
+            "end_date",
+            "is_recurring",
+            "recurrence_rule",
+            "start_date",
+            "timezone",
+            "title",
+            "wedding_id",
+        }
+        & set(update_fields.keys())
+    )
+
+
 # ============================================================================
 # Google Calendar OAuth Endpoints
 # ============================================================================
@@ -1757,10 +1777,52 @@ async def update_meeting(
             current_user.is_root_admin or current_user.is_wedding_planner
         ),
     )
+
+    invite_status: list[dict[str, Any]] = []
+    previous_recipients = {
+        email for email in task.get("couple_attendee_emails", []) if email
+    }
+    current_recipients = {
+        email for email in updated_task.get("couple_attendee_emails", []) if email
+    }
+    previous_invite_mode = task.get("invite_delivery_mode")
+    current_invite_mode = updated_task.get("invite_delivery_mode")
+
+    if previous_invite_mode == InviteDeliveryMode.EMAIL_ICS.value:
+        removed_recipients = (
+            previous_recipients
+            if current_invite_mode != InviteDeliveryMode.EMAIL_ICS.value
+            else previous_recipients - current_recipients
+        )
+        if removed_recipients:
+            cancellation_task = {
+                **task,
+                "updated_at": updated_task.get("updated_at") or datetime.now(UTC),
+                "meeting_status": MeetingLifecycleStatus.CANCELLED.value,
+            }
+            invite_status.extend(
+                await meeting_invite_service.send_cancellations(
+                    cancellation_task,
+                    recipient_emails=sorted(removed_recipients),
+                )
+            )
+
+    should_send_updated_invites = (
+        current_invite_mode == InviteDeliveryMode.EMAIL_ICS.value
+        and bool(current_recipients)
+        and (
+            previous_invite_mode != InviteDeliveryMode.EMAIL_ICS.value
+            or bool(current_recipients - previous_recipients)
+            or _meeting_invite_content_changed(update_fields)
+        )
+    )
+    if should_send_updated_invites:
+        invite_status.extend(await meeting_invite_service.send_invites(updated_task))
+
     return MeetingUpsertResponse(
         meeting=_serialize_meeting_payload(updated_task),
         sync_status=sync_status,
-        invite_status=[],
+        invite_status=invite_status,
     )
 
 
@@ -1790,9 +1852,25 @@ async def delete_meeting(
         )
 
     await calendar_sync_service.delete_schedule_item_syncs(meeting_id)
-    await mongo.get_meeting_invites_collection().delete_many({"task_id": meeting_id})
+    invite_status: list[dict[str, Any]] = []
+    if (
+        task.get("invite_delivery_mode") == InviteDeliveryMode.EMAIL_ICS.value
+        and task.get("couple_attendee_emails")
+    ):
+        cancellation_task = {
+            **task,
+            "updated_at": datetime.now(UTC),
+            "meeting_status": MeetingLifecycleStatus.CANCELLED.value,
+        }
+        invite_status = await meeting_invite_service.send_cancellations(
+            cancellation_task
+        )
     await tasks_collection.delete_one({"_id": oid})
-    return {"deleted": True, "meeting_id": meeting_id}
+    return {
+        "deleted": True,
+        "meeting_id": meeting_id,
+        "invite_status": invite_status,
+    }
 
 
 @router.post(

@@ -432,7 +432,16 @@ export async function completeGoogleCalendarCallback(
 export async function updateCalendarConnection(
   token: string,
   connectionId: string,
-  updates: Partial<Pick<CalendarConnection, 'is_shared_in_team_view' | 'details_visibility' | 'sync_enabled' | 'is_default_write_target'>>
+  updates: Partial<
+    Pick<
+      CalendarConnection,
+      | 'allowed_scheduler_user_ids'
+      | 'is_shared_in_team_view'
+      | 'details_visibility'
+      | 'sync_enabled'
+      | 'is_default_write_target'
+    >
+  >
 ): Promise<CalendarConnection> {
   return authFetch<CalendarConnection>(
     token,
