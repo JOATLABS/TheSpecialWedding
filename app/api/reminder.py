@@ -8,6 +8,7 @@ from app.dependencies.auth_extended import (
 )
 from app.core.database import mongo
 from app.core.config import settings
+from app.utils.support_inbox_links import build_support_inbox_url
 from datetime import datetime, timezone
 import logging
 
@@ -201,7 +202,8 @@ async def handle_sms_callback(request: Request):
                             "priority": "high",
                             "type": "help_request",
                         }
-                        await mongo.db["support_tickets"].insert_one(help_ticket)
+                        insert_result = await mongo.db["support_tickets"].insert_one(help_ticket)
+                        help_ticket["_id"] = insert_result.inserted_id
                         await _notify_planner_help_request(
                             help_ticket, assigned_planner_email
                         )
@@ -278,7 +280,10 @@ async def handle_sms_callback(request: Request):
                         "is_read": False,
                         "priority": "medium",
                     }
-                    await mongo.db["support_tickets"].insert_one(support_ticket)
+                    insert_result = await mongo.db["support_tickets"].insert_one(
+                        support_ticket
+                    )
+                    support_ticket["_id"] = insert_result.inserted_id
                     logger.info(
                         f"Support ticket created from {from_number} for planner {assigned_planner_email}: {text}"
                     )
@@ -328,6 +333,12 @@ async def _notify_planner_support_ticket(ticket: dict, planner_email: str):
         frontend_url = settings.FRONTEND_URL or os.getenv(
             "FRONTEND_URL", "https://thespecialwedding.io"
         )
+        inbox_url = build_support_inbox_url(
+            frontend_url=frontend_url,
+            conversation="sms_support",
+            ticket_id=str(ticket["_id"]),
+            wedding_id=ticket.get("wedding_id"),
+        )
         subject = f"New Guest Message: {ticket['wedding_name']}"
 
         html_content = f"""
@@ -347,9 +358,9 @@ async def _notify_planner_support_ticket(ticket: dict, planner_email: str):
             <p>Please respond to your guest as soon as possible.</p>
 
             <div style="margin: 30px 0;">
-                <a href="{frontend_url}/admin/support?ticket={str(ticket.get("_id", ""))}"
+                <a href="{inbox_url}"
                    style="background-color: #2c3e50; color: white; padding: 12px 24px; text-decoration: none; border-radius: 4px; display: inline-block;">
-                    View & Respond in Dashboard
+                    Open in Inbox
                 </a>
             </div>
 
@@ -445,6 +456,15 @@ async def _notify_planner_help_request(ticket: dict, planner_email: str):
 
         email_service = ResendEmailService()
 
+        frontend_url = settings.FRONTEND_URL or os.getenv(
+            "FRONTEND_URL", "https://thespecialwedding.io"
+        )
+        inbox_url = build_support_inbox_url(
+            frontend_url=frontend_url,
+            conversation="sms_support",
+            ticket_id=str(ticket["_id"]),
+            wedding_id=ticket.get("wedding_id"),
+        )
         subject = f"🆘 Guest Needs Help: {ticket['wedding_name']}"
 
         html_content = f"""
@@ -464,9 +484,9 @@ async def _notify_planner_help_request(ticket: dict, planner_email: str):
             </div>
 
             <div style="margin: 30px 0;">
-                <a href="https://thespecialwedding.com/admin/support?ticket={str(ticket.get("_id", ""))}"
+                <a href="{inbox_url}"
                    style="background-color: #dc2626; color: white; padding: 12px 24px; text-decoration: none; border-radius: 4px; display: inline-block;">
-                    View in Dashboard
+                    Open in Inbox
                 </a>
             </div>
 

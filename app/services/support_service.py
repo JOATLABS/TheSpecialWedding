@@ -4,6 +4,7 @@ from typing import Dict, Optional, Any
 from datetime import datetime, timedelta, timezone
 from bson import ObjectId
 from app.utils.serializers import serialize_mongo_doc
+from app.utils.support_inbox_links import build_support_inbox_url
 import secrets
 import string
 import logging
@@ -150,7 +151,13 @@ class SupportService:
             )
 
     async def get_tickets(
-        self, page: int = 1, limit: int = 20, filters: Optional[Dict[str, Any]] = None
+        self,
+        page: int = 1,
+        limit: int = 20,
+        filters: Optional[Dict[str, Any]] = None,
+        *,
+        exclude_sms: bool = False,
+        active_statuses: Optional[list[str]] = None,
     ) -> dict:
         """Get tickets with filtering and pagination"""
         try:
@@ -160,6 +167,10 @@ class SupportService:
                 for key, value in filters.items():
                     if value is not None:
                         query[key] = value
+            if exclude_sms:
+                query["$or"] = [{"source": {"$exists": False}}, {"source": {"$ne": "sms"}}]
+            if active_statuses:
+                query["status"] = {"$in": active_statuses}
 
             # Count total documents
             total = await self.tickets_collection.count_documents(query)
@@ -232,6 +243,12 @@ class SupportService:
             if not ticket:
                 raise HTTPException(status_code=404, detail="Ticket not found")
 
+            if ticket.get("source") == "sms":
+                raise HTTPException(
+                    status_code=404,
+                    detail="Ticket not found",
+                )
+
             # Check permissions - users can only see their own tickets unless they're ROOT_ADMIN
             if (
                 current_user.role != "ROOT_ADMIN"
@@ -296,6 +313,12 @@ class SupportService:
             existing = await self.tickets_collection.find_one({"_id": obj_id})
             if not existing:
                 raise HTTPException(status_code=404, detail="Ticket not found")
+
+            if existing.get("source") == "sms":
+                raise HTTPException(
+                    status_code=400,
+                    detail="SMS support tickets must be updated via SMS support endpoints",
+                )
 
             # Check permissions
             if (
@@ -366,6 +389,12 @@ class SupportService:
             ):
                 raise HTTPException(status_code=403, detail="Access denied")
 
+            if ticket.get("source") == "sms":
+                raise HTTPException(
+                    status_code=400,
+                    detail="SMS support tickets must be replied to via SMS support endpoints",
+                )
+
             # Only ROOT_ADMIN can create internal comments
             if comment_data.get("is_internal") and current_user.role != "ROOT_ADMIN":
                 comment_data["is_internal"] = False
@@ -380,13 +409,19 @@ class SupportService:
             }
 
             # Add comment to ticket
-            result = await self.tickets_collection.update_one(
-                {"_id": obj_id},
-                {
-                    "$push": {"comments": comment},
-                    "$set": {"updated_at": datetime.now(timezone.utc)},
-                },
-            )
+            now = datetime.now(timezone.utc)
+            update: dict[str, Any] = {
+                "$push": {"comments": comment},
+                "$set": {"updated_at": now},
+            }
+            if (
+                current_user.role == "ROOT_ADMIN"
+                and not comment_data.get("is_internal", False)
+                and ticket.get("status") == "open"
+            ):
+                update["$set"]["status"] = "in_progress"
+
+            result = await self.tickets_collection.update_one({"_id": obj_id}, update)
 
             if result.modified_count == 0:
                 raise HTTPException(status_code=400, detail="Failed to add comment")
@@ -414,8 +449,8 @@ class SupportService:
                     {
                         "type": "support_ticket_comment",
                         "message": f"Comment added to ticket {ticket.get('ticket_number', 'Unknown')}",
-                        "timestamp": datetime.now(timezone.utc),
-                        "created_at": datetime.now(timezone.utc),
+                        "timestamp": now,
+                        "created_at": now,
                         "planner_email": ticket["created_by"],
                         "actor_email": current_user.email,
                         "metadata": {
@@ -502,6 +537,12 @@ class SupportService:
             ticket = await self.tickets_collection.find_one({"_id": obj_id})
             if not ticket:
                 raise HTTPException(status_code=404, detail="Ticket not found")
+
+            if ticket.get("source") == "sms":
+                raise HTTPException(
+                    status_code=400,
+                    detail="SMS support tickets cannot be assigned via support ticket endpoints",
+                )
 
             new_status = (
                 "in_progress"
@@ -840,7 +881,14 @@ class SupportService:
             priority_color = priority_color_map.get(priority, "#2563eb")
 
             frontend_url = (os.getenv("FRONTEND_URL") or "").rstrip("/")
-            dashboard_url = f"{frontend_url}/admin/support" if frontend_url else ""
+            inbox_url = ""
+            if frontend_url:
+                inbox_url = build_support_inbox_url(
+                    frontend_url=frontend_url,
+                    conversation="support_ticket",
+                    ticket_id=str(ticket.get("_id")),
+                    wedding_id=ticket.get("wedding_id"),
+                )
 
             html_content = f"""\
                     <!doctype html>
@@ -902,12 +950,12 @@ class SupportService:
                             {
                 f'''
                             <div style="text-align: center; margin-top: 20px;">
-                                <a href="{dashboard_url}" style="display: inline-block; background-color: #3b82f6; color: white; padding: 10px 18px; border-radius: 8px; text-decoration: none; font-weight: 700;">
-                                View in Dashboard
+                                <a href="{inbox_url}" style="display: inline-block; background-color: #3b82f6; color: white; padding: 10px 18px; border-radius: 8px; text-decoration: none; font-weight: 700;">
+                                Open in Inbox
                                 </a>
                             </div>
                             '''
-                if dashboard_url
+                if inbox_url
                 else ""
             }
                             </div>
@@ -998,12 +1046,20 @@ class SupportService:
 
             email_service = ResendEmailService()
 
+            ticket_id = str(ticket.get("_id"))
             ticket_number = ticket.get("ticket_number", "Unknown")
             ticket_subject = ticket.get("subject", "No Subject")
             message_content = comment.get("message", "")
 
             frontend_url = (os.getenv("FRONTEND_URL") or "").rstrip("/")
-            support_url = f"{frontend_url}/admin/support" if frontend_url else ""
+            support_url = ""
+            if frontend_url:
+                support_url = build_support_inbox_url(
+                    frontend_url=frontend_url,
+                    conversation="support_ticket",
+                    ticket_id=ticket_id,
+                    wedding_id=ticket.get("wedding_id"),
+                )
 
             html_content = f"""
             <!doctype html>
@@ -1048,7 +1104,7 @@ class SupportService:
                 f'''
                         <div style="text-align: center; margin-top: 24px;">
                             <a href="{support_url}" style="display: inline-block; background-color: #10b981; color: white; padding: 12px 24px; border-radius: 8px; text-decoration: none; font-weight: 600;">
-                                View in Support Center
+                                Open in Inbox
                             </a>
                         </div>
                         '''

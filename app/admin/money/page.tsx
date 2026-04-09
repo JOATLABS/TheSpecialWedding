@@ -3,9 +3,9 @@
 /**
  * Money Management Page
  *
- * NOTE: This page calls contract/payment endpoints at root paths (e.g. /contracts, /payments)
- * because the contracts_router is registered WITHOUT a prefix in main.py (line 260).
- * If the contracts router is ever given a prefix, update the fetch URLs below accordingly.
+ * NOTE: Planner/couple contract admin APIs now live under
+ * `/admin/client-contracts/*`. Keep any contract/payment fetches on this page
+ * aligned with that namespace so they do not drift back to the retired root paths.
  */
 
 import { useState, useEffect, useCallback } from 'react';
@@ -222,7 +222,7 @@ export default function MoneyDashboard() {
       };
 
       const [incomingOverviewRes, outgoingOverviewRes, subRes] = await Promise.all([
-        fetch(`${baseUrl}/contracts/payments/overview`, { headers }),
+        fetch(`${baseUrl}/admin/client-contracts/payments/overview`, { headers }),
         fetch(`${baseUrl}/admin/budget/payments/overview`, { headers }),
         fetch(`${baseUrl}/stripe/subscription`, { headers })
       ]);
@@ -352,7 +352,7 @@ export default function MoneyDashboard() {
     setActionLoading(payment.id);
     try {
       const baseUrl = getApiBaseUrl();
-      const res = await fetch(`${baseUrl}/payments/${payment.id}/retry`, {
+      const res = await fetch(`${baseUrl}/admin/client-contracts/payments/${payment.id}/retry`, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${adminToken}`,
@@ -380,7 +380,7 @@ export default function MoneyDashboard() {
     setActionLoading(payment.id);
     try {
       const baseUrl = getApiBaseUrl();
-      const res = await fetch(`${baseUrl}/payments/${payment.id}/cancel`, {
+      const res = await fetch(`${baseUrl}/admin/client-contracts/payments/${payment.id}/cancel`, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${adminToken}`,
@@ -406,7 +406,7 @@ export default function MoneyDashboard() {
     setActionLoading(selectedPayment.id);
     try {
       const baseUrl = getApiBaseUrl();
-      const res = await fetch(`${baseUrl}/payments/${selectedPayment.id}/mark-paid-externally`, {
+      const res = await fetch(`${baseUrl}/admin/client-contracts/payments/${selectedPayment.id}/mark-paid-externally`, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${adminToken}`,

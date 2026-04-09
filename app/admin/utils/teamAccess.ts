@@ -85,6 +85,23 @@ export function canAccessGuestCommunications(userProfile?: UserProfile | null): 
   return canSendRsvp(userProfile) || canSendReminders(userProfile);
 }
 
+export function canAccessSupportInbox(userProfile?: UserProfile | null): boolean {
+  if (!userProfile) return false;
+  return Boolean(
+    userProfile.is_root_admin ||
+      userProfile.is_wedding_planner ||
+      (userProfile.is_team_member && userProfile.team_permissions)
+  );
+}
+
+export function canAccessAnyCommunicationsInbox(userProfile?: UserProfile | null): boolean {
+  return Boolean(
+    canAccessGuestCommunications(userProfile) ||
+      canMessageCouples(userProfile) ||
+      canAccessSupportInbox(userProfile)
+  );
+}
+
 export function getAllowedTeamNavNames(userProfile?: UserProfile | null): Set<string> {
   const allowedNavNames = new Set<string>(TEAM_BASE_NAV_NAMES);
   if (!userProfile?.is_team_member || !userProfile.team_permissions) {

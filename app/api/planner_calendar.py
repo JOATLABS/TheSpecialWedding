@@ -17,6 +17,7 @@ from app.dependencies.auth_extended import (
     check_wedding_access,
     get_accessible_calendar_scope,
     get_calendar_owner_identity,
+    resolve_owner_scoped_user_assignments,
     require_calendar_access,
     require_calendar_permission,
     require_team_or_planner,
@@ -381,6 +382,33 @@ async def _resolve_couple_attendee_emails(
         if couple_doc.get("email"):
             emails.append(couple_doc["email"])
     return emails
+
+
+def _build_scoped_meeting_query(
+    current_user: ExtendedAuthUser,
+    meeting_id: ObjectId,
+) -> dict[str, Any]:
+    """Build a scoped lookup query for canonical meetings."""
+    return {
+        "$and": [
+            {"_id": meeting_id},
+            {"$or": [{"schedule_item_type": "meeting"}, {"category": "meeting"}]},
+            _build_task_scope_query(current_user),
+        ]
+    }
+
+
+async def _get_scoped_meeting(
+    meeting_id: ObjectId,
+    current_user: ExtendedAuthUser,
+    *,
+    detail: str = "Meeting not found",
+) -> dict[str, Any]:
+    """Load a meeting while enforcing planner-owner and wedding/team scope."""
+    task = await mongo.get_planner_tasks_collection().find_one(
+        _build_scoped_meeting_query(current_user, meeting_id)
+    )
+    return _require_document(task, detail)
 
 
 def _serialize_shared_event(row: dict) -> SharedCalendarEventResponse:
@@ -827,6 +855,14 @@ async def create_task(
     now = datetime.now(UTC)
     owner_context = get_calendar_owner_identity(current_user)
     owner_email = _calendar_owner_email(current_user)
+    assigned_user_ids = task_data.assigned_user_ids
+    assigned_user_emails = task_data.assigned_user_emails
+    if assigned_user_ids:
+        assigned_user_ids, assigned_user_emails = await resolve_owner_scoped_user_assignments(
+            owner_context.get("owner_id"),
+            owner_context.get("owner_email"),
+            assigned_user_ids,
+        )
 
     # Build task document
     task_doc = {
@@ -835,8 +871,8 @@ async def create_task(
         "owner_planner_email": owner_email,
         "created_by_user_id": owner_context.get("user_id"),
         "created_by_email": current_user.email,
-        "assigned_user_ids": task_data.assigned_user_ids,
-        "assigned_user_emails": task_data.assigned_user_emails,
+        "assigned_user_ids": assigned_user_ids,
+        "assigned_user_emails": assigned_user_emails,
         "wedding_id": task_data.wedding_id,
         "title": task_data.title,
         "description": task_data.description,
@@ -1056,6 +1092,15 @@ async def update_task(
     update_doc: dict[str, Any] = {"updated_at": datetime.now(UTC)}
 
     update_fields = updates.model_dump(exclude_unset=True)
+    owner_context = get_calendar_owner_identity(current_user)
+    if "assigned_user_ids" in update_fields and update_fields["assigned_user_ids"] is not None:
+        resolved_ids, resolved_emails = await resolve_owner_scoped_user_assignments(
+            owner_context.get("owner_id"),
+            owner_context.get("owner_email"),
+            update_fields["assigned_user_ids"],
+        )
+        update_fields["assigned_user_ids"] = resolved_ids
+        update_fields["assigned_user_emails"] = resolved_emails
     for field, value in update_fields.items():
         if value is not None:
             update_doc[field] = value
@@ -1418,9 +1463,13 @@ async def create_meeting(
 
     owner_context = get_calendar_owner_identity(current_user)
     assigned_user_ids = data.assigned_user_ids or []
-    assigned_user_emails = data.assigned_user_emails or await _resolve_user_emails(
-        assigned_user_ids
-    )
+    assigned_user_emails = data.assigned_user_emails or []
+    if assigned_user_ids:
+        assigned_user_ids, assigned_user_emails = await resolve_owner_scoped_user_assignments(
+            owner_context.get("owner_id"),
+            owner_context.get("owner_email"),
+            assigned_user_ids,
+        )
     couple_attendee_emails = await _resolve_couple_attendee_emails(
         data.wedding_id,
         data.couple_attendee_emails,
@@ -1555,10 +1604,7 @@ async def update_meeting(
         raise HTTPException(status_code=400, detail="Invalid meeting ID format")
 
     tasks_collection = mongo.get_planner_tasks_collection()
-    task = await tasks_collection.find_one(
-        {"_id": oid, "$or": [{"schedule_item_type": "meeting"}, {"category": "meeting"}]}
-    )
-    task = _require_document(task, "Meeting not found")
+    task = await _get_scoped_meeting(oid, current_user)
     if task.get("wedding_id") and not await check_wedding_access(current_user, task["wedding_id"]):
         raise HTTPException(status_code=403, detail="You don't have access to this wedding")
 
@@ -1572,14 +1618,20 @@ async def update_meeting(
             status_code=403,
             detail="You do not have the 'send meeting invites' permission.",
         )
+    if "wedding_id" in update_fields and update_fields["wedding_id"] is not None:
+        if not await check_wedding_access(current_user, update_fields["wedding_id"]):
+            raise HTTPException(status_code=403, detail="You don't have access to this wedding")
     if "assigned_user_ids" in update_fields and update_fields["assigned_user_ids"] is not None:
-        update_doc["assigned_user_ids"] = update_fields["assigned_user_ids"]
-        update_doc["assigned_user_emails"] = await _resolve_user_emails(
-            update_fields["assigned_user_ids"]
+        resolved_ids, resolved_emails = await resolve_owner_scoped_user_assignments(
+            task.get("owner_planner_id"),
+            task.get("owner_planner_email") or task.get("planner_email"),
+            update_fields["assigned_user_ids"],
         )
+        update_doc["assigned_user_ids"] = resolved_ids
+        update_doc["assigned_user_emails"] = resolved_emails
     if "couple_attendee_emails" in update_fields and update_fields["couple_attendee_emails"] is not None:
         update_doc["couple_attendee_emails"] = await _resolve_couple_attendee_emails(
-            task.get("wedding_id"),
+            update_fields.get("wedding_id") or task.get("wedding_id"),
             update_fields["couple_attendee_emails"],
         )
     for key, value in update_fields.items():
@@ -1625,10 +1677,7 @@ async def delete_meeting(
         raise HTTPException(status_code=400, detail="Invalid meeting ID format")
 
     tasks_collection = mongo.get_planner_tasks_collection()
-    task = await tasks_collection.find_one(
-        {"_id": oid, "$or": [{"schedule_item_type": "meeting"}, {"category": "meeting"}]}
-    )
-    task = _require_document(task, "Meeting not found")
+    task = await _get_scoped_meeting(oid, current_user)
     if task.get("wedding_id") and not await check_wedding_access(current_user, task["wedding_id"]):
         raise HTTPException(status_code=403, detail="You don't have access to this wedding")
 
@@ -1653,10 +1702,7 @@ async def send_meeting_invites(
         oid = ObjectId(meeting_id)
     except Exception:
         raise HTTPException(status_code=400, detail="Invalid meeting ID format")
-    task = await mongo.get_planner_tasks_collection().find_one(
-        {"_id": oid, "$or": [{"schedule_item_type": "meeting"}, {"category": "meeting"}]}
-    )
-    task = _require_document(task, "Meeting not found")
+    task = await _get_scoped_meeting(oid, current_user)
     if task.get("wedding_id") and not await check_wedding_access(current_user, task["wedding_id"]):
         raise HTTPException(status_code=403, detail="You don't have access to this wedding")
     invites = await meeting_invite_service.send_invites(task)
@@ -1678,10 +1724,7 @@ async def sync_meeting(
         oid = ObjectId(meeting_id)
     except Exception:
         raise HTTPException(status_code=400, detail="Invalid meeting ID format")
-    task = await mongo.get_planner_tasks_collection().find_one(
-        {"_id": oid, "$or": [{"schedule_item_type": "meeting"}, {"category": "meeting"}]}
-    )
-    task = _require_document(task, "Meeting not found")
+    task = await _get_scoped_meeting(oid, current_user)
     sync_status = await calendar_sync_service.sync_schedule_item(task)
     return {"meeting_id": meeting_id, "sync_status": sync_status}
 
@@ -1699,10 +1742,7 @@ async def get_meeting_sync_status(
         oid = ObjectId(meeting_id)
     except Exception:
         raise HTTPException(status_code=400, detail="Invalid meeting ID format")
-    task = await mongo.get_planner_tasks_collection().find_one(
-        {"_id": oid, "$or": [{"schedule_item_type": "meeting"}, {"category": "meeting"}]}
-    )
-    task = _require_document(task, "Meeting not found")
+    task = await _get_scoped_meeting(oid, current_user)
     if task.get("wedding_id") and not await check_wedding_access(current_user, task["wedding_id"]):
         raise HTTPException(status_code=403, detail="You don't have access to this wedding")
     return {"meeting_id": meeting_id, "sync_status": await calendar_sync_service.get_sync_status(meeting_id)}

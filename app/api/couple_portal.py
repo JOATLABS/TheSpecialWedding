@@ -36,6 +36,7 @@ from app.dependencies.auth_extended import (
     enforce_team_permission,
     check_wedding_access,
     get_accessible_wedding_ids,
+    resolve_owner_scoped_user_assignments,
 )
 from app.dependencies.couple_auth import require_couple_auth
 from app.utils.couple_realtime import couple_sse_channel
@@ -2222,7 +2223,10 @@ class ScheduleMeetingRequest(BaseModel):
 
     @model_validator(mode="after")
     def validate_dates(self):
-        self.start_date = attach_timezone_if_naive(self.start_date, self.timezone)
+        start_date = attach_timezone_if_naive(self.start_date, self.timezone)
+        if start_date is None:
+            raise ValueError("start_date is required")
+        self.start_date = start_date
         self.end_date = attach_timezone_if_naive(self.end_date, self.timezone)
         if self.end_date and self.end_date < self.start_date:
             raise ValueError("end_date must be greater than or equal to start_date")
@@ -2274,7 +2278,13 @@ async def schedule_meeting(
     )
     owner_planner_id = owner_identity.get("planner_id")
     assigned_user_ids = data.assigned_user_ids or []
-    assigned_user_emails = await _resolve_internal_user_emails(assigned_user_ids)
+    assigned_user_emails: list[str] = []
+    if assigned_user_ids:
+        assigned_user_ids, assigned_user_emails = await resolve_owner_scoped_user_assignments(
+            owner_planner_id,
+            planner_email,
+            assigned_user_ids,
+        )
     couple_attendee_emails = await _resolve_meeting_couple_attendee_emails(
         data.wedding_id,
         data.couple_attendee_emails,

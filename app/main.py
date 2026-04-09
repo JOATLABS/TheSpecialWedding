@@ -72,7 +72,11 @@ from app.api.billing_jobs import router as billing_jobs_router
 from app.api.metering import router as metering_router
 from app.api.planner_calendar import router as planner_calendar_router
 from app.api.packages import router as packages_router
-from app.api.contracts import router as contracts_router
+from app.api.contracts import (
+    client_contracts_admin_router,
+    client_contracts_cron_router,
+    client_contracts_public_router,
+)
 from app.api.autopilot import router as autopilot_router
 from app.api.ai import router as ai_router
 from app.api.planner_notifications import router as planner_notifications_router
@@ -768,8 +772,11 @@ app.include_router(
     platform_metrics_router, tags=["Metrics"]
 )  # Metrics ingestion and snapshots
 app.include_router(
-    contracts_router, tags=["Public Contracts"]
-)  # Public contract viewing/signing
+    client_contracts_public_router, tags=["Public Contracts"]
+)  # Public couple contract viewing/signing and portal access
+app.include_router(
+    client_contracts_cron_router, tags=["Cron"]
+)  # Internal couple-contract cron endpoints
 app.include_router(
     config_errors_router, tags=["System"]
 )  # Public config error reporting
@@ -816,6 +823,9 @@ app.include_router(
 app.include_router(
     guest_memories_router, tags=["Guest Memories"]
 )  # Public upload + couple memories endpoints
+app.include_router(
+    client_contracts_admin_router, prefix="/admin", tags=["Contracts"]
+)  # Canonical planner/couple contract admin endpoints
 
 # Admin routes (authentication required)
 # Note: Routers already registered publicly with route-level auth are excluded to avoid duplicate routes
@@ -851,7 +861,7 @@ admin_routers = [
     (metering_router, "ROOT_ADMIN"),
     (planner_calendar_router, "Planner Calendar"),
     (packages_router, "Packages"),
-    # contracts_router - already registered publicly with route-level auth
+    # client_contracts_admin_router - mounted explicitly at /admin/client-contracts
     (autopilot_router, "Autopilot"),
     (ai_router, "AI"),
     (planner_notifications_router, "Planner Notifications"),

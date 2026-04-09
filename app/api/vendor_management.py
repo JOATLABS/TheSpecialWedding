@@ -3,6 +3,9 @@ Vendor Management API
 
 Comprehensive API for managing vendors, contracts, and payments.
 All endpoints are feature-gated by subscription plan.
+
+This router owns planner-to-vendor contract administration under `/admin/contracts`.
+Couple/planner client contracts are handled separately under `/admin/client-contracts`.
 """
 
 import logging

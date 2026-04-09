@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { usePathname, useSearchParams } from 'next/navigation';
 import { useAdmin } from '@/contexts/AdminContext';
 import {
-  canAccessGuestCommunications,
+  canAccessAnyCommunicationsInbox,
   canMessageCouples,
   canSendReminders,
   canSendRsvp,
@@ -23,7 +23,7 @@ export default function CommunicationsTabs() {
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const weddingId = searchParams.get('wedding_id');
-  const hasInboxAccess = canAccessGuestCommunications(userProfile) || canMessageCouples(userProfile);
+  const hasInboxAccess = canAccessAnyCommunicationsInbox(userProfile);
   const canAccessInvites = canSendRsvp(userProfile);
   const canAccessReminders = canSendReminders(userProfile);
   const canAccessHistory = canAccessInvites || canAccessReminders;
