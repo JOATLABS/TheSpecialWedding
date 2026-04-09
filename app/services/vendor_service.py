@@ -12,7 +12,7 @@ import string
 import logging
 from copy import deepcopy
 from datetime import datetime, timedelta, timezone
-from typing import List, Dict, Optional, Any
+from typing import TYPE_CHECKING, List, Dict, Optional, Any
 from bson import ObjectId
 from bson.errors import InvalidId
 from fastapi import HTTPException, UploadFile
@@ -33,6 +33,9 @@ from app.models.vendor import (
     PaymentLinkStatus,
 )
 from app.models.vendor_contracts import VendorContractActivityType
+
+if TYPE_CHECKING:
+    from mypy_boto3_s3.client import S3Client
 
 logger = logging.getLogger(__name__)
 
@@ -74,6 +77,14 @@ def validate_object_id(id_str: str, field_name: str = "ID") -> ObjectId:
         raise HTTPException(status_code=400, detail=f"Invalid {field_name} format")
 
 
+def require_env(name: str) -> str:
+    """Return a required environment variable or fail fast during service setup."""
+    value = os.getenv(name)
+    if not value:
+        raise RuntimeError(f"{name} environment variable is required")
+    return value
+
+
 class VendorService:
     """
     Service for managing all vendor-related operations.
@@ -100,14 +111,14 @@ class VendorService:
         self.email_service = ResendEmailService()
 
         # S3 Client for document storage (Cloudflare R2 requires s3v4 signature)
-        self.s3 = boto3.client(
+        self.s3: S3Client = boto3.client(
             "s3",
             endpoint_url=os.getenv("S3_ENDPOINT_URL"),
             aws_access_key_id=os.getenv("S3_ACCESS_KEY_ID"),
             aws_secret_access_key=os.getenv("S3_SECRET_ACCESS_KEY"),
             config=Config(signature_version="s3v4"),
         )
-        self.bucket_name = os.getenv("S3_BUCKET_NAME")
+        self.bucket_name = require_env("S3_BUCKET_NAME")
         self.media_domain = MEDIA_DOMAIN or ""
 
     # =========================================================================
@@ -188,6 +199,16 @@ class VendorService:
     @staticmethod
     def _is_contract_current(contract: Dict[str, Any]) -> bool:
         return contract.get("is_current_version", True)
+
+    def _ensure_contract_current_for_payments(
+        self, contract: Dict[str, Any], *, action: str
+    ) -> None:
+        """Fail closed when money mutations target a historical contract version."""
+        if not self._is_contract_current(contract):
+            raise HTTPException(
+                status_code=409,
+                detail=f"Cannot {action} on a historical contract version",
+            )
 
     @staticmethod
     def _can_create_revision_from_status(status: str) -> bool:
@@ -2719,6 +2740,9 @@ class VendorService:
         try:
             # Authorization: verify contract belongs to this user
             contract = await self.get_contract(contract_id, created_by=created_by)
+            self._ensure_contract_current_for_payments(
+                contract, action="create payment milestones"
+            )
 
             created_milestones = []
             for m in milestones:
@@ -2764,6 +2788,8 @@ class VendorService:
 
             return created_milestones
 
+        except HTTPException:
+            raise
         except Exception as e:
             logger.error(f"Error creating milestones: {str(e)}")
             raise HTTPException(
@@ -2838,12 +2864,15 @@ class VendorService:
         if not milestone:
             raise HTTPException(status_code=404, detail="Milestone not found")
 
-        if milestone.get("created_by") == created_by:
-            return milestone
-
         contract_id = milestone.get("contract_id")
         if contract_id:
-            await self.get_contract(contract_id, created_by=created_by)
+            contract = await self.get_contract(contract_id, created_by=created_by)
+            self._ensure_contract_current_for_payments(
+                contract, action="record payment"
+            )
+            return milestone
+
+        if milestone.get("created_by") == created_by:
             return milestone
 
         raise HTTPException(status_code=404, detail="Milestone not found")
