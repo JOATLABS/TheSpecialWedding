@@ -2,11 +2,10 @@
 Public Vendor Contract API
 
 Endpoints for vendors to access and sign contracts without authentication.
-Canonical access now uses path-scoped tokens, with query-token compatibility
-left in place temporarily for already-issued links.
+Canonical access uses path-scoped tokens only.
 """
 
-from fastapi import APIRouter, Query, Request
+from fastapi import APIRouter, Request
 from pydantic import BaseModel, Field
 
 from app.services.vendor_service import vendor_service
@@ -22,19 +21,6 @@ class VendorContractSignatureRequest(BaseModel):
 @router.get("/public/contracts/{contract_id}/{token}", tags=["Public Contract Access"])
 async def get_contract_for_vendor(contract_id: str, token: str):
     """Get contract for vendor review using the canonical path-token route."""
-    return await vendor_service.get_contract_by_token(contract_id, token)
-
-
-@router.get(
-    "/public/contracts/{contract_id}",
-    tags=["Public Contract Access"],
-    include_in_schema=False,
-)
-async def get_contract_for_vendor_legacy(
-    contract_id: str,
-    token: str = Query(..., description="Access token from email"),
-):
-    """Backward-compatible query-token access for already-issued links."""
     return await vendor_service.get_contract_by_token(contract_id, token)
 
 
@@ -60,23 +46,3 @@ async def sign_contract_as_vendor(
         signer_email=payload.signer_email,
         signature_ip=signature_ip,
     )
-
-
-@router.post(
-    "/public/contracts/{contract_id}/sign",
-    tags=["Public Contract Access"],
-    include_in_schema=False,
-)
-async def sign_contract_as_vendor_legacy(
-    request: Request,
-    contract_id: str,
-    token: str = Query(..., description="Access token"),
-    signer_name: str = Query(..., description="Name of person signing"),
-    signer_email: str = Query(..., description="Email of signer"),
-):
-    """Backward-compatible query-token signing path for already-issued links."""
-    payload = VendorContractSignatureRequest(
-        signer_name=signer_name,
-        signer_email=signer_email,
-    )
-    return await sign_contract_as_vendor(contract_id, token, payload, request)

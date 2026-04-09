@@ -9,6 +9,9 @@ from app.services import meeting_invite_service as meeting_invite_module
 
 
 class _FakeInvitesCollection:
+    async def find_one_and_update(self, *_args, **_kwargs):
+        return {"_id": "invite-1"}
+
     async def update_one(self, *_args, **_kwargs):
         return SimpleNamespace()
 

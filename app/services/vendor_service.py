@@ -1809,46 +1809,57 @@ class VendorService:
             logger.error(f"Failed to fetch contract: {str(e)}")
             raise HTTPException(status_code=500, detail="Failed to fetch contract")
 
+    async def _validate_contract_public_token(self, contract_id: str, raw_token: str) -> dict:
+        """Validate a public vendor contract token against the persisted hash and lifecycle rules."""
+        contract = await self.get_contract(contract_id)
+
+        if not self._is_contract_current(contract):
+            raise HTTPException(
+                status_code=410,
+                detail="This contract version has been replaced",
+            )
+
+        if contract.get("token_revoked_at"):
+            raise HTTPException(status_code=403, detail="Contract link is no longer active")
+
+        token_expires_at = contract.get("token_expires_at")
+        if token_expires_at and token_expires_at < datetime.now(timezone.utc):
+            raise HTTPException(status_code=403, detail="Contract link has expired")
+
+        stored_hash = contract.get("access_token_hash")
+        if not stored_hash:
+            raise HTTPException(status_code=403, detail="Contract link is not active")
+
+        if not self._verify_contract_access_token(raw_token, stored_hash):
+            raise HTTPException(
+                status_code=404, detail="Contract not found or invalid token"
+            )
+
+        return contract
+
     async def get_contract_by_token(self, contract_id: str, token: str) -> dict:
         """Get contract for vendor access (public endpoint)"""
         try:
-            contract = await self.vendor_contracts.find_one(
-                {"_id": ObjectId(contract_id), "access_token": token}
+            contract = await self._validate_contract_public_token(contract_id, token)
+            viewed_at = datetime.now(timezone.utc)
+            first_view = not contract.get("viewed_at")
+
+            view_update: Dict[str, Any] = {
+                "token_last_viewed_at": viewed_at,
+                "updated_at": viewed_at,
+            }
+            if first_view:
+                view_update["viewed_at"] = viewed_at
+                view_update["status"] = ContractStatus.VIEWED.value
+
+            await self.vendor_contracts.update_one(
+                {"_id": ObjectId(contract_id)},
+                {"$set": view_update},
             )
 
-            if not contract:
-                raise HTTPException(
-                    status_code=404, detail="Contract not found or invalid token"
-                )
-
-            self._serialize_doc(contract)
-            self._attach_contract_version_metadata(contract)
-
-            if not self._is_contract_current(contract):
-                raise HTTPException(
-                    status_code=410,
-                    detail="This contract version has been replaced",
-                )
-
-            # Check expiration
-            if contract.get("token_expires_at") and contract[
-                "token_expires_at"
-            ] < datetime.now(timezone.utc):
-                raise HTTPException(status_code=403, detail="Contract link has expired")
-
-            # Mark as viewed if first time
-            if not contract.get("viewed_at"):
-                first_viewed_at = datetime.now(timezone.utc)
-                await self.vendor_contracts.update_one(
-                    {"_id": ObjectId(contract_id)},
-                    {
-                        "$set": {
-                            "viewed_at": first_viewed_at,
-                            "status": ContractStatus.VIEWED.value,
-                        }
-                    },
-                )
-                contract["viewed_at"] = first_viewed_at
+            contract["token_last_viewed_at"] = viewed_at
+            if first_view:
+                contract["viewed_at"] = viewed_at
                 contract["status"] = ContractStatus.VIEWED.value
                 await self._log_contract_activity(
                     contract_id=contract_id,
@@ -1859,14 +1870,10 @@ class VendorService:
                     actor_type="vendor",
                     actor_identifier=contract.get("vendor_email"),
                     actor_display_name=contract.get("vendor_name"),
-                    created_at=first_viewed_at,
+                    created_at=viewed_at,
                 )
 
-            # Remove sensitive fields for vendor view
-            contract.pop("access_token", None)
-            contract.pop("internal_notes", None)
-
-            return contract
+            return self._sanitize_public_contract_response(contract)
 
         except HTTPException:
             raise
@@ -2087,10 +2094,16 @@ class VendorService:
                 wedding.get("couple_names", "our clients") if wedding else "our clients"
             )
 
+            planner_settings = await self._get_planner_contract_settings(created_by)
+            raw_token, token_update = self._issue_contract_access_token(
+                contract_id=contract_id,
+                planner_settings=planner_settings,
+            )
+
             # Generate contract link
             base_url = os.getenv("FRONTEND_URL", "")
             contract_link = self._build_public_vendor_contract_link(
-                base_url, contract_id, contract["access_token"]
+                base_url, contract_id, raw_token
             )
 
             # Build email
@@ -2143,107 +2156,113 @@ class VendorService:
             </html>
             """
 
-            # Send email
-            recipients = [contract["vendor_email"]]
-            if cc_emails:
-                recipients.extend(cc_emails)
+            now = token_update["token_last_sent_at"]
 
-            email_result = await self.email_service.send_email(
-                to_email=contract["vendor_email"],
-                subject=subject,
-                html_content=html_content,
-                from_name="Wedding Planning Team",
+            send_update: Dict[str, Any] = {
+                "status": ContractStatus.SENT.value,
+                "sent_at": now,
+                "updated_at": now,
+                "root_contract_id": self._get_root_contract_id(contract),
+                "version_number": contract.get("version_number", 1),
+                "parent_contract_id": contract.get("parent_contract_id"),
+                "supersedes_contract_id": contract.get("supersedes_contract_id"),
+                "superseded_by_contract_id": None,
+                "is_current_version": True,
+                "contract_kind": contract.get(
+                    "contract_kind", ContractKind.ORIGINAL.value
+                ),
+                "amendment_reason": contract.get("amendment_reason"),
+                "superseded_at": None,
+                **token_update,
+            }
+            await self.vendor_contracts.update_one(
+                {"_id": ObjectId(contract_id)},
+                {"$set": send_update},
             )
 
-            if email_result.get("success"):
-                now = datetime.now(timezone.utc)
+            if superseded_contract:
+                await self._mark_contract_as_superseded(
+                    contract_id=superseded_contract["id"],
+                    superseded_by_contract_id=contract_id,
+                )
+                await self._revoke_contract_access_token(superseded_contract["id"])
 
-                # Update contract status
-                send_update: Dict[str, Any] = {
+            await self._log_contract_activity(
+                contract_id=contract_id,
+                root_contract_id=self._get_root_contract_id(contract),
+                activity_type=VendorContractActivityType.CONTRACT_SENT,
+                title="Contract sent",
+                description=f"Sent to {contract['vendor_email']} for review and signature.",
+                actor_type="planner",
+                actor_identifier=created_by,
+                actor_display_name=created_by,
+                metadata={
                     "status": ContractStatus.SENT.value,
-                    "sent_at": now,
-                    "updated_at": now,
-                    "root_contract_id": self._get_root_contract_id(contract),
-                    "version_number": contract.get("version_number", 1),
-                    "parent_contract_id": contract.get("parent_contract_id"),
-                    "supersedes_contract_id": contract.get("supersedes_contract_id"),
-                    "superseded_by_contract_id": None,
-                    "is_current_version": True,
-                    "contract_kind": contract.get(
-                        "contract_kind", ContractKind.ORIGINAL.value
-                    ),
-                    "amendment_reason": contract.get("amendment_reason"),
-                    "superseded_at": None,
-                }
-                await self.vendor_contracts.update_one(
-                    {"_id": ObjectId(contract_id)},
-                    {"$set": send_update},
-                )
+                    "cc_emails": cc_emails or [],
+                },
+                created_at=now,
+            )
 
-                if superseded_contract:
-                    await self._mark_contract_as_superseded(
-                        contract_id=superseded_contract["id"],
-                        superseded_by_contract_id=contract_id,
-                    )
-
-                # Log communication
-                await self._log_communication(
-                    vendor_profile_id=contract["vendor_profile_id"],
-                    comm_type="contract_sent",
-                    content=f"Contract sent: {contract['contract_title']}",
-                    created_by=created_by,
-                    wedding_id=contract["wedding_id"],
-                    contract_id=contract_id,
-                    subject=subject,
-                    sent_to=contract["vendor_email"],
-                )
-
+            if superseded_contract:
                 await self._log_contract_activity(
-                    contract_id=contract_id,
-                    root_contract_id=self._get_root_contract_id(contract),
-                    activity_type=VendorContractActivityType.CONTRACT_SENT,
-                    title="Contract sent",
-                    description=f"Sent to {contract['vendor_email']} for review and signature.",
+                    contract_id=superseded_contract["id"],
+                    root_contract_id=self._get_root_contract_id(superseded_contract),
+                    activity_type=VendorContractActivityType.CONTRACT_SUPERSEDED,
+                    title="Contract superseded",
+                    description=(
+                        f"Replaced by version {contract.get('version_number', 1)}."
+                    ),
                     actor_type="planner",
                     actor_identifier=created_by,
                     actor_display_name=created_by,
                     metadata={
-                        "status": ContractStatus.SENT.value,
-                        "cc_emails": cc_emails or [],
+                        "superseded_by_contract_id": contract_id,
+                        "superseding_version_number": contract.get(
+                            "version_number", 1
+                        ),
+                        "superseding_contract_kind": contract.get(
+                            "contract_kind", ContractKind.ORIGINAL.value
+                        ),
                     },
                     created_at=now,
                 )
 
-                if superseded_contract:
-                    await self._log_contract_activity(
-                        contract_id=superseded_contract["id"],
-                        root_contract_id=self._get_root_contract_id(superseded_contract),
-                        activity_type=VendorContractActivityType.CONTRACT_SUPERSEDED,
-                        title="Contract superseded",
-                        description=(
-                            f"Replaced by version {contract.get('version_number', 1)}."
-                        ),
-                        actor_type="planner",
-                        actor_identifier=created_by,
-                        actor_display_name=created_by,
-                        metadata={
-                            "superseded_by_contract_id": contract_id,
-                            "superseding_version_number": contract.get(
-                                "version_number", 1
-                            ),
-                            "superseding_contract_kind": contract.get(
-                                "contract_kind", ContractKind.ORIGINAL.value
-                            ),
-                        },
-                        created_at=now,
+            email_warning: Optional[str] = None
+            try:
+                email_result = await self.email_service.send_email(
+                    to_email=contract["vendor_email"],
+                    subject=subject,
+                    html_content=html_content,
+                    from_name="Wedding Planning Team",
+                )
+                if not email_result.get("success"):
+                    email_warning = (
+                        "Contract was secured and marked sent, but email delivery failed."
                     )
+                else:
+                    await self._log_communication(
+                        vendor_profile_id=contract["vendor_profile_id"],
+                        comm_type="contract_sent",
+                        content=f"Contract sent: {contract['contract_title']}",
+                        created_by=created_by,
+                        wedding_id=contract["wedding_id"],
+                        contract_id=contract_id,
+                        subject=subject,
+                        sent_to=contract["vendor_email"],
+                    )
+            except Exception as email_error:
+                logger.error("Contract email delivery failed after send commit: %s", email_error)
+                email_warning = (
+                    "Contract was secured and marked sent, but email delivery failed."
+                )
 
-                return {
-                    "message": "Contract sent successfully",
-                    "sent_to": contract["vendor_email"],
-                }
-            else:
-                raise HTTPException(status_code=500, detail="Failed to send email")
+            response = {
+                "message": "Contract sent successfully",
+                "sent_to": contract["vendor_email"],
+            }
+            if email_warning:
+                response["warning"] = email_warning
+            return response
 
         except HTTPException:
             raise
@@ -2261,31 +2280,9 @@ class VendorService:
         signer_email: str,
         signature_ip: Optional[str] = None,
     ) -> dict:
-        """
-        Sign a contract (vendor action).
-
-        Note: This method updates multiple collections (vendor_contracts, vendor_assignments)
-        without using MongoDB transactions. In rare cases of partial failure, manual
-        reconciliation may be needed. Consider using MongoDB transactions for critical operations.
-        """
+        """Sign a contract (vendor action)."""
         try:
-            contract = await self.vendor_contracts.find_one(
-                {"_id": ObjectId(contract_id), "access_token": token}
-            )
-
-            if not contract:
-                raise HTTPException(
-                    status_code=404, detail="Contract not found or invalid token"
-                )
-
-            self._serialize_doc(contract)
-            self._attach_contract_version_metadata(contract)
-
-            if not self._is_contract_current(contract):
-                raise HTTPException(
-                    status_code=410,
-                    detail="This contract version has been replaced",
-                )
+            contract = await self._validate_contract_public_token(contract_id, token)
 
             if contract["status"] == ContractStatus.SIGNED.value:
                 raise HTTPException(
@@ -2302,39 +2299,44 @@ class VendorService:
 
             signed_at = datetime.now(timezone.utc)
 
-            # Update contract
-            await self.vendor_contracts.update_one(
-                {"_id": ObjectId(contract_id)},
-                {
-                    "$set": {
-                        "status": ContractStatus.SIGNED.value,
-                        "signed_at": signed_at,
-                        "signed_by_name": signer_name,
-                        "signed_by_email": signer_email,
-                        "signature_ip": signature_ip,
-                        "updated_at": signed_at,
-                    }
-                },
-            )
-
-            # Update assignment status
-            if contract.get("vendor_profile_id"):
-                await self.vendor_assignments.update_one(
-                    {
-                        "vendor_profile_id": contract["vendor_profile_id"],
-                        "wedding_id": contract["wedding_id"],
-                    },
+            async def _sign_in_transaction(session: Any) -> None:
+                await self.vendor_contracts.update_one(
+                    {"_id": ObjectId(contract_id)},
                     {
                         "$set": {
-                            "status": "contracted",
-                            "contract_id": contract_id,
-                            "contracted_amount": contract["total_amount"],
-                            "updated_at": datetime.now(timezone.utc),
+                            "status": ContractStatus.SIGNED.value,
+                            "signed_at": signed_at,
+                            "signed_by_name": signer_name,
+                            "signed_by_email": signer_email,
+                            "signature_ip": signature_ip,
+                            "updated_at": signed_at,
                         }
                     },
+                    session=session,
                 )
 
-            # Send notification to planner
+                if contract.get("vendor_profile_id"):
+                    await self.vendor_assignments.update_one(
+                        {
+                            "vendor_profile_id": contract["vendor_profile_id"],
+                            "wedding_id": contract["wedding_id"],
+                        },
+                        {
+                            "$set": {
+                                "status": "contracted",
+                                "contract_id": contract_id,
+                                "contracted_amount": contract["total_amount"],
+                                "updated_at": signed_at,
+                            }
+                        },
+                        session=session,
+                    )
+
+            await self._run_required_transaction(
+                "Vendor contract signing",
+                _sign_in_transaction,
+            )
+
             planner_email = contract["created_by"]
             subject = f"Contract Signed: {contract['vendor_name']}"
             html_content = f"""
@@ -2352,12 +2354,18 @@ class VendorService:
             </html>
             """
 
-            await self.email_service.send_email(
-                to_email=planner_email,
-                subject=subject,
-                html_content=html_content,
-                from_name="Wedding Platform",
-            )
+            try:
+                await self.email_service.send_email(
+                    to_email=planner_email,
+                    subject=subject,
+                    html_content=html_content,
+                    from_name="Wedding Platform",
+                )
+            except Exception as email_error:
+                logger.error(
+                    "Planner notification failed after contract sign commit: %s",
+                    email_error,
+                )
 
             await self._log_contract_activity(
                 contract_id=contract_id,
@@ -2981,19 +2989,17 @@ class VendorService:
         receipt_url: Optional[str] = None,
         stripe_payment_intent_id: Optional[str] = None,
     ) -> dict:
-        """
-        Record a payment against a milestone.
-
-        Note: This method updates multiple collections (payment_milestones, vendor_assignments,
-        vendor_profiles, budget_categories) without using MongoDB transactions. In rare cases
-        of partial failure, manual reconciliation may be needed. Consider using MongoDB
-        transactions for critical operations.
-        """
+        """Record a payment against a milestone."""
         try:
             milestone = await self._get_owned_payment_milestone(
                 milestone_id=milestone_id,
                 created_by=created_by,
             )
+            contract = None
+            if milestone.get("contract_id"):
+                contract = await self.get_contract(
+                    milestone["contract_id"], created_by=created_by
+                )
 
             new_paid_amount = milestone.get("paid_amount", 0) + amount
 
@@ -3018,33 +3024,41 @@ class VendorService:
             if stripe_payment_intent_id:
                 update_data["stripe_payment_intent_id"] = stripe_payment_intent_id
 
-            await self.payment_milestones.update_one(
-                {"_id": ObjectId(milestone_id)}, {"$set": update_data}
+            async def _record_in_transaction(session: Any) -> None:
+                await self.payment_milestones.update_one(
+                    {"_id": ObjectId(milestone_id)},
+                    {"$set": update_data},
+                    session=session,
+                )
+
+                if milestone.get("vendor_profile_id") and milestone.get("wedding_id"):
+                    await self.vendor_assignments.update_one(
+                        {
+                            "vendor_profile_id": milestone["vendor_profile_id"],
+                            "wedding_id": milestone["wedding_id"],
+                        },
+                        {"$inc": {"paid_amount": amount}},
+                        session=session,
+                    )
+
+                if milestone.get("vendor_profile_id"):
+                    await self.vendor_profiles.update_one(
+                        {"_id": ObjectId(milestone["vendor_profile_id"])},
+                        {"$inc": {"total_revenue": amount}},
+                        session=session,
+                    )
+
+                if milestone.get("budget_category_id"):
+                    await self.budget_categories.update_one(
+                        {"_id": ObjectId(milestone["budget_category_id"])},
+                        {"$inc": {"actual_spent": amount}},
+                        session=session,
+                    )
+
+            await self._run_required_transaction(
+                "Vendor milestone payment recording",
+                _record_in_transaction,
             )
-
-            # Update assignment paid amount
-            if milestone.get("vendor_profile_id") and milestone.get("wedding_id"):
-                await self.vendor_assignments.update_one(
-                    {
-                        "vendor_profile_id": milestone["vendor_profile_id"],
-                        "wedding_id": milestone["wedding_id"],
-                    },
-                    {"$inc": {"paid_amount": amount}},
-                )
-
-            # Update vendor profile total revenue
-            if milestone.get("vendor_profile_id"):
-                await self.vendor_profiles.update_one(
-                    {"_id": ObjectId(milestone["vendor_profile_id"])},
-                    {"$inc": {"total_revenue": amount}},
-                )
-
-            # Update budget category if linked
-            if milestone.get("budget_category_id"):
-                await self.budget_categories.update_one(
-                    {"_id": ObjectId(milestone["budget_category_id"])},
-                    {"$inc": {"actual_spent": amount}},
-                )
 
             updated = await self.payment_milestones.find_one(
                 {"_id": ObjectId(milestone_id)}
@@ -3055,14 +3069,10 @@ class VendorService:
                 )
             updated["_id"] = str(updated["_id"])
 
-            if milestone.get("contract_id"):
+            if milestone.get("contract_id") and contract:
                 await self._log_contract_activity(
                     contract_id=milestone["contract_id"],
-                    root_contract_id=self._get_root_contract_id(
-                        await self.get_contract(
-                            milestone["contract_id"], created_by=created_by
-                        )
-                    ),
+                    root_contract_id=self._get_root_contract_id(contract),
                     activity_type=VendorContractActivityType.PAYMENT_RECORDED,
                     title="Payment recorded",
                     description=(

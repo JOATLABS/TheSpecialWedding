@@ -40,6 +40,10 @@ client = MongoClient("mongodb://localhost:27017")
 db = client["wedding"]
 now = datetime.now(timezone.utc)
 
+db["couple_users"].delete_many({
+    "email": {"$in": [fixture["coupleEmail"], "qa_pr2_couple@thespecialwedding.io"]},
+    "wedding_id": fixture["weddingId"],
+})
 db["forms"].delete_many({"title": fixture["formTitle"], "wedding_id": fixture["weddingId"]})
 db["form_submissions"].delete_many({"submitted_by": fixture["coupleEmail"], "wedding_id": fixture["weddingId"]})
 db["planner_tasks"].delete_many({"title": fixture["meetingTitle"], "wedding_id": fixture["weddingId"]})
@@ -216,7 +220,10 @@ fixture = json.loads(${JSON.stringify(payload)})
 client = MongoClient("mongodb://localhost:27017")
 db = client["wedding"]
 
-db["couple_users"].delete_many({"email": fixture["coupleEmail"], "wedding_id": fixture["weddingId"]})
+db["couple_users"].delete_many({
+    "email": {"$in": [fixture["coupleEmail"], "qa_pr2_couple@thespecialwedding.io"]},
+    "wedding_id": fixture["weddingId"],
+})
 db["forms"].delete_many({"title": fixture["formTitle"], "wedding_id": fixture["weddingId"]})
 db["form_submissions"].delete_many({"submitted_by": fixture["coupleEmail"], "wedding_id": fixture["weddingId"]})
 db["planner_tasks"].delete_many({"title": fixture["meetingTitle"], "wedding_id": fixture["weddingId"]})
@@ -245,6 +252,12 @@ async function loginCouple(page: import('@playwright/test').Page) {
   await page.getByLabel('Password').fill(FIXTURE.couplePassword);
   await page.getByRole('button', { name: /sign in/i }).click();
   await page.waitForURL(/\/couple\/dashboard/);
+}
+
+function coupleRow(page: import('@playwright/test').Page, email: string) {
+  return page
+    .locator(`p:text-is("${email}")`)
+    .locator('xpath=ancestor::div[contains(@class, "rounded-xl")][1]');
 }
 
 test.describe('PR2 couple portal lifecycle alignment', () => {
@@ -295,10 +308,7 @@ test.describe('PR2 couple portal lifecycle alignment', () => {
     await loginAdmin(page);
     await page.goto(`/admin/weddings/${FIXTURE.weddingId}`);
     await page.getByRole('button', { name: 'Couple' }).click();
-    const activeRow = page.locator('div')
-      .filter({ hasText: FIXTURE.coupleEmail })
-      .filter({ hasText: 'Revoke Access' })
-      .first();
+    const activeRow = coupleRow(page, FIXTURE.coupleEmail);
     await expect(activeRow).toContainText(FIXTURE.coupleEmail);
     await expect(activeRow).toContainText('Active');
     await expect(activeRow).toContainText('Revoke Access');
@@ -306,10 +316,7 @@ test.describe('PR2 couple portal lifecycle alignment', () => {
     seedFixture('owner_cancelled');
     await page.reload();
     await page.getByRole('button', { name: 'Couple' }).click();
-    const ownerCancelledRow = page.locator('div')
-      .filter({ hasText: FIXTURE.coupleEmail })
-      .filter({ hasText: 'Planner Inactive' })
-      .first();
+    const ownerCancelledRow = coupleRow(page, FIXTURE.coupleEmail);
     await expect(ownerCancelledRow).toContainText('Planner Inactive');
     await expect(ownerCancelledRow).toContainText('Planner subscription inactive');
     await expect(ownerCancelledRow.getByRole('button', { name: /Revoke Access/i })).toHaveCount(0);
@@ -318,10 +325,7 @@ test.describe('PR2 couple portal lifecycle alignment', () => {
     seedFixture('archived');
     await page.reload();
     await page.getByRole('button', { name: 'Couple' }).click();
-    const archivedRow = page.locator('div')
-      .filter({ hasText: FIXTURE.coupleEmail })
-      .filter({ hasText: 'Archived Read-Only' })
-      .first();
+    const archivedRow = coupleRow(page, FIXTURE.coupleEmail);
     await expect(archivedRow).toContainText('Archived Read-Only');
     await expect(archivedRow).toContainText('Archived portal');
     await expect(archivedRow.getByRole('button', { name: /Revoke Access/i })).toHaveCount(0);
