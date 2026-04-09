@@ -49,6 +49,7 @@ export default function PublicContractPageClient() {
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [isReplacedVersion, setIsReplacedVersion] = useState(false);
   const [contract, setContract] = useState<PublicContract | null>(null);
   const [signing, setSigning] = useState(false);
   const [signed, setSigned] = useState(false);
@@ -66,6 +67,7 @@ export default function PublicContractPageClient() {
     }
 
     setLoading(true);
+    setIsReplacedVersion(false);
     try {
       const API_BASE = getApiBaseUrl();
       const response = await fetch(
@@ -75,6 +77,9 @@ export default function PublicContractPageClient() {
       if (!response.ok) {
         if (response.status === 404) {
           setError('Contract not found. It may have been removed or the link has expired.');
+        } else if (response.status === 410) {
+          setIsReplacedVersion(true);
+          setError('This contract version has been replaced. Please use the latest link sent by the planner.');
         } else if (response.status === 403) {
           setError('Access denied. This link may have expired or is invalid.');
         } else {
@@ -126,6 +131,13 @@ export default function PublicContractPageClient() {
       );
 
       if (!response.ok) {
+        if (response.status === 410) {
+          setShowSignModal(false);
+          setIsReplacedVersion(true);
+          setError('This contract version has been replaced. Please use the latest link sent by the planner.');
+          return;
+        }
+
         throw new Error('Failed to sign contract');
       }
 
@@ -167,10 +179,14 @@ export default function PublicContractPageClient() {
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
             </svg>
           </div>
-          <h1 className="text-2xl font-bold text-gray-900 mb-2">Unable to Load Contract</h1>
+          <h1 className="text-2xl font-bold text-gray-900 mb-2">
+            {isReplacedVersion ? 'Contract Version Replaced' : 'Unable to Load Contract'}
+          </h1>
           <p className="text-gray-600 mb-6">{error}</p>
           <p className="text-sm text-gray-500">
-            If you believe this is an error, please contact the wedding planner who sent you this contract.
+            {isReplacedVersion
+              ? 'Please use the newest contract link sent by the wedding planner.'
+              : 'If you believe this is an error, please contact the wedding planner who sent you this contract.'}
           </p>
         </div>
       </div>

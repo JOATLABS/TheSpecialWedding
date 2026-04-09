@@ -6,11 +6,11 @@ Shared enums and persisted document models remain in `app.models.vendor`.
 """
 
 from datetime import datetime
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Literal, Optional
 
 from pydantic import BaseModel, Field
 
-from app.models.vendor import VendorCategory
+from app.models.vendor import ContractKind, ContractStatus, VendorCategory
 
 
 class VendorContractSectionInput(BaseModel):
@@ -155,6 +155,42 @@ class RecordVendorMilestonePaymentRequest(BaseModel):
     payment_date: Optional[datetime] = None
     notes: Optional[str] = None
     receipt_url: Optional[str] = None
+
+
+class CreateVendorContractRevisionRequest(BaseModel):
+    """Create a new draft revision or amendment from a live contract."""
+
+    revision_kind: Literal["revision", "amendment"]
+    reason: Optional[str] = None
+    copy_sections: bool = True
+    copy_terms_and_conditions: bool = True
+    copy_cancellation_policy: bool = True
+    copy_custom_clauses: bool = True
+
+
+class VendorContractRevisionSummary(BaseModel):
+    """Compact lineage summary for vendor contract history surfaces."""
+
+    id: str
+    contract_number: Optional[str] = None
+    version_number: int
+    contract_kind: ContractKind
+    status: ContractStatus
+    is_current_version: bool
+    parent_contract_id: Optional[str] = None
+    supersedes_contract_id: Optional[str] = None
+    superseded_by_contract_id: Optional[str] = None
+    created_at: datetime
+    sent_at: Optional[datetime] = None
+    signed_at: Optional[datetime] = None
+
+
+class VendorContractRevisionHistoryResponse(BaseModel):
+    """Full revision history for a contract lineage."""
+
+    current_contract_id: str
+    root_contract_id: str
+    versions: List[VendorContractRevisionSummary] = Field(default_factory=list)
 
 
 class CreateContractFromQuoteRequest(BaseModel):

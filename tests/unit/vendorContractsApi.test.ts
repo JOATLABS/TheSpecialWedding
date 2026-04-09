@@ -210,4 +210,90 @@ describe('vendorContractsApi request normalization', () => {
     assert.equal(fetchMock.mock.callCount(), 1);
     assert.equal(result._id, 'contract_1');
   });
+
+  it('createContractRevision sends the normalized revision request body', async () => {
+    const fetchMock = mock.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      assert.equal(
+        input.toString(),
+        'https://api.example.com/admin/contracts/contract_1/revisions'
+      );
+      assert.equal(init?.method, 'POST');
+
+      const body = JSON.parse(init?.body as string);
+      assert.equal(body.revision_kind, 'amendment');
+      assert.equal(body.reason, 'Signed scope change');
+      assert.equal(body.copy_sections, true);
+
+      return new Response(
+        JSON.stringify({
+          ...contractResponse,
+          _id: 'contract_2',
+          version_number: 2,
+          contract_kind: 'amendment',
+          parent_contract_id: 'contract_1',
+          supersedes_contract_id: 'contract_1',
+          is_current_version: false,
+        }),
+        { status: 200 }
+      );
+    });
+
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+
+    const result = await vendorContractsApi.createContractRevision('secret-token', 'contract_1', {
+      revision_kind: 'amendment',
+      reason: 'Signed scope change',
+      copy_sections: true,
+    });
+
+    assert.equal(fetchMock.mock.callCount(), 1);
+    assert.equal(result._id, 'contract_2');
+    assert.equal(result.contract_kind, 'amendment');
+  });
+
+  it('getContractRevisions returns the revision lineage payload', async () => {
+    const fetchMock = mock.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      assert.equal(
+        input.toString(),
+        'https://api.example.com/admin/contracts/contract_1/revisions'
+      );
+      assert.equal(init?.method, undefined);
+
+      return new Response(
+        JSON.stringify({
+          current_contract_id: 'contract_2',
+          root_contract_id: 'contract_1',
+          versions: [
+            {
+              id: 'contract_1',
+              contract_number: 'CON-001',
+              version_number: 1,
+              contract_kind: 'original',
+              status: 'signed',
+              is_current_version: false,
+              created_at: '2026-04-08T00:00:00.000Z',
+            },
+            {
+              id: 'contract_2',
+              contract_number: 'CON-001',
+              version_number: 2,
+              contract_kind: 'revision',
+              status: 'sent',
+              is_current_version: true,
+              created_at: '2026-04-09T00:00:00.000Z',
+            },
+          ],
+        }),
+        { status: 200 }
+      );
+    });
+
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+
+    const result = await vendorContractsApi.getContractRevisions('secret-token', 'contract_1');
+
+    assert.equal(fetchMock.mock.callCount(), 1);
+    assert.equal(result.current_contract_id, 'contract_2');
+    assert.equal(result.versions[1].version_number, 2);
+  });
 });

@@ -19,6 +19,7 @@ from app.dependencies.feature_gates import require_vendor_feature
 from app.models.vendor_contracts import (
     ApplyVendorContractFormDataRequest,
     CreateVendorContractRequest,
+    CreateVendorContractRevisionRequest,
     CreateVendorContractTemplateRequest,
     CreateVendorPaymentMilestonesRequest,
     RecordVendorMilestonePaymentRequest,
@@ -26,6 +27,7 @@ from app.models.vendor_contracts import (
     UpdateVendorContractRequest,
     UpdateVendorContractSectionsRequest,
     VendorContractFormDataResponse,
+    VendorContractRevisionHistoryResponse,
 )
 from app.models.vendor import (
     AssignVendorRequest,
@@ -281,6 +283,42 @@ async def get_contract(
 ):
     """Get a specific contract (only contracts created by the current user)"""
     return await vendor_service.get_contract(contract_id, created_by=current_user.email)
+
+
+@router.post("/contracts/{contract_id}/revisions", tags=["Contracts"])
+async def create_contract_revision(
+    contract_id: str,
+    data: CreateVendorContractRevisionRequest,
+    current_user: ExtendedAuthUser = Depends(require_vendor_feature),
+):
+    """Create a new draft revision or amendment from a live vendor contract."""
+    enforce_team_permission(current_user, "manage_vendors")
+    return await vendor_service.create_contract_revision(
+        contract_id=contract_id,
+        created_by=current_user.email,
+        revision_kind=data.revision_kind,
+        reason=data.reason,
+        copy_sections=data.copy_sections,
+        copy_terms_and_conditions=data.copy_terms_and_conditions,
+        copy_cancellation_policy=data.copy_cancellation_policy,
+        copy_custom_clauses=data.copy_custom_clauses,
+    )
+
+
+@router.get(
+    "/contracts/{contract_id}/revisions",
+    tags=["Contracts"],
+    response_model=VendorContractRevisionHistoryResponse,
+)
+async def list_contract_revisions(
+    contract_id: str,
+    current_user: ExtendedAuthUser = Depends(require_vendor_feature),
+):
+    """List the full lineage for the contract chain containing this contract."""
+    return await vendor_service.get_contract_revision_history(
+        contract_id=contract_id,
+        created_by=current_user.email,
+    )
 
 
 @router.put("/contracts/{contract_id}", tags=["Contracts"])
