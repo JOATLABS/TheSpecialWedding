@@ -680,9 +680,7 @@ class UpdateDraftRequest(BaseModel):
     status: Optional[str] = Field(None, pattern="^(pending|dismissed)$")
 
 
-@client_contracts_admin_router.put(
-    "/followup-drafts/{draft_id}", tags=["Contracts"]
-)
+@client_contracts_admin_router.put("/followup-drafts/{draft_id}", tags=["Contracts"])
 async def update_followup_draft(
     draft_id: str,
     update_data: UpdateDraftRequest,

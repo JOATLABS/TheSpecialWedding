@@ -408,7 +408,9 @@ async def delete_form(
                 )
 
         # Log deletion attempt
-        client_ip: str = getattr(request.client, "host", "unknown") if request.client else "unknown"
+        client_ip: str = (
+            getattr(request.client, "host", "unknown") if request.client else "unknown"
+        )
         logger.warning(
             f"Form deletion attempt: id={form_id}, user={current_user.email}, "
             f"ip={client_ip}"
@@ -589,7 +591,9 @@ async def export_form_responses_csv(
                 )
             raise
         # Log CSV export attempt for security audit
-        client_ip: str = getattr(request.client, "host", "unknown") if request.client else "unknown"
+        client_ip: str = (
+            getattr(request.client, "host", "unknown") if request.client else "unknown"
+        )
         logger.info(
             f"CSV export attempt: form_id={form_id}, user={current_user.email}, "
             f"ip={client_ip}, date_from={date_from}, date_to={date_to}, "
@@ -756,7 +760,9 @@ async def submit_form(
     """Submit a form response with enhanced security validation"""
     try:
         # Get client information
-        client_ip: str = getattr(request.client, "host", "unknown") if request.client else "unknown"
+        client_ip: str = (
+            getattr(request.client, "host", "unknown") if request.client else "unknown"
+        )
         user_agent = request.headers.get("user-agent", "")
 
         # Enhanced rate limiting for form submissions

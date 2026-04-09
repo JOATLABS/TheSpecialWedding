@@ -49,9 +49,7 @@ class Settings:
     GOOGLE_CALENDAR_DEFAULT_TIMEZONE: str = os.getenv(
         "GOOGLE_CALENDAR_DEFAULT_TIMEZONE", "UTC"
     )
-    GOOGLE_APP_PUBLIC_HOME_URL: Optional[str] = os.getenv(
-        "GOOGLE_APP_PUBLIC_HOME_URL"
-    )
+    GOOGLE_APP_PUBLIC_HOME_URL: Optional[str] = os.getenv("GOOGLE_APP_PUBLIC_HOME_URL")
     GOOGLE_APP_PRIVACY_URL: Optional[str] = os.getenv("GOOGLE_APP_PRIVACY_URL")
     GOOGLE_APP_TERMS_URL: Optional[str] = os.getenv("GOOGLE_APP_TERMS_URL")
     GOOGLE_APP_SUPPORT_URL: Optional[str] = os.getenv("GOOGLE_APP_SUPPORT_URL")

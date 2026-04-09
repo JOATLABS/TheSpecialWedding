@@ -68,7 +68,11 @@ class MeetingInviteService:
         if wedding_id:
             wedding = await self.weddings_collection.find_one({"_id": wedding_id})
 
-        frontend_url = settings.FRONTEND_URL or settings.GOOGLE_APP_PUBLIC_HOME_URL or "https://thespecialwedding.io"
+        frontend_url = (
+            settings.FRONTEND_URL
+            or settings.GOOGLE_APP_PUBLIC_HOME_URL
+            or "https://thespecialwedding.io"
+        )
         email_service = ResendEmailService()
         ics_payload = self._build_ics_attachment(task, wedding)
         sent_results: list[dict[str, Any]] = []
@@ -79,7 +83,8 @@ class MeetingInviteService:
                 "task_id": str(task["_id"]),
                 "wedding_id": str(wedding_id),
                 "owner_planner_id": task.get("owner_planner_id"),
-                "owner_planner_email": task.get("owner_planner_email") or task.get("planner_email"),
+                "owner_planner_email": task.get("owner_planner_email")
+                or task.get("planner_email"),
                 "recipient_email": recipient_email,
                 "recipient_name": None,
                 "delivery_mode": task.get("invite_delivery_mode") or "email_ics",
@@ -101,10 +106,10 @@ class MeetingInviteService:
             subject = f"Meeting invitation: {task.get('title')}"
             html = f"""
                 <div style="font-family: Arial, sans-serif; line-height: 1.6; color: #1f2937;">
-                  <h2 style="margin-bottom: 12px;">{task.get('title')}</h2>
-                  <p>{task.get('description') or 'A planner meeting has been scheduled for you.'}</p>
-                  <p><strong>When:</strong> {task.get('start_date')}</p>
-                  <p><strong>Ends:</strong> {task.get('end_date')}</p>
+                  <h2 style="margin-bottom: 12px;">{task.get("title")}</h2>
+                  <p>{task.get("description") or "A planner meeting has been scheduled for you."}</p>
+                  <p><strong>When:</strong> {task.get("start_date")}</p>
+                  <p><strong>Ends:</strong> {task.get("end_date")}</p>
                   <p><strong>Portal:</strong> <a href="{frontend_url}/couple/portal/meetings">View your meetings</a></p>
                   <p>An ICS calendar file is attached so you can add this meeting to your calendar.</p>
                 </div>

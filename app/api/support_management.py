@@ -414,7 +414,9 @@ def _phone_lookup_variants(phone: Optional[str]) -> list[str]:
     return [variant for variant in variants if variant]
 
 
-async def _resolve_guest_for_sms_ticket(ticket: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+async def _resolve_guest_for_sms_ticket(
+    ticket: Dict[str, Any],
+) -> Optional[Dict[str, Any]]:
     from bson import ObjectId
 
     guest_collection = mongo.get_guest_collection()

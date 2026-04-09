@@ -299,7 +299,9 @@ class CalendarEventCreate(BaseModel):
         if self.is_recurring and not self.recurrence_rule:
             raise ValueError("recurrence_rule is required when is_recurring is true")
         if self.schedule_item_type == ScheduleItemType.MEETING.value:
-            self.meeting_status = self.meeting_status or MeetingLifecycleStatus.SCHEDULED.value
+            self.meeting_status = (
+                self.meeting_status or MeetingLifecycleStatus.SCHEDULED.value
+            )
         if not self.sync_target_override_enabled:
             self.sync_target_connection_ids = []
         return self

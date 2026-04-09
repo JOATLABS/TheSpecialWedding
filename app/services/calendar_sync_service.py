@@ -30,7 +30,9 @@ class CalendarSyncService:
     ) -> list[dict]:
         """Resolve effective writable target connections for a canonical schedule item."""
         owner_id = task.get("owner_planner_id")
-        assigned_user_ids = [value for value in task.get("assigned_user_ids", []) if value]
+        assigned_user_ids = [
+            value for value in task.get("assigned_user_ids", []) if value
+        ]
         policy = task.get("calendar_sync_policy") or CalendarSyncPolicy.OWNER_ONLY.value
         override_enabled = bool(task.get("sync_target_override_enabled"))
         effective_explicit_ids = explicit_connection_ids
@@ -45,9 +47,13 @@ class CalendarSyncService:
         elif policy == CalendarSyncPolicy.ASSIGNED_ONLY.value:
             allowed_user_ids = assigned_user_ids
         elif policy == CalendarSyncPolicy.OWNER_AND_ASSIGNED.value:
-            allowed_user_ids = [value for value in [owner_id, *assigned_user_ids] if value]
+            allowed_user_ids = [
+                value for value in [owner_id, *assigned_user_ids] if value
+            ]
         elif policy == CalendarSyncPolicy.CUSTOM.value:
-            allowed_user_ids = [value for value in [owner_id, *assigned_user_ids] if value]
+            allowed_user_ids = [
+                value for value in [owner_id, *assigned_user_ids] if value
+            ]
 
         base_query = {
             "owner_planner_id": owner_id,
@@ -73,15 +79,11 @@ class CalendarSyncService:
             return []
 
         selected_targets: list[dict] = []
-        if (
-            assigned_user_ids
-            and policy
-            in {
-                CalendarSyncPolicy.ASSIGNED_ONLY.value,
-                CalendarSyncPolicy.OWNER_AND_ASSIGNED.value,
-                CalendarSyncPolicy.CUSTOM.value,
-            }
-        ):
+        if assigned_user_ids and policy in {
+            CalendarSyncPolicy.ASSIGNED_ONLY.value,
+            CalendarSyncPolicy.OWNER_AND_ASSIGNED.value,
+            CalendarSyncPolicy.CUSTOM.value,
+        }:
             for assigned_user_id in assigned_user_ids:
                 default_connection = next(
                     (
@@ -107,7 +109,8 @@ class CalendarSyncService:
                 (
                     doc
                     for doc in allowed_connections
-                    if doc.get("user_id") == owner_id and doc.get("is_default_write_target")
+                    if doc.get("user_id") == owner_id
+                    and doc.get("is_default_write_target")
                 ),
                 None,
             )
@@ -126,8 +129,12 @@ class CalendarSyncService:
         """Create or update all required external sync mappings for a task."""
         task_id = str(task["_id"])
         now = datetime.now(UTC)
-        existing_syncs = await self.syncs_collection.find({"task_id": task_id}).to_list(length=200)
-        selected_connections = await self.resolve_sync_targets(task, explicit_connection_ids)
+        existing_syncs = await self.syncs_collection.find({"task_id": task_id}).to_list(
+            length=200
+        )
+        selected_connections = await self.resolve_sync_targets(
+            task, explicit_connection_ids
+        )
         selected_connection_ids = {str(doc["_id"]) for doc in selected_connections}
         updated_syncs: list[dict] = []
 
@@ -151,12 +158,16 @@ class CalendarSyncService:
 
         if not selected_connections:
             await self.syncs_collection.update_one(
-                {"task_id": task_id, "sync_status": CalendarSyncStatusValue.NOT_CONFIGURED.value},
+                {
+                    "task_id": task_id,
+                    "sync_status": CalendarSyncStatusValue.NOT_CONFIGURED.value,
+                },
                 {
                     "$set": {
                         "task_id": task_id,
                         "owner_planner_id": task.get("owner_planner_id"),
-                        "owner_planner_email": task.get("owner_planner_email") or task.get("planner_email"),
+                        "owner_planner_email": task.get("owner_planner_email")
+                        or task.get("planner_email"),
                         "sync_status": CalendarSyncStatusValue.NOT_CONFIGURED.value,
                         "updated_at": now,
                     },
@@ -167,7 +178,10 @@ class CalendarSyncService:
             return await self.get_sync_status(task_id)
 
         await self.syncs_collection.delete_many(
-            {"task_id": task_id, "sync_status": CalendarSyncStatusValue.NOT_CONFIGURED.value}
+            {
+                "task_id": task_id,
+                "sync_status": CalendarSyncStatusValue.NOT_CONFIGURED.value,
+            }
         )
 
         for connection_doc in selected_connections:
@@ -181,19 +195,23 @@ class CalendarSyncService:
                 None,
             )
             if existing and existing.get("external_event_id"):
-                success = await google_calendar_service.update_google_event_for_connection(
-                    connection_id,
-                    existing["external_event_id"],
-                    task,
-                    attendee_emails=attendee_emails,
+                success = (
+                    await google_calendar_service.update_google_event_for_connection(
+                        connection_id,
+                        existing["external_event_id"],
+                        task,
+                        attendee_emails=attendee_emails,
+                    )
                 )
                 external_event_id = existing.get("external_event_id")
                 etag = existing.get("etag")
             else:
-                result = await google_calendar_service.create_google_event_for_connection(
-                    connection_id,
-                    task,
-                    attendee_emails=attendee_emails,
+                result = (
+                    await google_calendar_service.create_google_event_for_connection(
+                        connection_id,
+                        task,
+                        attendee_emails=attendee_emails,
+                    )
                 )
                 success = bool(result)
                 external_event_id = result.get("id") if result else None
@@ -210,7 +228,8 @@ class CalendarSyncService:
                     "$set": {
                         "task_id": task_id,
                         "owner_planner_id": task.get("owner_planner_id"),
-                        "owner_planner_email": task.get("owner_planner_email") or task.get("planner_email"),
+                        "owner_planner_email": task.get("owner_planner_email")
+                        or task.get("planner_email"),
                         "target_user_id": connection_doc.get("user_id"),
                         "target_user_email": connection_doc.get("user_email"),
                         "calendar_connection_id": connection_id,
@@ -234,18 +253,24 @@ class CalendarSyncService:
 
     async def delete_schedule_item_syncs(self, task_id: str) -> None:
         """Delete all external event projections and local mapping rows."""
-        sync_docs = await self.syncs_collection.find({"task_id": task_id}).to_list(length=200)
+        sync_docs = await self.syncs_collection.find({"task_id": task_id}).to_list(
+            length=200
+        )
         failed_deletions: list[str] = []
         for sync_doc in sync_docs:
             connection_id = sync_doc.get("calendar_connection_id")
             external_event_id = sync_doc.get("external_event_id")
             if connection_id and external_event_id:
-                deleted = await google_calendar_service.delete_google_event_for_connection(
-                    connection_id,
-                    external_event_id,
+                deleted = (
+                    await google_calendar_service.delete_google_event_for_connection(
+                        connection_id,
+                        external_event_id,
+                    )
                 )
                 if not deleted:
-                    failed_deletions.append(str(sync_doc.get("_id") or external_event_id))
+                    failed_deletions.append(
+                        str(sync_doc.get("_id") or external_event_id)
+                    )
         if failed_deletions:
             raise HTTPException(
                 status_code=502,
@@ -255,7 +280,9 @@ class CalendarSyncService:
 
     async def get_sync_status(self, task_id: str) -> list[dict]:
         """List per-target sync rows for a canonical schedule item."""
-        docs = await self.syncs_collection.find({"task_id": task_id}).to_list(length=200)
+        docs = await self.syncs_collection.find({"task_id": task_id}).to_list(
+            length=200
+        )
         result = []
         for doc in docs:
             result.append(

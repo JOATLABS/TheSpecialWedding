@@ -203,7 +203,9 @@ async def handle_sms_callback(request: Request):
                             "priority": "high",
                             "type": "help_request",
                         }
-                        insert_result = await mongo.db["support_tickets"].insert_one(help_ticket)
+                        insert_result = await mongo.db["support_tickets"].insert_one(
+                            help_ticket
+                        )
                         help_ticket["_id"] = insert_result.inserted_id
                         await _notify_planner_help_request(
                             help_ticket, assigned_planner_email
@@ -335,7 +337,7 @@ async def _notify_planner_support_ticket(ticket: dict, planner_email: str):
         if frontend_url is None:
             raise ValueError("FRONTEND_URL must be configured")
         frontend_url = cast(str, frontend_url)
-        
+
         inbox_url = build_support_inbox_url(
             frontend_url=frontend_url,
             conversation="sms_support",
@@ -463,7 +465,7 @@ async def _notify_planner_help_request(ticket: dict, planner_email: str):
         if frontend_url is None:
             raise ValueError("FRONTEND_URL must be configured")
         frontend_url = cast(str, frontend_url)
-        
+
         inbox_url = build_support_inbox_url(
             frontend_url=frontend_url,
             conversation="sms_support",
