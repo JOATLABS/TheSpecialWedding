@@ -31,7 +31,13 @@ from app.dependencies.auth_extended import (
     get_accessible_wedding_ids,
 )
 from app.dependencies.couple_auth import require_couple_auth
+from app.utils.couple_identity import (
+    build_couple_principal_key,
+    get_couple_record_id,
+    list_couple_identity_keys,
+)
 from app.utils.couple_realtime import couple_sse_channel
+from app.utils.id_utils import to_str_id
 from app.services.couple_lifecycle_service import couple_lifecycle_service
 from app.utils.planner_ownership import (
     build_team_owner_query,
@@ -1067,7 +1073,7 @@ async def _broadcast_couple_message_change(
     wedding_id: str,
     action: str,
     record_id: Optional[str] = None,
-    include_couple_email: Optional[str] = None,
+    include_couple_id: Optional[str] = None,
     extra_planner_emails: Optional[List[str]] = None,
 ) -> None:
     """Broadcast couple-message updates to relevant planner/team/couple clients."""
@@ -1084,9 +1090,9 @@ async def _broadcast_couple_message_change(
             record_id=record_id,
         )
 
-    if include_couple_email:
+    if include_couple_id:
         await sse_manager.broadcast_to_user(
-            couple_sse_channel(include_couple_email),
+            couple_sse_channel(include_couple_id),
             "data-change",
             {
                 "resource": "couple_message",
@@ -1205,7 +1211,7 @@ async def couple_send_message(
             wedding_id,
             action="created",
             record_id=str(result.inserted_id),
-            include_couple_email=couple["email"],
+            include_couple_id=get_couple_record_id(couple),
             extra_planner_emails=planner_targets or None,
         )
     except Exception as exc:
@@ -1278,7 +1284,7 @@ async def couple_mark_messages_read(couple: dict = Depends(require_couple_auth))
             await _broadcast_couple_message_change(
                 wedding_id,
                 action="updated",
-                include_couple_email=couple["email"],
+                include_couple_id=get_couple_record_id(couple),
             )
         except Exception as exc:
             logger.warning(f"Failed to broadcast couple read-state change: {exc}")
@@ -1357,8 +1363,8 @@ async def planner_send_message(
             data.wedding_id,
             action="created",
             record_id=str(result.inserted_id),
-            include_couple_email=(
-                couple_doc.get("email")
+            include_couple_id=(
+                to_str_id(couple_doc)
                 if couple_doc
                 and couple_doc.get("is_active")
                 and couple_doc.get("setup_completed")
@@ -2524,7 +2530,7 @@ async def subscribe_couple_push(
     }
 
     success = await web_push_service.save_subscription(
-        user_id=couple["email"],
+        user_id=build_couple_principal_key(get_couple_record_id(couple)),
         subscription=subscription_data,
         user_agent=user_agent,
     )
@@ -2544,8 +2550,17 @@ async def unsubscribe_couple_push(
     """Couple unsubscribes from browser push notifications."""
     success = await web_push_service.remove_subscription(
         endpoint=body.endpoint,
-        user_id=couple["email"],
+        user_id=build_couple_principal_key(get_couple_record_id(couple)),
     )
+
+    if not success:
+        for legacy_user_id in list_couple_identity_keys(couple)[1:]:
+            success = await web_push_service.remove_subscription(
+                endpoint=body.endpoint,
+                user_id=legacy_user_id,
+            )
+            if success:
+                break
 
     if not success:
         raise HTTPException(status_code=500, detail="Failed to remove subscription")
@@ -2561,7 +2576,9 @@ async def get_couple_push_status(couple: dict = Depends(require_couple_auth)):
         return {"enabled": False, "subscribed": False, "reason": "Push not configured"}
 
     collection = mongo.db["push_subscriptions"]
-    count = await collection.count_documents({"user_id": couple["email"]})
+    count = await collection.count_documents(
+        {"user_id": {"$in": list_couple_identity_keys(couple)}}
+    )
 
     return {
         "enabled": True,

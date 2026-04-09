@@ -17,42 +17,60 @@ import app.api.couple_auth as couple_auth_module  # noqa: E402
 
 
 class FakeCoupleUsersCollection:
-    def __init__(self, document: dict | None):
-        self.document = copy.deepcopy(document)
+    def __init__(self, document: dict | list[dict] | None):
+        if isinstance(document, list):
+            self.documents = copy.deepcopy(document)
+        elif document is None:
+            self.documents = []
+        else:
+            self.documents = [copy.deepcopy(document)]
         self.update_calls: list[tuple[dict, dict]] = []
 
-    async def find_one(self, query):
-        if not self.document:
-            return None
+    @property
+    def document(self):
+        return self.documents[0] if self.documents else None
 
+    def _matches(self, document: dict, query: dict) -> bool:
         for key, value in query.items():
-            document_value = self.document.get(key)
+            document_value = document.get(key)
             if isinstance(value, dict):
                 if "$gt" in value and not (
                     document_value and document_value > value["$gt"]
                 ):
-                    return None
+                    return False
                 continue
             if document_value != value:
-                return None
+                return False
+        return True
 
-        return copy.deepcopy(self.document)
+    async def find_one(self, query):
+        for document in self.documents:
+            if self._matches(document, query):
+                return copy.deepcopy(document)
+        return None
+
+    def find(self, query):
+        matches = [
+            copy.deepcopy(document)
+            for document in self.documents
+            if self._matches(document, query)
+        ]
+        return SimpleNamespace(to_list=AsyncMock(return_value=matches))
 
     async def update_one(self, query, update):
         self.update_calls.append((copy.deepcopy(query), copy.deepcopy(update)))
-        if not self.document:
-            return SimpleNamespace(modified_count=0)
+        for document in self.documents:
+            if not self._matches(document, query):
+                continue
 
-        for key, value in query.items():
-            if self.document.get(key) != value:
-                return SimpleNamespace(modified_count=0)
+            for key, value in update.get("$set", {}).items():
+                document[key] = value
+            for key in update.get("$unset", {}):
+                document.pop(key, None)
 
-        for key, value in update.get("$set", {}).items():
-            self.document[key] = value
-        for key in update.get("$unset", {}):
-            self.document.pop(key, None)
+            return SimpleNamespace(modified_count=1)
 
-        return SimpleNamespace(modified_count=1)
+        return SimpleNamespace(modified_count=0)
 
 
 class FakeMongo:
@@ -173,7 +191,7 @@ def test_couple_login_allows_archived_readonly_accounts(monkeypatch, sample_coup
     monkeypatch.setattr(
         couple_auth_module,
         "_set_couple_session_cookie",
-        lambda response, email: "test-couple-token",
+        lambda response, couple: "test-couple-token",
     )
 
     result = asyncio.run(

@@ -9,6 +9,7 @@ from pydantic import BaseModel, Field
 from typing import Optional
 from datetime import datetime, timezone, timedelta
 from app.core.database import mongo
+from app.core.settings import settings
 from app.dependencies.auth_extended import (
     ExtendedAuthUser,
     require_team_or_planner,
@@ -26,6 +27,7 @@ from app.services.couple_lifecycle_service import (
     COUPLE_PORTAL_STATE_PENDING_SETUP,
     couple_lifecycle_service,
 )
+from app.utils.couple_identity import normalize_couple_email
 from bson import ObjectId
 import secrets
 import logging
@@ -55,6 +57,30 @@ class ResendInviteRequest(BaseModel):
     couple_id: str = Field(...)
 
 
+async def _ensure_unique_couple_email_for_wedding(email: str, wedding_id: str) -> None:
+    """
+    Reject reusing a couple email across different weddings.
+
+    Couple auth now uses the couple record as the principal, but the current
+    product still presents a single email/password login surface. Until a
+    wedding-selection UX exists, allowing one email to back multiple wedding
+    portals creates ambiguous login and reset flows.
+    """
+    conflict = await mongo.db["couple_users"].find_one(
+        {
+            "email": email,
+            "wedding_id": {"$ne": wedding_id},
+        },
+        {"_id": 1, "wedding_id": 1, "partner1_name": 1, "partner2_name": 1},
+    )
+
+    if conflict:
+        raise HTTPException(
+            status_code=409,
+            detail="This email is already linked to another wedding portal. Use a different email address or retire the existing portal before reusing it.",
+        )
+
+
 @router.post("/couple-portal/invite", tags=["Couple Portal"])
 async def invite_couple(
     data: InviteCoupleRequest,
@@ -72,9 +98,13 @@ async def invite_couple(
             status_code=403, detail="You don't have access to this wedding"
         )
 
+    normalized_email = normalize_couple_email(data.email)
+    if not normalized_email:
+        raise HTTPException(status_code=400, detail="A valid couple email is required")
+
     # Check if couple already exists for this wedding
     existing = await mongo.db["couple_users"].find_one(
-        {"email": data.email.lower().strip(), "wedding_id": data.wedding_id}
+        {"email": normalized_email, "wedding_id": data.wedding_id}
     )
 
     if existing and existing.get("setup_completed"):
@@ -82,6 +112,8 @@ async def invite_couple(
             status_code=400,
             detail="This couple already has an active portal account for this wedding.",
         )
+
+    await _ensure_unique_couple_email_for_wedding(normalized_email, data.wedding_id)
 
     # Get wedding details for the email
     wedding = await mongo.get_weddings_collection().find_one(
@@ -106,7 +138,7 @@ async def invite_couple(
     invite_expires = datetime.now(timezone.utc) + timedelta(days=7)
 
     couple_doc = {
-        "email": data.email.lower().strip(),
+        "email": normalized_email,
         "partner1_name": data.partner1_name,
         "partner2_name": data.partner2_name,
         "phone": data.phone,
@@ -163,7 +195,7 @@ async def invite_couple(
         {"_id": normalize_query_id(data.wedding_id)},
         {
             "$set": {
-                "couple_portal_email": data.email.lower().strip(),
+                "couple_portal_email": normalized_email,
                 "couple_portal_enabled": True,
                 "couple_portal_invited_at": datetime.now(timezone.utc),
                 "updated_by": current_user.email,
@@ -228,7 +260,7 @@ async def invite_couple(
 
         _email_svc = ResendEmailService()
         await _email_svc.send_email(
-            to_email=data.email.lower().strip(),
+            to_email=normalized_email,
             subject=f"You're Invited to Your Wedding Portal - {wedding.get('couple_names', 'Your Wedding')}",
             html_content=html_content,
         )
@@ -353,6 +385,10 @@ async def list_couples(
 ):
     """List all couples for the planner's weddings."""
     _enforce_manage_couple_portal(current_user)
+    frontend_url = (
+        getattr(settings, "frontend_url", None) or "https://thespecialwedding.io"
+    )
+    normalized_frontend_url = frontend_url.rstrip("/")
     if wedding_id:
         if not await check_wedding_access(current_user, wedding_id):
             raise HTTPException(
@@ -397,6 +433,11 @@ async def list_couples(
                 "access_state": couple_lifecycle_service.infer_stored_state(couple),
                 "setup_completed": couple.get("setup_completed", False),
                 "wedding_archived": couple.get("wedding_archived", False),
+                "setup_link": (
+                    f"{normalized_frontend_url}/couple/setup/{couple['invite_token']}"
+                    if couple.get("invite_token") and not couple.get("setup_completed")
+                    else None
+                ),
                 "last_login": couple.get("last_login").isoformat()
                 if couple.get("last_login")
                 else None,

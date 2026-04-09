@@ -25,6 +25,7 @@ import Users from 'lucide-react/dist/esm/icons/users';
 import Mail from 'lucide-react/dist/esm/icons/mail';
 import Send from 'lucide-react/dist/esm/icons/send';
 import RefreshCw from 'lucide-react/dist/esm/icons/refresh-cw';
+import Copy from 'lucide-react/dist/esm/icons/copy';
 import Plus from 'lucide-react/dist/esm/icons/plus';
 import Loader2 from 'lucide-react/dist/esm/icons/loader-2';
 import ShieldOff from 'lucide-react/dist/esm/icons/shield-off';
@@ -1638,6 +1639,7 @@ interface CoupleUser {
   wedding_id: string;
   is_active: boolean;
   setup_completed: boolean;
+  setup_link?: string | null;
   last_login?: string;
   created_at?: string;
 }
@@ -1650,6 +1652,7 @@ function CoupleTab({ weddingId, token }: { weddingId: string; token: string }) {
   const [invitePartner1, setInvitePartner1] = useState('');
   const [invitePartner2, setInvitePartner2] = useState('');
   const [inviting, setInviting] = useState(false);
+  const [copyingCoupleId, setCopyingCoupleId] = useState<string | null>(null);
 
   const fetchCouples = useCallback(async () => {
     if (!token || !weddingId) return;
@@ -1691,12 +1694,22 @@ function CoupleTab({ weddingId, token }: { weddingId: string; token: string }) {
         }),
       });
       if (res.ok) {
-        toast.success('Invitation sent!');
+        const data = await res.json();
+        if (data.setup_link && navigator.clipboard?.writeText) {
+          try {
+            await navigator.clipboard.writeText(data.setup_link);
+            toast.success('Invitation sent. Current setup link copied.');
+          } catch {
+            toast.success('Invitation sent!');
+          }
+        } else {
+          toast.success('Invitation sent!');
+        }
         setShowInviteForm(false);
         setInviteEmail('');
         setInvitePartner1('');
         setInvitePartner2('');
-        fetchCouples();
+        await fetchCouples();
       } else {
         const err = await res.json();
         toast.error(err.detail || 'Failed to send invitation');
@@ -1737,13 +1750,46 @@ function CoupleTab({ weddingId, token }: { weddingId: string; token: string }) {
         body: JSON.stringify({ couple_id: coupleId }),
       });
       if (res.ok) {
-        toast.success('Invitation resent');
+        const data = await res.json();
+        if (data.setup_link && navigator.clipboard?.writeText) {
+          try {
+            await navigator.clipboard.writeText(data.setup_link);
+            toast.success('Invitation resent. Current setup link copied.');
+          } catch {
+            toast.success('Invitation resent');
+          }
+        } else {
+          toast.success('Invitation resent');
+        }
+        await fetchCouples();
       } else {
         const err = await res.json();
         toast.error(err.detail || 'Failed to resend');
       }
     } catch {
       toast.error('Failed to connect');
+    }
+  };
+
+  const handleCopySetupLink = async (couple: CoupleUser) => {
+    if (!couple.setup_link) {
+      toast.error('No active setup link is available for this couple.');
+      return;
+    }
+
+    setCopyingCoupleId(couple.id);
+    try {
+      if (!navigator.clipboard?.writeText) {
+        toast.error('Clipboard access is not available in this browser.');
+        return;
+      }
+
+      await navigator.clipboard.writeText(couple.setup_link);
+      toast.success('Current setup link copied.');
+    } catch {
+      toast.error('Failed to copy setup link.');
+    } finally {
+      setCopyingCoupleId(null);
     }
   };
 
@@ -1806,14 +1852,29 @@ function CoupleTab({ weddingId, token }: { weddingId: string; token: string }) {
                   </span>
 
                   {!couple.setup_completed && (
-                    <button
-                      onClick={() => handleResend(couple.id)}
-                      className="text-xs text-blue-600 hover:underline flex items-center gap-1"
-                      title="Resend invitation email"
-                    >
-                      <RefreshCw className="w-3 h-3" />
-                      Resend
-                    </button>
+                    <>
+                      <button
+                        onClick={() => handleCopySetupLink(couple)}
+                        className="text-xs text-blue-600 hover:underline flex items-center gap-1"
+                        title="Copy the current invitation setup link"
+                      >
+                        {copyingCoupleId === couple.id ? (
+                          <Loader2 className="w-3 h-3 animate-spin" />
+                        ) : (
+                          <Copy className="w-3 h-3" />
+                        )}
+                        Copy Link
+                      </button>
+
+                      <button
+                        onClick={() => handleResend(couple.id)}
+                        className="text-xs text-blue-600 hover:underline flex items-center gap-1"
+                        title="Resend invitation email"
+                      >
+                        <RefreshCw className="w-3 h-3" />
+                        Resend
+                      </button>
+                    </>
                   )}
 
                   {couple.setup_completed && (
