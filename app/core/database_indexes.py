@@ -12,6 +12,46 @@ from app.core.database import mongo
 logger = logging.getLogger(__name__)
 
 
+async def _deduplicate_meeting_invites(collection) -> None:
+    """Collapse legacy duplicate invite rows before enforcing uniqueness."""
+    duplicate_groups = collection.aggregate(
+        [
+            {
+                "$sort": {
+                    "updated_at": DESCENDING,
+                    "created_at": DESCENDING,
+                    "_id": DESCENDING,
+                }
+            },
+            {
+                "$group": {
+                    "_id": {
+                        "task_id": "$task_id",
+                        "recipient_email": "$recipient_email",
+                    },
+                    "ids": {"$push": "$_id"},
+                    "count": {"$sum": 1},
+                }
+            },
+            {"$match": {"count": {"$gt": 1}}},
+        ]
+    )
+
+    removed_count = 0
+    async for group in duplicate_groups:
+        duplicate_ids = group.get("ids", [])[1:]
+        if not duplicate_ids:
+            continue
+        await collection.delete_many({"_id": {"$in": duplicate_ids}})
+        removed_count += len(duplicate_ids)
+
+    if removed_count:
+        logger.warning(
+            "Removed %s duplicate meeting_invites rows before enforcing unique task/recipient constraint",
+            removed_count,
+        )
+
+
 async def create_support_ticket_indexes():
     """
     Create indexes for support_tickets collection
@@ -1997,9 +2037,11 @@ async def create_calendar_indexes():
         )
 
         meeting_invites = mongo.get_meeting_invites_collection()
+        await _deduplicate_meeting_invites(meeting_invites)
         await meeting_invites.create_index(
             [("task_id", ASCENDING), ("recipient_email", ASCENDING)],
             name="idx_meeting_invites_task_recipient",
+            unique=True,
             background=True,
         )
         await meeting_invites.create_index(

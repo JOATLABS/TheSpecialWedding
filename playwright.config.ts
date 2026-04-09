@@ -18,7 +18,7 @@ export default defineConfig({
   /* Shared settings for all the projects below. See https://playwright.dev/docs/api/class-testoptions. */
   use: {
     /* Base URL to use in actions like `await page.goto('/')`. */
-    baseURL: 'http://localhost:3002',
+    baseURL: 'http://localhost:3000',
 
     /* Collect trace when retrying the failed test. See https://playwright.dev/docs/trace-viewer */
     trace: 'on-first-retry',
@@ -72,12 +72,12 @@ export default defineConfig({
   webServer: [
     {
       command: 'npm run dev',
-      url: 'http://localhost:3002',
+      url: 'http://localhost:3000',
       reuseExistingServer: !process.env.CI,
     },
     {
-      command: 'python -m uvicorn app.main:app --host 0.0.0.0 --port 8002',
-      url: 'http://localhost:8002/health',
+      command: 'python -m uvicorn app.main:app --host 0.0.0.0 --port 8000',
+      url: 'http://localhost:8000/health',
       reuseExistingServer: !process.env.CI,
     }
   ],

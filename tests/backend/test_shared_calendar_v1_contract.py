@@ -15,6 +15,7 @@ from app.api.planner_calendar import (
     _connection_matches_owner_scope,
     _build_scoped_meeting_query,
 )
+from app.core import database_indexes as database_indexes_module
 from app.dependencies.auth_extended import (
     ExtendedAuthUser,
     resolve_owner_scoped_user_assignments,
@@ -38,6 +39,16 @@ class _FakeCursor:
             return list(self.rows)
         return list(self.rows[:length])
 
+    def __aiter__(self):
+        self._iter = iter(self.rows)
+        return self
+
+    async def __anext__(self):
+        try:
+            return next(self._iter)
+        except StopIteration:
+            raise StopAsyncIteration
+
 
 class _FakeTasksCollection:
     def __init__(self, rows: list[dict]):
@@ -55,6 +66,8 @@ class _RecordingCollection:
         self.delete_one_calls: list[dict] = []
         self.update_one_calls: list[tuple[dict, dict]] = []
         self.delete_many_calls: list[dict] = []
+        self.create_index_calls: list[tuple[list[tuple[str, int]], dict[str, Any]]] = []
+        self.aggregate_rows: list[dict[str, Any]] = []
 
     async def count_documents(self, _query: dict) -> int:
         return self.count
@@ -73,6 +86,13 @@ class _RecordingCollection:
 
     async def delete_many(self, query: dict) -> None:
         self.delete_many_calls.append(query)
+
+    async def create_index(self, keys: list[tuple[str, int]], **kwargs: Any) -> str:
+        self.create_index_calls.append((keys, kwargs))
+        return kwargs.get("name", "idx")
+
+    def aggregate(self, _pipeline: list[dict[str, Any]]) -> _FakeCursor:
+        return _FakeCursor(self.aggregate_rows)
 
 
 def test_google_oauth_state_round_trip_and_token_encryption() -> None:
@@ -103,7 +123,9 @@ def test_google_oauth_state_rejects_tampering() -> None:
         owner_id="owner-1",
         owner_email="owner@example.com",
     )
-    tampered = f"{state[:-1]}{'a' if state[-1] != 'a' else 'b'}"
+    header, payload, signature = state.split(".")
+    tampered_signature = f"{'a' if signature[0] != 'a' else 'b'}{signature[1:]}"
+    tampered = ".".join((header, payload, tampered_signature))
 
     with pytest.raises(HTTPException) as exc_info:
         google_calendar_service._decode_state(tampered)
@@ -132,6 +154,42 @@ def test_google_oauth_state_rejects_expired_token() -> None:
 
     assert exc_info.value.status_code == 400
     assert exc_info.value.detail == "OAuth state has expired"
+
+
+@pytest.mark.asyncio
+async def test_calendar_indexes_make_meeting_invite_task_recipient_unique(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    planner_tasks = _RecordingCollection()
+    calendar_connections = _RecordingCollection()
+    calendar_event_syncs = _RecordingCollection()
+    meeting_invites = _RecordingCollection()
+    meeting_invites.aggregate_rows = [
+        {
+            "_id": {
+                "task_id": "task-1",
+                "recipient_email": "couple@example.com",
+            },
+            "ids": ["invite-2", "invite-1"],
+            "count": 2,
+        }
+    ]
+
+    fake_mongo = SimpleNamespace(
+        get_planner_tasks_collection=lambda: planner_tasks,
+        get_calendar_connections_collection=lambda: calendar_connections,
+        get_calendar_event_syncs_collection=lambda: calendar_event_syncs,
+        get_meeting_invites_collection=lambda: meeting_invites,
+    )
+    monkeypatch.setattr(database_indexes_module, "mongo", fake_mongo)
+
+    await database_indexes_module.create_calendar_indexes()
+
+    assert meeting_invites.delete_many_calls == [{"_id": {"$in": ["invite-1"]}}]
+    assert (
+        [call for call in meeting_invites.create_index_calls if call[1].get("name") == "idx_meeting_invites_task_recipient"][0][1]["unique"]
+        is True
+    )
 
 
 def test_google_service_requires_explicit_security_keys_in_production(

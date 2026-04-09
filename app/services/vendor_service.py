@@ -10,9 +10,11 @@ import re
 import secrets
 import string
 import logging
+import hashlib
+import hmac
 from copy import deepcopy
 from datetime import datetime, timedelta, timezone
-from typing import TYPE_CHECKING, List, Dict, Optional, Any
+from typing import TYPE_CHECKING, List, Dict, Optional, Any, Callable, Awaitable
 from bson import ObjectId
 from bson.errors import InvalidId
 from fastapi import HTTPException, UploadFile
@@ -145,6 +147,100 @@ class VendorService:
         return f"{normalized_base}/vendor-contract/{contract_id}/{access_token}"
 
     @staticmethod
+    def _build_inactive_contract_token_fields() -> Dict[str, Any]:
+        return {
+            "access_token_hash": None,
+            "token_expires_at": None,
+            "token_revoked_at": None,
+            "token_last_sent_at": None,
+            "token_last_viewed_at": None,
+        }
+
+    def _hash_contract_access_token(self, raw_token: str) -> str:
+        secret_key = settings.secret_key
+        if not secret_key:
+            raise RuntimeError("SECRET_KEY is required for contract token hashing")
+
+        return hmac.new(
+            secret_key.encode("utf-8"),
+            raw_token.encode("utf-8"),
+            hashlib.sha256,
+        ).hexdigest()
+
+    def _verify_contract_access_token(self, raw_token: str, stored_hash: str) -> bool:
+        expected_hash = self._hash_contract_access_token(raw_token)
+        return hmac.compare_digest(expected_hash, stored_hash)
+
+    def _issue_contract_access_token(
+        self, contract_id: str, planner_settings: dict
+    ) -> tuple[str, dict]:
+        now = datetime.now(timezone.utc)
+        raw_token = self._generate_token()
+        return raw_token, {
+            "access_token_hash": self._hash_contract_access_token(raw_token),
+            "token_expires_at": now
+            + timedelta(days=planner_settings["token_expiry_days"]),
+            "token_revoked_at": None,
+            "token_last_sent_at": now,
+            "token_last_viewed_at": None,
+            "updated_at": now,
+        }
+
+    async def _revoke_contract_access_token(
+        self, contract_id: str, session: Any = None
+    ) -> None:
+        revoked_at = datetime.now(timezone.utc)
+        await self.vendor_contracts.update_one(
+            {"_id": validate_object_id(contract_id, "contract ID")},
+            {
+                "$set": {
+                    "token_revoked_at": revoked_at,
+                    "updated_at": revoked_at,
+                }
+            },
+            session=session,
+        )
+
+    def _sanitize_public_contract_response(self, contract: Dict[str, Any]) -> Dict[str, Any]:
+        contract.pop("access_token", None)
+        contract.pop("access_token_hash", None)
+        contract.pop("internal_notes", None)
+        contract.pop("token_revoked_at", None)
+        contract.pop("token_last_sent_at", None)
+        contract.pop("token_last_viewed_at", None)
+        return contract
+
+    async def _run_required_transaction(
+        self,
+        operation_name: str,
+        operation: Callable[[Any], Awaitable[Any]],
+    ) -> Any:
+        try:
+            async with await mongo.client.start_session() as session:
+                async with session.start_transaction():
+                    return await operation(session)
+        except HTTPException:
+            raise
+        except Exception as exc:
+            message = str(exc).lower()
+            if (
+                "transaction" in message
+                or "replica" in message
+                or "topology" in message
+                or "session" in message
+            ):
+                logger.error(
+                    "MongoDB transaction support is required for %s: %s",
+                    operation_name,
+                    exc,
+                )
+                raise HTTPException(
+                    status_code=503,
+                    detail=f"{operation_name} requires MongoDB transaction support",
+                )
+            raise
+
+    @staticmethod
     def _serialize_doc(doc: Dict) -> Dict:
         """Normalize a MongoDB document for API response: ensure both 'id' and '_id' are string."""
         if "_id" in doc:
@@ -183,6 +279,10 @@ class VendorService:
 
         contract.setdefault("amendment_reason", None)
         contract.setdefault("superseded_at", None)
+        contract.setdefault("access_token_hash", None)
+        contract.setdefault("token_revoked_at", None)
+        contract.setdefault("token_last_sent_at", None)
+        contract.setdefault("token_last_viewed_at", None)
         return contract
 
     def _get_root_contract_id(self, contract: Dict[str, Any]) -> str:
@@ -302,7 +402,6 @@ class VendorService:
         source_contract: Dict[str, Any],
         revision_kind: str,
         next_version_number: int,
-        token_expires_at: datetime,
         reason: Optional[str] = None,
         copy_sections: bool = True,
         copy_terms_and_conditions: bool = True,
@@ -366,8 +465,6 @@ class VendorService:
             "deposit_amount": source_contract.get("deposit_amount"),
             "deposit_due_date": source_contract.get("deposit_due_date"),
             "status": ContractStatus.DRAFT.value,
-            "access_token": self._generate_token(),
-            "token_expires_at": token_expires_at,
             "service_date": source_contract.get("service_date"),
             "service_start_time": source_contract.get("service_start_time"),
             "service_end_time": source_contract.get("service_end_time"),
@@ -398,6 +495,7 @@ class VendorService:
             "superseded_at": None,
             "created_at": now,
             "updated_at": now,
+            **self._build_inactive_contract_token_fields(),
         }
 
         return revision_contract
@@ -1560,9 +1658,6 @@ class VendorService:
                 "deposit_amount": deposit_amount,
                 "deposit_due_date": deposit_due_date,
                 "status": ContractStatus.DRAFT.value,
-                "access_token": self._generate_token(),
-                "token_expires_at": datetime.now(timezone.utc)
-                + timedelta(days=planner_settings["token_expiry_days"]),
                 "service_date": service_date,
                 "service_location": service_location,
                 "created_by": created_by,
@@ -1577,6 +1672,7 @@ class VendorService:
                 "superseded_at": None,
                 "created_at": datetime.now(timezone.utc),
                 "updated_at": datetime.now(timezone.utc),
+                **self._build_inactive_contract_token_fields(),
             }
 
             await self.vendor_contracts.insert_one(contract)
@@ -1814,7 +1910,6 @@ class VendorService:
                     detail="Revision kind must be 'revision' or 'amendment'",
                 )
 
-            planner_settings = await self._get_planner_contract_settings(created_by)
             root_contract_id = self._get_root_contract_id(source_contract)
             next_version_number = await self._get_next_contract_version_number(
                 root_contract_id=root_contract_id,
@@ -1825,8 +1920,6 @@ class VendorService:
                 source_contract=source_contract,
                 revision_kind=revision_kind,
                 next_version_number=next_version_number,
-                token_expires_at=datetime.now(timezone.utc)
-                + timedelta(days=planner_settings["token_expiry_days"]),
                 reason=reason,
                 copy_sections=copy_sections,
                 copy_terms_and_conditions=copy_terms_and_conditions,
@@ -3145,9 +3238,6 @@ class VendorService:
         The planner uploads their own contract PDF instead of using templates.
         """
         try:
-            # Get planner's contract settings (with fallback to system defaults)
-            planner_settings = await self._get_planner_contract_settings(created_by)
-
             # Get vendor profile
             vendor = await self.get_vendor_profile(vendor_profile_id, created_by)
             if not vendor:
@@ -3191,7 +3281,10 @@ class VendorService:
                 )
 
             # Create contract record
+            contract_id = ObjectId()
+            now = datetime.now(timezone.utc)
             contract_doc = {
+                "_id": contract_id,
                 "wedding_id": wedding_id,
                 "vendor_profile_id": vendor_profile_id,
                 "vendor_name": vendor["business_name"],
@@ -3210,22 +3303,30 @@ class VendorService:
                 "currency": "USD",
                 "deposit_amount": deposit_amount,
                 "status": ContractStatus.DRAFT.value,
-                "access_token": self._generate_token(),
-                "token_expires_at": datetime.now(timezone.utc)
-                + timedelta(days=planner_settings["token_expiry_days"]),
                 "service_date": service_date,
                 "service_location": service_location,
                 "internal_notes": notes,
                 "created_by": created_by,
-                "created_at": datetime.now(timezone.utc),
-                "updated_at": datetime.now(timezone.utc),
+                "version_number": 1,
+                "root_contract_id": str(contract_id),
+                "parent_contract_id": None,
+                "supersedes_contract_id": None,
+                "superseded_by_contract_id": None,
+                "is_current_version": True,
+                "contract_kind": ContractKind.ORIGINAL.value,
+                "amendment_reason": None,
+                "superseded_at": None,
+                "created_at": now,
+                "updated_at": now,
                 "form_submission_ids": [],
                 "form_data_mappings": {},
+                **self._build_inactive_contract_token_fields(),
             }
 
             result = await self.vendor_contracts.insert_one(contract_doc)
             contract_doc["_id"] = result.inserted_id
             self._serialize_doc(contract_doc)
+            self._attach_contract_version_metadata(contract_doc)
 
             logger.info(
                 f"Created PDF contract {contract_doc['_id']} for vendor {vendor_profile_id}"

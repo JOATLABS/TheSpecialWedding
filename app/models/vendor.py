@@ -548,8 +548,19 @@ class VendorContract(BaseModel):
     )
 
     # Access Control
-    access_token: str = Field(..., description="Secure token for vendor access")
+    access_token_hash: Optional[str] = Field(
+        None, description="Hashed token for vendor access"
+    )
     token_expires_at: Optional[datetime] = Field(None, description="Token expiration")
+    token_revoked_at: Optional[datetime] = Field(
+        None, description="When the current access token was revoked"
+    )
+    token_last_sent_at: Optional[datetime] = Field(
+        None, description="When the current access token was last emailed"
+    )
+    token_last_viewed_at: Optional[datetime] = Field(
+        None, description="When the current access token was last used to view"
+    )
 
     # Service Dates
     service_date: Optional[datetime] = Field(None, description="Primary service date")
