@@ -748,7 +748,8 @@ async def resolve_owner_scoped_user_assignments(
         elif (
             user_role == "team_member"
             and normalized_owner_id
-            and normalize_planner_id(user_doc.get("parent_planner_id")) == normalized_owner_id
+            and normalize_planner_id(user_doc.get("parent_planner_id"))
+            == normalized_owner_id
         ):
             belongs_to_owner_scope = True
 

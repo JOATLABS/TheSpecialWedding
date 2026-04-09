@@ -168,7 +168,10 @@ class SupportService:
                     if value is not None:
                         query[key] = value
             if exclude_sms:
-                query["$or"] = [{"source": {"$exists": False}}, {"source": {"$ne": "sms"}}]
+                query["$or"] = [
+                    {"source": {"$exists": False}},
+                    {"source": {"$ne": "sms"}},
+                ]
             if active_statuses:
                 query["status"] = {"$in": active_statuses}
 

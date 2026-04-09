@@ -707,10 +707,6 @@ export default function CommunicationsInboxView() {
     }
 
     for (const ticket of smsTickets) {
-      if (ticket.type !== 'help_request') {
-        continue;
-      }
-
       items.push({
         id: `sms_support_${ticket._id}`,
         type: 'sms_support',
@@ -759,7 +755,7 @@ export default function CommunicationsInboxView() {
 
   const loading = emailLoading || conversationsLoading || supportLoading;
   const smsUnreadCount = smsTickets.reduce(
-    (count, ticket) => count + (ticket.type === 'help_request' && !ticket.is_read ? 1 : 0),
+    (count, ticket) => count + (!ticket.is_read ? 1 : 0),
     0
   );
   const totalUnread = unreadCount + smsUnreadCount + coupleConversations.reduce(

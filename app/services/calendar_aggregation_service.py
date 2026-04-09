@@ -84,10 +84,13 @@ class CalendarAggregationService:
             "end_date": task.get("end_date"),
             "all_day": task.get("all_day", False),
             "wedding_id": task.get("wedding_id"),
-            "owner_planner_email": task.get("owner_planner_email") or task.get("planner_email"),
+            "owner_planner_email": task.get("owner_planner_email")
+            or task.get("planner_email"),
             "assigned_user_ids": assigned_user_ids,
             "assigned_user_emails": assigned_user_emails,
-            "visibility_mode": task.get("visibility_mode", VisibilityMode.DETAILS.value),
+            "visibility_mode": task.get(
+                "visibility_mode", VisibilityMode.DETAILS.value
+            ),
             "details": {
                 "description": task.get("description"),
                 "category": task.get("category"),
@@ -101,8 +104,12 @@ class CalendarAggregationService:
 
     def _normalize_external(self, event: dict, can_view_details: bool) -> dict:
         connection = event.get("_connection", {})
-        details_visibility = connection.get("details_visibility", VisibilityMode.BUSY_ONLY.value)
-        show_details = details_visibility == VisibilityMode.DETAILS.value and can_view_details
+        details_visibility = connection.get(
+            "details_visibility", VisibilityMode.BUSY_ONLY.value
+        )
+        show_details = (
+            details_visibility == VisibilityMode.DETAILS.value and can_view_details
+        )
         start_info = event.get("start", {})
         end_info = event.get("end", {})
         return {
@@ -114,8 +121,12 @@ class CalendarAggregationService:
             "all_day": bool(start_info.get("date") and not start_info.get("dateTime")),
             "wedding_id": None,
             "owner_planner_email": connection.get("owner_planner_email"),
-            "assigned_user_ids": [connection.get("user_id")] if connection.get("user_id") else [],
-            "assigned_user_emails": [connection.get("user_email")] if connection.get("user_email") else [],
+            "assigned_user_ids": [connection.get("user_id")]
+            if connection.get("user_id")
+            else [],
+            "assigned_user_emails": [connection.get("user_email")]
+            if connection.get("user_email")
+            else [],
             "visibility_mode": details_visibility,
             "details": {
                 "calendar_connection_id": connection.get("id"),
@@ -154,7 +165,9 @@ class CalendarAggregationService:
             accessible_wedding_ids=accessible_wedding_ids,
         )
         internal_rows = (
-            await self.tasks_collection.find(query).sort("start_date", 1).to_list(length=500)
+            await self.tasks_collection.find(query)
+            .sort("start_date", 1)
+            .to_list(length=500)
         )
         internal_events = [self._normalize_internal(row) for row in internal_rows]
 
@@ -167,18 +180,26 @@ class CalendarAggregationService:
                 include_all_owner_connections=include_all_owner_connections,
             )
             for connection in connections:
-                if not connection.get("is_shared_in_team_view") and connection.get("user_id") != current_user_id:
+                if (
+                    not connection.get("is_shared_in_team_view")
+                    and connection.get("user_id") != current_user_id
+                ):
                     continue
                 if staff_ids and connection.get("user_id") not in staff_ids:
                     continue
-                events = await google_calendar_service.fetch_google_events_for_connection(
-                    connection["id"],
-                    time_min=start,
-                    time_max=end,
-                    max_results=200,
+                events = (
+                    await google_calendar_service.fetch_google_events_for_connection(
+                        connection["id"],
+                        time_min=start,
+                        time_max=end,
+                        max_results=200,
+                    )
                 )
                 external_events.extend(
-                    [self._normalize_external(event, can_view_details) for event in events]
+                    [
+                        self._normalize_external(event, can_view_details)
+                        for event in events
+                    ]
                 )
 
         combined = sorted(

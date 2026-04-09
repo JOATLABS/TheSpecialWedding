@@ -1927,7 +1927,11 @@ async def create_calendar_indexes():
             background=True,
         )
         await calendar_connections.create_index(
-            [("user_id", ASCENDING), ("provider_account_email", ASCENDING), ("calendar_id", ASCENDING)],
+            [
+                ("user_id", ASCENDING),
+                ("provider_account_email", ASCENDING),
+                ("calendar_id", ASCENDING),
+            ],
             name="idx_calendar_connections_user_account_calendar",
             unique=True,
             background=True,
@@ -1942,7 +1946,11 @@ async def create_calendar_indexes():
             background=True,
         )
         await calendar_event_syncs.create_index(
-            [("target_user_id", ASCENDING), ("sync_status", ASCENDING), ("updated_at", DESCENDING)],
+            [
+                ("target_user_id", ASCENDING),
+                ("sync_status", ASCENDING),
+                ("updated_at", DESCENDING),
+            ],
             name="idx_calendar_syncs_target_status_updated",
             background=True,
         )

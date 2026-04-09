@@ -201,7 +201,10 @@ async def handle_twilio_status_callback(
         logger.info(f"Updated delivery status for {message_sid}: {message_status}")
 
         # Take error-based actions for failed/undelivered messages
-        if message_status in ("failed", "undelivered") and parsed_error_code is not None:
+        if (
+            message_status in ("failed", "undelivered")
+            and parsed_error_code is not None
+        ):
             await _handle_delivery_failure(
                 message_sid=message_sid,
                 error_code=parsed_error_code,
@@ -1042,7 +1045,9 @@ async def handle_twilio_incoming_message(
                     "priority": "high",
                     "type": "help_request",
                 }
-                insert_result = await mongo.db["support_tickets"].insert_one(help_ticket)
+                insert_result = await mongo.db["support_tickets"].insert_one(
+                    help_ticket
+                )
                 help_ticket["_id"] = insert_result.inserted_id
                 await _notify_planner_help_request(
                     help_ticket, assigned_planner_email, wedding_name

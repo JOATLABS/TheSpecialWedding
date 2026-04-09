@@ -326,12 +326,17 @@ def _build_task_scope_query(current_user: ExtendedAuthUser) -> dict[str, Any]:
         ]
     }
 
-    if not current_user.is_team_member or current_user.team_wedding_access != "assigned":
+    if (
+        not current_user.is_team_member
+        or current_user.team_wedding_access != "assigned"
+    ):
         return owner_scope
 
     accessible_wedding_ids = current_user.team_assigned_wedding_ids or []
     actor_user_id = _calendar_user_id(current_user)
-    access_filters: list[dict[str, Any]] = [{"wedding_id": {"$in": accessible_wedding_ids}}]
+    access_filters: list[dict[str, Any]] = [
+        {"wedding_id": {"$in": accessible_wedding_ids}}
+    ]
     if actor_user_id:
         access_filters.extend(
             [
@@ -438,7 +443,9 @@ def _serialize_meeting_payload(task: dict) -> dict[str, Any]:
         "start_date": _isoformat(task.get("start_date")),
         "end_date": _isoformat(task.get("end_date")),
         "all_day": task.get("all_day", False),
-        "schedule_item_type": task.get("schedule_item_type", ScheduleItemType.MEETING.value),
+        "schedule_item_type": task.get(
+            "schedule_item_type", ScheduleItemType.MEETING.value
+        ),
         "meeting_status": task.get("meeting_status"),
         "timezone": task.get("timezone"),
         "assigned_user_ids": task.get("assigned_user_ids", []),
@@ -451,7 +458,8 @@ def _serialize_meeting_payload(task: dict) -> dict[str, Any]:
         "conference_provider": task.get("conference_provider"),
         "conference_url": task.get("conference_url"),
         "created_by_email": task.get("created_by_email"),
-        "owner_planner_email": task.get("owner_planner_email") or task.get("planner_email"),
+        "owner_planner_email": task.get("owner_planner_email")
+        or task.get("planner_email"),
         "status": task.get("status"),
     }
 
@@ -467,7 +475,9 @@ def _serialize_meeting_payload(task: dict) -> dict[str, Any]:
     response_model=GoogleAuthUrlResponse,
 )
 async def get_google_auth_url(
-    current_user: ExtendedAuthUser = Depends(require_calendar_permission("connect_personal_calendar")),
+    current_user: ExtendedAuthUser = Depends(
+        require_calendar_permission("connect_personal_calendar")
+    ),
 ) -> GoogleAuthUrlResponse:
     """
     Get Google OAuth authorization URL to connect Google Calendar.
@@ -638,7 +648,9 @@ async def google_connection_oauth_callback(
     ),
 ) -> GoogleCallbackResponse:
     """Connection-aware alias for the Google OAuth callback."""
-    return await google_oauth_callback(code=code, state=state, current_user=current_user)
+    return await google_oauth_callback(
+        code=code, state=state, current_user=current_user
+    )
 
 
 @router.patch(
@@ -655,7 +667,9 @@ async def update_calendar_connection(
     connection_doc = await google_calendar_service._get_connection_doc(connection_id)
     current_context = get_calendar_owner_identity(current_user)
     is_owner = current_user.is_root_admin or current_user.is_wedding_planner
-    is_connection_owner = connection_doc.get("user_id") == current_context.get("user_id")
+    is_connection_owner = connection_doc.get("user_id") == current_context.get(
+        "user_id"
+    )
     can_manage_all = bool(
         current_user.team_permissions
         and current_user.team_permissions.get("manage_calendar_connections", False)
@@ -663,10 +677,14 @@ async def update_calendar_connection(
 
     updates = body.model_dump(exclude_none=True)
     if not _connection_matches_owner_scope(connection_doc, current_user):
-        raise HTTPException(status_code=403, detail="Cannot manage this calendar connection")
+        raise HTTPException(
+            status_code=403, detail="Cannot manage this calendar connection"
+        )
 
     if not (is_owner or can_manage_all or is_connection_owner):
-        raise HTTPException(status_code=403, detail="Cannot manage this calendar connection")
+        raise HTTPException(
+            status_code=403, detail="Cannot manage this calendar connection"
+        )
 
     if not (is_owner or can_manage_all):
         restricted_fields = {"is_shared_in_team_view", "details_visibility"}
@@ -697,13 +715,17 @@ async def delete_calendar_connection(
         and current_user.team_permissions.get("manage_calendar_connections", False)
     )
     if not _connection_matches_owner_scope(connection_doc, current_user):
-        raise HTTPException(status_code=403, detail="Cannot disconnect this calendar connection")
+        raise HTTPException(
+            status_code=403, detail="Cannot disconnect this calendar connection"
+        )
     if not (
         is_owner
         or can_manage_all
         or connection_doc.get("user_id") == current_context.get("user_id")
     ):
-        raise HTTPException(status_code=403, detail="Cannot disconnect this calendar connection")
+        raise HTTPException(
+            status_code=403, detail="Cannot disconnect this calendar connection"
+        )
     return await google_calendar_service.disconnect_connection(connection_id)
 
 
@@ -724,14 +746,18 @@ async def healthcheck_calendar_connection(
         and current_user.team_permissions.get("manage_calendar_connections", False)
     )
     if not _connection_matches_owner_scope(connection_doc, current_user):
-        raise HTTPException(status_code=403, detail="Cannot healthcheck this calendar connection")
+        raise HTTPException(
+            status_code=403, detail="Cannot healthcheck this calendar connection"
+        )
     if not (
         current_user.is_root_admin
         or current_user.is_wedding_planner
         or can_manage_all
         or connection_doc.get("user_id") == current_context.get("user_id")
     ):
-        raise HTTPException(status_code=403, detail="Cannot healthcheck this calendar connection")
+        raise HTTPException(
+            status_code=403, detail="Cannot healthcheck this calendar connection"
+        )
     result = await google_calendar_service.healthcheck_connection(connection_id)
     return CalendarConnectionResponse(**result)
 
@@ -857,7 +883,10 @@ async def create_task(
     assigned_user_ids = task_data.assigned_user_ids
     assigned_user_emails = task_data.assigned_user_emails
     if assigned_user_ids:
-        assigned_user_ids, assigned_user_emails = await resolve_owner_scoped_user_assignments(
+        (
+            assigned_user_ids,
+            assigned_user_emails,
+        ) = await resolve_owner_scoped_user_assignments(
             owner_context.get("owner_id"),
             owner_context.get("owner_email"),
             assigned_user_ids,
@@ -1092,7 +1121,10 @@ async def update_task(
 
     update_fields = updates.model_dump(exclude_unset=True)
     owner_context = get_calendar_owner_identity(current_user)
-    if "assigned_user_ids" in update_fields and update_fields["assigned_user_ids"] is not None:
+    if (
+        "assigned_user_ids" in update_fields
+        and update_fields["assigned_user_ids"] is not None
+    ):
         resolved_ids, resolved_emails = await resolve_owner_scoped_user_assignments(
             owner_context.get("owner_id"),
             owner_context.get("owner_email"),
@@ -1203,7 +1235,9 @@ async def sync_task_to_google(
     """
     enforce_team_permission(current_user, "manage_wedding_settings")
     # Check if Google Calendar is connected
-    status = await google_calendar_service.get_connection_status(_calendar_owner_email(current_user))
+    status = await google_calendar_service.get_connection_status(
+        _calendar_owner_email(current_user)
+    )
     if not status.get("connected"):
         raise HTTPException(
             status_code=400,
@@ -1352,17 +1386,19 @@ async def get_month_tasks(
     query = {
         "$and": [
             _build_task_scope_query(current_user),
-            {"$or": [
-            # Tasks that start in this month
-            {"start_date": {"$gte": start_of_month, "$lt": end_of_month}},
-            # Tasks that end in this month
-            {"end_date": {"$gte": start_of_month, "$lt": end_of_month}},
-            # Tasks that span this month
             {
-                "start_date": {"$lt": start_of_month},
-                "end_date": {"$gte": end_of_month},
+                "$or": [
+                    # Tasks that start in this month
+                    {"start_date": {"$gte": start_of_month, "$lt": end_of_month}},
+                    # Tasks that end in this month
+                    {"end_date": {"$gte": start_of_month, "$lt": end_of_month}},
+                    # Tasks that span this month
+                    {
+                        "start_date": {"$lt": start_of_month},
+                        "end_date": {"$gte": end_of_month},
+                    },
+                ]
             },
-            ]},
         ]
     }
 
@@ -1457,14 +1493,21 @@ async def create_meeting(
     ),
 ) -> MeetingUpsertResponse:
     """Create a canonical meeting inside planner_tasks and sync projections explicitly."""
-    if data.wedding_id and not await check_wedding_access(current_user, data.wedding_id):
-        raise HTTPException(status_code=403, detail="You don't have access to this wedding")
+    if data.wedding_id and not await check_wedding_access(
+        current_user, data.wedding_id
+    ):
+        raise HTTPException(
+            status_code=403, detail="You don't have access to this wedding"
+        )
 
     owner_context = get_calendar_owner_identity(current_user)
     assigned_user_ids = data.assigned_user_ids or []
     assigned_user_emails = data.assigned_user_emails or []
     if assigned_user_ids:
-        assigned_user_ids, assigned_user_emails = await resolve_owner_scoped_user_assignments(
+        (
+            assigned_user_ids,
+            assigned_user_emails,
+        ) = await resolve_owner_scoped_user_assignments(
             owner_context.get("owner_id"),
             owner_context.get("owner_email"),
             assigned_user_ids,
@@ -1548,11 +1591,17 @@ async def create_meeting(
     sync_status = await calendar_sync_service.sync_schedule_item(
         task_doc,
         explicit_connection_ids=(
-            data.sync_target_connection_ids if data.sync_target_override_enabled else None
+            data.sync_target_connection_ids
+            if data.sync_target_override_enabled
+            else None
         ),
     )
     first_synced = next(
-        (row for row in sync_status if row.get("sync_status") == "synced" and row.get("external_event_id")),
+        (
+            row
+            for row in sync_status
+            if row.get("sync_status") == "synced" and row.get("external_event_id")
+        ),
         None,
     )
     if first_synced:
@@ -1604,14 +1653,19 @@ async def update_meeting(
 
     tasks_collection = mongo.get_planner_tasks_collection()
     task = await _get_scoped_meeting(oid, current_user)
-    if task.get("wedding_id") and not await check_wedding_access(current_user, task["wedding_id"]):
-        raise HTTPException(status_code=403, detail="You don't have access to this wedding")
+    if task.get("wedding_id") and not await check_wedding_access(
+        current_user, task["wedding_id"]
+    ):
+        raise HTTPException(
+            status_code=403, detail="You don't have access to this wedding"
+        )
 
     update_doc: dict[str, Any] = {"updated_at": datetime.now(UTC)}
     update_fields = updates.model_dump(exclude_unset=True)
-    if (
-        update_fields.get("invite_delivery_mode") == InviteDeliveryMode.EMAIL_ICS.value
-        and not _can_send_meeting_invites(current_user)
+    if update_fields.get(
+        "invite_delivery_mode"
+    ) == InviteDeliveryMode.EMAIL_ICS.value and not _can_send_meeting_invites(
+        current_user
     ):
         raise HTTPException(
             status_code=403,
@@ -1619,8 +1673,13 @@ async def update_meeting(
         )
     if "wedding_id" in update_fields and update_fields["wedding_id"] is not None:
         if not await check_wedding_access(current_user, update_fields["wedding_id"]):
-            raise HTTPException(status_code=403, detail="You don't have access to this wedding")
-    if "assigned_user_ids" in update_fields and update_fields["assigned_user_ids"] is not None:
+            raise HTTPException(
+                status_code=403, detail="You don't have access to this wedding"
+            )
+    if (
+        "assigned_user_ids" in update_fields
+        and update_fields["assigned_user_ids"] is not None
+    ):
         resolved_ids, resolved_emails = await resolve_owner_scoped_user_assignments(
             task.get("owner_planner_id"),
             task.get("owner_planner_email") or task.get("planner_email"),
@@ -1628,7 +1687,10 @@ async def update_meeting(
         )
         update_doc["assigned_user_ids"] = resolved_ids
         update_doc["assigned_user_emails"] = resolved_emails
-    if "couple_attendee_emails" in update_fields and update_fields["couple_attendee_emails"] is not None:
+    if (
+        "couple_attendee_emails" in update_fields
+        and update_fields["couple_attendee_emails"] is not None
+    ):
         update_doc["couple_attendee_emails"] = await _resolve_couple_attendee_emails(
             update_fields.get("wedding_id") or task.get("wedding_id"),
             update_fields["couple_attendee_emails"],
@@ -1649,7 +1711,11 @@ async def update_meeting(
         explicit_connection_ids=(
             update_fields.get("sync_target_connection_ids")
             if update_fields.get("sync_target_override_enabled") is True
-            else ([] if update_fields.get("sync_target_override_enabled") is False else None)
+            else (
+                []
+                if update_fields.get("sync_target_override_enabled") is False
+                else None
+            )
         ),
     )
     return MeetingUpsertResponse(
@@ -1677,8 +1743,12 @@ async def delete_meeting(
 
     tasks_collection = mongo.get_planner_tasks_collection()
     task = await _get_scoped_meeting(oid, current_user)
-    if task.get("wedding_id") and not await check_wedding_access(current_user, task["wedding_id"]):
-        raise HTTPException(status_code=403, detail="You don't have access to this wedding")
+    if task.get("wedding_id") and not await check_wedding_access(
+        current_user, task["wedding_id"]
+    ):
+        raise HTTPException(
+            status_code=403, detail="You don't have access to this wedding"
+        )
 
     await calendar_sync_service.delete_schedule_item_syncs(meeting_id)
     await mongo.get_meeting_invites_collection().delete_many({"task_id": meeting_id})
@@ -1702,8 +1772,12 @@ async def send_meeting_invites(
     except Exception:
         raise HTTPException(status_code=400, detail="Invalid meeting ID format")
     task = await _get_scoped_meeting(oid, current_user)
-    if task.get("wedding_id") and not await check_wedding_access(current_user, task["wedding_id"]):
-        raise HTTPException(status_code=403, detail="You don't have access to this wedding")
+    if task.get("wedding_id") and not await check_wedding_access(
+        current_user, task["wedding_id"]
+    ):
+        raise HTTPException(
+            status_code=403, detail="You don't have access to this wedding"
+        )
     invites = await meeting_invite_service.send_invites(task)
     return {"meeting_id": meeting_id, "invite_status": invites}
 
@@ -1742,6 +1816,13 @@ async def get_meeting_sync_status(
     except Exception:
         raise HTTPException(status_code=400, detail="Invalid meeting ID format")
     task = await _get_scoped_meeting(oid, current_user)
-    if task.get("wedding_id") and not await check_wedding_access(current_user, task["wedding_id"]):
-        raise HTTPException(status_code=403, detail="You don't have access to this wedding")
-    return {"meeting_id": meeting_id, "sync_status": await calendar_sync_service.get_sync_status(meeting_id)}
+    if task.get("wedding_id") and not await check_wedding_access(
+        current_user, task["wedding_id"]
+    ):
+        raise HTTPException(
+            status_code=403, detail="You don't have access to this wedding"
+        )
+    return {
+        "meeting_id": meeting_id,
+        "sync_status": await calendar_sync_service.get_sync_status(meeting_id),
+    }
