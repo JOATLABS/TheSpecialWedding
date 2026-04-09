@@ -63,19 +63,19 @@ class FakeCollection:
     def __init__(self, documents: list[dict] | None = None):
         self.documents = documents or []
 
-    async def insert_one(self, document: dict) -> SimpleNamespace:
+    async def insert_one(self, document: dict, session=None) -> SimpleNamespace:
         stored = deepcopy(document)
         stored.setdefault("_id", ObjectId())
         self.documents.append(stored)
         return SimpleNamespace(inserted_id=stored["_id"])
 
-    async def find_one(self, query: dict) -> dict | None:
+    async def find_one(self, query: dict, session=None) -> dict | None:
         for document in self.documents:
             if _matches_query(document, query):
                 return deepcopy(document)
         return None
 
-    async def update_one(self, query: dict, update: dict) -> SimpleNamespace:
+    async def update_one(self, query: dict, update: dict, session=None) -> SimpleNamespace:
         for document in self.documents:
             if _matches_query(document, query):
                 for key, value in update.get("$set", {}).items():
@@ -85,7 +85,7 @@ class FakeCollection:
                 return SimpleNamespace(matched_count=1, modified_count=1)
         return SimpleNamespace(matched_count=0, modified_count=0)
 
-    async def update_many(self, query: dict, update: dict) -> SimpleNamespace:
+    async def update_many(self, query: dict, update: dict, session=None) -> SimpleNamespace:
         modified_count = 0
         for document in self.documents:
             if _matches_query(document, query):
@@ -138,8 +138,11 @@ def make_contract_doc(
         "currency": "USD",
         "deposit_amount": 2500,
         "status": status,
-        "access_token": access_token,
+        "access_token_hash": vendor_service._hash_contract_access_token(access_token),
         "token_expires_at": datetime(2026, 5, 1, tzinfo=timezone.utc),
+        "token_revoked_at": None,
+        "token_last_sent_at": None,
+        "token_last_viewed_at": None,
         "created_by": "planner@example.com",
         "created_at": now,
         "updated_at": now,
@@ -192,6 +195,9 @@ def configured_vendor_service(monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setattr(vendor_service, "budget_categories", budget_categories)
     monkeypatch.setattr(vendor_service, "vendor_profiles", vendor_profiles)
     monkeypatch.setattr(vendor_service, "_log_communication", AsyncMock())
+    async def run_required_transaction(_operation_name, operation):
+        return await operation(None)
+    monkeypatch.setattr(vendor_service, "_run_required_transaction", run_required_transaction)
     monkeypatch.setattr(
         vendor_service,
         "_get_planner_contract_settings",

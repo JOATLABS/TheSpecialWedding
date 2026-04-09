@@ -47,19 +47,19 @@ class FakeCollection:
     def __init__(self, documents: list[dict] | None = None):
         self.documents = documents or []
 
-    async def insert_one(self, document: dict) -> SimpleNamespace:
+    async def insert_one(self, document: dict, session=None) -> SimpleNamespace:
         stored = deepcopy(document)
         stored.setdefault("_id", ObjectId())
         self.documents.append(stored)
         return SimpleNamespace(inserted_id=stored["_id"])
 
-    async def find_one(self, query: dict) -> dict | None:
+    async def find_one(self, query: dict, session=None) -> dict | None:
         for document in self.documents:
             if _matches_query(document, query):
                 return deepcopy(document)
         return None
 
-    async def update_one(self, query: dict, update: dict) -> SimpleNamespace:
+    async def update_one(self, query: dict, update: dict, session=None) -> SimpleNamespace:
         for document in self.documents:
             if _matches_query(document, query):
                 for key, value in update.get("$set", {}).items():
@@ -119,8 +119,11 @@ def make_contract_doc(
         "currency": "USD",
         "deposit_amount": 2500,
         "status": status,
-        "access_token": access_token,
+        "access_token_hash": vendor_service._hash_contract_access_token(access_token),
         "token_expires_at": datetime(2026, 5, 1, tzinfo=timezone.utc),
+        "token_revoked_at": None,
+        "token_last_sent_at": None,
+        "token_last_viewed_at": None,
         "created_by": "planner@example.com",
         "created_at": now,
         "updated_at": now,
@@ -179,6 +182,9 @@ def configured_vendor_service(monkeypatch: pytest.MonkeyPatch):
         "_get_planner_contract_settings",
         AsyncMock(return_value={"token_expiry_days": 30, "deposit_due_days": 7}),
     )
+    async def run_required_transaction(_operation_name, operation):
+        return await operation(None)
+    monkeypatch.setattr(vendor_service, "_run_required_transaction", run_required_transaction)
     monkeypatch.setattr(
         vendor_service,
         "_get_wedding",
