@@ -83,6 +83,7 @@ export interface VendorContract {
   sections: ContractSection[];
   terms_and_conditions?: string;
   cancellation_policy?: string;
+  custom_clauses?: string;
   total_amount: number;
   currency: string;
   deposit_amount?: number;
@@ -94,6 +95,10 @@ export interface VendorContract {
   signed_by_name?: string;
   service_date?: string;
   service_location?: string;
+  form_data_applied?: boolean;
+  form_submission_id?: string;
+  form_submission_ids?: string[];
+  form_data_mappings?: Record<string, string>;
   created_at: string;
   updated_at: string;
 }
@@ -114,23 +119,30 @@ export interface PaymentMilestone {
   vendor_email: string;
 }
 
-export interface FormDataForContract {
-  vendor_submissions: Array<{
-    _id: string;
-    form_name: string;
-    submitted_at?: string;
-    data: Record<string, unknown>;
-  }>;
-  available_fields: Record<string, {
-    value: unknown;
-    source: string;
-    source_id: string;
-    original_key: string;
-  }>;
-  suggested_contract_fields: Record<string, {
-    value: unknown;
-    source_field: string;
-  }>;
+export interface VendorContractFormSubmissionSummary {
+  _id: string;
+  form_name: string;
+  submitted_at?: string;
+  source: string;
+  data: Record<string, unknown>;
+}
+
+export interface VendorContractAvailableField {
+  value: unknown;
+  source: string;
+  source_id: string;
+  original_key: string;
+}
+
+export interface VendorContractSuggestedField {
+  value: unknown;
+  source_field: string;
+}
+
+export interface VendorContractFormDataResponse {
+  vendor_submissions: VendorContractFormSubmissionSummary[];
+  available_fields: Record<string, VendorContractAvailableField>;
+  suggested_contract_fields: Record<string, VendorContractSuggestedField>;
 }
 
 export interface PublicContract {
@@ -160,7 +172,7 @@ export interface PublicContract {
   signed_by_name?: string;
 }
 
-export interface CreateTemplateRequest {
+export interface CreateVendorContractTemplateRequest {
   name: string;
   description?: string;
   service_category: VendorCategory;
@@ -170,6 +182,71 @@ export interface CreateTemplateRequest {
   default_deposit_percentage?: number;
   default_payment_schedule?: PaymentScheduleItem[];
   is_public?: boolean;
+}
+
+export interface CreateVendorContractRequest {
+  wedding_id: string;
+  vendor_profile_id: string;
+  total_amount: number;
+  template_id?: string;
+  quote_id?: string;
+  deposit_percentage?: number;
+  service_date?: string;
+  service_location?: string;
+  custom_sections?: ContractSection[];
+}
+
+export interface UpdateVendorContractRequest {
+  contract_title?: string;
+  total_amount?: number;
+  deposit_amount?: number;
+  deposit_due_date?: string;
+  terms_and_conditions?: string;
+  cancellation_policy?: string;
+  custom_clauses?: string;
+  service_date?: string;
+  service_start_time?: string;
+  service_end_time?: string;
+  service_location?: string;
+  internal_notes?: string;
+  sections?: ContractSection[];
+}
+
+export interface UpdateVendorContractSectionsRequest {
+  sections: ContractSection[];
+  terms_and_conditions?: string;
+  cancellation_policy?: string;
+  custom_clauses?: string;
+}
+
+export interface ApplyVendorContractFormDataRequest {
+  form_submission_id: string;
+  field_mappings?: Record<string, string>;
+}
+
+export interface SendVendorContractRequest {
+  message?: string;
+  cc_emails?: string[];
+}
+
+export interface PaymentMilestoneInput {
+  description: string;
+  amount: number;
+  due_date: string;
+  percentage_of_total?: number;
+  days_before_event?: number;
+}
+
+export interface CreateVendorPaymentMilestonesRequest {
+  milestones: PaymentMilestoneInput[];
+}
+
+export interface RecordVendorMilestonePaymentRequest {
+  amount: number;
+  payment_method: string;
+  payment_date?: string;
+  notes?: string;
+  receipt_url?: string;
 }
 
 export async function getContractTemplates(
@@ -210,7 +287,7 @@ export async function getContractTemplate(
 
 export async function createContractTemplate(
   token: string,
-  data: CreateTemplateRequest
+  data: CreateVendorContractTemplateRequest
 ): Promise<ContractTemplate> {
   const response = await fetch(`${API_BASE}/admin/templates`, {
     method: 'POST',
@@ -231,35 +308,15 @@ export async function createContractTemplate(
 
 export async function createContract(
   token: string,
-  data: {
-    wedding_id: string;
-    vendor_profile_id: string;
-    total_amount: number;
-    template_id?: string;
-    quote_id?: string;
-    deposit_percentage?: number;
-    service_date?: string;
-    service_location?: string;
-    custom_sections?: ContractSection[];
-  }
+  data: CreateVendorContractRequest
 ): Promise<VendorContract> {
-  const params = new URLSearchParams();
-  params.append('wedding_id', data.wedding_id);
-  params.append('vendor_profile_id', data.vendor_profile_id);
-  params.append('total_amount', String(data.total_amount));
-  if (data.template_id) params.append('template_id', data.template_id);
-  if (data.quote_id) params.append('quote_id', data.quote_id);
-  if (data.deposit_percentage) params.append('deposit_percentage', String(data.deposit_percentage));
-  if (data.service_date) params.append('service_date', data.service_date);
-  if (data.service_location) params.append('service_location', data.service_location);
-
-  const response = await fetch(`${API_BASE}/admin/contracts?${params.toString()}`, {
+  const response = await fetch(`${API_BASE}/admin/contracts`, {
     method: 'POST',
     headers: {
       Authorization: `Bearer ${token}`,
       'Content-Type': 'application/json',
     },
-    body: data.custom_sections ? JSON.stringify(data.custom_sections) : undefined,
+    body: JSON.stringify(data),
   });
 
   if (!response.ok) {
@@ -319,7 +376,7 @@ export async function getContract(
 export async function updateContract(
   token: string,
   contractId: string,
-  data: Partial<VendorContract>
+  data: UpdateVendorContractRequest
 ): Promise<VendorContract> {
   const response = await fetch(`${API_BASE}/admin/contracts/${contractId}`, {
     method: 'PUT',
@@ -341,14 +398,21 @@ export async function updateContract(
 export async function sendContract(
   token: string,
   contractId: string,
-  message?: string
+  message?: string,
+  ccEmails: string[] = []
 ): Promise<{ message: string; sent_to: string }> {
-  const params = new URLSearchParams();
-  if (message) params.append('message', message);
+  const requestBody: SendVendorContractRequest = {
+    message,
+    cc_emails: ccEmails,
+  };
 
-  const response = await fetch(`${API_BASE}/admin/contracts/${contractId}/send?${params.toString()}`, {
+  const response = await fetch(`${API_BASE}/admin/contracts/${contractId}/send`, {
     method: 'POST',
-    headers: { Authorization: `Bearer ${token}` },
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(requestBody),
   });
 
   if (!response.ok) {
@@ -403,7 +467,7 @@ export async function uploadContractPdf(
 export async function getContractFormData(
   token: string,
   contractId: string
-): Promise<FormDataForContract> {
+): Promise<VendorContractFormDataResponse> {
   const response = await fetch(`${API_BASE}/admin/contracts/${contractId}/form-data`, {
     headers: { Authorization: `Bearer ${token}` },
   });
@@ -418,7 +482,7 @@ export async function getContractFormData(
 export async function applyFormDataToContract(
   token: string,
   contractId: string,
-  formDataMappings: Record<string, { value: unknown } | string>
+  data: ApplyVendorContractFormDataRequest
 ): Promise<VendorContract> {
   const response = await fetch(`${API_BASE}/admin/contracts/${contractId}/apply-form-data`, {
     method: 'POST',
@@ -426,7 +490,10 @@ export async function applyFormDataToContract(
       Authorization: `Bearer ${token}`,
       'Content-Type': 'application/json',
     },
-    body: JSON.stringify(formDataMappings),
+    body: JSON.stringify({
+      form_submission_id: data.form_submission_id,
+      field_mappings: data.field_mappings ?? {},
+    }),
   });
 
   if (!response.ok) {
@@ -440,12 +507,7 @@ export async function applyFormDataToContract(
 export async function updateContractSections(
   token: string,
   contractId: string,
-  data: {
-    sections: ContractSection[];
-    terms_and_conditions?: string;
-    cancellation_policy?: string;
-    custom_clauses?: string;
-  }
+  data: UpdateVendorContractSectionsRequest
 ): Promise<VendorContract> {
   const response = await fetch(`${API_BASE}/admin/contracts/${contractId}/sections`, {
     method: 'PUT',
@@ -467,20 +529,17 @@ export async function updateContractSections(
 export async function createPaymentMilestones(
   token: string,
   contractId: string,
-  milestones: Array<{
-    description: string;
-    amount: number;
-    due_date: string;
-    percentage_of_total?: number;
-  }>
+  milestones: PaymentMilestoneInput[]
 ): Promise<PaymentMilestone[]> {
+  const requestBody: CreateVendorPaymentMilestonesRequest = { milestones };
+
   const response = await fetch(`${API_BASE}/admin/contracts/${contractId}/milestones`, {
     method: 'POST',
     headers: {
       Authorization: `Bearer ${token}`,
       'Content-Type': 'application/json',
     },
-    body: JSON.stringify(milestones),
+    body: JSON.stringify(requestBody),
   });
 
   if (!response.ok) {
@@ -524,22 +583,15 @@ export async function getPaymentMilestones(
 export async function recordPayment(
   token: string,
   milestoneId: string,
-  data: {
-    amount: number;
-    payment_method: string;
-    payment_date?: string;
-    notes?: string;
-  }
+  data: RecordVendorMilestonePaymentRequest
 ): Promise<PaymentMilestone> {
-  const params = new URLSearchParams();
-  params.append('amount', String(data.amount));
-  params.append('payment_method', data.payment_method);
-  if (data.payment_date) params.append('payment_date', data.payment_date);
-  if (data.notes) params.append('notes', data.notes);
-
-  const response = await fetch(`${API_BASE}/admin/milestones/${milestoneId}/pay?${params.toString()}`, {
+  const response = await fetch(`${API_BASE}/admin/milestones/${milestoneId}/pay`, {
     method: 'POST',
-    headers: { Authorization: `Bearer ${token}` },
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(data),
   });
 
   if (!response.ok) {

@@ -17,7 +17,7 @@ import {
   createPaymentMilestones,
   type VendorContract,
   type ContractSection,
-  type FormDataForContract,
+  type VendorContractFormDataResponse,
   getContractStatusColor,
 } from '@/services/vendorContractsApi';
 
@@ -34,7 +34,7 @@ export default function ContractDetailPage() {
   const [saving, setSaving] = useState(false);
   const [sending, setSending] = useState(false);
   const [contract, setContract] = useState<VendorContract | null>(null);
-  const [formData, setFormData] = useState<FormDataForContract | null>(null);
+  const [formData, setFormData] = useState<VendorContractFormDataResponse | null>(null);
   const [activeTab, setActiveTab] = useState<TabId>('details');
   const [editMode, setEditMode] = useState(false);
   const [sendMessage, setSendMessage] = useState('');
@@ -166,6 +166,20 @@ export default function ContractDetailPage() {
       console.error('Error creating milestones:', error);
       toast.error('Failed to create payment milestones');
     }
+  };
+
+  const buildSuggestedFieldMappings = (
+    data: VendorContractFormDataResponse
+  ): Record<string, string> => {
+    return Object.entries(data.suggested_contract_fields).reduce<Record<string, string>>(
+      (mappings, [placeholder, suggestion]) => {
+        if (suggestion?.source_field) {
+          mappings[suggestion.source_field] = placeholder;
+        }
+        return mappings;
+      },
+      {}
+    );
   };
 
   // Get status badge
@@ -423,10 +437,19 @@ export default function ContractDetailPage() {
                       <button
                         onClick={() => {
                           if (formData && token && contractId) {
+                            const selectedSubmission = formData.vendor_submissions[0];
+                            if (!selectedSubmission) {
+                              toast.error('No vendor submission is available to apply');
+                              return;
+                            }
+
                             applyFormDataToContract(
                               token,
                               contractId,
-                              (formData.vendor_submissions[0]?.data || {}) as Record<string, { value: unknown } | string>
+                              {
+                                form_submission_id: selectedSubmission._id,
+                                field_mappings: buildSuggestedFieldMappings(formData),
+                              }
                             )
                               .then((updated) => {
                                 setContract(updated);

@@ -869,10 +869,21 @@ class VendorService:
         """Create a contract template"""
         try:
             template = {
-                **data,
+                "name": data["name"],
+                "description": data.get("description"),
+                "service_category": data["service_category"],
+                "sections": data.get("sections", []),
+                "terms_and_conditions": data.get("terms_and_conditions"),
+                "cancellation_policy": data.get("cancellation_policy"),
+                "default_deposit_percentage": data.get(
+                    "default_deposit_percentage"
+                ),
+                "default_payment_schedule": data.get(
+                    "default_payment_schedule", []
+                ),
                 "created_by": created_by,
                 "is_system_template": False,
-                "is_public": False,
+                "is_public": data.get("is_public", False),
                 "is_active": True,
                 "usage_count": 0,
                 "created_at": datetime.now(timezone.utc),
@@ -1561,7 +1572,13 @@ class VendorService:
             raise HTTPException(status_code=500, detail="Failed to update contract")
 
     async def update_contract_sections(
-        self, contract_id: str, sections: List[Dict], updated_by: str
+        self,
+        contract_id: str,
+        sections: List[Dict[str, Any]],
+        updated_by: str,
+        terms_and_conditions: Optional[str] = None,
+        cancellation_policy: Optional[str] = None,
+        custom_clauses: Optional[str] = None,
     ) -> dict:
         """Update contract sections - add, modify, or remove sections"""
         try:
@@ -1592,14 +1609,20 @@ class VendorService:
             # Sort by order
             processed_sections.sort(key=lambda x: x["order"])
 
+            update_data: Dict[str, Any] = {
+                "sections": processed_sections,
+                "updated_at": datetime.now(timezone.utc),
+            }
+            if terms_and_conditions is not None:
+                update_data["terms_and_conditions"] = terms_and_conditions
+            if cancellation_policy is not None:
+                update_data["cancellation_policy"] = cancellation_policy
+            if custom_clauses is not None:
+                update_data["custom_clauses"] = custom_clauses
+
             await self.vendor_contracts.update_one(
                 {"_id": ObjectId(contract_id)},
-                {
-                    "$set": {
-                        "sections": processed_sections,
-                        "updated_at": datetime.now(timezone.utc),
-                    }
-                },
+                {"$set": update_data},
             )
 
             return await self.get_contract(contract_id, created_by=updated_by)
@@ -1629,7 +1652,11 @@ class VendorService:
             vendor_email = contract.get("vendor_email")
 
             if not vendor_email:
-                return {"submissions": [], "message": "No vendor email in contract"}
+                return {
+                    "vendor_submissions": [],
+                    "available_fields": {},
+                    "suggested_contract_fields": {},
+                }
 
             # Find vendor form submissions for this vendor
             vendor_submissions = (
@@ -1647,43 +1674,83 @@ class VendorService:
 
             submissions = []
             for sub in vendor_submissions:
-                sub["_id"] = str(sub["_id"])
-                sub["source"] = "vendor_submission"
-                submissions.append(sub)
+                submissions.append(
+                    self._summarize_contract_form_submission(
+                        submission=sub,
+                        source="vendor_submission",
+                    )
+                )
 
             for form in vendor_forms:
                 if form.get("submission_data"):
-                    form["_id"] = str(form["_id"])
-                    form["source"] = "vendor_form"
-                    submissions.append(form)
+                    submissions.append(
+                        self._summarize_contract_form_submission(
+                            submission=form,
+                            source="vendor_form",
+                        )
+                    )
 
             # Extract available fields that could populate contract
-            available_fields = {}
+            available_fields: Dict[str, Dict[str, Any]] = {}
             for sub in submissions:
-                data = sub.get("submission_data", {})
+                data = sub.get("data", {})
                 if isinstance(data, dict):
                     for key, value in data.items():
                         if value and isinstance(value, (str, int, float)):
                             available_fields[key] = {
                                 "value": value,
+                                "source": sub.get("source", "unknown"),
                                 "source_id": sub["_id"],
-                                "source_type": sub.get("source", "unknown"),
+                                "original_key": key,
                             }
 
             return {
-                "submissions": submissions,
+                "vendor_submissions": submissions,
                 "available_fields": available_fields,
-                "vendor_email": vendor_email,
-                "suggested_mappings": self._suggest_field_mappings(available_fields),
+                "suggested_contract_fields": self._suggest_field_mappings(
+                    available_fields
+                ),
             }
 
         except Exception as e:
             logger.error(f"Error getting form data for contract: {str(e)}")
-            return {"submissions": [], "available_fields": {}, "error": str(e)}
+            return {
+                "vendor_submissions": [],
+                "available_fields": {},
+                "suggested_contract_fields": {},
+            }
 
-    def _suggest_field_mappings(self, available_fields: dict) -> dict:
+    def _summarize_contract_form_submission(
+        self, submission: Dict[str, Any], source: str
+    ) -> Dict[str, Any]:
+        """Normalize vendor form documents into a stable contract form-data summary."""
+        raw_id = submission.get("_id")
+        submission_data = submission.get("submission_data", {})
+        submitted_at = (
+            submission.get("submitted_at")
+            or submission.get("created_at")
+            or submission.get("updated_at")
+        )
+        form_name = (
+            submission.get("form_name")
+            or submission.get("title")
+            or submission.get("name")
+            or "Vendor Submission"
+        )
+
+        return {
+            "_id": str(raw_id) if raw_id is not None else "",
+            "form_name": form_name,
+            "submitted_at": submitted_at,
+            "source": source,
+            "data": submission_data if isinstance(submission_data, dict) else {},
+        }
+
+    def _suggest_field_mappings(
+        self, available_fields: Dict[str, Dict[str, Any]]
+    ) -> Dict[str, Dict[str, Any]]:
         """Suggest mappings from form fields to contract placeholders"""
-        mappings = {}
+        mappings: Dict[str, Dict[str, Any]] = {}
 
         # Common field name patterns to contract placeholders
         patterns = {
@@ -1707,17 +1774,32 @@ class VendorService:
         for field_name, field_data in available_fields.items():
             field_lower = field_name.lower()
             for pattern, placeholder in patterns.items():
-                if pattern in field_lower:
-                    mappings[field_name] = placeholder
+                if pattern in field_lower and placeholder not in mappings:
+                    mappings[placeholder] = {
+                        "source_field": field_name,
+                        "value": field_data.get("value"),
+                    }
                     break
 
         return mappings
+
+    def _apply_placeholder_replacements(
+        self, content: Optional[str], replacements: Dict[str, str]
+    ) -> Optional[str]:
+        """Apply placeholder replacements to an optional string field."""
+        if content is None:
+            return None
+
+        updated = content
+        for placeholder, value in replacements.items():
+            updated = updated.replace(placeholder, value)
+        return updated
 
     async def apply_form_data_to_contract(
         self,
         contract_id: str,
         form_submission_id: str,
-        field_mappings: Optional[Dict] = None,
+        field_mappings: Optional[Dict[str, str]] = None,
         applied_by: Optional[str] = None,
     ) -> dict:
         """Apply data from a vendor form submission to populate contract sections"""
@@ -1734,15 +1816,19 @@ class VendorService:
                     detail="Cannot apply form data to a contract that has been sent",
                 )
 
+            submission_object_id = validate_object_id(
+                form_submission_id, "form submission ID"
+            )
+
             # Try to find the submission in vendor_submissions first
             submission = await mongo.db["vendor_submissions"].find_one(
-                {"_id": ObjectId(form_submission_id)}
+                {"_id": submission_object_id}
             )
 
             if not submission:
                 # Try vendor_forms
                 submission = await mongo.db["vendor_forms"].find_one(
-                    {"_id": ObjectId(form_submission_id)}
+                    {"_id": submission_object_id}
                 )
 
             if not submission:
@@ -1755,32 +1841,40 @@ class VendorService:
                 )
 
             # Build placeholder replacements
-            replacements = {}
+            replacements: Dict[str, str] = {}
+            normalized_mappings: Dict[str, str] = {}
 
             # Default mappings from submission data
             for key, value in submission_data.items():
                 if value and isinstance(value, (str, int, float)):
                     placeholder = f"{{{{{key}}}}}"
                     replacements[placeholder] = str(value)
+                    normalized_mappings[key] = placeholder
 
             # Apply custom field mappings if provided
             if field_mappings:
                 for field_name, placeholder in field_mappings.items():
                     if field_name in submission_data:
                         replacements[placeholder] = str(submission_data[field_name])
+                        normalized_mappings[field_name] = placeholder
 
             # Apply replacements to contract sections
             updated_sections = []
             for section in contract.get("sections", []):
-                new_content = section.get("content", "")
-                for placeholder, value in replacements.items():
-                    new_content = new_content.replace(placeholder, value)
-                updated_sections.append({**section, "content": new_content})
+                updated_sections.append(
+                    {
+                        **section,
+                        "content": self._apply_placeholder_replacements(
+                            section.get("content", ""),
+                            replacements,
+                        ),
+                    }
+                )
 
-            # Also apply to terms and conditions
-            terms = contract.get("terms_and_conditions", "")
-            for placeholder, value in replacements.items():
-                terms = terms.replace(placeholder, value)
+            existing_submission_ids = contract.get("form_submission_ids") or []
+            updated_submission_ids = list(
+                dict.fromkeys([*existing_submission_ids, form_submission_id])
+            )
 
             # Update contract
             await self.vendor_contracts.update_one(
@@ -1788,19 +1882,28 @@ class VendorService:
                 {
                     "$set": {
                         "sections": updated_sections,
-                        "terms_and_conditions": terms,
+                        "terms_and_conditions": self._apply_placeholder_replacements(
+                            contract.get("terms_and_conditions"),
+                            replacements,
+                        ),
+                        "cancellation_policy": self._apply_placeholder_replacements(
+                            contract.get("cancellation_policy"),
+                            replacements,
+                        ),
+                        "custom_clauses": self._apply_placeholder_replacements(
+                            contract.get("custom_clauses"),
+                            replacements,
+                        ),
                         "form_data_applied": True,
                         "form_submission_id": form_submission_id,
+                        "form_submission_ids": updated_submission_ids,
+                        "form_data_mappings": normalized_mappings,
                         "updated_at": datetime.now(timezone.utc),
                     }
                 },
             )
 
-            return {
-                "message": "Form data applied to contract successfully",
-                "fields_applied": list(replacements.keys()),
-                "contract_id": contract_id,
-            }
+            return await self.get_contract(contract_id, created_by=applied_by)
 
         except HTTPException:
             raise

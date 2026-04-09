@@ -915,24 +915,6 @@ class AssignVendorRequest(BaseModel):
     service_notes: Optional[str] = None
 
 
-class CreateContractFromQuoteRequest(BaseModel):
-    """Request to create contract from an accepted quote"""
-
-    quote_id: str
-    template_id: Optional[str] = None
-    custom_sections: Optional[List[Dict]] = None
-    deposit_percentage: Optional[float] = None
-    payment_milestones: Optional[List[Dict]] = None
-
-
-class SendContractRequest(BaseModel):
-    """Request to send contract to vendor"""
-
-    contract_id: str
-    message: Optional[str] = None
-    cc_emails: List[str] = []
-
-
 class SignContractRequest(BaseModel):
     """Request when vendor signs contract"""
 
@@ -940,39 +922,6 @@ class SignContractRequest(BaseModel):
     signer_email: str
     signature_data: Optional[str] = None  # Base64 signature image if needed
     agreed_to_terms: bool = True
-
-
-class RecordPaymentRequest(BaseModel):
-    """Request to record a payment"""
-
-    milestone_id: str
-    amount: float
-    payment_method: str  # cash, check, card, bank_transfer, stripe
-    payment_date: Optional[datetime] = None
-    notes: Optional[str] = None
-    receipt_url: Optional[str] = None
-
-
-class UploadContractPdfRequest(BaseModel):
-    """Request to create contract from uploaded PDF"""
-
-    wedding_id: str
-    vendor_profile_id: str
-    contract_title: str
-    total_amount: float
-    deposit_amount: Optional[float] = None
-    service_date: Optional[datetime] = None
-    service_location: Optional[str] = None
-    notes: Optional[str] = None
-
-
-class UpdateContractSectionsRequest(BaseModel):
-    """Request to update contract sections"""
-
-    sections: List[Dict[str, Any]]
-    terms_and_conditions: Optional[str] = None
-    cancellation_policy: Optional[str] = None
-    custom_clauses: Optional[str] = None
 
 
 class CreatePaymentLinkRequest(BaseModel):
@@ -1011,10 +960,3 @@ class SendPaymentLinkRequest(BaseModel):
 
     payment_link_id: str
     custom_message: Optional[str] = None
-
-
-class GetFormDataForContractRequest(BaseModel):
-    """Request to get form data that can be used in a contract"""
-
-    vendor_email: str
-    wedding_id: str
