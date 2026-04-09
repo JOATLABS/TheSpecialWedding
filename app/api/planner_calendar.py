@@ -7,7 +7,7 @@ from datetime import datetime, timedelta, UTC
 from typing import List, Optional, Any
 
 from bson import ObjectId
-from fastapi import APIRouter, HTTPException, Depends, Query, Path
+from fastapi import APIRouter, HTTPException, Depends, Query
 from pydantic import BaseModel, Field
 
 from app.core.database import mongo
@@ -20,7 +20,6 @@ from app.dependencies.auth_extended import (
     resolve_owner_scoped_user_assignments,
     require_calendar_access,
     require_calendar_permission,
-    require_team_or_planner,
     require_wedding_planner,
     enforce_team_permission,
 )

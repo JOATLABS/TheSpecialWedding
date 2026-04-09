@@ -1,4 +1,3 @@
-import os
 from typing import cast
 from fastapi import APIRouter, HTTPException, Depends, Request
 from app.services.reminder_service import ReminderService
