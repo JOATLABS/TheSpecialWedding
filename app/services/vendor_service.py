@@ -1850,7 +1850,8 @@ class VendorService:
             }
             if first_view:
                 view_update["viewed_at"] = viewed_at
-                view_update["status"] = ContractStatus.VIEWED.value
+                if contract.get("status") == ContractStatus.SENT.value:
+                    view_update["status"] = ContractStatus.VIEWED.value
 
             await self.vendor_contracts.update_one(
                 {"_id": ObjectId(contract_id)},
@@ -1860,7 +1861,8 @@ class VendorService:
             contract["token_last_viewed_at"] = viewed_at
             if first_view:
                 contract["viewed_at"] = viewed_at
-                contract["status"] = ContractStatus.VIEWED.value
+                if contract.get("status") == ContractStatus.SENT.value:
+                    contract["status"] = ContractStatus.VIEWED.value
                 await self._log_contract_activity(
                     contract_id=contract_id,
                     root_contract_id=self._get_root_contract_id(contract),
