@@ -13,8 +13,15 @@ import { useConfirmDialog } from '@/components/ui/ConfirmDialog';
 import { formatAdminTimestamp } from '@/utils/dateFormat';
 import { toast } from 'sonner';
 
+interface StaffOption {
+  id: string;
+  email: string;
+  label: string;
+}
+
 interface GoogleCalendarConnectProps {
   connections: CalendarConnection[];
+  staffOptions?: StaffOption[];
   loading?: boolean;
   onRefresh: () => Promise<void> | void;
 }
@@ -40,6 +47,7 @@ function visibilityLabel(mode: string) {
 
 export default function GoogleCalendarConnect({
   connections,
+  staffOptions = [],
   loading = false,
   onRefresh,
 }: GoogleCalendarConnectProps) {
@@ -138,7 +146,11 @@ export default function GoogleCalendarConnect({
     updates: Partial<
       Pick<
         CalendarConnection,
-        'is_shared_in_team_view' | 'details_visibility' | 'sync_enabled' | 'is_default_write_target'
+        | 'allowed_scheduler_user_ids'
+        | 'is_shared_in_team_view'
+        | 'details_visibility'
+        | 'sync_enabled'
+        | 'is_default_write_target'
       >
     >,
     successMessage: string
@@ -149,6 +161,22 @@ export default function GoogleCalendarConnect({
       await updateCalendarConnection(token, connection.id, updates);
       toast.success(successMessage);
     });
+  };
+
+  const handleSchedulerToggle = async (
+    connection: CalendarConnection,
+    schedulerUserId: string
+  ) => {
+    const currentIds = connection.allowed_scheduler_user_ids || [];
+    const nextIds = currentIds.includes(schedulerUserId)
+      ? currentIds.filter((value) => value !== schedulerUserId)
+      : [...currentIds, schedulerUserId];
+
+    await handleToggle(
+      connection,
+      { allowed_scheduler_user_ids: nextIds },
+      'Calendar scheduler access updated'
+    );
   };
 
   if (loading) {
@@ -291,6 +319,56 @@ export default function GoogleCalendarConnect({
                             <p className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700">
                               {connection.last_error}
                             </p>
+                          )}
+
+                          {connection.is_writable && (
+                            <div className="rounded-xl border border-slate-200 bg-white p-3">
+                              <div className="flex flex-col gap-1">
+                                <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
+                                  Scheduler access
+                                </p>
+                                {connection.user_id === connection.owner_planner_id &&
+                                connection.allowed_scheduler_user_ids.length === 0 ? (
+                                  <p className="text-xs text-slate-500">
+                                    Owner calendar uses the business fallback by default. Team
+                                    schedulers can target it when sync policy allows it.
+                                  </p>
+                                ) : (
+                                  <p className="text-xs text-slate-500">
+                                    Choose which internal users may schedule onto this connected
+                                    calendar.
+                                  </p>
+                                )}
+                              </div>
+
+                              {connection.user_id !== connection.owner_planner_id &&
+                              staffOptions.length > 0 ? (
+                                <div className="mt-3 flex flex-wrap gap-2">
+                                  {staffOptions.map((staff) => {
+                                    const checked = connection.allowed_scheduler_user_ids.includes(
+                                      staff.id
+                                    );
+                                    return (
+                                      <label
+                                        key={`${connection.id}-${staff.id}`}
+                                        className="inline-flex items-center gap-2 rounded-full border border-slate-200 px-3 py-1.5 text-xs text-slate-700"
+                                      >
+                                        <input
+                                          type="checkbox"
+                                          checked={checked}
+                                          onChange={() =>
+                                            void handleSchedulerToggle(connection, staff.id)
+                                          }
+                                          disabled={updateLoading}
+                                          className="h-3.5 w-3.5 rounded border-slate-300 text-slate-900"
+                                        />
+                                        {staff.label}
+                                      </label>
+                                    );
+                                  })}
+                                </div>
+                              ) : null}
+                            </div>
                           )}
                         </div>
 

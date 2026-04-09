@@ -19,7 +19,7 @@ from app.dependencies.auth_extended import (
     ExtendedAuthUser,
     resolve_owner_scoped_user_assignments,
 )
-from app.models.calendar import CalendarEventCreate
+from app.models.calendar import CalendarEventCreate, CalendarEventUpdate
 from app.services.meeting_invite_service import MeetingInviteService
 from app.services.calendar_aggregation_service import CalendarAggregationService
 from app.services.calendar_sync_service import CalendarSyncService
@@ -467,6 +467,168 @@ async def test_create_meeting_normalizes_owner_scope_for_team_members(
     assert inserted_docs[0]["owner_planner_email"] == "owner@example.com"
     assert inserted_docs[0]["created_by_email"] == "team@example.com"
     assert response.meeting["owner_planner_email"] == "owner@example.com"
+
+
+@pytest.mark.asyncio
+async def test_update_meeting_sends_updated_ics_for_material_email_ics_change(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    original_task = {
+        "_id": "meeting-1",
+        "owner_planner_id": "owner-1",
+        "owner_planner_email": "owner@example.com",
+        "planner_email": "owner@example.com",
+        "wedding_id": "wedding-1",
+        "title": "Planning Call",
+        "description": "Original details",
+        "start_date": datetime(2026, 4, 8, 12, 0, tzinfo=UTC),
+        "end_date": datetime(2026, 4, 8, 13, 0, tzinfo=UTC),
+        "timezone": "UTC",
+        "invite_delivery_mode": "email_ics",
+        "couple_attendee_emails": ["couple@example.com"],
+    }
+    updated_task = {
+        **original_task,
+        "start_date": datetime(2026, 4, 8, 14, 0, tzinfo=UTC),
+        "end_date": datetime(2026, 4, 8, 15, 0, tzinfo=UTC),
+        "updated_at": datetime.now(UTC),
+    }
+
+    class FakeTasksCollection:
+        async def update_one(self, *_args: object, **_kwargs: object) -> None:
+            return None
+
+        async def find_one(self, _query: dict) -> dict[str, Any]:
+            return updated_task
+
+    monkeypatch.setattr(
+        planner_calendar_api,
+        "check_wedding_access",
+        AsyncMock(return_value=True),
+    )
+    monkeypatch.setattr(
+        planner_calendar_api,
+        "_get_scoped_meeting",
+        AsyncMock(return_value=original_task),
+    )
+    monkeypatch.setattr(
+        planner_calendar_api,
+        "mongo",
+        SimpleNamespace(get_planner_tasks_collection=lambda: FakeTasksCollection()),
+    )
+    monkeypatch.setattr(
+        planner_calendar_api.calendar_sync_service,
+        "sync_schedule_item",
+        AsyncMock(return_value=[]),
+    )
+    send_invites = AsyncMock(return_value=[{"success": True}])
+    send_cancellations = AsyncMock(return_value=[])
+    monkeypatch.setattr(
+        planner_calendar_api.meeting_invite_service,
+        "send_invites",
+        send_invites,
+    )
+    monkeypatch.setattr(
+        planner_calendar_api.meeting_invite_service,
+        "send_cancellations",
+        send_cancellations,
+    )
+
+    current_user = ExtendedAuthUser(
+        "owner@example.com",
+        "wedding_planner",
+        {"_id": "owner-1"},
+    )
+
+    response = await planner_calendar_api.update_meeting(
+        "507f1f77bcf86cd799439011",
+        cast(
+            Any,
+            CalendarEventUpdate.model_validate(
+                {
+                    "start_date": datetime(2026, 4, 8, 14, 0, tzinfo=UTC),
+                    "end_date": datetime(2026, 4, 8, 15, 0, tzinfo=UTC),
+                }
+            ),
+        ),
+        current_user=current_user,
+    )
+
+    send_invites.assert_awaited_once_with(updated_task)
+    send_cancellations.assert_not_awaited()
+    assert response.invite_status == [{"success": True}]
+
+
+@pytest.mark.asyncio
+async def test_delete_meeting_sends_cancellation_ics(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    task = {
+        "_id": "meeting-1",
+        "owner_planner_id": "owner-1",
+        "owner_planner_email": "owner@example.com",
+        "planner_email": "owner@example.com",
+        "wedding_id": "wedding-1",
+        "title": "Planning Call",
+        "description": "Original details",
+        "start_date": datetime(2026, 4, 8, 12, 0, tzinfo=UTC),
+        "end_date": datetime(2026, 4, 8, 13, 0, tzinfo=UTC),
+        "timezone": "UTC",
+        "invite_delivery_mode": "email_ics",
+        "couple_attendee_emails": ["couple@example.com"],
+    }
+
+    class FakeTasksCollection:
+        def __init__(self) -> None:
+            self.deleted_queries: list[dict[str, Any]] = []
+
+        async def delete_one(self, query: dict[str, Any]) -> None:
+            self.deleted_queries.append(query)
+
+    fake_tasks = FakeTasksCollection()
+
+    monkeypatch.setattr(
+        planner_calendar_api,
+        "check_wedding_access",
+        AsyncMock(return_value=True),
+    )
+    monkeypatch.setattr(
+        planner_calendar_api,
+        "_get_scoped_meeting",
+        AsyncMock(return_value=task),
+    )
+    monkeypatch.setattr(
+        planner_calendar_api,
+        "mongo",
+        SimpleNamespace(get_planner_tasks_collection=lambda: fake_tasks),
+    )
+    delete_syncs = AsyncMock(return_value=None)
+    send_cancellations = AsyncMock(return_value=[{"success": True}])
+    monkeypatch.setattr(
+        planner_calendar_api.calendar_sync_service,
+        "delete_schedule_item_syncs",
+        delete_syncs,
+    )
+    monkeypatch.setattr(
+        planner_calendar_api.meeting_invite_service,
+        "send_cancellations",
+        send_cancellations,
+    )
+
+    current_user = ExtendedAuthUser(
+        "owner@example.com",
+        "wedding_planner",
+        {"_id": "owner-1"},
+    )
+
+    result = await planner_calendar_api.delete_meeting(
+        "507f1f77bcf86cd799439011",
+        current_user=current_user,
+    )
+
+    delete_syncs.assert_awaited_once_with("507f1f77bcf86cd799439011")
+    send_cancellations.assert_awaited_once()
+    assert result["invite_status"] == [{"success": True}]
 
 
 def test_connection_scope_requires_matching_owner_identity() -> None:

@@ -489,7 +489,12 @@ export default function PlannerCalendarPage() {
         </div>
       </div>
 
-      <GoogleCalendarConnect connections={connections} loading={loading} onRefresh={refreshAll} />
+      <GoogleCalendarConnect
+        connections={connections}
+        staffOptions={staffOptions}
+        loading={loading}
+        onRefresh={refreshAll}
+      />
 
       <div className="grid gap-6 xl:grid-cols-[minmax(0,1.7fr)_minmax(320px,0.95fr)]">
         <section className="rounded-2xl border border-slate-200 bg-white shadow-sm">
