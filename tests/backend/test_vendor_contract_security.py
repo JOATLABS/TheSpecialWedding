@@ -51,6 +51,17 @@ class FakeCursor:
     def __init__(self, documents: list[dict]):
         self._documents = documents
 
+    def __aiter__(self):
+        self._iter_index = 0
+        return self
+
+    async def __anext__(self):
+        if self._iter_index >= len(self._documents):
+            raise StopAsyncIteration
+        value = deepcopy(self._documents[self._iter_index])
+        self._iter_index += 1
+        return value
+
     def sort(self, field: str, direction: int) -> "FakeCursor":
         reverse = direction == -1
         self._documents = sorted(
@@ -379,6 +390,28 @@ async def test_public_view_does_not_downgrade_signed_contract_status(
 
 
 @pytest.mark.asyncio
+async def test_public_view_updates_last_viewed_without_touching_updated_at_on_repeat_access(
+    configured_vendor_service,
+) -> None:
+    context = configured_vendor_service
+    service = context["service"]
+    prior_view = datetime.now(timezone.utc) - timedelta(days=1)
+    contract = make_contract_doc(access_token="repeat-view-token", status=ContractStatus.VIEWED.value)
+    contract["viewed_at"] = prior_view
+    contract["token_last_viewed_at"] = prior_view
+    original_updated_at = contract["updated_at"]
+    context["contracts"].documents.append(deepcopy(contract))
+
+    viewed = await service.get_contract_by_token(str(contract["_id"]), "repeat-view-token")
+
+    stored = context["contracts"].documents[0]
+    assert viewed["status"] == ContractStatus.VIEWED.value
+    assert stored["updated_at"] == original_updated_at
+    assert stored["token_last_viewed_at"] is not None
+    assert stored["token_last_viewed_at"] > prior_view
+
+
+@pytest.mark.asyncio
 async def test_sign_contract_rolls_back_on_transaction_failure(configured_vendor_service, monkeypatch) -> None:
     context = configured_vendor_service
     service = context["service"]
@@ -536,3 +569,19 @@ def test_backfill_helper_hashes_plaintext_vendor_contract_tokens() -> None:
     assert set_updates["token_last_sent_at"] == document["sent_at"]
     assert set_updates["token_last_viewed_at"] == document["viewed_at"]
     assert unset_updates == {"access_token": ""}
+
+
+@pytest.mark.asyncio
+async def test_backfill_conflict_detection_ignores_missing_legacy_lineage_fields() -> None:
+    backfill_module = _load_backfill_module()
+    collection = FakeCollection(
+        [
+            {"_id": ObjectId(), "access_token": "legacy-a"},
+            {"_id": ObjectId(), "access_token": "legacy-b"},
+        ]
+    )
+
+    conflicts = await backfill_module.detect_lineage_conflicts(collection)
+
+    assert conflicts["duplicate_versions"] == []
+    assert conflicts["multiple_current_versions"] == []

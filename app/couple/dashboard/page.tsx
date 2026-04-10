@@ -1726,7 +1726,7 @@ function MeetingsSection({ archived }: { archived: boolean }) {
       <PageHeader title="Meetings" description="Upcoming calls and planning sessions with your planner" />
       {archived && (
         <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-700 dark:border-amber-800/50 dark:bg-amber-950/30 dark:text-amber-300">
-          This wedding is archived, so new meeting activity is paused. Any saved details below remain view-only.
+          This wedding is archived, so meeting scheduling is paused. Archived portals do not show active meeting links.
         </div>
       )}
 

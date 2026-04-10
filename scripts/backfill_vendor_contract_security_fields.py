@@ -14,6 +14,7 @@ import hmac
 import logging
 import os
 import sys
+from collections import defaultdict
 from typing import Any, Dict, Tuple
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -81,35 +82,47 @@ def build_vendor_contract_security_backfill_ops(
 
 
 async def detect_lineage_conflicts(collection) -> Dict[str, list[dict]]:
-    duplicate_versions = await collection.aggregate(
-        [
-            {
-                "$group": {
-                    "_id": {
-                        "root_contract_id": "$root_contract_id",
-                        "version_number": "$version_number",
-                    },
-                    "ids": {"$push": "$_id"},
-                    "count": {"$sum": 1},
-                }
-            },
-            {"$match": {"count": {"$gt": 1}}},
-        ]
-    ).to_list(length=200)
+    duplicate_version_groups: dict[tuple[str, int], list[Any]] = defaultdict(list)
+    current_version_groups: dict[str, list[Any]] = defaultdict(list)
 
-    multiple_current = await collection.aggregate(
-        [
-            {"$match": {"is_current_version": True}},
-            {
-                "$group": {
-                    "_id": "$root_contract_id",
-                    "ids": {"$push": "$_id"},
-                    "count": {"$sum": 1},
-                }
+    async for document in collection.find({}):
+        normalized_root_contract_id = document.get("root_contract_id") or str(document["_id"])
+        normalized_version_number = document.get("version_number") or 1
+        normalized_is_current_version = document.get("is_current_version")
+        if normalized_is_current_version is None:
+            normalized_is_current_version = not bool(
+                document.get("superseded_by_contract_id") or document.get("superseded_at")
+            )
+
+        duplicate_version_groups[
+            (normalized_root_contract_id, normalized_version_number)
+        ].append(document["_id"])
+
+        if normalized_is_current_version:
+            current_version_groups[normalized_root_contract_id].append(document["_id"])
+
+    duplicate_versions = [
+        {
+            "_id": {
+                "root_contract_id": root_contract_id,
+                "version_number": version_number,
             },
-            {"$match": {"count": {"$gt": 1}}},
-        ]
-    ).to_list(length=200)
+            "ids": ids,
+            "count": len(ids),
+        }
+        for (root_contract_id, version_number), ids in duplicate_version_groups.items()
+        if len(ids) > 1
+    ]
+
+    multiple_current = [
+        {
+            "_id": root_contract_id,
+            "ids": ids,
+            "count": len(ids),
+        }
+        for root_contract_id, ids in current_version_groups.items()
+        if len(ids) > 1
+    ]
 
     return {
         "duplicate_versions": duplicate_versions,

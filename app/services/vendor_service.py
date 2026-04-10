@@ -1846,12 +1846,12 @@ class VendorService:
 
             view_update: Dict[str, Any] = {
                 "token_last_viewed_at": viewed_at,
-                "updated_at": viewed_at,
             }
             if first_view:
                 view_update["viewed_at"] = viewed_at
                 if contract.get("status") == ContractStatus.SENT.value:
                     view_update["status"] = ContractStatus.VIEWED.value
+                    view_update["updated_at"] = viewed_at
 
             await self.vendor_contracts.update_one(
                 {"_id": ObjectId(contract_id)},
