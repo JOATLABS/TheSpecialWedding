@@ -32,14 +32,21 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-os.environ.setdefault("SECRET_KEY", "test-secret-key-this-is-long-enough-for-validation-testing-purposes-2026")
+os.environ.setdefault(
+    "SECRET_KEY",
+    "test-secret-key-this-is-long-enough-for-validation-testing-purposes-2026",
+)
 os.environ.setdefault("ALGORITHM", "HS256")
 os.environ.setdefault("API_KEY", "test-api-key")
 os.environ.setdefault("ROOT_ADMIN_EMAIL", "thedeveloper@thespecialwedding.io")
 
 from fastapi import FastAPI
 from app.dependencies.auth_extended import ExtendedAuthUser
-from app.api.vendor_campaigns import router as vendor_campaigns_router, require_advertising_vendor, get_vendor_campaign_service
+from app.api.vendor_campaigns import (
+    router as vendor_campaigns_router,
+    require_advertising_vendor,
+    get_vendor_campaign_service,
+)
 
 # Create a minimal test app with just the vendor campaigns router
 # (avoids importing app.main which triggers the full import chain)
@@ -67,8 +74,8 @@ def make_mock_vendor_user(vendor_id=VENDOR_ID, email=VENDOR_EMAIL, name=VENDOR_N
         user_data={
             "_id": ObjectId(vendor_id),
             "name": name,
-            "role": "advertising_vendor"
-        }
+            "role": "advertising_vendor",
+        },
     )
 
 
@@ -77,11 +84,7 @@ def make_mock_admin_user():
     return ExtendedAuthUser(
         email="thedeveloper@thespecialwedding.io",
         role="root_admin",
-        user_data={
-            "_id": ObjectId(),
-            "name": "Root Admin",
-            "role": "root_admin"
-        }
+        user_data={"_id": ObjectId(), "name": "Root Admin", "role": "root_admin"},
     )
 
 
@@ -93,8 +96,8 @@ def make_mock_planner_user():
         user_data={
             "_id": ObjectId(),
             "name": "Wedding Planner",
-            "role": "wedding_planner"
-        }
+            "role": "wedding_planner",
+        },
     )
 
 
@@ -134,8 +137,12 @@ def planner_client(mock_service):
     what the real dependency does for non-vendor/non-admin users.
     """
     from fastapi import HTTPException
+
     def raise_403():
-        raise HTTPException(status_code=403, detail="Advertising vendor access required")
+        raise HTTPException(
+            status_code=403, detail="Advertising vendor access required"
+        )
+
     app.dependency_overrides[require_advertising_vendor] = raise_403
     app.dependency_overrides[get_vendor_campaign_service] = lambda: mock_service
     client = TestClient(app, raise_server_exceptions=False)
@@ -147,6 +154,7 @@ def planner_client(mock_service):
 # AUTH TESTS
 # =============================================================================
 
+
 class TestAuthBoundaries:
     """Test authentication boundaries for all endpoints."""
 
@@ -155,11 +163,10 @@ class TestAuthBoundaries:
         mock_service.create_campaign.return_value = {
             "_id": CAMPAIGN_ID,
             "status": "draft",
-            "campaign_name": "Test Campaign"
+            "campaign_name": "Test Campaign",
         }
         resp = vendor_client.post(
-            "/portal/ads/campaigns",
-            json={"campaign_name": "Test Campaign"}
+            "/portal/ads/campaigns", json={"campaign_name": "Test Campaign"}
         )
         assert resp.status_code == 201
         assert mock_service.create_campaign.called
@@ -168,11 +175,10 @@ class TestAuthBoundaries:
         """Root admin can create campaign."""
         mock_service.create_campaign.return_value = {
             "_id": CAMPAIGN_ID,
-            "status": "draft"
+            "status": "draft",
         }
         resp = admin_client.post(
-            "/portal/ads/campaigns",
-            json={"campaign_name": "Admin Campaign"}
+            "/portal/ads/campaigns", json={"campaign_name": "Admin Campaign"}
         )
         assert resp.status_code == 201
 
@@ -181,8 +187,7 @@ class TestAuthBoundaries:
         # planner_client has the HTTPException from require_advertising_vendor
         # but TestClient catches it and returns 403
         resp = planner_client.post(
-            "/portal/ads/campaigns",
-            json={"campaign_name": "Bad"}
+            "/portal/ads/campaigns", json={"campaign_name": "Bad"}
         )
         assert resp.status_code == 403
 
@@ -213,6 +218,7 @@ class TestAuthBoundaries:
 # CAMPAIGN CRUD TESTS
 # =============================================================================
 
+
 class TestCampaignCRUD:
     """Test campaign creation, retrieval, update, delete."""
 
@@ -221,14 +227,11 @@ class TestCampaignCRUD:
         mock_service.create_campaign.return_value = {
             "_id": CAMPAIGN_ID,
             "status": "draft",
-            "campaign_name": "Summer Wedding Ads"
+            "campaign_name": "Summer Wedding Ads",
         }
         resp = vendor_client.post(
             "/portal/ads/campaigns",
-            json={
-                "campaign_name": "Summer Wedding Ads",
-                "goal": "profile_visits"
-            }
+            json={"campaign_name": "Summer Wedding Ads", "goal": "profile_visits"},
         )
         assert resp.status_code == 201
         data = resp.json()
@@ -240,8 +243,7 @@ class TestCampaignCRUD:
         """Create campaign includes vendor_id, email, name."""
         mock_service.create_campaign.return_value = {"_id": CAMPAIGN_ID}
         resp = vendor_client.post(
-            "/portal/ads/campaigns",
-            json={"campaign_name": "Test"}
+            "/portal/ads/campaigns", json={"campaign_name": "Test"}
         )
         assert resp.status_code == 201
         # Check that service was called with vendor info
@@ -254,10 +256,8 @@ class TestCampaignCRUD:
     def test_list_campaigns_200(self, vendor_client, mock_service):
         """GET /campaigns returns 200 with campaign list."""
         mock_service.list_campaigns.return_value = {
-            "campaigns": [
-                {"_id": CAMPAIGN_ID, "campaign_name": "Campaign 1"}
-            ],
-            "total": 1
+            "campaigns": [{"_id": CAMPAIGN_ID, "campaign_name": "Campaign 1"}],
+            "total": 1,
         }
         resp = vendor_client.get("/portal/ads/campaigns")
         assert resp.status_code == 200
@@ -314,11 +314,11 @@ class TestCampaignCRUD:
         """PUT /campaigns/{id} returns 200."""
         mock_service.update_campaign.return_value = {
             "_id": CAMPAIGN_ID,
-            "campaign_name": "Updated Name"
+            "campaign_name": "Updated Name",
         }
         resp = vendor_client.put(
             f"/portal/ads/campaigns/{CAMPAIGN_ID}",
-            json={"campaign_name": "Updated Name"}
+            json={"campaign_name": "Updated Name"},
         )
         assert resp.status_code == 200
 
@@ -326,8 +326,7 @@ class TestCampaignCRUD:
         """PUT excludes fields that weren't provided."""
         mock_service.update_campaign.return_value = {"_id": CAMPAIGN_ID}
         resp = vendor_client.put(
-            f"/portal/ads/campaigns/{CAMPAIGN_ID}",
-            json={"campaign_name": "New Name"}
+            f"/portal/ads/campaigns/{CAMPAIGN_ID}", json={"campaign_name": "New Name"}
         )
         assert resp.status_code == 200
         # Should only pass campaign_name in updates dict
@@ -355,6 +354,7 @@ class TestCampaignCRUD:
 # CAMPAIGN LIFECYCLE TESTS
 # =============================================================================
 
+
 class TestCampaignLifecycle:
     """Test submit and pause operations."""
 
@@ -362,7 +362,7 @@ class TestCampaignLifecycle:
         """POST /campaigns/{id}/submit returns 200."""
         mock_service.submit_for_review.return_value = {
             "_id": CAMPAIGN_ID,
-            "status": "pending_review"
+            "status": "pending_review",
         }
         resp = vendor_client.post(f"/portal/ads/campaigns/{CAMPAIGN_ID}/submit")
         assert resp.status_code == 200
@@ -381,7 +381,7 @@ class TestCampaignLifecycle:
         """POST /campaigns/{id}/pause returns 200."""
         mock_service.pause_campaign.return_value = {
             "_id": CAMPAIGN_ID,
-            "status": "paused"
+            "status": "paused",
         }
         resp = vendor_client.post(f"/portal/ads/campaigns/{CAMPAIGN_ID}/pause")
         assert resp.status_code == 200
@@ -401,6 +401,7 @@ class TestCampaignLifecycle:
 # CAMPAIGN STATS TESTS
 # =============================================================================
 
+
 class TestCampaignStats:
     """Test campaign statistics endpoint."""
 
@@ -408,12 +409,8 @@ class TestCampaignStats:
         """GET /campaigns/{id}/stats returns 200."""
         mock_service.get_campaign_stats.return_value = {
             "campaign_id": CAMPAIGN_ID,
-            "lifetime_stats": {
-                "impressions": 100,
-                "clicks": 10,
-                "ctr": 10.0
-            },
-            "daily_stats": []
+            "lifetime_stats": {"impressions": 100, "clicks": 10, "ctr": 10.0},
+            "daily_stats": [],
         }
         resp = vendor_client.get(f"/portal/ads/campaigns/{CAMPAIGN_ID}/stats")
         assert resp.status_code == 200
@@ -428,7 +425,9 @@ class TestCampaignStats:
         call_kwargs = mock_service.get_campaign_stats.call_args[0]
         assert call_kwargs[2] == 60
 
-    def test_get_campaign_stats_validates_days_bounds(self, vendor_client, mock_service):
+    def test_get_campaign_stats_validates_days_bounds(
+        self, vendor_client, mock_service
+    ):
         """GET /stats validates days between 1 and 365."""
         # Days too high
         resp = vendor_client.get(f"/portal/ads/campaigns/{CAMPAIGN_ID}/stats?days=366")
@@ -451,6 +450,7 @@ class TestCampaignStats:
 # CREATIVE MANAGEMENT TESTS
 # =============================================================================
 
+
 class TestCreativeManagement:
     """Test creative CRUD operations."""
 
@@ -459,15 +459,15 @@ class TestCreativeManagement:
         mock_service.create_creative.return_value = {
             "_id": CREATIVE_ID,
             "status": "pending",
-            "headline": "Beautiful Flowers"
+            "headline": "Beautiful Flowers",
         }
         resp = vendor_client.post(
             f"/portal/ads/campaigns/{CAMPAIGN_ID}/creatives",
             json={
                 "headline": "Beautiful Flowers",
                 "description": "Fresh bouquets for your wedding",
-                "image_url": "https://cdn.example.com/flower.jpg"
-            }
+                "image_url": "https://cdn.example.com/flower.jpg",
+            },
         )
         assert resp.status_code == 201
         data = resp.json()
@@ -478,10 +478,7 @@ class TestCreativeManagement:
         mock_service.create_creative.return_value = {"_id": CREATIVE_ID}
         resp = vendor_client.post(
             f"/portal/ads/campaigns/{CAMPAIGN_ID}/creatives",
-            json={
-                "headline": "Test",
-                "description": "Test description"
-            }
+            json={"headline": "Test", "description": "Test description"},
         )
         assert resp.status_code == 201
         call_kwargs = mock_service.create_creative.call_args[0]
@@ -492,10 +489,7 @@ class TestCreativeManagement:
         mock_service.create_creative.return_value = {"_id": CREATIVE_ID}
         resp = vendor_client.post(
             f"/portal/ads/campaigns/{CAMPAIGN_ID}/creatives",
-            json={
-                "headline": "Test",
-                "description": "Test description"
-            }
+            json={"headline": "Test", "description": "Test description"},
         )
         assert resp.status_code == 201
         call_kwargs = mock_service.create_creative.call_args[0]
@@ -510,7 +504,7 @@ class TestCreativeManagement:
         mock_service.get_campaign.return_value = {"_id": CAMPAIGN_ID}
         mock_service.list_creatives.return_value = {
             "creatives": [{"_id": CREATIVE_ID}],
-            "total": 1
+            "total": 1,
         }
         resp = vendor_client.get(f"/portal/ads/campaigns/{CAMPAIGN_ID}/creatives")
         assert resp.status_code == 200
@@ -530,11 +524,11 @@ class TestCreativeManagement:
         """PUT /creatives/{id} returns 200."""
         mock_service.update_creative.return_value = {
             "_id": CREATIVE_ID,
-            "headline": "Updated Headline"
+            "headline": "Updated Headline",
         }
         resp = vendor_client.put(
             f"/portal/ads/creatives/{CREATIVE_ID}",
-            json={"headline": "Updated Headline", "description": "Updated description"}
+            json={"headline": "Updated Headline", "description": "Updated description"},
         )
         assert resp.status_code == 200
 
@@ -543,7 +537,7 @@ class TestCreativeManagement:
         mock_service.update_creative.return_value = {"_id": CREATIVE_ID}
         resp = vendor_client.put(
             f"/portal/ads/creatives/{CREATIVE_ID}",
-            json={"headline": "Updated", "description": "Updated description"}
+            json={"headline": "Updated", "description": "Updated description"},
         )
         assert resp.status_code == 200
         call_kwargs = mock_service.update_creative.call_args[0]
@@ -553,7 +547,7 @@ class TestCreativeManagement:
         """POST /campaigns/{id}/creatives/{creative_id}/set-primary returns 200."""
         mock_service.set_primary_creative.return_value = {
             "_id": CAMPAIGN_ID,
-            "primary_creative_id": CREATIVE_ID
+            "primary_creative_id": CREATIVE_ID,
         }
         resp = vendor_client.post(
             f"/portal/ads/campaigns/{CAMPAIGN_ID}/creatives/{CREATIVE_ID}/set-primary"
@@ -577,6 +571,7 @@ class TestCreativeManagement:
 # LEAD TESTS
 # =============================================================================
 
+
 class TestLeads:
     """Test lead retrieval."""
 
@@ -587,10 +582,10 @@ class TestLeads:
                 {
                     "_id": str(ObjectId()),
                     "lead_type": "quote_request",
-                    "status": "pending"
+                    "status": "pending",
                 }
             ],
-            "total": 1
+            "total": 1,
         }
         resp = vendor_client.get("/portal/ads/leads")
         assert resp.status_code == 200
@@ -640,6 +635,7 @@ class TestLeads:
 # BILLING TESTS
 # =============================================================================
 
+
 class TestBilling:
     """Test billing summary endpoint."""
 
@@ -683,6 +679,7 @@ class TestBilling:
 # ERROR HANDLING TESTS
 # =============================================================================
 
+
 class TestErrorHandling:
     """Test error cases and edge cases."""
 
@@ -692,16 +689,13 @@ class TestErrorHandling:
         bad_user = ExtendedAuthUser(
             email="bad@example.com",
             role="advertising_vendor",
-            user_data={"name": "No ID User"}  # Missing _id
+            user_data={"name": "No ID User"},  # Missing _id
         )
         app.dependency_overrides[require_advertising_vendor] = lambda: bad_user
         app.dependency_overrides[get_vendor_campaign_service] = lambda: mock_service
         client = TestClient(app)
 
-        resp = client.post(
-            "/portal/ads/campaigns",
-            json={"campaign_name": "Test"}
-        )
+        resp = client.post("/portal/ads/campaigns", json={"campaign_name": "Test"})
         assert resp.status_code == 400
         app.dependency_overrides.clear()
 
@@ -716,24 +710,26 @@ class TestErrorHandling:
         """Create campaign with only required field."""
         mock_service.create_campaign.return_value = {"_id": CAMPAIGN_ID}
         resp = vendor_client.post(
-            "/portal/ads/campaigns",
-            json={"campaign_name": "Minimal"}
+            "/portal/ads/campaigns", json={"campaign_name": "Minimal"}
         )
         assert resp.status_code == 201
 
-    def test_create_campaign_missing_campaign_name_400(self, vendor_client, mock_service):
+    def test_create_campaign_missing_campaign_name_400(
+        self, vendor_client, mock_service
+    ):
         """Create campaign missing campaign_name returns 422."""
         resp = vendor_client.post(
-            "/portal/ads/campaigns",
-            json={"goal": "profile_visits"}
+            "/portal/ads/campaigns", json={"goal": "profile_visits"}
         )
         assert resp.status_code == 422
 
-    def test_create_creative_missing_required_fields_422(self, vendor_client, mock_service):
+    def test_create_creative_missing_required_fields_422(
+        self, vendor_client, mock_service
+    ):
         """Create creative missing required fields returns 422."""
         resp = vendor_client.post(
             f"/portal/ads/campaigns/{CAMPAIGN_ID}/creatives",
-            json={"image_url": "https://example.com/image.jpg"}
+            json={"image_url": "https://example.com/image.jpg"},
         )
         assert resp.status_code == 422
 
@@ -742,7 +738,7 @@ class TestErrorHandling:
         mock_service.update_campaign.return_value = {"_id": CAMPAIGN_ID}
         resp = vendor_client.put(
             f"/portal/ads/campaigns/{CAMPAIGN_ID}",
-            json={"campaign_description": "Updated description only"}
+            json={"campaign_description": "Updated description only"},
         )
         assert resp.status_code == 200
         call_kwargs = mock_service.update_campaign.call_args[0]
@@ -754,6 +750,7 @@ class TestErrorHandling:
 # =============================================================================
 # INTEGRATION TESTS
 # =============================================================================
+
 
 class TestIntegration:
     """Integration-style tests combining multiple operations."""
@@ -769,7 +766,7 @@ class TestIntegration:
 
         mock_service.list_campaigns.return_value = {
             "campaigns": [{"_id": CAMPAIGN_ID, "vendor_id": VENDOR_ID}],
-            "total": 1
+            "total": 1,
         }
         resp1 = client1.get("/portal/ads/campaigns")
         assert resp1.status_code == 200
@@ -789,8 +786,7 @@ class TestIntegration:
 
         # Create
         resp = admin_client.post(
-            "/portal/ads/campaigns",
-            json={"campaign_name": "Admin Campaign"}
+            "/portal/ads/campaigns", json={"campaign_name": "Admin Campaign"}
         )
         assert resp.status_code == 201
 
@@ -811,33 +807,32 @@ class TestIntegration:
         # Create campaign
         mock_service.create_campaign.return_value = {
             "_id": CAMPAIGN_ID,
-            "status": "draft"
+            "status": "draft",
         }
         resp = vendor_client.post(
-            "/portal/ads/campaigns",
-            json={"campaign_name": "Spring 2026"}
+            "/portal/ads/campaigns", json={"campaign_name": "Spring 2026"}
         )
         assert resp.status_code == 201
 
         # Create creative
         mock_service.create_creative.return_value = {
             "_id": CREATIVE_ID,
-            "review_status": "pending"
+            "review_status": "pending",
         }
         resp = vendor_client.post(
             f"/portal/ads/campaigns/{CAMPAIGN_ID}/creatives",
             json={
                 "headline": "Spring Flowers",
                 "description": "Fresh arrangements",
-                "image_url": "https://example.com/spring.jpg"
-            }
+                "image_url": "https://example.com/spring.jpg",
+            },
         )
         assert resp.status_code == 201
 
         # Set as primary
         mock_service.set_primary_creative.return_value = {
             "_id": CAMPAIGN_ID,
-            "primary_creative_id": CREATIVE_ID
+            "primary_creative_id": CREATIVE_ID,
         }
         resp = vendor_client.post(
             f"/portal/ads/campaigns/{CAMPAIGN_ID}/creatives/{CREATIVE_ID}/set-primary"
@@ -847,7 +842,7 @@ class TestIntegration:
         # Submit for review
         mock_service.submit_for_review.return_value = {
             "_id": CAMPAIGN_ID,
-            "status": "pending_review"
+            "status": "pending_review",
         }
         resp = vendor_client.post(f"/portal/ads/campaigns/{CAMPAIGN_ID}/submit")
         assert resp.status_code == 200
@@ -869,6 +864,7 @@ class TestIntegration:
 # RESPONSE SHAPE TESTS
 # =============================================================================
 
+
 class TestResponseShapes:
     """Verify response structures match expectations."""
 
@@ -879,11 +875,10 @@ class TestResponseShapes:
             "status": "draft",
             "campaign_name": "Test",
             "vendor_id": VENDOR_ID,
-            "goal": "profile_visits"
+            "goal": "profile_visits",
         }
         resp = vendor_client.post(
-            "/portal/ads/campaigns",
-            json={"campaign_name": "Test"}
+            "/portal/ads/campaigns", json={"campaign_name": "Test"}
         )
         assert resp.status_code == 201
         data = resp.json()
@@ -894,10 +889,8 @@ class TestResponseShapes:
     def test_list_campaigns_response_structure(self, vendor_client, mock_service):
         """List campaigns response has expected structure."""
         mock_service.list_campaigns.return_value = {
-            "campaigns": [
-                {"_id": CAMPAIGN_ID, "campaign_name": "Test"}
-            ],
-            "total": 1
+            "campaigns": [{"_id": CAMPAIGN_ID, "campaign_name": "Test"}],
+            "total": 1,
         }
         resp = vendor_client.get("/portal/ads/campaigns")
         assert resp.status_code == 200
@@ -920,18 +913,8 @@ class TestResponseShapes:
         """Stats response has expected structure."""
         mock_service.get_campaign_stats.return_value = {
             "campaign_id": CAMPAIGN_ID,
-            "lifetime_stats": {
-                "impressions": 100,
-                "clicks": 10,
-                "leads": 2
-            },
-            "daily_stats": [
-                {
-                    "date": "2026-03-19",
-                    "impressions": 10,
-                    "clicks": 1
-                }
-            ]
+            "lifetime_stats": {"impressions": 100, "clicks": 10, "leads": 2},
+            "daily_stats": [{"date": "2026-03-19", "impressions": 10, "clicks": 1}],
         }
         resp = vendor_client.get(f"/portal/ads/campaigns/{CAMPAIGN_ID}/stats")
         assert resp.status_code == 200

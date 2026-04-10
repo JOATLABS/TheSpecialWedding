@@ -24,6 +24,7 @@ os.environ.setdefault("ROOT_ADMIN_EMAIL", "thedeveloper@thespecialwedding.com")
 
 # --- Async Wrappers for mongomock ---
 
+
 class AsyncMockCursor:
     def __init__(self, cursor):
         self.cursor = cursor
@@ -110,16 +111,21 @@ def budget_api_client(monkeypatch):
     fake_mongo = FakeMongo(database)
 
     import app.services.budget_service as budget_service_module
+
     reload(budget_service_module)
     monkeypatch.setattr(budget_service_module, "mongo", fake_mongo)
 
     import app.dependencies.auth_extended as auth_module
+
     reload(auth_module)
     monkeypatch.setattr(auth_module, "mongo", fake_mongo)
 
     import app.api.budget as budget_api_module
+
     reload(budget_api_module)
-    monkeypatch.setattr(budget_api_module, "budget_service", budget_service_module.BudgetService())
+    monkeypatch.setattr(
+        budget_api_module, "budget_service", budget_service_module.BudgetService()
+    )
 
     app = FastAPI()
     app.include_router(budget_api_module.router, prefix="/admin")
@@ -130,14 +136,23 @@ def budget_api_client(monkeypatch):
         async def _override():
             return user
 
-        app.dependency_overrides[budget_api_module.get_current_user_extended] = _override
+        app.dependency_overrides[budget_api_module.get_current_user_extended] = (
+            _override
+        )
 
     yield client, database, budget_api_module, override_user
 
     app.dependency_overrides.clear()
 
 
-def _insert_category(database, *, category_id: str, wedding_id: str, actual_spent: float = 0.0, budgeted_amount: float = 1000.0):
+def _insert_category(
+    database,
+    *,
+    category_id: str,
+    wedding_id: str,
+    actual_spent: float = 0.0,
+    budgeted_amount: float = 1000.0,
+):
     categories = database["budget_categories"]
     categories.insert_one(
         {
@@ -171,7 +186,13 @@ def test_planner_can_record_payment_for_owned_wedding(budget_api_client):
     category_id = str(ObjectId())
 
     _insert_wedding(database, wedding_id=wedding_id, planner_email=planner_email)
-    _insert_category(database, category_id=category_id, wedding_id=wedding_id, actual_spent=200.0, budgeted_amount=1000.0)
+    _insert_category(
+        database,
+        category_id=category_id,
+        wedding_id=wedding_id,
+        actual_spent=200.0,
+        budgeted_amount=1000.0,
+    )
 
     planner = budget_module.ExtendedAuthUser(
         email=planner_email,
@@ -189,7 +210,9 @@ def test_planner_can_record_payment_for_owned_wedding(budget_api_client):
         "notes": "Paid via corporate card",
     }
 
-    response = client.post(f"/admin/budget/category/{category_id}/payment", json=payload)
+    response = client.post(
+        f"/admin/budget/category/{category_id}/payment", json=payload
+    )
 
     assert response.status_code == 200
     body = response.json()

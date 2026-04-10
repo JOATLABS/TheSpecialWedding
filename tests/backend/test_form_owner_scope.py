@@ -50,7 +50,9 @@ async def test_create_form_preserves_owner_scope_and_actor_email() -> None:
 
 
 @pytest.mark.asyncio
-async def test_get_forms_uses_owner_alias_scope_and_viewer_specific_unread_counts() -> None:
+async def test_get_forms_uses_owner_alias_scope_and_viewer_specific_unread_counts() -> (
+    None
+):
     captured_query: dict[str, object] = {}
 
     class FakeFormsCollection:

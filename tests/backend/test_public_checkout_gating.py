@@ -43,7 +43,9 @@ def test_public_checkout_rejects_active_users(monkeypatch):
         }
     )
     create_checkout = AsyncMock()
-    monkeypatch.setattr(stripe_payment_module.stripe_service, "create_checkout_session", create_checkout)
+    monkeypatch.setattr(
+        stripe_payment_module.stripe_service, "create_checkout_session", create_checkout
+    )
 
     with pytest.raises(HTTPException) as exc:
         asyncio.run(
@@ -68,10 +70,16 @@ def test_public_checkout_allows_retryable_signup_statuses(monkeypatch, status_va
             "plan_id": "plan_boutique",
         }
     )
-    create_checkout = AsyncMock(return_value={"url": "https://checkout.stripe.test/session"})
-    monkeypatch.setattr(stripe_payment_module.stripe_service, "create_checkout_session", create_checkout)
+    create_checkout = AsyncMock(
+        return_value={"url": "https://checkout.stripe.test/session"}
+    )
+    monkeypatch.setattr(
+        stripe_payment_module.stripe_service, "create_checkout_session", create_checkout
+    )
     stripe_payment_module.stripe_service.users_collection.update_one = AsyncMock(
-        side_effect=AssertionError("public checkout should not mutate the user document before payment succeeds")
+        side_effect=AssertionError(
+            "public checkout should not mutate the user document before payment succeeds"
+        )
     )
 
     result = asyncio.run(
@@ -95,7 +103,9 @@ def test_public_checkout_rejects_expired_users(monkeypatch):
         }
     )
     create_checkout = AsyncMock()
-    monkeypatch.setattr(stripe_payment_module.stripe_service, "create_checkout_session", create_checkout)
+    monkeypatch.setattr(
+        stripe_payment_module.stripe_service, "create_checkout_session", create_checkout
+    )
 
     with pytest.raises(HTTPException) as exc:
         asyncio.run(

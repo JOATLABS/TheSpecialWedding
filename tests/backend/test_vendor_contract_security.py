@@ -94,7 +94,9 @@ class FakeCollection:
                 return deepcopy(document)
         return None
 
-    async def update_one(self, query: dict, update: dict, session=None) -> SimpleNamespace:
+    async def update_one(
+        self, query: dict, update: dict, session=None
+    ) -> SimpleNamespace:
         for document in self.documents:
             if _matches_query(document, query):
                 for key, value in update.get("$set", {}).items():
@@ -108,7 +110,11 @@ class FakeCollection:
 
     def find(self, query: dict) -> FakeCursor:
         return FakeCursor(
-            [deepcopy(document) for document in self.documents if _matches_query(document, query)]
+            [
+                deepcopy(document)
+                for document in self.documents
+                if _matches_query(document, query)
+            ]
         )
 
 
@@ -153,7 +159,8 @@ def make_contract_doc(
         "deposit_amount": 2500,
         "status": status,
         "access_token_hash": vendor_service._hash_contract_access_token(access_token),
-        "token_expires_at": token_expires_at or datetime(2026, 5, 1, tzinfo=timezone.utc),
+        "token_expires_at": token_expires_at
+        or datetime(2026, 5, 1, tzinfo=timezone.utc),
         "token_revoked_at": token_revoked_at,
         "token_last_sent_at": None,
         "token_last_viewed_at": None,
@@ -244,7 +251,9 @@ def configured_vendor_service(monkeypatch: pytest.MonkeyPatch):
     async def run_required_transaction(_operation_name, operation):
         return await operation(None)
 
-    monkeypatch.setattr(vendor_service, "_run_required_transaction", run_required_transaction)
+    monkeypatch.setattr(
+        vendor_service, "_run_required_transaction", run_required_transaction
+    )
     vendor_service.email_service = DummyEmailService()
 
     return {
@@ -262,7 +271,9 @@ def configured_vendor_service(monkeypatch: pytest.MonkeyPatch):
 
 def _load_backfill_module():
     script_path = ROOT / "scripts" / "backfill_vendor_contract_security_fields.py"
-    spec = importlib.util.spec_from_file_location("vendor_contract_security_backfill", script_path)
+    spec = importlib.util.spec_from_file_location(
+        "vendor_contract_security_backfill", script_path
+    )
     module = importlib.util.module_from_spec(spec)
     assert spec and spec.loader
     spec.loader.exec_module(module)
@@ -270,7 +281,9 @@ def _load_backfill_module():
 
 
 @pytest.mark.asyncio
-async def test_create_contract_initializes_inactive_token_fields(configured_vendor_service) -> None:
+async def test_create_contract_initializes_inactive_token_fields(
+    configured_vendor_service,
+) -> None:
     context = configured_vendor_service
     service = context["service"]
 
@@ -297,7 +310,9 @@ async def test_send_contract_persists_only_hash_and_public_validation_uses_raw_e
 ) -> None:
     context = configured_vendor_service
     service = context["service"]
-    contract = make_contract_doc(status=ContractStatus.DRAFT.value, access_token="legacy-token")
+    contract = make_contract_doc(
+        status=ContractStatus.DRAFT.value, access_token="legacy-token"
+    )
     contract["access_token_hash"] = None
     contract["token_expires_at"] = None
     context["contracts"].documents.append(deepcopy(contract))
@@ -333,11 +348,15 @@ async def test_first_public_sent_view_transitions_status_and_updates_updated_at(
 ) -> None:
     context = configured_vendor_service
     service = context["service"]
-    contract = make_contract_doc(access_token="sent-view-token", status=ContractStatus.SENT.value)
+    contract = make_contract_doc(
+        access_token="sent-view-token", status=ContractStatus.SENT.value
+    )
     original_updated_at = contract["updated_at"]
     context["contracts"].documents.append(deepcopy(contract))
 
-    viewed = await service.get_contract_by_token(str(contract["_id"]), "sent-view-token")
+    viewed = await service.get_contract_by_token(
+        str(contract["_id"]), "sent-view-token"
+    )
 
     stored = context["contracts"].documents[0]
     assert viewed["status"] == ContractStatus.VIEWED.value
@@ -363,7 +382,9 @@ async def test_invalid_revoked_and_expired_tokens_are_rejected(
         access_token="expired-token",
         token_expires_at=datetime.now(timezone.utc) - timedelta(minutes=5),
     )
-    context["contracts"].documents.extend([deepcopy(valid), deepcopy(revoked), deepcopy(expired)])
+    context["contracts"].documents.extend(
+        [deepcopy(valid), deepcopy(revoked), deepcopy(expired)]
+    )
 
     with pytest.raises(HTTPException) as invalid_error:
         await service.get_contract_by_token(str(valid["_id"]), "wrong-token")
@@ -414,13 +435,17 @@ async def test_public_view_updates_last_viewed_without_touching_updated_at_on_re
     context = configured_vendor_service
     service = context["service"]
     prior_view = datetime.now(timezone.utc) - timedelta(days=1)
-    contract = make_contract_doc(access_token="repeat-view-token", status=ContractStatus.VIEWED.value)
+    contract = make_contract_doc(
+        access_token="repeat-view-token", status=ContractStatus.VIEWED.value
+    )
     contract["viewed_at"] = prior_view
     contract["token_last_viewed_at"] = prior_view
     original_updated_at = contract["updated_at"]
     context["contracts"].documents.append(deepcopy(contract))
 
-    viewed = await service.get_contract_by_token(str(contract["_id"]), "repeat-view-token")
+    viewed = await service.get_contract_by_token(
+        str(contract["_id"]), "repeat-view-token"
+    )
 
     stored = context["contracts"].documents[0]
     assert viewed["status"] == ContractStatus.VIEWED.value
@@ -430,7 +455,9 @@ async def test_public_view_updates_last_viewed_without_touching_updated_at_on_re
 
 
 @pytest.mark.asyncio
-async def test_sign_contract_rolls_back_on_transaction_failure(configured_vendor_service, monkeypatch) -> None:
+async def test_sign_contract_rolls_back_on_transaction_failure(
+    configured_vendor_service, monkeypatch
+) -> None:
     context = configured_vendor_service
     service = context["service"]
     contract = make_contract_doc(access_token="sign-token")
@@ -454,7 +481,9 @@ async def test_sign_contract_rolls_back_on_transaction_failure(configured_vendor
             context["assignments"].documents = assignments_snapshot
             raise
 
-    monkeypatch.setattr(vendor_service, "_run_required_transaction", transactional_runner)
+    monkeypatch.setattr(
+        vendor_service, "_run_required_transaction", transactional_runner
+    )
 
     original_update_one = context["assignments"].update_one
 
@@ -478,7 +507,9 @@ async def test_sign_contract_rolls_back_on_transaction_failure(configured_vendor
 
 
 @pytest.mark.asyncio
-async def test_record_payment_rolls_back_on_transaction_failure(configured_vendor_service, monkeypatch) -> None:
+async def test_record_payment_rolls_back_on_transaction_failure(
+    configured_vendor_service, monkeypatch
+) -> None:
     context = configured_vendor_service
     service = context["service"]
     contract = make_contract_doc(access_token="pay-token")
@@ -528,7 +559,9 @@ async def test_record_payment_rolls_back_on_transaction_failure(configured_vendo
             context["budget_categories"].documents = budget_snapshot
             raise
 
-    monkeypatch.setattr(vendor_service, "_run_required_transaction", transactional_runner)
+    monkeypatch.setattr(
+        vendor_service, "_run_required_transaction", transactional_runner
+    )
 
     async def failing_vendor_update(query, update, session=None):
         raise RuntimeError("vendor revenue failure")
@@ -606,10 +639,10 @@ async def test_historical_contracts_cannot_accept_payment_mutations(
 
 def test_query_token_public_routes_are_removed_and_canonical_routes_remain() -> None:
     source = _read("app/api/vendor_contract_public.py")
-    assert '/public/contracts/{contract_id}/{token}' in source
-    assert '/public/contracts/{contract_id}/{token}/sign' in source
+    assert "/public/contracts/{contract_id}/{token}" in source
+    assert "/public/contracts/{contract_id}/{token}/sign" in source
     assert '/public/contracts/{contract_id}",' not in source
-    assert '/public/contracts/{contract_id}/sign' not in source
+    assert "/public/contracts/{contract_id}/sign" not in source
     assert "Query(" not in source
 
 
@@ -631,21 +664,25 @@ def test_backfill_helper_hashes_plaintext_vendor_contract_tokens() -> None:
         "viewed_at": datetime(2026, 4, 8, 14, tzinfo=timezone.utc),
     }
 
-    set_updates, unset_updates = backfill_module.build_vendor_contract_security_backfill_ops(
-        document,
-        drop_plaintext_token=True,
+    set_updates, unset_updates = (
+        backfill_module.build_vendor_contract_security_backfill_ops(
+            document,
+            drop_plaintext_token=True,
+        )
     )
 
-    assert set_updates["access_token_hash"] == vendor_service._hash_contract_access_token(
-        "legacy-token"
-    )
+    assert set_updates[
+        "access_token_hash"
+    ] == vendor_service._hash_contract_access_token("legacy-token")
     assert set_updates["token_last_sent_at"] == document["sent_at"]
     assert set_updates["token_last_viewed_at"] == document["viewed_at"]
     assert unset_updates == {"access_token": ""}
 
 
 @pytest.mark.asyncio
-async def test_backfill_conflict_detection_ignores_missing_legacy_lineage_fields() -> None:
+async def test_backfill_conflict_detection_ignores_missing_legacy_lineage_fields() -> (
+    None
+):
     backfill_module = _load_backfill_module()
     collection = FakeCollection(
         [

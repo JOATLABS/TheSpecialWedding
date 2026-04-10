@@ -47,6 +47,7 @@ from tests.backend.conftest_advertising import (
 # FIXTURES
 # =============================================================================
 
+
 @pytest.fixture
 def service_and_db():
     """Create a fresh PlannerAdInteractionService with mongomock database."""
@@ -72,6 +73,7 @@ def service_with_email():
 # ADD TO DIRECTORY TESTS (10+ tests)
 # =============================================================================
 
+
 @pytest.mark.asyncio
 async def test_add_to_directory_success(service_and_db):
     """Successfully add vendor to directory from active campaign."""
@@ -89,14 +91,12 @@ async def test_add_to_directory_success(service_and_db):
     # Update campaign with primary creative
     raw_db["ad_campaigns"].update_one(
         {"_id": campaign_result.inserted_id},
-        {"$set": {"primary_creative_id": creative_id}}
+        {"$set": {"primary_creative_id": creative_id}},
     )
 
     planner_email = "planner@example.com"
     result = await service.add_to_directory(
-        campaign_id=campaign_id,
-        planner_id="planner123",
-        planner_email=planner_email
+        campaign_id=campaign_id, planner_id="planner123", planner_email=planner_email
     )
 
     assert result["status"] == "added_to_directory"
@@ -124,14 +124,12 @@ async def test_add_to_directory_creates_vendor_profile(service_and_db):
 
     raw_db["ad_campaigns"].update_one(
         {"_id": campaign_result.inserted_id},
-        {"$set": {"primary_creative_id": creative_id}}
+        {"$set": {"primary_creative_id": creative_id}},
     )
 
     planner_email = "planner@example.com"
     result = await service.add_to_directory(
-        campaign_id=campaign_id,
-        planner_id="planner123",
-        planner_email=planner_email
+        campaign_id=campaign_id, planner_id="planner123", planner_email=planner_email
     )
 
     vendor_profile = result["vendor_profile"]
@@ -162,14 +160,12 @@ async def test_add_to_directory_creates_ad_lead(service_and_db):
 
     raw_db["ad_campaigns"].update_one(
         {"_id": campaign_result.inserted_id},
-        {"$set": {"primary_creative_id": creative_id}}
+        {"$set": {"primary_creative_id": creative_id}},
     )
 
     planner_email = "planner@example.com"
     await service.add_to_directory(
-        campaign_id=campaign_id,
-        planner_id="planner123",
-        planner_email=planner_email
+        campaign_id=campaign_id, planner_id="planner123", planner_email=planner_email
     )
 
     leads = list(raw_db["ad_leads"].find({}))
@@ -197,14 +193,12 @@ async def test_add_to_directory_creates_ad_event(service_and_db):
 
     raw_db["ad_campaigns"].update_one(
         {"_id": campaign_result.inserted_id},
-        {"$set": {"primary_creative_id": creative_id}}
+        {"$set": {"primary_creative_id": creative_id}},
     )
 
     planner_email = "planner@example.com"
     await service.add_to_directory(
-        campaign_id=campaign_id,
-        planner_id="planner123",
-        planner_email=planner_email
+        campaign_id=campaign_id, planner_id="planner123", planner_email=planner_email
     )
 
     events = list(raw_db["ad_events"].find({}))
@@ -230,14 +224,12 @@ async def test_add_to_directory_increments_campaign_counters(service_and_db):
 
     raw_db["ad_campaigns"].update_one(
         {"_id": campaign_result.inserted_id},
-        {"$set": {"primary_creative_id": creative_id}}
+        {"$set": {"primary_creative_id": creative_id}},
     )
 
     planner_email = "planner@example.com"
     await service.add_to_directory(
-        campaign_id=campaign_id,
-        planner_id="planner123",
-        planner_email=planner_email
+        campaign_id=campaign_id, planner_id="planner123", planner_email=planner_email
     )
 
     campaign = raw_db["ad_campaigns"].find_one({"_id": campaign_result.inserted_id})
@@ -260,16 +252,14 @@ async def test_add_to_directory_duplicate_returns_409(service_and_db):
 
     raw_db["ad_campaigns"].update_one(
         {"_id": campaign_result.inserted_id},
-        {"$set": {"primary_creative_id": creative_id}}
+        {"$set": {"primary_creative_id": creative_id}},
     )
 
     planner_email = "planner@example.com"
 
     # First add should succeed
     await service.add_to_directory(
-        campaign_id=campaign_id,
-        planner_id="planner123",
-        planner_email=planner_email
+        campaign_id=campaign_id, planner_id="planner123", planner_email=planner_email
     )
 
     # Second add should fail
@@ -277,7 +267,7 @@ async def test_add_to_directory_duplicate_returns_409(service_and_db):
         await service.add_to_directory(
             campaign_id=campaign_id,
             planner_id="planner123",
-            planner_email=planner_email
+            planner_email=planner_email,
         )
     assert exc.value.status_code == 409
     assert "already in your directory" in exc.value.detail
@@ -293,7 +283,7 @@ async def test_add_to_directory_campaign_not_found_returns_404(service_and_db):
         await service.add_to_directory(
             campaign_id=str(ObjectId()),
             planner_id="planner123",
-            planner_email=planner_email
+            planner_email=planner_email,
         )
     assert exc.value.status_code == 404
     assert "Campaign not found" in exc.value.detail
@@ -304,7 +294,11 @@ async def test_add_to_directory_campaign_not_active_returns_400(service_and_db):
     """Return 400 if campaign is not active."""
     service, db, raw_db = service_and_db
 
-    for status in [CampaignStatus.DRAFT.value, CampaignStatus.PAUSED.value, CampaignStatus.COMPLETED.value]:
+    for status in [
+        CampaignStatus.DRAFT.value,
+        CampaignStatus.PAUSED.value,
+        CampaignStatus.COMPLETED.value,
+    ]:
         campaign_doc = make_campaign(status=status)
         campaign_result = raw_db["ad_campaigns"].insert_one(campaign_doc)
         campaign_id = str(campaign_result.inserted_id)
@@ -314,7 +308,7 @@ async def test_add_to_directory_campaign_not_active_returns_400(service_and_db):
             await service.add_to_directory(
                 campaign_id=campaign_id,
                 planner_id="planner123",
-                planner_email=planner_email
+                planner_email=planner_email,
             )
         assert exc.value.status_code == 400
         assert "not active" in exc.value.detail
@@ -336,14 +330,12 @@ async def test_add_to_directory_includes_creative_description(service_and_db):
 
     raw_db["ad_campaigns"].update_one(
         {"_id": campaign_result.inserted_id},
-        {"$set": {"primary_creative_id": creative_id}}
+        {"$set": {"primary_creative_id": creative_id}},
     )
 
     planner_email = "planner@example.com"
     result = await service.add_to_directory(
-        campaign_id=campaign_id,
-        planner_id="planner123",
-        planner_email=planner_email
+        campaign_id=campaign_id, planner_id="planner123", planner_email=planner_email
     )
 
     assert result["vendor_profile"]["service_description"] == custom_description
@@ -354,15 +346,15 @@ async def test_add_to_directory_no_primary_creative_handles_gracefully(service_a
     """Handle campaign with no primary creative gracefully."""
     service, db, raw_db = service_and_db
 
-    campaign_doc = make_campaign(status=CampaignStatus.ACTIVE.value, primary_creative_id=None)
+    campaign_doc = make_campaign(
+        status=CampaignStatus.ACTIVE.value, primary_creative_id=None
+    )
     campaign_result = raw_db["ad_campaigns"].insert_one(campaign_doc)
     campaign_id = str(campaign_result.inserted_id)
 
     planner_email = "planner@example.com"
     result = await service.add_to_directory(
-        campaign_id=campaign_id,
-        planner_id="planner123",
-        planner_email=planner_email
+        campaign_id=campaign_id, planner_id="planner123", planner_email=planner_email
     )
 
     assert result["vendor_profile"]["service_description"] is None
@@ -384,7 +376,7 @@ async def test_add_to_directory_with_click_id(service_and_db):
 
     raw_db["ad_campaigns"].update_one(
         {"_id": campaign_result.inserted_id},
-        {"$set": {"primary_creative_id": creative_id}}
+        {"$set": {"primary_creative_id": creative_id}},
     )
 
     planner_email = "planner@example.com"
@@ -393,7 +385,7 @@ async def test_add_to_directory_with_click_id(service_and_db):
         campaign_id=campaign_id,
         planner_id="planner123",
         planner_email=planner_email,
-        click_id=custom_click_id
+        click_id=custom_click_id,
     )
 
     event = raw_db["ad_events"].find_one({})
@@ -403,6 +395,7 @@ async def test_add_to_directory_with_click_id(service_and_db):
 # =============================================================================
 # REQUEST QUOTE TESTS (12+ tests)
 # =============================================================================
+
 
 @pytest.mark.asyncio
 async def test_request_quote_success(service_and_db):
@@ -419,7 +412,7 @@ async def test_request_quote_success(service_and_db):
 
     raw_db["ad_campaigns"].update_one(
         {"_id": campaign_result.inserted_id},
-        {"$set": {"primary_creative_id": creative_id}}
+        {"$set": {"primary_creative_id": creative_id}},
     )
 
     planner_email = "planner@example.com"
@@ -429,7 +422,7 @@ async def test_request_quote_success(service_and_db):
         planner_email=planner_email,
         planner_name="Jane Planner",
         message="I'd like a quote for my June wedding",
-        auto_add_to_directory=False
+        auto_add_to_directory=False,
     )
 
     assert result["status"] == "quote_requested"
@@ -453,7 +446,7 @@ async def test_request_quote_creates_ad_lead(service_and_db):
 
     raw_db["ad_campaigns"].update_one(
         {"_id": campaign_result.inserted_id},
-        {"$set": {"primary_creative_id": creative_id}}
+        {"$set": {"primary_creative_id": creative_id}},
     )
 
     planner_email = "planner@example.com"
@@ -464,7 +457,7 @@ async def test_request_quote_creates_ad_lead(service_and_db):
         planner_email=planner_email,
         planner_name="Jane Planner",
         message=message,
-        auto_add_to_directory=False
+        auto_add_to_directory=False,
     )
 
     leads = list(raw_db["ad_leads"].find({}))
@@ -492,7 +485,7 @@ async def test_request_quote_creates_ad_event(service_and_db):
 
     raw_db["ad_campaigns"].update_one(
         {"_id": campaign_result.inserted_id},
-        {"$set": {"primary_creative_id": creative_id}}
+        {"$set": {"primary_creative_id": creative_id}},
     )
 
     planner_email = "planner@example.com"
@@ -502,7 +495,7 @@ async def test_request_quote_creates_ad_event(service_and_db):
         planner_email=planner_email,
         planner_name="Jane Planner",
         message="Quote request message",
-        auto_add_to_directory=False
+        auto_add_to_directory=False,
     )
 
     events = list(raw_db["ad_events"].find({}))
@@ -528,7 +521,7 @@ async def test_request_quote_increments_lead_count_not_conversion_count(service_
 
     raw_db["ad_campaigns"].update_one(
         {"_id": campaign_result.inserted_id},
-        {"$set": {"primary_creative_id": creative_id}}
+        {"$set": {"primary_creative_id": creative_id}},
     )
 
     planner_email = "planner@example.com"
@@ -538,7 +531,7 @@ async def test_request_quote_increments_lead_count_not_conversion_count(service_
         planner_email=planner_email,
         planner_name="Jane Planner",
         message="Quote request",
-        auto_add_to_directory=False
+        auto_add_to_directory=False,
     )
 
     campaign = raw_db["ad_campaigns"].find_one({"_id": campaign_result.inserted_id})
@@ -560,7 +553,7 @@ async def test_request_quote_empty_message_returns_400(service_and_db):
 
     raw_db["ad_campaigns"].update_one(
         {"_id": campaign_result.inserted_id},
-        {"$set": {"primary_creative_id": str(creative_result.inserted_id)}}
+        {"$set": {"primary_creative_id": str(creative_result.inserted_id)}},
     )
 
     planner_email = "planner@example.com"
@@ -571,7 +564,7 @@ async def test_request_quote_empty_message_returns_400(service_and_db):
             planner_email=planner_email,
             planner_name="Jane Planner",
             message="",
-            auto_add_to_directory=False
+            auto_add_to_directory=False,
         )
     assert exc.value.status_code == 400
     assert "empty" in exc.value.detail
@@ -590,7 +583,7 @@ async def test_request_quote_campaign_not_found_returns_404(service_and_db):
             planner_email=planner_email,
             planner_name="Jane Planner",
             message="Quote request",
-            auto_add_to_directory=False
+            auto_add_to_directory=False,
         )
     assert exc.value.status_code == 404
     assert "Campaign not found" in exc.value.detail
@@ -613,7 +606,7 @@ async def test_request_quote_campaign_not_active_returns_400(service_and_db):
             planner_email=planner_email,
             planner_name="Jane Planner",
             message="Quote request",
-            auto_add_to_directory=False
+            auto_add_to_directory=False,
         )
     assert exc.value.status_code == 400
     assert "not active" in exc.value.detail
@@ -634,7 +627,7 @@ async def test_request_quote_auto_add_to_directory_true(service_and_db):
 
     raw_db["ad_campaigns"].update_one(
         {"_id": campaign_result.inserted_id},
-        {"$set": {"primary_creative_id": creative_id}}
+        {"$set": {"primary_creative_id": creative_id}},
     )
 
     planner_email = "planner@example.com"
@@ -644,7 +637,7 @@ async def test_request_quote_auto_add_to_directory_true(service_and_db):
         planner_email=planner_email,
         planner_name="Jane Planner",
         message="Quote request",
-        auto_add_to_directory=True
+        auto_add_to_directory=True,
     )
 
     assert result["auto_added_to_directory"] is True
@@ -670,7 +663,7 @@ async def test_request_quote_auto_add_to_directory_false(service_and_db):
 
     raw_db["ad_campaigns"].update_one(
         {"_id": campaign_result.inserted_id},
-        {"$set": {"primary_creative_id": creative_id}}
+        {"$set": {"primary_creative_id": creative_id}},
     )
 
     planner_email = "planner@example.com"
@@ -680,7 +673,7 @@ async def test_request_quote_auto_add_to_directory_false(service_and_db):
         planner_email=planner_email,
         planner_name="Jane Planner",
         message="Quote request",
-        auto_add_to_directory=False
+        auto_add_to_directory=False,
     )
 
     assert result["auto_added_to_directory"] is False
@@ -705,7 +698,7 @@ async def test_request_quote_no_duplicate_directory_entry(service_and_db):
 
     raw_db["ad_campaigns"].update_one(
         {"_id": campaign_result.inserted_id},
-        {"$set": {"primary_creative_id": creative_id}}
+        {"$set": {"primary_creative_id": creative_id}},
     )
 
     planner_email = "planner@example.com"
@@ -717,7 +710,7 @@ async def test_request_quote_no_duplicate_directory_entry(service_and_db):
         planner_email=planner_email,
         planner_name="Jane Planner",
         message="First quote request",
-        auto_add_to_directory=True
+        auto_add_to_directory=True,
     )
 
     # Second request with auto-add (should not duplicate)
@@ -727,7 +720,7 @@ async def test_request_quote_no_duplicate_directory_entry(service_and_db):
         planner_email=planner_email,
         planner_name="Jane Planner",
         message="Second quote request",
-        auto_add_to_directory=True
+        auto_add_to_directory=True,
     )
 
     assert result["auto_added_to_directory"] is False
@@ -751,7 +744,7 @@ async def test_request_quote_stores_wedding_context(service_and_db):
 
     raw_db["ad_campaigns"].update_one(
         {"_id": campaign_result.inserted_id},
-        {"$set": {"primary_creative_id": creative_id}}
+        {"$set": {"primary_creative_id": creative_id}},
     )
 
     planner_email = "planner@example.com"
@@ -760,7 +753,7 @@ async def test_request_quote_stores_wedding_context(service_and_db):
         "location": "Dallas, TX",
         "guest_count": 150,
         "venue": "The Grand Hotel",
-        "budget_range": "$50,000 - $75,000"
+        "budget_range": "$50,000 - $75,000",
     }
     await service.request_quote(
         campaign_id=campaign_id,
@@ -769,7 +762,7 @@ async def test_request_quote_stores_wedding_context(service_and_db):
         planner_name="Jane Planner",
         message="Quote request",
         wedding_context=wedding_context,
-        auto_add_to_directory=False
+        auto_add_to_directory=False,
     )
 
     lead = raw_db["ad_leads"].find_one({})
@@ -791,7 +784,7 @@ async def test_request_quote_calls_email_service(service_with_email):
 
     raw_db["ad_campaigns"].update_one(
         {"_id": campaign_result.inserted_id},
-        {"$set": {"primary_creative_id": creative_id}}
+        {"$set": {"primary_creative_id": creative_id}},
     )
 
     planner_email = "planner@example.com"
@@ -804,7 +797,7 @@ async def test_request_quote_calls_email_service(service_with_email):
         planner_email=planner_email,
         planner_name=planner_name,
         message=message,
-        auto_add_to_directory=False
+        auto_add_to_directory=False,
     )
 
     assert result["email_sent"] is True
@@ -832,7 +825,7 @@ async def test_request_quote_email_failure_doesnt_break_flow(service_with_email)
 
     raw_db["ad_campaigns"].update_one(
         {"_id": campaign_result.inserted_id},
-        {"$set": {"primary_creative_id": creative_id}}
+        {"$set": {"primary_creative_id": creative_id}},
     )
 
     planner_email = "planner@example.com"
@@ -842,7 +835,7 @@ async def test_request_quote_email_failure_doesnt_break_flow(service_with_email)
         planner_email=planner_email,
         planner_name="Jane Planner",
         message="Quote request",
-        auto_add_to_directory=False
+        auto_add_to_directory=False,
     )
 
     assert result["status"] == "quote_requested"
@@ -853,6 +846,7 @@ async def test_request_quote_email_failure_doesnt_break_flow(service_with_email)
 # =============================================================================
 # GET SPONSORED CARDS TESTS (6+ tests)
 # =============================================================================
+
 
 @pytest.mark.asyncio
 async def test_get_sponsored_cards_returns_active_campaigns(service_and_db):
@@ -869,14 +863,11 @@ async def test_get_sponsored_cards_returns_active_campaigns(service_and_db):
 
     raw_db["ad_campaigns"].update_one(
         {"_id": campaign_result.inserted_id},
-        {"$set": {"primary_creative_id": creative_id}}
+        {"$set": {"primary_creative_id": creative_id}},
     )
 
     planner_email = "planner@example.com"
-    cards = await service.get_sponsored_cards(
-        planner_email=planner_email,
-        limit=10
-    )
+    cards = await service.get_sponsored_cards(planner_email=planner_email, limit=10)
 
     assert len(cards) == 1
     card = cards[0]
@@ -901,23 +892,18 @@ async def test_get_sponsored_cards_excludes_already_added(service_and_db):
 
     raw_db["ad_campaigns"].update_one(
         {"_id": campaign_result.inserted_id},
-        {"$set": {"primary_creative_id": creative_id}}
+        {"$set": {"primary_creative_id": creative_id}},
     )
 
     planner_email = "planner@example.com"
 
     # Add vendor to directory
     await service.add_to_directory(
-        campaign_id=campaign_id,
-        planner_id="planner123",
-        planner_email=planner_email
+        campaign_id=campaign_id, planner_id="planner123", planner_email=planner_email
     )
 
     # Get sponsored cards should not include this campaign
-    cards = await service.get_sponsored_cards(
-        planner_email=planner_email,
-        limit=10
-    )
+    cards = await service.get_sponsored_cards(planner_email=planner_email, limit=10)
 
     assert len(cards) == 0
 
@@ -932,8 +918,7 @@ async def test_get_sponsored_cards_deduplicates_by_vendor(service_and_db):
     # Create two campaigns for same vendor
     for i in range(2):
         campaign_doc = make_campaign(
-            vendor_id=vendor_id,
-            status=CampaignStatus.ACTIVE.value
+            vendor_id=vendor_id, status=CampaignStatus.ACTIVE.value
         )
         campaign_result = raw_db["ad_campaigns"].insert_one(campaign_doc)
         campaign_id = str(campaign_result.inserted_id)
@@ -944,14 +929,11 @@ async def test_get_sponsored_cards_deduplicates_by_vendor(service_and_db):
 
         raw_db["ad_campaigns"].update_one(
             {"_id": campaign_result.inserted_id},
-            {"$set": {"primary_creative_id": creative_id}}
+            {"$set": {"primary_creative_id": creative_id}},
         )
 
     planner_email = "planner@example.com"
-    cards = await service.get_sponsored_cards(
-        planner_email=planner_email,
-        limit=10
-    )
+    cards = await service.get_sponsored_cards(planner_email=planner_email, limit=10)
 
     # Should only return one card (first campaign)
     assert len(cards) == 1
@@ -968,7 +950,7 @@ async def test_get_sponsored_cards_respects_limit(service_and_db):
         campaign_doc = make_campaign(
             vendor_id=vendor_id,
             status=CampaignStatus.ACTIVE.value,
-            quality_score=50 + i
+            quality_score=50 + i,
         )
         campaign_result = raw_db["ad_campaigns"].insert_one(campaign_doc)
         campaign_id = str(campaign_result.inserted_id)
@@ -979,14 +961,11 @@ async def test_get_sponsored_cards_respects_limit(service_and_db):
 
         raw_db["ad_campaigns"].update_one(
             {"_id": campaign_result.inserted_id},
-            {"$set": {"primary_creative_id": creative_id}}
+            {"$set": {"primary_creative_id": creative_id}},
         )
 
     planner_email = "planner@example.com"
-    cards = await service.get_sponsored_cards(
-        planner_email=planner_email,
-        limit=2
-    )
+    cards = await service.get_sponsored_cards(planner_email=planner_email, limit=2)
 
     assert len(cards) == 2
 
@@ -998,8 +977,7 @@ async def test_get_sponsored_cards_filters_by_categories(service_and_db):
 
     # Create florist campaign
     campaign_doc = make_campaign(
-        status=CampaignStatus.ACTIVE.value,
-        vendor_category="florist"
+        status=CampaignStatus.ACTIVE.value, vendor_category="florist"
     )
     campaign_result = raw_db["ad_campaigns"].insert_one(campaign_doc)
     campaign_id = str(campaign_result.inserted_id)
@@ -1010,14 +988,14 @@ async def test_get_sponsored_cards_filters_by_categories(service_and_db):
 
     raw_db["ad_campaigns"].update_one(
         {"_id": campaign_result.inserted_id},
-        {"$set": {"primary_creative_id": creative_id}}
+        {"$set": {"primary_creative_id": creative_id}},
     )
 
     # Create photographer campaign
     campaign_doc2 = make_campaign(
         vendor_id=str(ObjectId()),
         status=CampaignStatus.ACTIVE.value,
-        vendor_category="photographer"
+        vendor_category="photographer",
     )
     campaign_result2 = raw_db["ad_campaigns"].insert_one(campaign_doc2)
     campaign_id2 = str(campaign_result2.inserted_id)
@@ -1028,14 +1006,12 @@ async def test_get_sponsored_cards_filters_by_categories(service_and_db):
 
     raw_db["ad_campaigns"].update_one(
         {"_id": campaign_result2.inserted_id},
-        {"$set": {"primary_creative_id": creative_id2}}
+        {"$set": {"primary_creative_id": creative_id2}},
     )
 
     planner_email = "planner@example.com"
     cards = await service.get_sponsored_cards(
-        planner_email=planner_email,
-        categories=["florist"],
-        limit=10
+        planner_email=planner_email, categories=["florist"], limit=10
     )
 
     assert len(cards) == 1
@@ -1048,10 +1024,7 @@ async def test_get_sponsored_cards_empty_when_no_active_campaigns(service_and_db
     service, db, raw_db = service_and_db
 
     planner_email = "planner@example.com"
-    cards = await service.get_sponsored_cards(
-        planner_email=planner_email,
-        limit=10
-    )
+    cards = await service.get_sponsored_cards(planner_email=planner_email, limit=10)
 
     assert cards == []
 
@@ -1059,6 +1032,7 @@ async def test_get_sponsored_cards_empty_when_no_active_campaigns(service_and_db
 # =============================================================================
 # CHECK DIRECTORY STATUS TESTS (3+ tests)
 # =============================================================================
+
 
 @pytest.mark.asyncio
 async def test_check_directory_status_in_directory(service_and_db):
@@ -1075,23 +1049,20 @@ async def test_check_directory_status_in_directory(service_and_db):
 
     raw_db["ad_campaigns"].update_one(
         {"_id": campaign_result.inserted_id},
-        {"$set": {"primary_creative_id": creative_id}}
+        {"$set": {"primary_creative_id": creative_id}},
     )
 
     planner_email = "planner@example.com"
 
     # Add to directory
     result = await service.add_to_directory(
-        campaign_id=campaign_id,
-        planner_id="planner123",
-        planner_email=planner_email
+        campaign_id=campaign_id, planner_id="planner123", planner_email=planner_email
     )
     vendor_profile_id = result["vendor_profile"]["_id"]
 
     # Check status
     status = await service.check_directory_status(
-        campaign_id=campaign_id,
-        planner_email=planner_email
+        campaign_id=campaign_id, planner_email=planner_email
     )
 
     assert status["in_directory"] is True
@@ -1111,8 +1082,7 @@ async def test_check_directory_status_not_in_directory(service_and_db):
     planner_email = "planner@example.com"
 
     status = await service.check_directory_status(
-        campaign_id=campaign_id,
-        planner_email=planner_email
+        campaign_id=campaign_id, planner_email=planner_email
     )
 
     assert status["in_directory"] is False
@@ -1134,19 +1104,16 @@ async def test_check_directory_status_returns_vendor_profile_id(service_and_db):
 
     raw_db["ad_campaigns"].update_one(
         {"_id": campaign_result.inserted_id},
-        {"$set": {"primary_creative_id": creative_id}}
+        {"$set": {"primary_creative_id": creative_id}},
     )
 
     planner_email = "planner@example.com"
     add_result = await service.add_to_directory(
-        campaign_id=campaign_id,
-        planner_id="planner123",
-        planner_email=planner_email
+        campaign_id=campaign_id, planner_id="planner123", planner_email=planner_email
     )
 
     status = await service.check_directory_status(
-        campaign_id=campaign_id,
-        planner_email=planner_email
+        campaign_id=campaign_id, planner_email=planner_email
     )
 
     assert status["vendor_profile_id"] == add_result["vendor_profile"]["_id"]

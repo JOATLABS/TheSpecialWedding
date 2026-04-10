@@ -211,7 +211,9 @@ async def _collection_counts(collection_names: Iterable[str]) -> Dict[str, int]:
     return counts
 
 
-async def _identity_presence(identity_emails: Dict[str, str]) -> Dict[str, Dict[str, int]]:
+async def _identity_presence(
+    identity_emails: Dict[str, str],
+) -> Dict[str, Dict[str, int]]:
     presence: Dict[str, Dict[str, int]] = {}
     collections = ["users", "couple_users", "team_members", "user_invitations"]
     existing = await _list_existing_collections()
@@ -245,7 +247,9 @@ def _print_counts(title: str, counts: Dict[str, int]) -> None:
             print(f"  - {collection}: {counts.get(collection, 0)}")
 
 
-def _print_identity_presence(presence: Dict[str, Dict[str, int]], identities: Dict[str, str]) -> None:
+def _print_identity_presence(
+    presence: Dict[str, Dict[str, int]], identities: Dict[str, str]
+) -> None:
     print("\n=== .env Identity Presence ===")
     for key, email in identities.items():
         counts = presence.get(key, {})
@@ -262,7 +266,9 @@ async def dry_run() -> None:
     presence = await _identity_presence(identities)
 
     print("Dry run only. No data has been deleted.")
-    print("The TEST_* identities in .env are manual-flow fixtures and are not recreated by this script.")
+    print(
+        "The TEST_* identities in .env are manual-flow fixtures and are not recreated by this script."
+    )
     print("\nThis reset WILL preserve these collections:")
     for collection in PRESERVED_COLLECTIONS:
         print(f"  - {collection}")
@@ -305,8 +311,12 @@ async def execute_reset(assume_yes: bool) -> int:
 
     print(f"\nDeleted {deleted_total} total documents.")
     print("Run this script again with --verify to confirm the reset is clean.")
-    print("Note: only the root admin may be recreated on the next application startup by scripts/setup_admin_user.py.")
-    print("All TEST_* accounts must be recreated manually through the frontend flows you want to validate.")
+    print(
+        "Note: only the root admin may be recreated on the next application startup by scripts/setup_admin_user.py."
+    )
+    print(
+        "All TEST_* accounts must be recreated manually through the frontend flows you want to validate."
+    )
     return 0
 
 

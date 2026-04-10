@@ -51,7 +51,9 @@ class _FakeServiceCursor:
 
     def sort(self, field: str, direction: int):
         reverse = direction == -1
-        self._docs = sorted(self._docs, key=lambda item: item.get(field), reverse=reverse)
+        self._docs = sorted(
+            self._docs, key=lambda item: item.get(field), reverse=reverse
+        )
         return self
 
     async def to_list(self, length=None):
@@ -74,7 +76,11 @@ class _FakeServiceCollection:
                             (
                                 document.get(branch_key) == branch_value
                                 if not isinstance(branch_value, dict)
-                                else ("$exists" in branch_value and (branch_key in document) == branch_value["$exists"])
+                                else (
+                                    "$exists" in branch_value
+                                    and (branch_key in document)
+                                    == branch_value["$exists"]
+                                )
                             )
                             for branch_key, branch_value in branch.items()
                         )
@@ -88,7 +94,9 @@ class _FakeServiceCollection:
 
     async def find_one(self, query):
         for doc in self._docs:
-            if doc.get("_id") == query.get("_id") and doc.get("created_by") == query.get("created_by"):
+            if doc.get("_id") == query.get("_id") and doc.get(
+                "created_by"
+            ) == query.get("created_by"):
                 return deepcopy(doc)
         return None
 
@@ -99,7 +107,9 @@ async def test_create_contract_template_uses_typed_payload(
     planner_user: ExtendedAuthUser,
 ) -> None:
     create_mock = AsyncMock(return_value={"_id": "template-1"})
-    monkeypatch.setattr(vendor_management_api.vendor_service, "create_contract_template", create_mock)
+    monkeypatch.setattr(
+        vendor_management_api.vendor_service, "create_contract_template", create_mock
+    )
 
     request = CreateVendorContractTemplateRequest(
         name="Photography",
@@ -130,7 +140,9 @@ async def test_create_contract_uses_json_body_payload(
     planner_user: ExtendedAuthUser,
 ) -> None:
     create_mock = AsyncMock(return_value={"_id": "contract-1"})
-    monkeypatch.setattr(vendor_management_api.vendor_service, "create_contract", create_mock)
+    monkeypatch.setattr(
+        vendor_management_api.vendor_service, "create_contract", create_mock
+    )
 
     request = CreateVendorContractRequest(
         wedding_id="wedding-1",
@@ -157,7 +169,9 @@ async def test_create_contract_revision_forwards_typed_payload(
     planner_user: ExtendedAuthUser,
 ) -> None:
     create_mock = AsyncMock(return_value={"_id": "contract-2"})
-    monkeypatch.setattr(vendor_management_api.vendor_service, "create_contract_revision", create_mock)
+    monkeypatch.setattr(
+        vendor_management_api.vendor_service, "create_contract_revision", create_mock
+    )
 
     request = CreateVendorContractRevisionRequest(
         revision_kind="revision",
@@ -188,7 +202,9 @@ async def test_list_contracts_forwards_scoped_filters_and_pagination(
     planner_user: ExtendedAuthUser,
 ) -> None:
     list_mock = AsyncMock(return_value=[{"_id": "contract-1"}])
-    monkeypatch.setattr(vendor_management_api.vendor_service, "get_contracts", list_mock)
+    monkeypatch.setattr(
+        vendor_management_api.vendor_service, "get_contracts", list_mock
+    )
 
     await vendor_management_api.list_contracts(
         wedding_id="wedding-1",
@@ -237,7 +253,11 @@ async def test_list_contract_revisions_forwards_to_service(
             "versions": [],
         }
     )
-    monkeypatch.setattr(vendor_management_api.vendor_service, "get_contract_revision_history", revision_mock)
+    monkeypatch.setattr(
+        vendor_management_api.vendor_service,
+        "get_contract_revision_history",
+        revision_mock,
+    )
 
     await vendor_management_api.list_contract_revisions(
         contract_id="contract-1",
@@ -256,7 +276,9 @@ async def test_update_contract_uses_exclude_none_payload(
     planner_user: ExtendedAuthUser,
 ) -> None:
     update_mock = AsyncMock(return_value={"_id": "contract-1"})
-    monkeypatch.setattr(vendor_management_api.vendor_service, "update_contract", update_mock)
+    monkeypatch.setattr(
+        vendor_management_api.vendor_service, "update_contract", update_mock
+    )
 
     request = UpdateVendorContractRequest(
         contract_title="Updated Title",
@@ -285,7 +307,9 @@ async def test_update_contract_sections_forwards_full_object_payload(
     planner_user: ExtendedAuthUser,
 ) -> None:
     update_mock = AsyncMock(return_value={"_id": "contract-1"})
-    monkeypatch.setattr(vendor_management_api.vendor_service, "update_contract_sections", update_mock)
+    monkeypatch.setattr(
+        vendor_management_api.vendor_service, "update_contract_sections", update_mock
+    )
 
     request = UpdateVendorContractSectionsRequest(
         sections=[{"id": "sec-1", "title": "Intro", "content": "Hello", "order": 0}],
@@ -316,7 +340,9 @@ async def test_apply_form_data_endpoint_uses_normalized_request(
     planner_user: ExtendedAuthUser,
 ) -> None:
     apply_mock = AsyncMock(return_value={"_id": "contract-1"})
-    monkeypatch.setattr(vendor_management_api.vendor_service, "apply_form_data_to_contract", apply_mock)
+    monkeypatch.setattr(
+        vendor_management_api.vendor_service, "apply_form_data_to_contract", apply_mock
+    )
 
     request = ApplyVendorContractFormDataRequest(
         form_submission_id="submission-1",
@@ -342,8 +368,12 @@ async def test_send_contract_endpoint_uses_body_model_with_default_cc_list(
     monkeypatch: pytest.MonkeyPatch,
     planner_user: ExtendedAuthUser,
 ) -> None:
-    send_mock = AsyncMock(return_value={"message": "sent", "sent_to": "vendor@example.com"})
-    monkeypatch.setattr(vendor_management_api.vendor_service, "send_contract", send_mock)
+    send_mock = AsyncMock(
+        return_value={"message": "sent", "sent_to": "vendor@example.com"}
+    )
+    monkeypatch.setattr(
+        vendor_management_api.vendor_service, "send_contract", send_mock
+    )
 
     request = SendVendorContractRequest(message="Please review")
 
@@ -367,7 +397,9 @@ async def test_create_payment_milestones_endpoint_wraps_milestones_body(
     planner_user: ExtendedAuthUser,
 ) -> None:
     create_mock = AsyncMock(return_value=[{"_id": "milestone-1"}])
-    monkeypatch.setattr(vendor_management_api.vendor_service, "create_payment_milestones", create_mock)
+    monkeypatch.setattr(
+        vendor_management_api.vendor_service, "create_payment_milestones", create_mock
+    )
 
     request = CreateVendorPaymentMilestonesRequest(
         milestones=[
@@ -406,7 +438,9 @@ async def test_record_milestone_payment_endpoint_uses_body_model(
     planner_user: ExtendedAuthUser,
 ) -> None:
     record_mock = AsyncMock(return_value={"_id": "milestone-1"})
-    monkeypatch.setattr(vendor_management_api.vendor_service, "record_payment", record_mock)
+    monkeypatch.setattr(
+        vendor_management_api.vendor_service, "record_payment", record_mock
+    )
 
     request = RecordVendorMilestonePaymentRequest(
         amount=1200,
@@ -439,7 +473,9 @@ async def test_list_payment_milestones_endpoint_scopes_to_planner(
     planner_user: ExtendedAuthUser,
 ) -> None:
     list_mock = AsyncMock(return_value=[{"_id": "milestone-1"}])
-    monkeypatch.setattr(vendor_management_api.vendor_service, "get_payment_milestones", list_mock)
+    monkeypatch.setattr(
+        vendor_management_api.vendor_service, "get_payment_milestones", list_mock
+    )
 
     await vendor_management_api.list_payment_milestones(
         contract_id="contract-1",
@@ -468,7 +504,9 @@ async def test_get_contract_activity_endpoint_forwards_scoped_lookup(
             items=[],
         ).model_dump()
     )
-    monkeypatch.setattr(vendor_management_api.vendor_service, "get_contract_activity", activity_mock)
+    monkeypatch.setattr(
+        vendor_management_api.vendor_service, "get_contract_activity", activity_mock
+    )
 
     await vendor_management_api.get_contract_activity(
         contract_id="contract-1",
@@ -526,7 +564,9 @@ async def test_vendor_service_get_contracts_defaults_to_current_versions_only(
     result = await vendor_service.get_contracts(created_by="planner@example.com")
 
     assert [contract["id"] for contract in result] == [str(current_id), str(legacy_id)]
-    assert all(contract.get("is_current_version", True) is not False for contract in result)
+    assert all(
+        contract.get("is_current_version", True) is not False for contract in result
+    )
 
 
 @pytest.mark.asyncio
@@ -627,8 +667,14 @@ async def test_vendor_service_get_form_data_normalizes_response_keys(
     assert "suggested_contract_fields" in result
     assert "submissions" not in result
     assert "suggested_mappings" not in result
-    assert result["vendor_submissions"][0]["data"]["portfolio_link"] == "https://example.com/work"
-    assert result["suggested_contract_fields"]["{{vendor_portfolio}}"]["source_field"] == "portfolio_link"
+    assert (
+        result["vendor_submissions"][0]["data"]["portfolio_link"]
+        == "https://example.com/work"
+    )
+    assert (
+        result["suggested_contract_fields"]["{{vendor_portfolio}}"]["source_field"]
+        == "portfolio_link"
+    )
 
 
 @pytest.mark.asyncio
@@ -686,7 +732,9 @@ async def test_vendor_service_apply_form_data_returns_updated_contract(
         async def find_one(self, query):
             return None
 
-    monkeypatch.setattr(vendor_service, "vendor_contracts", FakeVendorContractsCollection())
+    monkeypatch.setattr(
+        vendor_service, "vendor_contracts", FakeVendorContractsCollection()
+    )
     monkeypatch.setattr(
         vendor_service_module,
         "mongo",
@@ -710,8 +758,12 @@ async def test_vendor_service_apply_form_data_returns_updated_contract(
     assert update_payload["sections"][0]["content"] == (
         "Portfolio https://example.com/portfolio / raw https://example.com/portfolio"
     )
-    assert update_payload["terms_and_conditions"] == "Terms https://example.com/portfolio"
-    assert update_payload["cancellation_policy"] == "Cancel https://example.com/portfolio"
+    assert (
+        update_payload["terms_and_conditions"] == "Terms https://example.com/portfolio"
+    )
+    assert (
+        update_payload["cancellation_policy"] == "Cancel https://example.com/portfolio"
+    )
     assert update_payload["custom_clauses"] == "Clause https://example.com/portfolio"
     assert update_payload["form_data_applied"] is True
     assert update_payload["form_submission_id"] == submission_id

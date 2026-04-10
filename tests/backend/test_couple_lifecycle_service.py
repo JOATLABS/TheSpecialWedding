@@ -117,7 +117,9 @@ async def test_owner_identity_resolution_uses_canonical_wedding_owner(
         return {"planner_id": planner_id, "planner_email": planner_email}
 
     service.weddings_collection = FakeWeddingsCollection()
-    monkeypatch.setattr(couple_lifecycle_module, "resolve_planner_identity", fake_resolve)
+    monkeypatch.setattr(
+        couple_lifecycle_module, "resolve_planner_identity", fake_resolve
+    )
 
     result = await service._resolve_owner_identity(
         {
@@ -156,7 +158,9 @@ async def test_owner_identity_resolution_does_not_fallback_to_couple_mirrors(
         return {"planner_id": planner_id, "planner_email": planner_email}
 
     service.weddings_collection = FakeWeddingsCollection()
-    monkeypatch.setattr(couple_lifecycle_module, "resolve_planner_identity", fake_resolve)
+    monkeypatch.setattr(
+        couple_lifecycle_module, "resolve_planner_identity", fake_resolve
+    )
 
     result = await service._resolve_owner_identity(
         {

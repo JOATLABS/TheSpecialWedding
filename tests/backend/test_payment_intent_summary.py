@@ -55,7 +55,9 @@ def test_payment_intent_summary_omits_client_secret(monkeypatch):
         }
     )
     monkeypatch.setattr(database_module, "mongo", fake_mongo)
-    monkeypatch.setattr(settings_module.settings, "stripe_secret_key", "sk_test_123", raising=False)
+    monkeypatch.setattr(
+        settings_module.settings, "stripe_secret_key", "sk_test_123", raising=False
+    )
     monkeypatch.setattr(
         stripe.PaymentIntent,
         "retrieve",
@@ -69,7 +71,9 @@ def test_payment_intent_summary_omits_client_secret(monkeypatch):
         ),
     )
 
-    result = asyncio.run(stripe_payment_module.get_payment_intent_summary("public-token-123"))
+    result = asyncio.run(
+        stripe_payment_module.get_payment_intent_summary("public-token-123")
+    )
 
     assert result == {
         "id": "pi_123",
@@ -90,7 +94,9 @@ def test_payment_intent_details_require_public_token(monkeypatch):
         }
     )
     monkeypatch.setattr(database_module, "mongo", fake_mongo)
-    monkeypatch.setattr(settings_module.settings, "stripe_secret_key", "sk_test_123", raising=False)
+    monkeypatch.setattr(
+        settings_module.settings, "stripe_secret_key", "sk_test_123", raising=False
+    )
     monkeypatch.setattr(
         stripe.PaymentIntent,
         "retrieve",
@@ -104,7 +110,9 @@ def test_payment_intent_details_require_public_token(monkeypatch):
         ),
     )
 
-    result = asyncio.run(stripe_payment_module.get_payment_intent_details("public-token-123"))
+    result = asyncio.run(
+        stripe_payment_module.get_payment_intent_details("public-token-123")
+    )
 
     assert result == {
         "id": "pi_123",
@@ -125,7 +133,9 @@ def test_payment_intent_details_omit_client_secret_when_not_payable(monkeypatch)
         }
     )
     monkeypatch.setattr(database_module, "mongo", fake_mongo)
-    monkeypatch.setattr(settings_module.settings, "stripe_secret_key", "sk_test_123", raising=False)
+    monkeypatch.setattr(
+        settings_module.settings, "stripe_secret_key", "sk_test_123", raising=False
+    )
     monkeypatch.setattr(
         stripe.PaymentIntent,
         "retrieve",
@@ -139,7 +149,9 @@ def test_payment_intent_details_omit_client_secret_when_not_payable(monkeypatch)
         ),
     )
 
-    result = asyncio.run(stripe_payment_module.get_payment_intent_details("public-token-123"))
+    result = asyncio.run(
+        stripe_payment_module.get_payment_intent_details("public-token-123")
+    )
 
     assert result == {
         "id": "pi_123",
@@ -160,7 +172,9 @@ def test_payment_intent_summary_rejects_raw_payment_intent_id(monkeypatch):
         }
     )
     monkeypatch.setattr(database_module, "mongo", fake_mongo)
-    monkeypatch.setattr(settings_module.settings, "stripe_secret_key", "sk_test_123", raising=False)
+    monkeypatch.setattr(
+        settings_module.settings, "stripe_secret_key", "sk_test_123", raising=False
+    )
 
     try:
         asyncio.run(stripe_payment_module.get_payment_intent_summary("pi_123"))
@@ -168,7 +182,9 @@ def test_payment_intent_summary_rejects_raw_payment_intent_id(monkeypatch):
         assert exc.status_code == 404
         assert exc.detail == "Payment request not found"
     else:
-        raise AssertionError("Expected summary lookup by raw payment_intent_id to be rejected")
+        raise AssertionError(
+            "Expected summary lookup by raw payment_intent_id to be rejected"
+        )
 
 
 def test_create_payment_intent_stores_public_token_without_client_secret(monkeypatch):

@@ -59,7 +59,9 @@ class FakeCollection:
                 return deepcopy(document)
         return None
 
-    async def update_one(self, query: dict, update: dict, session=None) -> SimpleNamespace:
+    async def update_one(
+        self, query: dict, update: dict, session=None
+    ) -> SimpleNamespace:
         for document in self.documents:
             if _matches_query(document, query):
                 for key, value in update.get("$set", {}).items():
@@ -69,7 +71,11 @@ class FakeCollection:
 
     def find(self, query: dict) -> FakeCursor:
         return FakeCursor(
-            [deepcopy(document) for document in self.documents if _matches_query(document, query)]
+            [
+                deepcopy(document)
+                for document in self.documents
+                if _matches_query(document, query)
+            ]
         )
 
 
@@ -182,9 +188,13 @@ def configured_vendor_service(monkeypatch: pytest.MonkeyPatch):
         "_get_planner_contract_settings",
         AsyncMock(return_value={"token_expiry_days": 30, "deposit_due_days": 7}),
     )
+
     async def run_required_transaction(_operation_name, operation):
         return await operation(None)
-    monkeypatch.setattr(vendor_service, "_run_required_transaction", run_required_transaction)
+
+    monkeypatch.setattr(
+        vendor_service, "_run_required_transaction", run_required_transaction
+    )
     monkeypatch.setattr(
         vendor_service,
         "_get_wedding",
@@ -218,7 +228,9 @@ def configured_vendor_service(monkeypatch: pytest.MonkeyPatch):
 
 
 @pytest.mark.asyncio
-async def test_create_contract_initializes_version_metadata(configured_vendor_service) -> None:
+async def test_create_contract_initializes_version_metadata(
+    configured_vendor_service,
+) -> None:
     service, contracts, _, vendor_profile_id = configured_vendor_service
 
     created = await service.create_contract(
@@ -282,8 +294,12 @@ async def test_creating_revision_does_not_supersede_current_contract_until_send(
         reason="Requested wording tweaks",
     )
 
-    stored_original = next(doc for doc in contracts.documents if doc["_id"] == original["_id"])
-    stored_created = next(doc for doc in contracts.documents if doc["_id"] == ObjectId(created["_id"]))
+    stored_original = next(
+        doc for doc in contracts.documents if doc["_id"] == original["_id"]
+    )
+    stored_created = next(
+        doc for doc in contracts.documents if doc["_id"] == ObjectId(created["_id"])
+    )
 
     assert stored_original["is_current_version"] is True
     assert stored_original["superseded_by_contract_id"] is None
@@ -371,8 +387,12 @@ async def test_sending_child_version_supersedes_previous_current_and_keeps_singl
 
     assert result["sent_to"] == "vendor@example.com"
 
-    stored_original = next(doc for doc in contracts.documents if doc["_id"] == original["_id"])
-    stored_child = next(doc for doc in contracts.documents if doc["_id"] == child["_id"])
+    stored_original = next(
+        doc for doc in contracts.documents if doc["_id"] == original["_id"]
+    )
+    stored_child = next(
+        doc for doc in contracts.documents if doc["_id"] == child["_id"]
+    )
 
     assert stored_original["is_current_version"] is False
     assert stored_original["superseded_by_contract_id"] == str(child["_id"])
@@ -473,12 +493,16 @@ async def test_current_contract_token_can_still_be_viewed_and_signed(
     )
     assert signed["message"] == "Contract signed successfully"
 
-    stored_current = next(doc for doc in contracts.documents if doc["_id"] == current["_id"])
+    stored_current = next(
+        doc for doc in contracts.documents if doc["_id"] == current["_id"]
+    )
     assert stored_current["status"] == ContractStatus.SIGNED.value
 
 
 @pytest.mark.asyncio
-async def test_revision_history_returns_ordered_lineage(configured_vendor_service) -> None:
+async def test_revision_history_returns_ordered_lineage(
+    configured_vendor_service,
+) -> None:
     service, contracts, _, _ = configured_vendor_service
     root_id = ObjectId()
     contracts.documents.extend(

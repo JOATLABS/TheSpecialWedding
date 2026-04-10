@@ -10,6 +10,7 @@ This script:
 3. Retrieves subscription from Stripe API
 4. Updates MongoDB with the subscription data (same logic as webhook handler)
 """
+
 import os
 import sys
 from datetime import datetime, timezone
@@ -29,7 +30,10 @@ from app.models.subscription import normalize_subscription_status
 
 # Connect to MongoDB (same pattern as seed_subscription_plans.py)
 mongo_uri = (
-    os.getenv("MONGO_URI") or os.getenv("MONGODB_URI") or os.getenv("MONGO_URL") or "mongodb://localhost:27017"
+    os.getenv("MONGO_URI")
+    or os.getenv("MONGODB_URI")
+    or os.getenv("MONGO_URL")
+    or "mongodb://localhost:27017"
 )
 db_name = os.getenv("MONGO_DB", "wedding")
 
@@ -38,6 +42,7 @@ client = MongoClient(mongo_uri)
 db = client[db_name]
 
 stripe.api_key = os.getenv("STRIPE_SECRET_KEY")
+
 
 def main():
     if len(sys.argv) < 2:
@@ -69,7 +74,9 @@ def main():
     print(f"  plan_id: {sub_record.get('plan_id')}")
     print(f"  status: {sub_record.get('status')}")
     print(f"  stripe_customer_id: {sub_record.get('stripe_customer_id')}")
-    print(f"  stripe_checkout_session_id: {sub_record.get('stripe_checkout_session_id')}")
+    print(
+        f"  stripe_checkout_session_id: {sub_record.get('stripe_checkout_session_id')}"
+    )
 
     # Get the checkout session from Stripe
     checkout_session_id = sub_record.get("stripe_checkout_session_id")
@@ -103,11 +110,15 @@ def main():
     print(f"  metadata: {dict(subscription.metadata)}")
 
     # Stripe API v13+: current_period_start/end are on subscription items, not top-level
-    sub_item = subscription["items"]["data"][0] if subscription["items"]["data"] else None
+    sub_item = (
+        subscription["items"]["data"][0] if subscription["items"]["data"] else None
+    )
     raw_period_start = None
     raw_period_end = None
     if sub_item:
-        raw_period_start = sub_item.get("current_period_start") or subscription.get("start_date")
+        raw_period_start = sub_item.get("current_period_start") or subscription.get(
+            "start_date"
+        )
         raw_period_end = sub_item.get("current_period_end")
         print(f"  current_period_start: {raw_period_start}")
         print(f"  current_period_end: {raw_period_end}")
@@ -126,11 +137,21 @@ def main():
     print(f"  resolved plan_id: {plan_id}")
 
     # Map Stripe status to internal status
-    internal_status = normalize_subscription_status(subscription.status) or subscription.status
+    internal_status = (
+        normalize_subscription_status(subscription.status) or subscription.status
+    )
 
     now = datetime.now(timezone.utc)
-    period_start = datetime.fromtimestamp(raw_period_start, tz=timezone.utc) if raw_period_start else now
-    period_end = datetime.fromtimestamp(raw_period_end, tz=timezone.utc) if raw_period_end else now
+    period_start = (
+        datetime.fromtimestamp(raw_period_start, tz=timezone.utc)
+        if raw_period_start
+        else now
+    )
+    period_end = (
+        datetime.fromtimestamp(raw_period_end, tz=timezone.utc)
+        if raw_period_end
+        else now
+    )
 
     # Build plan snapshot
     plan = db["subscription_plans"].find_one({"_id": plan_id})
@@ -168,8 +189,7 @@ def main():
         sub_update["plan_snapshot"] = plan_snapshot
 
     result = db["user_subscriptions"].update_one(
-        {"user_id": user_id},
-        {"$set": sub_update}
+        {"user_id": user_id}, {"$set": sub_update}
     )
     print(f"  matched: {result.matched_count}, modified: {result.modified_count}")
 
@@ -238,9 +258,9 @@ def main():
     updated_user = db["users"].find_one({"_id": user["_id"]})
     usage = db["usage_tracking"].find_one({"user_id": user_id})
 
-    print(f"\n{'='*50}")
+    print(f"\n{'=' * 50}")
     print(f"FINAL STATE")
-    print(f"{'='*50}")
+    print(f"{'=' * 50}")
 
     print(f"\nSubscription:")
     print(f"  status: {updated_sub.get('status')}")
@@ -262,13 +282,18 @@ def main():
         print(f"\nUsage Tracking:")
         print(f"  weddings: {usage.get('weddings_used')}/{usage.get('weddings_limit')}")
         print(f"  guests: {usage.get('guests_used')}/{usage.get('guests_limit')}")
-        print(f"  ai_credits: {usage.get('ai_credits_used')}/{usage.get('ai_credits_limit')}")
-        print(f"  storage_gb: {usage.get('storage_used_gb')}/{usage.get('storage_limit_gb')}")
+        print(
+            f"  ai_credits: {usage.get('ai_credits_used')}/{usage.get('ai_credits_limit')}"
+        )
+        print(
+            f"  storage_gb: {usage.get('storage_used_gb')}/{usage.get('storage_limit_gb')}"
+        )
     else:
         print(f"\nUsage Tracking: NOT FOUND")
 
     print(f"\nDone!")
     client.close()
+
 
 if __name__ == "__main__":
     main()

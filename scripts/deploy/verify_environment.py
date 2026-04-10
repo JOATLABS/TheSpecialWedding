@@ -33,7 +33,9 @@ def ensure_response_ok(response: requests.Response, label: str) -> None:
     raise RuntimeError(f"{label} failed with HTTP {response.status_code}: {body}")
 
 
-def request(session: requests.Session, method: str, url: str, **kwargs) -> requests.Response:
+def request(
+    session: requests.Session, method: str, url: str, **kwargs
+) -> requests.Response:
     return session.request(method, url, timeout=DEFAULT_TIMEOUT, **kwargs)
 
 
@@ -63,7 +65,9 @@ def wait_for_http_ok(
     raise RuntimeError(f"{label} never became healthy: {last_error}")
 
 
-def verify_public_route(session: requests.Session, frontend_base: str, slug: str) -> None:
+def verify_public_route(
+    session: requests.Session, frontend_base: str, slug: str
+) -> None:
     url = f"{frontend_base.rstrip('/')}/{slug.lstrip('/')}"
     response = request(session, "GET", url)
     ensure_response_ok(response, f"public wedding route {url}")
@@ -72,14 +76,18 @@ def verify_public_route(session: requests.Session, frontend_base: str, slug: str
 
 def verify_health(session: requests.Session, api_base: str, frontend_base: str) -> None:
     wait_for_http_ok(session, f"{frontend_base.rstrip('/')}/", "frontend")
-    wait_for_http_ok(session, f"{api_base.rstrip('/')}/health/livez", "backend liveness")
+    wait_for_http_ok(
+        session, f"{api_base.rstrip('/')}/health/livez", "backend liveness"
+    )
 
     ready_response = request(session, "GET", f"{api_base.rstrip('/')}/health/readyz")
     ensure_response_ok(ready_response, "backend readiness")
     log_step("Backend readiness OK")
 
 
-def login_admin(session: requests.Session, api_base: str, email: str, password: str) -> str:
+def login_admin(
+    session: requests.Session, api_base: str, email: str, password: str
+) -> str:
     response = request(
         session,
         "POST",
@@ -115,7 +123,9 @@ def login_admin(session: requests.Session, api_base: str, email: str, password: 
     return token
 
 
-def verify_sse(session: requests.Session, api_base: str, token: str, timeout_seconds: int = 25) -> None:
+def verify_sse(
+    session: requests.Session, api_base: str, token: str, timeout_seconds: int = 25
+) -> None:
     response = session.get(
         f"{api_base.rstrip('/')}/admin/notifications/stream",
         headers={
@@ -130,7 +140,9 @@ def verify_sse(session: requests.Session, api_base: str, token: str, timeout_sec
 
     content_type = response.headers.get("content-type", "")
     if "text/event-stream" not in content_type:
-        raise RuntimeError(f"notification SSE returned unexpected content type: {content_type}")
+        raise RuntimeError(
+            f"notification SSE returned unexpected content type: {content_type}"
+        )
 
     deadline = time.monotonic() + timeout_seconds
     saw_notification_event = False
@@ -154,10 +166,14 @@ def verify_sse(session: requests.Session, api_base: str, token: str, timeout_sec
     finally:
         response.close()
 
-    raise RuntimeError("notification SSE did not emit an initial notification-count event")
+    raise RuntimeError(
+        "notification SSE did not emit an initial notification-count event"
+    )
 
 
-def login_couple(session: requests.Session, api_base: str, email: str, password: str) -> str:
+def login_couple(
+    session: requests.Session, api_base: str, email: str, password: str
+) -> str:
     response = request(
         session,
         "POST",
@@ -194,7 +210,9 @@ def login_couple(session: requests.Session, api_base: str, email: str, password:
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Verify a deployed frontend/backend environment")
+    parser = argparse.ArgumentParser(
+        description="Verify a deployed frontend/backend environment"
+    )
     parser.add_argument("--frontend-base", required=True)
     parser.add_argument("--api-base", required=True)
     parser.add_argument("--admin-email", required=True)
@@ -223,18 +241,24 @@ def main() -> int:
 
     admin_session = requests.Session()
     admin_session.verify = session.verify
-    admin_token = login_admin(admin_session, args.api_base, args.admin_email, args.admin_password)
+    admin_token = login_admin(
+        admin_session, args.api_base, args.admin_email, args.admin_password
+    )
 
     if not args.skip_sse:
         verify_sse(admin_session, args.api_base, admin_token)
 
     if args.couple_email or args.couple_password:
         if not (args.couple_email and args.couple_password):
-            raise RuntimeError("Both --couple-email and --couple-password are required together")
+            raise RuntimeError(
+                "Both --couple-email and --couple-password are required together"
+            )
 
         couple_session = requests.Session()
         couple_session.verify = session.verify
-        login_couple(couple_session, args.api_base, args.couple_email, args.couple_password)
+        login_couple(
+            couple_session, args.api_base, args.couple_email, args.couple_password
+        )
 
     log_step("Environment verification passed")
     return 0

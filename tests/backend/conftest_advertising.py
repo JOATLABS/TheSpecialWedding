@@ -32,6 +32,7 @@ os.environ.setdefault("ROOT_ADMIN_EMAIL", "thedeveloper@thespecialwedding.io")
 # ASYNC MOCK WRAPPERS (mongomock is synchronous, our services are async)
 # =============================================================================
 
+
 class AsyncMockCursor:
     """Wraps a synchronous mongomock cursor to support async iteration."""
 
@@ -143,6 +144,7 @@ class FakeMongo:
 # =============================================================================
 # FIXTURES
 # =============================================================================
+
 
 @pytest.fixture
 def mock_db():

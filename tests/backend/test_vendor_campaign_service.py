@@ -48,6 +48,7 @@ from tests.backend.conftest_advertising import (
 # FIXTURES
 # =============================================================================
 
+
 @pytest.fixture
 def service_and_db():
     """Create a fresh VendorCampaignService with mongomock database."""
@@ -61,6 +62,7 @@ def service_and_db():
 # =============================================================================
 # CAMPAIGN CRUD TESTS
 # =============================================================================
+
 
 @pytest.mark.asyncio
 async def test_create_campaign_returns_draft_with_defaults(service_and_db):
@@ -159,9 +161,15 @@ async def test_list_campaigns_filters_by_vendor(service_and_db):
     other_vendor_id = str(ObjectId())
 
     # Insert campaigns for different vendors
-    raw_db["ad_campaigns"].insert_one({"_id": ObjectId(), **make_campaign(vendor_id=VENDOR_ID)})
-    raw_db["ad_campaigns"].insert_one({"_id": ObjectId(), **make_campaign(vendor_id=VENDOR_ID)})
-    raw_db["ad_campaigns"].insert_one({"_id": ObjectId(), **make_campaign(vendor_id=other_vendor_id)})
+    raw_db["ad_campaigns"].insert_one(
+        {"_id": ObjectId(), **make_campaign(vendor_id=VENDOR_ID)}
+    )
+    raw_db["ad_campaigns"].insert_one(
+        {"_id": ObjectId(), **make_campaign(vendor_id=VENDOR_ID)}
+    )
+    raw_db["ad_campaigns"].insert_one(
+        {"_id": ObjectId(), **make_campaign(vendor_id=other_vendor_id)}
+    )
 
     result = await service.list_campaigns(vendor_id=VENDOR_ID)
 
@@ -174,9 +182,18 @@ async def test_list_campaigns_filters_by_status(service_and_db):
     """Verify list_campaigns can filter by status."""
     service, db, raw_db = service_and_db
 
-    raw_db["ad_campaigns"].insert_one({"_id": ObjectId(), **make_campaign(vendor_id=VENDOR_ID, status="draft")})
-    raw_db["ad_campaigns"].insert_one({"_id": ObjectId(), **make_campaign(vendor_id=VENDOR_ID, status="pending_review")})
-    raw_db["ad_campaigns"].insert_one({"_id": ObjectId(), **make_campaign(vendor_id=VENDOR_ID, status="active")})
+    raw_db["ad_campaigns"].insert_one(
+        {"_id": ObjectId(), **make_campaign(vendor_id=VENDOR_ID, status="draft")}
+    )
+    raw_db["ad_campaigns"].insert_one(
+        {
+            "_id": ObjectId(),
+            **make_campaign(vendor_id=VENDOR_ID, status="pending_review"),
+        }
+    )
+    raw_db["ad_campaigns"].insert_one(
+        {"_id": ObjectId(), **make_campaign(vendor_id=VENDOR_ID, status="active")}
+    )
 
     result = await service.list_campaigns(vendor_id=VENDOR_ID, status_filter="active")
 
@@ -190,10 +207,9 @@ async def test_update_campaign_only_drafts(service_and_db):
     service, db, raw_db = service_and_db
 
     campaign_oid = ObjectId()
-    raw_db["ad_campaigns"].insert_one({
-        "_id": campaign_oid,
-        **make_campaign(vendor_id=VENDOR_ID, status="active")
-    })
+    raw_db["ad_campaigns"].insert_one(
+        {"_id": campaign_oid, **make_campaign(vendor_id=VENDOR_ID, status="active")}
+    )
 
     with pytest.raises(HTTPException) as exc_info:
         await service.update_campaign(
@@ -212,10 +228,9 @@ async def test_update_campaign_strips_immutable_fields(service_and_db):
     service, db, raw_db = service_and_db
 
     campaign_oid = ObjectId()
-    raw_db["ad_campaigns"].insert_one({
-        "_id": campaign_oid,
-        **make_campaign(vendor_id=VENDOR_ID, status="draft")
-    })
+    raw_db["ad_campaigns"].insert_one(
+        {"_id": campaign_oid, **make_campaign(vendor_id=VENDOR_ID, status="draft")}
+    )
 
     original_vendor_id = VENDOR_ID
     result = await service.update_campaign(
@@ -240,10 +255,9 @@ async def test_delete_campaign_only_drafts(service_and_db):
     service, db, raw_db = service_and_db
 
     campaign_oid = ObjectId()
-    raw_db["ad_campaigns"].insert_one({
-        "_id": campaign_oid,
-        **make_campaign(vendor_id=VENDOR_ID, status="active")
-    })
+    raw_db["ad_campaigns"].insert_one(
+        {"_id": campaign_oid, **make_campaign(vendor_id=VENDOR_ID, status="active")}
+    )
 
     with pytest.raises(HTTPException) as exc_info:
         await service.delete_campaign(str(campaign_oid), vendor_id=VENDOR_ID)
@@ -257,10 +271,9 @@ async def test_delete_campaign_removes_from_db(service_and_db):
     service, db, raw_db = service_and_db
 
     campaign_oid = ObjectId()
-    raw_db["ad_campaigns"].insert_one({
-        "_id": campaign_oid,
-        **make_campaign(vendor_id=VENDOR_ID, status="draft")
-    })
+    raw_db["ad_campaigns"].insert_one(
+        {"_id": campaign_oid, **make_campaign(vendor_id=VENDOR_ID, status="draft")}
+    )
 
     result = await service.delete_campaign(str(campaign_oid), vendor_id=VENDOR_ID)
 
@@ -272,6 +285,7 @@ async def test_delete_campaign_removes_from_db(service_and_db):
 # CAMPAIGN LIFECYCLE TESTS
 # =============================================================================
 
+
 @pytest.mark.asyncio
 async def test_submit_for_review_changes_status_to_pending_review(service_and_db):
     """Verify submit_for_review transitions draft to pending_review."""
@@ -279,16 +293,18 @@ async def test_submit_for_review_changes_status_to_pending_review(service_and_db
 
     campaign_oid = ObjectId()
     creative_oid = ObjectId()
-    raw_db["ad_campaigns"].insert_one({
-        "_id": campaign_oid,
-        **make_campaign(
-            vendor_id=VENDOR_ID,
-            status="draft",
-            primary_creative_id=str(creative_oid),
-            vendor_category="florist",
-            target_regions=["Dallas, TX"],
-        )
-    })
+    raw_db["ad_campaigns"].insert_one(
+        {
+            "_id": campaign_oid,
+            **make_campaign(
+                vendor_id=VENDOR_ID,
+                status="draft",
+                primary_creative_id=str(creative_oid),
+                vendor_category="florist",
+                target_regions=["Dallas, TX"],
+            ),
+        }
+    )
 
     result = await service.submit_for_review(str(campaign_oid), VENDOR_ID)
 
@@ -302,16 +318,18 @@ async def test_submit_validates_readiness_missing_primary_creative(service_and_d
     service, db, raw_db = service_and_db
 
     campaign_oid = ObjectId()
-    raw_db["ad_campaigns"].insert_one({
-        "_id": campaign_oid,
-        **make_campaign(
-            vendor_id=VENDOR_ID,
-            status="draft",
-            primary_creative_id=None,
-            vendor_category="florist",
-            target_regions=["Dallas, TX"],
-        )
-    })
+    raw_db["ad_campaigns"].insert_one(
+        {
+            "_id": campaign_oid,
+            **make_campaign(
+                vendor_id=VENDOR_ID,
+                status="draft",
+                primary_creative_id=None,
+                vendor_category="florist",
+                target_regions=["Dallas, TX"],
+            ),
+        }
+    )
 
     with pytest.raises(HTTPException) as exc_info:
         await service.submit_for_review(str(campaign_oid), VENDOR_ID)
@@ -327,16 +345,18 @@ async def test_submit_validates_vendor_category_required(service_and_db):
 
     campaign_oid = ObjectId()
     creative_oid = ObjectId()
-    raw_db["ad_campaigns"].insert_one({
-        "_id": campaign_oid,
-        **make_campaign(
-            vendor_id=VENDOR_ID,
-            status="draft",
-            primary_creative_id=str(creative_oid),
-            vendor_category=None,
-            target_regions=["Dallas, TX"],
-        )
-    })
+    raw_db["ad_campaigns"].insert_one(
+        {
+            "_id": campaign_oid,
+            **make_campaign(
+                vendor_id=VENDOR_ID,
+                status="draft",
+                primary_creative_id=str(creative_oid),
+                vendor_category=None,
+                target_regions=["Dallas, TX"],
+            ),
+        }
+    )
 
     with pytest.raises(HTTPException) as exc_info:
         await service.submit_for_review(str(campaign_oid), VENDOR_ID)
@@ -352,16 +372,18 @@ async def test_submit_validates_target_regions_required(service_and_db):
 
     campaign_oid = ObjectId()
     creative_oid = ObjectId()
-    raw_db["ad_campaigns"].insert_one({
-        "_id": campaign_oid,
-        **make_campaign(
-            vendor_id=VENDOR_ID,
-            status="draft",
-            primary_creative_id=str(creative_oid),
-            vendor_category="florist",
-            target_regions=[],
-        )
-    })
+    raw_db["ad_campaigns"].insert_one(
+        {
+            "_id": campaign_oid,
+            **make_campaign(
+                vendor_id=VENDOR_ID,
+                status="draft",
+                primary_creative_id=str(creative_oid),
+                vendor_category="florist",
+                target_regions=[],
+            ),
+        }
+    )
 
     with pytest.raises(HTTPException) as exc_info:
         await service.submit_for_review(str(campaign_oid), VENDOR_ID)
@@ -376,10 +398,9 @@ async def test_submit_rejects_non_draft(service_and_db):
     service, db, raw_db = service_and_db
 
     campaign_oid = ObjectId()
-    raw_db["ad_campaigns"].insert_one({
-        "_id": campaign_oid,
-        **make_campaign(vendor_id=VENDOR_ID, status="active")
-    })
+    raw_db["ad_campaigns"].insert_one(
+        {"_id": campaign_oid, **make_campaign(vendor_id=VENDOR_ID, status="active")}
+    )
 
     with pytest.raises(HTTPException) as exc_info:
         await service.submit_for_review(str(campaign_oid), VENDOR_ID)
@@ -393,10 +414,9 @@ async def test_pause_campaign_changes_active_to_paused(service_and_db):
     service, db, raw_db = service_and_db
 
     campaign_oid = ObjectId()
-    raw_db["ad_campaigns"].insert_one({
-        "_id": campaign_oid,
-        **make_campaign(vendor_id=VENDOR_ID, status="active")
-    })
+    raw_db["ad_campaigns"].insert_one(
+        {"_id": campaign_oid, **make_campaign(vendor_id=VENDOR_ID, status="active")}
+    )
 
     result = await service.pause_campaign(str(campaign_oid), VENDOR_ID)
 
@@ -409,10 +429,9 @@ async def test_pause_campaign_rejects_non_active(service_and_db):
     service, db, raw_db = service_and_db
 
     campaign_oid = ObjectId()
-    raw_db["ad_campaigns"].insert_one({
-        "_id": campaign_oid,
-        **make_campaign(vendor_id=VENDOR_ID, status="draft")
-    })
+    raw_db["ad_campaigns"].insert_one(
+        {"_id": campaign_oid, **make_campaign(vendor_id=VENDOR_ID, status="draft")}
+    )
 
     with pytest.raises(HTTPException) as exc_info:
         await service.pause_campaign(str(campaign_oid), VENDOR_ID)
@@ -424,16 +443,16 @@ async def test_pause_campaign_rejects_non_active(service_and_db):
 # CREATIVE CRUD TESTS
 # =============================================================================
 
+
 @pytest.mark.asyncio
 async def test_create_creative_links_to_campaign(service_and_db):
     """Verify create_creative adds creative_id to campaign's creative_ids."""
     service, db, raw_db = service_and_db
 
     campaign_oid = ObjectId()
-    raw_db["ad_campaigns"].insert_one({
-        "_id": campaign_oid,
-        **make_campaign(vendor_id=VENDOR_ID)
-    })
+    raw_db["ad_campaigns"].insert_one(
+        {"_id": campaign_oid, **make_campaign(vendor_id=VENDOR_ID)}
+    )
 
     result = await service.create_creative(
         campaign_id=str(campaign_oid),
@@ -458,10 +477,12 @@ async def test_create_creative_sets_primary_if_first(service_and_db):
     service, db, raw_db = service_and_db
 
     campaign_oid = ObjectId()
-    raw_db["ad_campaigns"].insert_one({
-        "_id": campaign_oid,
-        **make_campaign(vendor_id=VENDOR_ID, primary_creative_id=None)
-    })
+    raw_db["ad_campaigns"].insert_one(
+        {
+            "_id": campaign_oid,
+            **make_campaign(vendor_id=VENDOR_ID, primary_creative_id=None),
+        }
+    )
 
     result = await service.create_creative(
         campaign_id=str(campaign_oid),
@@ -484,13 +505,15 @@ async def test_create_creative_explicit_primary(service_and_db):
 
     campaign_oid = ObjectId()
     existing_creative_oid = ObjectId()
-    raw_db["ad_campaigns"].insert_one({
-        "_id": campaign_oid,
-        **make_campaign(
-            vendor_id=VENDOR_ID,
-            primary_creative_id=str(existing_creative_oid),
-        )
-    })
+    raw_db["ad_campaigns"].insert_one(
+        {
+            "_id": campaign_oid,
+            **make_campaign(
+                vendor_id=VENDOR_ID,
+                primary_creative_id=str(existing_creative_oid),
+            ),
+        }
+    )
 
     result = await service.create_creative(
         campaign_id=str(campaign_oid),
@@ -514,9 +537,18 @@ async def test_list_creatives_by_campaign(service_and_db):
     campaign_oid = ObjectId()
     other_campaign_oid = ObjectId()
 
-    raw_db["ad_creatives"].insert_one({"_id": ObjectId(), **make_creative(str(campaign_oid), vendor_id=VENDOR_ID)})
-    raw_db["ad_creatives"].insert_one({"_id": ObjectId(), **make_creative(str(campaign_oid), vendor_id=VENDOR_ID)})
-    raw_db["ad_creatives"].insert_one({"_id": ObjectId(), **make_creative(str(other_campaign_oid), vendor_id=VENDOR_ID)})
+    raw_db["ad_creatives"].insert_one(
+        {"_id": ObjectId(), **make_creative(str(campaign_oid), vendor_id=VENDOR_ID)}
+    )
+    raw_db["ad_creatives"].insert_one(
+        {"_id": ObjectId(), **make_creative(str(campaign_oid), vendor_id=VENDOR_ID)}
+    )
+    raw_db["ad_creatives"].insert_one(
+        {
+            "_id": ObjectId(),
+            **make_creative(str(other_campaign_oid), vendor_id=VENDOR_ID),
+        }
+    )
 
     result = await service.list_creatives(str(campaign_oid), vendor_id=VENDOR_ID)
 
@@ -530,14 +562,16 @@ async def test_update_creative_resets_review_on_content_change(service_and_db):
     service, db, raw_db = service_and_db
 
     creative_oid = ObjectId()
-    raw_db["ad_creatives"].insert_one({
-        "_id": creative_oid,
-        **make_creative(
-            str(ObjectId()),
-            vendor_id=VENDOR_ID,
-            review_status=CreativeReviewStatus.APPROVED.value,
-        )
-    })
+    raw_db["ad_creatives"].insert_one(
+        {
+            "_id": creative_oid,
+            **make_creative(
+                str(ObjectId()),
+                vendor_id=VENDOR_ID,
+                review_status=CreativeReviewStatus.APPROVED.value,
+            ),
+        }
+    )
 
     result = await service.update_creative(
         creative_id=str(creative_oid),
@@ -558,21 +592,27 @@ async def test_set_primary_creative_updates_campaign(service_and_db):
     creative1_oid = ObjectId()
     creative2_oid = ObjectId()
 
-    raw_db["ad_campaigns"].insert_one({
-        "_id": campaign_oid,
-        **make_campaign(
-            vendor_id=VENDOR_ID,
-            primary_creative_id=str(creative1_oid),
-        )
-    })
-    raw_db["ad_creatives"].insert_one({
-        "_id": creative1_oid,
-        **make_creative(str(campaign_oid), vendor_id=VENDOR_ID, is_primary=True)
-    })
-    raw_db["ad_creatives"].insert_one({
-        "_id": creative2_oid,
-        **make_creative(str(campaign_oid), vendor_id=VENDOR_ID, is_primary=False)
-    })
+    raw_db["ad_campaigns"].insert_one(
+        {
+            "_id": campaign_oid,
+            **make_campaign(
+                vendor_id=VENDOR_ID,
+                primary_creative_id=str(creative1_oid),
+            ),
+        }
+    )
+    raw_db["ad_creatives"].insert_one(
+        {
+            "_id": creative1_oid,
+            **make_creative(str(campaign_oid), vendor_id=VENDOR_ID, is_primary=True),
+        }
+    )
+    raw_db["ad_creatives"].insert_one(
+        {
+            "_id": creative2_oid,
+            **make_creative(str(campaign_oid), vendor_id=VENDOR_ID, is_primary=False),
+        }
+    )
 
     result = await service.set_primary_creative(
         campaign_id=str(campaign_oid),
@@ -587,6 +627,7 @@ async def test_set_primary_creative_updates_campaign(service_and_db):
 # LEADS TESTS
 # =============================================================================
 
+
 @pytest.mark.asyncio
 async def test_get_vendor_leads_returns_leads_across_campaigns(service_and_db):
     """Verify get_vendor_leads returns leads for all vendor campaigns."""
@@ -596,18 +637,20 @@ async def test_get_vendor_leads_returns_leads_across_campaigns(service_and_db):
     campaign2_oid = ObjectId()
 
     # Insert campaigns
-    raw_db["ad_campaigns"].insert_one({
-        "_id": campaign1_oid,
-        **make_campaign(vendor_id=VENDOR_ID)
-    })
-    raw_db["ad_campaigns"].insert_one({
-        "_id": campaign2_oid,
-        **make_campaign(vendor_id=VENDOR_ID)
-    })
+    raw_db["ad_campaigns"].insert_one(
+        {"_id": campaign1_oid, **make_campaign(vendor_id=VENDOR_ID)}
+    )
+    raw_db["ad_campaigns"].insert_one(
+        {"_id": campaign2_oid, **make_campaign(vendor_id=VENDOR_ID)}
+    )
 
     # Insert leads for both campaigns
-    raw_db["ad_leads"].insert_one({"_id": ObjectId(), **make_ad_lead(str(campaign1_oid))})
-    raw_db["ad_leads"].insert_one({"_id": ObjectId(), **make_ad_lead(str(campaign2_oid))})
+    raw_db["ad_leads"].insert_one(
+        {"_id": ObjectId(), **make_ad_lead(str(campaign1_oid))}
+    )
+    raw_db["ad_leads"].insert_one(
+        {"_id": ObjectId(), **make_ad_lead(str(campaign2_oid))}
+    )
 
     result = await service.get_vendor_leads(vendor_id=VENDOR_ID)
 
@@ -628,22 +671,25 @@ async def test_get_vendor_leads_empty_when_no_campaigns(service_and_db):
 # CAMPAIGN STATS TESTS
 # =============================================================================
 
+
 @pytest.mark.asyncio
 async def test_get_campaign_stats_returns_totals_and_series(service_and_db):
     """Verify get_campaign_stats returns totals and daily series."""
     service, db, raw_db = service_and_db
 
     campaign_oid = ObjectId()
-    raw_db["ad_campaigns"].insert_one({
-        "_id": campaign_oid,
-        **make_campaign(
-            vendor_id=VENDOR_ID,
-            impression_count=1000,
-            click_count=50,
-            lead_count=5,
-            conversion_count=2,
-        )
-    })
+    raw_db["ad_campaigns"].insert_one(
+        {
+            "_id": campaign_oid,
+            **make_campaign(
+                vendor_id=VENDOR_ID,
+                impression_count=1000,
+                click_count=50,
+                lead_count=5,
+                conversion_count=2,
+            ),
+        }
+    )
 
     result = await service.get_campaign_stats(str(campaign_oid), VENDOR_ID)
 
@@ -659,23 +705,40 @@ async def test_get_campaign_stats_returns_totals_and_series(service_and_db):
 # AD SERVING TESTS
 # =============================================================================
 
+
 @pytest.mark.asyncio
 async def test_get_servable_campaigns_only_active(service_and_db):
     """Verify get_servable_campaigns only returns active campaigns."""
     service, db, raw_db = service_and_db
 
-    raw_db["ad_campaigns"].insert_one({
-        "_id": ObjectId(),
-        **make_campaign(vendor_id=VENDOR_ID, status="active", primary_creative_id=str(ObjectId()))
-    })
-    raw_db["ad_campaigns"].insert_one({
-        "_id": ObjectId(),
-        **make_campaign(vendor_id=VENDOR_ID, status="draft", primary_creative_id=str(ObjectId()))
-    })
-    raw_db["ad_campaigns"].insert_one({
-        "_id": ObjectId(),
-        **make_campaign(vendor_id=VENDOR_ID, status="paused", primary_creative_id=str(ObjectId()))
-    })
+    raw_db["ad_campaigns"].insert_one(
+        {
+            "_id": ObjectId(),
+            **make_campaign(
+                vendor_id=VENDOR_ID,
+                status="active",
+                primary_creative_id=str(ObjectId()),
+            ),
+        }
+    )
+    raw_db["ad_campaigns"].insert_one(
+        {
+            "_id": ObjectId(),
+            **make_campaign(
+                vendor_id=VENDOR_ID, status="draft", primary_creative_id=str(ObjectId())
+            ),
+        }
+    )
+    raw_db["ad_campaigns"].insert_one(
+        {
+            "_id": ObjectId(),
+            **make_campaign(
+                vendor_id=VENDOR_ID,
+                status="paused",
+                primary_creative_id=str(ObjectId()),
+            ),
+        }
+    )
 
     result = await service.get_servable_campaigns()
 
@@ -693,28 +756,32 @@ async def test_get_servable_campaigns_checks_date_range(service_and_db):
     future = now + timedelta(days=10)
 
     # Active, within range
-    raw_db["ad_campaigns"].insert_one({
-        "_id": ObjectId(),
-        **make_campaign(
-            vendor_id=VENDOR_ID,
-            status="active",
-            start_date=past,
-            end_date=future,
-            primary_creative_id=str(ObjectId()),
-        )
-    })
+    raw_db["ad_campaigns"].insert_one(
+        {
+            "_id": ObjectId(),
+            **make_campaign(
+                vendor_id=VENDOR_ID,
+                status="active",
+                start_date=past,
+                end_date=future,
+                primary_creative_id=str(ObjectId()),
+            ),
+        }
+    )
 
     # Active, but ended
-    raw_db["ad_campaigns"].insert_one({
-        "_id": ObjectId(),
-        **make_campaign(
-            vendor_id=VENDOR_ID,
-            status="active",
-            start_date=past,
-            end_date=past,  # Already ended
-            primary_creative_id=str(ObjectId()),
-        )
-    })
+    raw_db["ad_campaigns"].insert_one(
+        {
+            "_id": ObjectId(),
+            **make_campaign(
+                vendor_id=VENDOR_ID,
+                status="active",
+                start_date=past,
+                end_date=past,  # Already ended
+                primary_creative_id=str(ObjectId()),
+            ),
+        }
+    )
 
     result = await service.get_servable_campaigns()
 
@@ -730,33 +797,39 @@ async def test_get_servable_campaigns_deduplicates_by_vendor(service_and_db):
     vendor2 = str(ObjectId())
 
     # Two campaigns from vendor1, one from vendor2
-    raw_db["ad_campaigns"].insert_one({
-        "_id": ObjectId(),
-        **make_campaign(
-            vendor_id=vendor1,
-            status="active",
-            primary_creative_id=str(ObjectId()),
-            quality_score=100,
-        )
-    })
-    raw_db["ad_campaigns"].insert_one({
-        "_id": ObjectId(),
-        **make_campaign(
-            vendor_id=vendor1,
-            status="active",
-            primary_creative_id=str(ObjectId()),
-            quality_score=50,  # Lower score
-        )
-    })
-    raw_db["ad_campaigns"].insert_one({
-        "_id": ObjectId(),
-        **make_campaign(
-            vendor_id=vendor2,
-            status="active",
-            primary_creative_id=str(ObjectId()),
-            quality_score=80,
-        )
-    })
+    raw_db["ad_campaigns"].insert_one(
+        {
+            "_id": ObjectId(),
+            **make_campaign(
+                vendor_id=vendor1,
+                status="active",
+                primary_creative_id=str(ObjectId()),
+                quality_score=100,
+            ),
+        }
+    )
+    raw_db["ad_campaigns"].insert_one(
+        {
+            "_id": ObjectId(),
+            **make_campaign(
+                vendor_id=vendor1,
+                status="active",
+                primary_creative_id=str(ObjectId()),
+                quality_score=50,  # Lower score
+            ),
+        }
+    )
+    raw_db["ad_campaigns"].insert_one(
+        {
+            "_id": ObjectId(),
+            **make_campaign(
+                vendor_id=vendor2,
+                status="active",
+                primary_creative_id=str(ObjectId()),
+                quality_score=80,
+            ),
+        }
+    )
 
     result = await service.get_servable_campaigns(limit=3)
 
@@ -770,6 +843,7 @@ async def test_get_servable_campaigns_deduplicates_by_vendor(service_and_db):
 # EXPIRATION TESTS
 # =============================================================================
 
+
 @pytest.mark.asyncio
 async def test_complete_expired_campaigns_marks_past_end_date(service_and_db):
     """Verify complete_expired_campaigns marks campaigns past end_date as completed."""
@@ -779,14 +853,16 @@ async def test_complete_expired_campaigns_marks_past_end_date(service_and_db):
     past_end = now - timedelta(days=1)
 
     campaign_oid = ObjectId()
-    raw_db["ad_campaigns"].insert_one({
-        "_id": campaign_oid,
-        **make_campaign(
-            vendor_id=VENDOR_ID,
-            status="active",
-            end_date=past_end,
-        )
-    })
+    raw_db["ad_campaigns"].insert_one(
+        {
+            "_id": campaign_oid,
+            **make_campaign(
+                vendor_id=VENDOR_ID,
+                status="active",
+                end_date=past_end,
+            ),
+        }
+    )
 
     count = await service.complete_expired_campaigns()
 
@@ -798,6 +874,7 @@ async def test_complete_expired_campaigns_marks_past_end_date(service_and_db):
 # =============================================================================
 # EDGE CASE TESTS
 # =============================================================================
+
 
 @pytest.mark.asyncio
 async def test_create_campaign_accepts_all_data_fields(service_and_db):
@@ -837,10 +914,9 @@ async def test_get_campaign_without_vendor_check(service_and_db):
     service, db, raw_db = service_and_db
 
     campaign_oid = ObjectId()
-    raw_db["ad_campaigns"].insert_one({
-        "_id": campaign_oid,
-        **make_campaign(vendor_id=VENDOR_ID)
-    })
+    raw_db["ad_campaigns"].insert_one(
+        {"_id": campaign_oid, **make_campaign(vendor_id=VENDOR_ID)}
+    )
 
     result = await service.get_campaign(str(campaign_oid))
 
@@ -853,10 +929,9 @@ async def test_list_creatives_without_vendor_check(service_and_db):
     service, db, raw_db = service_and_db
 
     campaign_oid = ObjectId()
-    raw_db["ad_creatives"].insert_one({
-        "_id": ObjectId(),
-        **make_creative(str(campaign_oid), vendor_id=VENDOR_ID)
-    })
+    raw_db["ad_creatives"].insert_one(
+        {"_id": ObjectId(), **make_creative(str(campaign_oid), vendor_id=VENDOR_ID)}
+    )
 
     result = await service.list_creatives(str(campaign_oid))
 
@@ -870,10 +945,14 @@ async def test_update_campaign_updates_timestamp(service_and_db):
 
     campaign_oid = ObjectId()
     old_time = datetime.now(timezone.utc) - timedelta(hours=1)
-    raw_db["ad_campaigns"].insert_one({
-        "_id": campaign_oid,
-        **make_campaign(vendor_id=VENDOR_ID, status="draft", **{"updated_at": old_time})
-    })
+    raw_db["ad_campaigns"].insert_one(
+        {
+            "_id": campaign_oid,
+            **make_campaign(
+                vendor_id=VENDOR_ID, status="draft", **{"updated_at": old_time}
+            ),
+        }
+    )
 
     result = await service.update_campaign(
         campaign_id=str(campaign_oid),
@@ -893,10 +972,9 @@ async def test_create_creative_sets_review_status_pending(service_and_db):
     service, db, raw_db = service_and_db
 
     campaign_oid = ObjectId()
-    raw_db["ad_campaigns"].insert_one({
-        "_id": campaign_oid,
-        **make_campaign(vendor_id=VENDOR_ID)
-    })
+    raw_db["ad_campaigns"].insert_one(
+        {"_id": campaign_oid, **make_campaign(vendor_id=VENDOR_ID)}
+    )
 
     result = await service.create_creative(
         campaign_id=str(campaign_oid),
@@ -916,14 +994,16 @@ async def test_get_campaign_stats_handles_zero_impressions(service_and_db):
     service, db, raw_db = service_and_db
 
     campaign_oid = ObjectId()
-    raw_db["ad_campaigns"].insert_one({
-        "_id": campaign_oid,
-        **make_campaign(
-            vendor_id=VENDOR_ID,
-            impression_count=0,
-            click_count=0,
-        )
-    })
+    raw_db["ad_campaigns"].insert_one(
+        {
+            "_id": campaign_oid,
+            **make_campaign(
+                vendor_id=VENDOR_ID,
+                impression_count=0,
+                click_count=0,
+            ),
+        }
+    )
 
     result = await service.get_campaign_stats(str(campaign_oid), VENDOR_ID)
 

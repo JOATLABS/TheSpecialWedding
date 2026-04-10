@@ -27,7 +27,9 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from app.core.database import mongo
 from app.core.settings import settings
 
-logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
+logging.basicConfig(
+    level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s"
+)
 logger = logging.getLogger(__name__)
 
 
@@ -91,12 +93,15 @@ async def detect_lineage_conflicts(collection) -> Dict[str, list[dict]]:
     current_version_groups: dict[str, list[Any]] = defaultdict(list)
 
     async for document in collection.find({}):
-        normalized_root_contract_id = document.get("root_contract_id") or str(document["_id"])
+        normalized_root_contract_id = document.get("root_contract_id") or str(
+            document["_id"]
+        )
         normalized_version_number = document.get("version_number") or 1
         normalized_is_current_version = document.get("is_current_version")
         if normalized_is_current_version is None:
             normalized_is_current_version = not bool(
-                document.get("superseded_by_contract_id") or document.get("superseded_at")
+                document.get("superseded_by_contract_id")
+                or document.get("superseded_at")
             )
 
         duplicate_version_groups[
@@ -135,7 +140,9 @@ async def detect_lineage_conflicts(collection) -> Dict[str, list[dict]]:
     }
 
 
-async def run_backfill(*, apply: bool, drop_plaintext_token: bool, verbose: bool) -> int:
+async def run_backfill(
+    *, apply: bool, drop_plaintext_token: bool, verbose: bool
+) -> int:
     if not await mongo.test_connection():
         logger.error("MongoDB connection failed")
         return 1
@@ -154,7 +161,9 @@ async def run_backfill(*, apply: bool, drop_plaintext_token: bool, verbose: bool
             len(conflicts["multiple_current_versions"]),
         )
 
-    if apply and (conflicts["duplicate_versions"] or conflicts["multiple_current_versions"]):
+    if apply and (
+        conflicts["duplicate_versions"] or conflicts["multiple_current_versions"]
+    ):
         logger.error("Aborting apply mode until lineage conflicts are resolved.")
         return 1
 

@@ -3,6 +3,7 @@ Seed Subscription Plans Script
 Creates default subscription plans in MongoDB and corresponding products/prices in Stripe.
 Runs on container startup via Dockerfile.coolify.
 """
+
 import os
 import sys
 from datetime import datetime, timezone
@@ -18,6 +19,7 @@ print("=" * 50)
 try:
     import stripe
     from stripe import StripeError  # v13+ exception class
+
     STRIPE_AVAILABLE = True
 except ImportError:
     stripe = None  # type: ignore
@@ -34,7 +36,10 @@ except ImportError:
     sys.exit(1)
 
 mongo_uri = (
-    os.getenv("MONGO_URI") or os.getenv("MONGODB_URI") or os.getenv("MONGO_URL") or "mongodb://localhost:27017"
+    os.getenv("MONGO_URI")
+    or os.getenv("MONGODB_URI")
+    or os.getenv("MONGO_URL")
+    or "mongodb://localhost:27017"
 )
 db_name = os.getenv("MONGO_DB", "wedding")
 
@@ -43,7 +48,7 @@ print(f"[INFO] Connecting to MongoDB database: {db_name}")
 try:
     client: MongoClient = MongoClient(mongo_uri, serverSelectionTimeoutMS=5000)
     # Force connection test
-    client.admin.command('ping')
+    client.admin.command("ping")
     print("[OK] MongoDB connected successfully")
 except (ConnectionFailure, ServerSelectionTimeoutError) as e:
     print(f"[ERROR] MongoDB connection failed: {e}")
@@ -72,23 +77,31 @@ for plan in all_existing:
             collection.delete_one({"_id": existing_pid})
             seen_names[name] = pid
             duplicates_removed += 1
-            print(f"  [DEDUP] Removed duplicate plan '{existing_pid}' (keeping '{pid}')")
+            print(
+                f"  [DEDUP] Removed duplicate plan '{existing_pid}' (keeping '{pid}')"
+            )
         elif pid not in canonical_ids:
             # Current plan doesn't have canonical ID - remove it
             collection.delete_one({"_id": pid})
             duplicates_removed += 1
-            print(f"  [DEDUP] Removed duplicate plan '{pid}' (keeping '{existing_pid}')")
+            print(
+                f"  [DEDUP] Removed duplicate plan '{pid}' (keeping '{existing_pid}')"
+            )
     else:
         seen_names[name] = pid
 
 # Also fix any legacy wrong field names from previous seed runs
 legacy_fix = collection.update_many(
     {"stripe_monthly_price_id": {"$exists": True}},
-    [{"$set": {
-        "stripe_price_id_monthly": "$stripe_monthly_price_id",
-        "stripe_price_id_yearly": "$stripe_yearly_price_id",
-    }},
-    {"$unset": ["stripe_monthly_price_id", "stripe_yearly_price_id"]}]
+    [
+        {
+            "$set": {
+                "stripe_price_id_monthly": "$stripe_monthly_price_id",
+                "stripe_price_id_yearly": "$stripe_yearly_price_id",
+            }
+        },
+        {"$unset": ["stripe_monthly_price_id", "stripe_yearly_price_id"]},
+    ],
 )
 if legacy_fix.modified_count > 0:
     print(f"[FIX] Migrated {legacy_fix.modified_count} plans from legacy field names")
@@ -105,7 +118,9 @@ stripe_enabled = os.getenv("STRIPE_ENABLED", "false").lower() == "true"
 if STRIPE_AVAILABLE and stripe and stripe_secret and stripe_enabled:
     stripe.api_key = stripe_secret
     STRIPE_CONFIGURED = True
-    print(f"[OK] Stripe configured (mode: {'live' if stripe_secret.startswith('sk_live') else 'test'})")
+    print(
+        f"[OK] Stripe configured (mode: {'live' if stripe_secret.startswith('sk_live') else 'test'})"
+    )
 else:
     STRIPE_CONFIGURED = False
     if not stripe_enabled:
@@ -145,7 +160,7 @@ def create_stripe_product_and_prices(plan: dict) -> dict:
             return {
                 "stripe_product_id": product.id,
                 "stripe_price_id_monthly": monthly_price,
-                "stripe_price_id_yearly": yearly_price
+                "stripe_price_id_yearly": yearly_price,
             }
     except StripeError as e:
         print(f"[WARN] Error searching Stripe products: {e}")
@@ -155,10 +170,7 @@ def create_stripe_product_and_prices(plan: dict) -> dict:
         product = stripe.Product.create(
             name=f"The Special Wedding - {plan_name}",
             description=plan.get("description", f"{plan_name} subscription plan"),
-            metadata={
-                "plan_id": plan_id,
-                "source": "seed_script"
-            }
+            metadata={"plan_id": plan_id, "source": "seed_script"},
         )
         print(f"  [CREATED] Stripe product: {product.id}")
 
@@ -168,9 +180,11 @@ def create_stripe_product_and_prices(plan: dict) -> dict:
             unit_amount=int(plan["price_monthly"] * 100),  # Convert to cents
             currency="usd",
             recurring={"interval": "month"},
-            metadata={"plan_id": plan_id, "interval": "monthly"}
+            metadata={"plan_id": plan_id, "interval": "monthly"},
         )
-        print(f"  [CREATED] Monthly price: {new_monthly_price.id} (${plan['price_monthly']}/mo)")
+        print(
+            f"  [CREATED] Monthly price: {new_monthly_price.id} (${plan['price_monthly']}/mo)"
+        )
 
         # Create yearly price
         new_yearly_price = stripe.Price.create(
@@ -178,14 +192,16 @@ def create_stripe_product_and_prices(plan: dict) -> dict:
             unit_amount=int(plan["price_yearly"] * 100),  # Convert to cents
             currency="usd",
             recurring={"interval": "year"},
-            metadata={"plan_id": plan_id, "interval": "yearly"}
+            metadata={"plan_id": plan_id, "interval": "yearly"},
         )
-        print(f"  [CREATED] Yearly price: {new_yearly_price.id} (${plan['price_yearly']}/yr)")
+        print(
+            f"  [CREATED] Yearly price: {new_yearly_price.id} (${plan['price_yearly']}/yr)"
+        )
 
         return {
             "stripe_product_id": product.id,
             "stripe_price_id_monthly": new_monthly_price.id,
-            "stripe_price_id_yearly": new_yearly_price.id
+            "stripe_price_id_yearly": new_yearly_price.id,
         }
 
     except StripeError as e:
@@ -216,7 +232,7 @@ plans = [
             "basic_analytics": True,
             "vendor_management": False,
             "seating_orchestration": False,
-            "ai_features": True
+            "ai_features": True,
         },
         "features_list": [
             "Up to 3 weddings",
@@ -225,7 +241,7 @@ plans = [
             "Email invitations",
             "Wedding website",
             "Timeline builder",
-            "100 AI credits/month"
+            "100 AI credits/month",
         ],
         "is_active": True,
         "is_featured": False,
@@ -233,7 +249,7 @@ plans = [
         "display_order": 1,
         "created_by": "system",
         "created_at": datetime.now(timezone.utc),
-        "updated_at": datetime.now(timezone.utc)
+        "updated_at": datetime.now(timezone.utc),
     },
     {
         "_id": "plan_signature",
@@ -260,7 +276,7 @@ plans = [
             "qr_checkin": True,
             "automated_reminders": True,
             "vendor_collaboration": True,
-            "priority_support": True
+            "priority_support": True,
         },
         "features_list": [
             "Up to 10 weddings",
@@ -271,7 +287,7 @@ plans = [
             "Automated reminders",
             "Vendor collaboration",
             "300 AI credits/month",
-            "Priority support"
+            "Priority support",
         ],
         "is_active": True,
         "is_featured": True,
@@ -279,7 +295,7 @@ plans = [
         "display_order": 2,
         "created_by": "system",
         "created_at": datetime.now(timezone.utc),
-        "updated_at": datetime.now(timezone.utc)
+        "updated_at": datetime.now(timezone.utc),
     },
     {
         "_id": "plan_enterprise",
@@ -310,7 +326,7 @@ plans = [
             "priority_support": True,
             "white_label": True,
             "api_access": True,
-            "dedicated_support": True
+            "dedicated_support": True,
         },
         "features_list": [
             "Unlimited weddings",
@@ -321,7 +337,7 @@ plans = [
             "1000 AI credits/month",
             "10 staff seats",
             "Dedicated support",
-            "Custom integrations"
+            "Custom integrations",
         ],
         "is_active": True,
         "is_featured": False,
@@ -329,8 +345,8 @@ plans = [
         "display_order": 3,
         "created_by": "system",
         "created_at": datetime.now(timezone.utc),
-        "updated_at": datetime.now(timezone.utc)
-    }
+        "updated_at": datetime.now(timezone.utc),
+    },
 ]
 
 print("\n[SEED] Seeding Subscription Plans...")
@@ -357,7 +373,9 @@ for plan in plans:
         {"_id": plan_id},
         {
             "$setOnInsert": {
-                "created_at": plan_with_stripe.get("created_at", datetime.now(timezone.utc)),
+                "created_at": plan_with_stripe.get(
+                    "created_at", datetime.now(timezone.utc)
+                ),
                 "created_by": plan_with_stripe.get("created_by", "system"),
             },
             "$set": {
@@ -367,7 +385,9 @@ for plan in plans:
                 "price_yearly": plan_with_stripe.get("price_yearly"),
                 "is_metered": plan_with_stripe.get("is_metered", False),
                 "max_weddings": plan_with_stripe.get("max_weddings"),
-                "max_guests_per_wedding": plan_with_stripe.get("max_guests_per_wedding"),
+                "max_guests_per_wedding": plan_with_stripe.get(
+                    "max_guests_per_wedding"
+                ),
                 "ai_credits_monthly": plan_with_stripe.get("ai_credits_monthly"),
                 "storage_gb": plan_with_stripe.get("storage_gb"),
                 "staff_seats": plan_with_stripe.get("staff_seats"),
@@ -376,15 +396,29 @@ for plan in plans:
                 "is_active": plan_with_stripe.get("is_active", True),
                 "is_featured": plan_with_stripe.get("is_featured", False),
                 "sort_order": plan_with_stripe.get("sort_order", 0),
-                "display_order": plan_with_stripe.get("display_order", plan_with_stripe.get("sort_order", 0)),
+                "display_order": plan_with_stripe.get(
+                    "display_order", plan_with_stripe.get("sort_order", 0)
+                ),
                 "updated_at": datetime.now(timezone.utc),
                 # Only update Stripe IDs if we have them (field names must match codebase convention)
-                **({"stripe_product_id": stripe_ids["stripe_product_id"]} if stripe_ids.get("stripe_product_id") else {}),
-                **({"stripe_price_id_monthly": stripe_ids["stripe_price_id_monthly"]} if stripe_ids.get("stripe_price_id_monthly") else {}),
-                **({"stripe_price_id_yearly": stripe_ids["stripe_price_id_yearly"]} if stripe_ids.get("stripe_price_id_yearly") else {}),
-            }
+                **(
+                    {"stripe_product_id": stripe_ids["stripe_product_id"]}
+                    if stripe_ids.get("stripe_product_id")
+                    else {}
+                ),
+                **(
+                    {"stripe_price_id_monthly": stripe_ids["stripe_price_id_monthly"]}
+                    if stripe_ids.get("stripe_price_id_monthly")
+                    else {}
+                ),
+                **(
+                    {"stripe_price_id_yearly": stripe_ids["stripe_price_id_yearly"]}
+                    if stripe_ids.get("stripe_price_id_yearly")
+                    else {}
+                ),
+            },
         },
-        upsert=True  # Atomic: creates if not exists, updates if exists
+        upsert=True,  # Atomic: creates if not exists, updates if exists
     )
 
     if result.upserted_id:

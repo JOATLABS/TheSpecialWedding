@@ -75,7 +75,9 @@ class FakeCollection:
                 return deepcopy(document)
         return None
 
-    async def update_one(self, query: dict, update: dict, session=None) -> SimpleNamespace:
+    async def update_one(
+        self, query: dict, update: dict, session=None
+    ) -> SimpleNamespace:
         for document in self.documents:
             if _matches_query(document, query):
                 for key, value in update.get("$set", {}).items():
@@ -85,18 +87,26 @@ class FakeCollection:
                 return SimpleNamespace(matched_count=1, modified_count=1)
         return SimpleNamespace(matched_count=0, modified_count=0)
 
-    async def update_many(self, query: dict, update: dict, session=None) -> SimpleNamespace:
+    async def update_many(
+        self, query: dict, update: dict, session=None
+    ) -> SimpleNamespace:
         modified_count = 0
         for document in self.documents:
             if _matches_query(document, query):
                 for key, value in update.get("$set", {}).items():
                     document[key] = deepcopy(value)
                 modified_count += 1
-        return SimpleNamespace(matched_count=modified_count, modified_count=modified_count)
+        return SimpleNamespace(
+            matched_count=modified_count, modified_count=modified_count
+        )
 
     def find(self, query: dict) -> FakeCursor:
         return FakeCursor(
-            [deepcopy(document) for document in self.documents if _matches_query(document, query)]
+            [
+                deepcopy(document)
+                for document in self.documents
+                if _matches_query(document, query)
+            ]
         )
 
 
@@ -195,9 +205,13 @@ def configured_vendor_service(monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setattr(vendor_service, "budget_categories", budget_categories)
     monkeypatch.setattr(vendor_service, "vendor_profiles", vendor_profiles)
     monkeypatch.setattr(vendor_service, "_log_communication", AsyncMock())
+
     async def run_required_transaction(_operation_name, operation):
         return await operation(None)
-    monkeypatch.setattr(vendor_service, "_run_required_transaction", run_required_transaction)
+
+    monkeypatch.setattr(
+        vendor_service, "_run_required_transaction", run_required_transaction
+    )
     monkeypatch.setattr(
         vendor_service,
         "_get_planner_contract_settings",
@@ -242,7 +256,15 @@ def configured_vendor_service(monkeypatch: pytest.MonkeyPatch):
         ),
     )
 
-    return vendor_service, contracts, activities, milestones, assignments, budget_categories, str(vendor_id)
+    return (
+        vendor_service,
+        contracts,
+        activities,
+        milestones,
+        assignments,
+        budget_categories,
+        str(vendor_id),
+    )
 
 
 @pytest.mark.asyncio
@@ -257,7 +279,10 @@ async def test_create_contract_logs_contract_created(configured_vendor_service) 
         deposit_percentage=50,
     )
 
-    assert activities.documents[-1]["activity_type"] == VendorContractActivityType.CONTRACT_CREATED.value
+    assert (
+        activities.documents[-1]["activity_type"]
+        == VendorContractActivityType.CONTRACT_CREATED.value
+    )
     assert activities.documents[-1]["contract_id"] == created["_id"]
 
 
@@ -273,8 +298,13 @@ async def test_update_contract_logs_contract_updated(configured_vendor_service) 
         updated_by="planner@example.com",
     )
 
-    assert activities.documents[-1]["activity_type"] == VendorContractActivityType.CONTRACT_UPDATED.value
-    assert activities.documents[-1]["metadata"]["changed_fields"] == ["service_location"]
+    assert (
+        activities.documents[-1]["activity_type"]
+        == VendorContractActivityType.CONTRACT_UPDATED.value
+    )
+    assert activities.documents[-1]["metadata"]["changed_fields"] == [
+        "service_location"
+    ]
 
 
 @pytest.mark.asyncio
@@ -292,7 +322,9 @@ async def test_apply_form_data_logs_activity(
                 [
                     {
                         "_id": ObjectId("507f1f77bcf86cd799439012"),
-                        "submission_data": {"portfolio_link": "https://example.com/work"},
+                        "submission_data": {
+                            "portfolio_link": "https://example.com/work"
+                        },
                     }
                 ]
             ),
@@ -308,12 +340,20 @@ async def test_apply_form_data_logs_activity(
         applied_by="planner@example.com",
     )
 
-    assert activities.documents[-1]["activity_type"] == VendorContractActivityType.FORM_DATA_APPLIED.value
-    assert activities.documents[-1]["metadata"]["form_submission_id"] == "507f1f77bcf86cd799439012"
+    assert (
+        activities.documents[-1]["activity_type"]
+        == VendorContractActivityType.FORM_DATA_APPLIED.value
+    )
+    assert (
+        activities.documents[-1]["metadata"]["form_submission_id"]
+        == "507f1f77bcf86cd799439012"
+    )
 
 
 @pytest.mark.asyncio
-async def test_contract_view_is_logged_once_on_first_public_view(configured_vendor_service) -> None:
+async def test_contract_view_is_logged_once_on_first_public_view(
+    configured_vendor_service,
+) -> None:
     service, contracts, activities, _, _, _, _ = configured_vendor_service
     contract = make_contract_doc(status=ContractStatus.SENT.value)
     contracts.documents.append(deepcopy(contract))
@@ -322,7 +362,8 @@ async def test_contract_view_is_logged_once_on_first_public_view(configured_vend
     await service.get_contract_by_token(str(contract["_id"]), "token-1")
 
     viewed_events = [
-        item for item in activities.documents
+        item
+        for item in activities.documents
         if item["activity_type"] == VendorContractActivityType.CONTRACT_VIEWED.value
     ]
     assert len(viewed_events) == 1
@@ -385,7 +426,10 @@ async def test_sign_contract_logs_signed_activity(configured_vendor_service) -> 
         signature_ip="127.0.0.1",
     )
 
-    assert activities.documents[-1]["activity_type"] == VendorContractActivityType.CONTRACT_SIGNED.value
+    assert (
+        activities.documents[-1]["activity_type"]
+        == VendorContractActivityType.CONTRACT_SIGNED.value
+    )
     assert activities.documents[-1]["actor"]["display_name"] == "Vendor Owner"
 
 
@@ -393,7 +437,15 @@ async def test_sign_contract_logs_signed_activity(configured_vendor_service) -> 
 async def test_create_payment_milestones_and_record_payment_log_activity(
     configured_vendor_service,
 ) -> None:
-    service, contracts, activities, milestones, assignments, budget_categories, vendor_profile_id = configured_vendor_service
+    (
+        service,
+        contracts,
+        activities,
+        milestones,
+        assignments,
+        budget_categories,
+        vendor_profile_id,
+    ) = configured_vendor_service
     contract = make_contract_doc(status=ContractStatus.DRAFT.value)
     contract["vendor_profile_id"] = vendor_profile_id
     contract["budget_category_id"] = str(ObjectId())
@@ -425,7 +477,10 @@ async def test_create_payment_milestones_and_record_payment_log_activity(
         created_by="planner@example.com",
     )
 
-    assert activities.documents[-1]["activity_type"] == VendorContractActivityType.MILESTONES_CREATED.value
+    assert (
+        activities.documents[-1]["activity_type"]
+        == VendorContractActivityType.MILESTONES_CREATED.value
+    )
 
     await service.record_payment(
         milestone_id=created[0]["_id"],
@@ -435,7 +490,10 @@ async def test_create_payment_milestones_and_record_payment_log_activity(
         notes="Wire received",
     )
 
-    assert activities.documents[-1]["activity_type"] == VendorContractActivityType.PAYMENT_RECORDED.value
+    assert (
+        activities.documents[-1]["activity_type"]
+        == VendorContractActivityType.PAYMENT_RECORDED.value
+    )
     assert activities.documents[-1]["metadata"]["amount"] == 1200
     assert milestones.documents[0]["paid_amount"] == 1200
 
@@ -444,7 +502,9 @@ async def test_create_payment_milestones_and_record_payment_log_activity(
 async def test_create_payment_milestones_rejects_historical_contract_versions(
     configured_vendor_service,
 ) -> None:
-    service, contracts, activities, milestones, _, _, vendor_profile_id = configured_vendor_service
+    service, contracts, activities, milestones, _, _, vendor_profile_id = (
+        configured_vendor_service
+    )
     contract = make_contract_doc(
         status=ContractStatus.SIGNED.value,
         is_current_version=False,
@@ -475,7 +535,15 @@ async def test_create_payment_milestones_rejects_historical_contract_versions(
 async def test_record_payment_rejects_historical_contract_versions(
     configured_vendor_service,
 ) -> None:
-    service, contracts, activities, milestones, assignments, budget_categories, vendor_profile_id = configured_vendor_service
+    (
+        service,
+        contracts,
+        activities,
+        milestones,
+        assignments,
+        budget_categories,
+        vendor_profile_id,
+    ) = configured_vendor_service
     contract = make_contract_doc(
         status=ContractStatus.SIGNED.value,
         is_current_version=False,
@@ -546,7 +614,10 @@ async def test_create_revision_logs_revision_created(configured_vendor_service) 
         reason="Adjusted coverage",
     )
 
-    assert activities.documents[-1]["activity_type"] == VendorContractActivityType.REVISION_CREATED.value
+    assert (
+        activities.documents[-1]["activity_type"]
+        == VendorContractActivityType.REVISION_CREATED.value
+    )
     assert activities.documents[-1]["contract_id"] == created["_id"]
 
 
@@ -570,7 +641,10 @@ async def test_get_contract_activity_returns_descending_items_and_synthesizes_le
         created_by="planner@example.com",
     )
 
-    assert response["items"][0]["activity_type"] == VendorContractActivityType.CONTRACT_SIGNED.value
+    assert (
+        response["items"][0]["activity_type"]
+        == VendorContractActivityType.CONTRACT_SIGNED.value
+    )
     assert any(
         item["activity_type"] == VendorContractActivityType.CONTRACT_CREATED.value
         for item in response["items"]
@@ -593,7 +667,10 @@ async def test_get_contract_activity_returns_descending_items_and_synthesizes_le
         created_by="planner@example.com",
     )
 
-    assert explicit_response["items"][0]["activity_type"] == VendorContractActivityType.CONTRACT_UPDATED.value
+    assert (
+        explicit_response["items"][0]["activity_type"]
+        == VendorContractActivityType.CONTRACT_UPDATED.value
+    )
     assert any(
         item["activity_type"] == VendorContractActivityType.CONTRACT_SIGNED.value
         for item in explicit_response["items"]
@@ -651,7 +728,9 @@ async def test_get_contract_activity_is_contract_scoped_not_lineage_scoped(
         created_by="planner@example.com",
     )
 
-    assert all(item["contract_id"] == str(contract_a["_id"]) for item in response["items"])
+    assert all(
+        item["contract_id"] == str(contract_a["_id"]) for item in response["items"]
+    )
     assert not any(item["title"] == "Revision sent" for item in response["items"])
 
 
@@ -686,8 +765,9 @@ async def test_explicit_activity_dedupes_matching_synthesized_event_types(
     )
 
     signed_items = [
-      item for item in response["items"]
-      if item["activity_type"] == VendorContractActivityType.CONTRACT_SIGNED.value
+        item
+        for item in response["items"]
+        if item["activity_type"] == VendorContractActivityType.CONTRACT_SIGNED.value
     ]
     assert len(signed_items) == 1
 

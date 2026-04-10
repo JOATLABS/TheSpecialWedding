@@ -94,11 +94,11 @@ def test_guest_session_endpoints_and_token_redaction_are_pinned() -> None:
     otp_service = _read("app/services/otp_service.py")
     public_gallery = _read("app/utils/publicGallery.ts")
 
-    assert '/weddings/guest-access/{slug}/{token}/exchange' in guest_verification_api
-    assert '/weddings/guest-access/session/{slug}' in guest_verification_api
-    assert '/otp/request/session' in otp_api
-    assert '/otp/verify/session' in otp_api
-    assert '/session/{slug}/rsvp' in rsvp_api
+    assert "/weddings/guest-access/{slug}/{token}/exchange" in guest_verification_api
+    assert "/weddings/guest-access/session/{slug}" in guest_verification_api
+    assert "/otp/request/session" in otp_api
+    assert "/otp/verify/session" in otp_api
+    assert "/session/{slug}/rsvp" in rsvp_api
     assert 'guest_response.pop("token", None)' in guest_verification_service
     assert 'guest_response.pop("token", None)' in otp_service
     assert "credentials: 'include'" in public_gallery

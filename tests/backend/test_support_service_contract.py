@@ -37,7 +37,9 @@ class FakeCursor:
 
 
 class FakeTicketsCollection:
-    def __init__(self, documents: list[dict], find_one_result: dict | None = None) -> None:
+    def __init__(
+        self, documents: list[dict], find_one_result: dict | None = None
+    ) -> None:
         self.documents = documents
         self.find_one_result = find_one_result
         self.count_queries: list[dict] = []
@@ -134,7 +136,10 @@ async def test_add_comment_rejects_sms_support_tickets() -> None:
     with pytest.raises(HTTPException) as exc_info:
         await service.add_comment(
             ticket_id=str(ticket["_id"]),
-            comment_data={"message": "Replying from the wrong endpoint", "is_internal": False},
+            comment_data={
+                "message": "Replying from the wrong endpoint",
+                "is_internal": False,
+            },
             current_user=SimpleNamespace(role="ROOT_ADMIN", email="root@example.com"),
         )
 
@@ -173,7 +178,10 @@ async def test_add_comment_sets_ticket_in_progress_for_root_admin_public_reply(
 
     result = await service.add_comment(
         ticket_id=str(ticket["_id"]),
-        comment_data={"message": "We are investigating this now.", "is_internal": False},
+        comment_data={
+            "message": "We are investigating this now.",
+            "is_internal": False,
+        },
         current_user=SimpleNamespace(role="ROOT_ADMIN", email="root@example.com"),
     )
 

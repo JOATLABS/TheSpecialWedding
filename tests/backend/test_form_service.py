@@ -37,7 +37,11 @@ def form_service(monkeypatch):
     database = client["wedding_forms"]
     fake_mongo = FakeMongo(database)
     monkeypatch.setattr(form_service_module, "mongo", fake_mongo)
-    monkeypatch.setattr(form_service_module.rate_limiter, "check_rate_limit", lambda *args, **kwargs: True)
+    monkeypatch.setattr(
+        form_service_module.rate_limiter,
+        "check_rate_limit",
+        lambda *args, **kwargs: True,
+    )
 
     service = form_service_module.FormService()
     return service, database
@@ -45,7 +49,7 @@ def form_service(monkeypatch):
 
 def _sample_form_doc(created_by: str, **overrides):
     now = _utc_now()
-    planner_key = created_by.replace('.', '_')
+    planner_key = created_by.replace(".", "_")
     return {
         "_id": overrides.get("_id", "form_original"),
         "name": overrides.get("name", "Vendor Intake"),
@@ -85,9 +89,15 @@ def _sample_form_doc(created_by: str, **overrides):
             "planner_state",
             {
                 planner_key: {
-                    "last_viewed_submission_count": overrides.get("last_viewed_submission_count", 0),
-                    "last_viewed_responses_at": overrides.get("last_viewed_responses_at"),
-                    "last_viewed_analytics_at": overrides.get("last_viewed_analytics_at"),
+                    "last_viewed_submission_count": overrides.get(
+                        "last_viewed_submission_count", 0
+                    ),
+                    "last_viewed_responses_at": overrides.get(
+                        "last_viewed_responses_at"
+                    ),
+                    "last_viewed_analytics_at": overrides.get(
+                        "last_viewed_analytics_at"
+                    ),
                 }
             },
         ),
@@ -108,7 +118,7 @@ def test_duplicate_form_copies_structure_and_resets_submission_state(form_servic
     assert duplicated is not None
     assert duplicated["name"] == "Vendor Intake Copy"
     assert duplicated["submission_count"] == 0
-    planner_key = planner_email.replace('.', '_')
+    planner_key = planner_email.replace(".", "_")
     assert duplicated["planner_state"][planner_key]["last_viewed_submission_count"] == 0
     assert duplicated["fields"][0]["id"] == "company_name"
     assert duplicated["created_by"] == planner_email
@@ -135,11 +145,13 @@ def test_mark_form_viewed_updates_planner_state_and_unread_counter(form_service)
     forms_before = service.get_forms(planner_email)
     assert forms_before[0]["unread_responses"] == 3
 
-    result = service.mark_form_viewed("form_original", planner_email, "responses", submission_count=5)
+    result = service.mark_form_viewed(
+        "form_original", planner_email, "responses", submission_count=5
+    )
     assert result["unread_responses"] == 0
 
     stored = database["forms"].find_one({"_id": "form_original"})
-    planner_key = planner_email.replace('.', '_')
+    planner_key = planner_email.replace(".", "_")
     assert stored["planner_state"][planner_key]["last_viewed_submission_count"] == 5
     assert stored["planner_state"][planner_key]["last_viewed_responses_at"] is not None
 

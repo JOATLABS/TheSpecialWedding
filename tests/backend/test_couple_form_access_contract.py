@@ -18,7 +18,9 @@ class FakeFormsCollection:
     def _matches(document: dict, query: dict) -> bool:
         for key, value in query.items():
             if key == "$or":
-                if not any(FakeFormsCollection._matches(document, clause) for clause in value):
+                if not any(
+                    FakeFormsCollection._matches(document, clause) for clause in value
+                ):
                     return False
                 continue
 

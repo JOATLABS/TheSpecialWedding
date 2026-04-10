@@ -40,15 +40,19 @@ class FakeMongo:
 def test_confirm_payment_method_update_derives_card_metadata(monkeypatch):
     fake_mongo = FakeMongo()
     monkeypatch.setattr(database_module, "mongo", fake_mongo)
-    monkeypatch.setattr(settings_module.settings, "stripe_secret_key", "sk_test_123", raising=False)
+    monkeypatch.setattr(
+        settings_module.settings, "stripe_secret_key", "sk_test_123", raising=False
+    )
     monkeypatch.setattr(
         contracts_module.contract_service,
         "get_contract_by_token",
-        AsyncMock(return_value={
-            "stripe_customer_id": "cus_123",
-            "planner_email": None,
-            "couple": {"partner1_name": "Alex"},
-        }),
+        AsyncMock(
+            return_value={
+                "stripe_customer_id": "cus_123",
+                "planner_email": None,
+                "couple": {"partner1_name": "Alex"},
+            }
+        ),
     )
 
     customer_modify_calls = []
@@ -58,7 +62,10 @@ def test_confirm_payment_method_update_derives_card_metadata(monkeypatch):
         lambda _setup_intent_id: SimpleNamespace(
             status="succeeded",
             customer="cus_123",
-            metadata={"contract_token": "portal-token", "action": "update_payment_method"},
+            metadata={
+                "contract_token": "portal-token",
+                "action": "update_payment_method",
+            },
             payment_method="pm_123",
         ),
     )
@@ -74,7 +81,9 @@ def test_confirm_payment_method_update_derives_card_metadata(monkeypatch):
     monkeypatch.setattr(
         stripe.Customer,
         "modify",
-        lambda customer_id, **kwargs: customer_modify_calls.append((customer_id, kwargs)),
+        lambda customer_id, **kwargs: customer_modify_calls.append(
+            (customer_id, kwargs)
+        ),
     )
 
     result = asyncio.run(
@@ -98,7 +107,9 @@ def test_confirm_payment_method_update_derives_card_metadata(monkeypatch):
 
 
 def test_sign_contract_derives_card_metadata_before_persisting(monkeypatch):
-    monkeypatch.setattr(settings_module.settings, "stripe_secret_key", "sk_test_123", raising=False)
+    monkeypatch.setattr(
+        settings_module.settings, "stripe_secret_key", "sk_test_123", raising=False
+    )
 
     captured = {}
 
@@ -112,7 +123,9 @@ def test_sign_contract_derives_card_metadata_before_persisting(monkeypatch):
             "document_url": None,
         }
 
-    monkeypatch.setattr(contracts_module.contract_service, "sign_contract", fake_sign_contract)
+    monkeypatch.setattr(
+        contracts_module.contract_service, "sign_contract", fake_sign_contract
+    )
     monkeypatch.setattr(
         contracts_module.contract_service,
         "get_contract_by_token",
@@ -163,7 +176,9 @@ def test_sign_contract_derives_card_metadata_before_persisting(monkeypatch):
 
 
 def test_sign_contract_uses_contract_customer_when_request_omits_it(monkeypatch):
-    monkeypatch.setattr(settings_module.settings, "stripe_secret_key", "sk_test_123", raising=False)
+    monkeypatch.setattr(
+        settings_module.settings, "stripe_secret_key", "sk_test_123", raising=False
+    )
 
     captured = {}
 
@@ -177,7 +192,9 @@ def test_sign_contract_uses_contract_customer_when_request_omits_it(monkeypatch)
             "document_url": None,
         }
 
-    monkeypatch.setattr(contracts_module.contract_service, "sign_contract", fake_sign_contract)
+    monkeypatch.setattr(
+        contracts_module.contract_service, "sign_contract", fake_sign_contract
+    )
     monkeypatch.setattr(
         contracts_module.contract_service,
         "get_contract_by_token",

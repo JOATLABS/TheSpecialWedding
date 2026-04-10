@@ -28,12 +28,16 @@ import app.services.notification_service as notification_module
 class DummyEmailService:
     """Minimal stand-in for the production Resend email client."""
 
-    def __init__(self, configured: bool = True, fail_recipients: Optional[List[str]] = None):
+    def __init__(
+        self, configured: bool = True, fail_recipients: Optional[List[str]] = None
+    ):
         self.configured = configured
         self.fail_recipients = set(fail_recipients or [])
         self.calls: List[Dict[str, str]] = []
 
-    def send_email(self, *, to_email: str, subject: str, html_content: str, email_type: str):
+    def send_email(
+        self, *, to_email: str, subject: str, html_content: str, email_type: str
+    ):
         payload = {
             "to_email": to_email,
             "subject": subject,
@@ -68,7 +72,9 @@ def notification_service(monkeypatch):
     return service, database, dummy_email
 
 
-def test_send_notification_dispatches_and_updates_delivery_summary(notification_service):
+def test_send_notification_dispatches_and_updates_delivery_summary(
+    notification_service,
+):
     service, database, email_service = notification_service
 
     database["users"].insert_many(
@@ -97,15 +103,15 @@ def test_send_notification_dispatches_and_updates_delivery_summary(notification_
 
     create_result = asyncio.run(
         service.create_notification(
-        {
-            "title": "Planned Maintenance",
-            "message": "We will perform infrastructure maintenance on Saturday at 9 PM UTC.",
-            "type": "warning",
-            "target_audience": "wedding_planners",
-            "is_dismissible": True,
-            "priority": "high",
-        },
-        created_by="root@example.com",
+            {
+                "title": "Planned Maintenance",
+                "message": "We will perform infrastructure maintenance on Saturday at 9 PM UTC.",
+                "type": "warning",
+                "target_audience": "wedding_planners",
+                "is_dismissible": True,
+                "priority": "high",
+            },
+            created_by="root@example.com",
         )
     )
     notification_id = create_result["id"]
@@ -128,7 +134,9 @@ def test_send_notification_dispatches_and_updates_delivery_summary(notification_
     assert stored["delivery_summary"]["sent"] == 1
     assert stored["delivery_summary"]["failed"] == 0
     assert stored["delivery_summary"]["attempted"] == 1
-    assert stored["delivery_summary"]["last_attempt_at"].date() == datetime.utcnow().date()
+    assert (
+        stored["delivery_summary"]["last_attempt_at"].date() == datetime.utcnow().date()
+    )
     assert stored["total_recipients"] == 1
     assert stored["delivery_logs"][-1]["attempted"] == 1
 
@@ -138,15 +146,15 @@ def test_send_notification_without_recipients_raises(notification_service):
 
     create_result = asyncio.run(
         service.create_notification(
-        {
-            "title": "Vendor Alert",
-            "message": "Update your insurance documents.",
-            "type": "info",
-            "target_audience": "vendors",
-            "is_dismissible": True,
-            "priority": "medium",
-        },
-        created_by="root@example.com",
+            {
+                "title": "Vendor Alert",
+                "message": "Update your insurance documents.",
+                "type": "info",
+                "target_audience": "vendors",
+                "is_dismissible": True,
+                "priority": "medium",
+            },
+            created_by="root@example.com",
         )
     )
 
@@ -173,15 +181,15 @@ def test_send_notification_requires_configured_email_service(notification_servic
 
     create_result = asyncio.run(
         service.create_notification(
-        {
-            "title": "Test",
-            "message": "Testing configuration gate.",
-            "type": "info",
-            "target_audience": "wedding_planners",
-            "is_dismissible": True,
-            "priority": "low",
-        },
-        created_by="root@example.com",
+            {
+                "title": "Test",
+                "message": "Testing configuration gate.",
+                "type": "info",
+                "target_audience": "wedding_planners",
+                "is_dismissible": True,
+                "priority": "low",
+            },
+            created_by="root@example.com",
         )
     )
 

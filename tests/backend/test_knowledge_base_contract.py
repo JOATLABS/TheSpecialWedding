@@ -63,7 +63,9 @@ class FakeArticlesCollection:
 
 def test_pending_review_rejected_across_kb_models_and_requests():
     with pytest.raises(ValidationError):
-        KnowledgeBaseArticleCreateModel(**VALID_ARTICLE_PAYLOAD, status="pending_review")
+        KnowledgeBaseArticleCreateModel(
+            **VALID_ARTICLE_PAYLOAD, status="pending_review"
+        )
 
     with pytest.raises(ValidationError):
         KnowledgeBaseArticleUpdateModel(status="pending_review")

@@ -95,7 +95,10 @@ async def test_list_couples_only_exposes_copyable_setup_link_for_active_invites(
     result = await couple_invite_api.list_couples(current_user=root_user)
     couples = {couple["email"]: couple for couple in result["couples"]}
 
-    assert couples["live@example.com"]["setup_link"] == "http://localhost:3000/couple/setup/live-token"
+    assert (
+        couples["live@example.com"]["setup_link"]
+        == "http://localhost:3000/couple/setup/live-token"
+    )
     assert couples["live@example.com"]["setup_link_expires_at"] is not None
     assert couples["expired@example.com"]["setup_link"] is None
     assert couples["expired@example.com"]["setup_link_expires_at"] is not None
@@ -115,7 +118,9 @@ async def test_planner_conversations_require_message_couples_permission() -> Non
 
 @pytest.mark.asyncio
 async def test_owner_permission_payload_includes_new_couple_permissions() -> None:
-    user = ExtendedAuthUser("planner@example.com", "wedding_planner", {"_id": "owner-1"})
+    user = ExtendedAuthUser(
+        "planner@example.com", "wedding_planner", {"_id": "owner-1"}
+    )
 
     result = await team_management_api.get_my_permissions(current_user=user)
 
@@ -254,7 +259,9 @@ async def test_save_form_template_uses_owner_scope_for_team_members(
 
     class FakeFormsCollection:
         async def find_one(self, query):
-            assert query == {"_id": couple_portal_api.ObjectId("507f1f77bcf86cd799439011")}
+            assert query == {
+                "_id": couple_portal_api.ObjectId("507f1f77bcf86cd799439011")
+            }
             return {
                 "_id": "form-1",
                 "created_by": "owner@example.com",
@@ -292,7 +299,9 @@ async def test_save_form_template_uses_owner_scope_for_team_members(
     )
 
     monkeypatch.setattr(couple_portal_api, "mongo", fake_mongo)
-    monkeypatch.setattr(couple_portal_api, "check_wedding_access", AsyncMock(return_value=True))
+    monkeypatch.setattr(
+        couple_portal_api, "check_wedding_access", AsyncMock(return_value=True)
+    )
 
     current_user = ExtendedAuthUser("team@example.com", "team_member", {})
     current_user.team_permissions = {"manage_couple_portal": True}

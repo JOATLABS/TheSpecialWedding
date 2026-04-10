@@ -33,8 +33,14 @@ from datetime import datetime, timezone
 # Test planner credentials from .env
 TEST_EMAIL = os.getenv("TEST_PLANNER_EMAIL", "test.verification@example.com")
 TEST_PASSWORD = os.getenv("TEST_PLANNER_PASSWORD", "testPass123!")
-STRIPE_SECRET_KEY = os.getenv("STRIPE_SECRET_KEY", "sk_test_51Sapy9JbfaNLE8qUcpaFKWlZUG7JdeCq1tDkP53iqeiuQlUK2o64QfrKmkeQWMkDcf0m6WusG41sFsWcioJNAhF3005jzoapL4")
-STRIPE_WEBHOOK_SECRET = os.getenv("STRIPE_WEBHOOK_SECRET", "whsec_8317b93ea6f60f98ade549f8de71a129d1bf1df6e2f9c8f126acce98e31c5f55")
+STRIPE_SECRET_KEY = os.getenv(
+    "STRIPE_SECRET_KEY",
+    "sk_test_51Sapy9JbfaNLE8qUcpaFKWlZUG7JdeCq1tDkP53iqeiuQlUK2o64QfrKmkeQWMkDcf0m6WusG41sFsWcioJNAhF3005jzoapL4",
+)
+STRIPE_WEBHOOK_SECRET = os.getenv(
+    "STRIPE_WEBHOOK_SECRET",
+    "whsec_8317b93ea6f60f98ade549f8de71a129d1bf1df6e2f9c8f126acce98e31c5f55",
+)
 ROOT_ADMIN_EMAIL = os.getenv("ROOT_ADMIN_EMAIL", "thedeveloper@thespecialwedding.io")
 ROOT_ADMIN_PASSWORD = os.getenv("ROOT_ADMIN_PASSWORD", "ywCXX+yJiWYrHXBD")
 
@@ -52,11 +58,26 @@ CYAN = "\033[96m"
 RESET = "\033[0m"
 BOLD = "\033[1m"
 
-def ok(msg): print(f"  {GREEN}✓{RESET} {msg}")
-def fail(msg): print(f"  {RED}✗{RESET} {msg}")
-def warn(msg): print(f"  {YELLOW}⚠{RESET} {msg}")
-def info(msg): print(f"  {CYAN}ℹ{RESET} {msg}")
-def header(msg): print(f"\n{BOLD}{msg}{RESET}")
+
+def ok(msg):
+    print(f"  {GREEN}✓{RESET} {msg}")
+
+
+def fail(msg):
+    print(f"  {RED}✗{RESET} {msg}")
+
+
+def warn(msg):
+    print(f"  {YELLOW}⚠{RESET} {msg}")
+
+
+def info(msg):
+    print(f"  {CYAN}ℹ{RESET} {msg}")
+
+
+def header(msg):
+    print(f"\n{BOLD}{msg}{RESET}")
+
 
 errors = []
 warnings = []
@@ -75,7 +96,6 @@ async def run_tests(api_url: str):
     info(f"Stripe Key: {STRIPE_SECRET_KEY[:12]}...{STRIPE_SECRET_KEY[-4:]}")
 
     async with httpx.AsyncClient(base_url=api_url, timeout=30.0) as client:
-
         # ====================================================================
         # Step 0: Health Check
         # ====================================================================
@@ -99,10 +119,10 @@ async def run_tests(api_url: str):
         header("Step 0.5: Cleanup Previous Test User")
         try:
             # Login as root admin
-            admin_login = await client.post("/admin/login", json={
-                "email": ROOT_ADMIN_EMAIL,
-                "password": ROOT_ADMIN_PASSWORD
-            })
+            admin_login = await client.post(
+                "/admin/login",
+                json={"email": ROOT_ADMIN_EMAIL, "password": ROOT_ADMIN_PASSWORD},
+            )
             if admin_login.status_code == 200:
                 admin_token = admin_login.json().get("access_token")
                 admin_headers = {"Authorization": f"Bearer {admin_token}"}
@@ -115,7 +135,9 @@ async def run_tests(api_url: str):
                         if user.get("email") == TEST_EMAIL:
                             user_id = user.get("_id")
                             # Delete the test user
-                            del_resp = await client.delete(f"/users/{user_id}", headers=admin_headers)
+                            del_resp = await client.delete(
+                                f"/users/{user_id}", headers=admin_headers
+                            )
                             if del_resp.status_code == 200:
                                 ok(f"Cleaned up existing test user: {TEST_EMAIL}")
                             else:
@@ -157,7 +179,7 @@ async def run_tests(api_url: str):
             "first_name": "Test",
             "last_name": "Planner",
             "company_name": "Test Wedding Co",
-            "role": "wedding_planner"
+            "role": "wedding_planner",
         }
 
         r = await client.post("/public/register", json=registration_data)
@@ -200,22 +222,30 @@ async def run_tests(api_url: str):
                     user_data = user_resp.json()
                     verification_token = user_data.get("email_verification_token")
                     if verification_token:
-                        ok(f"Retrieved verification token from DB: {verification_token[:8]}...")
+                        ok(
+                            f"Retrieved verification token from DB: {verification_token[:8]}..."
+                        )
                     else:
                         warn("No verification token found in user record")
                         warnings.append("Verification token not in user record")
 
                     # Validate initial user state
-                    info(f"  subscription_status: {user_data.get('subscription_status')}")
+                    info(
+                        f"  subscription_status: {user_data.get('subscription_status')}"
+                    )
                     info(f"  is_active: {user_data.get('is_active')}")
                     info(f"  email_verified: {user_data.get('email_verified')}")
                     info(f"  plan_id: {user_data.get('plan_id')}")
 
                     if user_data.get("subscription_status") != "pending_payment":
-                        fail(f"Expected subscription_status='pending_payment', got '{user_data.get('subscription_status')}'")
+                        fail(
+                            f"Expected subscription_status='pending_payment', got '{user_data.get('subscription_status')}'"
+                        )
                         errors.append("Incorrect initial subscription_status")
                     if user_data.get("is_active") != False:
-                        fail(f"Expected is_active=False, got {user_data.get('is_active')}")
+                        fail(
+                            f"Expected is_active=False, got {user_data.get('is_active')}"
+                        )
                         errors.append("User should be inactive before verification")
         except Exception as e:
             warn(f"Could not retrieve verification token: {e}")
@@ -240,7 +270,9 @@ async def run_tests(api_url: str):
                 user_data = user_resp.json()
                 info(f"  Post-verify is_active: {user_data.get('is_active')}")
                 info(f"  Post-verify email_verified: {user_data.get('email_verified')}")
-                info(f"  Post-verify subscription_status: {user_data.get('subscription_status')}")
+                info(
+                    f"  Post-verify subscription_status: {user_data.get('subscription_status')}"
+                )
 
                 if not user_data.get("email_verified"):
                     fail("email_verified should be True after verification")
@@ -264,16 +296,24 @@ async def run_tests(api_url: str):
             if plans:
                 ok(f"Found {len(plans)} public plan(s)")
                 for plan in plans:
-                    info(f"  • {plan.get('name')} ({plan.get('_id')}) — ${plan.get('price_monthly', 'N/A')}/mo, ${plan.get('price_yearly', 'N/A')}/yr")
-                    info(f"    Max weddings: {plan.get('max_weddings')}, Max guests: {plan.get('max_guests_per_wedding')}")
+                    info(
+                        f"  • {plan.get('name')} ({plan.get('_id')}) — ${plan.get('price_monthly', 'N/A')}/mo, ${plan.get('price_yearly', 'N/A')}/yr"
+                    )
+                    info(
+                        f"    Max weddings: {plan.get('max_weddings')}, Max guests: {plan.get('max_guests_per_wedding')}"
+                    )
 
                 # Select first plan
                 selected_plan_id = plans[0].get("_id")
                 ok(f"Selected plan: {plans[0].get('name')} ({selected_plan_id})")
             else:
                 fail("No subscription plans found!")
-                errors.append("No subscription plans available — planners cannot sign up")
-                warn("You need to create at least one subscription plan via the admin panel")
+                errors.append(
+                    "No subscription plans available — planners cannot sign up"
+                )
+                warn(
+                    "You need to create at least one subscription plan via the admin panel"
+                )
         else:
             fail(f"Failed to list plans: {r.text}")
             errors.append(f"Plan listing failed: HTTP {r.status_code}")
@@ -295,7 +335,7 @@ async def run_tests(api_url: str):
             "billing_interval": "monthly",
             "success_url": "http://localhost:3000/admin/billing/success?session_id={CHECKOUT_SESSION_ID}",
             "cancel_url": "http://localhost:3000/admin/billing/cancelled",
-            "trial_days": 0
+            "trial_days": 0,
         }
 
         r = await client.post("/public/create-checkout-session", json=checkout_data)
@@ -348,10 +388,14 @@ async def run_tests(api_url: str):
                 info(f"Session currency: {session.currency}")
 
                 # Check line items
-                line_items = stripe.checkout.Session.list_line_items(checkout_session_id)
+                line_items = stripe.checkout.Session.list_line_items(
+                    checkout_session_id
+                )
                 if line_items.data:
                     for item in line_items.data:
-                        info(f"  Line item: {item.description} — {item.amount_total/100:.2f} {item.currency}")
+                        info(
+                            f"  Line item: {item.description} — {item.amount_total / 100:.2f} {item.currency}"
+                        )
                         ok("Line items present and valid")
                 else:
                     fail("No line items in checkout session")
@@ -362,7 +406,9 @@ async def run_tests(api_url: str):
                     customer = stripe.Customer.retrieve(session.customer)
                     ok(f"Stripe customer: {customer.email} (name: {customer.name})")
                     if customer.email != TEST_EMAIL:
-                        fail(f"Customer email mismatch: expected {TEST_EMAIL}, got {customer.email}")
+                        fail(
+                            f"Customer email mismatch: expected {TEST_EMAIL}, got {customer.email}"
+                        )
                         errors.append("Stripe customer email doesn't match test email")
                 else:
                     fail("No customer associated with checkout session")
@@ -380,22 +426,32 @@ async def run_tests(api_url: str):
         header("Step 6: Simulate Webhook — checkout.session.completed")
         if checkout_session_id and stripe_customer_id:
             info("Note: In production, this webhook is sent by Stripe after payment.")
-            info("For testing, we can use Stripe CLI: stripe trigger checkout.session.completed")
+            info(
+                "For testing, we can use Stripe CLI: stripe trigger checkout.session.completed"
+            )
             info("Or use the Stripe test dashboard to complete the payment.")
 
             # We can't easily simulate the webhook without a real payment,
             # but we can validate the webhook endpoint is accessible
             try:
                 # Test that webhook endpoint exists (will fail signature check, but shouldn't 404)
-                r = await client.post("/stripe/webhook", content=b'{}', headers={
-                    "stripe-signature": "fake_signature",
-                    "content-type": "application/json"
-                })
+                r = await client.post(
+                    "/stripe/webhook",
+                    content=b"{}",
+                    headers={
+                        "stripe-signature": "fake_signature",
+                        "content-type": "application/json",
+                    },
+                )
                 if r.status_code == 400:
-                    ok("Webhook endpoint exists and rejects invalid signatures (expected behavior)")
+                    ok(
+                        "Webhook endpoint exists and rejects invalid signatures (expected behavior)"
+                    )
                 elif r.status_code == 404:
                     fail("Webhook endpoint not found at /stripe/webhook!")
-                    errors.append("Webhook endpoint missing — Stripe events won't be processed")
+                    errors.append(
+                        "Webhook endpoint missing — Stripe events won't be processed"
+                    )
                 else:
                     info(f"Webhook endpoint returned: {r.status_code} — {r.text[:100]}")
             except Exception as e:
@@ -403,10 +459,14 @@ async def run_tests(api_url: str):
 
             # Also test the alias path
             try:
-                r = await client.post("/api/stripe/webhook", content=b'{}', headers={
-                    "stripe-signature": "fake_signature",
-                    "content-type": "application/json"
-                })
+                r = await client.post(
+                    "/api/stripe/webhook",
+                    content=b"{}",
+                    headers={
+                        "stripe-signature": "fake_signature",
+                        "content-type": "application/json",
+                    },
+                )
                 if r.status_code == 400:
                     ok("Alias webhook endpoint /api/stripe/webhook also working")
                 elif r.status_code == 404:
@@ -426,20 +486,28 @@ async def run_tests(api_url: str):
                 user_resp = await client.get(f"/users/{user_id}", headers=admin_headers)
                 if user_resp.status_code == 200:
                     user_data = user_resp.json()
-                    info(f"  subscription_status: {user_data.get('subscription_status')}")
+                    info(
+                        f"  subscription_status: {user_data.get('subscription_status')}"
+                    )
                     info(f"  is_active: {user_data.get('is_active')}")
                     info(f"  email_verified: {user_data.get('email_verified')}")
                     info(f"  stripe_customer_id: {user_data.get('stripe_customer_id')}")
-                    info(f"  stripe_subscription_id: {user_data.get('stripe_subscription_id')}")
+                    info(
+                        f"  stripe_subscription_id: {user_data.get('stripe_subscription_id')}"
+                    )
                     info(f"  plan_id: {user_data.get('plan_id')}")
 
                     # At this point (no webhook yet), status should still be pending_payment
                     # unless email verification already activated it
                     status = user_data.get("subscription_status")
                     if status == "pending_payment":
-                        ok("Subscription status is 'pending_payment' (correct — waiting for Stripe webhook)")
+                        ok(
+                            "Subscription status is 'pending_payment' (correct — waiting for Stripe webhook)"
+                        )
                     elif status in ("active", "trial"):
-                        ok(f"Subscription status is '{status}' (webhook already processed)")
+                        ok(
+                            f"Subscription status is '{status}' (webhook already processed)"
+                        )
                     else:
                         warn(f"Unexpected subscription_status: {status}")
                         warnings.append(f"Unexpected status after checkout: {status}")
@@ -451,10 +519,9 @@ async def run_tests(api_url: str):
         # ====================================================================
         header("Step 8: Test Login with New Account")
         try:
-            login_resp = await client.post("/admin/login", json={
-                "email": TEST_EMAIL,
-                "password": TEST_PASSWORD
-            })
+            login_resp = await client.post(
+                "/admin/login", json={"email": TEST_EMAIL, "password": TEST_PASSWORD}
+            )
             if login_resp.status_code == 200:
                 login_data = login_resp.json()
                 planner_token = login_data.get("access_token")
@@ -463,27 +530,37 @@ async def run_tests(api_url: str):
                     info(f"  Token: {planner_token[:30]}...")
 
                     # Test authenticated endpoint
-                    profile_resp = await client.get("/profile", headers={
-                        "Authorization": f"Bearer {planner_token}"
-                    })
+                    profile_resp = await client.get(
+                        "/profile", headers={"Authorization": f"Bearer {planner_token}"}
+                    )
                     if profile_resp.status_code == 200:
                         profile = profile_resp.json()
-                        ok(f"Profile access works — {profile.get('first_name')} {profile.get('last_name')}")
+                        ok(
+                            f"Profile access works — {profile.get('first_name')} {profile.get('last_name')}"
+                        )
                     else:
                         fail(f"Profile access failed: {profile_resp.status_code}")
-                        errors.append(f"Authenticated profile access failed: {profile_resp.status_code}")
+                        errors.append(
+                            f"Authenticated profile access failed: {profile_resp.status_code}"
+                        )
                 else:
                     fail("Login returned 200 but no access_token")
                     errors.append("Login missing access_token in response")
             elif login_resp.status_code == 401:
                 fail(f"Login rejected: {login_resp.text}")
-                errors.append("Cannot login with test planner credentials after registration")
+                errors.append(
+                    "Cannot login with test planner credentials after registration"
+                )
             elif login_resp.status_code == 403:
                 info(f"Login blocked (account may require payment): {login_resp.text}")
-                warn("Login blocked — check if subscription_status check is too restrictive")
+                warn(
+                    "Login blocked — check if subscription_status check is too restrictive"
+                )
                 warnings.append("Login blocked for pending_payment user")
             else:
-                fail(f"Login returned unexpected status: {login_resp.status_code} — {login_resp.text}")
+                fail(
+                    f"Login returned unexpected status: {login_resp.status_code} — {login_resp.text}"
+                )
                 errors.append(f"Login failed: HTTP {login_resp.status_code}")
         except Exception as e:
             fail(f"Login test failed: {e}")
@@ -510,14 +587,18 @@ async def run_tests(api_url: str):
 
     print(f"\n  {CYAN}Next Steps:{RESET}")
     print(f"    1. Complete payment at the Stripe checkout URL above")
-    print(f"    2. Or use Stripe CLI: stripe listen --forward-to {api_url}/stripe/webhook")
+    print(
+        f"    2. Or use Stripe CLI: stripe listen --forward-to {api_url}/stripe/webhook"
+    )
     print(f"    3. Then: stripe trigger checkout.session.completed")
     print(f"    4. Verify user status changes from 'pending_payment' to 'active'\n")
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Test Stripe Signup Flow")
-    parser.add_argument("--api-url", default="http://localhost:8000", help="API base URL")
+    parser.add_argument(
+        "--api-url", default="http://localhost:8000", help="API base URL"
+    )
     args = parser.parse_args()
 
     asyncio.run(run_tests(args.api_url))

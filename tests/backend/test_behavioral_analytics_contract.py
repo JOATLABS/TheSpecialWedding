@@ -36,7 +36,9 @@ async def test_engagement_signals_require_view_analytics_permission():
 
 
 @pytest.mark.asyncio
-async def test_engagement_signals_scope_team_member_to_owner_and_assigned_weddings(monkeypatch):
+async def test_engagement_signals_scope_team_member_to_owner_and_assigned_weddings(
+    monkeypatch,
+):
     user = ExtendedAuthUser("team@example.com", "team_member", {})
     user.team_permissions = {"view_analytics": True}
     user.team_owner_email = "owner@example.com"
@@ -45,7 +47,9 @@ async def test_engagement_signals_scope_team_member_to_owner_and_assigned_weddin
 
     captured: dict[str, object] = {}
 
-    async def fake_get_planner_engagement_signals(*, planner_email=None, accessible_wedding_ids=None):
+    async def fake_get_planner_engagement_signals(
+        *, planner_email=None, accessible_wedding_ids=None
+    ):
         captured["planner_email"] = planner_email
         captured["accessible_wedding_ids"] = accessible_wedding_ids
         return []
@@ -86,17 +90,27 @@ async def test_non_responders_require_wedding_access(monkeypatch):
 def test_retention_month_math_preserves_calendar_boundaries():
     now = datetime(2026, 4, 15, 12, 0, tzinfo=timezone.utc)
 
-    assert BehavioralAnalyticsService._add_months(now, 0) == datetime(2026, 4, 1, 0, 0, tzinfo=timezone.utc)
-    assert BehavioralAnalyticsService._add_months(now, -1) == datetime(2026, 3, 1, 0, 0, tzinfo=timezone.utc)
-    assert BehavioralAnalyticsService._add_months(now, -2) == datetime(2026, 2, 1, 0, 0, tzinfo=timezone.utc)
-    assert BehavioralAnalyticsService._add_months(now, -3) == datetime(2026, 1, 1, 0, 0, tzinfo=timezone.utc)
+    assert BehavioralAnalyticsService._add_months(now, 0) == datetime(
+        2026, 4, 1, 0, 0, tzinfo=timezone.utc
+    )
+    assert BehavioralAnalyticsService._add_months(now, -1) == datetime(
+        2026, 3, 1, 0, 0, tzinfo=timezone.utc
+    )
+    assert BehavioralAnalyticsService._add_months(now, -2) == datetime(
+        2026, 2, 1, 0, 0, tzinfo=timezone.utc
+    )
+    assert BehavioralAnalyticsService._add_months(now, -3) == datetime(
+        2026, 1, 1, 0, 0, tzinfo=timezone.utc
+    )
 
 
 def test_trial_conversion_queries_use_trial_end_dates_instead_of_state_history():
     start = datetime(2026, 3, 1, tzinfo=timezone.utc)
     end = datetime(2026, 3, 31, 23, 59, tzinfo=timezone.utc)
 
-    conversion_query, total_query = BehavioralAnalyticsService._trial_conversion_queries(start, end)
+    conversion_query, total_query = (
+        BehavioralAnalyticsService._trial_conversion_queries(start, end)
+    )
 
     assert "state_history" not in conversion_query
     assert conversion_query["status"] == "active"
@@ -121,11 +135,23 @@ async def test_compile_behavioral_metrics_caches_payload(monkeypatch):
 
     async def fake_wau(_now):
         call_counts["wau"] += 1
-        return {"current": 1, "previous_week": 0, "change": 1, "change_percent": 0, "mau": 1, "stickiness_ratio": 100}
+        return {
+            "current": 1,
+            "previous_week": 0,
+            "change": 1,
+            "change_percent": 0,
+            "mau": 1,
+            "stickiness_ratio": 100,
+        }
 
     async def fake_activation(_now):
         call_counts["activation"] += 1
-        return {"period": "last_30_days", "steps": [], "conversion_rate": 0, "signups_90d": 0}
+        return {
+            "period": "last_30_days",
+            "steps": [],
+            "conversion_rate": 0,
+            "signups_90d": 0,
+        }
 
     async def fake_retention(_now):
         call_counts["retention"] += 1
@@ -133,19 +159,61 @@ async def test_compile_behavioral_metrics_caches_payload(monkeypatch):
 
     async def fake_engagement(_now):
         call_counts["engagement"] += 1
-        return {"north_star_metric": 0, "rsvp_velocity": {"current_7d": 0, "previous_7d": 0, "change": 0, "trend": "flat"}, "platform_response_rate": 0, "active_engaged_weddings": 0}
+        return {
+            "north_star_metric": 0,
+            "rsvp_velocity": {
+                "current_7d": 0,
+                "previous_7d": 0,
+                "change": 0,
+                "trend": "flat",
+            },
+            "platform_response_rate": 0,
+            "active_engaged_weddings": 0,
+        }
 
     async def fake_mrr(_now):
         call_counts["mrr"] += 1
-        return {"current_mrr": 0, "new_mrr": 0, "churned_mrr": 0, "net_change": 0, "net_change_percent": 0, "trial_conversions": 0, "trial_conversion_rate": 0}
+        return {
+            "current_mrr": 0,
+            "new_mrr": 0,
+            "churned_mrr": 0,
+            "net_change": 0,
+            "net_change_percent": 0,
+            "trial_conversions": 0,
+            "trial_conversion_rate": 0,
+        }
 
     async def fake_wow(_now, _period_days):
         call_counts["wow"] += 1
         return {
-            "new_users": {"current": 0, "previous": 0, "change": 0, "change_percent": 0, "trend": "flat"},
-            "new_weddings": {"current": 0, "previous": 0, "change": 0, "change_percent": 0, "trend": "flat"},
-            "new_rsvps": {"current": 0, "previous": 0, "change": 0, "change_percent": 0, "trend": "flat"},
-            "active_users": {"current": 0, "previous": 0, "change": 0, "change_percent": 0, "trend": "flat"},
+            "new_users": {
+                "current": 0,
+                "previous": 0,
+                "change": 0,
+                "change_percent": 0,
+                "trend": "flat",
+            },
+            "new_weddings": {
+                "current": 0,
+                "previous": 0,
+                "change": 0,
+                "change_percent": 0,
+                "trend": "flat",
+            },
+            "new_rsvps": {
+                "current": 0,
+                "previous": 0,
+                "change": 0,
+                "change_percent": 0,
+                "trend": "flat",
+            },
+            "active_users": {
+                "current": 0,
+                "previous": 0,
+                "change": 0,
+                "change_percent": 0,
+                "trend": "flat",
+            },
         }
 
     monkeypatch.setattr(service, "_compute_wau", fake_wau)

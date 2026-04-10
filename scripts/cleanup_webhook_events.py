@@ -89,7 +89,9 @@ async def cleanup_webhook_events(retention_days: int = 30, dry_run: bool = False
 
             result = await collection.delete_many({"_id": {"$in": batch_ids}})
             total_deleted += result.deleted_count
-            logger.info(f"  Deleted batch: {result.deleted_count} events (total: {total_deleted}/{count})")
+            logger.info(
+                f"  Deleted batch: {result.deleted_count} events (total: {total_deleted}/{count})"
+            )
 
         if iteration >= max_iterations:
             logger.warning(
@@ -109,10 +111,12 @@ async def cleanup_webhook_events(retention_days: int = 30, dry_run: bool = False
 
         # Report on stuck "processing" events (older than 1 hour = likely crashed)
         stuck_cutoff = datetime.now(timezone.utc) - timedelta(hours=1)
-        stuck_count = await collection.count_documents({
-            "status": "processing",
-            "created_at": {"$lt": stuck_cutoff},
-        })
+        stuck_count = await collection.count_documents(
+            {
+                "status": "processing",
+                "created_at": {"$lt": stuck_cutoff},
+            }
+        )
         if stuck_count > 0:
             logger.warning(
                 f"⚠️  {stuck_count} events stuck in 'processing' state (>1 hour old). "
@@ -126,7 +130,9 @@ async def cleanup_webhook_events(retention_days: int = 30, dry_run: bool = False
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Clean up old processed Stripe webhook events")
+    parser = argparse.ArgumentParser(
+        description="Clean up old processed Stripe webhook events"
+    )
     parser.add_argument(
         "--retention",
         type=int,
@@ -140,10 +146,12 @@ def main():
     )
     args = parser.parse_args()
 
-    deleted = asyncio.run(cleanup_webhook_events(
-        retention_days=args.retention,
-        dry_run=args.dry_run,
-    ))
+    deleted = asyncio.run(
+        cleanup_webhook_events(
+            retention_days=args.retention,
+            dry_run=args.dry_run,
+        )
+    )
     sys.exit(0 if deleted >= 0 else 1)
 
 
