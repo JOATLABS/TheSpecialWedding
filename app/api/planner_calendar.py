@@ -42,7 +42,6 @@ from app.services.calendar_idempotency_service import calendar_idempotency_servi
 from app.services.calendar_job_service import calendar_job_service
 from app.services.calendar_sync_service import calendar_sync_service
 from app.services.google_calendar_service import google_calendar_service
-from app.services.meeting_invite_service import meeting_invite_service
 from app.utils.query_validation import (
     calculate_pagination_params,
     validated_status_filter,
