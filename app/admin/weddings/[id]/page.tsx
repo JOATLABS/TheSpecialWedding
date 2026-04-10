@@ -1642,6 +1642,7 @@ interface CoupleUser {
   setup_completed: boolean;
   wedding_archived?: boolean;
   setup_link?: string | null;
+  setup_link_expires_at?: string | null;
   last_login?: string;
   created_at?: string;
 }
@@ -1896,18 +1897,27 @@ function CoupleTab({ weddingId, token }: { weddingId: string; token: string }) {
 
                   {lifecycle === 'pending_setup' && (
                     <>
-                      <button
-                        onClick={() => handleCopySetupLink(couple)}
-                        className="text-xs text-blue-600 hover:underline flex items-center gap-1"
-                        title="Copy the current invitation setup link"
-                      >
-                        {copyingCoupleId === couple.id ? (
-                          <Loader2 className="w-3 h-3 animate-spin" />
-                        ) : (
-                          <Copy className="w-3 h-3" />
-                        )}
-                        Copy Link
-                      </button>
+                      {couple.setup_link ? (
+                        <button
+                          onClick={() => handleCopySetupLink(couple)}
+                          className="text-xs text-blue-600 hover:underline flex items-center gap-1"
+                          title="Copy the current invitation setup link"
+                        >
+                          {copyingCoupleId === couple.id ? (
+                            <Loader2 className="w-3 h-3 animate-spin" />
+                          ) : (
+                            <Copy className="w-3 h-3" />
+                          )}
+                          Copy Link
+                        </button>
+                      ) : (
+                        <span
+                          className="text-xs text-amber-600 dark:text-amber-400"
+                          title="The previous setup link has expired. Resend to generate a new one."
+                        >
+                          Link expired
+                        </span>
+                      )}
 
                       <button
                         onClick={() => handleResend(couple.id)}
