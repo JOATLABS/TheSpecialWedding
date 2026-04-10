@@ -8,6 +8,12 @@ import { formatAdminTimestamp, formatAdminDate } from '@/utils/dateFormat';
 import VendorContractPreview from '@/components/contracts/VendorContractPreview';
 import { PaymentMilestones } from '../../components/PaymentMilestones';
 import {
+  buildContractKeyDates,
+  buildEditableContractState,
+  getContractDetailControlState,
+  sortContractRevisionHistory,
+} from '../contractDetailViewState';
+import {
   getCategoryLabel,
 } from '@/services/vendorManagementApi';
 import {
@@ -67,8 +73,9 @@ export default function ContractDetailPage() {
     try {
       const data = await getContract(token, contractId);
       setContract(data);
-      setEditedContract(data);
-      setEditedSections(data.sections || []);
+      const nextState = buildEditableContractState(data);
+      setEditedContract(nextState.editedContract);
+      setEditedSections(nextState.editedSections);
 
       // Also fetch form data if available
       try {
@@ -238,36 +245,18 @@ export default function ContractDetailPage() {
     );
   };
 
-  const hasLiveSupersededSource =
-    !contract?.supersedes_contract_id ||
-    revisions?.current_contract_id === contract.supersedes_contract_id;
-
-  // Can edit check
-  const canEdit =
-    !!contract &&
-    ['draft', 'pending_review'].includes(contract.status) &&
-    (contract.is_current_version !== false || hasLiveSupersededSource);
-  const canSend =
-    !!contract &&
-    ['draft', 'pending_review'].includes(contract.status) &&
-    (contract.is_current_version !== false || hasLiveSupersededSource);
-  const canCreateRevision =
-    !!contract &&
-    contract.is_current_version !== false &&
-    ['sent', 'viewed', 'signed'].includes(contract.status);
-  const defaultRevisionLabel = contract?.status === 'signed' ? 'Create Amendment' : 'Create Revision';
-  const sortedRevisionHistory = [...(revisions?.versions || [])].sort(
-    (left, right) => right.version_number - left.version_number
-  );
+  const detailControlState = getContractDetailControlState(contract, revisions);
+  const {
+    canEdit,
+    canSend,
+    canCreateRevision,
+    paymentsReadOnly,
+    defaultRevisionLabel,
+    showHistoricalBanner,
+  } = detailControlState;
+  const sortedRevisionHistory = sortContractRevisionHistory(revisions);
   const activityItems = activity?.items || [];
-  const keyDates = contract
-    ? ([
-        { label: 'Created', value: contract.created_at },
-        contract.sent_at ? { label: 'Sent', value: contract.sent_at } : null,
-        contract.viewed_at ? { label: 'Viewed', value: contract.viewed_at } : null,
-        contract.signed_at ? { label: 'Signed', value: contract.signed_at } : null,
-      ].filter(Boolean) as Array<{ label: string; value: string }>)
-    : [];
+  const keyDates = buildContractKeyDates(contract);
 
   const getActivityAccentClass = (activityType: VendorContractActivityItem['activity_type']) => {
     switch (activityType) {
@@ -452,7 +441,7 @@ export default function ContractDetailPage() {
       </div>
 
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {contract.is_current_version === false && (
+        {showHistoricalBanner && (
           <div className="mb-6 rounded-2xl border border-amber-200 bg-amber-50 px-5 py-4 text-amber-900 dark:border-amber-900/60 dark:bg-amber-900/20 dark:text-amber-100">
             <div className="flex items-start gap-3">
               <svg className="mt-0.5 h-5 w-5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -593,9 +582,10 @@ export default function ContractDetailPage() {
                               }
                             )
                               .then((updated) => {
-                                setContract(updated);
-                                setEditedContract(updated);
-                                setEditedSections(updated.sections || []);
+                                const nextState = buildEditableContractState(updated);
+                                setContract(nextState.contract);
+                                setEditedContract(nextState.editedContract);
+                                setEditedSections(nextState.editedSections);
                                 void fetchActivity();
                                 toast.success('Form data applied to contract');
                               })
@@ -866,7 +856,7 @@ export default function ContractDetailPage() {
                 vendorName={contract.vendor_name}
                 vendorEmail={contract.vendor_email}
                 totalAmount={contract.total_amount}
-                readOnly={contract.is_current_version === false}
+                readOnly={paymentsReadOnly}
                 onMilestoneUpdated={() => {
                   void fetchActivity();
                 }}

@@ -328,6 +328,24 @@ async def test_send_contract_persists_only_hash_and_public_validation_uses_raw_e
 
 
 @pytest.mark.asyncio
+async def test_first_public_sent_view_transitions_status_and_updates_updated_at(
+    configured_vendor_service,
+) -> None:
+    context = configured_vendor_service
+    service = context["service"]
+    contract = make_contract_doc(access_token="sent-view-token", status=ContractStatus.SENT.value)
+    original_updated_at = contract["updated_at"]
+    context["contracts"].documents.append(deepcopy(contract))
+
+    viewed = await service.get_contract_by_token(str(contract["_id"]), "sent-view-token")
+
+    stored = context["contracts"].documents[0]
+    assert viewed["status"] == ContractStatus.VIEWED.value
+    assert stored["status"] == ContractStatus.VIEWED.value
+    assert stored["updated_at"] > original_updated_at
+
+
+@pytest.mark.asyncio
 async def test_invalid_revoked_and_expired_tokens_are_rejected(
     configured_vendor_service,
 ) -> None:
@@ -529,6 +547,61 @@ async def test_record_payment_rolls_back_on_transaction_failure(configured_vendo
     assert context["milestones"].documents[0]["paid_amount"] == 0
     assert context["assignments"].documents[0]["paid_amount"] == 0
     assert context["budget_categories"].documents[0]["actual_spent"] == 0
+
+
+@pytest.mark.asyncio
+async def test_historical_contracts_cannot_accept_payment_mutations(
+    configured_vendor_service,
+) -> None:
+    context = configured_vendor_service
+    service = context["service"]
+    historical_contract = make_contract_doc(
+        access_token="historical-token",
+        status=ContractStatus.SIGNED.value,
+        is_current_version=False,
+    )
+    context["contracts"].documents.append(deepcopy(historical_contract))
+    context["assignments"].documents.append(
+        {
+            "_id": ObjectId(),
+            "vendor_profile_id": "vendor-1",
+            "wedding_id": "wedding-1",
+            "paid_amount": 0,
+        }
+    )
+    context["budget_categories"].documents.append(
+        {"_id": ObjectId(historical_contract["budget_category_id"]), "actual_spent": 0}
+    )
+    context["milestones"].documents.append(
+        {
+            "_id": ObjectId(),
+            "contract_id": str(historical_contract["_id"]),
+            "wedding_id": historical_contract["wedding_id"],
+            "vendor_profile_id": historical_contract["vendor_profile_id"],
+            "budget_category_id": historical_contract["budget_category_id"],
+            "description": "Final",
+            "amount": 2500,
+            "currency": "USD",
+            "status": "pending",
+            "paid_amount": 0,
+            "vendor_name": historical_contract["vendor_name"],
+            "vendor_email": historical_contract["vendor_email"],
+            "created_by": "planner@example.com",
+            "created_at": datetime.now(timezone.utc),
+            "updated_at": datetime.now(timezone.utc),
+        }
+    )
+
+    with pytest.raises(HTTPException) as exc_info:
+        await service.record_payment(
+            milestone_id=str(context["milestones"].documents[0]["_id"]),
+            amount=500,
+            payment_method="bank_transfer",
+            created_by="planner@example.com",
+        )
+
+    assert exc_info.value.status_code == 409
+    assert "historical contract version" in exc_info.value.detail
 
 
 def test_query_token_public_routes_are_removed_and_canonical_routes_remain() -> None:

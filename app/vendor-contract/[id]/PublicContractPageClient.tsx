@@ -4,6 +4,12 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { useParams, useSearchParams } from 'next/navigation';
 import { getApiBaseUrl } from '@/utils/env';
 import VendorContractPreview from '@/components/contracts/VendorContractPreview';
+import {
+  canShowPublicContractSignControls,
+  getPublicContractErrorState,
+  isPublicContractAlreadySigned,
+  resolveVendorContractAccessToken,
+} from '../publicContractPageState';
 
 interface ContractSection {
   id: string;
@@ -45,7 +51,7 @@ export default function PublicContractPageClient() {
   const contractId = params.id as string;
   const routeToken = typeof params.token === 'string' ? params.token : null;
   const queryToken = searchParams.get('token');
-  const token = routeToken ?? queryToken;
+  const token = resolveVendorContractAccessToken(routeToken, queryToken);
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -75,16 +81,9 @@ export default function PublicContractPageClient() {
       );
 
       if (!response.ok) {
-        if (response.status === 404) {
-          setError('Contract not found. It may have been removed or the link has expired.');
-        } else if (response.status === 410) {
-          setIsReplacedVersion(true);
-          setError('This contract version has been replaced. Please use the latest link sent by the planner.');
-        } else if (response.status === 403) {
-          setError('Access denied. This link may have expired or is invalid.');
-        } else {
-          setError('Failed to load contract. Please try again later.');
-        }
+        const errorState = getPublicContractErrorState(response.status);
+        setIsReplacedVersion(errorState.isReplacedVersion);
+        setError(errorState.message);
         return;
       }
 
@@ -93,7 +92,7 @@ export default function PublicContractPageClient() {
       setSignerName(data.vendor_name);
       setSignerEmail(data.vendor_email);
 
-      if (data.status === 'signed' || data.status === 'completed') {
+      if (isPublicContractAlreadySigned(data.status)) {
         setSigned(true);
       }
     } catch (err) {
@@ -132,9 +131,10 @@ export default function PublicContractPageClient() {
 
       if (!response.ok) {
         if (response.status === 410) {
+          const errorState = getPublicContractErrorState(410);
           setShowSignModal(false);
-          setIsReplacedVersion(true);
-          setError('This contract version has been replaced. Please use the latest link sent by the planner.');
+          setIsReplacedVersion(errorState.isReplacedVersion);
+          setError(errorState.message);
           return;
         }
 
@@ -262,14 +262,14 @@ export default function PublicContractPageClient() {
                 <span className="px-4 py-2 bg-green-100 text-green-800 rounded-full font-medium">
                   Signed
                 </span>
-              ) : (
+              ) : canShowPublicContractSignControls(signed, isReplacedVersion) ? (
                 <button
                   onClick={() => setShowSignModal(true)}
                   className="px-6 py-2 bg-gradient-to-r from-indigo-600 to-purple-600 text-white rounded-lg font-semibold hover:opacity-90 transition-opacity shadow-lg"
                 >
                   Sign Contract
                 </button>
-              )}
+              ) : null}
             </div>
           </div>
         </div>
@@ -335,7 +335,7 @@ export default function PublicContractPageClient() {
           </div>
         </div>
 
-        {!signed && (
+        {canShowPublicContractSignControls(signed, isReplacedVersion) && (
           <div className="mt-8 text-center">
             <button
               onClick={() => setShowSignModal(true)}

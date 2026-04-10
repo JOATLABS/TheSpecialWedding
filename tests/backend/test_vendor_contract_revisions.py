@@ -268,6 +268,30 @@ async def test_create_revision_from_sent_contract_creates_new_draft_child_versio
 
 
 @pytest.mark.asyncio
+async def test_creating_revision_does_not_supersede_current_contract_until_send(
+    configured_vendor_service,
+) -> None:
+    service, contracts, _, _ = configured_vendor_service
+    original = make_contract_doc(status=ContractStatus.VIEWED.value)
+    contracts.documents.append(deepcopy(original))
+
+    created = await service.create_contract_revision(
+        contract_id=str(original["_id"]),
+        created_by="planner@example.com",
+        revision_kind=ContractKind.REVISION.value,
+        reason="Requested wording tweaks",
+    )
+
+    stored_original = next(doc for doc in contracts.documents if doc["_id"] == original["_id"])
+    stored_created = next(doc for doc in contracts.documents if doc["_id"] == ObjectId(created["_id"]))
+
+    assert stored_original["is_current_version"] is True
+    assert stored_original["superseded_by_contract_id"] is None
+    assert stored_created["is_current_version"] is False
+    assert stored_created["status"] == ContractStatus.DRAFT.value
+
+
+@pytest.mark.asyncio
 async def test_create_amendment_from_signed_contract_creates_new_draft_child_version(
     configured_vendor_service,
 ) -> None:
@@ -503,3 +527,64 @@ async def test_revision_history_returns_ordered_lineage(configured_vendor_servic
     assert history["root_contract_id"] == str(root_id)
     assert [version["version_number"] for version in history["versions"]] == [1, 2, 3]
     assert history["current_contract_id"] == history["versions"][2]["id"]
+
+
+@pytest.mark.asyncio
+async def test_historical_versions_remain_readable_but_not_editable(
+    configured_vendor_service,
+) -> None:
+    service, contracts, _, _ = configured_vendor_service
+    root_id = ObjectId()
+    stale_draft_id = ObjectId()
+    current_id = ObjectId()
+    contracts.documents.extend(
+        [
+            make_contract_doc(
+                contract_id=root_id,
+                root_contract_id=str(root_id),
+                version_number=1,
+                status=ContractStatus.SIGNED.value,
+                is_current_version=False,
+                superseded_by_contract_id=str(current_id),
+            ),
+            make_contract_doc(
+                contract_id=stale_draft_id,
+                root_contract_id=str(root_id),
+                parent_contract_id=str(root_id),
+                supersedes_contract_id=str(root_id),
+                version_number=2,
+                contract_kind=ContractKind.REVISION.value,
+                status=ContractStatus.DRAFT.value,
+                is_current_version=False,
+                access_token="stale-draft-token",
+            ),
+            make_contract_doc(
+                contract_id=current_id,
+                root_contract_id=str(root_id),
+                parent_contract_id=str(root_id),
+                supersedes_contract_id=str(root_id),
+                version_number=3,
+                contract_kind=ContractKind.AMENDMENT.value,
+                status=ContractStatus.SENT.value,
+                is_current_version=True,
+                access_token="current-token",
+            ),
+        ]
+    )
+
+    readable = await service.get_contract(
+        str(stale_draft_id),
+        created_by="planner@example.com",
+    )
+    assert readable["id"] == str(stale_draft_id)
+    assert readable["is_current_version"] is False
+
+    with pytest.raises(HTTPException) as exc_info:
+        await service.update_contract(
+            contract_id=str(stale_draft_id),
+            data={"contract_title": "Should fail"},
+            updated_by="planner@example.com",
+        )
+
+    assert exc_info.value.status_code == 400
+    assert "newer contract version is already live" in exc_info.value.detail

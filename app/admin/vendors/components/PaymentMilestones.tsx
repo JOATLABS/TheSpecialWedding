@@ -9,6 +9,14 @@ import { Loader2, DollarSign, Plus, Send, Calendar, CheckCircle2, Clock, AlertCi
 import { toast } from 'sonner';
 import { formatAdminDate, DEFAULT_TIMEZONE } from '@/utils/dateFormat';
 import {
+  buildPaymentMilestonesQuery,
+  calculatePaymentMilestonesSummary,
+  canAddPaymentMilestones,
+  canRecordPaymentForMilestone,
+  canSendPaymentLinkForMilestone,
+  getPaymentMilestonesEmptyStateMessage,
+} from './paymentMilestonesViewState';
+import {
   createPaymentLink,
   sendPaymentLink,
 } from '@/services/vendorManagementApi';
@@ -75,7 +83,10 @@ export function PaymentMilestones({
   const fetchMilestones = useCallback(async () => {
     setLoading(true);
     try {
-      const data = await getPaymentMilestones(token, { contract_id: contractId, wedding_id: weddingId });
+      const data = await getPaymentMilestones(
+        token,
+        buildPaymentMilestonesQuery(contractId, weddingId)
+      );
       setMilestones(data);
     } catch (error) {
       console.error('Error fetching milestones:', error);
@@ -237,9 +248,7 @@ export function PaymentMilestones({
   };
 
   // Calculate totals
-  const totalDue = milestones.reduce((sum, m) => sum + m.amount, 0);
-  const totalPaid = milestones.reduce((sum, m) => sum + m.paid_amount, 0);
-  const totalRemaining = totalDue - totalPaid;
+  const { totalDue, totalPaid, totalRemaining } = calculatePaymentMilestonesSummary(milestones);
 
   if (loading) {
     return (
@@ -267,7 +276,7 @@ export function PaymentMilestones({
             <div className="text-lg font-semibold text-orange-600">{formatCurrency(totalRemaining)}</div>
           </div>
         </div>
-        {!readOnly && contractId && (
+        {canAddPaymentMilestones(readOnly, contractId) && (
           <Button onClick={() => setShowAddModal(true)} variant="outline" size="sm">
             <Plus className="h-4 w-4 mr-1" />
             Add Milestone
@@ -290,11 +299,9 @@ export function PaymentMilestones({
         <div className="text-center py-8 bg-gray-50 dark:bg-gray-800 rounded-lg">
           <Calendar className="h-10 w-10 mx-auto text-gray-400 mb-2" />
           <p className="text-gray-500">
-            {contractId && !weddingId
-              ? 'No payment milestones for this contract yet'
-              : 'No payment milestones yet'}
+            {getPaymentMilestonesEmptyStateMessage(contractId, weddingId)}
           </p>
-          {!readOnly && contractId && (
+          {canAddPaymentMilestones(readOnly, contractId) && (
             <Button onClick={() => setShowAddModal(true)} variant="ghost" size="sm" className="mt-2">
               Add your first milestone
             </Button>
@@ -332,7 +339,7 @@ export function PaymentMilestones({
                   {milestone.status.charAt(0).toUpperCase() + milestone.status.slice(1)}
                 </span>
 
-                {!readOnly && milestone.status !== 'paid' && (
+                {canRecordPaymentForMilestone(readOnly, milestone) && (
                   <div className="flex items-center gap-1">
                     <Button
                       size="sm"
@@ -346,7 +353,7 @@ export function PaymentMilestones({
                     >
                       <CreditCard className="h-4 w-4" />
                     </Button>
-                    {coupleEmail && (
+                    {canSendPaymentLinkForMilestone(readOnly, coupleEmail, milestone) && (
                       <Button
                         size="sm"
                         variant="ghost"
