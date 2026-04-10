@@ -289,6 +289,11 @@ test.describe('PR2 couple portal lifecycle alignment', () => {
     await expect(page.getByText('Forms are view-only because this wedding has been archived.')).toBeVisible();
     await expect(page.getByRole('button', { name: 'View Response' })).toBeVisible();
 
+    await page.getByRole('button', { name: 'Meetings' }).click();
+    await expect(page).toHaveURL(/section=meetings/);
+    await expect(page.getByText('This wedding is archived, so meeting scheduling is paused. Archived portals do not show active meeting links.')).toBeVisible();
+    await expect(page.getByText('No active meetings are available for this archived wedding.')).toBeVisible();
+
     await page.goto(`/couple/forms/${fixture.formId}`);
     await expect(page.getByText('This wedding has been archived. Forms are view-only.')).toBeVisible();
     await expect(page.getByText('This form is view-only. New submissions and edits are disabled for archived weddings.')).toBeVisible();
