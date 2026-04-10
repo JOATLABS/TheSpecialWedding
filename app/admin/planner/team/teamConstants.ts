@@ -20,6 +20,17 @@ export const ALL_PERMISSIONS = [
   { key: 'manage_packages', label: 'Manage Packages' },
   { key: 'manage_couple_portal', label: 'Manage Couple Portal' },
   { key: 'message_couples', label: 'Message Couples' },
+  { key: 'view_shared_calendar', label: 'View Shared Calendar' },
+  { key: 'view_calendar_details', label: 'View Calendar Details' },
+  { key: 'connect_personal_calendar', label: 'Connect Personal Calendar' },
+  { key: 'manage_calendar_connections', label: 'Manage Calendar Connections' },
+  { key: 'schedule_meetings', label: 'Schedule Meetings' },
+  { key: 'edit_meetings', label: 'Edit Meetings' },
+  { key: 'cancel_meetings', label: 'Cancel Meetings' },
+  { key: 'send_meeting_invites', label: 'Send Meeting Invites' },
+  { key: 'view_team_availability', label: 'View Team Availability' },
+  { key: 'manage_calendar_tasks', label: 'Manage Calendar Tasks' },
+  { key: 'sync_calendar_tasks', label: 'Sync Calendar Tasks' },
 ];
 
 // Default permissions per role
@@ -30,11 +41,19 @@ export const ROLE_DEFAULTS: Record<string, Record<string, boolean>> = {
     manage_vendors: false, send_rsvp: false, send_reminders: false, manage_forms: true,
     view_analytics: true, manage_wedding_settings: false, manage_contracts: false, manage_packages: false,
     manage_couple_portal: true, message_couples: false,
+    view_shared_calendar: true, view_calendar_details: true, connect_personal_calendar: true,
+    manage_calendar_connections: false, schedule_meetings: true, edit_meetings: true,
+    cancel_meetings: true, send_meeting_invites: true, view_team_availability: true,
+    manage_calendar_tasks: true, sync_calendar_tasks: true,
   },
   viewer: {
     manage_guests: false, manage_budget: false, manage_gallery: false, manage_seating: false,
     manage_vendors: false, send_rsvp: false, send_reminders: false, manage_forms: false,
     view_analytics: true, manage_wedding_settings: false, manage_contracts: false, manage_packages: false,
     manage_couple_portal: false, message_couples: false,
+    view_shared_calendar: true, view_calendar_details: false, connect_personal_calendar: false,
+    manage_calendar_connections: false, schedule_meetings: false, edit_meetings: false,
+    cancel_meetings: false, send_meeting_invites: false, view_team_availability: false,
+    manage_calendar_tasks: false, sync_calendar_tasks: false,
   },
 };

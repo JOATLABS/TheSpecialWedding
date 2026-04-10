@@ -31,6 +31,17 @@ const PERMISSION_LABELS: Record<string, string> = {
   manage_packages: 'Manage Packages',
   manage_couple_portal: 'Manage Couple Portal',
   message_couples: 'Message Couples',
+  view_shared_calendar: 'View Shared Calendar',
+  view_calendar_details: 'View Calendar Details',
+  connect_personal_calendar: 'Connect Personal Calendar',
+  manage_calendar_connections: 'Manage Calendar Connections',
+  schedule_meetings: 'Schedule Meetings',
+  edit_meetings: 'Edit Meetings',
+  cancel_meetings: 'Cancel Meetings',
+  send_meeting_invites: 'Send Meeting Invites',
+  view_team_availability: 'View Team Availability',
+  manage_calendar_tasks: 'Manage Calendar Tasks',
+  sync_calendar_tasks: 'Sync Calendar Tasks',
 };
 
 const pageBackgroundClass =

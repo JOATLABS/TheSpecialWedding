@@ -121,18 +121,23 @@ export default function PlannerCalendarPage() {
     (userProfile.is_root_admin ||
       userProfile.is_wedding_planner ||
       userProfile.team_permissions?.view_team_availability);
-  const canCreateItems =
+  const canCreateMeetings =
     !!userProfile &&
     (userProfile.is_root_admin ||
       userProfile.is_wedding_planner ||
-      userProfile.team_permissions?.schedule_meetings ||
-      userProfile.team_permissions?.edit_meetings ||
-      userProfile.team_permissions?.manage_wedding_settings);
+      userProfile.team_permissions?.schedule_meetings);
+  const canEditMeetings =
+    !!userProfile &&
+    (userProfile.is_root_admin ||
+      userProfile.is_wedding_planner ||
+      userProfile.team_permissions?.edit_meetings);
   const canManageGeneralTasks =
     !!userProfile &&
     (userProfile.is_root_admin ||
       userProfile.is_wedding_planner ||
-      userProfile.team_permissions?.manage_wedding_settings);
+      userProfile.team_permissions?.manage_calendar_tasks);
+  const canCreateItems =
+    canCreateMeetings || canManageGeneralTasks;
   const defaultCreateCategory: 'meeting' | 'other' =
     canManageGeneralTasks ? 'other' : 'meeting';
 
@@ -349,6 +354,10 @@ export default function PlannerCalendarPage() {
 
     if (event.source_type === 'external_google') {
       toast.message('External Google events are read-only here. Change sharing or sync settings from the connection panel.');
+      return;
+    }
+    if (event.source_type === 'internal_task' && !canManageGeneralTasks) {
+      toast.message('You can view tasks on the shared calendar, but you need calendar task permission to edit them.');
       return;
     }
 
@@ -902,6 +911,8 @@ export default function PlannerCalendarPage() {
         weddings={weddings}
         defaultDate={selectedDate}
         defaultCategory={defaultCreateCategory}
+        allowGeneralTasks={canManageGeneralTasks}
+        allowMeetings={canCreateMeetings || canEditMeetings}
         connections={connections}
         staffOptions={staffOptions}
         onSuccess={async () => {
