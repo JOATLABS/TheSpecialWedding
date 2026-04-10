@@ -1,4 +1,5 @@
-from typing import Optional, List, TypedDict
+from typing import Optional, List
+from typing_extensions import TypedDict
 from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from app.utils.auth_utils import verify_token
