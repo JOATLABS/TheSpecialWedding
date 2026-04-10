@@ -45,7 +45,9 @@ class GoogleCalendarService:
         return settings.ENVIRONMENT.lower() == "production"
 
     def _validate_security_configuration(self) -> None:
-        if not (self._google_integration_configured() and self._is_production_environment()):
+        if not (
+            self._google_integration_configured() and self._is_production_environment()
+        ):
             return
 
         missing_keys: list[str] = []
@@ -105,7 +107,10 @@ class GoogleCalendarService:
         }
 
     def _get_state_signing_key(self) -> str:
-        if self._is_production_environment() and not settings.GOOGLE_OAUTH_STATE_SIGNING_KEY:
+        if (
+            self._is_production_environment()
+            and not settings.GOOGLE_OAUTH_STATE_SIGNING_KEY
+        ):
             raise RuntimeError(
                 "GOOGLE_OAUTH_STATE_SIGNING_KEY must be configured in production"
             )
@@ -117,9 +122,7 @@ class GoogleCalendarService:
 
     def _get_fernet(self) -> Fernet:
         if self._is_production_environment() and not settings.TOKEN_ENCRYPTION_KEY:
-            raise RuntimeError(
-                "TOKEN_ENCRYPTION_KEY must be configured in production"
-            )
+            raise RuntimeError("TOKEN_ENCRYPTION_KEY must be configured in production")
         raw_key = (
             settings.TOKEN_ENCRYPTION_KEY or settings.SECRET_KEY or "dev-token-key"
         )

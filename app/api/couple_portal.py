@@ -521,7 +521,9 @@ async def get_form_details(form_id: str, couple: dict = Depends(require_couple_a
     )
 
     if not form:
-        raise HTTPException(status_code=404, detail="Form not found or not shared with you")
+        raise HTTPException(
+            status_code=404, detail="Form not found or not shared with you"
+        )
 
     # Get existing submission if any
     submission = await mongo.db["form_submissions"].find_one(

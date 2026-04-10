@@ -101,7 +101,9 @@ def _normalize_invite_expiry(value: object) -> Optional[datetime]:
     return None
 
 
-def _build_active_setup_link(couple: dict, normalized_frontend_url: str) -> Optional[str]:
+def _build_active_setup_link(
+    couple: dict, normalized_frontend_url: str
+) -> Optional[str]:
     """Return the current setup link only when the invite token is still active."""
     if couple.get("setup_completed") or not couple.get("invite_token"):
         return None
@@ -465,9 +467,7 @@ async def list_couples(
                 "access_state": couple_lifecycle_service.infer_stored_state(couple),
                 "setup_completed": couple.get("setup_completed", False),
                 "wedding_archived": couple.get("wedding_archived", False),
-                "setup_link": _build_active_setup_link(
-                    couple, normalized_frontend_url
-                ),
+                "setup_link": _build_active_setup_link(couple, normalized_frontend_url),
                 "setup_link_expires_at": (
                     _normalize_invite_expiry(
                         couple.get("invite_token_expires")
