@@ -24,7 +24,8 @@ from app.services.security_audit_service import (
     SecurityEventType,
     SecuritySeverity,
 )
-from typing import Optional, TypedDict
+from typing import Optional
+from typing_extensions import TypedDict
 import logging
 import html
 

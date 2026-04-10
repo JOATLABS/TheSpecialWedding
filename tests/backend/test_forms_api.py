@@ -19,9 +19,50 @@ os.environ.setdefault("API_KEY", "test-api-key")
 os.environ.setdefault("ROOT_ADMIN_EMAIL", "thedeveloper@thespecialwedding.com")
 
 
+class AsyncMockCursor:
+    def __init__(self, cursor):
+        self.cursor = cursor
+
+    def sort(self, *args, **kwargs):
+        self.cursor.sort(*args, **kwargs)
+        return self
+
+    async def to_list(self, length=None):
+        return list(self.cursor)
+
+
+class AsyncMockCollection:
+    def __init__(self, collection, database):
+        self.collection = collection
+        self.database = database
+
+    def find(self, *args, **kwargs):
+        return AsyncMockCursor(self.collection.find(*args, **kwargs))
+
+    async def find_one(self, *args, **kwargs):
+        return self.collection.find_one(*args, **kwargs)
+
+    async def insert_one(self, *args, **kwargs):
+        return self.collection.insert_one(*args, **kwargs)
+
+    async def update_one(self, *args, **kwargs):
+        return self.collection.update_one(*args, **kwargs)
+
+
+class AsyncMockDatabase:
+    def __init__(self, database):
+        self.database = database
+        self.collections = {}
+
+    def __getitem__(self, name):
+        if name not in self.collections:
+            self.collections[name] = AsyncMockCollection(self.database[name], self)
+        return self.collections[name]
+
+
 class FakeMongo:
     def __init__(self, database):
-        self.db = database
+        self.db = AsyncMockDatabase(database)
 
     def get_forms_collection(self):
         return self.db["forms"]
@@ -42,9 +83,12 @@ def api_client(monkeypatch):
     import app.api.forms as forms_module
     reload(forms_module)
 
+    async def _noop_security_audit(*args, **kwargs):
+        return None
+
     monkeypatch.setattr(forms_module, "form_service", form_service_module.FormService())
     monkeypatch.setattr(forms_module.rate_limiter, "check_rate_limit", lambda *args, **kwargs: True)
-    monkeypatch.setattr(forms_module.security_audit, "log_security_event", lambda *args, **kwargs: None)
+    monkeypatch.setattr(forms_module.security_audit, "log_security_event", _noop_security_audit)
 
     app = FastAPI()
     app.include_router(forms_module.router, prefix="/admin")
@@ -55,7 +99,7 @@ def api_client(monkeypatch):
         async def _override():
             return user
 
-        app.dependency_overrides[forms_module.get_current_user_extended] = _override
+        app.dependency_overrides[forms_module.require_team_or_planner] = _override
 
     yield client, database, forms_module, override_user
 

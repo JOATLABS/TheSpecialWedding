@@ -92,6 +92,11 @@ jobs:
       - name: Ruff format check
         run: ruff format --check app/
 
+      - name: Run backend boot smoke test
+        run: pytest tests/backend/test_app_boot_smoke.py -v --tb=short
+        env:
+          PYTHONPATH: .
+
       - name: Run unit tests
         run: pytest tests/backend/ tests/test_id_utils.py -v --tb=short || echo "No unit tests found yet"
         env:

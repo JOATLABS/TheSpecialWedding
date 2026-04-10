@@ -87,6 +87,9 @@ services:
       NEXT_PUBLIC_API_BASE_URL: http://localhost:8000
       MEDIA_DOMAIN: media.test.thespecialwedding.io
       GOOGLE_REDIRECT_URI: http://localhost:3000/admin/planner/calendar/callback
+      AWS_REGION: us-east-1
+      S3_BUCKET_NAME: test-bucket
+      S3_AD_BUCKET_NAME: test-ad-bucket
     depends_on:
       mongo-test:
         condition: service_healthy
