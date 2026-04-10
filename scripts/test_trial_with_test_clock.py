@@ -27,20 +27,20 @@ Environment Variables:
     BACKEND_URL        – Backend base URL (default: http://localhost:8000)
 """
 
+import asyncio
+import json
+import logging
 import os
 import sys
 import time
-import json
-import asyncio
-import logging
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 # Add project root to path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-import stripe
 import requests
+import stripe
 
 # ---------------------------------------------------------------------------
 # Configuration

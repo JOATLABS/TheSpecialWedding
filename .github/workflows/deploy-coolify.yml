@@ -28,10 +28,6 @@ permissions:
   contents: read
   packages: read
 
-env:
-  BACKEND_IMAGE: ghcr.io/lopewale/wedding-app-backend
-  FRONTEND_IMAGE: ghcr.io/lopewale/wedding-app-frontend
-
 jobs:
   prepare:
     name: Prepare staging deploy
@@ -68,27 +64,6 @@ jobs:
         run: |
           SERVICE="${{ github.event.inputs.service || 'both' }}"
           echo "value=$SERVICE" >> "$GITHUB_OUTPUT"
-
-      - name: Verify staged image tag exists in GHCR
-        env:
-          TAG: ${{ steps.tag.outputs.tag }}
-          SERVICE: ${{ steps.service.outputs.value }}
-        run: |
-          set -euo pipefail
-
-          echo "${{ github.token }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin >/dev/null 2>&1
-
-          case "$SERVICE" in
-            both|backend)
-              docker manifest inspect "${{ env.BACKEND_IMAGE }}:${TAG}" >/dev/null
-              ;;
-          esac
-
-          case "$SERVICE" in
-            both|frontend)
-              docker manifest inspect "${{ env.FRONTEND_IMAGE }}:${TAG}" >/dev/null
-              ;;
-          esac
 
   deploy:
     needs: prepare

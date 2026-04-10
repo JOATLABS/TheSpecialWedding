@@ -5,36 +5,37 @@ Comprehensive service for managing vendors, contracts, and payments.
 Handles all business logic for the vendor management feature.
 """
 
+import hashlib
+import hmac
+import logging
 import os
 import re
 import secrets
 import string
-import logging
-import hashlib
-import hmac
 from copy import deepcopy
 from datetime import datetime, timedelta, timezone
-from typing import TYPE_CHECKING, List, Dict, Optional, Any, Callable, Awaitable
+from typing import TYPE_CHECKING, Any, Awaitable, Callable, Dict, List, Optional
+
+import boto3
+import stripe
+from botocore.config import Config
+from botocore.exceptions import ClientError
 from bson import ObjectId
 from bson.errors import InvalidId
 from fastapi import HTTPException, UploadFile
-import boto3
-from botocore.exceptions import ClientError
-from botocore.config import Config
-import stripe
 
 from app.core.database import mongo
 from app.core.settings import settings
-from app.services.email_service_resend import ResendEmailService
 from app.models.vendor import (
     ContractKind,
     ContractStatus,
     ContractType,
+    PaymentLinkStatus,
     PaymentMilestoneStatus,
     QuoteStatus,
-    PaymentLinkStatus,
 )
 from app.models.vendor_contracts import VendorContractActivityType
+from app.services.email_service_resend import ResendEmailService
 
 if TYPE_CHECKING:
     from mypy_boto3_s3.client import S3Client
@@ -448,20 +449,24 @@ class VendorService:
             "form_data_mappings": deepcopy(
                 source_contract.get("form_data_mappings") or {}
             ),
-            "sections": deepcopy(source_contract.get("sections") or [])
-            if copy_sections
-            else [],
-            "terms_and_conditions": deepcopy(
-                source_contract.get("terms_and_conditions")
-            )
-            if copy_terms_and_conditions
-            else None,
-            "cancellation_policy": deepcopy(source_contract.get("cancellation_policy"))
-            if copy_cancellation_policy
-            else None,
-            "custom_clauses": deepcopy(source_contract.get("custom_clauses"))
-            if copy_custom_clauses
-            else None,
+            "sections": (
+                deepcopy(source_contract.get("sections") or []) if copy_sections else []
+            ),
+            "terms_and_conditions": (
+                deepcopy(source_contract.get("terms_and_conditions"))
+                if copy_terms_and_conditions
+                else None
+            ),
+            "cancellation_policy": (
+                deepcopy(source_contract.get("cancellation_policy"))
+                if copy_cancellation_policy
+                else None
+            ),
+            "custom_clauses": (
+                deepcopy(source_contract.get("custom_clauses"))
+                if copy_custom_clauses
+                else None
+            ),
             "total_amount": source_contract["total_amount"],
             "currency": source_contract.get("currency", "USD"),
             "deposit_amount": source_contract.get("deposit_amount"),
@@ -1003,9 +1008,9 @@ class VendorService:
                     "service_subcategories": data.get("service_subcategories", []),
                     "service_description": data.get("service_description"),
                     "logo_url": data.get("logo_url"),
-                    "portfolio_urls": [data["logo_url"]]
-                    if data.get("logo_url")
-                    else [],
+                    "portfolio_urls": (
+                        [data["logo_url"]] if data.get("logo_url") else []
+                    ),
                     "typical_price_min": data.get("typical_price_min"),
                     "typical_price_max": data.get("typical_price_max"),
                     "currency": data.get("currency", "USD"),
@@ -1576,12 +1581,16 @@ class VendorService:
                     vendor.get("custom_service_category"),
                 ),
                 "total_amount": total_amount,
-                "deposit_amount": (total_amount * deposit_percentage / 100)
-                if deposit_percentage
-                else 0,
-                "planner_name": f"{planner.get('first_name', '')} {planner.get('last_name', '')}".strip()
-                if planner
-                else "",
+                "deposit_amount": (
+                    (total_amount * deposit_percentage / 100)
+                    if deposit_percentage
+                    else 0
+                ),
+                "planner_name": (
+                    f"{planner.get('first_name', '')} {planner.get('last_name', '')}".strip()
+                    if planner
+                    else ""
+                ),
                 "planner_email": created_by,
                 "planner_company": planner.get("company_name", "") if planner else "",
                 "contract_number": self._generate_contract_number(),
@@ -1796,9 +1805,11 @@ class VendorService:
             if not contract:
                 raise HTTPException(
                     status_code=404,
-                    detail="Contract not found"
-                    if not created_by
-                    else "Contract not found or access denied",
+                    detail=(
+                        "Contract not found"
+                        if not created_by
+                        else "Contract not found or access denied"
+                    ),
                 )
 
             self._serialize_doc(contract)
@@ -2870,9 +2881,11 @@ class VendorService:
                     "amount": m["amount"],
                     "currency": contract.get("currency", "USD"),
                     "percentage_of_total": m.get("percentage_of_total"),
-                    "due_date": m["due_date"]
-                    if isinstance(m["due_date"], datetime)
-                    else datetime.fromisoformat(m["due_date"]),
+                    "due_date": (
+                        m["due_date"]
+                        if isinstance(m["due_date"], datetime)
+                        else datetime.fromisoformat(m["due_date"])
+                    ),
                     "days_before_event": m.get("days_before_event"),
                     "status": PaymentMilestoneStatus.PENDING.value,
                     "paid_amount": 0.0,

@@ -2,18 +2,20 @@
 Comprehensive observability system with metrics, tracing, and health checks
 """
 
-from typing import Dict, List, Any, Callable
-from datetime import datetime, timezone
-import time
 import asyncio
 import logging
-from dataclasses import dataclass, field
-from enum import Enum
-import psutil
 import platform
-from app.core.settings import settings
+import time
+from dataclasses import dataclass, field
+from datetime import datetime, timezone
+from enum import Enum
+from typing import Any, Callable, Dict, List
+
+import psutil
+
 from app.core.cache import cache
 from app.core.database import mongo
+from app.core.settings import settings
 
 logger = logging.getLogger(__name__)
 

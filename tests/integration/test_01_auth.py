@@ -57,6 +57,7 @@ class TestAuthentication:
     def test_get_profile_with_invalid_token(self, api):
         """Invalid JWT returns 401/403."""
         import requests
+
         from tests.integration.conftest import BASE_URL
 
         resp = requests.get(

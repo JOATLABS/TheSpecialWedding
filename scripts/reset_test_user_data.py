@@ -33,7 +33,6 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from app.core.database import mongo  # noqa: E402
 
-
 ENV_IDENTITY_KEYS = [
     "ROOT_ADMIN_EMAIL",
     "TEST_COUPLE_EMAIL",

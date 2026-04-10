@@ -3,9 +3,11 @@ Async MongoDB connection using Motor
 Maintains same API as PyMongo version for backward compatibility
 """
 
-from motor.motor_asyncio import AsyncIOMotorClient
-from app.core.config import settings
 import logging
+
+from motor.motor_asyncio import AsyncIOMotorClient
+
+from app.core.config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -110,6 +112,18 @@ class MongoConnector:
         if self.db is None:
             raise RuntimeError("Database not connected")
         return self.db["meeting_invites"]
+
+    def get_calendar_jobs_collection(self):
+        """Queued calendar background jobs (invite delivery, maintenance)."""
+        if self.db is None:
+            raise RuntimeError("Database not connected")
+        return self.db["calendar_jobs"]
+
+    def get_calendar_idempotency_collection(self):
+        """Calendar request idempotency records."""
+        if self.db is None:
+            raise RuntimeError("Database not connected")
+        return self.db["calendar_idempotency_keys"]
 
     def get_planner_tasks_collection(self):
         """Planner-specific tasks and calendar events"""

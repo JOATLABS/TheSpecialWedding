@@ -595,9 +595,9 @@ class PlannerAdInteractionService:
             "status": "quote_requested",
             "email_sent": email_sent,
             "auto_added_to_directory": directory_entry is not None,
-            "vendor_profile_id": directory_entry.get("_id")
-            if directory_entry
-            else None,
+            "vendor_profile_id": (
+                directory_entry.get("_id") if directory_entry else None
+            ),
             "billing": billing_result,
         }
 
@@ -889,24 +889,30 @@ class PlannerAdInteractionService:
                         "position": winner["position"],
                         "effective_cost": winner["effective_cost"],
                         "estimated_action_rate": winner["estimated_action_rate"],
-                        "creative": {
-                            "creative_id": str(creative["_id"]) if creative else None,
-                            "headline": creative.get("headline") if creative else None,
-                            "description": creative.get("description")
+                        "creative": (
+                            {
+                                "creative_id": (
+                                    str(creative["_id"]) if creative else None
+                                ),
+                                "headline": (
+                                    creative.get("headline") if creative else None
+                                ),
+                                "description": (
+                                    creative.get("description") if creative else None
+                                ),
+                                "image_url": (
+                                    creative.get("image_url") if creative else None
+                                ),
+                                "offer": creative.get("offer") if creative else None,
+                                "call_to_action": (
+                                    creative.get("call_to_action", "View Portfolio")
+                                    if creative
+                                    else "View Portfolio"
+                                ),
+                            }
                             if creative
-                            else None,
-                            "image_url": creative.get("image_url")
-                            if creative
-                            else None,
-                            "offer": creative.get("offer") if creative else None,
-                            "call_to_action": creative.get(
-                                "call_to_action", "View Portfolio"
-                            )
-                            if creative
-                            else "View Portfolio",
-                        }
-                        if creative
-                        else None,
+                            else None
+                        ),
                         "in_directory": False,
                         "targeting_reason": self._build_targeting_reason(
                             campaign, planner_location
@@ -934,18 +940,24 @@ class PlannerAdInteractionService:
                 "vendor_service_area": campaign.get("vendor_service_area"),
                 "vendor_logo_url": campaign.get("vendor_logo_url"),
                 "quality_score": campaign.get("quality_score", 50),
-                "creative": {
-                    "creative_id": str(creative["_id"]) if creative else None,
-                    "headline": creative.get("headline") if creative else None,
-                    "description": creative.get("description") if creative else None,
-                    "image_url": creative.get("image_url") if creative else None,
-                    "offer": creative.get("offer") if creative else None,
-                    "call_to_action": creative.get("call_to_action", "View Portfolio")
+                "creative": (
+                    {
+                        "creative_id": str(creative["_id"]) if creative else None,
+                        "headline": creative.get("headline") if creative else None,
+                        "description": (
+                            creative.get("description") if creative else None
+                        ),
+                        "image_url": creative.get("image_url") if creative else None,
+                        "offer": creative.get("offer") if creative else None,
+                        "call_to_action": (
+                            creative.get("call_to_action", "View Portfolio")
+                            if creative
+                            else "View Portfolio"
+                        ),
+                    }
                     if creative
-                    else "View Portfolio",
-                }
-                if creative
-                else None,
+                    else None
+                ),
                 "in_directory": False,
                 "targeting_reason": self._build_targeting_reason(
                     campaign, planner_location

@@ -5,19 +5,21 @@ Zero-cost monitoring solution using MongoDB and existing infrastructure.
 Provides comprehensive metrics for the ROOT_ADMIN dashboard.
 """
 
+import logging
+from datetime import datetime, timedelta, timezone
+from typing import Any, Dict, Iterable, List, Optional
+
+from bson import ObjectId
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
-from typing import Dict, Any, List, Optional, Iterable
-from datetime import datetime, timedelta, timezone
-from app.dependencies.auth_extended import require_root_admin, ExtendedAuthUser
+
 from app.core.database import mongo
+from app.dependencies.auth_extended import ExtendedAuthUser, require_root_admin
 from app.utils.query_validation import (
-    validated_status_filter,
-    validated_enum_filter,
     validated_boolean_filter,
+    validated_enum_filter,
+    validated_status_filter,
 )
-from bson import ObjectId
-import logging
 
 # Try to import psutil for system metrics (install if not present: pip install psutil)
 try:
@@ -191,9 +193,9 @@ def _extract_error_detail(error: Dict[str, Any]) -> Dict[str, Any]:
         "context": error.get("context"),
         # Additional debugging information
         "environment": error.get("environment"),
-        "user_authenticated": user_info.get("authenticated", False)
-        if user_info
-        else None,
+        "user_authenticated": (
+            user_info.get("authenticated", False) if user_info else None
+        ),
         "error_source": error.get("source", "backend"),
         "metadata": error.get("metadata"),
         # Full error message (unsanitized for root admin)

@@ -3,11 +3,12 @@ Redis caching layer for performance optimization
 """
 
 import json
-import pickle
-from typing import Any, Optional, Union
 import logging
-from datetime import timedelta
+from datetime import datetime, timedelta
+from typing import Any, Optional, Union
+
 import redis.asyncio as redis
+
 from app.core.settings import settings
 
 logger = logging.getLogger(__name__)
@@ -58,21 +59,31 @@ class CacheManager:
             await self.redis_client.close()
             logger.info("Disconnected from Redis")
 
+    @staticmethod
+    def _json_default(obj: Any) -> Any:
+        """Handle types that json.dumps can't serialize natively."""
+        if isinstance(obj, datetime):
+            return {"__datetime__": True, "iso": obj.isoformat()}
+        if isinstance(obj, set):
+            return {"__set__": True, "items": sorted(obj)}
+        raise TypeError(f"Object of type {type(obj).__name__} is not JSON serializable")
+
+    @staticmethod
+    def _json_object_hook(obj: dict) -> Any:
+        """Reverse the custom encoding from _json_default."""
+        if obj.get("__datetime__"):
+            return datetime.fromisoformat(obj["iso"])
+        if obj.get("__set__"):
+            return set(obj["items"])
+        return obj
+
     def _serialize_value(self, value: Any) -> bytes:
-        """Serialize value for storage"""
-        if isinstance(value, (str, int, float, bool)):
-            return json.dumps(value).encode("utf-8")
-        else:
-            return pickle.dumps(value)
+        """Serialize value as JSON (no pickle — avoids arbitrary code execution)."""
+        return json.dumps(value, default=self._json_default).encode("utf-8")
 
     def _deserialize_value(self, value: bytes) -> Any:
-        """Deserialize value from storage"""
-        try:
-            # Try JSON first (for simple types)
-            return json.loads(value.decode("utf-8"))
-        except (json.JSONDecodeError, UnicodeDecodeError):
-            # Fall back to pickle for complex objects
-            return pickle.loads(value)
+        """Deserialize value from JSON."""
+        return json.loads(value.decode("utf-8"), object_hook=self._json_object_hook)
 
     def _get_key_with_prefix(self, key: str, prefix: str = "wedding_app") -> str:
         """Get key with application prefix"""

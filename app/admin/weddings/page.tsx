@@ -197,7 +197,7 @@ export default function AdminWeddingsPage() {
       status: 'active'
     }
   ];
-  
+
   const [formData, setFormData] = useState<WeddingForm>({
     couple_names: '',
     date: '',
@@ -405,7 +405,7 @@ export default function AdminWeddingsPage() {
 
     try {
       const baseUrl = getApiBaseUrl();
-      const url = editingId 
+      const url = editingId
         ? `${baseUrl}/admin/weddings/${editingId}`
         : `${baseUrl}/admin/weddings`;
 
@@ -419,7 +419,7 @@ export default function AdminWeddingsPage() {
       }));
 
       // Prepare the wedding data
-      const weddingData = editingId 
+      const weddingData = editingId
         ? {
           ...formData,
           events: normalizedEvents

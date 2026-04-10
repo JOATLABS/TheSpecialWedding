@@ -1,7 +1,8 @@
-import os
 import logging
-from typing import Dict, Any
-from app.core.sms_config import get_active_sms_provider, SMSProvider
+import os
+from typing import Any, Dict
+
+from app.core.sms_config import SMSProvider, get_active_sms_provider
 
 logger = logging.getLogger(__name__)
 
@@ -21,8 +22,8 @@ class SMSService:
     def _init_twilio(self):
         """Initialize Twilio client"""
         try:
-            from twilio.rest import Client
             from twilio.http.http_client import TwilioHttpClient
+            from twilio.rest import Client
 
             account_sid = os.getenv("TWILIO_ACCOUNT_SID")
             auth_token = os.getenv("TWILIO_AUTH_TOKEN")

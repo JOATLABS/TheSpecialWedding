@@ -9,19 +9,21 @@ This module intentionally separates:
 Vendor contract admin routes live in `app.api.vendor_management` under `/admin/contracts`.
 """
 
-from fastapi import APIRouter, HTTPException, Depends, Query, Request
-from typing import Any, Optional
-from pydantic import BaseModel, Field
+import logging
 from datetime import timezone
-from app.services.contract_service import contract_service
+from typing import Any, Optional
+
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from pydantic import BaseModel, Field
+
 from app.dependencies.auth_extended import (
     ExtendedAuthUser,
+    enforce_team_permission,
     require_admin_or_planner,
     require_team_or_planner,
-    enforce_team_permission,
 )
+from app.services.contract_service import contract_service
 from app.utils.query_validation import validated_status_filter
-import logging
 
 logger = logging.getLogger(__name__)
 client_contracts_admin_router = APIRouter(prefix="/client-contracts")
@@ -983,9 +985,11 @@ async def retry_payment(
 
         success = payment.get("status") == "succeeded"
         return {
-            "message": "Payment retry succeeded"
-            if success
-            else "Payment retry attempted but failed",
+            "message": (
+                "Payment retry succeeded"
+                if success
+                else "Payment retry attempted but failed"
+            ),
             "success": success,
             "payment": payment,
         }
@@ -1184,6 +1188,7 @@ async def sign_contract(token: str, sign_data: SignContractRequest, request: Req
         if sign_data.stripe_payment_method_id and resolved_customer_id:
             try:
                 import stripe
+
                 from app.core.settings import settings as app_settings
 
                 stripe.api_key = app_settings.stripe_secret_key
@@ -1310,6 +1315,7 @@ async def create_contract_setup_intent(token: str):
     """
     try:
         import stripe
+
         from app.core.settings import settings
 
         if not settings.stripe_secret_key:
@@ -1473,13 +1479,15 @@ async def get_portal_data(token: str):
                 "completed_count": len(
                     [p for p in payments if p.get("status") == "succeeded"]
                 ),
-                "next_payment": {
-                    "name": next_payment.get("name"),
-                    "amount": next_payment.get("amount"),
-                    "due_date": next_payment.get("due_date"),
-                }
-                if next_payment
-                else None,
+                "next_payment": (
+                    {
+                        "name": next_payment.get("name"),
+                        "amount": next_payment.get("amount"),
+                        "due_date": next_payment.get("due_date"),
+                    }
+                    if next_payment
+                    else None
+                ),
             },
         }
 
@@ -1501,6 +1509,7 @@ async def update_portal_payment_method(token: str, request: Request):
     """
     try:
         import stripe
+
         from app.core.settings import settings
 
         if not settings.stripe_secret_key:
@@ -1573,10 +1582,12 @@ async def confirm_payment_method_update(
     the default for the customer.
     """
     try:
-        import stripe
-        from app.core.settings import settings
-        from app.core.database import mongo
         from datetime import datetime
+
+        import stripe
+
+        from app.core.database import mongo
+        from app.core.settings import settings
 
         if not settings.stripe_secret_key:
             raise HTTPException(status_code=503, detail="Stripe is not configured")

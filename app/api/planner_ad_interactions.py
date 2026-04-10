@@ -22,11 +22,8 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 
-from app.dependencies.auth_extended import (
-    ExtendedAuthUser,
-    get_current_user_extended,
-)
 from app.core.database import mongo
+from app.dependencies.auth_extended import ExtendedAuthUser, get_current_user_extended
 from app.services.planner_ad_interaction_service import PlannerAdInteractionService
 
 logger = logging.getLogger(__name__)
@@ -370,12 +367,13 @@ async def draft_quote(
 
     # Call AI service
     try:
+        import json
+
         from app.services.ai_service import (
-            ai_service,
             AIGenerationError,
             InsufficientCreditsError,
+            ai_service,
         )
-        import json
 
         result = await ai_service.generate(
             user_id=planner_id,

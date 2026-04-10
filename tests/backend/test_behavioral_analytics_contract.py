@@ -4,10 +4,10 @@ from types import SimpleNamespace
 import pytest
 from fastapi import HTTPException
 
+import app.services.behavioral_analytics_service as behavioral_analytics_service_module
 from app.api import behavioral_analytics as analytics_api
 from app.dependencies.auth_extended import ExtendedAuthUser
 from app.services.behavioral_analytics_service import BehavioralAnalyticsService
-import app.services.behavioral_analytics_service as behavioral_analytics_service_module
 
 
 class FakeCache:
@@ -108,9 +108,10 @@ def test_trial_conversion_queries_use_trial_end_dates_instead_of_state_history()
     start = datetime(2026, 3, 1, tzinfo=timezone.utc)
     end = datetime(2026, 3, 31, 23, 59, tzinfo=timezone.utc)
 
-    conversion_query, total_query = (
-        BehavioralAnalyticsService._trial_conversion_queries(start, end)
-    )
+    (
+        conversion_query,
+        total_query,
+    ) = BehavioralAnalyticsService._trial_conversion_queries(start, end)
 
     assert "state_history" not in conversion_query
     assert conversion_query["status"] == "active"

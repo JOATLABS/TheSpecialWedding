@@ -10,6 +10,7 @@ Tests that security boundaries are enforced:
 
 import pytest
 import requests
+
 from tests.integration.conftest import BASE_URL
 
 
@@ -36,9 +37,11 @@ class TestSecurityBoundaries:
     def test_protected_endpoint_rejects_unauthenticated(self, method, path):
         """Protected endpoints return 401 or 403 without auth."""
         resp = requests.request(method, f"{BASE_URL}{path}", timeout=10)
-        assert resp.status_code in (401, 403, 405), (
-            f"{method} {path} returned {resp.status_code} without auth (expected 401/403)"
-        )
+        assert resp.status_code in (
+            401,
+            403,
+            405,
+        ), f"{method} {path} returned {resp.status_code} without auth (expected 401/403)"
 
     def test_invalid_jwt_rejected(self):
         """Forged JWT tokens are rejected."""
@@ -50,8 +53,9 @@ class TestSecurityBoundaries:
 
     def test_expired_token_rejected(self):
         """Expired tokens are rejected (we craft one with past expiry)."""
-        import jwt as pyjwt
         import datetime
+
+        import jwt as pyjwt
 
         token = pyjwt.encode(
             {
@@ -99,6 +103,6 @@ class TestPublicEndpoints:
     def test_public_endpoint_accessible(self, method, path):
         """Public endpoints return 200 without auth."""
         resp = requests.request(method, f"{BASE_URL}{path}", timeout=10)
-        assert resp.status_code == 200, (
-            f"{method} {path} returned {resp.status_code} (expected 200)"
-        )
+        assert (
+            resp.status_code == 200
+        ), f"{method} {path} returned {resp.status_code} (expected 200)"

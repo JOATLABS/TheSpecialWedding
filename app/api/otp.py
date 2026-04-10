@@ -1,13 +1,15 @@
 # app/api/otp.py
 
+import logging
+
 from fastapi import APIRouter, HTTPException, Request, Response
 from pydantic import BaseModel
-from app.services.otp_service import OTPService
+
 from app.dependencies.guest_access import (
     get_guest_access_session,
     set_guest_access_session,
 )
-import logging
+from app.services.otp_service import OTPService
 
 logger = logging.getLogger(__name__)
 

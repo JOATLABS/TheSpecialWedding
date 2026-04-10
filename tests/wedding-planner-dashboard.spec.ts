@@ -38,7 +38,7 @@ test.describe('Wedding Planner Dashboard Loading Issue', () => {
     // Step 2: Log in with the verified user credentials
     await page.fill('input[name="email"]', 'test.verification@example.com');
     await page.fill('input[name="password"]', 'TestPassword123!');
-    
+
     // Submit login form
     await page.click('button[type="submit"]');
 
@@ -52,13 +52,13 @@ test.describe('Wedding Planner Dashboard Loading Issue', () => {
     // Step 4: Check if the loading state appears
     console.log('Checking for loading state...');
     const loadingElement = page.locator('text=Loading your weddings...');
-    
+
     // Wait a bit to see if loading appears
     await page.waitForTimeout(1000);
-    
+
     if (await loadingElement.isVisible()) {
       console.log('Loading state detected - monitoring for resolution...');
-      
+
       // Wait up to 15 seconds for loading to complete
       try {
         await loadingElement.waitFor({ state: 'hidden', timeout: 15000 });
@@ -85,11 +85,11 @@ test.describe('Wedding Planner Dashboard Loading Issue', () => {
     console.log(`- Has stats cards: ${hasStatsCards}`);
 
     // Step 6: Check for the specific API call to /admin/planner/metrics
-    const metricsApiCalls = networkRequests.filter(req => 
+    const metricsApiCalls = networkRequests.filter(req =>
       req.url.includes('/admin/planner/metrics')
     );
-    
-    const metricsApiResponses = networkResponses.filter(res => 
+
+    const metricsApiResponses = networkResponses.filter(res =>
       res.url.includes('/admin/planner/metrics')
     );
 
@@ -113,7 +113,7 @@ test.describe('Wedding Planner Dashboard Loading Issue', () => {
         console.log(`  Response:`);
         console.log(`    URL: ${response.url}`);
         console.log(`    Status: ${response.status} ${response.statusText}`);
-        
+
         // Try to get response body if possible
         try {
           const responseObj = networkResponses.find(r => r.url === response.url);
@@ -132,7 +132,7 @@ test.describe('Wedding Planner Dashboard Loading Issue', () => {
     }
 
     // Step 7: Check console logs for JavaScript errors
-    const errorMessages = consoleMessages.filter(msg => 
+    const errorMessages = consoleMessages.filter(msg =>
       msg.includes('error:') || msg.includes('Error:') || msg.includes('Failed')
     );
 
@@ -147,7 +147,7 @@ test.describe('Wedding Planner Dashboard Loading Issue', () => {
     }
 
     // Step 8: Check for authentication issues
-    const authRelatedErrors = networkResponses.filter(res => 
+    const authRelatedErrors = networkResponses.filter(res =>
       res.status === 401 || res.status === 403
     );
 
@@ -160,20 +160,20 @@ test.describe('Wedding Planner Dashboard Loading Issue', () => {
 
     // Step 9: Check user profile and permissions
     console.log('Checking user profile and permissions...');
-    
+
     // Look for any profile-related API calls
-    const profileApiCalls = networkRequests.filter(req => 
+    const profileApiCalls = networkRequests.filter(req =>
       req.url.includes('/admin/profile') || req.url.includes('/admin/user')
     );
-    
+
     console.log(`Profile API calls: ${profileApiCalls.length}`);
 
     // Step 10: Final diagnosis
     console.log('\n=== DIAGNOSIS SUMMARY ===');
-    
+
     if (isStillLoading) {
       console.log('ISSUE CONFIRMED: Dashboard is stuck in loading state');
-      
+
       if (metricsApiCalls.length === 0) {
         console.log('ROOT CAUSE: No API calls being made to metrics endpoint');
         console.log('LIKELY ISSUES:');
@@ -240,7 +240,7 @@ test.describe('Wedding Planner Dashboard Loading Issue', () => {
     if (token) {
       // Test the API endpoint directly
       const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
-      
+
       try {
         const response = await request.get(`${baseUrl}/admin/planner/metrics`, {
           headers: {

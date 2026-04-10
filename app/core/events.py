@@ -2,14 +2,16 @@
 Event Sourcing and Domain Events System
 """
 
-from typing import Dict, List, Any, Optional, Callable, Awaitable, Union
-from datetime import datetime, timezone
-from pydantic import BaseModel, Field
-from enum import Enum
 import asyncio
-from app.core.database import mongo
-from app.core.cache import cache
 import logging
+from datetime import datetime, timezone
+from enum import Enum
+from typing import Any, Awaitable, Callable, Dict, List, Optional, Union
+
+from pydantic import BaseModel, Field
+
+from app.core.cache import cache
+from app.core.database import mongo
 
 logger = logging.getLogger(__name__)
 

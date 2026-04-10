@@ -1,17 +1,19 @@
 import { after, afterEach, before, beforeEach, describe, it, mock } from 'node:test';
 import assert from 'node:assert/strict';
 import React from 'react';
-import { renderToStaticMarkup } from 'react-dom/server';
+import { cleanup, render } from '@testing-library/react';
 
-process.env.NEXT_PUBLIC_API_BASE_URL = 'https://api.example.com';
+import { installDom } from './testDom';
 
 let ContractMarkdownRenderer: typeof import('../../app/components/contracts/ContractMarkdownRenderer').default;
 let VendorContractPreview: typeof import('../../app/components/contracts/VendorContractPreview').default;
 let applyContractPreviewPlaceholders: typeof import('../../app/components/contracts/VendorContractPreview').applyContractPreviewPlaceholders;
 let sortVendorContractPreviewSections: typeof import('../../app/components/contracts/VendorContractPreview').sortVendorContractPreviewSections;
+let domHandle: ReturnType<typeof installDom> | null = null;
 
 describe('vendor contract preview', () => {
   before(async () => {
+    domHandle = installDom();
     ({ default: ContractMarkdownRenderer } = await import('../../app/components/contracts/ContractMarkdownRenderer'));
     ({
       default: VendorContractPreview,
@@ -25,6 +27,7 @@ describe('vendor contract preview', () => {
   });
 
   afterEach(() => {
+    cleanup();
     mock.restoreAll();
   });
 
@@ -36,13 +39,12 @@ describe('vendor contract preview', () => {
   });
 
   it('sanitizes unsafe HTML while preserving markdown formatting', () => {
-    const markup = renderToStaticMarkup(
-      <ContractMarkdownRenderer content={'**Strong**<script>alert("x")</script>'} />
-    );
+    const view = render(<ContractMarkdownRenderer content={'**Strong**<script>alert("x")</script>'} />);
 
-    assert.match(markup, /<strong>Strong<\/strong>/);
-    assert.doesNotMatch(markup, /<script>/);
-    assert.doesNotMatch(markup, /alert\("x"\)/);
+    const strong = view.getByText('Strong');
+    assert.equal(strong.tagName, 'STRONG');
+    assert.equal(document.querySelector('script'), null);
+    assert.equal(document.body.textContent?.includes('alert("x")'), false);
   });
 
   it('sorts sections without mutating the input array', () => {
@@ -73,8 +75,8 @@ describe('vendor contract preview', () => {
     );
   });
 
-  it('renders custom clauses through the shared preview component', () => {
-    const markup = renderToStaticMarkup(
+  it('renders sections and document blocks in stable preview order', () => {
+    const view = render(
       <VendorContractPreview
         sections={[
           {
@@ -90,35 +92,27 @@ describe('vendor contract preview', () => {
             order: 1,
           },
         ]}
+        termsAndConditions={'Pay the **deposit** within 7 days.'}
+        cancellationPolicy={'Cancellation requires **written notice**.'}
         customClauses={'Custom note for {{vendor_name}}.'}
         placeholderValues={{ '{{vendor_name}}': 'Vendor Co' }}
       />
     );
 
-    assert.match(markup, /Introduction/);
-    assert.match(markup, /Scope/);
-    assert.match(markup, /Custom Clauses/);
-    assert.match(markup, /Vendor Co/);
-    assert.doesNotMatch(markup, /{{vendor_name}}/);
+    const headings = view.getAllByRole('heading', { level: 3 }).map((node) => node.textContent);
+    assert.deepEqual(headings, [
+      'Introduction',
+      'Scope',
+      'Terms & Conditions',
+      'Cancellation Policy',
+      'Custom Clauses',
+    ]);
+    assert.match(document.body.textContent || '', /Vendor Co/);
+    assert.doesNotMatch(document.body.textContent || '', /{{vendor_name}}/);
   });
 
-  it('renders terms and cancellation blocks through the shared preview composition', () => {
-    const markup = renderToStaticMarkup(
-      <VendorContractPreview
-        sections={[]}
-        termsAndConditions={'Pay the **deposit** within 7 days.'}
-        cancellationPolicy={'Cancellation requires **written notice**.'}
-      />
-    );
-
-    assert.match(markup, /Terms &amp; Conditions/);
-    assert.match(markup, /Cancellation Policy/);
-    assert.match(markup, /deposit/);
-    assert.match(markup, /written notice/);
-  });
-
-  it('does not apply planner-only placeholder substitution when no preview values are supplied', () => {
-    const markup = renderToStaticMarkup(
+  it('does not apply planner-only placeholder substitution without preview values', () => {
+    const view = render(
       <VendorContractPreview
         sections={[
           {
@@ -131,6 +125,6 @@ describe('vendor contract preview', () => {
       />
     );
 
-    assert.match(markup, /{{vendor_name}}/);
+    view.getByText(/Hello {{vendor_name}}/);
   });
 });

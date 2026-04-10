@@ -15,7 +15,6 @@ from fastapi import HTTPException
 from app.models.vendor import ContractKind, ContractStatus
 from app.services.vendor_service import vendor_service
 
-
 ROOT = Path(__file__).resolve().parents[2]
 
 
@@ -664,11 +663,12 @@ def test_backfill_helper_hashes_plaintext_vendor_contract_tokens() -> None:
         "viewed_at": datetime(2026, 4, 8, 14, tzinfo=timezone.utc),
     }
 
-    set_updates, unset_updates = (
-        backfill_module.build_vendor_contract_security_backfill_ops(
-            document,
-            drop_plaintext_token=True,
-        )
+    (
+        set_updates,
+        unset_updates,
+    ) = backfill_module.build_vendor_contract_security_backfill_ops(
+        document,
+        drop_plaintext_token=True,
     )
 
     assert set_updates[

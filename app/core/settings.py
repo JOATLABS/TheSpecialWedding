@@ -2,14 +2,16 @@
 Centralized configuration management using Pydantic Settings
 """
 
+import json
+from enum import Enum
+from functools import lru_cache
+from typing import Annotated, Any, Dict, List, Optional
+from urllib.parse import urlparse
+
+from pydantic import Field, field_validator
+
 # Use pydantic-settings for proper Pydantic v2 compatibility
 from pydantic_settings import BaseSettings, NoDecode
-from pydantic import Field, field_validator
-from typing import Annotated, List, Optional, Dict, Any
-from functools import lru_cache
-from enum import Enum
-import json
-from urllib.parse import urlparse
 
 
 class Environment(str, Enum):

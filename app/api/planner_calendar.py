@@ -3,13 +3,16 @@
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timedelta, UTC
-from typing import List, Optional, Any
+from contextlib import asynccontextmanager
+from datetime import UTC, datetime, timedelta
+from typing import Any, List, Optional
+from uuid import uuid4
 
 from bson import ObjectId
-from fastapi import APIRouter, HTTPException, Depends, Query
+from fastapi import APIRouter, Depends, Header, HTTPException, Query
 from pydantic import BaseModel, Field
 
+from app.core.cache import cache
 from app.core.database import mongo
 from app.dependencies.auth_extended import (
     ExtendedAuthUser,
@@ -17,20 +20,15 @@ from app.dependencies.auth_extended import (
     check_wedding_access,
     get_accessible_calendar_scope,
     get_calendar_owner_identity,
-    resolve_owner_scoped_user_assignments,
     require_calendar_access,
     require_calendar_permission,
-)
-from app.utils.query_validation import (
-    validated_string_filter,
-    validated_status_filter,
-    calculate_pagination_params,
+    resolve_owner_scoped_user_assignments,
 )
 from app.models.calendar import (
     CalendarEventCreate,
     CalendarEventUpdate,
-    CalendarSyncStatus,
     CalendarSyncPolicy,
+    CalendarSyncStatus,
     InviteDeliveryMode,
     MeetingLifecycleStatus,
     ScheduleItemType,
@@ -39,9 +37,17 @@ from app.models.calendar import (
 from app.models.calendar_connection import CalendarConnectionUpdateRequest
 from app.models.calendar_sync import CalendarSyncStatusValue
 from app.services.calendar_aggregation_service import calendar_aggregation_service
+from app.services.calendar_audit_service import calendar_audit_service
+from app.services.calendar_idempotency_service import calendar_idempotency_service
+from app.services.calendar_job_service import calendar_job_service
 from app.services.calendar_sync_service import calendar_sync_service
 from app.services.google_calendar_service import google_calendar_service
 from app.services.meeting_invite_service import meeting_invite_service
+from app.utils.query_validation import (
+    calculate_pagination_params,
+    validated_status_filter,
+    validated_string_filter,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -95,6 +101,7 @@ class TaskResponse(BaseModel):
     meeting_status: Optional[str] = None
     created_at: str
     updated_at: str
+    version: int = 1
     completed_at: Optional[str] = None
 
 
@@ -248,6 +255,7 @@ def _serialize_task(task: dict, wedding_name: Optional[str] = None) -> TaskRespo
         meeting_status=task.get("meeting_status"),
         created_at=_isoformat(task.get("created_at")) or "",
         updated_at=_isoformat(task.get("updated_at")) or "",
+        version=int(task.get("version") or 1),
         completed_at=_isoformat(task.get("completed_at")),
     )
 
@@ -460,6 +468,8 @@ def _serialize_meeting_payload(task: dict) -> dict[str, Any]:
         "owner_planner_email": task.get("owner_planner_email")
         or task.get("planner_email"),
         "status": task.get("status"),
+        "updated_at": _isoformat(task.get("updated_at")),
+        "version": int(task.get("version") or 1),
     }
 
 
@@ -481,6 +491,94 @@ def _meeting_invite_content_changed(update_fields: dict[str, Any]) -> bool:
         }
         & set(update_fields.keys())
     )
+
+
+def _require_idempotency_key(idempotency_key: Optional[str]) -> str:
+    if not idempotency_key:
+        raise HTTPException(
+            status_code=400,
+            detail="Idempotency-Key header is required for meeting mutations",
+        )
+    return idempotency_key
+
+
+def _build_meeting_idempotency_scope(action: str, identifier: str) -> str:
+    return f"planner_calendar:{action}:{identifier}"
+
+
+async def _begin_meeting_idempotency(
+    *,
+    scope_key: str,
+    idempotency_key: Optional[str],
+    action: str,
+    payload: dict[str, Any],
+) -> tuple[str, Optional[dict[str, Any]]]:
+    key = _require_idempotency_key(idempotency_key)
+    resolution = await calendar_idempotency_service.begin(
+        scope_key=scope_key,
+        idempotency_key=key,
+        request_hash=calendar_idempotency_service.build_request_hash(
+            action=action,
+            payload=payload,
+        ),
+    )
+    if resolution.state == "replay":
+        return key, resolution.response_payload
+    if resolution.state == "conflict":
+        raise HTTPException(
+            status_code=409,
+            detail="Idempotency key was already used for a different meeting request",
+        )
+    if resolution.state == "in_progress":
+        raise HTTPException(
+            status_code=409,
+            detail="A matching meeting request is already being processed",
+        )
+    return key, None
+
+
+async def _complete_meeting_idempotency(
+    *,
+    scope_key: str,
+    idempotency_key: str,
+    payload: dict[str, Any],
+) -> None:
+    await calendar_idempotency_service.complete(
+        scope_key=scope_key,
+        idempotency_key=idempotency_key,
+        response_payload=payload,
+        response_status_code=200,
+    )
+
+
+async def _fail_meeting_idempotency(
+    *,
+    scope_key: str,
+    idempotency_key: str,
+    detail: str,
+) -> None:
+    await calendar_idempotency_service.fail(
+        scope_key=scope_key,
+        idempotency_key=idempotency_key,
+        error_detail=detail,
+    )
+
+
+@asynccontextmanager
+async def _meeting_mutation_lock(meeting_id: str):
+    lock_value = uuid4().hex
+    lock_key = f"calendar_meeting_lock:{meeting_id}"
+    acquired = await cache.acquire_lock(lock_key, lock_value, expire=60)
+    if acquired is False:
+        raise HTTPException(
+            status_code=409,
+            detail="This meeting is currently being changed by another request. Try again.",
+        )
+    try:
+        yield
+    finally:
+        if acquired:
+            await cache.release_lock(lock_key, lock_value)
 
 
 # ============================================================================
@@ -725,7 +823,12 @@ async def update_calendar_connection(
         )
         updates["allowed_scheduler_user_ids"] = resolved_ids
 
-    updated = await google_calendar_service.update_connection(connection_id, updates)
+    updated = await google_calendar_service.update_connection(
+        connection_id,
+        updates,
+        actor_email=current_user.email,
+        actor_role=current_user.role,
+    )
     return CalendarConnectionResponse(**updated)
 
 
@@ -757,7 +860,11 @@ async def delete_calendar_connection(
         raise HTTPException(
             status_code=403, detail="Cannot disconnect this calendar connection"
         )
-    return await google_calendar_service.disconnect_connection(connection_id)
+    return await google_calendar_service.disconnect_connection(
+        connection_id,
+        actor_email=current_user.email,
+        actor_role=current_user.role,
+    )
 
 
 @router.post(
@@ -1206,9 +1313,11 @@ async def update_task(
             {"_id": oid},
             {
                 "$set": {
-                    "google_event_id": successful_sync.get("external_event_id")
-                    if successful_sync
-                    else None,
+                    "google_event_id": (
+                        successful_sync.get("external_event_id")
+                        if successful_sync
+                        else None
+                    ),
                     "synced_to_google": bool(successful_sync),
                     "last_google_sync": datetime.now(UTC) if successful_sync else None,
                 }
@@ -1542,6 +1651,7 @@ async def get_upcoming_tasks(
 )
 async def create_meeting(
     data: CalendarEventCreate,
+    idempotency_key: Optional[str] = Header(None, alias="Idempotency-Key"),
     current_user: ExtendedAuthUser = Depends(
         require_calendar_permission("schedule_meetings")
     ),
@@ -1555,6 +1665,23 @@ async def create_meeting(
         )
 
     owner_context = get_calendar_owner_identity(current_user)
+    scope_key = _build_meeting_idempotency_scope(
+        "create_meeting",
+        str(
+            owner_context.get("owner_id")
+            or owner_context.get("user_id")
+            or current_user.email
+        ),
+    )
+    idempotency_key_value, replay_payload = await _begin_meeting_idempotency(
+        scope_key=scope_key,
+        idempotency_key=idempotency_key,
+        action="create_meeting",
+        payload=data.model_dump(mode="json"),
+    )
+    if replay_payload:
+        return MeetingUpsertResponse(**replay_payload)
+
     assigned_user_ids = data.assigned_user_ids or []
     assigned_user_emails = data.assigned_user_emails or []
     if assigned_user_ids:
@@ -1637,58 +1764,107 @@ async def create_meeting(
         "attachments": [],
         "created_at": now,
         "updated_at": now,
+        "version": 1,
         "completed_at": None,
     }
-    result = await mongo.get_planner_tasks_collection().insert_one(task_doc)
-    task_doc["_id"] = result.inserted_id
+    try:
+        result = await mongo.get_planner_tasks_collection().insert_one(task_doc)
+        task_doc["_id"] = result.inserted_id
 
-    sync_status = await calendar_sync_service.sync_schedule_item(
-        task_doc,
-        explicit_connection_ids=(
-            data.sync_target_connection_ids
-            if data.sync_target_override_enabled
-            else None
-        ),
-        actor_user_id=_calendar_user_id(current_user),
-        actor_is_owner=bool(
-            current_user.is_root_admin or current_user.is_wedding_planner
-        ),
-    )
-    first_synced = next(
-        (
-            row
-            for row in sync_status
-            if row.get("sync_status") == "synced" and row.get("external_event_id")
-        ),
-        None,
-    )
-    if first_synced:
-        await mongo.get_planner_tasks_collection().update_one(
-            {"_id": result.inserted_id},
-            {
-                "$set": {
-                    "google_event_id": first_synced.get("external_event_id"),
-                    "synced_to_google": True,
-                    "last_google_sync": datetime.now(UTC),
-                }
+        sync_status = await calendar_sync_service.sync_schedule_item(
+            task_doc,
+            explicit_connection_ids=(
+                data.sync_target_connection_ids
+                if data.sync_target_override_enabled
+                else None
+            ),
+            actor_user_id=_calendar_user_id(current_user),
+            actor_is_owner=bool(
+                current_user.is_root_admin or current_user.is_wedding_planner
+            ),
+        )
+        first_synced = next(
+            (
+                row
+                for row in sync_status
+                if row.get("sync_status") == "synced" and row.get("external_event_id")
+            ),
+            None,
+        )
+        if first_synced:
+            await mongo.get_planner_tasks_collection().update_one(
+                {"_id": result.inserted_id},
+                {
+                    "$set": {
+                        "google_event_id": first_synced.get("external_event_id"),
+                        "synced_to_google": True,
+                        "last_google_sync": datetime.now(UTC),
+                    }
+                },
+            )
+            task_doc["google_event_id"] = first_synced.get("external_event_id")
+            task_doc["synced_to_google"] = True
+
+        invite_status: list[dict[str, Any]] = []
+        if (
+            invite_mode == InviteDeliveryMode.EMAIL_ICS.value
+            and can_send_invites
+            and couple_attendee_emails
+        ):
+            try:
+                invite_status = await calendar_job_service.enqueue_invite_job(
+                    task_doc,
+                    method="REQUEST",
+                    reason="meeting_created",
+                )
+            except Exception as exc:
+                logger.error(
+                    "Failed to enqueue meeting invite job for %s: %s",
+                    result.inserted_id,
+                    exc,
+                )
+                invite_status = [
+                    {
+                        "success": False,
+                        "status": "queue_failed",
+                        "error": "Failed to queue invite delivery",
+                    }
+                ]
+
+        await calendar_audit_service.log(
+            action="calendar_meeting_scheduled",
+            message=f"Scheduled meeting {task_doc.get('title')}",
+            owner_planner_email=task_doc.get("owner_planner_email")
+            or task_doc.get("planner_email"),
+            actor_email=current_user.email,
+            actor_role=current_user.role,
+            wedding_id=task_doc.get("wedding_id"),
+            metadata={
+                "task_id": str(task_doc.get("_id")),
+                "assigned_user_ids": task_doc.get("assigned_user_ids", []),
+                "calendar_sync_policy": task_doc.get("calendar_sync_policy"),
+                "invite_delivery_mode": task_doc.get("invite_delivery_mode"),
             },
         )
-        task_doc["google_event_id"] = first_synced.get("external_event_id")
-        task_doc["synced_to_google"] = True
 
-    invite_status = []
-    if (
-        invite_mode == InviteDeliveryMode.EMAIL_ICS.value
-        and can_send_invites
-        and couple_attendee_emails
-    ):
-        invite_status = await meeting_invite_service.send_invites(task_doc)
-
-    return MeetingUpsertResponse(
-        meeting=_serialize_meeting_payload(task_doc),
-        sync_status=sync_status,
-        invite_status=invite_status,
-    )
+        response = MeetingUpsertResponse(
+            meeting=_serialize_meeting_payload(task_doc),
+            sync_status=sync_status,
+            invite_status=invite_status,
+        )
+        await _complete_meeting_idempotency(
+            scope_key=scope_key,
+            idempotency_key=idempotency_key_value,
+            payload=response.model_dump(mode="json"),
+        )
+        return response
+    except Exception as exc:
+        await _fail_meeting_idempotency(
+            scope_key=scope_key,
+            idempotency_key=idempotency_key_value,
+            detail=str(exc),
+        )
+        raise
 
 
 @router.patch(
@@ -1699,6 +1875,7 @@ async def create_meeting(
 async def update_meeting(
     meeting_id: str,
     updates: CalendarEventUpdate,
+    idempotency_key: Optional[str] = Header(None, alias="Idempotency-Key"),
     current_user: ExtendedAuthUser = Depends(
         require_calendar_permission("edit_meetings")
     ),
@@ -1709,124 +1886,246 @@ async def update_meeting(
     except Exception:
         raise HTTPException(status_code=400, detail="Invalid meeting ID format")
 
-    tasks_collection = mongo.get_planner_tasks_collection()
-    task = await _get_scoped_meeting(oid, current_user)
-    if task.get("wedding_id") and not await check_wedding_access(
-        current_user, task["wedding_id"]
-    ):
+    if updates.expected_version is None:
         raise HTTPException(
-            status_code=403, detail="You don't have access to this wedding"
+            status_code=428,
+            detail="expected_version is required when updating a meeting",
         )
 
-    update_doc: dict[str, Any] = {"updated_at": datetime.now(UTC)}
-    update_fields = updates.model_dump(exclude_unset=True)
-    if update_fields.get(
-        "invite_delivery_mode"
-    ) == InviteDeliveryMode.EMAIL_ICS.value and not _can_send_meeting_invites(
-        current_user
-    ):
-        raise HTTPException(
-            status_code=403,
-            detail="You do not have the 'send meeting invites' permission.",
-        )
-    if "wedding_id" in update_fields and update_fields["wedding_id"] is not None:
-        if not await check_wedding_access(current_user, update_fields["wedding_id"]):
+    scope_key = _build_meeting_idempotency_scope("update_meeting", meeting_id)
+    update_payload = updates.model_dump(mode="json", exclude_unset=True)
+    idempotency_key_value, replay_payload = await _begin_meeting_idempotency(
+        scope_key=scope_key,
+        idempotency_key=idempotency_key,
+        action="update_meeting",
+        payload={"meeting_id": meeting_id, **update_payload},
+    )
+    if replay_payload:
+        return MeetingUpsertResponse(**replay_payload)
+
+    tasks_collection = mongo.get_planner_tasks_collection()
+    async with _meeting_mutation_lock(meeting_id):
+        task = await _get_scoped_meeting(oid, current_user)
+        if task.get("wedding_id") and not await check_wedding_access(
+            current_user, task["wedding_id"]
+        ):
             raise HTTPException(
                 status_code=403, detail="You don't have access to this wedding"
             )
-    if (
-        "assigned_user_ids" in update_fields
-        and update_fields["assigned_user_ids"] is not None
-    ):
-        resolved_ids, resolved_emails = await resolve_owner_scoped_user_assignments(
-            task.get("owner_planner_id"),
-            task.get("owner_planner_email") or task.get("planner_email"),
-            update_fields["assigned_user_ids"],
-        )
-        update_doc["assigned_user_ids"] = resolved_ids
-        update_doc["assigned_user_emails"] = resolved_emails
-    if (
-        "couple_attendee_emails" in update_fields
-        and update_fields["couple_attendee_emails"] is not None
-    ):
-        update_doc["couple_attendee_emails"] = await _resolve_couple_attendee_emails(
-            update_fields.get("wedding_id") or task.get("wedding_id"),
-            update_fields["couple_attendee_emails"],
-        )
-    for key, value in update_fields.items():
-        if key in {"assigned_user_ids", "couple_attendee_emails"}:
-            continue
-        if value is not None:
-            update_doc[key] = value
-    if update_fields.get("sync_target_override_enabled") is False:
-        update_doc["sync_target_connection_ids"] = []
 
-    await tasks_collection.update_one({"_id": oid}, {"$set": update_doc})
-    updated_task = await tasks_collection.find_one({"_id": oid})
-    updated_task = _require_document(updated_task, "Meeting not found after update")
-    sync_status = await calendar_sync_service.sync_schedule_item(
-        updated_task,
-        explicit_connection_ids=(
-            update_fields.get("sync_target_connection_ids")
-            if update_fields.get("sync_target_override_enabled") is True
-            else (
-                []
-                if update_fields.get("sync_target_override_enabled") is False
-                else None
+        expected_version = updates.expected_version
+        if int(task.get("version") or 1) != expected_version:
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "message": "This meeting was changed by another user. Refresh and try again.",
+                    "current_version": int(task.get("version") or 1),
+                },
             )
-        ),
-        actor_user_id=_calendar_user_id(current_user),
-        actor_is_owner=bool(
-            current_user.is_root_admin or current_user.is_wedding_planner
-        ),
-    )
 
-    invite_status: list[dict[str, Any]] = []
-    previous_recipients = {
-        email for email in task.get("couple_attendee_emails", []) if email
-    }
-    current_recipients = {
-        email for email in updated_task.get("couple_attendee_emails", []) if email
-    }
-    previous_invite_mode = task.get("invite_delivery_mode")
-    current_invite_mode = updated_task.get("invite_delivery_mode")
-
-    if previous_invite_mode == InviteDeliveryMode.EMAIL_ICS.value:
-        removed_recipients = (
-            previous_recipients
-            if current_invite_mode != InviteDeliveryMode.EMAIL_ICS.value
-            else previous_recipients - current_recipients
-        )
-        if removed_recipients:
-            cancellation_task = {
-                **task,
-                "updated_at": updated_task.get("updated_at") or datetime.now(UTC),
-                "meeting_status": MeetingLifecycleStatus.CANCELLED.value,
-            }
-            invite_status.extend(
-                await meeting_invite_service.send_cancellations(
-                    cancellation_task,
-                    recipient_emails=sorted(removed_recipients),
+        update_doc: dict[str, Any] = {"updated_at": datetime.now(UTC)}
+        update_fields = updates.model_dump(exclude_unset=True)
+        update_fields.pop("expected_version", None)
+        if update_fields.get(
+            "invite_delivery_mode"
+        ) == InviteDeliveryMode.EMAIL_ICS.value and not _can_send_meeting_invites(
+            current_user
+        ):
+            raise HTTPException(
+                status_code=403,
+                detail="You do not have the 'send meeting invites' permission.",
+            )
+        if "wedding_id" in update_fields and update_fields["wedding_id"] is not None:
+            if not await check_wedding_access(
+                current_user, update_fields["wedding_id"]
+            ):
+                raise HTTPException(
+                    status_code=403, detail="You don't have access to this wedding"
+                )
+        if (
+            "assigned_user_ids" in update_fields
+            and update_fields["assigned_user_ids"] is not None
+        ):
+            resolved_ids, resolved_emails = await resolve_owner_scoped_user_assignments(
+                task.get("owner_planner_id"),
+                task.get("owner_planner_email") or task.get("planner_email"),
+                update_fields["assigned_user_ids"],
+            )
+            update_doc["assigned_user_ids"] = resolved_ids
+            update_doc["assigned_user_emails"] = resolved_emails
+        if (
+            "couple_attendee_emails" in update_fields
+            and update_fields["couple_attendee_emails"] is not None
+        ):
+            update_doc["couple_attendee_emails"] = (
+                await _resolve_couple_attendee_emails(
+                    update_fields.get("wedding_id") or task.get("wedding_id"),
+                    update_fields["couple_attendee_emails"],
                 )
             )
+        for key, value in update_fields.items():
+            if key in {"assigned_user_ids", "couple_attendee_emails"}:
+                continue
+            if value is not None:
+                update_doc[key] = value
+        if update_fields.get("sync_target_override_enabled") is False:
+            update_doc["sync_target_connection_ids"] = []
+        if (
+            _meeting_invite_content_changed(update_fields)
+            and update_fields.get("meeting_status") is None
+        ):
+            update_doc["meeting_status"] = MeetingLifecycleStatus.RESCHEDULED.value
 
-    should_send_updated_invites = (
-        current_invite_mode == InviteDeliveryMode.EMAIL_ICS.value
-        and bool(current_recipients)
-        and (
-            previous_invite_mode != InviteDeliveryMode.EMAIL_ICS.value
-            or bool(current_recipients - previous_recipients)
-            or _meeting_invite_content_changed(update_fields)
-        )
-    )
-    if should_send_updated_invites:
-        invite_status.extend(await meeting_invite_service.send_invites(updated_task))
+        try:
+            update_result = await tasks_collection.update_one(
+                {"_id": oid, "version": expected_version},
+                {"$set": update_doc, "$inc": {"version": 1}},
+            )
+            if update_result.matched_count == 0:
+                fresh_task = await _get_scoped_meeting(oid, current_user)
+                raise HTTPException(
+                    status_code=409,
+                    detail={
+                        "message": "This meeting was changed by another user. Refresh and try again.",
+                        "current_version": int(fresh_task.get("version") or 1),
+                    },
+                )
 
-    return MeetingUpsertResponse(
-        meeting=_serialize_meeting_payload(updated_task),
-        sync_status=sync_status,
-        invite_status=invite_status,
-    )
+            updated_task = await tasks_collection.find_one({"_id": oid})
+            updated_task = _require_document(
+                updated_task, "Meeting not found after update"
+            )
+            sync_status = await calendar_sync_service.sync_schedule_item(
+                updated_task,
+                explicit_connection_ids=(
+                    update_fields.get("sync_target_connection_ids")
+                    if update_fields.get("sync_target_override_enabled") is True
+                    else (
+                        []
+                        if update_fields.get("sync_target_override_enabled") is False
+                        else None
+                    )
+                ),
+                actor_user_id=_calendar_user_id(current_user),
+                actor_is_owner=bool(
+                    current_user.is_root_admin or current_user.is_wedding_planner
+                ),
+            )
+
+            invite_status: list[dict[str, Any]] = []
+            previous_recipients = {
+                email for email in task.get("couple_attendee_emails", []) if email
+            }
+            current_recipients = {
+                email
+                for email in updated_task.get("couple_attendee_emails", [])
+                if email
+            }
+            previous_invite_mode = task.get("invite_delivery_mode")
+            current_invite_mode = updated_task.get("invite_delivery_mode")
+
+            if previous_invite_mode == InviteDeliveryMode.EMAIL_ICS.value:
+                removed_recipients = (
+                    previous_recipients
+                    if current_invite_mode != InviteDeliveryMode.EMAIL_ICS.value
+                    else previous_recipients - current_recipients
+                )
+                if removed_recipients:
+                    cancellation_task = {
+                        **task,
+                        "updated_at": updated_task.get("updated_at")
+                        or datetime.now(UTC),
+                        "meeting_status": MeetingLifecycleStatus.CANCELLED.value,
+                    }
+                    try:
+                        invite_status.extend(
+                            await calendar_job_service.enqueue_invite_job(
+                                cancellation_task,
+                                method="CANCEL",
+                                recipient_emails=sorted(removed_recipients),
+                                reason="meeting_updated_remove_recipient",
+                            )
+                        )
+                    except Exception as exc:
+                        logger.error(
+                            "Failed to enqueue recipient removal cancellations for %s: %s",
+                            meeting_id,
+                            exc,
+                        )
+                        invite_status.append(
+                            {
+                                "success": False,
+                                "status": "queue_failed",
+                                "error": "Failed to queue cancellation invite delivery",
+                            }
+                        )
+
+            should_send_updated_invites = (
+                current_invite_mode == InviteDeliveryMode.EMAIL_ICS.value
+                and bool(current_recipients)
+                and (
+                    previous_invite_mode != InviteDeliveryMode.EMAIL_ICS.value
+                    or bool(current_recipients - previous_recipients)
+                    or _meeting_invite_content_changed(update_fields)
+                )
+            )
+            if should_send_updated_invites:
+                try:
+                    invite_status.extend(
+                        await calendar_job_service.enqueue_invite_job(
+                            updated_task,
+                            method="REQUEST",
+                            reason="meeting_updated",
+                        )
+                    )
+                except Exception as exc:
+                    logger.error(
+                        "Failed to enqueue updated invites for %s: %s",
+                        meeting_id,
+                        exc,
+                    )
+                    invite_status.append(
+                        {
+                            "success": False,
+                            "status": "queue_failed",
+                            "error": "Failed to queue invite delivery",
+                        }
+                    )
+
+            await calendar_audit_service.log(
+                action="calendar_meeting_rescheduled",
+                message=f"Updated meeting {updated_task.get('title')}",
+                owner_planner_email=updated_task.get("owner_planner_email")
+                or updated_task.get("planner_email"),
+                actor_email=current_user.email,
+                actor_role=current_user.role,
+                wedding_id=updated_task.get("wedding_id"),
+                metadata={
+                    "task_id": meeting_id,
+                    "previous_version": expected_version,
+                    "current_version": int(updated_task.get("version") or 1),
+                    "updated_fields": sorted(update_fields.keys()),
+                },
+            )
+
+            response = MeetingUpsertResponse(
+                meeting=_serialize_meeting_payload(updated_task),
+                sync_status=sync_status,
+                invite_status=invite_status,
+            )
+            await _complete_meeting_idempotency(
+                scope_key=scope_key,
+                idempotency_key=idempotency_key_value,
+                payload=response.model_dump(mode="json"),
+            )
+            return response
+        except Exception as exc:
+            await _fail_meeting_idempotency(
+                scope_key=scope_key,
+                idempotency_key=idempotency_key_value,
+                detail=str(exc),
+            )
+            raise
 
 
 @router.delete(
@@ -1835,6 +2134,8 @@ async def update_meeting(
 )
 async def delete_meeting(
     meeting_id: str,
+    expected_version: int = Query(..., ge=1),
+    idempotency_key: Optional[str] = Header(None, alias="Idempotency-Key"),
     current_user: ExtendedAuthUser = Depends(
         require_calendar_permission("cancel_meetings")
     ),
@@ -1845,34 +2146,111 @@ async def delete_meeting(
     except Exception:
         raise HTTPException(status_code=400, detail="Invalid meeting ID format")
 
-    tasks_collection = mongo.get_planner_tasks_collection()
-    task = await _get_scoped_meeting(oid, current_user)
-    if task.get("wedding_id") and not await check_wedding_access(
-        current_user, task["wedding_id"]
-    ):
-        raise HTTPException(
-            status_code=403, detail="You don't have access to this wedding"
-        )
+    scope_key = _build_meeting_idempotency_scope("delete_meeting", meeting_id)
+    idempotency_key_value, replay_payload = await _begin_meeting_idempotency(
+        scope_key=scope_key,
+        idempotency_key=idempotency_key,
+        action="delete_meeting",
+        payload={"meeting_id": meeting_id, "expected_version": expected_version},
+    )
+    if replay_payload:
+        return replay_payload
 
-    await calendar_sync_service.delete_schedule_item_syncs(meeting_id)
-    invite_status: list[dict[str, Any]] = []
-    if task.get(
-        "invite_delivery_mode"
-    ) == InviteDeliveryMode.EMAIL_ICS.value and task.get("couple_attendee_emails"):
-        cancellation_task = {
-            **task,
-            "updated_at": datetime.now(UTC),
-            "meeting_status": MeetingLifecycleStatus.CANCELLED.value,
-        }
-        invite_status = await meeting_invite_service.send_cancellations(
-            cancellation_task
-        )
-    await tasks_collection.delete_one({"_id": oid})
-    return {
-        "deleted": True,
-        "meeting_id": meeting_id,
-        "invite_status": invite_status,
-    }
+    tasks_collection = mongo.get_planner_tasks_collection()
+    async with _meeting_mutation_lock(meeting_id):
+        task = await _get_scoped_meeting(oid, current_user)
+        if task.get("wedding_id") and not await check_wedding_access(
+            current_user, task["wedding_id"]
+        ):
+            raise HTTPException(
+                status_code=403, detail="You don't have access to this wedding"
+            )
+        if int(task.get("version") or 1) != expected_version:
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "message": "This meeting was changed by another user. Refresh and try again.",
+                    "current_version": int(task.get("version") or 1),
+                },
+            )
+
+        try:
+            await calendar_sync_service.delete_schedule_item_syncs(meeting_id)
+            invite_status: list[dict[str, Any]] = []
+            if task.get(
+                "invite_delivery_mode"
+            ) == InviteDeliveryMode.EMAIL_ICS.value and task.get(
+                "couple_attendee_emails"
+            ):
+                cancellation_task = {
+                    **task,
+                    "updated_at": datetime.now(UTC),
+                    "meeting_status": MeetingLifecycleStatus.CANCELLED.value,
+                }
+                try:
+                    invite_status = await calendar_job_service.enqueue_invite_job(
+                        cancellation_task,
+                        method="CANCEL",
+                        reason="meeting_cancelled",
+                    )
+                except Exception as exc:
+                    logger.error(
+                        "Failed to enqueue cancellation invites for %s: %s",
+                        meeting_id,
+                        exc,
+                    )
+                    invite_status = [
+                        {
+                            "success": False,
+                            "status": "queue_failed",
+                            "error": "Failed to queue cancellation invite delivery",
+                        }
+                    ]
+
+            delete_result = await tasks_collection.delete_one(
+                {"_id": oid, "version": expected_version}
+            )
+            if delete_result.deleted_count == 0:
+                fresh_task = await _get_scoped_meeting(oid, current_user)
+                raise HTTPException(
+                    status_code=409,
+                    detail={
+                        "message": "This meeting was changed by another user. Refresh and try again.",
+                        "current_version": int(fresh_task.get("version") or 1),
+                    },
+                )
+
+            await calendar_audit_service.log(
+                action="calendar_meeting_cancelled",
+                message=f"Cancelled meeting {task.get('title')}",
+                owner_planner_email=task.get("owner_planner_email")
+                or task.get("planner_email"),
+                actor_email=current_user.email,
+                actor_role=current_user.role,
+                wedding_id=task.get("wedding_id"),
+                metadata={
+                    "task_id": meeting_id,
+                    "previous_version": expected_version,
+                },
+            )
+            response_payload = {
+                "deleted": True,
+                "meeting_id": meeting_id,
+                "invite_status": invite_status,
+            }
+            await _complete_meeting_idempotency(
+                scope_key=scope_key,
+                idempotency_key=idempotency_key_value,
+                payload=response_payload,
+            )
+            return response_payload
+        except Exception as exc:
+            await _fail_meeting_idempotency(
+                scope_key=scope_key,
+                idempotency_key=idempotency_key_value,
+                detail=str(exc),
+            )
+            raise
 
 
 @router.post(
@@ -1897,7 +2275,11 @@ async def send_meeting_invites(
         raise HTTPException(
             status_code=403, detail="You don't have access to this wedding"
         )
-    invites = await meeting_invite_service.send_invites(task)
+    invites = await calendar_job_service.enqueue_invite_job(
+        task,
+        method="REQUEST",
+        reason="manual_resend",
+    )
     return {"meeting_id": meeting_id, "invite_status": invites}
 
 

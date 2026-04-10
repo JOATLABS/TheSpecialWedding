@@ -306,35 +306,43 @@ class BehavioralAnalyticsService:
                 {
                     "name": "Completed Onboarding",
                     "count": onboarded,
-                    "rate": round(onboarded / total_signups * 100, 1)
-                    if total_signups
-                    else 0.0,
+                    "rate": (
+                        round(onboarded / total_signups * 100, 1)
+                        if total_signups
+                        else 0.0
+                    ),
                 },
                 {
                     "name": "Created First Wedding",
                     "count": created_wedding,
-                    "rate": round(created_wedding / total_signups * 100, 1)
-                    if total_signups
-                    else 0.0,
+                    "rate": (
+                        round(created_wedding / total_signups * 100, 1)
+                        if total_signups
+                        else 0.0
+                    ),
                 },
                 {
                     "name": "Invited First Guest",
                     "count": invited_guests,
-                    "rate": round(invited_guests / total_signups * 100, 1)
-                    if total_signups
-                    else 0.0,
+                    "rate": (
+                        round(invited_guests / total_signups * 100, 1)
+                        if total_signups
+                        else 0.0
+                    ),
                 },
                 {
                     "name": "Received First RSVP",
                     "count": received_rsvp,
-                    "rate": round(received_rsvp / total_signups * 100, 1)
-                    if total_signups
-                    else 0.0,
+                    "rate": (
+                        round(received_rsvp / total_signups * 100, 1)
+                        if total_signups
+                        else 0.0
+                    ),
                 },
             ],
-            "conversion_rate": round(received_rsvp / total_signups * 100, 1)
-            if total_signups
-            else 0.0,
+            "conversion_rate": (
+                round(received_rsvp / total_signups * 100, 1) if total_signups else 0.0
+            ),
             "signups_90d": all_time_signups,
         }
 
@@ -525,9 +533,11 @@ class BehavioralAnalyticsService:
                 "current_7d": current_rsvps,
                 "previous_7d": previous_rsvps,
                 "change": rsvp_velocity_change,
-                "trend": "up"
-                if rsvp_velocity_change > 0
-                else ("down" if rsvp_velocity_change < 0 else "flat"),
+                "trend": (
+                    "up"
+                    if rsvp_velocity_change > 0
+                    else ("down" if rsvp_velocity_change < 0 else "flat")
+                ),
             },
             "platform_response_rate": platform_response_rate,
             "active_engaged_weddings": active_engaged_weddings,
@@ -621,11 +631,11 @@ class BehavioralAnalyticsService:
             "new_mrr": round(new_mrr, 2),
             "churned_mrr": round(churned_mrr, 2),
             "net_change": round(net_mrr_change, 2),
-            "net_change_percent": round(
-                net_mrr_change / (current_mrr - net_mrr_change) * 100, 1
-            )
-            if (current_mrr - net_mrr_change) > 0
-            else 0.0,
+            "net_change_percent": (
+                round(net_mrr_change / (current_mrr - net_mrr_change) * 100, 1)
+                if (current_mrr - net_mrr_change) > 0
+                else 0.0
+            ),
             "trial_conversions": trial_conversions,
             "trial_conversion_rate": trial_conversion_rate,
         }
@@ -882,15 +892,17 @@ class BehavioralAnalyticsService:
                     "couple_names": wedding.get("couple_names", ""),
                     "wedding_date": wedding.get("date", ""),
                     "last_activity_at": self._serialize_datetime(last_activity_at),
-                    "days_since_activity": (now - last_activity_at).days
-                    if last_activity_at
-                    else None,
+                    "days_since_activity": (
+                        (now - last_activity_at).days if last_activity_at else None
+                    ),
                     "guest_count": guest_count,
                     "invited_count": invited_count,
                     "rsvp_count": rsvp_count,
-                    "response_rate": round(rsvp_count / invited_count * 100, 1)
-                    if invited_count > 0
-                    else 0.0,
+                    "response_rate": (
+                        round(rsvp_count / invited_count * 100, 1)
+                        if invited_count > 0
+                        else 0.0
+                    ),
                     "rsvps_last_7d": recent_rsvps,
                     "forms_total": form_count,
                     "forms_completed": min(form_submissions, form_count),
@@ -1027,9 +1039,11 @@ class BehavioralAnalyticsService:
             "total_budgeted": round(total_budgeted, 2),
             "total_spent": round(total_spent, 2),
             "total_remaining": round(total_budgeted - total_spent, 2),
-            "percent_spent": round(total_spent / total_budgeted * 100, 1)
-            if total_budgeted > 0
-            else 0.0,
+            "percent_spent": (
+                round(total_spent / total_budgeted * 100, 1)
+                if total_budgeted > 0
+                else 0.0
+            ),
             "categories": breakdown,
             "category_count": len(breakdown),
         }
@@ -1082,7 +1096,9 @@ class BehavioralAnalyticsService:
         else:
             digest_source = "|".join(sorted(accessible_wedding_ids))
             scope = (
-                hashlib.sha1(digest_source.encode("utf-8")).hexdigest()
+                hashlib.sha1(
+                    digest_source.encode("utf-8"), usedforsecurity=False
+                ).hexdigest()
                 if digest_source
                 else "none"
             )

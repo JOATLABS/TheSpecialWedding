@@ -19,9 +19,9 @@ from typing import Any, Dict, List, Optional
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field, field_validator
 
-from app.dependencies.auth_extended import require_root_admin, ExtendedAuthUser
-from app.services.vendor_service import vendor_service
+from app.dependencies.auth_extended import ExtendedAuthUser, require_root_admin
 from app.models.vendor import VendorCategory
+from app.services.vendor_service import vendor_service
 
 logger = logging.getLogger(__name__)
 
@@ -89,7 +89,13 @@ class VendorImportItem(BaseModel):
         # Check for localhost and IPv6 loopback
         if any(
             pat in lower
-            for pat in ["localhost", "127.0.0.1", "0.0.0.0", "[::1]", "::1"]
+            for pat in [
+                "localhost",
+                "127.0.0.1",
+                "0.0.0.0",
+                "[::1]",
+                "::1",
+            ]  # nosec B104
         ):
             return None
         # Extract host portion for IP-range checks (strip scheme + path)

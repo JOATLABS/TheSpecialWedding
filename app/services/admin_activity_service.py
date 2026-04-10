@@ -9,11 +9,13 @@ Handles tracking and retrieval of root admin activities such as:
 This provides audit trail and dashboard display for admin actions.
 """
 
-from fastapi import HTTPException
-from app.core.database import mongo
-from typing import List, Optional
-from datetime import datetime, timezone
 import logging
+from datetime import datetime, timezone
+from typing import List, Optional
+
+from fastapi import HTTPException
+
+from app.core.database import mongo
 
 logger = logging.getLogger(__name__)
 

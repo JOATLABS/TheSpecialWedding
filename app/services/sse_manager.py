@@ -15,8 +15,8 @@ Redis is down.
 import asyncio
 import json
 import logging
-from typing import Dict, Set, Optional
 from datetime import datetime, timezone
+from typing import Dict, Optional, Set
 
 logger = logging.getLogger(__name__)
 

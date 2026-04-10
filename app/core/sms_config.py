@@ -41,8 +41,8 @@ Usage:
         # Use Telnyx client
 """
 
-import os
 import logging
+import os
 from enum import Enum
 
 logger = logging.getLogger(__name__)

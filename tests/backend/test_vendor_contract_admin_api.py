@@ -8,13 +8,14 @@ from unittest.mock import AsyncMock
 import pytest
 from bson import ObjectId
 
+import app.services.vendor_service as vendor_service_module
 from app.api import vendor_management as vendor_management_api
 from app.dependencies.auth_extended import ExtendedAuthUser
 from app.models.vendor import ContractKind, VendorCategory
 from app.models.vendor_contracts import (
     ApplyVendorContractFormDataRequest,
-    CreateVendorContractRevisionRequest,
     CreateVendorContractRequest,
+    CreateVendorContractRevisionRequest,
     CreateVendorContractTemplateRequest,
     CreateVendorPaymentMilestonesRequest,
     PaymentMilestoneInput,
@@ -24,7 +25,6 @@ from app.models.vendor_contracts import (
     UpdateVendorContractSectionsRequest,
     VendorContractActivityResponse,
 )
-import app.services.vendor_service as vendor_service_module
 from app.services.vendor_service import vendor_service
 
 

@@ -5,10 +5,12 @@ Handles AI-drafted follow-up emails for unsigned contracts.
 Integrates with cron jobs to check for stale contracts.
 """
 
-from typing import Dict, Any, List, Optional
-from datetime import datetime, timedelta, timezone
 import logging
+from datetime import datetime, timedelta, timezone
+from typing import Any, Dict, List, Optional
+
 from bson import ObjectId
+
 from app.core.database import mongo
 from app.core.settings import settings
 
@@ -92,7 +94,7 @@ class ContractFollowupService:
             The created draft dict or None if generation failed
         """
         try:
-            from app.services.ai_service import ai_service, InsufficientCreditsError
+            from app.services.ai_service import InsufficientCreditsError, ai_service
 
             planner_id = contract.get("planner_id")
             if not planner_id:
@@ -137,9 +139,9 @@ class ContractFollowupService:
                 or planner.get("name", "Your Wedding Planner"),
                 # Enhanced wedding context
                 "venue_name": wedding.get("venue", {}).get("name") if wedding else None,
-                "venue_location": wedding.get("venue", {}).get("location")
-                if wedding
-                else None,
+                "venue_location": (
+                    wedding.get("venue", {}).get("location") if wedding else None
+                ),
                 "cultural_style": wedding.get("cultural_style") if wedding else None,
                 "guest_count": wedding.get("guest_count") if wedding else None,
                 "wedding_title": wedding.get("title") if wedding else None,
@@ -214,9 +216,9 @@ Warm regards,
                 "created_at": datetime.now(timezone.utc),
                 "updated_at": datetime.now(timezone.utc),
                 "ai_generated": True,
-                "credits_used": result.get("credits_used", 0)
-                if "result" in dir()
-                else 0,
+                "credits_used": (
+                    result.get("credits_used", 0) if "result" in dir() else 0
+                ),
             }
 
             result = await self.followup_drafts.insert_one(draft)

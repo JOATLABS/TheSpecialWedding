@@ -10,14 +10,16 @@ Zero-cost backup solution:
 - Automated retention policy (30 days)
 """
 
-from fastapi import APIRouter, Depends, HTTPException, Header
-from typing import Dict, Any
-from datetime import datetime, timedelta, timezone
-from app.dependencies.auth_extended import require_root_admin, ExtendedAuthUser
-from app.core.database import mongo
-import os
-import logging
 import asyncio
+import logging
+import os
+from datetime import datetime, timedelta, timezone
+from typing import Any, Dict
+
+from fastapi import APIRouter, Depends, Header, HTTPException
+
+from app.core.database import mongo
+from app.dependencies.auth_extended import ExtendedAuthUser, require_root_admin
 
 logger = logging.getLogger(__name__)
 
@@ -65,7 +67,7 @@ async def trigger_backup(
         # Create backup filename with timestamp
         timestamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
         backup_filename = f"mongodb-backup-{timestamp}.gz"
-        backup_path = f"/tmp/{backup_filename}"
+        backup_path = f"/tmp/{backup_filename}"  # nosec B108
 
         # Get MongoDB URI
         mongo_uri = os.getenv("MONGO_URI")

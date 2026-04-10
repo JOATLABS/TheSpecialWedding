@@ -1,5 +1,6 @@
 import os
 from typing import Optional
+
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -56,6 +57,35 @@ class Settings:
     GOOGLE_APP_SUPPORT_URL: Optional[str] = os.getenv("GOOGLE_APP_SUPPORT_URL")
     GOOGLE_APP_DATA_DELETION_URL: Optional[str] = os.getenv(
         "GOOGLE_APP_DATA_DELETION_URL"
+    )
+    CALENDAR_SHARED_EVENTS_CACHE_SECONDS: int = int(
+        os.getenv("CALENDAR_SHARED_EVENTS_CACHE_SECONDS", "60")
+    )
+    CALENDAR_JOB_BATCH_SIZE: int = int(os.getenv("CALENDAR_JOB_BATCH_SIZE", "25"))
+    CALENDAR_JOB_MAX_ATTEMPTS: int = int(os.getenv("CALENDAR_JOB_MAX_ATTEMPTS", "5"))
+    CALENDAR_JOB_INITIAL_BACKOFF_SECONDS: int = int(
+        os.getenv("CALENDAR_JOB_INITIAL_BACKOFF_SECONDS", "30")
+    )
+    CALENDAR_IDEMPOTENCY_TTL_HOURS: int = int(
+        os.getenv("CALENDAR_IDEMPOTENCY_TTL_HOURS", "24")
+    )
+    CALENDAR_IDEMPOTENCY_IN_PROGRESS_TIMEOUT_SECONDS: int = int(
+        os.getenv("CALENDAR_IDEMPOTENCY_IN_PROGRESS_TIMEOUT_SECONDS", "300")
+    )
+    CALENDAR_SYNC_RETRY_BATCH_SIZE: int = int(
+        os.getenv("CALENDAR_SYNC_RETRY_BATCH_SIZE", "50")
+    )
+    CALENDAR_SYNC_RETRY_MAX_ATTEMPTS: int = int(
+        os.getenv("CALENDAR_SYNC_RETRY_MAX_ATTEMPTS", "5")
+    )
+    CALENDAR_SYNC_RETRY_INITIAL_BACKOFF_SECONDS: int = int(
+        os.getenv("CALENDAR_SYNC_RETRY_INITIAL_BACKOFF_SECONDS", "60")
+    )
+    CALENDAR_DRIFT_CHECK_BATCH_SIZE: int = int(
+        os.getenv("CALENDAR_DRIFT_CHECK_BATCH_SIZE", "50")
+    )
+    CALENDAR_DRIFT_CHECK_INTERVAL_MINUTES: int = int(
+        os.getenv("CALENDAR_DRIFT_CHECK_INTERVAL_MINUTES", "30")
     )
 
     # Scopes needed for calendar read/write access

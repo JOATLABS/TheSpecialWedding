@@ -3,22 +3,23 @@ Knowledge Base Service for Community-Driven Documentation
 Handles CRUD operations, search, and feedback for KB articles
 """
 
-from fastapi import HTTPException
-from app.core.database import mongo
-from typing import Dict, Optional, Any, List
-from datetime import datetime, timezone
-from bson import ObjectId
 import logging
-import re
 import math
+import re
+from datetime import datetime, timezone
+from typing import Any, Dict, List, Optional
 
+from bson import ObjectId
+from fastapi import HTTPException
+
+from app.core.database import mongo
 from app.models.knowledge_base import (
-    KB_CATEGORIES,
     CATEGORY_DISPLAY_NAMES,
-    generate_slug,
+    KB_CATEGORIES,
     KB_STATUSES,
     KnowledgeBaseArticleCreateModel,
     KnowledgeBaseArticleUpdateModel,
+    generate_slug,
 )
 
 logger = logging.getLogger(__name__)

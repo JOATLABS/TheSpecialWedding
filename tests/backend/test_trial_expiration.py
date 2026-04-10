@@ -16,8 +16,8 @@ os.environ.setdefault("SECRET_KEY", "test-secret")
 os.environ.setdefault("ALGORITHM", "HS256")
 os.environ.setdefault("API_KEY", "test-api-key")
 
-import app.services.trial_expiration_service as trial_service_module
 import app.dependencies.auth_extended as auth_extended
+import app.services.trial_expiration_service as trial_service_module
 
 
 class DummyEmailService:

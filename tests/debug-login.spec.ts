@@ -26,7 +26,7 @@ test.describe('Debug Login Page', () => {
     // Capture basic page info
     const title = await page.title();
     const url = page.url();
-    
+
     console.log(`Page Title: "${title}"`);
     console.log(`Page URL: ${url}`);
 
@@ -63,14 +63,14 @@ test.describe('Debug Login Page', () => {
     if (await loginButton.count() > 0) {
       const isButtonEnabled = await loginButton.isEnabled();
       console.log(`Login button enabled: ${isButtonEnabled}`);
-      
+
       if (isButtonEnabled) {
         console.log('Clicking login button...');
         await loginButton.click();
-        
+
         // Wait for navigation or error
         await page.waitForTimeout(5000);
-        
+
         const newUrl = page.url();
         console.log(`URL after login attempt: ${newUrl}`);
       }

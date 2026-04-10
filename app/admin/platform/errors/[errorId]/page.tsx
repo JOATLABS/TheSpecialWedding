@@ -117,9 +117,9 @@ export default function ErrorDetailsPage() {
         if (response.status === 404) {
           setFetchError('Error not found. It may have been acknowledged or deleted already.');
           setError(null);
-          return; 
+          return;
         }
-        
+
         const errorData = await response.json().catch(() => null);
         const errorMessage = errorData?.detail || 'Failed to acknowledge error';
         throw new Error(errorMessage);

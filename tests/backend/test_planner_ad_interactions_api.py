@@ -19,14 +19,14 @@ Auth strategy:
 
 import os
 import sys
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
-from datetime import datetime, timezone, timedelta
 
 import pytest
+from bson import ObjectId
 from fastapi import FastAPI, HTTPException
 from fastapi.testclient import TestClient
-from bson import ObjectId
 
 # Setup path and environment
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -41,12 +41,12 @@ os.environ.setdefault("ALGORITHM", "HS256")
 os.environ.setdefault("API_KEY", "test-api-key")
 os.environ.setdefault("ROOT_ADMIN_EMAIL", "thedeveloper@thespecialwedding.io")
 
-from app.dependencies.auth_extended import ExtendedAuthUser
 from app.api.planner_ad_interactions import (
-    router as planner_ad_router,
-    require_planner_or_admin,
     get_planner_ad_interaction_service,
+    require_planner_or_admin,
 )
+from app.api.planner_ad_interactions import router as planner_ad_router
+from app.dependencies.auth_extended import ExtendedAuthUser
 
 # Create a minimal test app with just the planner ad interactions router
 # (avoids importing app.main which triggers the full import chain)

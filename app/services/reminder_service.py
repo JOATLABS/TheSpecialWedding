@@ -1,10 +1,12 @@
 # app/services/reminder_service.py
 
 import os
-from fastapi import HTTPException
-from twilio.rest import Client
-from twilio.http.http_client import TwilioHttpClient
 from datetime import datetime, timezone
+
+from fastapi import HTTPException
+from twilio.http.http_client import TwilioHttpClient
+from twilio.rest import Client
+
 from app.core.database import mongo
 from app.utils.contact_sanitizer import normalize_phone_e164
 from app.utils.wedding_event_types import normalize_event_type

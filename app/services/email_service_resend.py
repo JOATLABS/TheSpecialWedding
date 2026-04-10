@@ -1,11 +1,13 @@
 # app/services/email_service_resend.py
 
 import asyncio
-import os
-import resend
-from datetime import datetime, timezone
-from typing import List, Dict, Optional, Any, cast
 import logging
+import os
+from datetime import datetime, timezone
+from typing import Any, Dict, List, Optional, cast
+
+import resend
+
 from app.core.database import mongo
 from app.utils.contact_sanitizer import sanitize_email, validate_email_format
 

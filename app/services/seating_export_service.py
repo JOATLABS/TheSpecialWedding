@@ -5,8 +5,8 @@ Generates printable PDF seating charts with visual floor plan layout
 for wedding venue display.
 """
 
-from datetime import datetime, timezone
 import logging
+from datetime import datetime, timezone
 from typing import Dict, List, Optional
 
 from app.core.database import mongo

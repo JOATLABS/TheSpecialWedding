@@ -1,22 +1,24 @@
 # app/api/email_reminders.py
 
-from fastapi import APIRouter, HTTPException, Depends, Query, Form, UploadFile, File
-from app.services.email_service_resend import ResendEmailService
-from app.dependencies.auth_extended import (
-    require_wedding_planner_only,
-    ExtendedAuthUser,
-    check_wedding_access,
-    require_admin_or_planner,
-    enforce_team_permission,
-)
-from app.services.wedding_service import WeddingService
-from app.core.config import settings
-from app.utils.response import dict_response
-from pydantic import BaseModel
-from typing import Optional
-from app.services.sse_manager import sse_manager
 import base64
 import logging
+from typing import Optional
+
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
+from pydantic import BaseModel
+
+from app.core.config import settings
+from app.dependencies.auth_extended import (
+    ExtendedAuthUser,
+    check_wedding_access,
+    enforce_team_permission,
+    require_admin_or_planner,
+    require_wedding_planner_only,
+)
+from app.services.email_service_resend import ResendEmailService
+from app.services.sse_manager import sse_manager
+from app.services.wedding_service import WeddingService
+from app.utils.response import dict_response
 
 logger = logging.getLogger(__name__)
 
@@ -56,9 +58,11 @@ def get_email_status():
             "available": email_available,
             "provider": "resend",
         },
-        message="Email service configured and ready"
-        if email_available
-        else "Email service not configured (RESEND_API_KEY missing)",
+        message=(
+            "Email service configured and ready"
+            if email_available
+            else "Email service not configured (RESEND_API_KEY missing)"
+        ),
     )
 
 

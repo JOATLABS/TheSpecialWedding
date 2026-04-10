@@ -2,21 +2,23 @@
 Stripe Payment API Endpoints
 """
 
-from fastapi import APIRouter, Depends, HTTPException, Request, Header
-from typing import Optional
-from bson import ObjectId
-from pydantic import BaseModel, Field
+import logging
 import secrets
+from typing import Optional
+
 import stripe
-from app.services.stripe_service import stripe_service
-from app.dependencies.auth_extended import require_admin_or_planner, ExtendedAuthUser
+from bson import ObjectId
+from fastapi import APIRouter, Depends, Header, HTTPException, Request
+from pydantic import BaseModel, Field
+
+from app.dependencies.auth_extended import ExtendedAuthUser, require_admin_or_planner
 from app.models.subscription import (
     ACTIVE_SUBSCRIPTION_STATUSES,
     BILLING_PORTAL_RECOVERY_SUBSCRIPTION_STATUSES,
     PUBLIC_CHECKOUT_ALLOWED_STATUSES,
     normalize_subscription_status,
 )
-import logging
+from app.services.stripe_service import stripe_service
 
 logger = logging.getLogger(__name__)
 
@@ -221,8 +223,9 @@ async def get_checkout_session(
     """
     try:
         import stripe
-        from app.core.settings import settings
+
         from app.core.database import mongo
+        from app.core.settings import settings
 
         stripe.api_key = settings.stripe_secret_key
         session = stripe.checkout.Session.retrieve(session_id)
@@ -303,9 +306,9 @@ async def get_checkout_session(
                         "invoice_pdf": latest.invoice_pdf,
                         "hosted_invoice_url": latest.hosted_invoice_url,
                         "status": latest.status,
-                        "amount_paid": latest.amount_paid / 100
-                        if latest.amount_paid
-                        else 0,
+                        "amount_paid": (
+                            latest.amount_paid / 100 if latest.amount_paid else 0
+                        ),
                     }
             except Exception as inv_err:
                 logger.warning(
@@ -332,6 +335,7 @@ async def get_payment_intent_details(id: str):
     """
     try:
         import stripe
+
         from app.core.settings import settings
 
         if not settings.stripe_secret_key:
@@ -369,6 +373,7 @@ async def get_payment_intent_summary(id: str):
     """
     try:
         import stripe
+
         from app.core.settings import settings
 
         if not settings.stripe_secret_key:
@@ -749,8 +754,9 @@ async def create_payment_intent(
         )
 
         # Save payment request record to Mongo
-        from app.core.database import mongo
         from datetime import datetime, timezone
+
+        from app.core.database import mongo
 
         public_token = secrets.token_urlsafe(24)
 
@@ -862,8 +868,9 @@ async def get_invoices(
     """
     try:
         import stripe
-        from app.core.settings import settings
+
         from app.core.database import mongo
+        from app.core.settings import settings
 
         if not settings.stripe_enabled or not settings.stripe_secret_key:
             return []
@@ -896,9 +903,11 @@ async def get_invoices(
                     "amount": invoice.amount_paid,  # In cents
                     "status": invoice.status,
                     "invoice_pdf": invoice.invoice_pdf,
-                    "description": invoice.lines.data[0].description
-                    if invoice.lines.data
-                    else "Subscription payment",
+                    "description": (
+                        invoice.lines.data[0].description
+                        if invoice.lines.data
+                        else "Subscription payment"
+                    ),
                     "period_start": invoice.period_start,
                     "period_end": invoice.period_end,
                     "number": invoice.number,
@@ -922,8 +931,8 @@ async def get_payment_method(
     Returns masked card information (last 4 digits, brand, expiry).
     """
     try:
-        from app.core.settings import settings
         from app.core.database import mongo
+        from app.core.settings import settings
 
         if not settings.stripe_enabled or not settings.stripe_secret_key:
             return {"has_payment_method": False}
@@ -1005,8 +1014,9 @@ async def get_subscription_details(
     """
     try:
         import stripe
-        from app.core.settings import settings
+
         from app.core.database import mongo
+        from app.core.settings import settings
 
         if not settings.stripe_enabled or not settings.stripe_secret_key:
             raise HTTPException(status_code=503, detail="Stripe is not enabled")
@@ -1103,9 +1113,9 @@ async def get_subscription_details(
                         if card is not None:
                             card_brand = card.brand
                             card_info = {
-                                "card_brand": card_brand.capitalize()
-                                if card_brand
-                                else "Card",
+                                "card_brand": (
+                                    card_brand.capitalize() if card_brand else "Card"
+                                ),
                                 "card_last_four": card.last4,
                                 "card_exp_month": card.exp_month,
                                 "card_exp_year": card.exp_year,

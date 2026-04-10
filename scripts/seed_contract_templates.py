@@ -12,13 +12,13 @@ import asyncio
 import os
 import sys
 from datetime import datetime
+
 from bson import ObjectId
 
 # Add parent directory to path for imports
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from app.core.database import mongo, init_database  # noqa: E402
-
+from app.core.database import init_database, mongo  # noqa: E402
 
 # Standard placeholders available in all templates
 STANDARD_PLACEHOLDERS = [

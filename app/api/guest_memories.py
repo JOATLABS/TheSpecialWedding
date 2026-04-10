@@ -1,6 +1,6 @@
-from datetime import datetime
 import hashlib
 import logging
+from datetime import datetime
 from typing import Literal, Optional
 
 from fastapi import (
@@ -24,11 +24,7 @@ from app.dependencies.auth_extended import (
 from app.dependencies.couple_auth import require_couple_auth
 from app.services.guest_export_service import guest_export_service
 from app.services.guest_media_service import NOT_SURE_EVENT, guest_media_service
-from app.utils.rate_limiter import (
-    check_rate_limit,
-    create_rate_limiter,
-    get_client_ip,
-)
+from app.utils.rate_limiter import check_rate_limit, create_rate_limiter, get_client_ip
 
 logger = logging.getLogger(__name__)
 
@@ -224,11 +220,13 @@ async def download_planner_guest_media_sign_pdf(
             or "Wedding",
             upload_url=settings_payload["upload_url"],
             qr_png_bytes=qr_bytes,
-            upload_closes_at=datetime.fromisoformat(
-                settings_payload["upload_closes_at"].replace("Z", "+00:00")
-            )
-            if settings_payload.get("upload_closes_at")
-            else None,
+            upload_closes_at=(
+                datetime.fromisoformat(
+                    settings_payload["upload_closes_at"].replace("Z", "+00:00")
+                )
+                if settings_payload.get("upload_closes_at")
+                else None
+            ),
         )
     except ImportError as exc:
         logger.error(f"Guest memories sign PDF generation dependency missing: {exc}")

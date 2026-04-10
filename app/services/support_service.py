@@ -1,15 +1,17 @@
-from fastapi import HTTPException, UploadFile
-from app.core.database import mongo
-from typing import Dict, Optional, Any
-from datetime import datetime, timedelta, timezone
-from bson import ObjectId
-from app.utils.serializers import serialize_mongo_doc
-from app.utils.support_inbox_links import build_support_inbox_url
-import secrets
-import string
+import asyncio
 import logging
 import os
-import asyncio
+import secrets
+import string
+from datetime import datetime, timedelta, timezone
+from typing import Any, Dict, Optional
+
+from bson import ObjectId
+from fastapi import HTTPException, UploadFile
+
+from app.core.database import mongo
+from app.utils.serializers import serialize_mongo_doc
+from app.utils.support_inbox_links import build_support_inbox_url
 
 logger = logging.getLogger(__name__)
 
@@ -111,9 +113,11 @@ class SupportService:
                         "type": "support_ticket",
                         "target_audience": "root_admin",
                         "is_dismissible": True,
-                        "priority": "high"
-                        if ticket["priority"] in ["urgent", "high"]
-                        else "medium",
+                        "priority": (
+                            "high"
+                            if ticket["priority"] in ["urgent", "high"]
+                            else "medium"
+                        ),
                     },
                     created_by="system",
                 )
@@ -673,13 +677,13 @@ class SupportService:
             )
             async for agent in cursor:
                 agent["_id"] = str(agent["_id"])
-                agent[
-                    "assigned_tickets"
-                ] = await self.tickets_collection.count_documents(
-                    {
-                        "assigned_to": agent["email"],
-                        "status": {"$in": ["open", "in_progress"]},
-                    }
+                agent["assigned_tickets"] = (
+                    await self.tickets_collection.count_documents(
+                        {
+                            "assigned_to": agent["email"],
+                            "status": {"$in": ["open", "in_progress"]},
+                        }
+                    )
                 )
                 agents.append(agent)
 

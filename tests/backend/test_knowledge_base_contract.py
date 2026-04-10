@@ -18,7 +18,6 @@ from app.models.knowledge_base import (
 )
 from app.services.knowledge_base_service import KnowledgeBaseService
 
-
 VALID_ARTICLE_PAYLOAD = {
     "title": "How to use the knowledge base",
     "content": "This is long enough content for validation. " * 4,

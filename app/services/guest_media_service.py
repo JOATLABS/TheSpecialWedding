@@ -414,7 +414,11 @@ class GuestMediaService:
                 candidate if "://" in candidate else f"https://{candidate}"
             )
             hostname = (parsed.hostname or parsed.path.split("/")[0]).strip().lower()
-            if not hostname or hostname in {"localhost", "127.0.0.1", "0.0.0.0"}:
+            if not hostname or hostname in {
+                "localhost",
+                "127.0.0.1",
+                "0.0.0.0",
+            }:  # nosec B104
                 continue
 
             allowed_origins.append(hostname)
@@ -672,7 +676,8 @@ class GuestMediaService:
         upload_batch_id = hashlib.sha1(
             f"{slug}:{cleaned_name}:{datetime.now(timezone.utc).isoformat()}".encode(
                 "utf-8"
-            )
+            ),
+            usedforsecurity=False,
         ).hexdigest()[:20]
         created_at = datetime.now(timezone.utc)
         wedding_id = str(wedding.get("_id"))
@@ -684,7 +689,8 @@ class GuestMediaService:
             asset_id = hashlib.sha1(
                 f"{upload_batch_id}:{index}:{file_data['filename']}:{created_at.isoformat()}".encode(
                     "utf-8"
-                )
+                ),
+                usedforsecurity=False,
             ).hexdigest()[:24]
             key = self.storage.build_key(
                 slug, upload_batch_id, asset_id, file_data["filename"]
@@ -1530,7 +1536,8 @@ class GuestMediaService:
         export_id = hashlib.sha1(
             f"{normalized_wedding_id}:{requested_by}:{datetime.now(timezone.utc).isoformat()}".encode(
                 "utf-8"
-            )
+            ),
+            usedforsecurity=False,
         ).hexdigest()[:24]
         now = datetime.now(timezone.utc)
         export_key = self.storage.build_export_key(

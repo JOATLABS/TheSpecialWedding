@@ -6,13 +6,16 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 from uuid import uuid4
 
+from bson import ObjectId
 from fastapi import HTTPException
 from pymongo import ReturnDocument
 from pymongo.errors import DuplicateKeyError
 
+from app.core.config import settings
 from app.core.database import mongo
 from app.models.calendar import CalendarSyncPolicy
 from app.models.calendar_sync import CalendarSyncStatusValue
+from app.services.calendar_audit_service import calendar_audit_service
 from app.services.google_calendar_service import google_calendar_service
 
 
@@ -73,6 +76,111 @@ class CalendarSyncService:
             "sync_direction": "outbound",
             "updated_at": now,
         }
+
+    def _retry_backoff(self, retry_count: int) -> timedelta:
+        capped_attempts = min(
+            max(retry_count, 1), settings.CALENDAR_SYNC_RETRY_MAX_ATTEMPTS
+        )
+        seconds = settings.CALENDAR_SYNC_RETRY_INITIAL_BACKOFF_SECONDS * (
+            2 ** (capped_attempts - 1)
+        )
+        max_seconds = settings.CALENDAR_SYNC_RETRY_INITIAL_BACKOFF_SECONDS * 32
+        return timedelta(seconds=min(seconds, max_seconds))
+
+    def _build_failure_state(
+        self,
+        *,
+        existing_retry_count: int,
+        classification: dict[str, Any],
+        now: datetime,
+    ) -> dict[str, Any]:
+        retry_count = existing_retry_count + 1
+        retryable = bool(classification.get("retryable", False)) and (
+            retry_count <= settings.CALENDAR_SYNC_RETRY_MAX_ATTEMPTS
+        )
+        next_retry_at = now + self._retry_backoff(retry_count) if retryable else None
+        return {
+            "sync_status": CalendarSyncStatusValue.FAILED.value,
+            "last_sync_at": None,
+            "last_error": classification.get("error_message")
+            or "Failed to sync to provider",
+            "last_error_category": classification.get("error_category"),
+            "retryable_error": retryable,
+            "retry_count": retry_count,
+            "last_retry_at": now,
+            "next_retry_at": next_retry_at,
+            "updated_at": now,
+        }
+
+    def _build_success_state(
+        self,
+        *,
+        now: datetime,
+        external_event_id: str | None,
+        etag: str | None,
+    ) -> dict[str, Any]:
+        return {
+            "external_event_id": external_event_id,
+            "etag": etag,
+            "sync_status": (
+                CalendarSyncStatusValue.SYNCED.value
+                if external_event_id
+                else CalendarSyncStatusValue.FAILED.value
+            ),
+            "last_sync_at": now if external_event_id else None,
+            "last_error": None if external_event_id else "Failed to sync to provider",
+            "last_error_category": None,
+            "retryable_error": False,
+            "retry_count": 0,
+            "last_retry_at": None,
+            "next_retry_at": None,
+            "last_drift_check_at": now if external_event_id else None,
+            "updated_at": now,
+        }
+
+    def _coerce_provider_result(self, result: Any) -> dict[str, Any]:
+        if isinstance(result, dict):
+            return result
+        return {
+            "success": bool(result),
+            "retryable": False,
+            "error_category": None,
+            "error_message": None if result else "Failed to sync to provider",
+            "status_code": None,
+        }
+
+    async def _log_sync_failure(
+        self,
+        *,
+        task: dict[str, Any],
+        connection_doc: dict[str, Any] | None,
+        classification: dict[str, Any],
+    ) -> None:
+        await calendar_audit_service.log(
+            action="calendar_sync_failed",
+            message=(
+                f"Failed to sync {task.get('title') or 'schedule item'} to "
+                f"{(connection_doc or {}).get('calendar_name') or 'external calendar'}"
+            ),
+            owner_planner_email=task.get("owner_planner_email")
+            or task.get("planner_email"),
+            actor_email=task.get("created_by_email")
+            or task.get("owner_planner_email")
+            or task.get("planner_email"),
+            wedding_id=task.get("wedding_id"),
+            metadata={
+                "task_id": str(task.get("_id")),
+                "calendar_connection_id": (
+                    str(connection_doc.get("_id"))
+                    if isinstance(connection_doc, dict)
+                    else None
+                ),
+                "error_category": classification.get("error_category"),
+                "retryable": classification.get("retryable", False),
+                "status_code": classification.get("status_code"),
+                "error_message": classification.get("error_message"),
+            },
+        )
 
     async def _claim_provider_create_slot(
         self,
@@ -278,20 +386,35 @@ class CalendarSyncService:
             sync_connection_id = sync_doc.get("calendar_connection_id")
             if sync_connection_id and sync_connection_id not in selected_connection_ids:
                 if sync_doc.get("external_event_id"):
-                    deleted = await google_calendar_service.delete_google_event_for_connection(
-                        sync_connection_id,
-                        sync_doc["external_event_id"],
+                    delete_result = self._coerce_provider_result(
+                        await google_calendar_service.delete_google_event_for_connection(
+                            sync_connection_id,
+                            sync_doc["external_event_id"],
+                        )
                     )
-                    if not deleted:
+                    if not delete_result.get("success"):
+                        failure_state = self._build_failure_state(
+                            existing_retry_count=int(sync_doc.get("retry_count") or 0),
+                            classification=delete_result,
+                            now=now,
+                        )
+                        failure_state["last_error"] = (
+                            "Failed to remove provider event for deselected calendar"
+                        )
                         await self.syncs_collection.update_one(
                             {"_id": sync_doc["_id"]},
                             {
                                 "$set": {
-                                    "sync_status": CalendarSyncStatusValue.FAILED.value,
-                                    "last_error": "Failed to remove provider event for deselected calendar",
-                                    "updated_at": now,
+                                    **failure_state,
+                                    "calendar_connection_id": sync_connection_id,
+                                    "calendar_id": sync_doc.get("calendar_id"),
                                 }
                             },
+                        )
+                        await self._log_sync_failure(
+                            task=task,
+                            connection_doc=None,
+                            classification=delete_result,
                         )
                         continue
                 await self.syncs_collection.update_one(
@@ -300,6 +423,9 @@ class CalendarSyncService:
                         "$set": {
                             "sync_status": CalendarSyncStatusValue.ORPHANED.value,
                             "last_error": None,
+                            "last_error_category": None,
+                            "retryable_error": False,
+                            "next_retry_at": None,
                             "updated_at": now,
                         }
                     },
@@ -318,6 +444,12 @@ class CalendarSyncService:
                         "owner_planner_email": task.get("owner_planner_email")
                         or task.get("planner_email"),
                         "sync_status": CalendarSyncStatusValue.NOT_CONFIGURED.value,
+                        "last_error": None,
+                        "last_error_category": None,
+                        "retryable_error": False,
+                        "retry_count": 0,
+                        "next_retry_at": None,
+                        "last_retry_at": None,
                         "updated_at": now,
                     },
                     "$setOnInsert": {"created_at": now},
@@ -337,7 +469,7 @@ class CalendarSyncService:
             connection_id = str(connection_doc["_id"])
             existing = existing_by_connection_id.get(connection_id)
             if existing and existing.get("external_event_id"):
-                success = (
+                provider_result = self._coerce_provider_result(
                     await google_calendar_service.update_google_event_for_connection(
                         connection_id,
                         existing["external_event_id"],
@@ -345,8 +477,11 @@ class CalendarSyncService:
                         attendee_emails=attendee_emails,
                     )
                 )
-                external_event_id = existing.get("external_event_id")
-                etag = existing.get("etag")
+                success = bool(provider_result.get("success"))
+                external_event_id = provider_result.get(
+                    "external_event_id"
+                ) or existing.get("external_event_id")
+                etag = provider_result.get("etag") or existing.get("etag")
             else:
                 claimed_doc, claim_token = await self._claim_provider_create_slot(
                     task=task,
@@ -356,24 +491,44 @@ class CalendarSyncService:
                 if claimed_doc is None:
                     continue
                 if claimed_doc.get("external_event_id"):
-                    success = await google_calendar_service.update_google_event_for_connection(
-                        connection_id,
-                        claimed_doc["external_event_id"],
-                        task,
-                        attendee_emails=attendee_emails,
+                    provider_result = self._coerce_provider_result(
+                        await google_calendar_service.update_google_event_for_connection(
+                            connection_id,
+                            claimed_doc["external_event_id"],
+                            task,
+                            attendee_emails=attendee_emails,
+                        )
                     )
+                    success = bool(provider_result.get("success"))
                     external_event_id = claimed_doc.get("external_event_id")
-                    etag = claimed_doc.get("etag")
+                    etag = provider_result.get("etag") or claimed_doc.get("etag")
                     existing = claimed_doc
                 else:
-                    result = await google_calendar_service.create_google_event_for_connection(
-                        connection_id,
-                        task,
-                        attendee_emails=attendee_emails,
+                    provider_result = self._coerce_provider_result(
+                        await google_calendar_service.create_google_event_for_connection(
+                            connection_id,
+                            task,
+                            attendee_emails=attendee_emails,
+                        )
                     )
-                    success = bool(result)
-                    external_event_id = result.get("id") if result else None
-                    etag = result.get("etag") if result else None
+                    success = bool(provider_result.get("success"))
+                    external_event_id = provider_result.get("external_event_id")
+                    etag = provider_result.get("etag")
+                    create_state = (
+                        self._build_success_state(
+                            now=now,
+                            external_event_id=external_event_id,
+                            etag=etag,
+                        )
+                        if success
+                        else self._build_failure_state(
+                            existing_retry_count=int(
+                                claimed_doc.get("retry_count") or 0
+                            ),
+                            classification=provider_result,
+                            now=now,
+                        )
+                    )
                     await self.syncs_collection.update_one(
                         {
                             "task_id": task_id,
@@ -387,17 +542,7 @@ class CalendarSyncService:
                                     connection_doc=connection_doc,
                                     now=now,
                                 ),
-                                "external_event_id": external_event_id,
-                                "sync_status": (
-                                    CalendarSyncStatusValue.SYNCED.value
-                                    if success and external_event_id
-                                    else CalendarSyncStatusValue.FAILED.value
-                                ),
-                                "last_sync_at": now if success else None,
-                                "last_error": (
-                                    None if success else "Failed to sync to provider"
-                                ),
-                                "etag": etag,
+                                **create_state,
                             },
                             "$unset": {
                                 "provider_create_claim_token": "",
@@ -416,12 +561,26 @@ class CalendarSyncService:
                         )
                         or {}
                     )
+                    if not success:
+                        await self._log_sync_failure(
+                            task=task,
+                            connection_doc=connection_doc,
+                            classification=provider_result,
+                        )
                     continue
 
-            sync_status = (
-                CalendarSyncStatusValue.SYNCED.value
-                if success and external_event_id
-                else CalendarSyncStatusValue.FAILED.value
+            sync_state = (
+                self._build_success_state(
+                    now=now,
+                    external_event_id=external_event_id,
+                    etag=etag,
+                )
+                if success
+                else self._build_failure_state(
+                    existing_retry_count=int((existing or {}).get("retry_count") or 0),
+                    classification=provider_result,
+                    now=now,
+                )
             )
             await self.syncs_collection.update_one(
                 {"task_id": task_id, "calendar_connection_id": connection_id},
@@ -436,13 +595,8 @@ class CalendarSyncService:
                         "calendar_connection_id": connection_id,
                         "provider": connection_doc.get("provider", "google"),
                         "calendar_id": connection_doc.get("calendar_id"),
-                        "external_event_id": external_event_id,
                         "sync_direction": "outbound",
-                        "sync_status": sync_status,
-                        "last_sync_at": now if success else None,
-                        "last_error": None if success else "Failed to sync to provider",
-                        "etag": etag,
-                        "updated_at": now,
+                        **sync_state,
                     },
                     "$unset": {
                         "provider_create_claim_token": "",
@@ -452,6 +606,12 @@ class CalendarSyncService:
                 },
                 upsert=True,
             )
+            if not success:
+                await self._log_sync_failure(
+                    task=task,
+                    connection_doc=connection_doc,
+                    classification=provider_result,
+                )
 
         updated_syncs = await self.get_sync_status(task_id)
         return updated_syncs
@@ -466,13 +626,25 @@ class CalendarSyncService:
             connection_id = sync_doc.get("calendar_connection_id")
             external_event_id = sync_doc.get("external_event_id")
             if connection_id and external_event_id:
-                deleted = (
+                delete_result = self._coerce_provider_result(
                     await google_calendar_service.delete_google_event_for_connection(
                         connection_id,
                         external_event_id,
                     )
                 )
-                if not deleted:
+                if not delete_result.get("success"):
+                    await self.syncs_collection.update_one(
+                        {"_id": sync_doc["_id"]},
+                        {
+                            "$set": self._build_failure_state(
+                                existing_retry_count=int(
+                                    sync_doc.get("retry_count") or 0
+                                ),
+                                classification=delete_result,
+                                now=datetime.now(UTC),
+                            )
+                        },
+                    )
                     failed_deletions.append(
                         str(sync_doc.get("_id") or external_event_id)
                     )
@@ -482,6 +654,181 @@ class CalendarSyncService:
                 detail="Failed to delete one or more external calendar events. Internal record was preserved.",
             )
         await self.syncs_collection.delete_many({"task_id": task_id})
+
+    async def process_due_retries(self, *, limit: int) -> dict[str, int]:
+        """Retry transient per-target sync failures with capped backoff."""
+        now = datetime.now(UTC)
+        due_rows = (
+            await self.syncs_collection.find(
+                {
+                    "sync_status": CalendarSyncStatusValue.FAILED.value,
+                    "retryable_error": True,
+                    "next_retry_at": {"$lte": now},
+                    "calendar_connection_id": {"$exists": True, "$ne": None},
+                }
+            )
+            .sort("next_retry_at", 1)
+            .limit(limit)
+            .to_list(length=limit)
+        )
+        processed = 0
+        succeeded = 0
+        failed = 0
+        for sync_doc in due_rows:
+            processed += 1
+            if await self._retry_sync_row(sync_doc):
+                succeeded += 1
+            else:
+                failed += 1
+        return {"processed": processed, "succeeded": succeeded, "failed": failed}
+
+    async def _retry_sync_row(self, sync_doc: dict[str, Any]) -> bool:
+        task_id = sync_doc.get("task_id")
+        if not task_id:
+            return False
+        try:
+            task_oid = ObjectId(task_id)
+        except Exception:
+            task_oid = task_id
+        task = await self.tasks_collection.find_one({"_id": task_oid})
+        if not isinstance(task, dict):
+            await self.syncs_collection.update_one(
+                {"_id": sync_doc["_id"]},
+                {
+                    "$set": {
+                        "sync_status": CalendarSyncStatusValue.ORPHANED.value,
+                        "last_error": "Canonical schedule item no longer exists",
+                        "last_error_category": "missing_task",
+                        "retryable_error": False,
+                        "next_retry_at": None,
+                        "updated_at": datetime.now(UTC),
+                    }
+                },
+            )
+            return False
+
+        selected = await self.resolve_sync_targets(task, actor_is_owner=True)
+        selected_by_id = {str(doc["_id"]): doc for doc in selected}
+        connection_id = sync_doc.get("calendar_connection_id")
+        if connection_id not in selected_by_id:
+            await self.syncs_collection.update_one(
+                {"_id": sync_doc["_id"]},
+                {
+                    "$set": {
+                        "sync_status": CalendarSyncStatusValue.ORPHANED.value,
+                        "last_error": "Retry target is no longer selected by current sync policy",
+                        "last_error_category": "deselected_target",
+                        "retryable_error": False,
+                        "next_retry_at": None,
+                        "updated_at": datetime.now(UTC),
+                    }
+                },
+            )
+            return False
+
+        await calendar_audit_service.log(
+            action="calendar_sync_retried",
+            message=f"Retrying calendar sync for {task.get('title') or 'schedule item'}",
+            owner_planner_email=task.get("owner_planner_email")
+            or task.get("planner_email"),
+            actor_email=task.get("owner_planner_email") or task.get("planner_email"),
+            wedding_id=task.get("wedding_id"),
+            metadata={
+                "task_id": task_id,
+                "calendar_connection_id": connection_id,
+                "retry_count": int(sync_doc.get("retry_count") or 0),
+            },
+        )
+
+        await self.sync_schedule_item(
+            task,
+            explicit_connection_ids=[connection_id],
+            actor_is_owner=True,
+        )
+        refreshed = await self.syncs_collection.find_one({"_id": sync_doc["_id"]})
+        return bool(
+            isinstance(refreshed, dict)
+            and refreshed.get("sync_status") == CalendarSyncStatusValue.SYNCED.value
+        )
+
+    async def run_drift_checks(self, *, limit: int) -> int:
+        """Check synced rows for missing provider events or lost provider access."""
+        now = datetime.now(UTC)
+        cutoff = now - timedelta(minutes=settings.CALENDAR_DRIFT_CHECK_INTERVAL_MINUTES)
+        due_rows = (
+            await self.syncs_collection.find(
+                {
+                    "sync_status": CalendarSyncStatusValue.SYNCED.value,
+                    "calendar_connection_id": {"$exists": True, "$ne": None},
+                    "$or": [
+                        {"last_drift_check_at": {"$exists": False}},
+                        {"last_drift_check_at": None},
+                        {"last_drift_check_at": {"$lt": cutoff}},
+                    ],
+                }
+            )
+            .sort("last_drift_check_at", 1)
+            .limit(limit)
+            .to_list(length=limit)
+        )
+        checked = 0
+        for sync_doc in due_rows:
+            connection_id = sync_doc.get("calendar_connection_id")
+            external_event_id = sync_doc.get("external_event_id")
+            if not connection_id or not external_event_id:
+                continue
+            checked += 1
+            result = await google_calendar_service.get_google_event_for_connection(
+                connection_id,
+                external_event_id,
+            )
+            if result.get("success"):
+                await self.syncs_collection.update_one(
+                    {"_id": sync_doc["_id"]},
+                    {
+                        "$set": {
+                            "last_drift_check_at": now,
+                            "last_error": None,
+                            "last_error_category": None,
+                            "updated_at": now,
+                        }
+                    },
+                )
+                continue
+
+            error_category = result.get("error_category")
+            if error_category == "not_found":
+                await self.syncs_collection.update_one(
+                    {"_id": sync_doc["_id"]},
+                    {
+                        "$set": {
+                            "sync_status": CalendarSyncStatusValue.ORPHANED.value,
+                            "last_error": "Provider event no longer exists",
+                            "last_error_category": "provider_event_missing",
+                            "retryable_error": False,
+                            "next_retry_at": None,
+                            "last_drift_check_at": now,
+                            "updated_at": now,
+                        }
+                    },
+                )
+            else:
+                await self.syncs_collection.update_one(
+                    {"_id": sync_doc["_id"]},
+                    {
+                        "$set": {
+                            **self._build_failure_state(
+                                existing_retry_count=int(
+                                    sync_doc.get("retry_count") or 0
+                                ),
+                                classification=result,
+                                now=now,
+                            ),
+                            "last_drift_check_at": now,
+                        }
+                    },
+                )
+        return checked
 
     async def get_sync_status(self, task_id: str) -> list[dict]:
         """List per-target sync rows for a canonical schedule item."""
@@ -503,6 +850,12 @@ class CalendarSyncService:
                     "sync_status": doc.get("sync_status"),
                     "last_sync_at": doc.get("last_sync_at"),
                     "last_error": doc.get("last_error"),
+                    "last_error_category": doc.get("last_error_category"),
+                    "retryable_error": doc.get("retryable_error", False),
+                    "retry_count": doc.get("retry_count", 0),
+                    "next_retry_at": doc.get("next_retry_at"),
+                    "last_retry_at": doc.get("last_retry_at"),
+                    "last_drift_check_at": doc.get("last_drift_check_at"),
                     "updated_at": doc.get("updated_at"),
                 }
             )

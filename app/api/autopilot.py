@@ -8,15 +8,15 @@ Provides endpoints for automated payment processing:
 - Recalculate payment schedules
 """
 
-from fastapi import APIRouter, Depends, Header, HTTPException
-from typing import Dict, Any, Optional
-from datetime import datetime
-from datetime import timezone
 import logging
 import os
+from datetime import datetime, timezone
+from typing import Any, Dict, Optional
 
+from fastapi import APIRouter, Depends, Header, HTTPException
+
+from app.dependencies.auth_extended import ExtendedAuthUser, require_admin_or_planner
 from app.services.autopilot_service import autopilot_service
-from app.dependencies.auth_extended import require_admin_or_planner, ExtendedAuthUser
 
 logger = logging.getLogger(__name__)
 

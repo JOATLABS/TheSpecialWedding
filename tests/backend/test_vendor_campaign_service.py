@@ -13,7 +13,7 @@ Tests cover:
 
 import os
 import sys
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import mongomock
@@ -31,18 +31,17 @@ os.environ.setdefault("ALGORITHM", "HS256")
 os.environ.setdefault("API_KEY", "test-api-key")
 os.environ.setdefault("ROOT_ADMIN_EMAIL", "thedeveloper@thespecialwedding.io")
 
-from app.services.vendor_campaign_service import VendorCampaignService
 from app.models.advertising_campaign import CampaignStatus, CreativeReviewStatus
+from app.services.vendor_campaign_service import VendorCampaignService
 from tests.backend.conftest_advertising import (
+    VENDOR_EMAIL,
+    VENDOR_ID,
+    VENDOR_NAME,
     AsyncMockDatabase,
+    make_ad_lead,
     make_campaign,
     make_creative,
-    make_ad_lead,
-    VENDOR_ID,
-    VENDOR_EMAIL,
-    VENDOR_NAME,
 )
-
 
 # =============================================================================
 # FIXTURES

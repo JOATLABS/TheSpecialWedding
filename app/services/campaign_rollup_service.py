@@ -21,8 +21,8 @@ PRD Reference: Section 3.5 (Updated Rollup Service)
 """
 
 import logging
-from datetime import datetime, timezone, timedelta
-from typing import Optional, Dict, Any, List
+from datetime import datetime, timedelta, timezone
+from typing import Any, Dict, List, Optional
 
 from bson import ObjectId
 

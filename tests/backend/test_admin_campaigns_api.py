@@ -11,13 +11,13 @@ Tests /admin/ads/campaigns/* endpoints covering:
 
 import os
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
 from unittest.mock import AsyncMock, patch
-from datetime import datetime, timezone
 
 import pytest
-from fastapi.testclient import TestClient
 from bson import ObjectId
+from fastapi.testclient import TestClient
 
 # Setup paths
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -31,14 +31,10 @@ os.environ.setdefault("API_KEY", "test-api-key")
 os.environ.setdefault("ROOT_ADMIN_EMAIL", "thedeveloper@thespecialwedding.io")
 
 from fastapi import FastAPI
-from app.dependencies.auth_extended import (
-    ExtendedAuthUser,
-    require_root_admin,
-)
-from app.api.admin_campaigns import (
-    router as admin_campaigns_router,
-    get_admin_campaign_service,
-)
+
+from app.api.admin_campaigns import get_admin_campaign_service
+from app.api.admin_campaigns import router as admin_campaigns_router
+from app.dependencies.auth_extended import ExtendedAuthUser, require_root_admin
 
 # Create a minimal test app with just the admin campaigns router
 # (avoids importing app.main which triggers the full import chain)

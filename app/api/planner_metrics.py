@@ -1,29 +1,30 @@
-from fastapi import APIRouter, HTTPException, Depends, Query
+import hashlib
+import logging
+from datetime import datetime, timezone
+from math import ceil
+from typing import Any, List, Optional
+
+from fastapi import APIRouter, Depends, HTTPException, Query
+
+from app.core.cache import CacheKeys, cache
+from app.core.database import mongo
 from app.dependencies.auth_extended import (
     ExtendedAuthUser,
     enforce_team_permission,
-    require_team_or_planner,
     get_accessible_wedding_ids,
     get_owner_identity,
+    require_team_or_planner,
 )
-from app.core.cache import cache, CacheKeys
-from app.core.database import mongo
 from app.models.planner_metrics import (
-    PlannerMetricsResponse,
-    MetricsSummaryModel,
-    WeddingMetricsModel,
-    RSVPStatsModel,
-    RevenueMetricsModel,
-    ActivityLogResponse,
     ActivityItemModel,
+    ActivityLogResponse,
+    MetricsSummaryModel,
+    PlannerMetricsResponse,
     PlannerWeddingModel,
+    RevenueMetricsModel,
+    RSVPStatsModel,
+    WeddingMetricsModel,
 )
-from datetime import datetime, timezone
-from typing import Any, Optional, List
-from math import ceil
-import hashlib
-import logging
-
 from app.utils.planner_ownership import (
     build_wedding_owner_query,
     combine_mongo_filters,
@@ -222,9 +223,11 @@ async def get_planner_metrics(
             assigned_weddings = await weddings_collection.find(
                 combine_mongo_filters(
                     build_wedding_owner_query(planner_email=owner_email),
-                    {"_id": {"$in": [wedding["_id"] for wedding in weddings]}}
-                    if weddings
-                    else None,
+                    (
+                        {"_id": {"$in": [wedding["_id"] for wedding in weddings]}}
+                        if weddings
+                        else None
+                    ),
                 ),
                 {"_id": 1},
             ).to_list(length=MAX_WEDDINGS)
@@ -375,9 +378,9 @@ async def get_planner_metrics(
 
             metrics["summary"]["confirmed_rsvps"] += confirmed
             metrics["summary"]["confirmed_plus_ones_allowed"] += confirmed_plus_allowed
-            metrics["summary"]["confirmed_plus_ones_submitted"] += (
-                confirmed_plus_ones_submitted
-            )
+            metrics["summary"][
+                "confirmed_plus_ones_submitted"
+            ] += confirmed_plus_ones_submitted
             metrics["summary"]["declined_rsvps"] += declined
             metrics["summary"]["pending_rsvps"] += pending
             metrics["summary"]["pending_plus_ones_allowed"] += pending_plus_allowed
@@ -473,9 +476,11 @@ async def get_planner_metrics(
                 {"$match": subscription_match},
                 {
                     "$lookup": {
-                        "from": plans_collection.name
-                        if hasattr(plans_collection, "name")
-                        else "subscription_plans",
+                        "from": (
+                            plans_collection.name
+                            if hasattr(plans_collection, "name")
+                            else "subscription_plans"
+                        ),
                         "localField": "plan_id",
                         "foreignField": "_id",
                         "as": "plan_doc",
@@ -618,9 +623,11 @@ async def get_planner_metrics(
                         timestamp=_safe_isoformat(
                             activity.get("timestamp") or activity.get("created_at")
                         ),
-                        wedding_id=str(activity.get("wedding_id"))
-                        if activity.get("wedding_id") is not None
-                        else None,
+                        wedding_id=(
+                            str(activity.get("wedding_id"))
+                            if activity.get("wedding_id") is not None
+                            else None
+                        ),
                         metadata=activity.get("metadata", {}),
                     )
                 )
@@ -747,9 +754,11 @@ async def get_activity_log(
                     timestamp=_safe_isoformat(
                         activity.get("timestamp") or activity.get("created_at")
                     ),
-                    wedding_id=str(activity.get("wedding_id"))
-                    if activity.get("wedding_id") is not None
-                    else None,
+                    wedding_id=(
+                        str(activity.get("wedding_id"))
+                        if activity.get("wedding_id") is not None
+                        else None
+                    ),
                     metadata=activity.get("metadata", {}),
                 )
             )

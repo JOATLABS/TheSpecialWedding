@@ -2,14 +2,16 @@
 Performance monitoring middleware
 """
 
+import asyncio
+import logging
+import time
+from collections import defaultdict, deque
+from typing import Dict, List
+
 from fastapi import Request
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import Response
-import time
-import logging
-from typing import Dict, List
-from collections import defaultdict, deque
-import asyncio
+
 from app.core.cache import cache
 
 logger = logging.getLogger(__name__)

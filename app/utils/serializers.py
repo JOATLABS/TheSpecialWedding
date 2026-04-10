@@ -2,9 +2,10 @@
 Utility functions for serializing MongoDB documents and other data structures
 """
 
-from bson import ObjectId
 from datetime import datetime
 from typing import Any, Dict, List
+
+from bson import ObjectId
 
 
 def serialize_mongo_doc(doc: Any) -> Any:

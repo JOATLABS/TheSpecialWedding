@@ -9,13 +9,14 @@ This module contains all models for the comprehensive vendor management system:
 - VendorAssignment: Links vendors to weddings and budget categories
 """
 
-from pydantic import BaseModel, Field, ConfigDict, field_serializer
-from typing import List, Dict, Optional, Any
 from datetime import datetime, timezone
 from enum import Enum
-from bson import ObjectId
-from app.utils.pydantic_objectid import PyObjectId, generate_object_id
+from typing import Any, Dict, List, Optional
 
+from bson import ObjectId
+from pydantic import BaseModel, ConfigDict, Field, field_serializer
+
+from app.utils.pydantic_objectid import PyObjectId, generate_object_id
 
 # =============================================================================
 # ENUMS

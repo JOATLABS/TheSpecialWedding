@@ -7,19 +7,21 @@ These are wedding activity notifications (RSVPs, forms, payments), NOT platform 
 Includes Web Push notification support for instant browser notifications.
 """
 
+import asyncio
+import logging
+from datetime import datetime, timezone
+from typing import Any, Dict, Optional
+
+from bson import ObjectId
 from fastapi import HTTPException
+
 from app.core.database import mongo
 from app.models.planner_notification import (
-    create_notification_document,
-    PlannerNotificationTypes,
     NotificationType,
+    PlannerNotificationTypes,
+    create_notification_document,
 )
 from app.utils.support_inbox_links import build_support_inbox_path
-from typing import Dict, Optional, Any
-from datetime import datetime, timezone
-from bson import ObjectId
-import logging
-import asyncio
 
 logger = logging.getLogger(__name__)
 
@@ -238,12 +240,14 @@ class PlannerNotificationService:
                         "priority": doc.get("priority", "medium"),
                         "action_url": doc.get("action_url"),
                         "is_read": doc.get("is_read", False),
-                        "created_at": doc["created_at"].isoformat()
-                        if doc.get("created_at")
-                        else None,
-                        "read_at": doc["read_at"].isoformat()
-                        if doc.get("read_at")
-                        else None,
+                        "created_at": (
+                            doc["created_at"].isoformat()
+                            if doc.get("created_at")
+                            else None
+                        ),
+                        "read_at": (
+                            doc["read_at"].isoformat() if doc.get("read_at") else None
+                        ),
                     }
                 )
 

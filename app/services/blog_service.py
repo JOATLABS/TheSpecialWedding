@@ -4,19 +4,20 @@ Mirrors KnowledgeBaseService architecture but uses 'blog_articles' collection.
 Blog articles are PUBLIC (no auth to read), admin-only to write.
 """
 
-from fastapi import HTTPException
-from app.core.database import mongo
-from typing import Dict, Optional, Any, List
-from datetime import datetime, timezone
-from bson import ObjectId
 import logging
-import re
 import math
+import re
+from datetime import datetime, timezone
+from typing import Any, Dict, List, Optional
 
+from bson import ObjectId
+from fastapi import HTTPException
+
+from app.core.database import mongo
 from app.models.blog import (
-    generate_blog_slug,
     BlogArticleCreateModel,
     BlogArticleUpdateModel,
+    generate_blog_slug,
 )
 from app.utils.blog_content import blog_content_word_count, sanitize_blog_content
 

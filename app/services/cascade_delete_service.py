@@ -15,6 +15,7 @@ This service ensures referential integrity when deleting a wedding by:
 import logging
 from datetime import datetime, timezone
 from typing import Dict, List
+
 from app.core.database import mongo
 from app.utils.planner_ownership import build_wedding_owner_query
 

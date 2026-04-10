@@ -15,16 +15,18 @@ Model Strategy:
 - Low credits (<10%): gemini-2.0-flash (faster, more economical)
 """
 
-from typing import Dict, Any, Optional
-from datetime import datetime, timezone
 import json
 import logging
+from datetime import datetime, timezone
+from typing import Any, Dict, Optional
+
 from fastapi import HTTPException
-from app.core.settings import settings
+
 from app.core.database import mongo
+from app.core.settings import settings
 from app.services.ai_cache_service import ai_cache_service
-from app.services.subscription_service import SubscriptionService
 from app.services.notification_service import NotificationService
+from app.services.subscription_service import SubscriptionService
 from app.utils.id_utils import to_object_id
 
 logger = logging.getLogger(__name__)
@@ -1120,9 +1122,11 @@ class AIService:
                 "cached": False,
                 "credits_used": 0 if is_root_admin else feature_config["credits"],
                 "model_used": model,
-                "credits_remaining": None
-                if credit_status["credits_remaining"] is None
-                else max(0, updated_remaining),
+                "credits_remaining": (
+                    None
+                    if credit_status["credits_remaining"] is None
+                    else max(0, updated_remaining)
+                ),
                 "credits_percent": updated_percent,
             }
 

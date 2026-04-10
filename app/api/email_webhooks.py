@@ -8,13 +8,15 @@ Event Types: email.sent, email.delivered, email.bounced, email.delivery_delayed,
              email.complained, email.opened, email.clicked, email.received (inbound)
 """
 
-from fastapi import APIRouter, Request, HTTPException, Header
-from typing import Optional
-from datetime import datetime, timezone
-from app.core.database import mongo
-from bson import ObjectId
 import logging
 import os
+from datetime import datetime, timezone
+from typing import Optional
+
+from bson import ObjectId
+from fastapi import APIRouter, Header, HTTPException, Request
+
+from app.core.database import mongo
 
 logger = logging.getLogger(__name__)
 

@@ -52,8 +52,8 @@ const Thumbnail = memo(({
 Thumbnail.displayName = 'Thumbnail';
 
 const GalleryGridComponent: React.FC<GalleryGridProps> = ({
-  images, 
-  columns = { sm: 2, md: 3, lg: 4 } 
+  images,
+  columns = { sm: 2, md: 3, lg: 4 }
 }) => {
   const [selectedIndex, setSelectedIndex] = useState<number | null>(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -164,7 +164,7 @@ const GalleryGridComponent: React.FC<GalleryGridProps> = ({
 
   const handleTouchEnd = () => {
     if (!touchStart || !touchEnd) return;
-    
+
     const distance = touchStart - touchEnd;
     const isLeftSwipe = distance > 50;
     const isRightSwipe = distance < -50;
@@ -212,7 +212,7 @@ const GalleryGridComponent: React.FC<GalleryGridProps> = ({
 
       {/* Lightbox */}
       {selectedIndex !== null && (
-        <div 
+        <div
           className="fixed inset-0 z-50 bg-black bg-opacity-95 flex items-center justify-center"
           onClick={closeLightbox}
           onTouchStart={handleTouchStart}
@@ -268,7 +268,7 @@ const GalleryGridComponent: React.FC<GalleryGridProps> = ({
           )}
 
           {/* Main image */}
-          <div 
+          <div
             className="relative max-w-[90vw] max-h-[90vh] w-full h-full flex items-center justify-center"
             onClick={(e) => e.stopPropagation()}
           >

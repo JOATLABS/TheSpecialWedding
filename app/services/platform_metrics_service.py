@@ -569,9 +569,11 @@ class PlatformMetricsService:
             {"$match": {"status": {"$in": ["active", "trial"]}}},
             {
                 "$lookup": {
-                    "from": plans_collection.name
-                    if hasattr(plans_collection, "name")
-                    else "subscription_plans",
+                    "from": (
+                        plans_collection.name
+                        if hasattr(plans_collection, "name")
+                        else "subscription_plans"
+                    ),
                     "localField": "plan_id",
                     "foreignField": "_id",
                     "as": "plan_doc",

@@ -17,12 +17,12 @@ PRD Reference: Sections 6-8 (Full architecture, not Section 14.3 simplified vers
 """
 
 from datetime import datetime, timezone
-from typing import List, Dict, Optional, Any
 from enum import Enum
+from typing import Any, Dict, List, Optional
+
 from pydantic import Field
 
 from app.models.base import MongoModel
-
 
 # =============================================================================
 # ENUMS

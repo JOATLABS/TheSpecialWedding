@@ -4,33 +4,35 @@ Couple Invitation API (Planner-side)
 Endpoints for planners to invite couples to the portal.
 """
 
-from fastapi import APIRouter, HTTPException, Depends
-from pydantic import BaseModel, Field
+import logging
+import secrets
+from datetime import datetime, timedelta, timezone
 from typing import Optional
-from datetime import datetime, timezone, timedelta
+
+from bson import ObjectId
+from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel, Field
+
 from app.core.database import mongo
 from app.core.settings import settings
 from app.dependencies.auth_extended import (
     ExtendedAuthUser,
-    require_team_or_planner,
-    enforce_team_permission,
     check_wedding_access,
+    enforce_team_permission,
     get_accessible_wedding_ids,
     get_owner_identity,
-)
-from app.utils.planner_ownership import (
-    extract_wedding_owner_identity,
-    list_wedding_ids_for_owner,
-    normalize_query_id,
+    require_team_or_planner,
 )
 from app.services.couple_lifecycle_service import (
     COUPLE_PORTAL_STATE_PENDING_SETUP,
     couple_lifecycle_service,
 )
 from app.utils.couple_identity import normalize_couple_email
-from bson import ObjectId
-import secrets
-import logging
+from app.utils.planner_ownership import (
+    extract_wedding_owner_identity,
+    list_wedding_ids_for_owner,
+    normalize_query_id,
+)
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -475,12 +477,16 @@ async def list_couples(
                     if _normalize_invite_expiry(couple.get("invite_token_expires"))
                     else None
                 ),
-                "last_login": couple.get("last_login").isoformat()
-                if couple.get("last_login")
-                else None,
-                "created_at": couple.get("created_at").isoformat()
-                if couple.get("created_at")
-                else None,
+                "last_login": (
+                    couple.get("last_login").isoformat()
+                    if couple.get("last_login")
+                    else None
+                ),
+                "created_at": (
+                    couple.get("created_at").isoformat()
+                    if couple.get("created_at")
+                    else None
+                ),
             }
         )
 

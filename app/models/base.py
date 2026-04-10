@@ -5,7 +5,9 @@ Provides common functionality and optimizations for all models.
 
 from datetime import datetime, timezone
 from typing import Any, Dict, Optional
+
 from pydantic import BaseModel, ConfigDict, Field, field_serializer
+
 from app.utils.pydantic_objectid import PyObjectId, generate_object_id
 
 

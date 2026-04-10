@@ -5,11 +5,13 @@ Endpoints for planner-specific activity notifications (RSVPs, forms, payments).
 These are SEPARATE from platform notifications sent by root admin.
 """
 
-from fastapi import APIRouter, Depends, Query
-from typing import Optional
-from app.dependencies.auth_extended import require_admin_or_planner, ExtendedAuthUser
-from app.services.planner_notification_service import planner_notification_service
 import logging
+from typing import Optional
+
+from fastapi import APIRouter, Depends, Query
+
+from app.dependencies.auth_extended import ExtendedAuthUser, require_admin_or_planner
+from app.services.planner_notification_service import planner_notification_service
 
 logger = logging.getLogger(__name__)
 
@@ -119,9 +121,11 @@ async def get_push_status(
         "message": (
             "Push notifications active"
             if is_subscribed
-            else "Not subscribed - enable in Account Settings"
-            if web_push_service.enabled
-            else "Push notifications not configured on server"
+            else (
+                "Not subscribed - enable in Account Settings"
+                if web_push_service.enabled
+                else "Push notifications not configured on server"
+            )
         ),
     }
 
@@ -153,7 +157,9 @@ async def send_test_push_notification(
 
     return {
         "success": result.get("success", False),
-        "message": f"Test notification sent to {result.get('sent', 0)} device(s)!"
-        if result.get("success")
-        else result.get("error", "No active subscriptions found"),
+        "message": (
+            f"Test notification sent to {result.get('sent', 0)} device(s)!"
+            if result.get("success")
+            else result.get("error", "No active subscriptions found")
+        ),
     }

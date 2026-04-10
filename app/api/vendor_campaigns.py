@@ -12,20 +12,18 @@ Routes: /portal/ads/campaigns/*
 """
 
 import logging
-from fastapi import APIRouter, Depends, HTTPException, Query
 from typing import Optional
 
-from app.dependencies.auth_extended import (
-    get_current_user_extended,
-    ExtendedAuthUser,
-)
+from fastapi import APIRouter, Depends, HTTPException, Query
+
 from app.core.database import mongo
-from app.services.vendor_campaign_service import VendorCampaignService
+from app.dependencies.auth_extended import ExtendedAuthUser, get_current_user_extended
 from app.models.advertising_campaign import (
     CreateCampaignRequest,
-    UpdateCampaignRequest,
     CreateCreativeRequest,
+    UpdateCampaignRequest,
 )
+from app.services.vendor_campaign_service import VendorCampaignService
 
 logger = logging.getLogger(__name__)
 

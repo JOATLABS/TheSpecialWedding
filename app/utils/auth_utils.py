@@ -7,7 +7,7 @@ import jwt
 from dotenv import load_dotenv
 from fastapi import Response
 
-from app.core.settings import settings, Environment
+from app.core.settings import Environment, settings
 
 load_dotenv()
 

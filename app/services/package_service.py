@@ -5,15 +5,17 @@ CRUD operations for wedding service packages.
 Handles package lifecycle from creation to sending to couples.
 """
 
-from typing import List, Dict, Optional, Any
-from datetime import datetime, timezone
-import secrets
 import logging
-from bson import ObjectId
+import secrets
+from datetime import datetime, timezone
+from typing import Any, Dict, List, Optional
+
 import stripe
+from bson import ObjectId
+
 from app.core.database import mongo
 from app.core.settings import settings
-from app.models.autopilot import WeddingPackage, Contract, CoupleInfo
+from app.models.autopilot import Contract, CoupleInfo, WeddingPackage
 from app.utils.mongo_dates import to_mongo_datetime
 from app.utils.payment_schedule import build_effective_payment_schedule
 

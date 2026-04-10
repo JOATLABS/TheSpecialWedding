@@ -56,7 +56,7 @@
 
 ---
 
-<!-- 
+<!--
 Remember: PR titles should follow conventional commit format:
 - feat(commands): add new command-name
 - fix(commands): fix issue in command-name

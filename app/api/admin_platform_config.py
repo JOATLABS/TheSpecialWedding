@@ -11,15 +11,13 @@ Routes: /admin/ads/config/*
 """
 
 import logging
+
 from fastapi import APIRouter, Depends, Query
 
-from app.dependencies.auth_extended import (
-    require_root_admin,
-    ExtendedAuthUser,
-)
 from app.core.database import mongo
-from app.services.ad_platform_config_service import AdPlatformConfigService
+from app.dependencies.auth_extended import ExtendedAuthUser, require_root_admin
 from app.models.advertising_campaign import UpdatePlatformConfigRequest
+from app.services.ad_platform_config_service import AdPlatformConfigService
 
 logger = logging.getLogger(__name__)
 

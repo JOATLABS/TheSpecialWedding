@@ -5,11 +5,13 @@ This module provides FastAPI dependencies for checking if users have access
 to specific features based on their subscription plan.
 """
 
-from fastapi import Depends, HTTPException, status
-from app.dependencies.auth_extended import require_admin_or_planner, ExtendedAuthUser
-from app.core.database import mongo
-from app.models.subscription import ACTIVE_SUBSCRIPTION_STATUSES
 import logging
+
+from fastapi import Depends, HTTPException, status
+
+from app.core.database import mongo
+from app.dependencies.auth_extended import ExtendedAuthUser, require_admin_or_planner
+from app.models.subscription import ACTIVE_SUBSCRIPTION_STATUSES
 
 logger = logging.getLogger(__name__)
 

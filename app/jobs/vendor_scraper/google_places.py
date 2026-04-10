@@ -8,9 +8,9 @@ phone, website, rating, and photo references.
 Requires GOOGLE_MAPS_API_KEY in environment.
 """
 
-import os
 import logging
-from typing import List, Dict, Optional
+import os
+from typing import Dict, List, Optional
 
 import httpx
 

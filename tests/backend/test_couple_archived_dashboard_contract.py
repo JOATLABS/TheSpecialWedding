@@ -6,6 +6,7 @@ from unittest.mock import AsyncMock
 
 import pytest
 
+from app.api import behavioral_analytics as behavioral_analytics_api
 from app.api import couple_portal as couple_portal_api
 
 
@@ -105,6 +106,11 @@ async def test_archived_dashboard_response_keeps_full_contract(
 
     monkeypatch.setattr(couple_portal_api, "mongo", fake_mongo)
     monkeypatch.setattr(
+        couple_portal_api,
+        "get_archived_wedding_record",
+        AsyncMock(return_value={"archived_at": archive_time}),
+    )
+    monkeypatch.setattr(
         couple_portal_api.couple_portal_service,
         "get_portal_dashboard",
         AsyncMock(return_value=dashboard_payload),
@@ -172,3 +178,129 @@ async def test_archived_form_detail_returns_read_only_metadata(
     assert result["archived"] is True
     assert "archived" in (result["read_only_reason"] or "").lower()
     assert result["existing_responses"] == {"song": "At Last"}
+
+
+@pytest.mark.asyncio
+async def test_archived_registry_and_faq_reads_use_snapshot_data(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    archive_doc = {
+        "wedding": {
+            "registries": [
+                {
+                    "name": "Honeyfund",
+                    "url": "https://example.com/honeyfund",
+                    "color": "bg-indigo-600",
+                }
+            ],
+            "faqs": [
+                {
+                    "question": "What should we wear?",
+                    "answer": "Cocktail attire",
+                }
+            ],
+        }
+    }
+
+    monkeypatch.setattr(
+        couple_portal_api,
+        "get_archived_wedding_record",
+        AsyncMock(return_value=archive_doc),
+    )
+
+    registries = await couple_portal_api.list_registries_couple(
+        couple={"wedding_id": "wedding-1", "wedding_archived": True}
+    )
+    faqs = await couple_portal_api.list_faqs_couple(
+        couple={"wedding_id": "wedding-1", "wedding_archived": True}
+    )
+
+    assert registries["archived"] is True
+    assert registries["read_only"] is True
+    assert registries["registries"][0]["name"] == "Honeyfund"
+
+    assert faqs["archived"] is True
+    assert faqs["read_only"] is True
+    assert faqs["faqs"][0]["question"] == "What should we wear?"
+
+
+@pytest.mark.asyncio
+async def test_archived_analytics_reads_use_snapshot_data(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    archive_doc = {
+        "wedding": {
+            "guest_count": 4,
+            "events": [
+                {"type": "ceremony", "date": "2026-10-12"},
+                {"type": "reception", "date": "2026-10-12"},
+            ],
+        },
+        "guests": [
+            {
+                "_id": "guest-1",
+                "name": "Jamie Guest",
+                "email": "jamie@example.com",
+                "invite_sent": True,
+                "invite_sent_date": datetime(2026, 4, 1, tzinfo=timezone.utc),
+            },
+            {
+                "_id": "guest-2",
+                "name": "Taylor Guest",
+                "email": "taylor@example.com",
+                "invite_sent": True,
+                "invite_sent_date": datetime(2026, 4, 2, tzinfo=timezone.utc),
+            },
+        ],
+        "rsvps": [
+            {
+                "guest_id": "guest-1",
+                "attending": {"ceremony": True, "reception": True},
+            }
+        ],
+        "budget": {
+            "total_budget": 10000,
+            "total_spent": 4200,
+            "categories": [
+                {
+                    "_id": "budget-1",
+                    "name": "Venue",
+                    "budgeted_amount": 5000,
+                    "actual_spent": 4200,
+                    "payment_status": "partial",
+                    "priority": 1,
+                }
+            ],
+        },
+    }
+
+    monkeypatch.setattr(
+        behavioral_analytics_api,
+        "get_archived_wedding_record",
+        AsyncMock(return_value=archive_doc),
+    )
+
+    non_responders = await behavioral_analytics_api.couple_get_non_responders(
+        couple={
+            "wedding_id": "wedding-1",
+            "wedding_archived": True,
+        }
+    )
+    breakdown = await behavioral_analytics_api.couple_get_budget_breakdown(
+        couple={
+            "wedding_id": "wedding-1",
+            "wedding_archived": True,
+        }
+    )
+
+    assert non_responders["archived"] is True
+    assert non_responders["read_only"] is True
+    assert non_responders["count"] == 1
+    assert non_responders["non_responders"][0]["guest_id"] == "guest-2"
+
+    assert breakdown["archived"] is True
+    assert breakdown["read_only"] is True
+    assert breakdown["total_budgeted"] == 10000
+    assert breakdown["total_spent"] == 4200
+    assert breakdown["category_count"] == 1
+    assert breakdown["categories"][0]["name"] == "Venue"

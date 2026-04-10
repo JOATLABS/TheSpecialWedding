@@ -772,4 +772,3 @@ The recent changes introduce powerful real-time notification capability via SSE,
 - Week 4+: MEDIUM-8,9 and tests
 
 The good news: The SSE architecture is fundamentally sound and well-implemented for a single-instance system. With the recommended changes, it will scale to production.
-

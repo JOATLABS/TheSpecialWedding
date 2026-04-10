@@ -1,8 +1,10 @@
-from bson import ObjectId
-from fastapi import HTTPException
-from app.core.database import mongo
 from datetime import datetime, timezone
 from typing import List, Optional
+
+from bson import ObjectId
+from fastapi import HTTPException
+
+from app.core.database import mongo
 from app.utils.csv_export import CSVExportUtils
 from app.utils.id_utils import to_object_id
 from app.utils.wedding_event_types import normalize_event_type_list
@@ -89,12 +91,16 @@ class AdminRSVPService:
                             "token": guest.get("token"),
                             "attending": rsvp.get("attending", []),
                             "dietary": rsvp.get("dietary"),
-                            "submitted_at": rsvp.get("submitted_at").isoformat()
-                            if rsvp.get("submitted_at")
-                            else None,
-                            "plus_one": guest_plus_ones[0]
-                            if len(guest_plus_ones) == 1
-                            else None,
+                            "submitted_at": (
+                                rsvp.get("submitted_at").isoformat()
+                                if rsvp.get("submitted_at")
+                                else None
+                            ),
+                            "plus_one": (
+                                guest_plus_ones[0]
+                                if len(guest_plus_ones) == 1
+                                else None
+                            ),
                             "plus_ones": guest_plus_ones,
                         }
                     )

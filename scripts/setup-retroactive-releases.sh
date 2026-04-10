@@ -114,7 +114,7 @@ git tag -a v1.5.0 74eae13 -m "Release v1.5.0
 - ultra-think command for deep analytical reasoning
 - Three memory management commands (contributed by Thomas Landgraf):
   - analyze-memory-commands
-  - setup-memory-system  
+  - setup-memory-system
   - visualize-memory
 
 ### Fixed

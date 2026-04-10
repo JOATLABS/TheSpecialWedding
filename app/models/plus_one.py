@@ -1,11 +1,13 @@
-from pydantic import BaseModel, ConfigDict, Field, field_validator
-from typing import List, Optional
-from bson import ObjectId
-from datetime import datetime
 import re
+from datetime import datetime
+from typing import List, Optional
+
+from bson import ObjectId
+from pydantic import BaseModel, ConfigDict, Field, field_validator
+
 from app.utils.contact_sanitizer import (
-    sanitize_phone,
     sanitize_email,
+    sanitize_phone,
     validate_email_format,
 )
 from app.utils.wedding_event_types import normalize_event_type_list

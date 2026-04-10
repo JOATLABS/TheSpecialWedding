@@ -18,7 +18,7 @@ interface ContractSection {
   order: number;
 }
 
-interface PublicContract {
+export interface PublicContract {
   _id: string;
   contract_title: string;
   contract_number?: string;
@@ -45,12 +45,23 @@ interface PublicContract {
   signed_by_name?: string;
 }
 
-export default function PublicContractPageClient() {
-  const params = useParams<{ id: string; token?: string }>();
-  const searchParams = useSearchParams();
-  const contractId = params.id as string;
-  const routeToken = typeof params.token === 'string' ? params.token : null;
-  const queryToken = searchParams.get('token');
+interface PublicContractPageRuntimeProps {
+  contractId: string;
+  routeToken?: string | null;
+  queryToken?: string | null;
+  fetchImpl?: typeof fetch;
+}
+
+interface PublicContractPageClientProps {
+  runtimeOverrides?: PublicContractPageRuntimeProps;
+}
+
+function PublicContractPageContent({
+  contractId,
+  routeToken = null,
+  queryToken = null,
+  fetchImpl = fetch,
+}: PublicContractPageRuntimeProps) {
   const token = resolveVendorContractAccessToken(routeToken, queryToken);
 
   const [loading, setLoading] = useState(true);
@@ -76,7 +87,7 @@ export default function PublicContractPageClient() {
     setIsReplacedVersion(false);
     try {
       const API_BASE = getApiBaseUrl();
-      const response = await fetch(
+      const response = await fetchImpl(
         `${API_BASE}/vendor-contract/public/contracts/${contractId}/${encodeURIComponent(token)}`,
       );
 
@@ -101,7 +112,7 @@ export default function PublicContractPageClient() {
     } finally {
       setLoading(false);
     }
-  }, [contractId, token]);
+  }, [contractId, fetchImpl, token]);
 
   useEffect(() => {
     void fetchContract();
@@ -115,7 +126,7 @@ export default function PublicContractPageClient() {
     setSigning(true);
     try {
       const API_BASE = getApiBaseUrl();
-      const response = await fetch(
+      const response = await fetchImpl(
         `${API_BASE}/vendor-contract/public/contracts/${contractId}/${encodeURIComponent(token)}/sign`,
         {
           method: 'POST',
@@ -458,4 +469,27 @@ export default function PublicContractPageClient() {
       )}
     </div>
   );
+}
+
+function RoutedPublicContractPageClient() {
+  const params = useParams<{ id: string; token?: string }>();
+  const searchParams = useSearchParams();
+
+  return (
+    <PublicContractPageContent
+      contractId={params.id as string}
+      routeToken={typeof params.token === 'string' ? params.token : null}
+      queryToken={searchParams.get('token')}
+    />
+  );
+}
+
+export default function PublicContractPageClient({
+  runtimeOverrides,
+}: PublicContractPageClientProps = {}) {
+  if (runtimeOverrides) {
+    return <PublicContractPageContent {...runtimeOverrides} />;
+  }
+
+  return <RoutedPublicContractPageClient />;
 }

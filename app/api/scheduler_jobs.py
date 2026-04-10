@@ -14,17 +14,20 @@ Example cron setup (every 5 minutes):
 
 import hashlib
 import hmac
-import os
 import logging
+import os
 import time
-from fastapi import APIRouter, HTTPException, Header, Query, BackgroundTasks, Request
-from typing import Optional
 from datetime import datetime, timezone
+from typing import Optional
 
-from app.services.task_reminder_service import task_reminder_service
+from fastapi import APIRouter, BackgroundTasks, Header, HTTPException, Query, Request
+
+from app.services.calendar_job_service import calendar_job_service
+from app.services.calendar_maintenance_service import calendar_maintenance_service
 from app.services.planner_onboarding_email_service import (
     planner_onboarding_email_service,
 )
+from app.services.task_reminder_service import task_reminder_service
 
 logger = logging.getLogger(__name__)
 
@@ -246,5 +249,89 @@ async def process_planner_onboarding_emails(
     return {
         "status": "accepted",
         "message": "Planner onboarding email processing started in background",
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+    }
+
+
+@router.post("/calendar-invite-jobs", tags=["Scheduler"])
+async def process_calendar_invite_jobs(
+    request: Request,
+    background_tasks: BackgroundTasks,
+    x_scheduler_key: Optional[str] = Header(None),
+    x_scheduler_signature: Optional[str] = Header(None),
+    x_scheduler_timestamp: Optional[str] = Header(None),
+    limit: int = Query(25, ge=1, le=200),
+    sync: bool = Query(
+        False, description="If true, run synchronously and return processing results"
+    ),
+):
+    """Process queued calendar invite jobs off the API request path."""
+    verify_scheduler_key(
+        request, x_scheduler_key, x_scheduler_signature, x_scheduler_timestamp
+    )
+
+    if sync:
+        results = await calendar_job_service.process_due_jobs(limit=limit)
+        return {
+            "status": "success",
+            "results": results,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+        }
+
+    background_tasks.add_task(calendar_job_service.process_due_jobs, limit=limit)
+    return {
+        "status": "accepted",
+        "message": "Calendar invite job processing started in background",
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+    }
+
+
+@router.post("/calendar-maintenance", tags=["Scheduler"])
+async def process_calendar_maintenance(
+    request: Request,
+    background_tasks: BackgroundTasks,
+    x_scheduler_key: Optional[str] = Header(None),
+    x_scheduler_signature: Optional[str] = Header(None),
+    x_scheduler_timestamp: Optional[str] = Header(None),
+    retry_limit: int = Query(50, ge=1, le=200),
+    drift_limit: int = Query(50, ge=1, le=200),
+    sync: bool = Query(
+        False, description="If true, run synchronously and return processing results"
+    ),
+):
+    """Process due sync retries and provider drift checks."""
+    verify_scheduler_key(
+        request, x_scheduler_key, x_scheduler_signature, x_scheduler_timestamp
+    )
+
+    async def _run_maintenance() -> dict[str, object]:
+        retry_results = await calendar_maintenance_service.process_due_sync_retries(
+            limit=retry_limit
+        )
+        drift_results = await calendar_maintenance_service.run_drift_checks(
+            limit=drift_limit
+        )
+        return {
+            "retry_results": retry_results,
+            "drift_results": drift_results,
+        }
+
+    if sync:
+        results = await _run_maintenance()
+        return {
+            "status": "success",
+            "results": results,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+        }
+
+    background_tasks.add_task(
+        calendar_maintenance_service.process_due_sync_retries, limit=retry_limit
+    )
+    background_tasks.add_task(
+        calendar_maintenance_service.run_drift_checks, limit=drift_limit
+    )
+    return {
+        "status": "accepted",
+        "message": "Calendar maintenance started in background",
         "timestamp": datetime.now(timezone.utc).isoformat(),
     }

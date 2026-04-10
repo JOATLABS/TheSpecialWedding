@@ -16,15 +16,16 @@ Usage:
   python test_stripe_signup.py --api-url https://api.thespecialwedding.com
 """
 
-import httpx
-import stripe
+import argparse
 import asyncio
 import json
-import sys
 import os
+import sys
 import time
-import argparse
 from datetime import datetime, timezone
+
+import httpx
+import stripe
 
 # ============================================================================
 # Configuration

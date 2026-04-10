@@ -13,6 +13,7 @@ import {
   CalendarConnection,
   CATEGORY_LABELS,
   CalendarSyncPolicy,
+  createCalendarMutationIntent,
   createMeeting,
   createTask,
   InviteDeliveryMode,
@@ -178,6 +179,9 @@ export default function TaskModal({
   const [customTargetsEnabled, setCustomTargetsEnabled] = useState(false);
   const [selectedConnectionIds, setSelectedConnectionIds] = useState<string[]>([]);
   const [syncPolicyTouched, setSyncPolicyTouched] = useState(false);
+  const [meetingMutationIntent, setMeetingMutationIntent] = useState(() =>
+    createCalendarMutationIntent()
+  );
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
@@ -295,6 +299,7 @@ export default function TaskModal({
       setSyncPolicyTouched(false);
     }
 
+    setMeetingMutationIntent(createCalendarMutationIntent());
     setError('');
   }, [defaultSelectableCategory, open, task, defaultDate]);
 
@@ -389,6 +394,7 @@ export default function TaskModal({
       sync_target_connection_ids:
         isMeetingMode && customTargetsEnabled ? selectedConnectionIds : undefined,
       sync_to_google: !isMeetingMode ? syncToGoogle : undefined,
+      expected_version: isMeetingMode && task ? task.version : undefined,
     };
 
     setLoading(true);
@@ -397,9 +403,9 @@ export default function TaskModal({
     try {
       if (isMeetingMode) {
         if (task) {
-          await updateMeeting(token, task.id, payload);
+          await updateMeeting(token, task.id, payload, meetingMutationIntent);
         } else {
-          await createMeeting(token, payload);
+          await createMeeting(token, payload, meetingMutationIntent);
         }
       } else if (task) {
         await updateTask(token, task.id, payload);

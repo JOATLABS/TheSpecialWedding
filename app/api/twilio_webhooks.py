@@ -8,15 +8,17 @@ This module handles all Twilio webhooks:
 These are webhook endpoints called by Twilio, NOT admin operations.
 """
 
-from fastapi import APIRouter, Request, HTTPException, Header
-from typing import Any, Optional
-from datetime import datetime, timezone
-from bson import ObjectId
-from starlette.datastructures import FormData, UploadFile
-from app.core.database import mongo
-from app.utils.support_inbox_links import build_support_inbox_url
 import logging
 import os
+from datetime import datetime, timezone
+from typing import Any, Optional
+
+from bson import ObjectId
+from fastapi import APIRouter, Header, HTTPException, Request
+from starlette.datastructures import FormData, UploadFile
+
+from app.core.database import mongo
+from app.utils.support_inbox_links import build_support_inbox_url
 
 logger = logging.getLogger(__name__)
 
@@ -295,7 +297,9 @@ def _validate_twilio_signature(
         return True
 
     try:
-        from twilio.request_validator import RequestValidator  # type: ignore[import-untyped]
+        from twilio.request_validator import (
+            RequestValidator,  # type: ignore[import-untyped]
+        )
 
         validator = RequestValidator(auth_token)
 
@@ -348,8 +352,8 @@ async def _handle_delivery_failure(
     from app.utils.sms_error_classifier import (
         classify_error,
         is_account_level,
-        is_permanent_recipient,
         is_compliance,
+        is_permanent_recipient,
         should_retry,
     )
 
@@ -1120,8 +1124,8 @@ async def handle_twilio_incoming_message(
 async def _notify_planner_support_ticket(ticket: dict, planner_email: str):
     """Send email notification to wedding planner about new support ticket"""
     try:
-        from app.services.email_service_resend import ResendEmailService
         from app.core.config import settings
+        from app.services.email_service_resend import ResendEmailService
 
         email_service = ResendEmailService()
 
@@ -1218,8 +1222,8 @@ async def _notify_planner_help_request(
 ):
     """Send email notification to wedding planner about a HELP request"""
     try:
-        from app.services.email_service_resend import ResendEmailService
         from app.core.config import settings
+        from app.services.email_service_resend import ResendEmailService
 
         email_service = ResendEmailService()
 

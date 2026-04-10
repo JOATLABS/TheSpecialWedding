@@ -1,14 +1,16 @@
 # app/services/otp_service.py
 
+import logging
 import random
 from datetime import datetime, timedelta, timezone
-from pymongo import ASCENDING
+
 from bson.objectid import ObjectId
+from pymongo import ASCENDING
+
 from app.core.database import mongo
 from app.core.settings import settings
-from app.services.reminder_service_twilio import TwilioReminderService
 from app.services.email_service_resend import ResendEmailService
-import logging
+from app.services.reminder_service_twilio import TwilioReminderService
 
 logger = logging.getLogger(__name__)
 
@@ -261,10 +263,12 @@ class OTPService:
                     "success": False,
                     "error": user_error,
                     "error_code": sms_error_code or "sms_failed",
-                    "retry_after": 30
-                    if sms_error_code
-                    in ("rate_limited", "daily_limit", "service_unavailable")
-                    else None,
+                    "retry_after": (
+                        30
+                        if sms_error_code
+                        in ("rate_limited", "daily_limit", "service_unavailable")
+                        else None
+                    ),
                 }
 
         # Send via email (either as primary or fallback)
@@ -562,10 +566,12 @@ class OTPService:
                     "success": False,
                     "error": user_error,
                     "error_code": sms_error_code or "sms_failed",
-                    "retry_after": 30
-                    if sms_error_code
-                    in ("rate_limited", "daily_limit", "service_unavailable")
-                    else None,
+                    "retry_after": (
+                        30
+                        if sms_error_code
+                        in ("rate_limited", "daily_limit", "service_unavailable")
+                        else None
+                    ),
                 }
 
         elif guest.get("email") == normalized_contact:

@@ -2,10 +2,10 @@
 Dependency Injection Container for better testability and loose coupling
 """
 
-from typing import Dict, Any, Type, TypeVar, Optional, Callable
-from abc import ABC, abstractmethod
 import logging
+from abc import ABC, abstractmethod
 from enum import Enum
+from typing import Any, Callable, Dict, Optional, Type, TypeVar
 
 logger = logging.getLogger(__name__)
 
@@ -277,11 +277,11 @@ container = DependencyContainer()
 
 def setup_services():
     """Setup service registrations"""
-    from app.services.email_service_resend import ResendEmailService as EmailService
-    from app.services.subscription_service import SubscriptionService
-    from app.core.settings import settings
     from app.core.cache import cache
     from app.core.events import event_bus
+    from app.core.settings import settings
+    from app.services.email_service_resend import ResendEmailService as EmailService
+    from app.services.subscription_service import SubscriptionService
 
     # Register singleton services
     container.register_instance(settings.__class__, settings)

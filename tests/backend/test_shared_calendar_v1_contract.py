@@ -11,9 +11,9 @@ from fastapi import HTTPException
 
 from app.api import planner_calendar as planner_calendar_api
 from app.api.planner_calendar import (
+    _build_scoped_meeting_query,
     _coerce_event_datetime,
     _connection_matches_owner_scope,
-    _build_scoped_meeting_query,
 )
 from app.core import database_indexes as database_indexes_module
 from app.dependencies.auth_extended import (
@@ -23,13 +23,13 @@ from app.dependencies.auth_extended import (
 )
 from app.models.calendar import CalendarEventCreate, CalendarEventUpdate
 from app.models.team_member import ROLE_PRESETS, resolve_team_permissions
-from app.services.meeting_invite_service import MeetingInviteService
 from app.services.calendar_aggregation_service import CalendarAggregationService
 from app.services.calendar_sync_service import CalendarSyncService
 from app.services.google_calendar_service import (
     GoogleCalendarService,
     google_calendar_service,
 )
+from app.services.meeting_invite_service import MeetingInviteService
 
 
 class _FakeCursor:
@@ -604,6 +604,26 @@ async def test_create_meeting_normalizes_owner_scope_for_team_members(
         "sync_schedule_item",
         AsyncMock(return_value=[]),
     )
+    monkeypatch.setattr(
+        planner_calendar_api,
+        "_begin_meeting_idempotency",
+        AsyncMock(return_value=("test-key", None)),
+    )
+    monkeypatch.setattr(
+        planner_calendar_api,
+        "_complete_meeting_idempotency",
+        AsyncMock(return_value=None),
+    )
+    monkeypatch.setattr(
+        planner_calendar_api,
+        "_fail_meeting_idempotency",
+        AsyncMock(return_value=None),
+    )
+    monkeypatch.setattr(
+        planner_calendar_api.calendar_audit_service,
+        "log",
+        AsyncMock(return_value=None),
+    )
 
     current_user = ExtendedAuthUser(
         "team@example.com",
@@ -624,6 +644,7 @@ async def test_create_meeting_normalizes_owner_scope_for_team_members(
             color=None,
             timezone="UTC",
         ),
+        idempotency_key="create-meeting-1",
         current_user=current_user,
     )
 
@@ -649,6 +670,7 @@ async def test_update_meeting_sends_updated_ics_for_material_email_ics_change(
         "start_date": datetime(2026, 4, 8, 12, 0, tzinfo=UTC),
         "end_date": datetime(2026, 4, 8, 13, 0, tzinfo=UTC),
         "timezone": "UTC",
+        "version": 1,
         "invite_delivery_mode": "email_ics",
         "couple_attendee_emails": ["couple@example.com"],
     }
@@ -657,11 +679,12 @@ async def test_update_meeting_sends_updated_ics_for_material_email_ics_change(
         "start_date": datetime(2026, 4, 8, 14, 0, tzinfo=UTC),
         "end_date": datetime(2026, 4, 8, 15, 0, tzinfo=UTC),
         "updated_at": datetime.now(UTC),
+        "version": 2,
     }
 
     class FakeTasksCollection:
-        async def update_one(self, *_args: object, **_kwargs: object) -> None:
-            return None
+        async def update_one(self, *_args: object, **_kwargs: object) -> Any:
+            return SimpleNamespace(matched_count=1)
 
         async def find_one(self, _query: dict) -> dict[str, Any]:
             return updated_task
@@ -686,17 +709,31 @@ async def test_update_meeting_sends_updated_ics_for_material_email_ics_change(
         "sync_schedule_item",
         AsyncMock(return_value=[]),
     )
-    send_invites = AsyncMock(return_value=[{"success": True}])
-    send_cancellations = AsyncMock(return_value=[])
+    enqueue_invite_job = AsyncMock(return_value=[{"success": True, "status": "queued"}])
     monkeypatch.setattr(
-        planner_calendar_api.meeting_invite_service,
-        "send_invites",
-        send_invites,
+        planner_calendar_api.calendar_job_service,
+        "enqueue_invite_job",
+        enqueue_invite_job,
     )
     monkeypatch.setattr(
-        planner_calendar_api.meeting_invite_service,
-        "send_cancellations",
-        send_cancellations,
+        planner_calendar_api,
+        "_begin_meeting_idempotency",
+        AsyncMock(return_value=("test-key", None)),
+    )
+    monkeypatch.setattr(
+        planner_calendar_api,
+        "_complete_meeting_idempotency",
+        AsyncMock(return_value=None),
+    )
+    monkeypatch.setattr(
+        planner_calendar_api,
+        "_fail_meeting_idempotency",
+        AsyncMock(return_value=None),
+    )
+    monkeypatch.setattr(
+        planner_calendar_api.calendar_audit_service,
+        "log",
+        AsyncMock(return_value=None),
     )
 
     current_user = ExtendedAuthUser(
@@ -713,15 +750,20 @@ async def test_update_meeting_sends_updated_ics_for_material_email_ics_change(
                 {
                     "start_date": datetime(2026, 4, 8, 14, 0, tzinfo=UTC),
                     "end_date": datetime(2026, 4, 8, 15, 0, tzinfo=UTC),
+                    "expected_version": 1,
                 }
             ),
         ),
+        idempotency_key="update-meeting-1",
         current_user=current_user,
     )
 
-    send_invites.assert_awaited_once_with(updated_task)
-    send_cancellations.assert_not_awaited()
-    assert response.invite_status == [{"success": True}]
+    enqueue_invite_job.assert_awaited_once_with(
+        updated_task,
+        method="REQUEST",
+        reason="meeting_updated",
+    )
+    assert response.invite_status == [{"success": True, "status": "queued"}]
 
 
 @pytest.mark.asyncio
@@ -739,6 +781,7 @@ async def test_delete_meeting_sends_cancellation_ics(
         "start_date": datetime(2026, 4, 8, 12, 0, tzinfo=UTC),
         "end_date": datetime(2026, 4, 8, 13, 0, tzinfo=UTC),
         "timezone": "UTC",
+        "version": 1,
         "invite_delivery_mode": "email_ics",
         "couple_attendee_emails": ["couple@example.com"],
     }
@@ -747,8 +790,9 @@ async def test_delete_meeting_sends_cancellation_ics(
         def __init__(self) -> None:
             self.deleted_queries: list[dict[str, Any]] = []
 
-        async def delete_one(self, query: dict[str, Any]) -> None:
+        async def delete_one(self, query: dict[str, Any]) -> Any:
             self.deleted_queries.append(query)
+            return SimpleNamespace(deleted_count=1)
 
     fake_tasks = FakeTasksCollection()
 
@@ -768,16 +812,36 @@ async def test_delete_meeting_sends_cancellation_ics(
         SimpleNamespace(get_planner_tasks_collection=lambda: fake_tasks),
     )
     delete_syncs = AsyncMock(return_value=None)
-    send_cancellations = AsyncMock(return_value=[{"success": True}])
+    enqueue_invite_job = AsyncMock(return_value=[{"success": True, "status": "queued"}])
     monkeypatch.setattr(
         planner_calendar_api.calendar_sync_service,
         "delete_schedule_item_syncs",
         delete_syncs,
     )
     monkeypatch.setattr(
-        planner_calendar_api.meeting_invite_service,
-        "send_cancellations",
-        send_cancellations,
+        planner_calendar_api.calendar_job_service,
+        "enqueue_invite_job",
+        enqueue_invite_job,
+    )
+    monkeypatch.setattr(
+        planner_calendar_api,
+        "_begin_meeting_idempotency",
+        AsyncMock(return_value=("test-key", None)),
+    )
+    monkeypatch.setattr(
+        planner_calendar_api,
+        "_complete_meeting_idempotency",
+        AsyncMock(return_value=None),
+    )
+    monkeypatch.setattr(
+        planner_calendar_api,
+        "_fail_meeting_idempotency",
+        AsyncMock(return_value=None),
+    )
+    monkeypatch.setattr(
+        planner_calendar_api.calendar_audit_service,
+        "log",
+        AsyncMock(return_value=None),
     )
 
     current_user = ExtendedAuthUser(
@@ -788,12 +852,14 @@ async def test_delete_meeting_sends_cancellation_ics(
 
     result = await planner_calendar_api.delete_meeting(
         "507f1f77bcf86cd799439011",
+        expected_version=1,
+        idempotency_key="delete-meeting-1",
         current_user=current_user,
     )
 
     delete_syncs.assert_awaited_once_with("507f1f77bcf86cd799439011")
-    send_cancellations.assert_awaited_once()
-    assert result["invite_status"] == [{"success": True}]
+    enqueue_invite_job.assert_awaited_once()
+    assert result["invite_status"] == [{"success": True, "status": "queued"}]
 
 
 def test_connection_scope_requires_matching_owner_identity() -> None:
@@ -933,6 +999,11 @@ async def test_disconnect_connection_orphans_sync_rows() -> None:
 
     setattr(service, "_get_connection_doc", fake_get_connection_doc)
     setattr(service, "_revoke_provider_account", fake_revoke)
+    monkeypatch = pytest.MonkeyPatch()
+    monkeypatch.setattr(
+        "app.services.google_calendar_service.calendar_audit_service.log",
+        AsyncMock(return_value=None),
+    )
 
     result = await service.disconnect_connection("connection-1")
 
@@ -944,6 +1015,9 @@ async def test_disconnect_connection_orphans_sync_rows() -> None:
                 "$set": {
                     "sync_status": "orphaned",
                     "last_error": "Calendar connection disconnected",
+                    "last_error_category": "connection_disconnected",
+                    "retryable_error": False,
+                    "next_retry_at": None,
                     "updated_at": ANY,
                 },
                 "$unset": {
@@ -954,6 +1028,7 @@ async def test_disconnect_connection_orphans_sync_rows() -> None:
         )
     ]
     assert revoked == ["revoked"]
+    monkeypatch.undo()
 
 
 @pytest.mark.asyncio
@@ -991,6 +1066,7 @@ async def test_delete_schedule_item_syncs_preserves_rows_when_provider_delete_fa
     class FakeSyncCollection:
         def __init__(self) -> None:
             self.delete_many_calls: list[dict] = []
+            self.update_one_calls: list[tuple[dict, dict]] = []
 
         def find(self, _query: dict) -> _FakeCursor:
             return _FakeCursor(
@@ -1005,6 +1081,9 @@ async def test_delete_schedule_item_syncs_preserves_rows_when_provider_delete_fa
 
         async def delete_many(self, query: dict) -> None:
             self.delete_many_calls.append(query)
+
+        async def update_one(self, query: dict, update: dict, **_kwargs: Any) -> None:
+            self.update_one_calls.append((query, update))
 
     fake_syncs = FakeSyncCollection()
     cast(Any, service).syncs_collection = fake_syncs

@@ -3,11 +3,13 @@ Support Ticket Models for SMS and Web-based Support System
 Provides Pydantic models with validation for multi-tenant support tickets
 """
 
-from pydantic import BaseModel, Field, field_validator, field_serializer
-from typing import Optional, List
-from datetime import datetime
-from app.models.base import MongoModel, UserRelatedModel
 import re
+from datetime import datetime
+from typing import List, Optional
+
+from pydantic import BaseModel, Field, field_serializer, field_validator
+
+from app.models.base import MongoModel, UserRelatedModel
 
 
 class SMSResponseModel(BaseModel):

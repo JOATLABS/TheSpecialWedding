@@ -20,22 +20,22 @@ Usage:
     python -m app.jobs.vendor_scraper.run --categories photographer,florist,venue
 """
 
-import asyncio
 import argparse
+import asyncio
 import logging
 import time
 from typing import List, Optional
 
 from app.core.database import mongo
-from app.services.vendor_service import VendorService
 from app.jobs.vendor_scraper.config import (
-    get_states,
-    SEARCH_QUERIES,
     REQUEST_DELAY_SECONDS,
+    SEARCH_QUERIES,
+    get_states,
 )
 from app.jobs.vendor_scraper.google_places import search_vendors
-from app.jobs.vendor_scraper.website_enricher import enrich_from_website
 from app.jobs.vendor_scraper.logo_uploader import download_and_upload_logo
+from app.jobs.vendor_scraper.website_enricher import enrich_from_website
+from app.services.vendor_service import VendorService
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(

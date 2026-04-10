@@ -50,18 +50,18 @@ print_info "Found $TOTAL_COMMANDS command files"
 extract_command_info() {
     local file="$1"
     local filename=$(basename "$file" .md)
-    
+
     # Extract title (first line starting with #)
     local title=$(head -n 10 "$file" | grep "^# " | head -n 1 | sed 's/^# //')
-    
+
     # Extract description (first non-empty line after title that doesn't start with #)
     local description=$(head -n 10 "$file" | sed -n '/^# /,$p' | tail -n +2 | grep -v "^#" | grep -v "^$" | head -n 1 | sed 's/^[[:space:]]*//')
-    
+
     # If no description found, use title
     if [ -z "$description" ]; then
         description="$title"
     fi
-    
+
     echo "- \`/project:$filename\` - $description"
 }
 
@@ -134,7 +134,7 @@ print_info "Updating changelog..."
     echo ""
     echo "$NEW_ENTRY"
     echo ""
-    
+
     # Add existing content (skip the header)
     tail -n +5 "$CHANGELOG_FILE"
 } > "$CHANGELOG_FILE.tmp"

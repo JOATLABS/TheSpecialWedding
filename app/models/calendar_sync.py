@@ -46,6 +46,12 @@ class CalendarEventSyncModel(BaseModel):
     sync_status: str = Field(default=CalendarSyncStatusValue.PENDING.value)
     last_sync_at: Optional[datetime] = None
     last_error: Optional[str] = None
+    last_error_category: Optional[str] = None
+    retryable_error: bool = False
+    retry_count: int = 0
+    next_retry_at: Optional[datetime] = None
+    last_retry_at: Optional[datetime] = None
+    last_drift_check_at: Optional[datetime] = None
     etag: Optional[str] = None
     external_updated_at: Optional[datetime] = None
     created_at: datetime = Field(default_factory=datetime.utcnow)

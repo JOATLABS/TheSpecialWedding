@@ -1,17 +1,19 @@
-from fastapi import HTTPException
-from app.core.database import mongo
-from app.core.cache import cache, CacheKeys
-from typing import Optional, Dict, Any
-from datetime import datetime, timezone, timedelta
-from bson.objectid import ObjectId
+import hashlib
+import logging
+import os
 import re
 import secrets
-import logging
-import hashlib
-import os
+from datetime import datetime, timedelta, timezone
+from typing import Any, Dict, Optional
+
+from bson.objectid import ObjectId
+from fastapi import HTTPException
+
+from app.core.cache import CacheKeys, cache
+from app.core.database import mongo
 from app.services.guest_service import GuestService
-from app.services.wedding_service import WeddingService
 from app.services.otp_service import OTPService
+from app.services.wedding_service import WeddingService
 
 # Configure security logging
 security_logger = logging.getLogger("guest_verification_security")
@@ -65,9 +67,11 @@ class GuestVerificationService:
                 "$or": [
                     {"guest_id": guest_id},
                     {
-                        "guest_id": ObjectId(guest_id)
-                        if ObjectId.is_valid(guest_id)
-                        else guest_id
+                        "guest_id": (
+                            ObjectId(guest_id)
+                            if ObjectId.is_valid(guest_id)
+                            else guest_id
+                        )
                     },
                 ]
             }
@@ -932,12 +936,14 @@ class GuestVerificationService:
                 phone_variants = [
                     contact.strip(),  # Original input
                     digits_only,  # Just digits
-                    f"+1{digits_only}"
-                    if len(digits_only) == 10
-                    else digits_only,  # E.164 format
-                    f"+{digits_only}"
-                    if digits_only.startswith("1") and len(digits_only) == 11
-                    else digits_only,
+                    (
+                        f"+1{digits_only}" if len(digits_only) == 10 else digits_only
+                    ),  # E.164 format
+                    (
+                        f"+{digits_only}"
+                        if digits_only.startswith("1") and len(digits_only) == 11
+                        else digits_only
+                    ),
                 ]
                 # Remove duplicates while preserving order
                 phone_variants = list(dict.fromkeys(phone_variants))

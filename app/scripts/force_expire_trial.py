@@ -6,13 +6,13 @@ Usage:
 """
 
 import asyncio
-import sys
 import os
-from datetime import datetime, timezone, timedelta
+import sys
+from datetime import datetime, timedelta, timezone
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
 
-from app.core.database import mongo, init_database  # noqa: E402
+from app.core.database import init_database, mongo  # noqa: E402
 
 
 async def force_expire(email: str):

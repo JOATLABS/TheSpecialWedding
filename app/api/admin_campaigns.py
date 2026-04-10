@@ -14,21 +14,19 @@ Routes: /admin/ads/campaigns/*  (campaign monitor & review)
 """
 
 import logging
-from fastapi import APIRouter, Depends, HTTPException, Query, Body
 from typing import Optional
 
-from app.dependencies.auth_extended import (
-    require_root_admin,
-    ExtendedAuthUser,
-)
+from fastapi import APIRouter, Body, Depends, HTTPException, Query
+
 from app.core.database import mongo
-from app.services.admin_campaign_service import AdminCampaignService
+from app.dependencies.auth_extended import ExtendedAuthUser, require_root_admin
 from app.models.advertising_campaign import (
     ReviewCampaignDecisionRequest,
     ReviewCreativeDecisionRequest,
     SetFreeTierRequest,
     UpdateCPLPricingRequest,
 )
+from app.services.admin_campaign_service import AdminCampaignService
 
 logger = logging.getLogger(__name__)
 

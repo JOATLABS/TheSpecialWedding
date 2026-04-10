@@ -9,10 +9,11 @@ PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..
 if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
 
+from fastapi import HTTPException
+
 import app.api.stripe_payment as stripe_payment_module
 import app.core.database as database_module
 import app.core.settings as settings_module
-from fastapi import HTTPException
 
 
 class AsyncCollection:

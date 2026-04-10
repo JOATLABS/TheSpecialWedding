@@ -21,9 +21,9 @@ Usage:
     )
 """
 
-from datetime import datetime, timezone
-from typing import Optional, Dict, Any
 import logging
+from datetime import datetime, timezone
+from typing import Any, Dict, Optional
 
 from app.core.database import mongo
 
@@ -304,9 +304,9 @@ class ActivityLogService:
 
         meta: Dict[str, Any] = {
             "recipient_name": recipient_name,
-            "recipient_phone": recipient_phone[-4:]
-            if recipient_phone
-            else None,  # Last 4 digits only
+            "recipient_phone": (
+                recipient_phone[-4:] if recipient_phone else None
+            ),  # Last 4 digits only
             "message_type": message_type,
             "status": status,
             **(metadata or {}),

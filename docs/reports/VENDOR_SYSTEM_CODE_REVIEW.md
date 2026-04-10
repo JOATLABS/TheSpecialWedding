@@ -816,4 +816,3 @@ signature_ip = request.client.host  # Could be used for verification
 4. **Week 4:** Add inline contract notes structure
 5. **Week 5:** Integrate AI quote comparison UI
 6. **Week 6:** Testing and security audit
-

@@ -8,10 +8,11 @@ Threading: Emails are linked via reply-to address encoding:
   reply+{wedding_slug}--{guest_id}@thespecialwedding.io
 """
 
-from pydantic import BaseModel, Field
-from typing import Optional, List, Dict, Any
 from datetime import datetime, timezone
+from typing import Any, Dict, List, Optional
+
 from bson import ObjectId
+from pydantic import BaseModel, Field
 
 
 class EmailAttachmentMetadata(BaseModel):

@@ -13,13 +13,11 @@ Routes: /planner/ads/preferences/*
 
 import logging
 from datetime import datetime, timezone
-from fastapi import APIRouter, Depends, Body
 
-from app.dependencies.auth_extended import (
-    get_current_user_extended,
-    ExtendedAuthUser,
-)
+from fastapi import APIRouter, Body, Depends
+
 from app.core.database import mongo
+from app.dependencies.auth_extended import ExtendedAuthUser, get_current_user_extended
 
 logger = logging.getLogger(__name__)
 

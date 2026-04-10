@@ -135,12 +135,12 @@ class CalendarAggregationService:
             "all_day": bool(start_info.get("date") and not start_info.get("dateTime")),
             "wedding_id": None,
             "owner_planner_email": connection.get("owner_planner_email"),
-            "assigned_user_ids": [connection.get("user_id")]
-            if connection.get("user_id")
-            else [],
-            "assigned_user_emails": [connection.get("user_email")]
-            if connection.get("user_email")
-            else [],
+            "assigned_user_ids": (
+                [connection.get("user_id")] if connection.get("user_id") else []
+            ),
+            "assigned_user_emails": (
+                [connection.get("user_email")] if connection.get("user_email") else []
+            ),
             "visibility_mode": details_visibility,
             "details": {
                 "calendar_connection_id": connection.get("id"),

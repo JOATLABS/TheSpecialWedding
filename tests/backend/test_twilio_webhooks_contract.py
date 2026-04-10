@@ -1,9 +1,9 @@
 from __future__ import annotations
 
+import sys
 from io import BytesIO
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
-import sys
 
 import pytest
 from starlette.datastructures import FormData, UploadFile

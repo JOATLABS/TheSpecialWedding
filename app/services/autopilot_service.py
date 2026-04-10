@@ -5,11 +5,13 @@ Handles automatic payment processing, scheduling, retries, and notifications.
 This is the core engine for the Wedding Finance Autopilot feature.
 """
 
-from typing import Dict, Any, List, Optional
-from datetime import datetime, date, timedelta, timezone
-from decimal import Decimal
 import logging
+from datetime import date, datetime, timedelta, timezone
+from decimal import Decimal
+from typing import Any, Dict, List, Optional
+
 from bson import ObjectId
+
 from app.core.database import mongo
 from app.core.settings import settings
 
@@ -408,9 +410,11 @@ class AutopilotService:
                 await self.record_payment_success(
                     payment_id=payment_id,
                     payment_intent_id=payment_intent.id,
-                    receipt_url=payment_intent.charges.data[0].receipt_url
-                    if payment_intent.charges.data
-                    else None,
+                    receipt_url=(
+                        payment_intent.charges.data[0].receipt_url
+                        if payment_intent.charges.data
+                        else None
+                    ),
                 )
                 return {"success": True, "payment_intent_id": payment_intent.id}
 

@@ -1,14 +1,16 @@
+import asyncio
+import json
+import logging
+import time
+from collections import defaultdict, deque
+from typing import Deque, Dict, Optional
+from urllib.parse import parse_qs
+
 from fastapi import Request
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import JSONResponse, Response
-import time
-from collections import defaultdict, deque
-from typing import Dict, Deque, Optional
-import asyncio
-import json
-from urllib.parse import parse_qs
-from app.core.cache import cache, CacheKeys
-import logging
+
+from app.core.cache import CacheKeys, cache
 
 logger = logging.getLogger(__name__)
 

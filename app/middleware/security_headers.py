@@ -63,7 +63,9 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
 
     # ==================== HEADER BUILDERS ====================
 
-    def _add_security_headers(self, response: Response, request: Request, nonce: str) -> None:
+    def _add_security_headers(
+        self, response: Response, request: Request, nonce: str
+    ) -> None:
         path = request.url.path
         is_api = self._is_api_path(path)
 
@@ -90,7 +92,9 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         response.headers["X-Security-Policy"] = "strict"
 
         if self._is_sensitive_path(path):
-            response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, private"
+            response.headers["Cache-Control"] = (
+                "no-store, no-cache, must-revalidate, private"
+            )
             response.headers["Pragma"] = "no-cache"
             response.headers["Expires"] = "0"
 
@@ -125,8 +129,12 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         }
 
         if is_admin:
-            base_directives["script-src"].extend(["https://cdn.jsdelivr.net", "https://unpkg.com"])
-            base_directives["style-src"].extend(["https://fonts.googleapis.com", "https://cdn.jsdelivr.net"])
+            base_directives["script-src"].extend(
+                ["https://cdn.jsdelivr.net", "https://unpkg.com"]
+            )
+            base_directives["style-src"].extend(
+                ["https://fonts.googleapis.com", "https://cdn.jsdelivr.net"]
+            )
 
         if is_api:
             base_directives = {
@@ -199,36 +207,80 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
 
     def _is_suspicious_user_agent(self, user_agent: str) -> bool:
         suspicious_patterns = [
-            "sqlmap", "nikto", "nmap", "masscan", "nessus",
-            "burpsuite", "owasp", "zap", "w3af", "skipfish",
-            "python-requests", "curl", "wget", "gobuster",
-            "dirb", "dirbuster", "wfuzz", "ffuf",
-            "<script", "javascript:", "vbscript:",
-            "union select", "or 1=1", "../", "..\\",
-            "cmd.exe", "/bin/bash", "whoami",
+            "sqlmap",
+            "nikto",
+            "nmap",
+            "masscan",
+            "nessus",
+            "burpsuite",
+            "owasp",
+            "zap",
+            "w3af",
+            "skipfish",
+            "python-requests",
+            "curl",
+            "wget",
+            "gobuster",
+            "dirb",
+            "dirbuster",
+            "wfuzz",
+            "ffuf",
+            "<script",
+            "javascript:",
+            "vbscript:",
+            "union select",
+            "or 1=1",
+            "../",
+            "..\\",
+            "cmd.exe",
+            "/bin/bash",
+            "whoami",
         ]
         user_agent_lower = user_agent.lower()
         return any(pattern in user_agent_lower for pattern in suspicious_patterns)
 
     def _has_path_traversal_attempts(self, path: str) -> bool:
         traversal_patterns = [
-            "../", "..\\", "%2e%2e%2f", "%2e%2e%5c",
-            "%252e%252e%252f", "%252e%252e%255c",
-            "..%2f", "..%5c", "%2e%2e/",
-            "/etc/passwd", "/etc/shadow",
-            "C:\\Windows\\", "C:\\Users\\",
-            "/proc/version", "/proc/self/environ",
+            "../",
+            "..\\",
+            "%2e%2e%2f",
+            "%2e%2e%5c",
+            "%252e%252e%252f",
+            "%252e%252e%255c",
+            "..%2f",
+            "..%5c",
+            "%2e%2e/",
+            "/etc/passwd",
+            "/etc/shadow",
+            "C:\\Windows\\",
+            "C:\\Users\\",
+            "/proc/version",
+            "/proc/self/environ",
         ]
-        path_decoded = path.replace("%", "\\x").encode().decode("unicode_escape", errors="ignore")
-        return any(pattern in path or pattern in path_decoded for pattern in traversal_patterns)
+        path_decoded = (
+            path.replace("%", "\\x").encode().decode("unicode_escape", errors="ignore")
+        )
+        return any(
+            pattern in path or pattern in path_decoded for pattern in traversal_patterns
+        )
 
     def _has_suspicious_query(self, query: str) -> bool:
         suspicious_patterns = [
-            "union+select", "or+1=1", "and+1=1",
-            "javascript:", "vbscript:", "<script",
-            "onload=", "onerror=", "onclick=",
-            "exec(", "eval(", "system(",
-            "../", "..\\", "/etc/passwd",
+            "union+select",
+            "or+1=1",
+            "and+1=1",
+            "javascript:",
+            "vbscript:",
+            "<script",
+            "onload=",
+            "onerror=",
+            "onclick=",
+            "exec(",
+            "eval(",
+            "system(",
+            "../",
+            "..\\",
+            "/etc/passwd",
         ]
         query_lower = query.lower()
         return any(pattern in query_lower for pattern in suspicious_patterns)

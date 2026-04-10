@@ -1,16 +1,18 @@
-from fastapi import APIRouter, Depends, HTTPException, Body, Query, Response
-from typing import List
 import logging
-from app.models.table import TableModel, UpdateTableRequest, AssignGuestsRequest
+from typing import List
+
+from bson import ObjectId
+from bson.errors import InvalidId
+from fastapi import APIRouter, Body, Depends, HTTPException, Query, Response
+
+from app.core.database import mongo
 from app.dependencies.auth_extended import (
-    require_admin_or_planner,
     ExtendedAuthUser,
     check_wedding_access,
     enforce_team_permission,
+    require_admin_or_planner,
 )
-from app.core.database import mongo
-from bson import ObjectId
-from bson.errors import InvalidId
+from app.models.table import AssignGuestsRequest, TableModel, UpdateTableRequest
 
 logger = logging.getLogger(__name__)
 

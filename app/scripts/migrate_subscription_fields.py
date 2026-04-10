@@ -12,14 +12,14 @@ Safe to run multiple times (idempotent).
 """
 
 import asyncio
-import sys
 import os
+import sys
 from datetime import datetime, timezone
 
 # Ensure project root is importable
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
 
-from app.core.database import mongo, init_database  # noqa: E402
+from app.core.database import init_database, mongo  # noqa: E402
 
 
 async def migrate():

@@ -73,6 +73,7 @@ export interface PlannerTask {
   meeting_status?: string | null;
   created_at: string;
   updated_at: string;
+  version: number;
   completed_at?: string | null;
 }
 
@@ -123,6 +124,12 @@ export interface CalendarSyncStatusItem {
   sync_status: SyncStatusValue | string;
   last_sync_at?: string | null;
   last_error?: string | null;
+  last_error_category?: string | null;
+  retryable_error?: boolean;
+  retry_count?: number;
+  next_retry_at?: string | null;
+  last_retry_at?: string | null;
+  last_drift_check_at?: string | null;
   updated_at?: string | null;
 }
 
@@ -221,6 +228,54 @@ export interface ScheduleItemPayload {
   invite_delivery_mode?: InviteDeliveryMode;
   meeting_status?: string;
   sync_target_connection_ids?: string[];
+  expected_version?: number;
+}
+
+function normalizeForStableStringify(value: unknown): unknown {
+  if (Array.isArray(value)) {
+    return value.map((entry) => normalizeForStableStringify(entry));
+  }
+  if (value && typeof value === 'object') {
+    return Object.keys(value as Record<string, unknown>)
+      .sort()
+      .reduce<Record<string, unknown>>((acc, key) => {
+        acc[key] = normalizeForStableStringify((value as Record<string, unknown>)[key]);
+        return acc;
+      }, {});
+  }
+  return value;
+}
+
+export function createCalendarMutationIntent(): string {
+  if (typeof globalThis.crypto?.randomUUID === 'function') {
+    return globalThis.crypto.randomUUID();
+  }
+  return `calendar-intent-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+}
+
+async function buildIdempotencyKey(
+  intentId: string,
+  method: string,
+  path: string,
+  payload: unknown
+): Promise<string> {
+  const body = JSON.stringify({
+    intentId,
+    method,
+    path,
+    payload: normalizeForStableStringify(payload),
+  });
+  if (typeof globalThis.crypto?.subtle !== 'undefined') {
+    const digest = await globalThis.crypto.subtle.digest(
+      'SHA-256',
+      new TextEncoder().encode(body)
+    );
+    const hash = Array.from(new Uint8Array(digest))
+      .map((byte) => byte.toString(16).padStart(2, '0'))
+      .join('');
+    return `calendar-${hash}`;
+  }
+  return `calendar-${encodeURIComponent(body).slice(0, 180)}`;
 }
 
 export interface TeamMemberSummary {
@@ -273,7 +328,15 @@ async function authFetch<T>(
 
   if (!response.ok) {
     const error = await response.json().catch(() => ({}));
-    throw new Error(error.detail || error.message || 'Request failed');
+    const detail =
+      typeof error.detail === 'string'
+        ? error.detail
+        : typeof error.detail?.message === 'string'
+          ? error.detail.message
+          : error.detail
+            ? JSON.stringify(error.detail)
+            : undefined;
+    throw new Error(detail || error.message || 'Request failed');
   }
 
   if (response.status === 204) {
@@ -509,10 +572,15 @@ export async function getStaffAvailability(
 
 export async function createMeeting(
   token: string,
-  payload: ScheduleItemPayload
+  payload: ScheduleItemPayload,
+  mutationIntent: string
 ): Promise<MeetingUpsertResponse> {
+  const path = '/admin/planner/calendar/meetings';
   return authFetch<MeetingUpsertResponse>(token, '/admin/planner/calendar/meetings', {
     method: 'POST',
+    headers: {
+      'Idempotency-Key': await buildIdempotencyKey(mutationIntent, 'POST', path, payload),
+    },
     body: JSON.stringify(payload),
   });
 }
@@ -520,22 +588,44 @@ export async function createMeeting(
 export async function updateMeeting(
   token: string,
   meetingId: string,
-  payload: Partial<ScheduleItemPayload>
+  payload: Partial<ScheduleItemPayload>,
+  mutationIntent: string
 ): Promise<MeetingUpsertResponse> {
+  const path = `/admin/planner/calendar/meetings/${meetingId}`;
   return authFetch<MeetingUpsertResponse>(
     token,
     `/admin/planner/calendar/meetings/${meetingId}`,
     {
       method: 'PATCH',
+      headers: {
+        'Idempotency-Key': await buildIdempotencyKey(mutationIntent, 'PATCH', path, payload),
+      },
       body: JSON.stringify(payload),
     }
   );
 }
 
-export async function deleteMeeting(token: string, meetingId: string): Promise<void> {
-  await authFetch<void>(token, `/admin/planner/calendar/meetings/${meetingId}`, {
-    method: 'DELETE',
-  });
+export async function deleteMeeting(
+  token: string,
+  meetingId: string,
+  expectedVersion: number,
+  mutationIntent: string
+): Promise<void> {
+  const path = `/admin/planner/calendar/meetings/${meetingId}`;
+  await authFetch<void>(
+    token,
+    `/admin/planner/calendar/meetings/${meetingId}${buildQuery({
+      expected_version: String(expectedVersion),
+    })}`,
+    {
+      method: 'DELETE',
+      headers: {
+        'Idempotency-Key': await buildIdempotencyKey(mutationIntent, 'DELETE', path, {
+          expected_version: expectedVersion,
+        }),
+      },
+    }
+  );
 }
 
 export async function sendMeetingInvites(

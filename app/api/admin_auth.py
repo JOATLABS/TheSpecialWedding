@@ -2,12 +2,13 @@ from datetime import timedelta
 
 from fastapi import APIRouter, Depends, Response
 from fastapi.responses import JSONResponse
+
+from app.dependencies.auth_extended import ExtendedAuthUser, get_current_user_extended
 from app.models.admin_user import AdminLoginModel
 from app.services.auth_service import AuthService
-from app.dependencies.auth_extended import get_current_user_extended, ExtendedAuthUser
-from app.utils.auth_utils import create_access_token, set_auth_cookie, clear_auth_cookie
-from app.utils.serializers import serialize_mongo_doc
+from app.utils.auth_utils import clear_auth_cookie, create_access_token, set_auth_cookie
 from app.utils.response import dict_response
+from app.utils.serializers import serialize_mongo_doc
 
 router = APIRouter()
 auth_service = AuthService()

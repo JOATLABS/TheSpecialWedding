@@ -2,22 +2,23 @@
 Audit Logging Middleware for security and compliance
 """
 
+import asyncio
+import hashlib
+import json
+import logging
+import os
+import time
+from datetime import datetime, timezone
+from typing import Any, Dict, Optional
+from uuid import uuid4
+
 from fastapi import Request
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import Response
-import json
-import time
-import logging
-from datetime import datetime, timezone
-from typing import Dict, Any, Optional
+
 from app.core.database import mongo
 from app.core.settings import settings
 from app.utils.auth_utils import verify_token
-import hashlib
-import asyncio
-import os
-from uuid import uuid4
-
 
 # Setup audit logger
 audit_logger = logging.getLogger("audit")

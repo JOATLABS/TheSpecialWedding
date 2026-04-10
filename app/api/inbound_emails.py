@@ -8,13 +8,14 @@ All endpoints require planner or admin authentication.
 Planners can only see emails linked to their weddings.
 """
 
-from fastapi import APIRouter, Depends, Query
+import logging
 from typing import Optional
+
+from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel, Field
 
-from app.dependencies.auth_extended import require_admin_or_planner, ExtendedAuthUser
+from app.dependencies.auth_extended import ExtendedAuthUser, require_admin_or_planner
 from app.services.inbound_email_service import inbound_email_service
-import logging
 
 logger = logging.getLogger(__name__)
 router = APIRouter()

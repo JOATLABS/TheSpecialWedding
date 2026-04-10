@@ -12,6 +12,7 @@ from pymongo import ReturnDocument
 from app.core.config import settings
 from app.core.database import mongo
 from app.models.meeting_invite import MeetingInviteDeliveryStatus
+from app.services.calendar_audit_service import calendar_audit_service
 from app.services.email_service_resend import ResendEmailService
 
 
@@ -225,6 +226,32 @@ class MeetingInviteService:
                 {"task_id": str(task["_id"]), "recipient_email": recipient_email},
                 {"$set": update_doc},
             )
+            if send_result.get("success"):
+                await calendar_audit_service.log(
+                    action=(
+                        "calendar_invite_cancelled"
+                        if method == "CANCEL"
+                        else "calendar_invite_sent"
+                    ),
+                    message=(
+                        f"Cancelled meeting invite for {recipient_email}"
+                        if method == "CANCEL"
+                        else f"Sent meeting invite to {recipient_email}"
+                    ),
+                    owner_planner_email=task.get("owner_planner_email")
+                    or task.get("planner_email"),
+                    actor_email=task.get("created_by_email")
+                    or task.get("owner_planner_email")
+                    or task.get("planner_email"),
+                    wedding_id=str(wedding_id) if wedding_id else None,
+                    metadata={
+                        "task_id": str(task.get("_id")),
+                        "recipient_email": recipient_email,
+                        "delivery_mode": task.get("invite_delivery_mode")
+                        or "email_ics",
+                        "method": method,
+                    },
+                )
             sent_results.append(
                 {
                     "invite_id": invite_id,
@@ -236,6 +263,42 @@ class MeetingInviteService:
             )
 
         return sent_results
+
+    async def queue_invites(
+        self,
+        task: dict[str, Any],
+        *,
+        method: str = "REQUEST",
+        recipient_emails: Optional[list[str]] = None,
+    ) -> list[dict[str, Any]]:
+        """Mark invite recipients as queued before background delivery."""
+        recipient_emails = recipient_emails or task.get("couple_attendee_emails", [])
+        if not recipient_emails:
+            return []
+
+        wedding_id = task.get("wedding_id")
+        now = datetime.now(UTC)
+        uid = self._build_ics_uid(task)
+        queued_rows: list[dict[str, Any]] = []
+        for recipient_email in recipient_emails:
+            invite_id = await self._upsert_invite_record(
+                task=task,
+                recipient_email=recipient_email,
+                wedding_id=wedding_id,
+                uid=uid,
+                delivery_mode=task.get("invite_delivery_mode") or "email_ics",
+                now=now,
+            )
+            queued_rows.append(
+                {
+                    "invite_id": invite_id,
+                    "recipient_email": recipient_email,
+                    "success": True,
+                    "status": "queued",
+                    "method": method,
+                }
+            )
+        return queued_rows
 
     async def send_invites(
         self, task: dict[str, Any], *, recipient_emails: Optional[list[str]] = None

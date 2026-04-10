@@ -81,9 +81,9 @@ def admin_token(api_url, wait_for_backend):
         json={"email": ADMIN_EMAIL, "password": ADMIN_PASSWORD},
         timeout=10,
     )
-    assert resp.status_code == 200, (
-        f"Admin login failed: {resp.status_code} - {resp.text}"
-    )
+    assert (
+        resp.status_code == 200
+    ), f"Admin login failed: {resp.status_code} - {resp.text}"
     data = resp.json()
     assert "access_token" in data
     return data["access_token"]

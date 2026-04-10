@@ -3,11 +3,11 @@ from typing import Any, Dict, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 
-from app.dependencies.auth_extended import require_root_admin, ExtendedAuthUser
 from app.core.database import mongo
+from app.dependencies.auth_extended import ExtendedAuthUser, require_root_admin
 from app.models.subscription import ACTIVE_SUBSCRIPTION_STATUSES
-from app.utils.pydantic_objectid import PyObjectId
 from app.services.platform_metrics_service import PlatformMetricsService
+from app.utils.pydantic_objectid import PyObjectId
 
 router = APIRouter()
 
@@ -477,9 +477,11 @@ async def get_wedding_planners(
                 "created_at": planner.get(
                     "created_at", datetime.now(timezone.utc)
                 ).isoformat(),
-                "last_login": planner.get("last_login").isoformat()
-                if planner.get("last_login")
-                else None,
+                "last_login": (
+                    planner.get("last_login").isoformat()
+                    if planner.get("last_login")
+                    else None
+                ),
             }
             formatted_planners.append(formatted_planner)
 

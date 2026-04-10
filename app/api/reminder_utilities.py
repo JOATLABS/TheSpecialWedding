@@ -1,16 +1,18 @@
 # app/api/reminder_utilities.py
 
+from typing import List, Optional
+
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
-from typing import List, Optional
+
+from app.dependencies.auth_extended import (
+    ExtendedAuthUser,
+    check_wedding_access,
+    enforce_team_permission,
+    require_admin_or_planner,
+)
 from app.services.reminder_utilities import RSVPReminderHelper
 from app.services.sse_manager import sse_manager
-from app.dependencies.auth_extended import (
-    require_admin_or_planner,
-    ExtendedAuthUser,
-    enforce_team_permission,
-    check_wedding_access,
-)
 from app.services.wedding_service import WeddingService
 
 router = APIRouter()

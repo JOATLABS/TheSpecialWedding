@@ -14,13 +14,14 @@ This script:
 import os
 import sys
 from datetime import datetime, timezone
+
 from dotenv import load_dotenv
 
 load_dotenv()
 
 import stripe
-from pymongo import MongoClient
 from bson import ObjectId
+from pymongo import MongoClient
 
 PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 if PROJECT_ROOT not in sys.path:

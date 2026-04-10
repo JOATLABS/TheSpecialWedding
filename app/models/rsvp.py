@@ -1,7 +1,9 @@
-from pydantic import BaseModel, Field, field_validator, model_validator
-from typing import List, Optional, Any
-import re
 import logging
+import re
+from typing import Any, List, Optional
+
+from pydantic import BaseModel, Field, field_validator, model_validator
+
 from app.utils.wedding_event_types import normalize_event_type_list
 
 logger = logging.getLogger(__name__)
