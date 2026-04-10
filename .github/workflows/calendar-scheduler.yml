@@ -1,0 +1,179 @@
+# =============================================================================
+# Production calendar scheduler workflow
+# Runs the shared calendar invite queue and maintenance endpoints on a schedule.
+# Staging can be triggered manually for validation, but is not scheduled by default.
+# =============================================================================
+name: Calendar Scheduler
+
+on:
+  schedule:
+    - cron: "*/5 * * * *"
+    - cron: "*/15 * * * *"
+  workflow_dispatch:
+    inputs:
+      environment_name:
+        description: "Which environment to target"
+        required: true
+        default: production
+        type: choice
+        options:
+          - production
+          - staging
+      job:
+        description: "Which calendar scheduler job(s) to run"
+        required: true
+        default: both
+        type: choice
+        options:
+          - invite
+          - maintenance
+          - both
+      invite_limit:
+        description: "Invite-job batch size for manual runs"
+        required: false
+        default: "25"
+      retry_limit:
+        description: "Sync-retry batch size for manual runs"
+        required: false
+        default: "50"
+      drift_limit:
+        description: "Drift-check batch size for manual runs"
+        required: false
+        default: "50"
+
+permissions:
+  contents: read
+
+jobs:
+  production:
+    name: Run production calendar scheduler
+    if: ${{ github.event_name == 'schedule' || github.event.inputs.environment_name == 'production' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Resolve production job plan
+        id: plan
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" = "schedule" ]; then
+            case "${{ github.event.schedule }}" in
+              "*/5 * * * *")
+                echo "run_invites=true" >> "$GITHUB_OUTPUT"
+                echo "run_maintenance=false" >> "$GITHUB_OUTPUT"
+                echo "invite_limit=25" >> "$GITHUB_OUTPUT"
+                echo "retry_limit=50" >> "$GITHUB_OUTPUT"
+                echo "drift_limit=50" >> "$GITHUB_OUTPUT"
+                ;;
+              "*/15 * * * *")
+                echo "run_invites=false" >> "$GITHUB_OUTPUT"
+                echo "run_maintenance=true" >> "$GITHUB_OUTPUT"
+                echo "invite_limit=25" >> "$GITHUB_OUTPUT"
+                echo "retry_limit=50" >> "$GITHUB_OUTPUT"
+                echo "drift_limit=50" >> "$GITHUB_OUTPUT"
+                ;;
+              *)
+                echo "Unsupported schedule trigger: ${{ github.event.schedule }}"
+                exit 1
+                ;;
+            esac
+          else
+            case "${{ github.event.inputs.job }}" in
+              invite)
+                echo "run_invites=true" >> "$GITHUB_OUTPUT"
+                echo "run_maintenance=false" >> "$GITHUB_OUTPUT"
+                ;;
+              maintenance)
+                echo "run_invites=false" >> "$GITHUB_OUTPUT"
+                echo "run_maintenance=true" >> "$GITHUB_OUTPUT"
+                ;;
+              both)
+                echo "run_invites=true" >> "$GITHUB_OUTPUT"
+                echo "run_maintenance=true" >> "$GITHUB_OUTPUT"
+                ;;
+              *)
+                echo "Unsupported manual job selection: ${{ github.event.inputs.job }}"
+                exit 1
+                ;;
+            esac
+            echo "invite_limit=${{ github.event.inputs.invite_limit || '25' }}" >> "$GITHUB_OUTPUT"
+            echo "retry_limit=${{ github.event.inputs.retry_limit || '50' }}" >> "$GITHUB_OUTPUT"
+            echo "drift_limit=${{ github.event.inputs.drift_limit || '50' }}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Trigger production calendar invite jobs
+        if: ${{ steps.plan.outputs.run_invites == 'true' }}
+        env:
+          SCHEDULER_BASE_URL: https://api.thespecialwedding.io
+          SCHEDULER_HMAC_SECRET: ${{ secrets.PRODUCTION_SCHEDULER_HMAC_SECRET }}
+        run: |
+          python3 scripts/deploy/trigger_scheduler.py \
+            --path /scheduler/calendar-invite-jobs \
+            --query "limit=${{ steps.plan.outputs.invite_limit }}"
+
+      - name: Trigger production calendar maintenance
+        if: ${{ steps.plan.outputs.run_maintenance == 'true' }}
+        env:
+          SCHEDULER_BASE_URL: https://api.thespecialwedding.io
+          SCHEDULER_HMAC_SECRET: ${{ secrets.PRODUCTION_SCHEDULER_HMAC_SECRET }}
+        run: |
+          python3 scripts/deploy/trigger_scheduler.py \
+            --path /scheduler/calendar-maintenance \
+            --query "retry_limit=${{ steps.plan.outputs.retry_limit }}" \
+            --query "drift_limit=${{ steps.plan.outputs.drift_limit }}"
+
+  staging:
+    name: Run staging calendar scheduler
+    if: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.environment_name == 'staging' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Resolve staging job plan
+        id: plan
+        shell: bash
+        run: |
+          case "${{ github.event.inputs.job }}" in
+            invite)
+              echo "run_invites=true" >> "$GITHUB_OUTPUT"
+              echo "run_maintenance=false" >> "$GITHUB_OUTPUT"
+              ;;
+            maintenance)
+              echo "run_invites=false" >> "$GITHUB_OUTPUT"
+              echo "run_maintenance=true" >> "$GITHUB_OUTPUT"
+              ;;
+            both)
+              echo "run_invites=true" >> "$GITHUB_OUTPUT"
+              echo "run_maintenance=true" >> "$GITHUB_OUTPUT"
+              ;;
+            *)
+              echo "Unsupported manual job selection: ${{ github.event.inputs.job }}"
+              exit 1
+              ;;
+          esac
+          echo "invite_limit=${{ github.event.inputs.invite_limit || '25' }}" >> "$GITHUB_OUTPUT"
+          echo "retry_limit=${{ github.event.inputs.retry_limit || '50' }}" >> "$GITHUB_OUTPUT"
+          echo "drift_limit=${{ github.event.inputs.drift_limit || '50' }}" >> "$GITHUB_OUTPUT"
+
+      - name: Trigger staging calendar invite jobs
+        if: ${{ steps.plan.outputs.run_invites == 'true' }}
+        env:
+          SCHEDULER_BASE_URL: https://api.staging.thespecialwedding.io
+          SCHEDULER_HMAC_SECRET: ${{ secrets.STAGING_SCHEDULER_HMAC_SECRET }}
+        run: |
+          python3 scripts/deploy/trigger_scheduler.py \
+            --path /scheduler/calendar-invite-jobs \
+            --query "limit=${{ steps.plan.outputs.invite_limit }}"
+
+      - name: Trigger staging calendar maintenance
+        if: ${{ steps.plan.outputs.run_maintenance == 'true' }}
+        env:
+          SCHEDULER_BASE_URL: https://api.staging.thespecialwedding.io
+          SCHEDULER_HMAC_SECRET: ${{ secrets.STAGING_SCHEDULER_HMAC_SECRET }}
+        run: |
+          python3 scripts/deploy/trigger_scheduler.py \
+            --path /scheduler/calendar-maintenance \
+            --query "retry_limit=${{ steps.plan.outputs.retry_limit }}" \
+            --query "drift_limit=${{ steps.plan.outputs.drift_limit }}"
