@@ -358,8 +358,12 @@ jobs:
             -e ENABLE_RATE_LIMITING=false \
             -e ENABLE_CSRF_PROTECTION=false \
             -e "CORS_ORIGINS=http://localhost:3000" \
+            -e "ALLOWED_HOSTS=localhost,127.0.0.1" \
             -e FRONTEND_URL=http://localhost:3000 \
             -e NEXT_PUBLIC_API_BASE_URL=http://localhost:8000 \
+            -e S3_REGION=auto \
+            -e S3_BUCKET_NAME=${{ vars.S3_BUCKET_NAME }} \
+            -e S3_AD_BUCKET_NAME=${{ vars.S3_AD_BUCKET_NAME }} \
             -e MOCK_SMS_PROVIDER=true \
             -e MOCK_EMAIL_PROVIDER=true \
             ${{ env.BACKEND_IMAGE }}:${{ steps.tag.outputs.tag }} \
