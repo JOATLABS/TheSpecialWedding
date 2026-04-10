@@ -38,7 +38,9 @@ These files now implement the rollout:
 | [`.github/workflows/deploy-coolify.yml`](/Users/emmanuelakinwale/Desktop/WeddingWebApp/.github/workflows/deploy-coolify.yml) | Auto-deploy staging after CI succeeds on `main`, or manually redeploy staging by tag |
 | [`.github/workflows/promote-coolify-production.yml`](/Users/emmanuelakinwale/Desktop/WeddingWebApp/.github/workflows/promote-coolify-production.yml) | Manual production promotion of an explicit SHA tag |
 | [`.github/workflows/coolify-deploy-shared.yml`](/Users/emmanuelakinwale/Desktop/WeddingWebApp/.github/workflows/coolify-deploy-shared.yml) | Shared deploy, verify, and rollback logic for both environments |
+| [`.github/workflows/calendar-scheduler.yml`](/Users/emmanuelakinwale/Desktop/WeddingWebApp/.github/workflows/calendar-scheduler.yml) | Runs production calendar invite jobs every 5 minutes and calendar maintenance every 15 minutes; staging can be triggered manually |
 | [`scripts/deploy/verify_environment.py`](/Users/emmanuelakinwale/Desktop/WeddingWebApp/scripts/deploy/verify_environment.py) | Post-deploy smoke verification used by both workflows |
+| [`scripts/deploy/trigger_scheduler.py`](/Users/emmanuelakinwale/Desktop/WeddingWebApp/scripts/deploy/trigger_scheduler.py) | Sends HMAC-signed scheduler requests to backend cron endpoints |
 
 ---
 
@@ -153,6 +155,7 @@ Required:
 - `FRONTEND_URL` for that environment
 - environment-specific `CORS_ORIGINS`
 - environment-specific host validation inputs (`ALLOWED_HOSTS` or derived config)
+- environment-specific `SCHEDULER_HMAC_SECRET`
 
 Examples:
 
@@ -198,12 +201,14 @@ Add these repository secrets.
 - `STAGING_SMOKE_COUPLE_EMAIL`
 - `STAGING_SMOKE_COUPLE_PASSWORD`
 - `STAGING_SMOKE_PUBLIC_WEDDING_SLUG`
+- `STAGING_SCHEDULER_HMAC_SECRET`
 
 ### Production smoke credentials
 
 - `PRODUCTION_SMOKE_ADMIN_EMAIL`
 - `PRODUCTION_SMOKE_ADMIN_PASSWORD`
 - `PRODUCTION_SMOKE_PUBLIC_WEDDING_SLUG`
+- `PRODUCTION_SCHEDULER_HMAC_SECRET`
 
 Use dedicated smoke accounts. Do not use a real planner or couple account as your deploy verification identity.
 
@@ -248,8 +253,8 @@ Recommended flow:
 Useful subsets:
 
 - `--scope shared` when rotating only `COOLIFY_BASE_URL`, `COOLIFY_API_TOKEN`, or the Coolify app UUIDs
-- `--scope staging` when rotating only staging smoke credentials
-- `--scope production` when rotating only production smoke credentials
+- `--scope staging` when rotating only staging smoke credentials and the staging scheduler HMAC secret
+- `--scope production` when rotating only production smoke credentials and the production scheduler HMAC secret
 
 Important note:
 
@@ -295,6 +300,28 @@ When staging is good:
 
 You can also use the production workflow as a manual rollback tool by supplying an earlier known-good SHA tag.
 
+### Scheduled calendar jobs
+
+The shared planner calendar now depends on two recurring backend scheduler calls:
+
+1. `POST /scheduler/calendar-invite-jobs`
+2. `POST /scheduler/calendar-maintenance`
+
+Those calls are now versioned in the repo through [`.github/workflows/calendar-scheduler.yml`](/Users/emmanuelakinwale/Desktop/WeddingWebApp/.github/workflows/calendar-scheduler.yml).
+
+Default behavior:
+
+- production invite queue runs every 5 minutes
+- production calendar maintenance runs every 15 minutes
+- staging is manual-only so test scheduling does not spam staging invite recipients
+
+The workflow signs requests with HMAC using the environment-specific scheduler secret. That secret must match the backend `SCHEDULER_HMAC_SECRET` for the same environment.
+
+Manual examples:
+
+1. Trigger staging invite processing after validating a test meeting flow.
+2. Trigger production maintenance on demand after resolving a Google quota incident.
+
 ---
 
 ## Step 7: Cutover checklist
@@ -309,6 +336,8 @@ You can also use the production workflow as a manual rollback tool by supplying 
 - [ ] `FRONTEND_URL` and `INTERNAL_API_BASE_URL` set correctly on both frontend apps
 - [ ] Backend env vars separated by environment
 - [ ] GitHub secrets added
+- [ ] `SCHEDULER_HMAC_SECRET` set on both backend environments
+- [ ] Calendar scheduler workflow has production secrets and succeeds on a manual dry run
 - [ ] Dedicated smoke-test accounts created
 - [ ] Staging seed data loaded
 - [ ] First `main` merge reaches staging successfully

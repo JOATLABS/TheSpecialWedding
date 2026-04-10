@@ -26,6 +26,8 @@ Notes:
     deploy workflows read repo secrets such as COOLIFY_STAGING_BACKEND_UUID.
   - Secret values are write-only in GitHub. Keep your real source of truth in
     the local env file, a password manager, or another secure store.
+  - Scheduler HMAC secrets must match the `SCHEDULER_HMAC_SECRET` configured
+    on the backend for the same environment.
 EOF
 }
 
@@ -114,6 +116,7 @@ declare -a STAGING_REQUIRED=(
   "STAGING_SMOKE_ADMIN_PASSWORD"
   "STAGING_SMOKE_COUPLE_EMAIL"
   "STAGING_SMOKE_COUPLE_PASSWORD"
+  "STAGING_SCHEDULER_HMAC_SECRET"
 )
 
 declare -a STAGING_OPTIONAL=(
@@ -123,6 +126,7 @@ declare -a STAGING_OPTIONAL=(
 declare -a PRODUCTION_REQUIRED=(
   "PRODUCTION_SMOKE_ADMIN_EMAIL"
   "PRODUCTION_SMOKE_ADMIN_PASSWORD"
+  "PRODUCTION_SCHEDULER_HMAC_SECRET"
 )
 
 declare -a PRODUCTION_OPTIONAL=(
