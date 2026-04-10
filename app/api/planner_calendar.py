@@ -199,6 +199,17 @@ def _isoformat(value: Optional[datetime | str]) -> Optional[str]:
     return str(value)
 
 
+def _optional_str(value: Any) -> Optional[str]:
+    """Return string values as-is and coerce simple scalar IDs to strings."""
+    if value is None:
+        return None
+    if isinstance(value, str):
+        return value
+    if isinstance(value, (int, ObjectId)):
+        return str(value)
+    return None
+
+
 async def _get_wedding_name(wedding_id: Optional[str]) -> Optional[str]:
     """Get wedding couple names by ID."""
     if not wedding_id:
@@ -1833,11 +1844,11 @@ async def create_meeting(
         await calendar_audit_service.log(
             action="calendar_meeting_scheduled",
             message=f"Scheduled meeting {task_doc.get('title')}",
-            owner_planner_email=task_doc.get("owner_planner_email")
-            or task_doc.get("planner_email"),
+            owner_planner_email=_optional_str(task_doc.get("owner_planner_email"))
+            or _optional_str(task_doc.get("planner_email")),
             actor_email=current_user.email,
             actor_role=current_user.role,
-            wedding_id=task_doc.get("wedding_id"),
+            wedding_id=_optional_str(task_doc.get("wedding_id")),
             metadata={
                 "task_id": str(task_doc.get("_id")),
                 "assigned_user_ids": task_doc.get("assigned_user_ids", []),
@@ -2094,11 +2105,13 @@ async def update_meeting(
             await calendar_audit_service.log(
                 action="calendar_meeting_rescheduled",
                 message=f"Updated meeting {updated_task.get('title')}",
-                owner_planner_email=updated_task.get("owner_planner_email")
-                or updated_task.get("planner_email"),
+                owner_planner_email=_optional_str(
+                    updated_task.get("owner_planner_email")
+                )
+                or _optional_str(updated_task.get("planner_email")),
                 actor_email=current_user.email,
                 actor_role=current_user.role,
-                wedding_id=updated_task.get("wedding_id"),
+                wedding_id=_optional_str(updated_task.get("wedding_id")),
                 metadata={
                     "task_id": meeting_id,
                     "previous_version": expected_version,
@@ -2222,11 +2235,11 @@ async def delete_meeting(
             await calendar_audit_service.log(
                 action="calendar_meeting_cancelled",
                 message=f"Cancelled meeting {task.get('title')}",
-                owner_planner_email=task.get("owner_planner_email")
-                or task.get("planner_email"),
+                owner_planner_email=_optional_str(task.get("owner_planner_email"))
+                or _optional_str(task.get("planner_email")),
                 actor_email=current_user.email,
                 actor_role=current_user.role,
-                wedding_id=task.get("wedding_id"),
+                wedding_id=_optional_str(task.get("wedding_id")),
                 metadata={
                     "task_id": meeting_id,
                     "previous_version": expected_version,

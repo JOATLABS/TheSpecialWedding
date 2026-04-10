@@ -1,7 +1,7 @@
 import asyncio
 import logging
 from datetime import datetime, timezone
-from typing import Dict, List, Optional
+from typing import Any, Optional, TypedDict
 
 from bson import ObjectId
 from fastapi import HTTPException
@@ -10,6 +10,13 @@ from app.core.database import mongo
 from app.services.email_service_resend import ResendEmailService
 
 logger = logging.getLogger(__name__)
+
+
+class RecipientContact(TypedDict):
+    email: str
+    name: str | None
+    role: str | None
+    user_id: str | None
 
 
 class NotificationService:
@@ -89,7 +96,7 @@ class NotificationService:
             )
 
     async def get_notifications(
-        self, page: int = 1, limit: int = 20, filters: dict = None
+        self, page: int = 1, limit: int = 20, filters: Optional[dict[str, Any]] = None
     ) -> dict:
         """Get notifications with filtering and pagination"""
         try:
@@ -279,19 +286,20 @@ class NotificationService:
                     html_content = self._render_notification_email(
                         notification, recipient
                     )
+                    recipient_email = recipient["email"]
                     result = await self.email_service.send_email(
-                        to_email=recipient["email"],
+                        to_email=recipient_email,
                         subject=notification["title"],
                         html_content=html_content,
                         email_type="admin_notification",
                     )
 
                     if result.get("success"):
-                        sent.append(recipient["email"])
+                        sent.append(recipient_email)
                     else:
                         failed.append(
                             {
-                                "email": recipient["email"],
+                                "email": recipient_email,
                                 "error": result.get("error", "Unknown error"),
                             }
                         )
@@ -717,18 +725,16 @@ class NotificationService:
                 status_code=500, detail=f"Error getting notification count: {str(e)}"
             )
 
-    async def _resolve_recipients(
-        self, notification: dict
-    ) -> List[Dict[str, Optional[str]]]:
+    async def _resolve_recipients(self, notification: dict) -> list[RecipientContact]:
         """Resolve the actual recipient list for the notification."""
         target = notification.get("target_audience", "all")
-        recipients: List[Dict[str, Optional[str]]] = []
-        seen_emails = set()
+        recipients: list[RecipientContact] = []
+        seen_emails: set[str] = set()
 
         targeted_user_id = notification.get("user_id")
         if targeted_user_id:
             user = await self._find_user_by_identifier(targeted_user_id)
-            if user and user.get("email"):
+            if user:
                 formatted = self._format_user_contact(user)
                 recipients.append(formatted)
                 return recipients
@@ -738,6 +744,7 @@ class NotificationService:
             "email": {"$exists": True, "$nin": [None, ""]},
         }
 
+        cursor = None
         if target == "all":
             cursor = self.users_collection.find(base_query)
         elif target == "wedding_planners":
@@ -746,12 +753,13 @@ class NotificationService:
             )
         elif target == "vendors":
             cursor = self.users_collection.find({**base_query, "role": "vendor"})
-        else:
-            cursor = []
+
+        if cursor is None:
+            return recipients
 
         async for user in cursor:
             email = user.get("email")
-            if not email or email in seen_emails:
+            if not isinstance(email, str) or not email or email in seen_emails:
                 continue
 
             formatted = self._format_user_contact(user)
@@ -760,7 +768,9 @@ class NotificationService:
 
         return recipients
 
-    async def _find_user_by_identifier(self, identifier: str) -> Optional[Dict]:
+    async def _find_user_by_identifier(
+        self, identifier: str
+    ) -> Optional[dict[str, Any]]:
         """Locate a user by ObjectId or email address."""
         if not identifier:
             return None
@@ -784,27 +794,40 @@ class NotificationService:
         return await self.users_collection.find_one({"email": identifier})
 
     @staticmethod
-    def _format_user_contact(user: Dict) -> Dict[str, Optional[str]]:
+    def _format_user_contact(user: dict[str, Any]) -> RecipientContact:
         """Prepare a consistent contact payload for recipients."""
-        name_parts = [user.get("first_name"), user.get("last_name")]
-        full_name = " ".join(part for part in name_parts if part).strip()
+        email = user.get("email")
+        if not isinstance(email, str) or not email:
+            raise ValueError("User contact requires a non-empty email")
+
+        first_name = user.get("first_name")
+        last_name = user.get("last_name")
+        name_parts = [
+            part for part in (first_name, last_name) if isinstance(part, str) and part
+        ]
+        full_name = " ".join(name_parts).strip()
         if not full_name:
-            full_name = (
-                user.get("full_name") or user.get("name") or user.get("company_name")
-            )
-        if not full_name and user.get("email"):
-            full_name = user["email"].split("@")[0]
+            for field in ("full_name", "name", "company_name"):
+                value = user.get(field)
+                if isinstance(value, str) and value:
+                    full_name = value
+                    break
+        if not full_name:
+            full_name = email.split("@")[0]
+
+        role = user.get("role")
+        role_value = role if isinstance(role, str) and role else None
 
         return {
-            "email": user.get("email"),
+            "email": email,
             "name": full_name,
-            "role": user.get("role"),
+            "role": role_value,
             "user_id": str(user.get("_id")) if user.get("_id") is not None else None,
         }
 
     @staticmethod
     def _render_notification_email(
-        notification: dict, recipient: Dict[str, Optional[str]]
+        notification: dict, recipient: RecipientContact
     ) -> str:
         """Generate a glass-inspired HTML email for the notification."""
         headline = notification.get("title", "Platform Update")
@@ -950,7 +973,7 @@ class NotificationService:
             )
 
     async def get_templates(
-        self, page: int = 1, limit: int = 50, filters: dict = None
+        self, page: int = 1, limit: int = 50, filters: Optional[dict[str, Any]] = None
     ) -> dict:
         """Get notification templates with filtering and pagination"""
         try:
