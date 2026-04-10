@@ -86,7 +86,9 @@ class MeetingInviteService:
         method: str,
     ) -> tuple[str, str]:
         title = task.get("title") or "Planner meeting"
-        description = task.get("description") or "A planner meeting has been scheduled for you."
+        description = (
+            task.get("description") or "A planner meeting has been scheduled for you."
+        )
         when_text = task.get("start_date")
         ends_text = task.get("end_date")
 

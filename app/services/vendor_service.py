@@ -201,7 +201,9 @@ class VendorService:
             session=session,
         )
 
-    def _sanitize_public_contract_response(self, contract: Dict[str, Any]) -> Dict[str, Any]:
+    def _sanitize_public_contract_response(
+        self, contract: Dict[str, Any]
+    ) -> Dict[str, Any]:
         contract.pop("access_token", None)
         contract.pop("access_token_hash", None)
         contract.pop("internal_notes", None)
@@ -254,13 +256,15 @@ class VendorService:
             return None
         return str(value)
 
-    def _attach_contract_version_metadata(self, contract: Dict[str, Any]) -> Dict[str, Any]:
+    def _attach_contract_version_metadata(
+        self, contract: Dict[str, Any]
+    ) -> Dict[str, Any]:
         """Backfill default lineage metadata for legacy contracts in API responses."""
         contract_id = self._stringify_id(contract.get("_id") or contract.get("id"))
         contract["version_number"] = int(contract.get("version_number") or 1)
-        contract["root_contract_id"] = self._stringify_id(
-            contract.get("root_contract_id")
-        ) or contract_id
+        contract["root_contract_id"] = (
+            self._stringify_id(contract.get("root_contract_id")) or contract_id
+        )
         contract["parent_contract_id"] = self._stringify_id(
             contract.get("parent_contract_id")
         )
@@ -452,9 +456,7 @@ class VendorService:
             )
             if copy_terms_and_conditions
             else None,
-            "cancellation_policy": deepcopy(
-                source_contract.get("cancellation_policy")
-            )
+            "cancellation_policy": deepcopy(source_contract.get("cancellation_policy"))
             if copy_cancellation_policy
             else None,
             "custom_clauses": deepcopy(source_contract.get("custom_clauses"))
@@ -736,7 +738,9 @@ class VendorService:
         self, contract: Dict[str, Any]
     ) -> List[Dict[str, Any]]:
         """Build fallback activity entries for legacy contracts with no explicit log rows."""
-        contract_id = self._stringify_id(contract.get("_id") or contract.get("id")) or ""
+        contract_id = (
+            self._stringify_id(contract.get("_id") or contract.get("id")) or ""
+        )
         root_contract_id = self._get_root_contract_id(contract)
         planner_identifier = contract.get("created_by")
         vendor_identifier = contract.get("vendor_email")
@@ -834,7 +838,8 @@ class VendorService:
                     "description": None,
                     "actor": {
                         "type": "vendor",
-                        "identifier": contract.get("signed_by_email") or vendor_identifier,
+                        "identifier": contract.get("signed_by_email")
+                        or vendor_identifier,
                         "display_name": vendor_display_name,
                     },
                     "metadata": {},
@@ -1809,7 +1814,9 @@ class VendorService:
             logger.error(f"Failed to fetch contract: {str(e)}")
             raise HTTPException(status_code=500, detail="Failed to fetch contract")
 
-    async def _validate_contract_public_token(self, contract_id: str, raw_token: str) -> dict:
+    async def _validate_contract_public_token(
+        self, contract_id: str, raw_token: str
+    ) -> dict:
         """Validate a public vendor contract token against the persisted hash and lifecycle rules."""
         contract = await self.get_contract(contract_id)
 
@@ -1820,7 +1827,9 @@ class VendorService:
             )
 
         if contract.get("token_revoked_at"):
-            raise HTTPException(status_code=403, detail="Contract link is no longer active")
+            raise HTTPException(
+                status_code=403, detail="Contract link is no longer active"
+            )
 
         token_expires_at = contract.get("token_expires_at")
         if token_expires_at and token_expires_at < datetime.now(timezone.utc):
@@ -1896,7 +1905,9 @@ class VendorService:
     ) -> dict:
         """Create a new draft revision or amendment from the current live contract."""
         try:
-            source_contract = await self.get_contract(contract_id, created_by=created_by)
+            source_contract = await self.get_contract(
+                contract_id, created_by=created_by
+            )
 
             if not self._is_contract_current(source_contract):
                 raise HTTPException(
@@ -2050,11 +2061,10 @@ class VendorService:
             # Authorization: verify contract belongs to this user
             contract = await self.get_contract(contract_id, created_by=created_by)
 
-            if (
-                contract.get("contract_kind", ContractKind.ORIGINAL.value)
-                in {ContractKind.REVISION.value, ContractKind.AMENDMENT.value}
-                and not contract.get("supersedes_contract_id")
-            ):
+            if contract.get("contract_kind", ContractKind.ORIGINAL.value) in {
+                ContractKind.REVISION.value,
+                ContractKind.AMENDMENT.value,
+            } and not contract.get("supersedes_contract_id"):
                 raise HTTPException(
                     status_code=400,
                     detail="Revision draft is missing its superseded contract reference",
@@ -2084,7 +2094,9 @@ class VendorService:
                         detail="This revision is based on an outdated contract version",
                     )
 
-                if self._get_root_contract_id(superseded_contract) != self._get_root_contract_id(contract):
+                if self._get_root_contract_id(
+                    superseded_contract
+                ) != self._get_root_contract_id(contract):
                     raise HTTPException(
                         status_code=400,
                         detail="Revision lineage does not match the contract it supersedes",
@@ -2219,9 +2231,7 @@ class VendorService:
                     actor_display_name=created_by,
                     metadata={
                         "superseded_by_contract_id": contract_id,
-                        "superseding_version_number": contract.get(
-                            "version_number", 1
-                        ),
+                        "superseding_version_number": contract.get("version_number", 1),
                         "superseding_contract_kind": contract.get(
                             "contract_kind", ContractKind.ORIGINAL.value
                         ),
@@ -2238,9 +2248,7 @@ class VendorService:
                     from_name="Wedding Planning Team",
                 )
                 if not email_result.get("success"):
-                    email_warning = (
-                        "Contract was secured and marked sent, but email delivery failed."
-                    )
+                    email_warning = "Contract was secured and marked sent, but email delivery failed."
                 else:
                     await self._log_communication(
                         vendor_profile_id=contract["vendor_profile_id"],
@@ -2253,7 +2261,9 @@ class VendorService:
                         sent_to=contract["vendor_email"],
                     )
             except Exception as email_error:
-                logger.error("Contract email delivery failed after send commit: %s", email_error)
+                logger.error(
+                    "Contract email delivery failed after send commit: %s", email_error
+                )
                 email_warning = (
                     "Contract was secured and marked sent, but email delivery failed."
                 )
@@ -2432,7 +2442,9 @@ class VendorService:
                 {"_id": ObjectId(contract_id)}, {"$set": update_data}
             )
 
-            changed_fields = sorted(key for key in update_data.keys() if key != "updated_at")
+            changed_fields = sorted(
+                key for key in update_data.keys() if key != "updated_at"
+            )
             if changed_fields:
                 await self._log_contract_activity(
                     contract_id=contract_id,
@@ -3116,7 +3128,9 @@ class VendorService:
 
             if explicit_items:
                 explicit_types = {
-                    item.get("activity_type") for item in explicit_items if item.get("activity_type")
+                    item.get("activity_type")
+                    for item in explicit_items
+                    if item.get("activity_type")
                 }
                 synthesized_items = [
                     item
@@ -3128,7 +3142,9 @@ class VendorService:
 
             items = [*serialized_items, *synthesized_items]
             items.sort(
-                key=lambda item: item.get("created_at") or datetime.min.replace(tzinfo=timezone.utc),
+                key=lambda item: (
+                    item.get("created_at") or datetime.min.replace(tzinfo=timezone.utc)
+                ),
                 reverse=True,
             )
 

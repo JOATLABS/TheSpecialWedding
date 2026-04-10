@@ -72,9 +72,7 @@ async def require_couple_auth(request: Request) -> dict:
         legacy_email = normalize_couple_email(subject)
         if legacy_email:
             legacy_matches = await (
-                mongo.db["couple_users"]
-                .find({"email": legacy_email})
-                .to_list(length=2)
+                mongo.db["couple_users"].find({"email": legacy_email}).to_list(length=2)
             )
             if len(legacy_matches) > 1:
                 raise HTTPException(

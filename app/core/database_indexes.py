@@ -785,7 +785,11 @@ async def create_vendor_contract_security_indexes():
         logger.info("Created index: idx_vendor_contract_wedding_vendor")
 
         await milestones.create_index(
-            [("contract_id", ASCENDING), ("status", ASCENDING), ("due_date", ASCENDING)],
+            [
+                ("contract_id", ASCENDING),
+                ("status", ASCENDING),
+                ("due_date", ASCENDING),
+            ],
             name="idx_vendor_payment_milestones_contract_status_due",
         )
         logger.info("Created index: idx_vendor_payment_milestones_contract_status_due")
@@ -794,7 +798,9 @@ async def create_vendor_contract_security_indexes():
             [("created_by", ASCENDING), ("status", ASCENDING), ("due_date", ASCENDING)],
             name="idx_vendor_payment_milestones_created_by_status_due",
         )
-        logger.info("Created index: idx_vendor_payment_milestones_created_by_status_due")
+        logger.info(
+            "Created index: idx_vendor_payment_milestones_created_by_status_due"
+        )
 
         logger.info("All vendor contract security indexes created successfully")
         return True

@@ -157,7 +157,9 @@ def _raise_couple_sign_in_error(couple: dict, access: dict) -> None:
         )
 
 
-async def _select_login_candidate(email: str, password: str) -> tuple[dict, dict | None]:
+async def _select_login_candidate(
+    email: str, password: str
+) -> tuple[dict, dict | None]:
     """
     Select the couple account to authenticate for a login attempt.
 

@@ -1856,10 +1856,9 @@ async def delete_meeting(
 
     await calendar_sync_service.delete_schedule_item_syncs(meeting_id)
     invite_status: list[dict[str, Any]] = []
-    if (
-        task.get("invite_delivery_mode") == InviteDeliveryMode.EMAIL_ICS.value
-        and task.get("couple_attendee_emails")
-    ):
+    if task.get(
+        "invite_delivery_mode"
+    ) == InviteDeliveryMode.EMAIL_ICS.value and task.get("couple_attendee_emails"):
         cancellation_task = {
             **task,
             "updated_at": datetime.now(UTC),

@@ -85,7 +85,9 @@ class CalendarSyncService:
         task_id = str(task["_id"])
         connection_id = str(connection_doc["_id"])
         stale_before = now - timedelta(minutes=5)
-        base_doc = self._sync_row_base(task=task, connection_doc=connection_doc, now=now)
+        base_doc = self._sync_row_base(
+            task=task, connection_doc=connection_doc, now=now
+        )
 
         try:
             claimed_doc = await self.syncs_collection.find_one_and_update(
@@ -266,7 +268,8 @@ class CalendarSyncService:
             actor_is_owner=actor_is_owner,
         )
         existing_by_connection_id = {
-            sync_doc.get("calendar_connection_id"): sync_doc for sync_doc in existing_syncs
+            sync_doc.get("calendar_connection_id"): sync_doc
+            for sync_doc in existing_syncs
         }
         selected_connection_ids = {str(doc["_id"]) for doc in selected_connections}
         updated_syncs: list[dict] = []
@@ -353,24 +356,20 @@ class CalendarSyncService:
                 if claimed_doc is None:
                     continue
                 if claimed_doc.get("external_event_id"):
-                    success = (
-                        await google_calendar_service.update_google_event_for_connection(
-                            connection_id,
-                            claimed_doc["external_event_id"],
-                            task,
-                            attendee_emails=attendee_emails,
-                        )
+                    success = await google_calendar_service.update_google_event_for_connection(
+                        connection_id,
+                        claimed_doc["external_event_id"],
+                        task,
+                        attendee_emails=attendee_emails,
                     )
                     external_event_id = claimed_doc.get("external_event_id")
                     etag = claimed_doc.get("etag")
                     existing = claimed_doc
                 else:
-                    result = (
-                        await google_calendar_service.create_google_event_for_connection(
-                            connection_id,
-                            task,
-                            attendee_emails=attendee_emails,
-                        )
+                    result = await google_calendar_service.create_google_event_for_connection(
+                        connection_id,
+                        task,
+                        attendee_emails=attendee_emails,
                     )
                     success = bool(result)
                     external_event_id = result.get("id") if result else None
