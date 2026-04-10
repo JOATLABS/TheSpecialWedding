@@ -329,6 +329,40 @@ async def test_contract_view_is_logged_once_on_first_public_view(configured_vend
 
 
 @pytest.mark.asyncio
+async def test_send_contract_logs_sent_and_superseded_activity(
+    configured_vendor_service,
+) -> None:
+    service, contracts, activities, _, _, _, _ = configured_vendor_service
+    original = make_contract_doc(
+        status=ContractStatus.SIGNED.value,
+        is_current_version=True,
+        access_token="original-token",
+    )
+    child = make_contract_doc(
+        contract_id=ObjectId(),
+        status=ContractStatus.DRAFT.value,
+        is_current_version=False,
+        contract_kind=ContractKind.REVISION.value,
+        root_contract_id=str(original["_id"]),
+        parent_contract_id=str(original["_id"]),
+        supersedes_contract_id=str(original["_id"]),
+        access_token="child-token",
+    )
+    child["version_number"] = 2
+    contracts.documents.extend([deepcopy(original), deepcopy(child)])
+
+    await service.send_contract(
+        contract_id=str(child["_id"]),
+        created_by="planner@example.com",
+        message="Please review changes",
+    )
+
+    activity_types = [item["activity_type"] for item in activities.documents]
+    assert VendorContractActivityType.CONTRACT_SENT.value in activity_types
+    assert VendorContractActivityType.CONTRACT_SUPERSEDED.value in activity_types
+
+
+@pytest.mark.asyncio
 async def test_sign_contract_logs_signed_activity(configured_vendor_service) -> None:
     service, contracts, activities, _, assignments, _, _ = configured_vendor_service
     contract = make_contract_doc(status=ContractStatus.SENT.value)
@@ -564,6 +598,98 @@ async def test_get_contract_activity_returns_descending_items_and_synthesizes_le
         item["activity_type"] == VendorContractActivityType.CONTRACT_SIGNED.value
         for item in explicit_response["items"]
     )
+
+
+@pytest.mark.asyncio
+async def test_get_contract_activity_is_contract_scoped_not_lineage_scoped(
+    configured_vendor_service,
+) -> None:
+    service, contracts, activities, _, _, _, _ = configured_vendor_service
+    root_id = ObjectId()
+    contract_a = make_contract_doc(
+        contract_id=root_id,
+        root_contract_id=str(root_id),
+        status=ContractStatus.SIGNED.value,
+    )
+    contract_b = make_contract_doc(
+        contract_id=ObjectId(),
+        root_contract_id=str(root_id),
+        parent_contract_id=str(root_id),
+        supersedes_contract_id=str(root_id),
+        contract_kind=ContractKind.REVISION.value,
+        status=ContractStatus.SENT.value,
+        is_current_version=True,
+    )
+    contract_b["version_number"] = 2
+    contracts.documents.extend([deepcopy(contract_a), deepcopy(contract_b)])
+
+    await service._log_contract_activity(
+        contract_id=str(contract_a["_id"]),
+        root_contract_id=str(root_id),
+        activity_type=VendorContractActivityType.CONTRACT_UPDATED,
+        title="Original updated",
+        description=None,
+        actor_type="planner",
+        actor_identifier="planner@example.com",
+        actor_display_name="planner@example.com",
+        created_at=datetime(2026, 4, 9, 10, tzinfo=timezone.utc),
+    )
+    await service._log_contract_activity(
+        contract_id=str(contract_b["_id"]),
+        root_contract_id=str(root_id),
+        activity_type=VendorContractActivityType.CONTRACT_SENT,
+        title="Revision sent",
+        description=None,
+        actor_type="planner",
+        actor_identifier="planner@example.com",
+        actor_display_name="planner@example.com",
+        created_at=datetime(2026, 4, 10, 10, tzinfo=timezone.utc),
+    )
+
+    response = await service.get_contract_activity(
+        contract_id=str(contract_a["_id"]),
+        created_by="planner@example.com",
+    )
+
+    assert all(item["contract_id"] == str(contract_a["_id"]) for item in response["items"])
+    assert not any(item["title"] == "Revision sent" for item in response["items"])
+
+
+@pytest.mark.asyncio
+async def test_explicit_activity_dedupes_matching_synthesized_event_types(
+    configured_vendor_service,
+) -> None:
+    service, contracts, _, _, _, _, _ = configured_vendor_service
+    contract = make_contract_doc(
+        status=ContractStatus.SIGNED.value,
+        created_at=datetime(2026, 4, 8, 10, tzinfo=timezone.utc),
+    )
+    contract["sent_at"] = datetime(2026, 4, 8, 12, tzinfo=timezone.utc)
+    contract["signed_at"] = datetime(2026, 4, 8, 16, tzinfo=timezone.utc)
+    contracts.documents.append(deepcopy(contract))
+
+    await service._log_contract_activity(
+        contract_id=str(contract["_id"]),
+        root_contract_id=str(contract["_id"]),
+        activity_type=VendorContractActivityType.CONTRACT_SIGNED,
+        title="Contract signed",
+        description="Explicit audit event",
+        actor_type="vendor",
+        actor_identifier="vendor@example.com",
+        actor_display_name="Vendor",
+        created_at=datetime(2026, 4, 8, 16, tzinfo=timezone.utc),
+    )
+
+    response = await service.get_contract_activity(
+        contract_id=str(contract["_id"]),
+        created_by="planner@example.com",
+    )
+
+    signed_items = [
+      item for item in response["items"]
+      if item["activity_type"] == VendorContractActivityType.CONTRACT_SIGNED.value
+    ]
+    assert len(signed_items) == 1
 
 
 @pytest.mark.asyncio

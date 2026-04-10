@@ -61,6 +61,7 @@ concurrency:
 
 permissions:
   contents: read
+  packages: read
 
 env:
   BACKEND_IMAGE: ghcr.io/lopewale/wedding-app-backend
@@ -125,8 +126,8 @@ jobs:
     needs: prepare
     if: needs.prepare.outputs.deploy-backend == 'true'
     outputs:
-      previous-name: ${{ steps.current-image.outputs.name }}
-      previous-tag: ${{ steps.current-tag.outputs.tag }}
+      previous-name: ${{ steps.rollback-target.outputs.name }}
+      previous-tag: ${{ steps.rollback-target.outputs.tag }}
     environment:
       name: ${{ inputs.environment_name }}
       url: ${{ inputs.api_url }}
@@ -159,6 +160,34 @@ jobs:
           fi
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
 
+      - name: Log in to GHCR for rollback validation
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+
+      - name: Validate current backend rollback target
+        id: rollback-target
+        env:
+          NAME: ${{ steps.current-image.outputs.name }}
+          TAG: ${{ steps.current-tag.outputs.tag }}
+        run: |
+          set -euo pipefail
+
+          if docker manifest inspect "${NAME}:${TAG}" >/dev/null 2>&1; then
+            echo "name=$NAME" >> "$GITHUB_OUTPUT"
+            echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+            echo "valid=true" >> "$GITHUB_OUTPUT"
+            echo "Backend rollback target is valid: ${NAME}:${TAG}" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "::warning::Backend rollback target ${NAME}:${TAG} does not exist in GHCR. Automatic rollback for the backend will be skipped rather than restoring a broken image reference."
+            echo "name=" >> "$GITHUB_OUTPUT"
+            echo "tag=" >> "$GITHUB_OUTPUT"
+            echo "valid=false" >> "$GITHUB_OUTPUT"
+            echo "Backend rollback target is invalid and will be skipped: ${NAME}:${TAG}" >> "$GITHUB_STEP_SUMMARY"
+          fi
+
       - name: Update backend image reference
         run: |
           TAG="${{ needs.prepare.outputs.image-tag }}"
@@ -181,8 +210,8 @@ jobs:
     needs: prepare
     if: needs.prepare.outputs.deploy-frontend == 'true'
     outputs:
-      previous-name: ${{ steps.current-image.outputs.name }}
-      previous-tag: ${{ steps.current-tag.outputs.tag }}
+      previous-name: ${{ steps.rollback-target.outputs.name }}
+      previous-tag: ${{ steps.rollback-target.outputs.tag }}
     environment:
       name: ${{ inputs.environment_name }}
       url: ${{ inputs.frontend_url }}
@@ -214,6 +243,34 @@ jobs:
             exit 1
           fi
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+
+      - name: Log in to GHCR for rollback validation
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+
+      - name: Validate current frontend rollback target
+        id: rollback-target
+        env:
+          NAME: ${{ steps.current-image.outputs.name }}
+          TAG: ${{ steps.current-tag.outputs.tag }}
+        run: |
+          set -euo pipefail
+
+          if docker manifest inspect "${NAME}:${TAG}" >/dev/null 2>&1; then
+            echo "name=$NAME" >> "$GITHUB_OUTPUT"
+            echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+            echo "valid=true" >> "$GITHUB_OUTPUT"
+            echo "Frontend rollback target is valid: ${NAME}:${TAG}" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "::warning::Frontend rollback target ${NAME}:${TAG} does not exist in GHCR. Automatic rollback for the frontend will be skipped rather than restoring a broken image reference."
+            echo "name=" >> "$GITHUB_OUTPUT"
+            echo "tag=" >> "$GITHUB_OUTPUT"
+            echo "valid=false" >> "$GITHUB_OUTPUT"
+            echo "Frontend rollback target is invalid and will be skipped: ${NAME}:${TAG}" >> "$GITHUB_STEP_SUMMARY"
+          fi
 
       - name: Update frontend image reference
         run: |
@@ -313,6 +370,8 @@ jobs:
         if: >-
           ${{
             needs.prepare.outputs.deploy-backend == 'true' &&
+            needs.deploy-backend.outputs.previous-name != '' &&
+            needs.deploy-backend.outputs.previous-tag != '' &&
             (needs.deploy-backend.result == 'failure' || needs.verify.result == 'failure')
           }}
         run: |
@@ -342,6 +401,8 @@ jobs:
         if: >-
           ${{
             needs.prepare.outputs.deploy-frontend == 'true' &&
+            needs.deploy-frontend.outputs.previous-name != '' &&
+            needs.deploy-frontend.outputs.previous-tag != '' &&
             (needs.deploy-frontend.result == 'failure' || needs.verify.result == 'failure')
           }}
         run: |

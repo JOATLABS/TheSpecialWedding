@@ -1,14 +1,16 @@
 from __future__ import annotations
 
+from copy import deepcopy
 from datetime import datetime, timezone
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 import pytest
+from bson import ObjectId
 
 from app.api import vendor_management as vendor_management_api
 from app.dependencies.auth_extended import ExtendedAuthUser
-from app.models.vendor import VendorCategory
+from app.models.vendor import ContractKind, VendorCategory
 from app.models.vendor_contracts import (
     ApplyVendorContractFormDataRequest,
     CreateVendorContractRevisionRequest,
@@ -33,6 +35,62 @@ def planner_user() -> ExtendedAuthUser:
         "wedding_planner",
         {"_id": "planner-1"},
     )
+
+
+class _FakeServiceCursor:
+    def __init__(self, docs: list[dict]):
+        self._docs = docs
+
+    def skip(self, value: int):
+        self._docs = self._docs[value:]
+        return self
+
+    def limit(self, value: int):
+        self._docs = self._docs[:value]
+        return self
+
+    def sort(self, field: str, direction: int):
+        reverse = direction == -1
+        self._docs = sorted(self._docs, key=lambda item: item.get(field), reverse=reverse)
+        return self
+
+    async def to_list(self, length=None):
+        docs = deepcopy(self._docs)
+        if length is None:
+            return docs
+        return docs[:length]
+
+
+class _FakeServiceCollection:
+    def __init__(self, docs: list[dict]):
+        self._docs = docs
+
+    def find(self, query):
+        def _matches(document: dict) -> bool:
+            for key, expected in query.items():
+                if key == "$or":
+                    return any(
+                        all(
+                            (
+                                document.get(branch_key) == branch_value
+                                if not isinstance(branch_value, dict)
+                                else ("$exists" in branch_value and (branch_key in document) == branch_value["$exists"])
+                            )
+                            for branch_key, branch_value in branch.items()
+                        )
+                        for branch in expected
+                    )
+                if document.get(key) != expected:
+                    return False
+            return True
+
+        return _FakeServiceCursor([doc for doc in self._docs if _matches(doc)])
+
+    async def find_one(self, query):
+        for doc in self._docs:
+            if doc.get("_id") == query.get("_id") and doc.get("created_by") == query.get("created_by"):
+                return deepcopy(doc)
+        return None
 
 
 @pytest.mark.asyncio
@@ -122,6 +180,49 @@ async def test_create_contract_revision_forwards_typed_payload(
         copy_cancellation_policy=True,
         copy_custom_clauses=True,
     )
+
+
+@pytest.mark.asyncio
+async def test_list_contracts_forwards_scoped_filters_and_pagination(
+    monkeypatch: pytest.MonkeyPatch,
+    planner_user: ExtendedAuthUser,
+) -> None:
+    list_mock = AsyncMock(return_value=[{"_id": "contract-1"}])
+    monkeypatch.setattr(vendor_management_api.vendor_service, "get_contracts", list_mock)
+
+    await vendor_management_api.list_contracts(
+        wedding_id="wedding-1",
+        vendor_profile_id="vendor-1",
+        status="draft",
+        skip=10,
+        limit=25,
+        current_user=planner_user,
+    )
+
+    list_mock.assert_awaited_once_with(
+        created_by="planner@example.com",
+        wedding_id="wedding-1",
+        vendor_profile_id="vendor-1",
+        status="draft",
+        skip=10,
+        limit=25,
+    )
+
+
+@pytest.mark.asyncio
+async def test_get_contract_endpoint_forwards_owner_scope(
+    monkeypatch: pytest.MonkeyPatch,
+    planner_user: ExtendedAuthUser,
+) -> None:
+    get_mock = AsyncMock(return_value={"_id": "contract-1"})
+    monkeypatch.setattr(vendor_management_api.vendor_service, "get_contract", get_mock)
+
+    await vendor_management_api.get_contract(
+        contract_id="contract-1",
+        current_user=planner_user,
+    )
+
+    get_mock.assert_awaited_once_with("contract-1", created_by="planner@example.com")
 
 
 @pytest.mark.asyncio
@@ -378,6 +479,95 @@ async def test_get_contract_activity_endpoint_forwards_scoped_lookup(
         contract_id="contract-1",
         created_by="planner@example.com",
     )
+
+
+@pytest.mark.asyncio
+async def test_vendor_service_get_contracts_defaults_to_current_versions_only(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    current_id = ObjectId()
+    legacy_id = ObjectId()
+    historical_id = ObjectId()
+    monkeypatch.setattr(
+        vendor_service,
+        "vendor_contracts",
+        _FakeServiceCollection(
+            [
+                {
+                    "_id": current_id,
+                    "created_by": "planner@example.com",
+                    "created_at": datetime(2026, 4, 10, tzinfo=timezone.utc),
+                    "status": "draft",
+                    "is_current_version": True,
+                    "version_number": 2,
+                    "root_contract_id": "root-1",
+                    "contract_kind": ContractKind.REVISION.value,
+                },
+                {
+                    "_id": legacy_id,
+                    "created_by": "planner@example.com",
+                    "created_at": datetime(2026, 4, 9, tzinfo=timezone.utc),
+                    "status": "draft",
+                },
+                {
+                    "_id": historical_id,
+                    "created_by": "planner@example.com",
+                    "created_at": datetime(2026, 4, 8, tzinfo=timezone.utc),
+                    "status": "signed",
+                    "is_current_version": False,
+                    "version_number": 1,
+                    "root_contract_id": "root-1",
+                    "contract_kind": ContractKind.ORIGINAL.value,
+                },
+            ]
+        ),
+    )
+
+    result = await vendor_service.get_contracts(created_by="planner@example.com")
+
+    assert [contract["id"] for contract in result] == [str(current_id), str(legacy_id)]
+    assert all(contract.get("is_current_version", True) is not False for contract in result)
+
+
+@pytest.mark.asyncio
+async def test_vendor_service_get_contract_returns_lineage_metadata_for_admin_responses(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    contract_id = ObjectId()
+    monkeypatch.setattr(
+        vendor_service,
+        "vendor_contracts",
+        _FakeServiceCollection(
+            [
+                {
+                    "_id": contract_id,
+                    "created_by": "planner@example.com",
+                    "status": "sent",
+                    "version_number": 3,
+                    "root_contract_id": "root-1",
+                    "parent_contract_id": "root-1",
+                    "supersedes_contract_id": "contract-2",
+                    "superseded_by_contract_id": None,
+                    "is_current_version": True,
+                    "contract_kind": ContractKind.AMENDMENT.value,
+                    "created_at": datetime(2026, 4, 10, tzinfo=timezone.utc),
+                    "updated_at": datetime(2026, 4, 10, tzinfo=timezone.utc),
+                }
+            ]
+        ),
+    )
+
+    result = await vendor_service.get_contract(
+        str(contract_id),
+        created_by="planner@example.com",
+    )
+
+    assert result["id"] == str(contract_id)
+    assert result["version_number"] == 3
+    assert result["root_contract_id"] == "root-1"
+    assert result["parent_contract_id"] == "root-1"
+    assert result["supersedes_contract_id"] == "contract-2"
+    assert result["contract_kind"] == ContractKind.AMENDMENT.value
 
 
 class _FakeCursor:

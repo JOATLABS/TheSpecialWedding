@@ -738,7 +738,11 @@ async def create_vendor_contract_activity_indexes():
 
 async def create_vendor_contract_security_indexes():
     """
-    Create security and lineage integrity indexes for vendor contracts and milestones.
+    Create vendor contract indexes for the hard invariants this module relies on:
+    - unique token hashes for public access
+    - unique version numbers inside one lineage
+    - exactly one current version per lineage
+    - fast planner and milestone queries for contract operations
     """
     contracts = mongo.db["vendor_contracts"]
     milestones = mongo.db["vendor_payment_milestones"]

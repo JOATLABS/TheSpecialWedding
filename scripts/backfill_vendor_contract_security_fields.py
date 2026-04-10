@@ -5,6 +5,11 @@ Usage:
   python scripts/backfill_vendor_contract_security_fields.py
   python scripts/backfill_vendor_contract_security_fields.py --apply
   python scripts/backfill_vendor_contract_security_fields.py --apply --drop-plaintext-token
+
+Recommended rollout:
+  1. Dry run and review conflict counts
+  2. Apply the backfill
+  3. Optionally drop legacy plaintext contract tokens after verification
 """
 
 import argparse

@@ -101,4 +101,36 @@ describe('vendor contract preview', () => {
     assert.match(markup, /Vendor Co/);
     assert.doesNotMatch(markup, /{{vendor_name}}/);
   });
+
+  it('renders terms and cancellation blocks through the shared preview composition', () => {
+    const markup = renderToStaticMarkup(
+      <VendorContractPreview
+        sections={[]}
+        termsAndConditions={'Pay the **deposit** within 7 days.'}
+        cancellationPolicy={'Cancellation requires **written notice**.'}
+      />
+    );
+
+    assert.match(markup, /Terms &amp; Conditions/);
+    assert.match(markup, /Cancellation Policy/);
+    assert.match(markup, /deposit/);
+    assert.match(markup, /written notice/);
+  });
+
+  it('does not apply planner-only placeholder substitution when no preview values are supplied', () => {
+    const markup = renderToStaticMarkup(
+      <VendorContractPreview
+        sections={[
+          {
+            id: 'scope',
+            title: 'Scope',
+            content: 'Hello {{vendor_name}}',
+            order: 0,
+          },
+        ]}
+      />
+    );
+
+    assert.match(markup, /{{vendor_name}}/);
+  });
 });

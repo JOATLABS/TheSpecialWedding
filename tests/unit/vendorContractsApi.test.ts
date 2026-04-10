@@ -76,6 +76,39 @@ describe('vendorContractsApi request normalization', () => {
     assert.equal(result._id, 'contract_1');
   });
 
+  it('updateContract sends the normalized JSON body to the admin contract endpoint', async () => {
+    const fetchMock = mock.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      assert.equal(input.toString(), 'https://api.example.com/admin/contracts/contract_1');
+      assert.equal(init?.method, 'PUT');
+
+      const body = JSON.parse(init?.body as string);
+      assert.equal(body.contract_title, 'Updated title');
+      assert.equal(body.total_amount, 7200);
+      assert.equal(body.service_location, 'Austin, TX');
+
+      return new Response(
+        JSON.stringify({
+          ...contractResponse,
+          contract_title: 'Updated title',
+          total_amount: 7200,
+          service_location: 'Austin, TX',
+        }),
+        { status: 200 }
+      );
+    });
+
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+
+    const result = await vendorContractsApi.updateContract('secret-token', 'contract_1', {
+      contract_title: 'Updated title',
+      total_amount: 7200,
+      service_location: 'Austin, TX',
+    });
+
+    assert.equal(fetchMock.mock.callCount(), 1);
+    assert.equal(result.total_amount, 7200);
+  });
+
   it('sendContract sends a JSON body instead of query params', async () => {
     const fetchMock = mock.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       assert.equal(input.toString(), 'https://api.example.com/admin/contracts/contract_1/send');
@@ -140,6 +173,51 @@ describe('vendorContractsApi request normalization', () => {
     assert.equal(result.form_data_applied, true);
   });
 
+  it('getContractFormData returns the normalized response shape', async () => {
+    const fetchMock = mock.fn(async (input: RequestInfo | URL) => {
+      assert.equal(
+        input.toString(),
+        'https://api.example.com/admin/contracts/contract_1/form-data'
+      );
+
+      return new Response(
+        JSON.stringify({
+          vendor_submissions: [
+            {
+              _id: 'submission_1',
+              form_name: 'Vendor Intake',
+              source: 'vendor_form',
+              data: { portfolio_link: 'https://example.com/work' },
+            },
+          ],
+          available_fields: {
+            portfolio_link: {
+              value: 'https://example.com/work',
+              source: 'vendor_form',
+              source_id: 'submission_1',
+              original_key: 'portfolio_link',
+            },
+          },
+          suggested_contract_fields: {
+            '{{vendor_portfolio}}': {
+              value: 'https://example.com/work',
+              source_field: 'portfolio_link',
+            },
+          },
+        }),
+        { status: 200 }
+      );
+    });
+
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+
+    const result = await vendorContractsApi.getContractFormData('secret-token', 'contract_1');
+
+    assert.equal(fetchMock.mock.callCount(), 1);
+    assert.equal(result.vendor_submissions[0]._id, 'submission_1');
+    assert.equal(result.suggested_contract_fields['{{vendor_portfolio}}'].source_field, 'portfolio_link');
+  });
+
   it('recordPayment sends milestone payment data as JSON', async () => {
     const fetchMock = mock.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       assert.equal(input.toString(), 'https://api.example.com/admin/milestones/milestone_1/pay');
@@ -179,6 +257,61 @@ describe('vendorContractsApi request normalization', () => {
 
     assert.equal(fetchMock.mock.callCount(), 1);
     assert.equal(result.status, 'paid');
+  });
+
+  it('createPaymentMilestones sends the normalized milestone request body', async () => {
+    const fetchMock = mock.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      assert.equal(
+        input.toString(),
+        'https://api.example.com/admin/contracts/contract_1/milestones'
+      );
+      assert.equal(init?.method, 'POST');
+
+      const body = JSON.parse(init?.body as string);
+      assert.deepEqual(body, {
+        milestones: [
+          {
+            description: 'Deposit',
+            amount: 2500,
+            due_date: '2026-04-20T00:00:00.000Z',
+            percentage_of_total: 50,
+          },
+        ],
+      });
+
+      return new Response(
+        JSON.stringify([
+          {
+            _id: 'milestone_1',
+            contract_id: 'contract_1',
+            wedding_id: 'wedding_1',
+            description: 'Deposit',
+            amount: 2500,
+            currency: 'USD',
+            due_date: '2026-04-20T00:00:00.000Z',
+            status: 'pending',
+            paid_amount: 0,
+            vendor_name: 'Vendor Co',
+            vendor_email: 'vendor@example.com',
+          },
+        ]),
+        { status: 200 }
+      );
+    });
+
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+
+    const result = await vendorContractsApi.createPaymentMilestones('secret-token', 'contract_1', [
+      {
+        description: 'Deposit',
+        amount: 2500,
+        due_date: '2026-04-20T00:00:00.000Z',
+        percentage_of_total: 50,
+      },
+    ]);
+
+    assert.equal(fetchMock.mock.callCount(), 1);
+    assert.equal(result[0]._id, 'milestone_1');
   });
 
   it('updateContractSections sends the full object payload', async () => {
@@ -340,5 +473,96 @@ describe('vendorContractsApi request normalization', () => {
     assert.equal(fetchMock.mock.callCount(), 1);
     assert.equal(result.items[0].activity_type, 'contract_sent');
     assert.equal(result.items[0].actor.type, 'planner');
+  });
+
+  it('getPublicContract uses the canonical path-token route', async () => {
+    const fetchMock = mock.fn(async (input: RequestInfo | URL) => {
+      assert.equal(
+        input.toString(),
+        'https://api.example.com/vendor-contract/public/contracts/contract_1/raw-token'
+      );
+
+      return new Response(
+        JSON.stringify({
+          _id: 'contract_1',
+          contract_title: 'Photo Contract',
+          vendor_name: 'Vendor Co',
+          vendor_email: 'vendor@example.com',
+          service_category: 'photographer',
+          sections: [],
+          total_amount: 5000,
+          currency: 'USD',
+          status: 'sent',
+        }),
+        { status: 200 }
+      );
+    });
+
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+
+    const result = await vendorContractsApi.getPublicContract('contract_1', 'raw-token');
+
+    assert.equal(fetchMock.mock.callCount(), 1);
+    assert.equal(result._id, 'contract_1');
+  });
+
+  it('getPublicContract surfaces superseded-version errors cleanly', async () => {
+    const fetchMock = mock.fn(async () => new Response(JSON.stringify({ detail: 'replaced' }), { status: 410 }));
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+
+    await assert.rejects(
+      () => vendorContractsApi.getPublicContract('contract_1', 'raw-token'),
+      /This contract version has been replaced/
+    );
+  });
+
+  it('signPublicContract uses the canonical path-token sign route', async () => {
+    const fetchMock = mock.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      assert.equal(
+        input.toString(),
+        'https://api.example.com/vendor-contract/public/contracts/contract_1/raw-token/sign'
+      );
+      assert.equal(init?.method, 'POST');
+
+      const body = JSON.parse(init?.body as string);
+      assert.equal(body.signer_name, 'Vendor Owner');
+      assert.equal(body.signer_email, 'vendor@example.com');
+
+      return new Response(
+        JSON.stringify({
+          message: 'Contract signed successfully',
+          signed_at: '2026-04-10T00:00:00.000Z',
+        }),
+        { status: 200 }
+      );
+    });
+
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+
+    const result = await vendorContractsApi.signPublicContract(
+      'contract_1',
+      'raw-token',
+      'Vendor Owner',
+      'vendor@example.com'
+    );
+
+    assert.equal(fetchMock.mock.callCount(), 1);
+    assert.equal(result.message, 'Contract signed successfully');
+  });
+
+  it('signPublicContract surfaces superseded-version errors cleanly', async () => {
+    const fetchMock = mock.fn(async () => new Response(JSON.stringify({ detail: 'replaced' }), { status: 410 }));
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+
+    await assert.rejects(
+      () =>
+        vendorContractsApi.signPublicContract(
+          'contract_1',
+          'raw-token',
+          'Vendor Owner',
+          'vendor@example.com'
+        ),
+      /This contract version has been replaced/
+    );
   });
 });
