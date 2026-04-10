@@ -102,6 +102,7 @@ jobs:
       api_url: https://api.staging.thespecialwedding.io
       verify_couple: true
       verify_sse: true
+      allow_insecure_tls: true
     secrets:
       COOLIFY_BASE_URL: ${{ secrets.COOLIFY_BASE_URL }}
       COOLIFY_API_TOKEN: ${{ secrets.COOLIFY_API_TOKEN }}
