@@ -9,6 +9,7 @@ import time
 from typing import Optional
 
 import requests
+import urllib3
 
 
 DEFAULT_TIMEOUT = 15
@@ -32,16 +33,27 @@ def ensure_response_ok(response: requests.Response, label: str) -> None:
     raise RuntimeError(f"{label} failed with HTTP {response.status_code}: {body}")
 
 
-def wait_for_http_ok(url: str, label: str, attempts: int = 20, delay: int = 15) -> None:
+def request(session: requests.Session, method: str, url: str, **kwargs) -> requests.Response:
+    return session.request(method, url, timeout=DEFAULT_TIMEOUT, **kwargs)
+
+
+def wait_for_http_ok(
+    session: requests.Session,
+    url: str,
+    label: str,
+    attempts: int = 20,
+    delay: int = 15,
+) -> None:
     last_error: Optional[str] = None
 
     for attempt in range(1, attempts + 1):
         try:
-            response = requests.get(url, timeout=DEFAULT_TIMEOUT)
+            response = request(session, "GET", url)
             if response.ok:
                 log_step(f"{label} is healthy on attempt {attempt}")
                 return
-            last_error = f"HTTP {response.status_code}"
+            body = response.text[:200].strip().replace("\n", " ")
+            last_error = f"HTTP {response.status_code}: {body}"
         except requests.RequestException as exc:
             last_error = str(exc)
 
@@ -51,27 +63,28 @@ def wait_for_http_ok(url: str, label: str, attempts: int = 20, delay: int = 15) 
     raise RuntimeError(f"{label} never became healthy: {last_error}")
 
 
-def verify_public_route(frontend_base: str, slug: str) -> None:
+def verify_public_route(session: requests.Session, frontend_base: str, slug: str) -> None:
     url = f"{frontend_base.rstrip('/')}/{slug.lstrip('/')}"
-    response = requests.get(url, timeout=DEFAULT_TIMEOUT)
+    response = request(session, "GET", url)
     ensure_response_ok(response, f"public wedding route {url}")
     log_step(f"Public wedding route OK: {url}")
 
 
-def verify_health(api_base: str, frontend_base: str) -> None:
-    wait_for_http_ok(f"{frontend_base.rstrip('/')}/", "frontend")
-    wait_for_http_ok(f"{api_base.rstrip('/')}/health/livez", "backend liveness")
+def verify_health(session: requests.Session, api_base: str, frontend_base: str) -> None:
+    wait_for_http_ok(session, f"{frontend_base.rstrip('/')}/", "frontend")
+    wait_for_http_ok(session, f"{api_base.rstrip('/')}/health/livez", "backend liveness")
 
-    ready_response = requests.get(f"{api_base.rstrip('/')}/health/readyz", timeout=DEFAULT_TIMEOUT)
+    ready_response = request(session, "GET", f"{api_base.rstrip('/')}/health/readyz")
     ensure_response_ok(ready_response, "backend readiness")
     log_step("Backend readiness OK")
 
 
 def login_admin(session: requests.Session, api_base: str, email: str, password: str) -> str:
-    response = session.post(
+    response = request(
+        session,
+        "POST",
         f"{api_base.rstrip('/')}/admin/token",
         json={"email": email, "password": password},
-        timeout=DEFAULT_TIMEOUT,
     )
     ensure_response_ok(response, "admin login")
 
@@ -82,17 +95,19 @@ def login_admin(session: requests.Session, api_base: str, email: str, password: 
 
     headers = build_auth_headers(token)
 
-    profile_response = session.get(
+    profile_response = request(
+        session,
+        "GET",
         f"{api_base.rstrip('/')}/admin/profile",
         headers=headers,
-        timeout=DEFAULT_TIMEOUT,
     )
     ensure_response_ok(profile_response, "admin profile")
 
-    weddings_response = session.get(
+    weddings_response = request(
+        session,
+        "GET",
         f"{api_base.rstrip('/')}/admin/planner/weddings?page=1&limit=1",
         headers=headers,
-        timeout=DEFAULT_TIMEOUT,
     )
     ensure_response_ok(weddings_response, "planner weddings read")
 
@@ -143,10 +158,11 @@ def verify_sse(session: requests.Session, api_base: str, token: str, timeout_sec
 
 
 def login_couple(session: requests.Session, api_base: str, email: str, password: str) -> str:
-    response = session.post(
+    response = request(
+        session,
+        "POST",
         f"{api_base.rstrip('/')}/couple/login",
         json={"email": email, "password": password},
-        timeout=DEFAULT_TIMEOUT,
     )
     ensure_response_ok(response, "couple login")
 
@@ -157,17 +173,19 @@ def login_couple(session: requests.Session, api_base: str, email: str, password:
 
     headers = build_auth_headers(token)
 
-    profile_response = session.get(
+    profile_response = request(
+        session,
+        "GET",
         f"{api_base.rstrip('/')}/couple/profile",
         headers=headers,
-        timeout=DEFAULT_TIMEOUT,
     )
     ensure_response_ok(profile_response, "couple profile")
 
-    dashboard_response = session.get(
+    dashboard_response = request(
+        session,
+        "GET",
         f"{api_base.rstrip('/')}/couple/portal/dashboard",
         headers=headers,
-        timeout=DEFAULT_TIMEOUT,
     )
     ensure_response_ok(dashboard_response, "couple dashboard")
 
@@ -185,18 +203,26 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--couple-password")
     parser.add_argument("--public-slug")
     parser.add_argument("--skip-sse", action="store_true")
+    parser.add_argument("--allow-insecure-tls", action="store_true")
     return parser.parse_args()
 
 
 def main() -> int:
     args = parse_args()
 
-    verify_health(args.api_base, args.frontend_base)
+    session = requests.Session()
+    if args.allow_insecure_tls:
+        session.verify = False
+        urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+        log_step("TLS certificate verification disabled for this environment")
+
+    verify_health(session, args.api_base, args.frontend_base)
 
     if args.public_slug:
-        verify_public_route(args.frontend_base, args.public_slug)
+        verify_public_route(session, args.frontend_base, args.public_slug)
 
     admin_session = requests.Session()
+    admin_session.verify = session.verify
     admin_token = login_admin(admin_session, args.api_base, args.admin_email, args.admin_password)
 
     if not args.skip_sse:
@@ -207,6 +233,7 @@ def main() -> int:
             raise RuntimeError("Both --couple-email and --couple-password are required together")
 
         couple_session = requests.Session()
+        couple_session.verify = session.verify
         login_couple(couple_session, args.api_base, args.couple_email, args.couple_password)
 
     log_step("Environment verification passed")

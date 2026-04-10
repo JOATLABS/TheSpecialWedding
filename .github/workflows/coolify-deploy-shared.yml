@@ -31,6 +31,10 @@ on:
         required: false
         default: true
         type: boolean
+      allow_insecure_tls:
+        required: false
+        default: false
+        type: boolean
     secrets:
       COOLIFY_BASE_URL:
         required: true
@@ -280,6 +284,10 @@ jobs:
 
           if [ "${{ inputs.verify_sse }}" != "true" ]; then
             ARGS+=(--skip-sse)
+          fi
+
+          if [ "${{ inputs.allow_insecure_tls }}" = "true" ]; then
+            ARGS+=(--allow-insecure-tls)
           fi
 
           if [ "${{ inputs.verify_couple }}" = "true" ]; then
