@@ -58,6 +58,7 @@ from app.models.advertising_campaign import (
 # ENUM TESTS
 # =============================================================================
 
+
 class TestCampaignGoalEnum:
     """Test CampaignGoal enum values and serialization."""
 
@@ -208,6 +209,7 @@ class TestVendorAccountStatusEnum:
 # =============================================================================
 # AD CAMPAIGN MODEL TESTS
 # =============================================================================
+
 
 class TestAdCampaignConstruction:
     """Test AdCampaign model construction with required fields."""
@@ -511,6 +513,7 @@ class TestAdCampaignIsServableProperty:
 # AD CREATIVE MODEL TESTS
 # =============================================================================
 
+
 class TestAdCreativeConstruction:
     """Test AdCreative model construction."""
 
@@ -596,6 +599,7 @@ class TestAdCreativeDefaults:
 # =============================================================================
 # REQUEST MODEL TESTS
 # =============================================================================
+
 
 class TestCreateCampaignRequest:
     """Test CreateCampaignRequest validation."""
@@ -765,6 +769,7 @@ class TestReviewCreativeDecisionRequest:
 # CAMPAIGN DAY STATS TESTS
 # =============================================================================
 
+
 class TestCampaignDayStatsDefaults:
     """Test CampaignDayStats default values."""
 
@@ -812,6 +817,7 @@ class TestCampaignDayStatsDefaults:
 # PLACEMENT DAY STATS TESTS
 # =============================================================================
 
+
 class TestPlacementDayStatsDefaults:
     """Test PlacementDayStats default values."""
 
@@ -852,6 +858,7 @@ class TestPlacementDayStatsDefaults:
 # AD FRAUD SIGNAL TESTS
 # =============================================================================
 
+
 class TestAdFraudSignalConstruction:
     """Test AdFraudSignal model construction."""
 
@@ -882,6 +889,7 @@ class TestAdFraudSignalConstruction:
 # =============================================================================
 # VENDOR AD BILLING TESTS
 # =============================================================================
+
 
 class TestVendorAdBillingDefaults:
     """Test VendorAdBilling default values."""

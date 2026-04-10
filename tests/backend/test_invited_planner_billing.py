@@ -24,7 +24,9 @@ def _matches(document, query):
     for key, expected in query.items():
         actual = document.get(key)
         if isinstance(expected, dict):
-            if "$gt" in expected and not (actual is not None and actual > expected["$gt"]):
+            if "$gt" in expected and not (
+                actual is not None and actual > expected["$gt"]
+            ):
                 return False
             if "$exists" in expected and ((key in document) != expected["$exists"]):
                 return False
@@ -177,13 +179,16 @@ def test_zero_day_invited_planner_requires_payment_after_setup(user_management_s
     assert "expires_at" not in stored_invitation
 
 
-@pytest.mark.parametrize(("status_value", "request_path"), [
-    ("pending_payment", "/admin/planner"),
-    ("pending_checkout", "/admin/planner"),
-    ("past_due", "/admin/planner"),
-    ("inactive", "/admin/planner"),
-    ("pending", "/admin/weddings"),
-])
+@pytest.mark.parametrize(
+    ("status_value", "request_path"),
+    [
+        ("pending_payment", "/admin/planner"),
+        ("pending_checkout", "/admin/planner"),
+        ("past_due", "/admin/planner"),
+        ("inactive", "/admin/planner"),
+        ("pending", "/admin/weddings"),
+    ],
+)
 def test_unpaid_planner_statuses_are_blocked_from_feature_routes(
     monkeypatch,
     fake_storage,
@@ -218,8 +223,12 @@ def test_unpaid_planner_statuses_are_blocked_from_feature_routes(
     assert exc.value.status_code == status.HTTP_402_PAYMENT_REQUIRED
 
 
-@pytest.mark.parametrize("status_value", ["pending_payment", "pending_checkout", "past_due"])
-def test_unpaid_planner_statuses_can_still_access_billing(monkeypatch, fake_storage, status_value):
+@pytest.mark.parametrize(
+    "status_value", ["pending_payment", "pending_checkout", "past_due"]
+)
+def test_unpaid_planner_statuses_can_still_access_billing(
+    monkeypatch, fake_storage, status_value
+):
     fake_mongo = FakeMongo(fake_storage)
     monkeypatch.setattr(auth_extended, "mongo", fake_mongo)
     monkeypatch.setattr(
@@ -240,7 +249,9 @@ def test_unpaid_planner_statuses_can_still_access_billing(monkeypatch, fake_stor
     )
 
     credentials = SimpleNamespace(credentials="token")
-    request = SimpleNamespace(url=SimpleNamespace(path="/stripe/subscription"), cookies={})
+    request = SimpleNamespace(
+        url=SimpleNamespace(path="/stripe/subscription"), cookies={}
+    )
 
     user = asyncio.run(auth_extended.get_current_user_extended(credentials, request))
 

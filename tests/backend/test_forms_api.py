@@ -75,20 +75,30 @@ def api_client(monkeypatch):
     fake_mongo = FakeMongo(database)
 
     import app.services.form_service as form_service_module
+
     reload(form_service_module)
 
     monkeypatch.setattr(form_service_module, "mongo", fake_mongo)
-    monkeypatch.setattr(form_service_module.rate_limiter, "check_rate_limit", lambda *args, **kwargs: True)
+    monkeypatch.setattr(
+        form_service_module.rate_limiter,
+        "check_rate_limit",
+        lambda *args, **kwargs: True,
+    )
 
     import app.api.forms as forms_module
+
     reload(forms_module)
 
     async def _noop_security_audit(*args, **kwargs):
         return None
 
     monkeypatch.setattr(forms_module, "form_service", form_service_module.FormService())
-    monkeypatch.setattr(forms_module.rate_limiter, "check_rate_limit", lambda *args, **kwargs: True)
-    monkeypatch.setattr(forms_module.security_audit, "log_security_event", _noop_security_audit)
+    monkeypatch.setattr(
+        forms_module.rate_limiter, "check_rate_limit", lambda *args, **kwargs: True
+    )
+    monkeypatch.setattr(
+        forms_module.security_audit, "log_security_event", _noop_security_audit
+    )
 
     app = FastAPI()
     app.include_router(forms_module.router, prefix="/admin")
@@ -138,7 +148,9 @@ def test_root_admin_can_view_all_forms(api_client):
     forms_collection.insert_many(
         [
             _form_document("planner.one@example.com", _id="form_planner_one"),
-            _form_document("planner.two@example.com", _id="form_planner_two", submission_count=3),
+            _form_document(
+                "planner.two@example.com", _id="form_planner_two", submission_count=3
+            ),
         ]
     )
 
@@ -331,6 +343,8 @@ def test_root_admin_can_mark_form_viewed(api_client):
 
     stored = database["forms"].find_one({"_id": "form_admin_view"})
     # Root admin updates their own email state, but original owner data should remain
-    assert stored["planner_state"][planner_state_key]["last_viewed_submission_count"] == 0
+    assert (
+        stored["planner_state"][planner_state_key]["last_viewed_submission_count"] == 0
+    )
     admin_key = os.environ["ROOT_ADMIN_EMAIL"].lower().replace(".", "_")
     assert stored["planner_state"][admin_key]["last_viewed_analytics_at"] is not None

@@ -25,6 +25,7 @@ from locust.exception import StopUser
 try:
     from dotenv import load_dotenv
 except ImportError:  # pragma: no cover - optional helper for local use
+
     def load_dotenv(*args: Any, **kwargs: Any) -> bool:
         return False
 
@@ -43,27 +44,51 @@ def _env_first(*names: str, default: str | None = None) -> str | None:
     return default
 
 
-API_HOST = (_env_first("LOCUST_API_HOST", "NEXT_PUBLIC_API_BASE_URL", default="http://localhost:8000") or "").rstrip("/")
-FRONTEND_HOST = (_env_first("LOCUST_FRONTEND_HOST", "FRONTEND_URL", default="http://localhost:3000") or "").rstrip("/")
+API_HOST = (
+    _env_first(
+        "LOCUST_API_HOST", "NEXT_PUBLIC_API_BASE_URL", default="http://localhost:8000"
+    )
+    or ""
+).rstrip("/")
+FRONTEND_HOST = (
+    _env_first("LOCUST_FRONTEND_HOST", "FRONTEND_URL", default="http://localhost:3000")
+    or ""
+).rstrip("/")
 
-WEDDING_SLUG = _env_first("LOCUST_WEDDING_SLUG", default="james-and-mel") or "james-and-mel"
+WEDDING_SLUG = (
+    _env_first("LOCUST_WEDDING_SLUG", default="james-and-mel") or "james-and-mel"
+)
 WEDDING_ID_OVERRIDE = _env_first("LOCUST_WEDDING_ID")
 
 PLANNER_BEARER_TOKEN = _env_first("LOCUST_PLANNER_BEARER_TOKEN")
 COUPLE_BEARER_TOKEN = _env_first("LOCUST_COUPLE_BEARER_TOKEN")
 
-PLANNER_EMAIL = _env_first("LOCUST_PLANNER_EMAIL", "TEST_PLANNER_WITH_PACKAGE_EMAIL", default="") or ""
-PLANNER_PASSWORD = _env_first("LOCUST_PLANNER_PASSWORD", "TEST_PLANNER_WITH_PACKAGE_PASSWORD", default="") or ""
+PLANNER_EMAIL = (
+    _env_first("LOCUST_PLANNER_EMAIL", "TEST_PLANNER_WITH_PACKAGE_EMAIL", default="")
+    or ""
+)
+PLANNER_PASSWORD = (
+    _env_first(
+        "LOCUST_PLANNER_PASSWORD", "TEST_PLANNER_WITH_PACKAGE_PASSWORD", default=""
+    )
+    or ""
+)
 COUPLE_EMAIL = _env_first("LOCUST_COUPLE_EMAIL", "TEST_COUPLE_EMAIL", default="") or ""
-COUPLE_PASSWORD = _env_first("LOCUST_COUPLE_PASSWORD", "TEST_COUPLE_PASSWORD", default="") or ""
+COUPLE_PASSWORD = (
+    _env_first("LOCUST_COUPLE_PASSWORD", "TEST_COUPLE_PASSWORD", default="") or ""
+)
 
 if not PLANNER_BEARER_TOKEN:
     if not PLANNER_EMAIL or not PLANNER_PASSWORD:
-        raise RuntimeError("Planner credentials are required unless LOCUST_PLANNER_BEARER_TOKEN is set")
+        raise RuntimeError(
+            "Planner credentials are required unless LOCUST_PLANNER_BEARER_TOKEN is set"
+        )
 
 if not COUPLE_BEARER_TOKEN:
     if not COUPLE_EMAIL or not COUPLE_PASSWORD:
-        raise RuntimeError("Couple credentials are required unless LOCUST_COUPLE_BEARER_TOKEN is set")
+        raise RuntimeError(
+            "Couple credentials are required unless LOCUST_COUPLE_BEARER_TOKEN is set"
+        )
 
 
 class JsonApiUser(HttpUser):
@@ -170,7 +195,9 @@ class PlannerApiUser(JsonApiUser):
             headers=self.auth_headers,
         )
         if profile and profile.get("email") != PLANNER_EMAIL:
-            raise StopUser("Planner profile response does not match configured planner email")
+            raise StopUser(
+                "Planner profile response does not match configured planner email"
+            )
 
     @task(5)
     def weddings(self) -> None:
@@ -242,7 +269,9 @@ class CouplePortalApiUser(JsonApiUser):
             headers=self.auth_headers,
         )
         if profile and profile.get("email") != COUPLE_EMAIL:
-            raise StopUser("Couple profile response does not match configured couple email")
+            raise StopUser(
+                "Couple profile response does not match configured couple email"
+            )
 
     @task(4)
     def dashboard(self) -> None:
@@ -281,7 +310,9 @@ class PublicWeddingPageUser(HttpUser):
             catch_response=True,
         ) as response:
             if response.status_code != 200:
-                response.failure(f"Wedding landing page returned {response.status_code}")
+                response.failure(
+                    f"Wedding landing page returned {response.status_code}"
+                )
                 return
             if "text/html" not in response.headers.get("content-type", ""):
                 response.failure("Wedding landing page did not return HTML")
@@ -295,7 +326,9 @@ class PublicWeddingPageUser(HttpUser):
             catch_response=True,
         ) as response:
             if response.status_code != 200:
-                response.failure(f"Wedding gallery page returned {response.status_code}")
+                response.failure(
+                    f"Wedding gallery page returned {response.status_code}"
+                )
                 return
             if "text/html" not in response.headers.get("content-type", ""):
                 response.failure("Wedding gallery page did not return HTML")

@@ -35,7 +35,10 @@ from app.dependencies.auth_extended import (
     ExtendedAuthUser,
     require_root_admin,
 )
-from app.api.admin_campaigns import router as admin_campaigns_router, get_admin_campaign_service
+from app.api.admin_campaigns import (
+    router as admin_campaigns_router,
+    get_admin_campaign_service,
+)
 
 # Create a minimal test app with just the admin campaigns router
 # (avoids importing app.main which triggers the full import chain)
@@ -57,11 +60,7 @@ def mock_admin_user():
     return ExtendedAuthUser(
         email=ADMIN_EMAIL,
         role="ROOT_ADMIN",
-        user_data={
-            "_id": str(ObjectId()),
-            "email": ADMIN_EMAIL,
-            "role": "ROOT_ADMIN"
-        }
+        user_data={"_id": str(ObjectId()), "email": ADMIN_EMAIL, "role": "ROOT_ADMIN"},
     )
 
 
@@ -71,11 +70,7 @@ def mock_non_admin_user():
     return ExtendedAuthUser(
         email=NON_ADMIN_EMAIL,
         role="vendor",
-        user_data={
-            "_id": str(ObjectId()),
-            "email": NON_ADMIN_EMAIL,
-            "role": "vendor"
-        }
+        user_data={"_id": str(ObjectId()), "email": NON_ADMIN_EMAIL, "role": "vendor"},
     )
 
 
@@ -98,9 +93,11 @@ def admin_client(mock_service, mock_admin_user):
 @pytest.fixture
 def non_admin_client(mock_service, mock_non_admin_user):
     """Create a TestClient with non-admin auth."""
+
     # Simulate non-admin access by making require_root_admin raise an exception
     def raise_forbidden():
         from fastapi import HTTPException
+
         raise HTTPException(status_code=403, detail="Not authorized")
 
     app.dependency_overrides[require_root_admin] = raise_forbidden
@@ -131,8 +128,7 @@ class TestAuthBoundaries:
     def test_approve_campaign_forbidden_non_admin(self, non_admin_client):
         """Non-admin cannot approve campaigns."""
         response = non_admin_client.put(
-            f"/admin/ads/campaigns/{ObjectId()}/approve",
-            json={}
+            f"/admin/ads/campaigns/{ObjectId()}/approve", json={}
         )
         assert response.status_code == 403
 
@@ -169,10 +165,10 @@ class TestReviewQueue:
                     "campaign_name": "Summer Sale",
                     "vendor_name": "Florist Co",
                     "status": "pending_review",
-                    "submitted_at": "2026-03-19T10:00:00Z"
+                    "submitted_at": "2026-03-19T10:00:00Z",
                 }
             ],
-            "total": 1
+            "total": 1,
         }
 
         response = admin_client.get("/admin/ads/campaigns/review")
@@ -191,9 +187,7 @@ class TestReviewQueue:
         """Get review queue filtered by status."""
         mock_service.get_review_queue.return_value = {"campaigns": [], "total": 0}
 
-        response = admin_client.get(
-            "/admin/ads/campaigns/review?status=pending_review"
-        )
+        response = admin_client.get("/admin/ads/campaigns/review?status=pending_review")
         assert response.status_code == 200
 
         mock_service.get_review_queue.assert_called_once_with(
@@ -206,9 +200,7 @@ class TestReviewQueue:
         """Get review queue with custom pagination."""
         mock_service.get_review_queue.return_value = {"campaigns": [], "total": 100}
 
-        response = admin_client.get(
-            "/admin/ads/campaigns/review?limit=20&skip=40"
-        )
+        response = admin_client.get("/admin/ads/campaigns/review?limit=20&skip=40")
         assert response.status_code == 200
 
         mock_service.get_review_queue.assert_called_once_with(
@@ -234,7 +226,7 @@ class TestReviewQueue:
             "rejected": 2,
             "draft": 10,
             "completed": 8,
-            "total": 48
+            "total": 48,
         }
 
         response = admin_client.get("/admin/ads/campaigns/review/counts")
@@ -263,12 +255,11 @@ class TestCampaignReviewActions:
             "campaign_name": "Summer Sale",
             "status": "active",
             "reviewed_by": ADMIN_EMAIL,
-            "reviewed_at": "2026-03-19T10:00:00Z"
+            "reviewed_at": "2026-03-19T10:00:00Z",
         }
 
         response = admin_client.put(
-            f"/admin/ads/campaigns/{campaign_id}/approve",
-            json={}
+            f"/admin/ads/campaigns/{campaign_id}/approve", json={}
         )
         assert response.status_code == 200
         data = response.json()
@@ -284,11 +275,14 @@ class TestCampaignReviewActions:
     def test_approve_campaign_with_notes(self, admin_client, mock_service):
         """Approve campaign with review notes."""
         campaign_id = str(ObjectId())
-        mock_service.approve_campaign.return_value = {"_id": campaign_id, "status": "active"}
+        mock_service.approve_campaign.return_value = {
+            "_id": campaign_id,
+            "status": "active",
+        }
 
         response = admin_client.put(
             f"/admin/ads/campaigns/{campaign_id}/approve",
-            json={"review_notes": "Looks good!"}
+            json={"review_notes": "Looks good!"},
         )
         assert response.status_code == 200
 
@@ -308,8 +302,7 @@ class TestCampaignReviewActions:
         }
 
         response = admin_client.put(
-            f"/admin/ads/campaigns/{campaign_id}/reject",
-            json={}
+            f"/admin/ads/campaigns/{campaign_id}/reject", json={}
         )
         assert response.status_code == 200
         data = response.json()
@@ -324,11 +317,14 @@ class TestCampaignReviewActions:
     def test_reject_campaign_with_notes(self, admin_client, mock_service):
         """Reject campaign with review notes."""
         campaign_id = str(ObjectId())
-        mock_service.reject_campaign.return_value = {"_id": campaign_id, "status": "rejected"}
+        mock_service.reject_campaign.return_value = {
+            "_id": campaign_id,
+            "status": "rejected",
+        }
 
         response = admin_client.put(
             f"/admin/ads/campaigns/{campaign_id}/reject",
-            json={"review_notes": "Inappropriate content"}
+            json={"review_notes": "Inappropriate content"},
         )
         assert response.status_code == 200
 
@@ -349,7 +345,7 @@ class TestCampaignReviewActions:
 
         response = admin_client.put(
             f"/admin/ads/campaigns/{campaign_id}/request-changes",
-            json={"review_notes": "Please fix the image quality"}
+            json={"review_notes": "Please fix the image quality"},
         )
         assert response.status_code == 200
         data = response.json()
@@ -364,11 +360,14 @@ class TestCampaignReviewActions:
     def test_request_changes_with_empty_notes(self, admin_client, mock_service):
         """Request changes with empty notes becomes empty string."""
         campaign_id = str(ObjectId())
-        mock_service.request_changes.return_value = {"_id": campaign_id, "status": "draft"}
+        mock_service.request_changes.return_value = {
+            "_id": campaign_id,
+            "status": "draft",
+        }
 
         response = admin_client.put(
             f"/admin/ads/campaigns/{campaign_id}/request-changes",
-            json={"review_notes": None}
+            json={"review_notes": None},
         )
         assert response.status_code == 200
 
@@ -395,10 +394,10 @@ class TestCreativeReview:
                     "_id": str(ObjectId()),
                     "campaign_id": str(ObjectId()),
                     "headline": "Summer Flowers",
-                    "review_status": "pending"
+                    "review_status": "pending",
                 }
             ],
-            "total": 1
+            "total": 1,
         }
 
         response = admin_client.get("/admin/ads/campaigns/review/creatives")
@@ -407,14 +406,16 @@ class TestCreativeReview:
         assert len(data["creatives"]) == 1
         assert data["total"] == 1
 
-        mock_service.get_creative_review_queue.assert_called_once_with(
-            limit=50,
-            skip=0
-        )
+        mock_service.get_creative_review_queue.assert_called_once_with(limit=50, skip=0)
 
-    def test_get_creative_review_queue_with_pagination(self, admin_client, mock_service):
+    def test_get_creative_review_queue_with_pagination(
+        self, admin_client, mock_service
+    ):
         """Get creative review queue with custom pagination."""
-        mock_service.get_creative_review_queue.return_value = {"creatives": [], "total": 200}
+        mock_service.get_creative_review_queue.return_value = {
+            "creatives": [],
+            "total": 200,
+        }
 
         response = admin_client.get(
             "/admin/ads/campaigns/review/creatives?limit=30&skip=60"
@@ -422,8 +423,7 @@ class TestCreativeReview:
         assert response.status_code == 200
 
         mock_service.get_creative_review_queue.assert_called_once_with(
-            limit=30,
-            skip=60
+            limit=30, skip=60
         )
 
     def test_approve_creative(self, admin_client, mock_service):
@@ -437,7 +437,7 @@ class TestCreativeReview:
 
         response = admin_client.put(
             f"/admin/ads/campaigns/review/creatives/{creative_id}/approve",
-            json={"review_notes": "Great image quality"}
+            json={"review_notes": "Great image quality"},
         )
         assert response.status_code == 200
         data = response.json()
@@ -454,12 +454,11 @@ class TestCreativeReview:
         creative_id = str(ObjectId())
         mock_service.approve_creative.return_value = {
             "_id": creative_id,
-            "review_status": "approved"
+            "review_status": "approved",
         }
 
         response = admin_client.put(
-            f"/admin/ads/campaigns/review/creatives/{creative_id}/approve",
-            json={}
+            f"/admin/ads/campaigns/review/creatives/{creative_id}/approve", json={}
         )
         assert response.status_code == 200
 
@@ -480,7 +479,7 @@ class TestCreativeReview:
 
         response = admin_client.put(
             f"/admin/ads/campaigns/review/creatives/{creative_id}/reject",
-            json={"review_notes": "Image quality too low"}
+            json={"review_notes": "Image quality too low"},
         )
         assert response.status_code == 200
         data = response.json()
@@ -497,12 +496,11 @@ class TestCreativeReview:
         creative_id = str(ObjectId())
         mock_service.reject_creative.return_value = {
             "_id": creative_id,
-            "review_status": "rejected"
+            "review_status": "rejected",
         }
 
         response = admin_client.put(
-            f"/admin/ads/campaigns/review/creatives/{creative_id}/reject",
-            json={}
+            f"/admin/ads/campaigns/review/creatives/{creative_id}/reject", json={}
         )
         assert response.status_code == 200
 
@@ -529,10 +527,10 @@ class TestCampaignMonitoring:
                     "_id": str(ObjectId()),
                     "campaign_name": "Spring Special",
                     "vendor_name": "Vendor A",
-                    "status": "active"
+                    "status": "active",
                 }
             ],
-            "total": 1
+            "total": 1,
         }
 
         response = admin_client.get("/admin/ads/campaigns/")
@@ -570,12 +568,12 @@ class TestCampaignMonitoring:
         mock_service.admin_pause_campaign.return_value = {
             "_id": campaign_id,
             "status": "paused",
-            "pause_reason": "Policy violation"
+            "pause_reason": "Policy violation",
         }
 
         response = admin_client.put(
             f"/admin/ads/campaigns/{campaign_id}/pause",
-            json={"reason": "Policy violation"}
+            json={"reason": "Policy violation"},
         )
         assert response.status_code == 200
         data = response.json()
@@ -592,12 +590,11 @@ class TestCampaignMonitoring:
         campaign_id = str(ObjectId())
         mock_service.admin_pause_campaign.return_value = {
             "_id": campaign_id,
-            "status": "paused"
+            "status": "paused",
         }
 
         response = admin_client.put(
-            f"/admin/ads/campaigns/{campaign_id}/pause",
-            json={}
+            f"/admin/ads/campaigns/{campaign_id}/pause", json={}
         )
         assert response.status_code == 200
 
@@ -613,12 +610,12 @@ class TestCampaignMonitoring:
         mock_service.admin_deactivate_campaign.return_value = {
             "_id": campaign_id,
             "status": "rejected",
-            "deactivate_reason": "Malicious content"
+            "deactivate_reason": "Malicious content",
         }
 
         response = admin_client.put(
             f"/admin/ads/campaigns/{campaign_id}/deactivate",
-            json={"reason": "Malicious content"}
+            json={"reason": "Malicious content"},
         )
         assert response.status_code == 200
         data = response.json()
@@ -635,12 +632,11 @@ class TestCampaignMonitoring:
         campaign_id = str(ObjectId())
         mock_service.admin_deactivate_campaign.return_value = {
             "_id": campaign_id,
-            "status": "rejected"
+            "status": "rejected",
         }
 
         response = admin_client.put(
-            f"/admin/ads/campaigns/{campaign_id}/deactivate",
-            json={}
+            f"/admin/ads/campaigns/{campaign_id}/deactivate", json={}
         )
         assert response.status_code == 200
 
@@ -669,7 +665,7 @@ class TestRevenueAndEngagement:
             "total_leads": 120,
             "unique_planners": 3200,
             "ctr": 3.0,
-            "lead_rate": 26.7
+            "lead_rate": 26.7,
         }
 
         response = admin_client.get("/admin/ads/campaigns/revenue")
@@ -731,10 +727,10 @@ class TestPlannerFeedback:
                     "planner_id": str(ObjectId()),
                     "feedback_type": "hidden_vendor",
                     "vendor_id": str(ObjectId()),
-                    "created_at": "2026-03-19T10:00:00Z"
+                    "created_at": "2026-03-19T10:00:00Z",
                 }
             ],
-            "total": 1
+            "total": 1,
         }
 
         response = admin_client.get("/admin/ads/campaigns/feedback")
@@ -742,24 +738,16 @@ class TestPlannerFeedback:
         data = response.json()
         assert len(data["feedback"]) == 1
 
-        mock_service.get_planner_feedback.assert_called_once_with(
-            limit=50,
-            skip=0
-        )
+        mock_service.get_planner_feedback.assert_called_once_with(limit=50, skip=0)
 
     def test_get_planner_feedback_pagination(self, admin_client, mock_service):
         """Get planner feedback with custom pagination."""
         mock_service.get_planner_feedback.return_value = {"feedback": [], "total": 500}
 
-        response = admin_client.get(
-            "/admin/ads/campaigns/feedback?limit=100&skip=200"
-        )
+        response = admin_client.get("/admin/ads/campaigns/feedback?limit=100&skip=200")
         assert response.status_code == 200
 
-        mock_service.get_planner_feedback.assert_called_once_with(
-            limit=100,
-            skip=200
-        )
+        mock_service.get_planner_feedback.assert_called_once_with(limit=100, skip=200)
 
 
 # =============================================================================
@@ -779,10 +767,10 @@ class TestFraudSignals:
                     "signal_type": "unusual_traffic",
                     "campaign_id": str(ObjectId()),
                     "status": "pending",
-                    "flagged_at": "2026-03-19T10:00:00Z"
+                    "flagged_at": "2026-03-19T10:00:00Z",
                 }
             ],
-            "total": 1
+            "total": 1,
         }
 
         response = admin_client.get("/admin/ads/campaigns/fraud-signals")
@@ -791,9 +779,7 @@ class TestFraudSignals:
         assert len(data["signals"]) == 1
 
         mock_service.get_fraud_signals.assert_called_once_with(
-            status_filter=None,
-            limit=50,
-            skip=0
+            status_filter=None, limit=50, skip=0
         )
 
     def test_get_fraud_signals_with_status_filter(self, admin_client, mock_service):
@@ -806,9 +792,7 @@ class TestFraudSignals:
         assert response.status_code == 200
 
         mock_service.get_fraud_signals.assert_called_once_with(
-            status_filter="pending",
-            limit=25,
-            skip=5
+            status_filter="pending", limit=25, skip=5
         )
 
     def test_update_fraud_signal(self, admin_client, mock_service):
@@ -823,10 +807,7 @@ class TestFraudSignals:
 
         response = admin_client.put(
             f"/admin/ads/campaigns/fraud-signals/{signal_id}",
-            json={
-                "status": "investigated",
-                "notes": "Confirmed bot traffic"
-            }
+            json={"status": "investigated", "notes": "Confirmed bot traffic"},
         )
         assert response.status_code == 200
         data = response.json()
@@ -845,12 +826,12 @@ class TestFraudSignals:
         signal_id = str(ObjectId())
         mock_service.update_fraud_signal.return_value = {
             "_id": signal_id,
-            "status": "false_alarm"
+            "status": "false_alarm",
         }
 
         response = admin_client.put(
             f"/admin/ads/campaigns/fraud-signals/{signal_id}",
-            json={"status": "false_alarm"}
+            json={"status": "false_alarm"},
         )
         assert response.status_code == 200
 
@@ -866,7 +847,7 @@ class TestFraudSignals:
         signal_id = str(ObjectId())
         response = admin_client.put(
             f"/admin/ads/campaigns/fraud-signals/{signal_id}",
-            json={"notes": "Some notes"}
+            json={"notes": "Some notes"},
         )
         assert response.status_code == 422  # Validation error - status required
 
@@ -888,10 +869,10 @@ class TestVendorAccounts:
                     "vendor_name": "Florist Co",
                     "vendor_email": "florist@example.com",
                     "status": "active",
-                    "created_at": "2026-01-19T10:00:00Z"
+                    "created_at": "2026-01-19T10:00:00Z",
                 }
             ],
-            "total": 1
+            "total": 1,
         }
 
         response = admin_client.get("/admin/ads/campaigns/vendors")
@@ -900,9 +881,7 @@ class TestVendorAccounts:
         assert len(data["vendors"]) == 1
 
         mock_service.list_vendor_accounts.assert_called_once_with(
-            status_filter=None,
-            limit=50,
-            skip=0
+            status_filter=None, limit=50, skip=0
         )
 
     def test_list_vendor_accounts_with_status_filter(self, admin_client, mock_service):
@@ -915,9 +894,7 @@ class TestVendorAccounts:
         assert response.status_code == 200
 
         mock_service.list_vendor_accounts.assert_called_once_with(
-            status_filter="active",
-            limit=30,
-            skip=15
+            status_filter="active", limit=30, skip=15
         )
 
 
@@ -937,7 +914,7 @@ class TestPlatformConfig:
             "max_daily_budget": 10000.0,
             "review_sla_hours": 24,
             "fraud_detection_enabled": True,
-            "updated_at": "2026-03-10T10:00:00Z"
+            "updated_at": "2026-03-10T10:00:00Z",
         }
 
         response = admin_client.get("/admin/ads/campaigns/config")
@@ -955,15 +932,12 @@ class TestPlatformConfig:
             "review_sla_hours": 48,
             "fraud_detection_enabled": False,
             "updated_by": ADMIN_EMAIL,
-            "updated_at": "2026-03-19T10:00:00Z"
+            "updated_at": "2026-03-19T10:00:00Z",
         }
 
         response = admin_client.put(
             "/admin/ads/campaigns/config",
-            json={
-                "review_sla_hours": 48,
-                "fraud_detection_enabled": False
-            }
+            json={"review_sla_hours": 48, "fraud_detection_enabled": False},
         )
         assert response.status_code == 200
         data = response.json()
@@ -972,10 +946,7 @@ class TestPlatformConfig:
 
         mock_service.update_platform_config.assert_called_once_with(
             admin_email=ADMIN_EMAIL,
-            updates={
-                "review_sla_hours": 48,
-                "fraud_detection_enabled": False
-            },
+            updates={"review_sla_hours": 48, "fraud_detection_enabled": False},
         )
 
     def test_update_platform_config_empty_updates(self, admin_client, mock_service):
@@ -985,10 +956,7 @@ class TestPlatformConfig:
             "updated_by": ADMIN_EMAIL,
         }
 
-        response = admin_client.put(
-            "/admin/ads/campaigns/config",
-            json={}
-        )
+        response = admin_client.put("/admin/ads/campaigns/config", json={})
         assert response.status_code == 200
 
         mock_service.update_platform_config.assert_called_once_with(
@@ -1010,10 +978,7 @@ class TestErrorHandling:
         # FastAPI accepts any string as path parameter
         mock_service.approve_campaign.return_value = {"_id": "invalid_id"}
 
-        response = admin_client.put(
-            "/admin/ads/campaigns/invalid_id/approve",
-            json={}
-        )
+        response = admin_client.put("/admin/ads/campaigns/invalid_id/approve", json={})
         assert response.status_code == 200  # Service handles validation
 
     def test_service_error_handling(self, admin_client, mock_service):
@@ -1022,13 +987,11 @@ class TestErrorHandling:
 
         campaign_id = str(ObjectId())
         mock_service.approve_campaign.side_effect = HTTPException(
-            status_code=404,
-            detail="Campaign not found"
+            status_code=404, detail="Campaign not found"
         )
 
         response = admin_client.put(
-            f"/admin/ads/campaigns/{campaign_id}/approve",
-            json={}
+            f"/admin/ads/campaigns/{campaign_id}/approve", json={}
         )
         assert response.status_code == 404
 
@@ -1037,8 +1000,7 @@ class TestErrorHandling:
         signal_id = str(ObjectId())
         # status is required in Body(...)
         response = admin_client.put(
-            f"/admin/ads/campaigns/fraud-signals/{signal_id}",
-            json={}
+            f"/admin/ads/campaigns/fraud-signals/{signal_id}", json={}
         )
         assert response.status_code == 422
 
@@ -1073,7 +1035,7 @@ class TestIntegration:
         # Get review queue
         mock_service.get_review_queue.return_value = {
             "campaigns": [{"_id": campaign_id, "status": "pending_review"}],
-            "total": 1
+            "total": 1,
         }
         response = admin_client.get("/admin/ads/campaigns/review")
         assert response.status_code == 200
@@ -1081,11 +1043,11 @@ class TestIntegration:
         # Approve campaign
         mock_service.approve_campaign.return_value = {
             "_id": campaign_id,
-            "status": "active"
+            "status": "active",
         }
         response = admin_client.put(
             f"/admin/ads/campaigns/{campaign_id}/approve",
-            json={"review_notes": "Approved"}
+            json={"review_notes": "Approved"},
         )
         assert response.status_code == 200
 
@@ -1095,18 +1057,18 @@ class TestIntegration:
 
         mock_service.get_creative_review_queue.return_value = {
             "creatives": [{"_id": creative_id, "review_status": "pending"}],
-            "total": 1
+            "total": 1,
         }
         response = admin_client.get("/admin/ads/campaigns/review/creatives")
         assert response.status_code == 200
 
         mock_service.reject_creative.return_value = {
             "_id": creative_id,
-            "review_status": "rejected"
+            "review_status": "rejected",
         }
         response = admin_client.put(
             f"/admin/ads/campaigns/review/creatives/{creative_id}/reject",
-            json={"review_notes": "Image quality too low"}
+            json={"review_notes": "Image quality too low"},
         )
         assert response.status_code == 200
 
@@ -1116,21 +1078,18 @@ class TestIntegration:
 
         mock_service.get_fraud_signals.return_value = {
             "signals": [{"_id": signal_id, "status": "pending"}],
-            "total": 1
+            "total": 1,
         }
         response = admin_client.get("/admin/ads/campaigns/fraud-signals")
         assert response.status_code == 200
 
         mock_service.update_fraud_signal.return_value = {
             "_id": signal_id,
-            "status": "confirmed_fraud"
+            "status": "confirmed_fraud",
         }
         response = admin_client.put(
             f"/admin/ads/campaigns/fraud-signals/{signal_id}",
-            json={
-                "status": "confirmed_fraud",
-                "notes": "Confirmed bot clicks"
-            }
+            json={"status": "confirmed_fraud", "notes": "Confirmed bot clicks"},
         )
         assert response.status_code == 200
 
@@ -1157,12 +1116,12 @@ class TestEdgeCases:
         long_notes = "x" * 2000
         mock_service.approve_campaign.return_value = {
             "_id": campaign_id,
-            "status": "active"
+            "status": "active",
         }
 
         response = admin_client.put(
             f"/admin/ads/campaigns/{campaign_id}/approve",
-            json={"review_notes": long_notes}
+            json={"review_notes": long_notes},
         )
         assert response.status_code == 200
 
@@ -1172,12 +1131,12 @@ class TestEdgeCases:
         special_notes = "Test™ with émojis 🚀 and <html>"
         mock_service.approve_campaign.return_value = {
             "_id": campaign_id,
-            "status": "active"
+            "status": "active",
         }
 
         response = admin_client.put(
             f"/admin/ads/campaigns/{campaign_id}/approve",
-            json={"review_notes": special_notes}
+            json={"review_notes": special_notes},
         )
         assert response.status_code == 200
 
@@ -1205,8 +1164,7 @@ class TestEdgeCases:
         mock_service.approve_campaign.return_value = {"_id": campaign_id}
 
         response = admin_client.put(
-            f"/admin/ads/campaigns/{campaign_id}/approve",
-            json={}
+            f"/admin/ads/campaigns/{campaign_id}/approve", json={}
         )
         assert response.status_code == 200
 

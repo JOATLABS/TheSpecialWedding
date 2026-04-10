@@ -51,7 +51,9 @@ def build_request(path: str, payload: dict[str, str] | None = None) -> Request:
 def test_public_and_authenticated_route_families_use_distinct_rate_limit_buckets():
     middleware = build_middleware()
 
-    public_metadata = middleware._get_rate_limit_config("/weddings/privacy-info/james-and-mel")
+    public_metadata = middleware._get_rate_limit_config(
+        "/weddings/privacy-info/james-and-mel"
+    )
     public_gallery = middleware._get_rate_limit_config("/gallery")
     admin_api = middleware._get_rate_limit_config("/admin/planner/weddings")
     couple_api = middleware._get_rate_limit_config("/couple/portal/dashboard")
@@ -67,15 +69,21 @@ def test_public_and_authenticated_route_families_use_distinct_rate_limit_buckets
 def test_dynamic_guest_verification_paths_use_the_auth_bucket():
     middleware = build_middleware(auth_calls=12, auth_period=90)
 
-    guest_verify = middleware._get_rate_limit_config("/weddings/verify-guest-access/james-and-mel")
-    guest_session = middleware._get_rate_limit_config("/weddings/guest-access/session/james-and-mel")
+    guest_verify = middleware._get_rate_limit_config(
+        "/weddings/verify-guest-access/james-and-mel"
+    )
+    guest_session = middleware._get_rate_limit_config(
+        "/weddings/guest-access/session/james-and-mel"
+    )
 
     assert guest_verify == ("guest_access", 12, 90, True)
     assert guest_session == ("guest_access_session", 500, 60, False)
 
 
 def test_exact_auth_routes_still_override_route_family_defaults():
-    middleware = build_middleware(auth_calls=20, auth_period=60, login_ip_calls=30, login_principal_calls=5)
+    middleware = build_middleware(
+        auth_calls=20, auth_period=60, login_ip_calls=30, login_principal_calls=5
+    )
 
     admin_login = middleware._get_rate_limit_config("/admin/token")
     couple_login = middleware._get_rate_limit_config("/couple/login")
@@ -87,7 +95,9 @@ def test_exact_auth_routes_still_override_route_family_defaults():
 
 
 def test_login_routes_apply_ip_backstop_in_addition_to_identity_bucket():
-    middleware = build_middleware(login_ip_calls=30, login_principal_calls=5, login_period=60)
+    middleware = build_middleware(
+        login_ip_calls=30, login_principal_calls=5, login_period=60
+    )
 
     assert middleware._get_additional_rate_limit_configs("/admin/token") == [
         ("admin_login_ip", 30, 60, True)
@@ -99,8 +109,12 @@ def test_login_routes_apply_ip_backstop_in_addition_to_identity_bucket():
 
 def test_login_identity_bucket_uses_email_subject_when_available():
     middleware = build_middleware()
-    request = build_request("/admin/token", {"email": "Planner@Example.com", "password": "secret"})
+    request = build_request(
+        "/admin/token", {"email": "Planner@Example.com", "password": "secret"}
+    )
 
-    subject = asyncio.run(middleware._get_bucket_subject(request, "admin_login_identity", "127.0.0.1"))
+    subject = asyncio.run(
+        middleware._get_bucket_subject(request, "admin_login_identity", "127.0.0.1")
+    )
 
     assert subject == "planner@example.com"

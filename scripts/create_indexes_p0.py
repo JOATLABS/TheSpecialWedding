@@ -24,7 +24,9 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
+logging.basicConfig(
+    level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s"
+)
 logger = logging.getLogger(__name__)
 
 # Index definitions: (collection, index_spec, kwargs)
@@ -80,7 +82,9 @@ async def create_indexes(dry_run: bool = False):
                 continue
 
             if dry_run:
-                logger.info(f"  [DRY RUN] Would create {collection_name}.{index_name}: {index_spec}")
+                logger.info(
+                    f"  [DRY RUN] Would create {collection_name}.{index_name}: {index_spec}"
+                )
                 continue
 
             logger.info(f"  → Creating {collection_name}.{index_name}: {index_spec}")
@@ -94,7 +98,9 @@ async def create_indexes(dry_run: bool = False):
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Create MongoDB indexes for P0 refactors")
+    parser = argparse.ArgumentParser(
+        description="Create MongoDB indexes for P0 refactors"
+    )
     parser.add_argument("--dry-run", action="store_true", help="Preview only")
     args = parser.parse_args()
 

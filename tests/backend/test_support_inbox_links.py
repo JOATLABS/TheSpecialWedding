@@ -27,8 +27,7 @@ def test_build_support_inbox_url_for_support_ticket() -> None:
     )
 
     assert (
-        url
-        == "https://thespecialwedding.io/admin/communications/inbox"
+        url == "https://thespecialwedding.io/admin/communications/inbox"
         "?conversation=support_ticket&ticket_id=ticket-99"
     )
 

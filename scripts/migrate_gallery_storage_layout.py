@@ -26,10 +26,16 @@ GALLERY_FOLDERS = ("gallery", "our-story", "wedding-party")
 
 
 def _is_relative_storage_key(value: Any) -> bool:
-    return isinstance(value, str) and value != "" and not value.startswith(("http://", "https://"))
+    return (
+        isinstance(value, str)
+        and value != ""
+        and not value.startswith(("http://", "https://"))
+    )
 
 
-def _collect_reference_updates(wedding: dict[str, Any], key_map: dict[str, str]) -> dict[str, str]:
+def _collect_reference_updates(
+    wedding: dict[str, Any], key_map: dict[str, str]
+) -> dict[str, str]:
     updates: dict[str, str] = {}
 
     featured_image = wedding.get("featured_image")
@@ -65,7 +71,9 @@ def _object_exists(service: GalleryUploadService, key: str) -> bool:
         raise
 
 
-def _copy_object(service: GalleryUploadService, source_key: str, destination_key: str) -> None:
+def _copy_object(
+    service: GalleryUploadService, source_key: str, destination_key: str
+) -> None:
     service.s3.copy_object(
         Bucket=service.bucket_name,
         CopySource={"Bucket": service.bucket_name, "Key": source_key},
@@ -112,7 +120,9 @@ async def migrate_gallery_storage_layout(
         print(f"\n[{slug}] planner scope -> {planner_scope}")
 
         for folder in GALLERY_FOLDERS:
-            legacy_prefix = service.build_wedding_storage_prefix(folder=folder, wedding_slug=slug)
+            legacy_prefix = service.build_wedding_storage_prefix(
+                folder=folder, wedding_slug=slug
+            )
             legacy_items = service.list_uploaded_files(prefix=legacy_prefix)
 
             if not legacy_items:
@@ -141,7 +151,9 @@ async def migrate_gallery_storage_layout(
                         legacy_keys_to_delete.append(source_key)
                     continue
 
-                print(f"  {'+' if execute else '-'} copy {source_key} -> {destination_key}")
+                print(
+                    f"  {'+' if execute else '-'} copy {source_key} -> {destination_key}"
+                )
                 if execute:
                     _copy_object(service, source_key, destination_key)
                     summary["copied_objects"] += 1
@@ -150,9 +162,13 @@ async def migrate_gallery_storage_layout(
 
         updates = _collect_reference_updates(wedding, key_map)
         if updates:
-            print(f"  {'+' if execute else '-'} update wedding refs: {sorted(updates.keys())}")
+            print(
+                f"  {'+' if execute else '-'} update wedding refs: {sorted(updates.keys())}"
+            )
             if execute:
-                await mongo.db["weddings"].update_one({"_id": wedding["_id"]}, {"$set": updates})
+                await mongo.db["weddings"].update_one(
+                    {"_id": wedding["_id"]}, {"$set": updates}
+                )
             summary["updated_references"] += len(updates)
 
         if execute and delete_legacy:
@@ -175,14 +191,22 @@ def main() -> int:
     parser = argparse.ArgumentParser(
         description="Copy legacy wedding gallery assets into planner-scoped prefixes and update wedding references.",
     )
-    parser.add_argument("--execute", action="store_true", help="Apply the migration instead of running a dry run.")
+    parser.add_argument(
+        "--execute",
+        action="store_true",
+        help="Apply the migration instead of running a dry run.",
+    )
     parser.add_argument(
         "--delete-legacy",
         action="store_true",
         help="Delete legacy objects after successful copy. Requires --execute.",
     )
-    parser.add_argument("--wedding-slug", help="Limit the migration to a single wedding slug.")
-    parser.add_argument("--planner-email", help="Limit the migration to a single planner email.")
+    parser.add_argument(
+        "--wedding-slug", help="Limit the migration to a single wedding slug."
+    )
+    parser.add_argument(
+        "--planner-email", help="Limit the migration to a single planner email."
+    )
     args = parser.parse_args()
 
     if args.delete_legacy and not args.execute:

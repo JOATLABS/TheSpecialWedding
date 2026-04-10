@@ -36,12 +36,15 @@ class TestSecurityBoundaries:
     def test_protected_endpoint_rejects_unauthenticated(self, method, path):
         """Protected endpoints return 401 or 403 without auth."""
         resp = requests.request(method, f"{BASE_URL}{path}", timeout=10)
-        assert resp.status_code in (401, 403, 405), \
+        assert resp.status_code in (401, 403, 405), (
             f"{method} {path} returned {resp.status_code} without auth (expected 401/403)"
+        )
 
     def test_invalid_jwt_rejected(self):
         """Forged JWT tokens are rejected."""
-        headers = {"Authorization": "Bearer eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJoYWNrZXJAZXZpbC5jb20iLCJyb2xlIjoiUk9PVF9BRE1JTiJ9.fake"}
+        headers = {
+            "Authorization": "Bearer eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJoYWNrZXJAZXZpbC5jb20iLCJyb2xlIjoiUk9PVF9BRE1JTiJ9.fake"
+        }
         resp = requests.get(f"{BASE_URL}/admin/profile", headers=headers, timeout=10)
         assert resp.status_code in (401, 403)
 
@@ -96,5 +99,6 @@ class TestPublicEndpoints:
     def test_public_endpoint_accessible(self, method, path):
         """Public endpoints return 200 without auth."""
         resp = requests.request(method, f"{BASE_URL}{path}", timeout=10)
-        assert resp.status_code == 200, \
+        assert resp.status_code == 200, (
             f"{method} {path} returned {resp.status_code} (expected 200)"
+        )

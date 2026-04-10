@@ -68,7 +68,9 @@ def test_resolve_owner_identity_no_longer_falls_back_to_couple_owner_mirrors(
 
 def test_resolve_couple_planner_email_uses_canonical_wedding_owner(monkeypatch):
     resolver = AsyncMock(return_value={"planner_email": "owner@example.com"})
-    monkeypatch.setattr(couple_portal_module, "resolve_wedding_owner_identity", resolver)
+    monkeypatch.setattr(
+        couple_portal_module, "resolve_wedding_owner_identity", resolver
+    )
 
     result = asyncio.run(
         couple_portal_module._resolve_couple_planner_email(
@@ -82,7 +84,9 @@ def test_resolve_couple_planner_email_uses_canonical_wedding_owner(monkeypatch):
 
 def test_resolve_couple_planner_email_does_not_fall_back_to_couple_mirror(monkeypatch):
     resolver = AsyncMock(return_value={"planner_email": None})
-    monkeypatch.setattr(couple_portal_module, "resolve_wedding_owner_identity", resolver)
+    monkeypatch.setattr(
+        couple_portal_module, "resolve_wedding_owner_identity", resolver
+    )
 
     result = asyncio.run(
         couple_portal_module._resolve_couple_planner_email(

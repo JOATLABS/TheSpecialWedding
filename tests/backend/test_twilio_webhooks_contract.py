@@ -112,9 +112,7 @@ async def test_status_callback_parses_error_code_once_and_calls_failure_handler(
     assert log_collection.last_query == {"message_sid": "SM123"}
     assert log_collection.last_update is not None
     assert log_collection.last_update["$set"]["error_code"] == 30004
-    assert (
-        log_collection.last_update["$push"]["delivery_events"]["error_code"] == 30004
-    )
+    assert log_collection.last_update["$push"]["delivery_events"]["error_code"] == 30004
     failure_handler.assert_awaited_once()
     assert failure_handler.await_args.kwargs["error_code"] == 30004
 
@@ -185,7 +183,10 @@ async def test_status_callback_invalid_error_code_does_not_raise(
     assert "error_code" not in log_collection.last_update["$set"]
     assert log_collection.last_update["$push"]["delivery_events"]["error_code"] is None
     failure_handler.assert_not_awaited()
-    assert "Ignoring invalid integer value for Twilio webhook field ErrorCode" in caplog.text
+    assert (
+        "Ignoring invalid integer value for Twilio webhook field ErrorCode"
+        in caplog.text
+    )
 
 
 @pytest.mark.asyncio

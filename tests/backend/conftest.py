@@ -9,9 +9,14 @@ import sys
 from pathlib import Path
 
 # Setup environment BEFORE importing app
-os.environ.setdefault("SECRET_KEY", "test-secret-key-this-is-long-enough-for-validation-testing-purposes-2026")
+os.environ.setdefault(
+    "SECRET_KEY",
+    "test-secret-key-this-is-long-enough-for-validation-testing-purposes-2026",
+)
 os.environ.setdefault("ALGORITHM", "HS256")
-os.environ.setdefault("API_KEY", "test-api-key-this-is-also-long-enough-for-validation-testing-purposes")
+os.environ.setdefault(
+    "API_KEY", "test-api-key-this-is-also-long-enough-for-validation-testing-purposes"
+)
 os.environ.setdefault("ROOT_ADMIN_EMAIL", "thedeveloper@thespecialwedding.io")
 os.environ.setdefault("MONGODB_URL", "mongodb://localhost:27017")
 os.environ.setdefault("MONGODB_NAME", "test_wedding_app")

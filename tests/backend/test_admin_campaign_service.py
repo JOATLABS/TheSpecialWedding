@@ -41,6 +41,7 @@ def service_and_db():
 # REVIEW QUEUE TESTS
 # ═════════════════════════════════════════════════════════════════════════════
 
+
 @pytest.mark.asyncio
 async def test_get_review_queue_returns_pending_campaigns_fifo(service_and_db):
     """Test that review queue returns pending campaigns in FIFO order (oldest first)."""
@@ -97,14 +98,16 @@ async def test_get_review_counts_returns_all_statuses(service_and_db):
     """Test that review counts include all campaign statuses."""
     service, _, raw_db = service_and_db
 
-    raw_db["ad_campaigns"].insert_many([
-        make_campaign(status=CampaignStatus.PENDING_REVIEW.value),
-        make_campaign(status=CampaignStatus.PENDING_REVIEW.value),
-        make_campaign(status=CampaignStatus.ACTIVE.value),
-        make_campaign(status=CampaignStatus.PAUSED.value),
-        make_campaign(status=CampaignStatus.REJECTED.value),
-        make_campaign(status=CampaignStatus.DRAFT.value),
-    ])
+    raw_db["ad_campaigns"].insert_many(
+        [
+            make_campaign(status=CampaignStatus.PENDING_REVIEW.value),
+            make_campaign(status=CampaignStatus.PENDING_REVIEW.value),
+            make_campaign(status=CampaignStatus.ACTIVE.value),
+            make_campaign(status=CampaignStatus.PAUSED.value),
+            make_campaign(status=CampaignStatus.REJECTED.value),
+            make_campaign(status=CampaignStatus.DRAFT.value),
+        ]
+    )
 
     counts = await service.get_review_counts()
 
@@ -121,6 +124,7 @@ async def test_get_review_counts_returns_all_statuses(service_and_db):
 # CAMPAIGN REVIEW ACTIONS
 # ═════════════════════════════════════════════════════════════════════════════
 
+
 @pytest.mark.asyncio
 async def test_approve_campaign_sets_active_and_auto_approves_creatives(service_and_db):
     """Test that approving a campaign sets status to active and auto-approves pending creatives."""
@@ -133,16 +137,18 @@ async def test_approve_campaign_sets_active_and_auto_approves_creatives(service_
     raw_db["ad_campaigns"].insert_one(campaign_doc)
 
     # Add pending creatives
-    raw_db["ad_creatives"].insert_many([
-        make_creative(
-            campaign_id=campaign_id,
-            review_status=CreativeReviewStatus.PENDING.value,
-        ),
-        make_creative(
-            campaign_id=campaign_id,
-            review_status=CreativeReviewStatus.PENDING.value,
-        ),
-    ])
+    raw_db["ad_creatives"].insert_many(
+        [
+            make_creative(
+                campaign_id=campaign_id,
+                review_status=CreativeReviewStatus.PENDING.value,
+            ),
+            make_creative(
+                campaign_id=campaign_id,
+                review_status=CreativeReviewStatus.PENDING.value,
+            ),
+        ]
+    )
 
     result = await service.approve_campaign(campaign_id, ADMIN_EMAIL, "Looks good!")
 
@@ -152,7 +158,9 @@ async def test_approve_campaign_sets_active_and_auto_approves_creatives(service_
 
     # Check creatives are auto-approved
     creatives = list(raw_db["ad_creatives"].find({"campaign_id": campaign_id}))
-    assert all(c["review_status"] == CreativeReviewStatus.APPROVED.value for c in creatives)
+    assert all(
+        c["review_status"] == CreativeReviewStatus.APPROVED.value for c in creatives
+    )
 
 
 @pytest.mark.asyncio
@@ -168,7 +176,9 @@ async def test_approve_campaign_rejects_non_pending(service_and_db):
     with pytest.raises(Exception) as exc_info:
         await service.approve_campaign(campaign_id, ADMIN_EMAIL)
 
-    assert "not in pending_review status" in str(exc_info.value) or "not found" in str(exc_info.value)
+    assert "not in pending_review status" in str(exc_info.value) or "not found" in str(
+        exc_info.value
+    )
 
 
 @pytest.mark.asyncio
@@ -199,9 +209,7 @@ async def test_request_changes_returns_to_draft_with_notes(service_and_db):
     raw_db["ad_campaigns"].insert_one(campaign_doc)
 
     result = await service.request_changes(
-        campaign_id,
-        ADMIN_EMAIL,
-        "Please update the headline to be more descriptive"
+        campaign_id, ADMIN_EMAIL, "Please update the headline to be more descriptive"
     )
 
     assert result["status"] == CampaignStatus.DRAFT.value
@@ -229,26 +237,29 @@ async def test_request_changes_requires_notes(service_and_db):
 # CREATIVE REVIEW
 # ═════════════════════════════════════════════════════════════════════════════
 
+
 @pytest.mark.asyncio
 async def test_get_creative_review_queue_returns_pending_only(service_and_db):
     """Test that creative review queue returns only pending creatives."""
     service, _, raw_db = service_and_db
 
     campaign_id = str(ObjectId())
-    raw_db["ad_creatives"].insert_many([
-        make_creative(
-            campaign_id=campaign_id,
-            review_status=CreativeReviewStatus.PENDING.value,
-        ),
-        make_creative(
-            campaign_id=campaign_id,
-            review_status=CreativeReviewStatus.PENDING.value,
-        ),
-        make_creative(
-            campaign_id=campaign_id,
-            review_status=CreativeReviewStatus.APPROVED.value,
-        ),
-    ])
+    raw_db["ad_creatives"].insert_many(
+        [
+            make_creative(
+                campaign_id=campaign_id,
+                review_status=CreativeReviewStatus.PENDING.value,
+            ),
+            make_creative(
+                campaign_id=campaign_id,
+                review_status=CreativeReviewStatus.PENDING.value,
+            ),
+            make_creative(
+                campaign_id=campaign_id,
+                review_status=CreativeReviewStatus.APPROVED.value,
+            ),
+        ]
+    )
 
     queue = await service.get_creative_review_queue()
 
@@ -300,16 +311,19 @@ async def test_reject_creative_sets_rejected(service_and_db):
 # CAMPAIGN MONITORING
 # ═════════════════════════════════════════════════════════════════════════════
 
+
 @pytest.mark.asyncio
 async def test_list_all_campaigns_no_filter(service_and_db):
     """Test that list_all_campaigns returns all campaigns when no filter is applied."""
     service, _, raw_db = service_and_db
 
-    raw_db["ad_campaigns"].insert_many([
-        make_campaign(status=CampaignStatus.ACTIVE.value),
-        make_campaign(status=CampaignStatus.DRAFT.value),
-        make_campaign(status=CampaignStatus.PAUSED.value),
-    ])
+    raw_db["ad_campaigns"].insert_many(
+        [
+            make_campaign(status=CampaignStatus.ACTIVE.value),
+            make_campaign(status=CampaignStatus.DRAFT.value),
+            make_campaign(status=CampaignStatus.PAUSED.value),
+        ]
+    )
 
     campaigns = await service.list_all_campaigns()
 
@@ -321,13 +335,17 @@ async def test_list_all_campaigns_filter_by_status(service_and_db):
     """Test that list_all_campaigns filters by status."""
     service, _, raw_db = service_and_db
 
-    raw_db["ad_campaigns"].insert_many([
-        make_campaign(status=CampaignStatus.ACTIVE.value),
-        make_campaign(status=CampaignStatus.ACTIVE.value),
-        make_campaign(status=CampaignStatus.DRAFT.value),
-    ])
+    raw_db["ad_campaigns"].insert_many(
+        [
+            make_campaign(status=CampaignStatus.ACTIVE.value),
+            make_campaign(status=CampaignStatus.ACTIVE.value),
+            make_campaign(status=CampaignStatus.DRAFT.value),
+        ]
+    )
 
-    campaigns = await service.list_all_campaigns(status_filter=CampaignStatus.ACTIVE.value)
+    campaigns = await service.list_all_campaigns(
+        status_filter=CampaignStatus.ACTIVE.value
+    )
 
     assert len(campaigns) == 2
     assert all(c["status"] == CampaignStatus.ACTIVE.value for c in campaigns)
@@ -344,9 +362,7 @@ async def test_admin_pause_active_campaign(service_and_db):
     raw_db["ad_campaigns"].insert_one(campaign_doc)
 
     result = await service.admin_pause_campaign(
-        campaign_id,
-        ADMIN_EMAIL,
-        "Manual pause for testing"
+        campaign_id, ADMIN_EMAIL, "Manual pause for testing"
     )
 
     assert result["status"] == CampaignStatus.PAUSED.value
@@ -366,7 +382,9 @@ async def test_admin_pause_non_active_fails(service_and_db):
     with pytest.raises(Exception) as exc_info:
         await service.admin_pause_campaign(campaign_id, ADMIN_EMAIL)
 
-    assert "not currently active" in str(exc_info.value) or "not found" in str(exc_info.value)
+    assert "not currently active" in str(exc_info.value) or "not found" in str(
+        exc_info.value
+    )
 
 
 @pytest.mark.asyncio
@@ -374,15 +392,21 @@ async def test_admin_deactivate_from_any_non_terminal(service_and_db):
     """Test that admin_deactivate_campaign works from any non-terminal status."""
     service, _, raw_db = service_and_db
 
-    for status in [CampaignStatus.DRAFT.value, CampaignStatus.PENDING_REVIEW.value,
-                   CampaignStatus.ACTIVE.value, CampaignStatus.PAUSED.value]:
+    for status in [
+        CampaignStatus.DRAFT.value,
+        CampaignStatus.PENDING_REVIEW.value,
+        CampaignStatus.ACTIVE.value,
+        CampaignStatus.PAUSED.value,
+    ]:
         campaign_doc = make_campaign(status=status)
         campaign_id = str(ObjectId())
         campaign_doc["_id"] = ObjectId(campaign_id)
         raw_db["ad_campaigns"].delete_many({})
         raw_db["ad_campaigns"].insert_one(campaign_doc)
 
-        result = await service.admin_deactivate_campaign(campaign_id, ADMIN_EMAIL, "Policy violation")
+        result = await service.admin_deactivate_campaign(
+            campaign_id, ADMIN_EMAIL, "Policy violation"
+        )
 
         assert result["status"] == CampaignStatus.REJECTED.value
 
@@ -392,7 +416,10 @@ async def test_admin_deactivate_terminal_fails(service_and_db):
     """Test that admin_deactivate_campaign fails from terminal statuses."""
     service, _, raw_db = service_and_db
 
-    for terminal_status in [CampaignStatus.COMPLETED.value, CampaignStatus.REJECTED.value]:
+    for terminal_status in [
+        CampaignStatus.COMPLETED.value,
+        CampaignStatus.REJECTED.value,
+    ]:
         campaign_doc = make_campaign(status=terminal_status)
         campaign_id = str(ObjectId())
         campaign_doc["_id"] = ObjectId(campaign_id)
@@ -409,22 +436,27 @@ async def test_admin_deactivate_terminal_fails(service_and_db):
 # REVENUE
 # ═════════════════════════════════════════════════════════════════════════════
 
+
 @pytest.mark.asyncio
 async def test_get_revenue_summary_returns_structure(service_and_db):
     """Test that get_revenue_summary returns the expected structure."""
     service, _, raw_db = service_and_db
 
     # Seed some campaigns and events
-    raw_db["ad_campaigns"].insert_many([
-        make_campaign(status=CampaignStatus.ACTIVE.value, vendor_id=VENDOR_ID),
-        make_campaign(status=CampaignStatus.DRAFT.value),
-    ])
+    raw_db["ad_campaigns"].insert_many(
+        [
+            make_campaign(status=CampaignStatus.ACTIVE.value, vendor_id=VENDOR_ID),
+            make_campaign(status=CampaignStatus.DRAFT.value),
+        ]
+    )
 
     campaign_id = str(ObjectId())
-    raw_db["ad_events"].insert_many([
-        make_ad_event(campaign_id, event_type="impression_served"),
-        make_ad_event(campaign_id, event_type="click"),
-    ])
+    raw_db["ad_events"].insert_many(
+        [
+            make_ad_event(campaign_id, event_type="impression_served"),
+            make_ad_event(campaign_id, event_type="click"),
+        ]
+    )
 
     result = await service.get_revenue_summary(days=30)
 
@@ -445,27 +477,30 @@ async def test_get_revenue_summary_returns_structure(service_and_db):
 # PLANNER FEEDBACK
 # ═════════════════════════════════════════════════════════════════════════════
 
+
 @pytest.mark.asyncio
 async def test_get_planner_feedback_returns_hidden_vendors(service_and_db):
     """Test that get_planner_feedback returns planners with hidden vendors."""
     service, _, raw_db = service_and_db
 
-    raw_db["planner_ad_preferences"].insert_many([
-        {
-            "planner_id": "planner1@example.com",
-            "hidden_vendor_ids": [VENDOR_ID],
-            "hidden_categories": [],
-            "reduced_frequency": False,
-            "updated_at": datetime.now(timezone.utc),
-        },
-        {
-            "planner_id": "planner2@example.com",
-            "hidden_vendor_ids": [],
-            "hidden_categories": ["florist"],
-            "reduced_frequency": False,
-            "updated_at": datetime.now(timezone.utc),
-        },
-    ])
+    raw_db["planner_ad_preferences"].insert_many(
+        [
+            {
+                "planner_id": "planner1@example.com",
+                "hidden_vendor_ids": [VENDOR_ID],
+                "hidden_categories": [],
+                "reduced_frequency": False,
+                "updated_at": datetime.now(timezone.utc),
+            },
+            {
+                "planner_id": "planner2@example.com",
+                "hidden_vendor_ids": [],
+                "hidden_categories": ["florist"],
+                "reduced_frequency": False,
+                "updated_at": datetime.now(timezone.utc),
+            },
+        ]
+    )
 
     result = await service.get_planner_feedback()
 
@@ -479,25 +514,28 @@ async def test_get_planner_feedback_returns_hidden_vendors(service_and_db):
 # FRAUD SIGNALS
 # ═════════════════════════════════════════════════════════════════════════════
 
+
 @pytest.mark.asyncio
 async def test_get_fraud_signals_returns_list(service_and_db):
     """Test that get_fraud_signals returns a list of fraud signals."""
     service, _, raw_db = service_and_db
 
-    raw_db["ad_fraud_signals"].insert_many([
-        {
-            "campaign_id": str(ObjectId()),
-            "signal_type": "suspicious_clicks",
-            "status": "new",
-            "flagged_at": datetime.now(timezone.utc),
-        },
-        {
-            "campaign_id": str(ObjectId()),
-            "signal_type": "unusual_conversion_rate",
-            "status": "investigating",
-            "flagged_at": datetime.now(timezone.utc),
-        },
-    ])
+    raw_db["ad_fraud_signals"].insert_many(
+        [
+            {
+                "campaign_id": str(ObjectId()),
+                "signal_type": "suspicious_clicks",
+                "status": "new",
+                "flagged_at": datetime.now(timezone.utc),
+            },
+            {
+                "campaign_id": str(ObjectId()),
+                "signal_type": "unusual_conversion_rate",
+                "status": "investigating",
+                "flagged_at": datetime.now(timezone.utc),
+            },
+        ]
+    )
 
     signals = await service.get_fraud_signals()
 
@@ -521,10 +559,7 @@ async def test_update_fraud_signal_changes_status(service_and_db):
     signal_id = str(signal_doc["_id"])
 
     result = await service.update_fraud_signal(
-        signal_id,
-        ADMIN_EMAIL,
-        "resolved",
-        "False positive - normal traffic spike"
+        signal_id, ADMIN_EMAIL, "resolved", "False positive - normal traffic spike"
     )
 
     assert result["status"] == "resolved"
@@ -534,6 +569,7 @@ async def test_update_fraud_signal_changes_status(service_and_db):
 # ═════════════════════════════════════════════════════════════════════════════
 # PLATFORM CONFIG
 # ═════════════════════════════════════════════════════════════════════════════
+
 
 @pytest.mark.asyncio
 async def test_get_platform_config_returns_defaults_when_empty(service_and_db):

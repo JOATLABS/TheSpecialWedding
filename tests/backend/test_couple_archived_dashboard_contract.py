@@ -140,7 +140,9 @@ async def test_archived_form_detail_returns_read_only_metadata(
                     "wedding_id": "wedding-1",
                     "title": "Planner Intake",
                     "description": "Tell us more",
-                    "fields": [{"id": "song", "label": "Favorite song", "type": "text"}],
+                    "fields": [
+                        {"id": "song", "label": "Favorite song", "type": "text"}
+                    ],
                     "shared_with_couple": True,
                     "created_at": datetime.now(timezone.utc),
                 }

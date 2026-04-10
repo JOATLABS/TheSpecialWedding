@@ -13,7 +13,9 @@ from app.utils.planner_ownership import (
 
 
 def test_normalize_planner_fields_trim_and_lowercase() -> None:
-    assert normalize_planner_id(" 507f1f77bcf86cd799439011 ") == "507f1f77bcf86cd799439011"
+    assert (
+        normalize_planner_id(" 507f1f77bcf86cd799439011 ") == "507f1f77bcf86cd799439011"
+    )
     assert normalize_planner_email(" Planner@Example.com ") == "planner@example.com"
 
 

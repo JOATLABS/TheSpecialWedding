@@ -42,6 +42,7 @@ def service_and_db():
 # CAMPAIGN ROLLUP TESTS
 # ═════════════════════════════════════════════════════════════════════════════
 
+
 @pytest.mark.asyncio
 async def test_compute_campaign_rollup_no_events_returns_zero(service_and_db):
     """Test that compute_campaign_rollup returns 0 when no events exist for the day."""
@@ -134,6 +135,7 @@ async def test_backfill_rollups_processes_multiple_days(service_and_db):
 # DASHBOARD QUERY TESTS
 # ═════════════════════════════════════════════════════════════════════════════
 
+
 @pytest.mark.asyncio
 async def test_get_campaign_daily_stats_queries_by_campaign(service_and_db):
     """Test that get_campaign_daily_stats queries by campaign_id."""
@@ -144,23 +146,25 @@ async def test_get_campaign_daily_stats_queries_by_campaign(service_and_db):
 
     # Insert stats for two campaigns
     now = datetime.now(timezone.utc)
-    raw_db["campaign_day_stats"].insert_many([
-        {
-            "date": now - timedelta(days=1),
-            "campaign_id": campaign_id,
-            "events": {"impression_served": 100, "click": 10},
-        },
-        {
-            "date": now - timedelta(days=2),
-            "campaign_id": campaign_id,
-            "events": {"impression_served": 50, "click": 5},
-        },
-        {
-            "date": now - timedelta(days=1),
-            "campaign_id": other_campaign_id,
-            "events": {"impression_served": 200, "click": 20},
-        },
-    ])
+    raw_db["campaign_day_stats"].insert_many(
+        [
+            {
+                "date": now - timedelta(days=1),
+                "campaign_id": campaign_id,
+                "events": {"impression_served": 100, "click": 10},
+            },
+            {
+                "date": now - timedelta(days=2),
+                "campaign_id": campaign_id,
+                "events": {"impression_served": 50, "click": 5},
+            },
+            {
+                "date": now - timedelta(days=1),
+                "campaign_id": other_campaign_id,
+                "events": {"impression_served": 200, "click": 20},
+            },
+        ]
+    )
 
     results = await service.get_campaign_daily_stats(campaign_id, days=30)
 
@@ -177,23 +181,25 @@ async def test_get_placement_daily_stats_queries_by_date(service_and_db):
     old_date = now - timedelta(days=60)
 
     # Insert stats with various dates
-    raw_db["placement_day_stats"].insert_many([
-        {
-            "date": now - timedelta(days=5),
-            "placement": "vendor_rail",
-            "impressions": 100,
-        },
-        {
-            "date": now - timedelta(days=10),
-            "placement": "vendor_rail",
-            "impressions": 150,
-        },
-        {
-            "date": old_date,  # Outside default 30-day window
-            "placement": "vendor_rail",
-            "impressions": 50,
-        },
-    ])
+    raw_db["placement_day_stats"].insert_many(
+        [
+            {
+                "date": now - timedelta(days=5),
+                "placement": "vendor_rail",
+                "impressions": 100,
+            },
+            {
+                "date": now - timedelta(days=10),
+                "placement": "vendor_rail",
+                "impressions": 150,
+            },
+            {
+                "date": old_date,  # Outside default 30-day window
+                "placement": "vendor_rail",
+                "impressions": 50,
+            },
+        ]
+    )
 
     results = await service.get_placement_daily_stats(days=30)
 
@@ -206,6 +212,7 @@ async def test_get_placement_daily_stats_queries_by_date(service_and_db):
 # HELPER METHOD TESTS
 # ═════════════════════════════════════════════════════════════════════════════
 
+
 @pytest.mark.asyncio
 async def test_build_hourly_array_correct_distribution(service_and_db):
     """Test that _build_hourly_array correctly distributes hours."""
@@ -215,11 +222,11 @@ async def test_build_hourly_array_correct_distribution(service_and_db):
     result = service._build_hourly_array(raw_hours)
 
     assert len(result) == 24
-    assert result[8] == 2    # Two events at hour 8
-    assert result[9] == 1    # One event at hour 9
-    assert result[10] == 3   # Three events at hour 10
-    assert result[20] == 1   # One event at hour 20
-    assert result[23] == 1   # One event at hour 23
+    assert result[8] == 2  # Two events at hour 8
+    assert result[9] == 1  # One event at hour 9
+    assert result[10] == 3  # Three events at hour 10
+    assert result[20] == 1  # One event at hour 20
+    assert result[23] == 1  # One event at hour 23
     assert sum(result) == 8  # Total events
 
 
@@ -232,7 +239,9 @@ async def test_get_day_boundaries_defaults_to_yesterday(service_and_db):
 
     # Should be yesterday's boundaries
     now = datetime.now(timezone.utc)
-    yesterday = (now - timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
+    yesterday = (now - timedelta(days=1)).replace(
+        hour=0, minute=0, second=0, microsecond=0
+    )
 
     assert day_start == yesterday
     assert day_end == yesterday + timedelta(days=1)
@@ -259,6 +268,7 @@ async def test_get_day_boundaries_normalizes_date(service_and_db):
 # INTEGRATION TESTS (Limited aggregation due to mongomock)
 # ═════════════════════════════════════════════════════════════════════════════
 
+
 @pytest.mark.asyncio
 async def test_compute_campaign_rollup_with_events(service_and_db):
     """Test compute_campaign_rollup with actual events (validates structure)."""
@@ -273,10 +283,22 @@ async def test_compute_campaign_rollup_with_events(service_and_db):
 
     # Insert various event types within the target date
     events = [
-        make_ad_event(campaign_id, "impression_served", created_at=target_date + timedelta(hours=8)),
-        make_ad_event(campaign_id, "impression_served", created_at=target_date + timedelta(hours=8)),
-        make_ad_event(campaign_id, "click", created_at=target_date + timedelta(hours=9)),
-        make_ad_event(campaign_id, "lead_created", created_at=target_date + timedelta(hours=10)),
+        make_ad_event(
+            campaign_id,
+            "impression_served",
+            created_at=target_date + timedelta(hours=8),
+        ),
+        make_ad_event(
+            campaign_id,
+            "impression_served",
+            created_at=target_date + timedelta(hours=8),
+        ),
+        make_ad_event(
+            campaign_id, "click", created_at=target_date + timedelta(hours=9)
+        ),
+        make_ad_event(
+            campaign_id, "lead_created", created_at=target_date + timedelta(hours=10)
+        ),
     ]
     raw_db["ad_events"].insert_many(events)
 
@@ -368,9 +390,11 @@ async def test_rollup_upsert_idempotence(service_and_db):
     assert count2 >= 0
 
     # Verify only one document exists for this date/campaign
-    stats = list(raw_db["campaign_day_stats"].find(
-        {"date": target_date, "campaign_id": campaign_id}
-    ))
+    stats = list(
+        raw_db["campaign_day_stats"].find(
+            {"date": target_date, "campaign_id": campaign_id}
+        )
+    )
     assert len(stats) <= 1
 
 
@@ -416,10 +440,22 @@ async def test_campaign_rollup_includes_event_types(service_and_db):
 
     # Insert various event types
     events = [
-        make_ad_event(campaign_id, "impression_served", created_at=target_date + timedelta(hours=1)),
-        make_ad_event(campaign_id, "click", created_at=target_date + timedelta(hours=2)),
-        make_ad_event(campaign_id, "lead_created", created_at=target_date + timedelta(hours=3)),
-        make_ad_event(campaign_id, "vendor_profile_view", created_at=target_date + timedelta(hours=4)),
+        make_ad_event(
+            campaign_id,
+            "impression_served",
+            created_at=target_date + timedelta(hours=1),
+        ),
+        make_ad_event(
+            campaign_id, "click", created_at=target_date + timedelta(hours=2)
+        ),
+        make_ad_event(
+            campaign_id, "lead_created", created_at=target_date + timedelta(hours=3)
+        ),
+        make_ad_event(
+            campaign_id,
+            "vendor_profile_view",
+            created_at=target_date + timedelta(hours=4),
+        ),
     ]
     raw_db["ad_events"].insert_many(events)
 

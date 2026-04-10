@@ -53,7 +53,9 @@ def trial_service(monkeypatch, mongo_database):
     monkeypatch.setattr(trial_service_module, "mongo", fake_mongo)
 
     email_service = DummyEmailService()
-    monkeypatch.setattr(trial_service_module, "ResendEmailService", lambda: email_service)
+    monkeypatch.setattr(
+        trial_service_module, "ResendEmailService", lambda: email_service
+    )
 
     service = trial_service_module.TrialExpirationService()
     return service, mongo_database, email_service

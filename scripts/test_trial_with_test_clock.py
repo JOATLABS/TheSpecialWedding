@@ -46,11 +46,14 @@ import requests
 # Configuration
 # ---------------------------------------------------------------------------
 
-logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
+logging.basicConfig(
+    level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s"
+)
 logger = logging.getLogger("test_clock_trial")
 
 # Load env
 from dotenv import load_dotenv
+
 load_dotenv(Path(__file__).resolve().parent.parent / ".env")
 
 STRIPE_SECRET_KEY = os.getenv("STRIPE_SECRET_KEY")
@@ -76,6 +79,7 @@ WEBHOOK_SETTLE_SECONDS = 8  # Wait for webhooks to process
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def get_admin_token() -> str:
     """Get admin JWT token"""
     resp = requests.post(
@@ -88,7 +92,9 @@ def get_admin_token() -> str:
 
 def api_get(path: str, token: str) -> dict:
     """Make authenticated GET request"""
-    resp = requests.get(f"{BACKEND_URL}{path}", headers={"Authorization": f"Bearer {token}"})
+    resp = requests.get(
+        f"{BACKEND_URL}{path}", headers={"Authorization": f"Bearer {token}"}
+    )
     resp.raise_for_status()
     return resp.json()
 
@@ -129,14 +135,15 @@ def wait_for_webhooks(seconds: int = WEBHOOK_SETTLE_SECONDS):
 
 
 def separator(title: str):
-    logger.info(f"\n{'='*60}")
+    logger.info(f"\n{'=' * 60}")
     logger.info(f"  {title}")
-    logger.info(f"{'='*60}")
+    logger.info(f"{'=' * 60}")
 
 
 # ---------------------------------------------------------------------------
 # Test Steps
 # ---------------------------------------------------------------------------
+
 
 def step_1_create_test_clock() -> stripe.test_helpers.TestClock:
     """Create a Stripe Test Clock anchored to now"""
@@ -150,11 +157,15 @@ def step_1_create_test_clock() -> stripe.test_helpers.TestClock:
     )
 
     logger.info(f"  ✅ Test Clock created: {clock.id}")
-    logger.info(f"  📅 Frozen at: {datetime.fromtimestamp(frozen_time, tz=timezone.utc).isoformat()}")
+    logger.info(
+        f"  📅 Frozen at: {datetime.fromtimestamp(frozen_time, tz=timezone.utc).isoformat()}"
+    )
     return clock
 
 
-def step_2_create_customer_and_user(clock: stripe.test_helpers.TestClock, admin_token: str) -> tuple[str, str]:
+def step_2_create_customer_and_user(
+    clock: stripe.test_helpers.TestClock, admin_token: str
+) -> tuple[str, str]:
     """Create a Stripe customer attached to the test clock, and register user in backend"""
     separator("STEP 2: Create Customer & Register User")
 
@@ -228,7 +239,9 @@ def step_3_create_trial_subscription(
     if not plan:
         logger.error(f"  ❌ Plan {TEST_PLAN_ID} not found!")
         # Try listing all plans
-        logger.info(f"  Available plans: {json.dumps([p.get('_id', p.get('id', 'unknown')) for p in plans])}")
+        logger.info(
+            f"  Available plans: {json.dumps([p.get('_id', p.get('id', 'unknown')) for p in plans])}"
+        )
         sys.exit(1)
 
     stripe_price_id = plan.get("stripe_price_id_monthly")
@@ -256,7 +269,9 @@ def step_3_create_trial_subscription(
     logger.info(f"  ✅ Payment method attached: {pm.id}")
 
     # Create subscription with trial
-    trial_end_ts = int((datetime.now(timezone.utc) + timedelta(days=TRIAL_DAYS)).timestamp())
+    trial_end_ts = int(
+        (datetime.now(timezone.utc) + timedelta(days=TRIAL_DAYS)).timestamp()
+    )
 
     subscription = stripe.Subscription.create(
         customer=customer_id,
@@ -275,7 +290,9 @@ def step_3_create_trial_subscription(
 
     logger.info(f"  ✅ Subscription created: {subscription.id}")
     logger.info(f"  📋 Status: {subscription.status}")
-    logger.info(f"  📅 Trial end: {datetime.fromtimestamp(subscription.trial_end, tz=timezone.utc).isoformat()}")
+    logger.info(
+        f"  📅 Trial end: {datetime.fromtimestamp(subscription.trial_end, tz=timezone.utc).isoformat()}"
+    )
 
     wait_for_webhooks()
 
@@ -308,18 +325,26 @@ def step_4_verify_trial_status(admin_token: str) -> bool:
         logger.info("  ✅ PASS: User is in trial status and active")
         return True
     else:
-        logger.error(f"  ❌ FAIL: Expected status='trial' & is_active=True, got status='{status}' & is_active={is_active}")
+        logger.error(
+            f"  ❌ FAIL: Expected status='trial' & is_active=True, got status='{status}' & is_active={is_active}"
+        )
         return False
 
 
-def step_5_advance_to_warning_period(clock: stripe.test_helpers.TestClock, sub_id: str) -> bool:
+def step_5_advance_to_warning_period(
+    clock: stripe.test_helpers.TestClock, sub_id: str
+) -> bool:
     """Advance test clock to 7 days before trial end (trigger trial_will_end)"""
     separator("STEP 5: Advance Clock to Warning Period (T-7 days)")
 
     # Advance to trial_end - 4 days (Stripe sends trial_will_end 3 days before end)
-    advance_to = int((datetime.now(timezone.utc) + timedelta(days=TRIAL_DAYS - 4)).timestamp())
+    advance_to = int(
+        (datetime.now(timezone.utc) + timedelta(days=TRIAL_DAYS - 4)).timestamp()
+    )
 
-    logger.info(f"  ⏰ Advancing clock to: {datetime.fromtimestamp(advance_to, tz=timezone.utc).isoformat()}")
+    logger.info(
+        f"  ⏰ Advancing clock to: {datetime.fromtimestamp(advance_to, tz=timezone.utc).isoformat()}"
+    )
 
     stripe.test_helpers.TestClock.advance(clock.id, frozen_time=advance_to)
 
@@ -343,7 +368,9 @@ def step_5_advance_to_warning_period(clock: stripe.test_helpers.TestClock, sub_i
     # Check subscription status in Stripe
     sub = stripe.Subscription.retrieve(sub_id)
     logger.info(f"  📋 Stripe subscription status: {sub.status}")
-    logger.info(f"  📋 Stripe trial_end: {datetime.fromtimestamp(sub.trial_end, tz=timezone.utc).isoformat() if sub.trial_end else 'None'}")
+    logger.info(
+        f"  📋 Stripe trial_end: {datetime.fromtimestamp(sub.trial_end, tz=timezone.utc).isoformat() if sub.trial_end else 'None'}"
+    )
 
     return True
 
@@ -357,9 +384,13 @@ def step_6_advance_past_trial_end(
     separator("STEP 6: Advance Clock Past Trial End")
 
     # Advance 2 days past trial end
-    advance_to = int((datetime.now(timezone.utc) + timedelta(days=TRIAL_DAYS + 2)).timestamp())
+    advance_to = int(
+        (datetime.now(timezone.utc) + timedelta(days=TRIAL_DAYS + 2)).timestamp()
+    )
 
-    logger.info(f"  ⏰ Advancing clock to: {datetime.fromtimestamp(advance_to, tz=timezone.utc).isoformat()}")
+    logger.info(
+        f"  ⏰ Advancing clock to: {datetime.fromtimestamp(advance_to, tz=timezone.utc).isoformat()}"
+    )
 
     stripe.test_helpers.TestClock.advance(clock.id, frozen_time=advance_to)
 
@@ -388,7 +419,9 @@ def step_6_advance_past_trial_end(
         logger.info(f"  📋 Backend is_active: {user.get('is_active')}")
 
     if sub.status == "active":
-        logger.info("  ✅ PASS: Subscription transitioned from trial to active after trial end")
+        logger.info(
+            "  ✅ PASS: Subscription transitioned from trial to active after trial end"
+        )
         return True
     elif sub.status in ("past_due", "unpaid"):
         logger.warning(f"  ⚠️ Subscription is {sub.status} - payment may have failed")
@@ -419,7 +452,9 @@ def step_7_test_internal_trial_expiration(admin_token: str) -> bool:
     # If the subscription is now "active" (Stripe renewed it), let's simulate
     # a trial expiration scenario by manually setting the user back to trial
     # with an expired trial_end_date
-    logger.info("  🔧 Setting user to trial status with expired trial_end_date for testing...")
+    logger.info(
+        "  🔧 Setting user to trial status with expired trial_end_date for testing..."
+    )
 
     # Use admin API to manually set up the expired trial scenario
     resp = requests.post(
@@ -433,7 +468,9 @@ def step_7_test_internal_trial_expiration(admin_token: str) -> bool:
         logger.info("  ✅ Internal trial expiration logic executed successfully")
         return True
     else:
-        logger.error(f"  ❌ Trial expiration check failed: {resp.status_code} - {resp.text}")
+        logger.error(
+            f"  ❌ Trial expiration check failed: {resp.status_code} - {resp.text}"
+        )
         return False
 
 
@@ -459,6 +496,7 @@ def step_8_cleanup(clock: stripe.test_helpers.TestClock, sub_id: str):
 # ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
+
 
 def main():
     logger.info("=" * 60)
@@ -508,7 +546,9 @@ def main():
         results["trial_end"] = step_6_advance_past_trial_end(clock, sub_id, admin_token)
 
         # Step 7: Test internal expiration logic
-        results["internal_expiration"] = step_7_test_internal_trial_expiration(admin_token)
+        results["internal_expiration"] = step_7_test_internal_trial_expiration(
+            admin_token
+        )
 
     except Exception as e:
         logger.error(f"  ❌ Test failed with error: {e}", exc_info=True)

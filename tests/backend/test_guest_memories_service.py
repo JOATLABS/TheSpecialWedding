@@ -67,7 +67,7 @@ def _install_test_stubs() -> None:
                 "rsvps": object(),
                 "guest_media_assets": object(),
                 "guest_media_exports": object(),
-            }
+            },
         )
         sys.modules["app.core.database"] = database_module
 
@@ -134,7 +134,11 @@ def test_uploaded_object_constraints_accept_matching_reserved_upload():
             "Uploaded object content type does not match the reserved upload",
         ),
         (
-            {"media_type": "image", "mime_type": "image/jpeg", "size_bytes": 30 * 1024 * 1024},
+            {
+                "media_type": "image",
+                "mime_type": "image/jpeg",
+                "size_bytes": 30 * 1024 * 1024,
+            },
             30 * 1024 * 1024,
             "image/jpeg",
             "Images must be 25 MB or smaller",
@@ -208,7 +212,10 @@ def test_serialize_asset_uses_authenticated_relative_paths_for_videos():
 
     assert serialized["id"] == "asset-video-1"
     assert serialized["player_path"] == "/couple/portal/memories/asset-video-1/player"
-    assert serialized["thumbnail_path"] == "/couple/portal/memories/asset-video-1/thumbnail"
+    assert (
+        serialized["thumbnail_path"]
+        == "/couple/portal/memories/asset-video-1/thumbnail"
+    )
     assert serialized["event_type"] == "reception"
     assert "original_bucket" not in serialized
     assert "original_key" not in serialized
@@ -251,7 +258,9 @@ def test_get_stream_player_token_reuses_unexpired_cached_token():
 
     class FakeAssets:
         async def update_one(self, *_args, **_kwargs):
-            raise AssertionError("Should not persist a new token when cached token is still valid")
+            raise AssertionError(
+                "Should not persist a new token when cached token is still valid"
+            )
 
     service.assets = FakeAssets()
 
@@ -259,7 +268,9 @@ def test_get_stream_player_token_reuses_unexpired_cached_token():
         "_id": "asset-video-2",
         "stream_uid": "stream-123",
         "stream_token": "cached-token",
-        "stream_token_expires_at": (datetime.now(timezone.utc) + timedelta(minutes=5)).isoformat(),
+        "stream_token_expires_at": (
+            datetime.now(timezone.utc) + timedelta(minutes=5)
+        ).isoformat(),
     }
 
     token = asyncio.run(service._get_stream_player_token(asset))
@@ -311,7 +322,10 @@ def test_poll_stream_ready_marks_error_state_as_failed():
     query, update = fake_assets.calls[-1]
     assert query == {"_id": "asset-video-3"}
     assert update["$set"]["stream_status"] == "failed"
-    assert update["$set"]["stream_error"] == "The file was not recognized as a valid video file."
+    assert (
+        update["$set"]["stream_error"]
+        == "The file was not recognized as a valid video file."
+    )
 
 
 def test_generate_guest_memories_sign_pdf_embeds_qr_and_upload_url(monkeypatch):

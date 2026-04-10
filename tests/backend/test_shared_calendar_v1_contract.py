@@ -26,7 +26,10 @@ from app.models.team_member import ROLE_PRESETS, resolve_team_permissions
 from app.services.meeting_invite_service import MeetingInviteService
 from app.services.calendar_aggregation_service import CalendarAggregationService
 from app.services.calendar_sync_service import CalendarSyncService
-from app.services.google_calendar_service import GoogleCalendarService, google_calendar_service
+from app.services.google_calendar_service import (
+    GoogleCalendarService,
+    google_calendar_service,
+)
 
 
 class _FakeCursor:
@@ -234,10 +237,11 @@ async def test_calendar_indexes_make_meeting_invite_task_recipient_unique(
     await database_indexes_module.create_calendar_indexes()
 
     assert meeting_invites.delete_many_calls == [{"_id": {"$in": ["invite-1"]}}]
-    assert (
-        [call for call in meeting_invites.create_index_calls if call[1].get("name") == "idx_meeting_invites_task_recipient"][0][1]["unique"]
-        is True
-    )
+    assert [
+        call
+        for call in meeting_invites.create_index_calls
+        if call[1].get("name") == "idx_meeting_invites_task_recipient"
+    ][0][1]["unique"] is True
 
 
 def test_google_service_requires_explicit_security_keys_in_production(
@@ -246,7 +250,9 @@ def test_google_service_requires_explicit_security_keys_in_production(
     service = GoogleCalendarService.__new__(GoogleCalendarService)
     monkeypatch.setattr("app.core.config.settings.ENVIRONMENT", "production")
     monkeypatch.setattr("app.core.config.settings.GOOGLE_CLIENT_ID", "client-id")
-    monkeypatch.setattr("app.core.config.settings.GOOGLE_CLIENT_SECRET", "client-secret")
+    monkeypatch.setattr(
+        "app.core.config.settings.GOOGLE_CLIENT_SECRET", "client-secret"
+    )
     monkeypatch.setattr("app.core.config.settings.GOOGLE_OAUTH_STATE_SIGNING_KEY", None)
     monkeypatch.setattr("app.core.config.settings.TOKEN_ENCRYPTION_KEY", None)
 
@@ -261,9 +267,17 @@ def test_google_service_requires_explicit_security_keys_in_production(
 async def test_sync_targets_prefer_explicit_allowed_override() -> None:
     service = CalendarSyncService.__new__(CalendarSyncService)
     allowed_connections = [
-        {"_id": "assigned-default", "user_id": "staff-1", "is_default_write_target": True},
+        {
+            "_id": "assigned-default",
+            "user_id": "staff-1",
+            "is_default_write_target": True,
+        },
         {"_id": "owner-default", "user_id": "owner-1", "is_default_write_target": True},
-        {"_id": "explicit-choice", "user_id": "staff-1", "is_default_write_target": False},
+        {
+            "_id": "explicit-choice",
+            "user_id": "staff-1",
+            "is_default_write_target": False,
+        },
     ]
 
     async def fake_get_connection_docs(_query: dict) -> list[dict]:
@@ -292,8 +306,16 @@ async def test_sync_targets_fail_closed_when_explicit_override_is_not_allowed() 
 
     async def fake_get_connection_docs(_query: dict) -> list[dict]:
         return [
-            {"_id": "assigned-default", "user_id": "staff-1", "is_default_write_target": True},
-            {"_id": "owner-default", "user_id": "owner-1", "is_default_write_target": True},
+            {
+                "_id": "assigned-default",
+                "user_id": "staff-1",
+                "is_default_write_target": True,
+            },
+            {
+                "_id": "owner-default",
+                "user_id": "owner-1",
+                "is_default_write_target": True,
+            },
         ]
 
     setattr(service, "_get_connection_docs", fake_get_connection_docs)
@@ -319,8 +341,16 @@ async def test_sync_targets_use_persisted_override_selection() -> None:
 
     async def fake_get_connection_docs(_query: dict) -> list[dict]:
         return [
-            {"_id": "owner-default", "user_id": "owner-1", "is_default_write_target": True},
-            {"_id": "explicit-choice", "user_id": "staff-1", "is_default_write_target": False},
+            {
+                "_id": "owner-default",
+                "user_id": "owner-1",
+                "is_default_write_target": True,
+            },
+            {
+                "_id": "explicit-choice",
+                "user_id": "staff-1",
+                "is_default_write_target": False,
+            },
         ]
 
     setattr(service, "_get_connection_docs", fake_get_connection_docs)
@@ -339,13 +369,23 @@ async def test_sync_targets_use_persisted_override_selection() -> None:
 
 
 @pytest.mark.asyncio
-async def test_sync_targets_custom_policy_without_explicit_ids_stays_internal_only() -> None:
+async def test_sync_targets_custom_policy_without_explicit_ids_stays_internal_only() -> (
+    None
+):
     service = CalendarSyncService.__new__(CalendarSyncService)
 
     async def fake_get_connection_docs(_query: dict) -> list[dict]:
         return [
-            {"_id": "owner-default", "user_id": "owner-1", "is_default_write_target": True},
-            {"_id": "assigned-default", "user_id": "staff-1", "is_default_write_target": True},
+            {
+                "_id": "owner-default",
+                "user_id": "owner-1",
+                "is_default_write_target": True,
+            },
+            {
+                "_id": "assigned-default",
+                "user_id": "staff-1",
+                "is_default_write_target": True,
+            },
         ]
 
     setattr(service, "_get_connection_docs", fake_get_connection_docs)
@@ -393,8 +433,9 @@ async def test_sync_targets_block_unlisted_staff_calendar_for_team_scheduler() -
 
 
 @pytest.mark.asyncio
-async def test_sync_targets_fall_back_to_owner_default_when_staff_calendar_is_not_allowed(
-    ) -> None:
+async def test_sync_targets_fall_back_to_owner_default_when_staff_calendar_is_not_allowed() -> (
+    None
+):
     service = CalendarSyncService.__new__(CalendarSyncService)
 
     async def fake_get_connection_docs(_query: dict) -> list[dict]:
@@ -436,8 +477,16 @@ async def test_sync_targets_prefer_assigned_default_before_owner_default() -> No
 
     async def fake_get_connection_docs(_query: dict) -> list[dict]:
         return [
-            {"_id": "owner-default", "user_id": "owner-1", "is_default_write_target": True},
-            {"_id": "assigned-default", "user_id": "staff-1", "is_default_write_target": True},
+            {
+                "_id": "owner-default",
+                "user_id": "owner-1",
+                "is_default_write_target": True,
+            },
+            {
+                "_id": "assigned-default",
+                "user_id": "staff-1",
+                "is_default_write_target": True,
+            },
         ]
 
     setattr(service, "_get_connection_docs", fake_get_connection_docs)
@@ -454,13 +503,23 @@ async def test_sync_targets_prefer_assigned_default_before_owner_default() -> No
 
 
 @pytest.mark.asyncio
-async def test_sync_targets_fall_back_to_owner_default_when_assigned_default_missing() -> None:
+async def test_sync_targets_fall_back_to_owner_default_when_assigned_default_missing() -> (
+    None
+):
     service = CalendarSyncService.__new__(CalendarSyncService)
 
     async def fake_get_connection_docs(_query: dict) -> list[dict]:
         return [
-            {"_id": "owner-default", "user_id": "owner-1", "is_default_write_target": True},
-            {"_id": "staff-secondary", "user_id": "staff-1", "is_default_write_target": False},
+            {
+                "_id": "owner-default",
+                "user_id": "owner-1",
+                "is_default_write_target": True,
+            },
+            {
+                "_id": "staff-secondary",
+                "user_id": "staff-1",
+                "is_default_write_target": False,
+            },
         ]
 
     setattr(service, "_get_connection_docs", fake_get_connection_docs)
@@ -772,7 +831,9 @@ async def test_owner_scoped_assignees_reject_out_of_scope_users(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     class FakeUsersCollection:
-        async def find_one(self, query: dict, projection: dict | None = None) -> dict | None:
+        async def find_one(
+            self, query: dict, projection: dict | None = None
+        ) -> dict | None:
             if query["_id"] == "staff-1":
                 return {
                     "_id": "staff-1",
@@ -793,7 +854,11 @@ async def test_owner_scoped_assignees_reject_out_of_scope_users(
 
     monkeypatch.setattr(
         "app.dependencies.auth_extended.mongo",
-        type("FakeMongo", (), {"get_users_collection": lambda self=None: FakeUsersCollection()})(),
+        type(
+            "FakeMongo",
+            (),
+            {"get_users_collection": lambda self=None: FakeUsersCollection()},
+        )(),
     )
 
     with pytest.raises(HTTPException) as exc_info:
@@ -817,7 +882,9 @@ def test_scoped_meeting_query_enforces_owner_scope() -> None:
     query = _build_scoped_meeting_query(planner, cast(Any, "meeting-1"))
 
     assert query["$and"][0] == {"_id": "meeting-1"}
-    assert query["$and"][1] == {"$or": [{"schedule_item_type": "meeting"}, {"category": "meeting"}]}
+    assert query["$and"][1] == {
+        "$or": [{"schedule_item_type": "meeting"}, {"category": "meeting"}]
+    }
     assert query["$and"][2] == {
         "$or": [
             {"owner_planner_email": "owner@example.com"},
@@ -845,7 +912,9 @@ def test_shared_calendar_query_intersects_requested_and_accessible_weddings() ->
 @pytest.mark.asyncio
 async def test_disconnect_connection_orphans_sync_rows() -> None:
     service = GoogleCalendarService.__new__(GoogleCalendarService)
-    cast(Any, service).connections_collection = _RecordingCollection(count=1, find_one_result=None)
+    cast(Any, service).connections_collection = _RecordingCollection(
+        count=1, find_one_result=None
+    )
     cast(Any, service).tokens_collection = _RecordingCollection()
     cast(Any, service).syncs_collection = _RecordingCollection()
 
@@ -940,7 +1009,9 @@ async def test_delete_schedule_item_syncs_preserves_rows_when_provider_delete_fa
     fake_syncs = FakeSyncCollection()
     cast(Any, service).syncs_collection = fake_syncs
 
-    async def fake_delete_google_event_for_connection(_connection_id: str, _external_event_id: str) -> bool:
+    async def fake_delete_google_event_for_connection(
+        _connection_id: str, _external_event_id: str
+    ) -> bool:
         return False
 
     monkeypatch.setattr(
@@ -1028,7 +1099,9 @@ def test_meeting_invite_ics_uid_is_stable_for_same_task() -> None:
 
 
 @pytest.mark.asyncio
-async def test_shared_calendar_view_filters_external_connections_by_staff(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_shared_calendar_view_filters_external_connections_by_staff(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     service = CalendarAggregationService.__new__(CalendarAggregationService)
     cast(Any, service).tasks_collection = _FakeTasksCollection([])
 
@@ -1056,7 +1129,9 @@ async def test_shared_calendar_view_filters_external_connections_by_staff(monkey
             },
         ]
 
-    async def fake_fetch_google_events_for_connection(connection_id: str, **_kwargs) -> list[dict]:
+    async def fake_fetch_google_events_for_connection(
+        connection_id: str, **_kwargs
+    ) -> list[dict]:
         return [
             {
                 "id": connection_id,
@@ -1089,5 +1164,7 @@ async def test_shared_calendar_view_filters_external_connections_by_staff(monkey
         staff_ids=["staff-1"],
     )
 
-    external_events = [event for event in events if event["source_type"] == "external_google"]
+    external_events = [
+        event for event in events if event["source_type"] == "external_google"
+    ]
     assert [event["id"] for event in external_events] == ["conn-staff-1"]

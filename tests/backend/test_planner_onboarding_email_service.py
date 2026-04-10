@@ -78,7 +78,9 @@ class AsyncCollection:
         return None
 
     def find(self, query, *_args, **_kwargs):
-        return AsyncCursor([document for document in self.storage if _matches(document, query)])
+        return AsyncCursor(
+            [document for document in self.storage if _matches(document, query)]
+        )
 
     async def update_one(self, query, update, *_args, **_kwargs):
         for document in self.storage:
@@ -98,7 +100,11 @@ class AsyncCollection:
                         else:
                             target = None
                             break
-                    if target is not None and isinstance(target, dict) and parts[-1] in target:
+                    if (
+                        target is not None
+                        and isinstance(target, dict)
+                        and parts[-1] in target
+                    ):
                         del target[parts[-1]]
                 return SimpleNamespace(modified_count=1)
         return SimpleNamespace(modified_count=0)
@@ -378,7 +384,8 @@ def test_unsubscribe_rejects_expired_token():
                     "started_at": started_at,
                     "welcome_sent_at": started_at,
                     "unsubscribe_token": unsubscribe_token,
-                    "unsubscribe_token_created_at": datetime.now(timezone.utc) - timedelta(days=91),
+                    "unsubscribe_token_created_at": datetime.now(timezone.utc)
+                    - timedelta(days=91),
                 },
             }
         ],
@@ -433,7 +440,7 @@ def test_html_escaping_in_display_name():
                 "email": "planner@example.com",
                 "role": "wedding_planner",
                 "first_name": '<script>alert("xss")</script>',
-                "company_name": '<img src=x onerror=alert(1)>',
+                "company_name": "<img src=x onerror=alert(1)>",
                 "email_verified": True,
                 "is_active": True,
                 "created_at": datetime.now(timezone.utc),
@@ -550,9 +557,7 @@ def test_process_due_emails_skips_day8_when_team_exists():
             }
         ],
         "weddings": [],
-        "team_members": [
-            {"_id": "tm_1", "owner_id": str(user_id), "status": "active"}
-        ],
+        "team_members": [{"_id": "tm_1", "owner_id": str(user_id), "status": "active"}],
         "user_subscriptions": [],
     }
     service = build_service(storage)

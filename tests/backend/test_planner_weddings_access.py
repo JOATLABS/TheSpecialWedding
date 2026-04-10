@@ -41,8 +41,8 @@ def test_owned_weddings_query_uses_team_owner_identity_for_team_members() -> Non
     user.team_wedding_access = "all"
     user.team_assigned_wedding_ids = []
 
-    query, accessible_ids, owner_email = planner_metrics_api._build_owned_weddings_query(
-        user
+    query, accessible_ids, owner_email = (
+        planner_metrics_api._build_owned_weddings_query(user)
     )
 
     assert accessible_ids is None
@@ -68,8 +68,8 @@ def test_owned_weddings_query_preserves_string_assigned_wedding_ids() -> None:
     user.team_wedding_access = "assigned"
     user.team_assigned_wedding_ids = ["wedding_alpha", "507f1f77bcf86cd799439011"]
 
-    query, accessible_ids, owner_email = planner_metrics_api._build_owned_weddings_query(
-        user
+    query, accessible_ids, owner_email = (
+        planner_metrics_api._build_owned_weddings_query(user)
     )
 
     assert accessible_ids == ["wedding_alpha", "507f1f77bcf86cd799439011"]

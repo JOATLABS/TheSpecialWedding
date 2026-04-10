@@ -78,7 +78,10 @@ class FakeWeddingsCollection:
                 continue
             if owner_id is not None and doc.get("assigned_planner_id") != owner_id:
                 continue
-            if owner_email is not None and doc.get("assigned_planner_email") != owner_email:
+            if (
+                owner_email is not None
+                and doc.get("assigned_planner_email") != owner_email
+            ):
                 continue
             count += 1
         return count
@@ -93,7 +96,10 @@ class FakeWeddingsCollection:
                 continue
             if owner_id is not None and doc.get("assigned_planner_id") != owner_id:
                 continue
-            if owner_email is not None and doc.get("assigned_planner_email") != owner_email:
+            if (
+                owner_email is not None
+                and doc.get("assigned_planner_email") != owner_email
+            ):
                 continue
             docs.append({"_id": doc["_id"]})
         return FakeCursor(docs)
@@ -119,7 +125,9 @@ async def test_accept_invite_restores_pending_status_when_validation_raises_http
     service.users_collection = FakeUsersCollection()
 
     def fail_password_validation(_password: str):
-        raise HTTPException(status_code=400, detail="Password must contain at least one number")
+        raise HTTPException(
+            status_code=400, detail="Password must contain at least one number"
+        )
 
     service._validate_password = fail_password_validation
 

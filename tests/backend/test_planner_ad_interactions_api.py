@@ -33,7 +33,10 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-os.environ.setdefault("SECRET_KEY", "test-secret-key-this-is-long-enough-for-validation-testing-purposes-2026")
+os.environ.setdefault(
+    "SECRET_KEY",
+    "test-secret-key-this-is-long-enough-for-validation-testing-purposes-2026",
+)
 os.environ.setdefault("ALGORITHM", "HS256")
 os.environ.setdefault("API_KEY", "test-api-key")
 os.environ.setdefault("ROOT_ADMIN_EMAIL", "thedeveloper@thespecialwedding.io")
@@ -76,8 +79,8 @@ def make_mock_planner_user(user_id=PLANNER_ID, email=PLANNER_EMAIL, name=PLANNER
             "_id": ObjectId(user_id),
             "name": name,
             "display_name": name,
-            "role": "wedding_planner"
-        }
+            "role": "wedding_planner",
+        },
     )
 
 
@@ -86,11 +89,7 @@ def make_mock_admin_user(email=ADMIN_EMAIL):
     return ExtendedAuthUser(
         email=email,
         role="ROOT_ADMIN",
-        user_data={
-            "_id": ObjectId(),
-            "name": "Root Admin",
-            "role": "ROOT_ADMIN"
-        }
+        user_data={"_id": ObjectId(), "name": "Root Admin", "role": "ROOT_ADMIN"},
     )
 
 
@@ -102,8 +101,8 @@ def make_mock_vendor_user():
         user_data={
             "_id": ObjectId(),
             "name": "Vendor Account",
-            "role": "advertising_vendor"
-        }
+            "role": "advertising_vendor",
+        },
     )
 
 
@@ -142,8 +141,10 @@ def vendor_client(mock_service):
     Override require_planner_or_admin to raise 403, simulating
     what the real dependency does for non-planner/non-admin users.
     """
+
     def raise_403():
         raise HTTPException(status_code=403, detail="Wedding planner access required")
+
     app.dependency_overrides[require_planner_or_admin] = raise_403
     app.dependency_overrides[get_planner_ad_interaction_service] = lambda: mock_service
     client = TestClient(app)
@@ -155,14 +156,23 @@ def vendor_client(mock_service):
 # TESTS: GET /sponsored-cards
 # =============================================================================
 
+
 class TestGetSponsoredCards:
     """Tests for GET /planner/ads/sponsored-cards endpoint."""
 
     def test_get_sponsored_cards_planner_success(self, planner_client, mock_service):
         """Planner can retrieve sponsored cards."""
         mock_cards = [
-            {"campaign_id": CAMPAIGN_ID, "vendor_name": "Florist Co", "category": "flowers"},
-            {"campaign_id": str(ObjectId()), "vendor_name": "Photographer Pro", "category": "photography"},
+            {
+                "campaign_id": CAMPAIGN_ID,
+                "vendor_name": "Florist Co",
+                "category": "flowers",
+            },
+            {
+                "campaign_id": str(ObjectId()),
+                "vendor_name": "Photographer Pro",
+                "category": "photography",
+            },
         ]
         mock_service.get_sponsored_cards.return_value = mock_cards
 
@@ -201,7 +211,9 @@ class TestGetSponsoredCards:
         """Location filter is passed to service."""
         mock_service.get_sponsored_cards.return_value = []
 
-        response = planner_client.get("/planner/ads/sponsored-cards?location=New%20York")
+        response = planner_client.get(
+            "/planner/ads/sponsored-cards?location=New%20York"
+        )
 
         assert response.status_code == 200
         call_kwargs = mock_service.get_sponsored_cards.call_args.kwargs
@@ -211,7 +223,9 @@ class TestGetSponsoredCards:
         """Categories filter is parsed and passed to service."""
         mock_service.get_sponsored_cards.return_value = []
 
-        response = planner_client.get("/planner/ads/sponsored-cards?categories=flowers%2Cphotography%2Ccatering")
+        response = planner_client.get(
+            "/planner/ads/sponsored-cards?categories=flowers%2Cphotography%2Ccatering"
+        )
 
         assert response.status_code == 200
         call_kwargs = mock_service.get_sponsored_cards.call_args.kwargs
@@ -255,7 +269,7 @@ class TestGetSponsoredCards:
                 "campaign_id": CAMPAIGN_ID,
                 "vendor_name": "Florist",
                 "category": "flowers",
-                "description": "Premium florals"
+                "description": "Premium florals",
             }
         ]
         mock_service.get_sponsored_cards.return_value = mock_cards
@@ -275,6 +289,7 @@ class TestGetSponsoredCards:
 # TESTS: POST /add-to-directory
 # =============================================================================
 
+
 class TestAddToDirectory:
     """Tests for POST /planner/ads/add-to-directory endpoint."""
 
@@ -283,16 +298,13 @@ class TestAddToDirectory:
         mock_result = {
             "campaign_id": CAMPAIGN_ID,
             "vendor_profile_id": VENDOR_PROFILE_ID,
-            "added": True
+            "added": True,
         }
         mock_service.add_to_directory.return_value = mock_result
 
         response = planner_client.post(
             "/planner/ads/add-to-directory",
-            json={
-                "campaign_id": CAMPAIGN_ID,
-                "click_id": CLICK_ID
-            }
+            json={"campaign_id": CAMPAIGN_ID, "click_id": CLICK_ID},
         )
 
         assert response.status_code == 201
@@ -313,10 +325,7 @@ class TestAddToDirectory:
 
         response = admin_client.post(
             "/planner/ads/add-to-directory",
-            json={
-                "campaign_id": CAMPAIGN_ID,
-                "click_id": CLICK_ID
-            }
+            json={"campaign_id": CAMPAIGN_ID, "click_id": CLICK_ID},
         )
 
         assert response.status_code == 201
@@ -326,18 +335,14 @@ class TestAddToDirectory:
         """Vendor cannot add to directory."""
         response = vendor_client.post(
             "/planner/ads/add-to-directory",
-            json={
-                "campaign_id": CAMPAIGN_ID,
-                "click_id": CLICK_ID
-            }
+            json={"campaign_id": CAMPAIGN_ID, "click_id": CLICK_ID},
         )
         assert response.status_code == 403
 
     def test_add_to_directory_missing_campaign_id(self, planner_client):
         """Request missing campaign_id is rejected (422)."""
         response = planner_client.post(
-            "/planner/ads/add-to-directory",
-            json={"click_id": CLICK_ID}
+            "/planner/ads/add-to-directory", json={"click_id": CLICK_ID}
         )
         assert response.status_code == 422
 
@@ -347,40 +352,42 @@ class TestAddToDirectory:
         mock_service.add_to_directory.return_value = mock_result
 
         response = planner_client.post(
-            "/planner/ads/add-to-directory",
-            json={"campaign_id": CAMPAIGN_ID}
+            "/planner/ads/add-to-directory", json={"campaign_id": CAMPAIGN_ID}
         )
 
         assert response.status_code == 201
         call_kwargs = mock_service.add_to_directory.call_args.kwargs
         assert call_kwargs["click_id"] is None
 
-    def test_add_to_directory_service_called_with_correct_planner_id(self, planner_client, mock_service):
+    def test_add_to_directory_service_called_with_correct_planner_id(
+        self, planner_client, mock_service
+    ):
         """Service receives planner_id from auth user."""
         mock_service.add_to_directory.return_value = {"added": True}
 
         response = planner_client.post(
-            "/planner/ads/add-to-directory",
-            json={"campaign_id": CAMPAIGN_ID}
+            "/planner/ads/add-to-directory", json={"campaign_id": CAMPAIGN_ID}
         )
 
         assert response.status_code == 201
         call_kwargs = mock_service.add_to_directory.call_args.kwargs
         # planner_id removed per senior dev review — planner_email is the attribution field
 
-    def test_add_to_directory_returns_service_result(self, planner_client, mock_service):
+    def test_add_to_directory_returns_service_result(
+        self, planner_client, mock_service
+    ):
         """Endpoint returns result from service."""
         service_result = {
             "campaign_id": CAMPAIGN_ID,
             "vendor_profile_id": VENDOR_PROFILE_ID,
             "added": True,
-            "source": "sponsored_ad"
+            "source": "sponsored_ad",
         }
         mock_service.add_to_directory.return_value = service_result
 
         response = planner_client.post(
             "/planner/ads/add-to-directory",
-            json={"campaign_id": CAMPAIGN_ID, "click_id": CLICK_ID}
+            json={"campaign_id": CAMPAIGN_ID, "click_id": CLICK_ID},
         )
 
         assert response.status_code == 201
@@ -392,6 +399,7 @@ class TestAddToDirectory:
 # TESTS: POST /request-quote
 # =============================================================================
 
+
 class TestRequestQuote:
     """Tests for POST /planner/ads/request-quote endpoint."""
 
@@ -400,7 +408,7 @@ class TestRequestQuote:
         mock_result = {
             "campaign_id": CAMPAIGN_ID,
             "lead_id": str(ObjectId()),
-            "status": "sent"
+            "status": "sent",
         }
         mock_service.request_quote.return_value = mock_result
 
@@ -408,8 +416,8 @@ class TestRequestQuote:
             "/planner/ads/request-quote",
             json={
                 "campaign_id": CAMPAIGN_ID,
-                "message": "We love your work and would like to discuss pricing."
-            }
+                "message": "We love your work and would like to discuss pricing.",
+            },
         )
 
         assert response.status_code == 201
@@ -421,7 +429,10 @@ class TestRequestQuote:
         assert call_kwargs["campaign_id"] == CAMPAIGN_ID
         assert call_kwargs["planner_email"] == PLANNER_EMAIL
         assert call_kwargs["planner_name"] == PLANNER_NAME
-        assert call_kwargs["message"] == "We love your work and would like to discuss pricing."
+        assert (
+            call_kwargs["message"]
+            == "We love your work and would like to discuss pricing."
+        )
 
     def test_request_quote_admin_success(self, admin_client, mock_service):
         """Admin can request a quote."""
@@ -430,10 +441,7 @@ class TestRequestQuote:
 
         response = admin_client.post(
             "/planner/ads/request-quote",
-            json={
-                "campaign_id": CAMPAIGN_ID,
-                "message": "Quote request"
-            }
+            json={"campaign_id": CAMPAIGN_ID, "message": "Quote request"},
         )
 
         assert response.status_code == 201
@@ -443,26 +451,21 @@ class TestRequestQuote:
         """Vendor cannot request quote."""
         response = vendor_client.post(
             "/planner/ads/request-quote",
-            json={
-                "campaign_id": CAMPAIGN_ID,
-                "message": "Quote request"
-            }
+            json={"campaign_id": CAMPAIGN_ID, "message": "Quote request"},
         )
         assert response.status_code == 403
 
     def test_request_quote_missing_campaign_id(self, planner_client):
         """Request missing campaign_id is rejected."""
         response = planner_client.post(
-            "/planner/ads/request-quote",
-            json={"message": "Quote request"}
+            "/planner/ads/request-quote", json={"message": "Quote request"}
         )
         assert response.status_code == 422
 
     def test_request_quote_missing_message(self, planner_client):
         """Request missing message is rejected."""
         response = planner_client.post(
-            "/planner/ads/request-quote",
-            json={"campaign_id": CAMPAIGN_ID}
+            "/planner/ads/request-quote", json={"campaign_id": CAMPAIGN_ID}
         )
         assert response.status_code == 422
 
@@ -470,10 +473,7 @@ class TestRequestQuote:
         """Empty message is rejected (min_length=1)."""
         response = planner_client.post(
             "/planner/ads/request-quote",
-            json={
-                "campaign_id": CAMPAIGN_ID,
-                "message": ""
-            }
+            json={"campaign_id": CAMPAIGN_ID, "message": ""},
         )
         assert response.status_code == 422
 
@@ -482,10 +482,7 @@ class TestRequestQuote:
         long_message = "x" * 2001
         response = planner_client.post(
             "/planner/ads/request-quote",
-            json={
-                "campaign_id": CAMPAIGN_ID,
-                "message": long_message
-            }
+            json={"campaign_id": CAMPAIGN_ID, "message": long_message},
         )
         assert response.status_code == 422
 
@@ -497,7 +494,7 @@ class TestRequestQuote:
             "location": "New York",
             "guest_count": 150,
             "venue": "Central Park Pavilion",
-            "budget_range": "$50k-$75k"
+            "budget_range": "$50k-$75k",
         }
 
         response = planner_client.post(
@@ -505,8 +502,8 @@ class TestRequestQuote:
             json={
                 "campaign_id": CAMPAIGN_ID,
                 "message": "Interested in your services.",
-                "wedding_context": wedding_context
-            }
+                "wedding_context": wedding_context,
+            },
         )
 
         assert response.status_code == 201
@@ -523,8 +520,8 @@ class TestRequestQuote:
             json={
                 "campaign_id": CAMPAIGN_ID,
                 "message": "Quote request",
-                "wedding_id": wedding_id
-            }
+                "wedding_id": wedding_id,
+            },
         )
 
         assert response.status_code == 201
@@ -540,31 +537,32 @@ class TestRequestQuote:
             json={
                 "campaign_id": CAMPAIGN_ID,
                 "message": "Quote request",
-                "click_id": CLICK_ID
-            }
+                "click_id": CLICK_ID,
+            },
         )
 
         assert response.status_code == 201
         call_kwargs = mock_service.request_quote.call_args.kwargs
         assert call_kwargs["click_id"] == CLICK_ID
 
-    def test_request_quote_auto_add_to_directory_default_true(self, planner_client, mock_service):
+    def test_request_quote_auto_add_to_directory_default_true(
+        self, planner_client, mock_service
+    ):
         """auto_add_to_directory defaults to True."""
         mock_service.request_quote.return_value = {"status": "sent"}
 
         response = planner_client.post(
             "/planner/ads/request-quote",
-            json={
-                "campaign_id": CAMPAIGN_ID,
-                "message": "Quote request"
-            }
+            json={"campaign_id": CAMPAIGN_ID, "message": "Quote request"},
         )
 
         assert response.status_code == 201
         call_kwargs = mock_service.request_quote.call_args.kwargs
         assert call_kwargs["auto_add_to_directory"] is True
 
-    def test_request_quote_auto_add_to_directory_false(self, planner_client, mock_service):
+    def test_request_quote_auto_add_to_directory_false(
+        self, planner_client, mock_service
+    ):
         """auto_add_to_directory can be set to False."""
         mock_service.request_quote.return_value = {"status": "sent"}
 
@@ -573,8 +571,8 @@ class TestRequestQuote:
             json={
                 "campaign_id": CAMPAIGN_ID,
                 "message": "Quote request",
-                "auto_add_to_directory": False
-            }
+                "auto_add_to_directory": False,
+            },
         )
 
         assert response.status_code == 201
@@ -587,33 +585,31 @@ class TestRequestQuote:
 
         response = planner_client.post(
             "/planner/ads/request-quote",
-            json={
-                "campaign_id": CAMPAIGN_ID,
-                "message": "Quote request"
-            }
+            json={"campaign_id": CAMPAIGN_ID, "message": "Quote request"},
         )
 
         assert response.status_code == 201
         call_kwargs = mock_service.request_quote.call_args.kwargs
         assert call_kwargs["planner_name"] == PLANNER_NAME
 
-    def test_request_quote_planner_name_fallback_to_email(self, planner_client, mock_service):
+    def test_request_quote_planner_name_fallback_to_email(
+        self, planner_client, mock_service
+    ):
         """Planner name falls back to email if not in user_data."""
         # Create a user without name
         user_without_name = ExtendedAuthUser(
             email="planner2@example.com",
             role="wedding_planner",
-            user_data={"_id": ObjectId()}
+            user_data={"_id": ObjectId()},
         )
-        planner_client.app.dependency_overrides[require_planner_or_admin] = lambda: user_without_name
+        planner_client.app.dependency_overrides[require_planner_or_admin] = lambda: (
+            user_without_name
+        )
         mock_service.request_quote.return_value = {"status": "sent"}
 
         response = planner_client.post(
             "/planner/ads/request-quote",
-            json={
-                "campaign_id": CAMPAIGN_ID,
-                "message": "Quote request"
-            }
+            json={"campaign_id": CAMPAIGN_ID, "message": "Quote request"},
         )
 
         assert response.status_code == 201
@@ -627,16 +623,13 @@ class TestRequestQuote:
             "campaign_id": CAMPAIGN_ID,
             "lead_id": lead_id,
             "status": "sent",
-            "email_sent": True
+            "email_sent": True,
         }
         mock_service.request_quote.return_value = service_result
 
         response = planner_client.post(
             "/planner/ads/request-quote",
-            json={
-                "campaign_id": CAMPAIGN_ID,
-                "message": "Quote request"
-            }
+            json={"campaign_id": CAMPAIGN_ID, "message": "Quote request"},
         )
 
         assert response.status_code == 201
@@ -648,6 +641,7 @@ class TestRequestQuote:
 # TESTS: GET /directory-status
 # =============================================================================
 
+
 class TestCheckDirectoryStatus:
     """Tests for GET /planner/ads/directory-status endpoint."""
 
@@ -656,7 +650,7 @@ class TestCheckDirectoryStatus:
         mock_result = {
             "campaign_id": CAMPAIGN_ID,
             "in_directory": True,
-            "vendor_profile_id": VENDOR_PROFILE_ID
+            "vendor_profile_id": VENDOR_PROFILE_ID,
         }
         mock_service.check_directory_status.return_value = mock_result
 
@@ -698,12 +692,14 @@ class TestCheckDirectoryStatus:
         response = planner_client.get("/planner/ads/directory-status")
         assert response.status_code == 422
 
-    def test_check_directory_status_vendor_not_in_directory(self, planner_client, mock_service):
+    def test_check_directory_status_vendor_not_in_directory(
+        self, planner_client, mock_service
+    ):
         """Returns in_directory=False when vendor not added."""
         mock_result = {
             "campaign_id": CAMPAIGN_ID,
             "in_directory": False,
-            "vendor_profile_id": None
+            "vendor_profile_id": None,
         }
         mock_service.check_directory_status.return_value = mock_result
 
@@ -715,12 +711,14 @@ class TestCheckDirectoryStatus:
         data = response.json()
         assert data["in_directory"] is False
 
-    def test_check_directory_status_response_structure(self, planner_client, mock_service):
+    def test_check_directory_status_response_structure(
+        self, planner_client, mock_service
+    ):
         """Response has required fields."""
         mock_result = {
             "campaign_id": CAMPAIGN_ID,
             "in_directory": True,
-            "vendor_profile_id": VENDOR_PROFILE_ID
+            "vendor_profile_id": VENDOR_PROFILE_ID,
         }
         mock_service.check_directory_status.return_value = mock_result
 
@@ -739,15 +737,18 @@ class TestCheckDirectoryStatus:
 # INTEGRATION TESTS
 # =============================================================================
 
+
 class TestIntegrationFlows:
     """Integration-style tests across multiple endpoints."""
 
-    def test_flow_check_status_then_add_to_directory(self, planner_client, mock_service):
+    def test_flow_check_status_then_add_to_directory(
+        self, planner_client, mock_service
+    ):
         """Planner checks status, then adds to directory."""
         # Step 1: Check status (not in directory)
         mock_service.check_directory_status.return_value = {
             "campaign_id": CAMPAIGN_ID,
-            "in_directory": False
+            "in_directory": False,
         }
         response1 = planner_client.get(
             f"/planner/ads/directory-status?campaign_id={CAMPAIGN_ID}"
@@ -759,11 +760,11 @@ class TestIntegrationFlows:
         mock_service.add_to_directory.return_value = {
             "campaign_id": CAMPAIGN_ID,
             "vendor_profile_id": VENDOR_PROFILE_ID,
-            "added": True
+            "added": True,
         }
         response2 = planner_client.post(
             "/planner/ads/add-to-directory",
-            json={"campaign_id": CAMPAIGN_ID, "click_id": CLICK_ID}
+            json={"campaign_id": CAMPAIGN_ID, "click_id": CLICK_ID},
         )
         assert response2.status_code == 201
         assert response2.json()["added"] is True
@@ -775,9 +776,7 @@ class TestIntegrationFlows:
     def test_flow_get_cards_then_request_quote(self, planner_client, mock_service):
         """Planner gets sponsored cards, then requests quote from one."""
         # Step 1: Get sponsored cards
-        mock_cards = [
-            {"campaign_id": CAMPAIGN_ID, "vendor_name": "Florist"}
-        ]
+        mock_cards = [{"campaign_id": CAMPAIGN_ID, "vendor_name": "Florist"}]
         mock_service.get_sponsored_cards.return_value = mock_cards
         response1 = planner_client.get("/planner/ads/sponsored-cards")
         assert response1.status_code == 200
@@ -786,14 +785,11 @@ class TestIntegrationFlows:
         # Step 2: Request quote from one of the cards
         mock_service.request_quote.return_value = {
             "campaign_id": CAMPAIGN_ID,
-            "status": "sent"
+            "status": "sent",
         }
         response2 = planner_client.post(
             "/planner/ads/request-quote",
-            json={
-                "campaign_id": CAMPAIGN_ID,
-                "message": "Interested in your florals"
-            }
+            json={"campaign_id": CAMPAIGN_ID, "message": "Interested in your florals"},
         )
         assert response2.status_code == 201
         assert response2.json()["status"] == "sent"
@@ -807,7 +803,7 @@ class TestIntegrationFlows:
         mock_service.request_quote.return_value = {
             "campaign_id": CAMPAIGN_ID,
             "status": "sent",
-            "vendor_added_to_directory": True
+            "vendor_added_to_directory": True,
         }
 
         response = planner_client.post(
@@ -815,8 +811,8 @@ class TestIntegrationFlows:
             json={
                 "campaign_id": CAMPAIGN_ID,
                 "message": "Great work!",
-                "auto_add_to_directory": True
-            }
+                "auto_add_to_directory": True,
+            },
         )
 
         assert response.status_code == 201
@@ -830,6 +826,7 @@ class TestIntegrationFlows:
 # ERROR HANDLING TESTS
 # =============================================================================
 
+
 class TestErrorHandling:
     """Tests for error conditions and edge cases."""
 
@@ -838,7 +835,7 @@ class TestErrorHandling:
         response = planner_client.post(
             "/planner/ads/add-to-directory",
             content="not valid json",
-            headers={"Content-Type": "application/json"}
+            headers={"Content-Type": "application/json"},
         )
         assert response.status_code == 422
 
@@ -851,8 +848,8 @@ class TestErrorHandling:
             json={
                 "campaign_id": CAMPAIGN_ID,
                 "click_id": CLICK_ID,
-                "extra_field": "should be ignored"
-            }
+                "extra_field": "should be ignored",
+            },
         )
 
         assert response.status_code == 201
@@ -864,7 +861,9 @@ class TestErrorHandling:
         """Service exceptions are propagated as 500."""
         planner_user = make_mock_planner_user()
         app.dependency_overrides[require_planner_or_admin] = lambda: planner_user
-        app.dependency_overrides[get_planner_ad_interaction_service] = lambda: mock_service
+        app.dependency_overrides[get_planner_ad_interaction_service] = lambda: (
+            mock_service
+        )
         mock_service.get_sponsored_cards.side_effect = ValueError("Database error")
 
         client = TestClient(app, raise_server_exceptions=False)

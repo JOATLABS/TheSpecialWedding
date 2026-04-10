@@ -35,7 +35,9 @@ class FakeMongo:
 
 
 @pytest.fixture
-def vendor_service(monkeypatch) -> Tuple[vendor_dashboard_module.VendorDashboardService, mongomock.database.Database]:
+def vendor_service(
+    monkeypatch,
+) -> Tuple[vendor_dashboard_module.VendorDashboardService, mongomock.database.Database]:
     client = mongomock.MongoClient()
     database = client["wedding_vendor_dashboard"]
     fake_mongo = FakeMongo(database)

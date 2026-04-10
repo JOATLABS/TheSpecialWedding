@@ -22,21 +22,96 @@ from app.core.database import mongo, init_database  # noqa: E402
 
 # Standard placeholders available in all templates
 STANDARD_PLACEHOLDERS = [
-    {"key": "{{vendor_name}}", "label": "Vendor Business Name", "source": "vendor", "field_path": "business_name"},
-    {"key": "{{vendor_email}}", "label": "Vendor Email", "source": "vendor", "field_path": "email"},
-    {"key": "{{vendor_phone}}", "label": "Vendor Phone", "source": "vendor", "field_path": "phone"},
-    {"key": "{{vendor_address}}", "label": "Vendor Address", "source": "vendor", "field_path": "address"},
-    {"key": "{{couple_names}}", "label": "Couple Names", "source": "wedding", "field_path": "couple_names"},
-    {"key": "{{wedding_date}}", "label": "Wedding Date", "source": "wedding", "field_path": "date"},
-    {"key": "{{wedding_venue}}", "label": "Wedding Venue", "source": "wedding", "field_path": "venue"},
-    {"key": "{{total_amount}}", "label": "Total Contract Amount", "source": "contract", "field_path": "total_amount"},
-    {"key": "{{deposit_amount}}", "label": "Deposit Amount", "source": "contract", "field_path": "deposit_amount"},
-    {"key": "{{service_category}}", "label": "Service Category", "source": "vendor", "field_path": "service_category"},
-    {"key": "{{planner_name}}", "label": "Planner Name", "source": "planner", "field_path": "name"},
-    {"key": "{{planner_email}}", "label": "Planner Email", "source": "planner", "field_path": "email"},
-    {"key": "{{planner_company}}", "label": "Planner Company", "source": "planner", "field_path": "company_name"},
-    {"key": "{{contract_date}}", "label": "Contract Date", "source": "system", "field_path": "current_date"},
-    {"key": "{{contract_number}}", "label": "Contract Number", "source": "contract", "field_path": "contract_number"},
+    {
+        "key": "{{vendor_name}}",
+        "label": "Vendor Business Name",
+        "source": "vendor",
+        "field_path": "business_name",
+    },
+    {
+        "key": "{{vendor_email}}",
+        "label": "Vendor Email",
+        "source": "vendor",
+        "field_path": "email",
+    },
+    {
+        "key": "{{vendor_phone}}",
+        "label": "Vendor Phone",
+        "source": "vendor",
+        "field_path": "phone",
+    },
+    {
+        "key": "{{vendor_address}}",
+        "label": "Vendor Address",
+        "source": "vendor",
+        "field_path": "address",
+    },
+    {
+        "key": "{{couple_names}}",
+        "label": "Couple Names",
+        "source": "wedding",
+        "field_path": "couple_names",
+    },
+    {
+        "key": "{{wedding_date}}",
+        "label": "Wedding Date",
+        "source": "wedding",
+        "field_path": "date",
+    },
+    {
+        "key": "{{wedding_venue}}",
+        "label": "Wedding Venue",
+        "source": "wedding",
+        "field_path": "venue",
+    },
+    {
+        "key": "{{total_amount}}",
+        "label": "Total Contract Amount",
+        "source": "contract",
+        "field_path": "total_amount",
+    },
+    {
+        "key": "{{deposit_amount}}",
+        "label": "Deposit Amount",
+        "source": "contract",
+        "field_path": "deposit_amount",
+    },
+    {
+        "key": "{{service_category}}",
+        "label": "Service Category",
+        "source": "vendor",
+        "field_path": "service_category",
+    },
+    {
+        "key": "{{planner_name}}",
+        "label": "Planner Name",
+        "source": "planner",
+        "field_path": "name",
+    },
+    {
+        "key": "{{planner_email}}",
+        "label": "Planner Email",
+        "source": "planner",
+        "field_path": "email",
+    },
+    {
+        "key": "{{planner_company}}",
+        "label": "Planner Company",
+        "source": "planner",
+        "field_path": "company_name",
+    },
+    {
+        "key": "{{contract_date}}",
+        "label": "Contract Date",
+        "source": "system",
+        "field_path": "current_date",
+    },
+    {
+        "key": "{{contract_number}}",
+        "label": "Contract Number",
+        "source": "contract",
+        "field_path": "contract_number",
+    },
 ]
 
 
@@ -67,7 +142,7 @@ Planning Contact: {{planner_name}} ({{planner_email}})
 Company: {{planner_company}}
 
 Contract Reference: {{contract_number}}""",
-                "order": 1
+                "order": 1,
             },
             {
                 "id": str(ObjectId()),
@@ -77,7 +152,7 @@ Contract Reference: {{contract_number}}""",
 **Service Type:** {{service_category}}
 
 The Photographer agrees to provide photography services for the wedding celebration detailed above.""",
-                "order": 2
+                "order": 2,
             },
             {
                 "id": str(ObjectId()),
@@ -91,7 +166,7 @@ The Photographer agrees to provide photography services for the wedding celebrat
 
 **Coverage Hours:** As specified in the quote
 **Estimated Delivery:** 6-8 weeks after the event""",
-                "order": 3
+                "order": 3,
             },
             {
                 "id": str(ObjectId()),
@@ -103,8 +178,8 @@ The Photographer agrees to provide photography services for the wedding celebrat
 - Final Balance: Due 14 days before the wedding date
 
 All payments are non-refundable but may be applied to a rescheduled date.""",
-                "order": 4
-            }
+                "order": 4,
+            },
         ],
         "terms_and_conditions": """**TERMS AND CONDITIONS**
 
@@ -126,9 +201,13 @@ All payments are non-refundable but may be applied to a rescheduled date.""",
 Rescheduling is permitted with at least 30 days notice, subject to availability.""",
         "default_deposit_percentage": 50,
         "default_payment_schedule": [
-            {"percentage": 50, "description": "Deposit - Due upon signing", "days_before_event": None},
-            {"percentage": 50, "description": "Final Balance", "days_before_event": 14}
-        ]
+            {
+                "percentage": 50,
+                "description": "Deposit - Due upon signing",
+                "days_before_event": None,
+            },
+            {"percentage": 50, "description": "Final Balance", "days_before_event": 14},
+        ],
     },
     {
         "name": "Catering Services Contract",
@@ -155,7 +234,7 @@ AND
 Planning Contact: {{planner_name}} ({{planner_email}})
 
 Contract Reference: {{contract_number}}""",
-                "order": 1
+                "order": 1,
             },
             {
                 "id": str(ObjectId()),
@@ -165,7 +244,7 @@ Contract Reference: {{contract_number}}""",
 **Event Type:** Wedding Reception
 
 The Caterer agrees to provide food and beverage services for the wedding celebration.""",
-                "order": 2
+                "order": 2,
             },
             {
                 "id": str(ObjectId()),
@@ -180,7 +259,7 @@ The Caterer agrees to provide food and beverage services for the wedding celebra
 **Service Style:** [Plated/Buffet/Family Style]
 
 Final menu selections due 30 days before event.""",
-                "order": 3
+                "order": 3,
             },
             {
                 "id": str(ObjectId()),
@@ -193,8 +272,8 @@ Note: Final amount may vary based on confirmed guest count.
 - Deposit (25%): ${{deposit_amount}} due upon signing
 - Progress Payment (50%): Due 30 days before event
 - Final Balance (25%): Due on event day or within 7 days after""",
-                "order": 4
-            }
+                "order": 4,
+            },
         ],
         "terms_and_conditions": """**TERMS AND CONDITIONS**
 
@@ -216,10 +295,18 @@ Note: Final amount may vary based on confirmed guest count.
 Menu changes may be made up to 30 days before event without penalty.""",
         "default_deposit_percentage": 25,
         "default_payment_schedule": [
-            {"percentage": 25, "description": "Deposit - Due upon signing", "days_before_event": None},
-            {"percentage": 50, "description": "Progress Payment", "days_before_event": 30},
-            {"percentage": 25, "description": "Final Balance", "days_before_event": 0}
-        ]
+            {
+                "percentage": 25,
+                "description": "Deposit - Due upon signing",
+                "days_before_event": None,
+            },
+            {
+                "percentage": 50,
+                "description": "Progress Payment",
+                "days_before_event": 30,
+            },
+            {"percentage": 25, "description": "Final Balance", "days_before_event": 0},
+        ],
     },
     {
         "name": "Florist Services Contract",
@@ -238,7 +325,7 @@ Menu changes may be made up to 30 days before event without penalty.""",
 **Planner:** {{planner_name}} ({{planner_company}})
 
 Contract #: {{contract_number}}""",
-                "order": 1
+                "order": 1,
             },
             {
                 "id": str(ObjectId()),
@@ -247,7 +334,7 @@ Contract #: {{contract_number}}""",
 **Delivery Location:** {{wedding_venue}}
 
 Florist will deliver and set up all floral arrangements prior to the ceremony.""",
-                "order": 2
+                "order": 2,
             },
             {
                 "id": str(ObjectId()),
@@ -261,7 +348,7 @@ Florist will deliver and set up all floral arrangements prior to the ceremony.""
 - Additional items as specified
 
 *Final selections and quantities to be confirmed 6 weeks before event.*""",
-                "order": 3
+                "order": 3,
             },
             {
                 "id": str(ObjectId()),
@@ -270,8 +357,8 @@ Florist will deliver and set up all floral arrangements prior to the ceremony.""
 **Deposit:** ${{deposit_amount}} (due upon signing)
 
 Seasonal flower availability may affect final selections. Substitutions of equal or greater value may be made with client approval.""",
-                "order": 4
-            }
+                "order": 4,
+            },
         ],
         "terms_and_conditions": """**TERMS**
 
@@ -287,8 +374,8 @@ Seasonal flower availability may affect final selections. Substitutions of equal
         "default_deposit_percentage": 50,
         "default_payment_schedule": [
             {"percentage": 50, "description": "Deposit", "days_before_event": None},
-            {"percentage": 50, "description": "Final Balance", "days_before_event": 14}
-        ]
+            {"percentage": 50, "description": "Final Balance", "days_before_event": 14},
+        ],
     },
     {
         "name": "DJ/Music Services Contract",
@@ -308,7 +395,7 @@ Contract #: {{contract_number}}
 
 **Clients:** {{couple_names}}
 **Coordinator:** {{planner_name}} ({{planner_email}})""",
-                "order": 1
+                "order": 1,
             },
             {
                 "id": str(ObjectId()),
@@ -318,7 +405,7 @@ Contract #: {{contract_number}}
 **Event Type:** Wedding Reception
 
 **Service Hours:** [Start Time] - [End Time]""",
-                "order": 2
+                "order": 2,
             },
             {
                 "id": str(ObjectId()),
@@ -332,7 +419,7 @@ Contract #: {{contract_number}}
 - Dance floor lighting
 
 **Playlist Planning:** DJ will coordinate with clients for must-play and do-not-play lists.""",
-                "order": 3
+                "order": 3,
             },
             {
                 "id": str(ObjectId()),
@@ -341,8 +428,8 @@ Contract #: {{contract_number}}
 **Deposit:** ${{deposit_amount}}
 
 Overtime rate: $[X]/hour if event extends beyond contracted hours.""",
-                "order": 4
-            }
+                "order": 4,
+            },
         ],
         "terms_and_conditions": """**TERMS**
 
@@ -356,8 +443,8 @@ Deposit is non-refundable. Cancellation within 30 days requires full payment."""
         "default_deposit_percentage": 50,
         "default_payment_schedule": [
             {"percentage": 50, "description": "Deposit", "days_before_event": None},
-            {"percentage": 50, "description": "Balance Due", "days_before_event": 7}
-        ]
+            {"percentage": 50, "description": "Balance Due", "days_before_event": 7},
+        ],
     },
     {
         "name": "Venue Rental Contract",
@@ -378,7 +465,7 @@ Contract #: {{contract_number}}
 
 **Client:** {{couple_names}}
 **Event Coordinator:** {{planner_name}}""",
-                "order": 1
+                "order": 1,
             },
             {
                 "id": str(ObjectId()),
@@ -390,7 +477,7 @@ Contract #: {{contract_number}}
 - Setup Access: [Time]
 - Event: [Time] - [Time]
 - Breakdown Completion: [Time]""",
-                "order": 2
+                "order": 2,
             },
             {
                 "id": str(ObjectId()),
@@ -404,7 +491,7 @@ Contract #: {{contract_number}}
 - [Additional venue amenities]
 
 **Guest Capacity:** [Maximum guests allowed]""",
-                "order": 3
+                "order": 3,
             },
             {
                 "id": str(ObjectId()),
@@ -416,8 +503,8 @@ Contract #: {{contract_number}}
 - Balance Due: 30 days before event
 
 **Security Deposit:** [Amount] - Refundable pending damage inspection""",
-                "order": 4
-            }
+                "order": 4,
+            },
         ],
         "terms_and_conditions": """**TERMS AND CONDITIONS**
 
@@ -435,9 +522,13 @@ Contract #: {{contract_number}}
 Date changes subject to availability and may incur fees.""",
         "default_deposit_percentage": 50,
         "default_payment_schedule": [
-            {"percentage": 50, "description": "Deposit to Reserve Date", "days_before_event": None},
-            {"percentage": 50, "description": "Final Balance", "days_before_event": 30}
-        ]
+            {
+                "percentage": 50,
+                "description": "Deposit to Reserve Date",
+                "days_before_event": None,
+            },
+            {"percentage": 50, "description": "Final Balance", "days_before_event": 30},
+        ],
     },
     {
         "name": "Videography Services Contract",
@@ -456,7 +547,7 @@ Date: {{contract_date}} | Contract #: {{contract_number}}
 
 **Clients:** {{couple_names}}
 **Planner:** {{planner_name}} ({{planner_company}})""",
-                "order": 1
+                "order": 1,
             },
             {
                 "id": str(ObjectId()),
@@ -465,7 +556,7 @@ Date: {{contract_date}} | Contract #: {{contract_number}}
 **Location:** {{wedding_venue}}
 
 **Coverage:** [Hours of coverage]""",
-                "order": 2
+                "order": 2,
             },
             {
                 "id": str(ObjectId()),
@@ -478,7 +569,7 @@ Date: {{contract_date}} | Contract #: {{contract_number}}
 - Online delivery via private link
 
 **Delivery Timeline:** 12-16 weeks after event""",
-                "order": 3
+                "order": 3,
             },
             {
                 "id": str(ObjectId()),
@@ -486,8 +577,8 @@ Date: {{contract_date}} | Contract #: {{contract_number}}
                 "content": """**Total:** ${{total_amount}}
 **Deposit:** ${{deposit_amount}} (non-refundable)
 **Balance:** Due 2 weeks before wedding""",
-                "order": 4
-            }
+                "order": 4,
+            },
         ],
         "terms_and_conditions": """**TERMS**
 
@@ -499,8 +590,8 @@ Date: {{contract_date}} | Contract #: {{contract_number}}
         "default_deposit_percentage": 50,
         "default_payment_schedule": [
             {"percentage": 50, "description": "Deposit", "days_before_event": None},
-            {"percentage": 50, "description": "Final Balance", "days_before_event": 14}
-        ]
+            {"percentage": 50, "description": "Final Balance", "days_before_event": 14},
+        ],
     },
     {
         "name": "Generic Vendor Services Contract",
@@ -522,7 +613,7 @@ Contract #: {{contract_number}}
 **Client:**
 {{couple_names}}
 Contact: {{planner_name}} ({{planner_email}})""",
-                "order": 1
+                "order": 1,
             },
             {
                 "id": str(ObjectId()),
@@ -533,7 +624,7 @@ Contact: {{planner_name}} ({{planner_email}})""",
 
 **Service Description:**
 [Describe services to be provided]""",
-                "order": 2
+                "order": 2,
             },
             {
                 "id": str(ObjectId()),
@@ -543,17 +634,17 @@ Contact: {{planner_name}} ({{planner_email}})""",
 
 **Payment Schedule:**
 [Specify payment terms]""",
-                "order": 3
-            }
+                "order": 3,
+            },
         ],
         "terms_and_conditions": """[Add specific terms and conditions for this service]""",
         "cancellation_policy": """[Add cancellation policy]""",
         "default_deposit_percentage": 50,
         "default_payment_schedule": [
             {"percentage": 50, "description": "Deposit", "days_before_event": None},
-            {"percentage": 50, "description": "Final Balance", "days_before_event": 14}
-        ]
-    }
+            {"percentage": 50, "description": "Final Balance", "days_before_event": 14},
+        ],
+    },
 ]
 
 
@@ -567,10 +658,9 @@ async def seed_contract_templates():
 
     for template_data in DEFAULT_TEMPLATES:
         # Check if template already exists
-        existing = await collection.find_one({
-            "name": template_data["name"],
-            "is_system_template": True
-        })
+        existing = await collection.find_one(
+            {"name": template_data["name"], "is_system_template": True}
+        )
 
         if existing:
             print(f"  - Template '{template_data['name']}' already exists, skipping")
@@ -585,11 +675,13 @@ async def seed_contract_templates():
             "usage_count": 0,
             "created_by": "system@thespecialwedding.com",
             "created_at": datetime.utcnow(),
-            "updated_at": datetime.utcnow()
+            "updated_at": datetime.utcnow(),
         }
 
         result = await collection.insert_one(template)
-        print(f"  + Created template: {template_data['name']} (ID: {result.inserted_id})")
+        print(
+            f"  + Created template: {template_data['name']} (ID: {result.inserted_id})"
+        )
 
     # Create index
     await collection.create_index("service_category")

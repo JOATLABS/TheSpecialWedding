@@ -36,11 +36,15 @@ async def setup_admin_user(auto_create: bool = False):
     admin_password = os.environ.get("ROOT_ADMIN_PASSWORD")
 
     if not admin_email or not admin_password:
-        print("[SKIP] ROOT_ADMIN_EMAIL or ROOT_ADMIN_PASSWORD not set. Skipping admin setup.")
+        print(
+            "[SKIP] ROOT_ADMIN_EMAIL or ROOT_ADMIN_PASSWORD not set. Skipping admin setup."
+        )
         return True
 
     print(f"[INFO] Checking for root admin user: {admin_email}")
-    print("[INFO] TEST_* accounts are manual-flow fixtures and are not created by this script.")
+    print(
+        "[INFO] TEST_* accounts are manual-flow fixtures and are not created by this script."
+    )
 
     try:
         # Get collection (Motor connects lazily on first query)
@@ -63,8 +67,7 @@ async def setup_admin_user(auto_create: bool = False):
                 update_fields["role"] = "ROOT_ADMIN"
                 print("[UPDATED] Upgraded user role to ROOT_ADMIN")
             await users_collection.update_one(
-                {"email": admin_email},
-                {"$set": update_fields}
+                {"email": admin_email}, {"$set": update_fields}
             )
             print("[SYNCED] Password hash and active status synced from environment")
             return True
@@ -76,11 +79,13 @@ async def setup_admin_user(auto_create: bool = False):
             password_hash = get_password_hash(admin_password)
             await users_collection.update_one(
                 {"_id": existing_root["_id"]},
-                {"$set": {
-                    "email": admin_email,
-                    "password_hash": password_hash,
-                    "updated_at": datetime.now(timezone.utc),
-                }}
+                {
+                    "$set": {
+                        "email": admin_email,
+                        "password_hash": password_hash,
+                        "updated_at": datetime.now(timezone.utc),
+                    }
+                },
             )
             print(f"[MIGRATED] Root admin email updated: {old_email} → {admin_email}")
             return True
@@ -88,7 +93,7 @@ async def setup_admin_user(auto_create: bool = False):
         # Confirm creation in interactive mode
         if not auto_create:
             confirm = input(f"Create root admin user '{admin_email}'? [y/N]: ")
-            if confirm.lower() != 'y':
+            if confirm.lower() != "y":
                 print("[SKIP] Admin creation cancelled by user.")
                 return True
 
@@ -131,7 +136,7 @@ def main():
     parser.add_argument(
         "--auto-create",
         action="store_true",
-        help="Automatically create admin without confirmation (for Docker/CI)"
+        help="Automatically create admin without confirmation (for Docker/CI)",
     )
     args = parser.parse_args()
 

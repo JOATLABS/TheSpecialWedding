@@ -55,9 +55,15 @@ def _build_service() -> GalleryUploadService:
 
 
 def test_planner_scope_prefers_planner_id_and_avoids_email_leakage():
-    assert GalleryUploadService.get_planner_scope_from_wedding(
-        {"assigned_planner_id": "507F1F77BCF86CD799439011", "assigned_planner_email": "planner@example.com"}
-    ) == "planner-507f1f77bcf86cd799439011"
+    assert (
+        GalleryUploadService.get_planner_scope_from_wedding(
+            {
+                "assigned_planner_id": "507F1F77BCF86CD799439011",
+                "assigned_planner_email": "planner@example.com",
+            }
+        )
+        == "planner-507f1f77bcf86cd799439011"
+    )
 
     email_scope = GalleryUploadService.get_planner_scope_from_wedding(
         {"assigned_planner_email": "planner@example.com"}
@@ -67,7 +73,9 @@ def test_planner_scope_prefers_planner_id_and_avoids_email_leakage():
 
 
 def test_parse_wedding_storage_key_supports_legacy_and_planner_scoped_shapes():
-    legacy = GalleryUploadService.parse_wedding_storage_key("gallery/jane-john/20260405_photo.jpg")
+    legacy = GalleryUploadService.parse_wedding_storage_key(
+        "gallery/jane-john/20260405_photo.jpg"
+    )
     scoped = GalleryUploadService.parse_wedding_storage_key(
         "gallery/planner-507f1f77bcf86cd799439011/jane-john/20260405_photo.jpg"
     )
@@ -90,15 +98,29 @@ def test_list_wedding_files_deduplicates_legacy_copy_after_scoped_migration():
     service = _build_service()
     planner_scope = "planner-507f1f77bcf86cd799439011"
     legacy_prefix = service.build_wedding_storage_prefix("gallery", "jane-john")
-    scoped_prefix = service.build_wedding_storage_prefix("gallery", "jane-john", planner_scope)
+    scoped_prefix = service.build_wedding_storage_prefix(
+        "gallery", "jane-john", planner_scope
+    )
 
     files_by_prefix = {
         scoped_prefix: [
-            {"key": f"{scoped_prefix}20260405_a.jpg", "url": "https://cdn.example/scoped-a", "size": 1},
+            {
+                "key": f"{scoped_prefix}20260405_a.jpg",
+                "url": "https://cdn.example/scoped-a",
+                "size": 1,
+            },
         ],
         legacy_prefix: [
-            {"key": f"{legacy_prefix}20260405_a.jpg", "url": "https://cdn.example/legacy-a", "size": 1},
-            {"key": f"{legacy_prefix}20260405_b.jpg", "url": "https://cdn.example/legacy-b", "size": 1},
+            {
+                "key": f"{legacy_prefix}20260405_a.jpg",
+                "url": "https://cdn.example/legacy-a",
+                "size": 1,
+            },
+            {
+                "key": f"{legacy_prefix}20260405_b.jpg",
+                "url": "https://cdn.example/legacy-b",
+                "size": 1,
+            },
         ],
     }
 
@@ -116,7 +138,9 @@ def test_list_wedding_files_page_falls_back_to_legacy_when_scoped_prefix_is_empt
     service = _build_service()
     planner_scope = "planner-507f1f77bcf86cd799439011"
     legacy_prefix = service.build_wedding_storage_prefix("gallery", "jane-john")
-    scoped_prefix = service.build_wedding_storage_prefix("gallery", "jane-john", planner_scope)
+    scoped_prefix = service.build_wedding_storage_prefix(
+        "gallery", "jane-john", planner_scope
+    )
 
     def fake_page(prefix: str, limit: int, cursor: str | None = None):
         if prefix == scoped_prefix:
@@ -124,8 +148,16 @@ def test_list_wedding_files_page_falls_back_to_legacy_when_scoped_prefix_is_empt
         assert prefix == legacy_prefix
         return {
             "items": [
-                {"key": f"{legacy_prefix}20260405_a.jpg", "url": "https://cdn.example/legacy-a", "size": 1},
-                {"key": f"{legacy_prefix}20260405_b.jpg", "url": "https://cdn.example/legacy-b", "size": 1},
+                {
+                    "key": f"{legacy_prefix}20260405_a.jpg",
+                    "url": "https://cdn.example/legacy-a",
+                    "size": 1,
+                },
+                {
+                    "key": f"{legacy_prefix}20260405_b.jpg",
+                    "url": "https://cdn.example/legacy-b",
+                    "size": 1,
+                },
             ],
             "next_cursor": "legacy-token",
             "has_more": True,

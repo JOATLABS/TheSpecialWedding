@@ -40,12 +40,18 @@ class TestRSVPFlow:
         wedding_id = weddings[0].get("id") or weddings[0].get("_id")
         guests_resp = api.get(f"/admin/guests?wedding_id={wedding_id}")
         guests_data = guests_resp.json()
-        guests = guests_data if isinstance(guests_data, list) else guests_data.get("guests", guests_data.get("items", []))
+        guests = (
+            guests_data
+            if isinstance(guests_data, list)
+            else guests_data.get("guests", guests_data.get("items", []))
+        )
 
         if not guests:
             pytest.skip("No guests available for RSVP test")
 
-        guest_id = guests[0].get("id") or guests[0].get("_id") or guests[0].get("guest_id")
+        guest_id = (
+            guests[0].get("id") or guests[0].get("_id") or guests[0].get("guest_id")
+        )
 
         resp = api.put(
             f"/admin/rsvps/{guest_id}",
