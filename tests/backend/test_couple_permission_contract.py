@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
@@ -24,6 +24,81 @@ async def test_list_couples_requires_manage_couple_portal_permission() -> None:
 
     assert exc_info.value.status_code == 403
     assert "manage couple portal" in exc_info.value.detail.lower()
+
+
+@pytest.mark.asyncio
+async def test_list_couples_only_exposes_copyable_setup_link_for_active_invites(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    now = datetime.now(timezone.utc)
+
+    class FakeCursor:
+        def __init__(self, docs):
+            self._docs = iter(docs)
+
+        def sort(self, *_args, **_kwargs):
+            return self
+
+        def __aiter__(self):
+            return self
+
+        async def __anext__(self):
+            try:
+                return next(self._docs)
+            except StopIteration as exc:
+                raise StopAsyncIteration from exc
+
+    class FakeCouplesCollection:
+        def find(self, query):
+            assert query == {}
+            return FakeCursor(
+                [
+                    {
+                        "_id": "couple-live",
+                        "email": "live@example.com",
+                        "partner1_name": "Live",
+                        "wedding_id": "wedding-1",
+                        "is_active": False,
+                        "setup_completed": False,
+                        "invite_token": "live-token",
+                        "invite_token_expires": now + timedelta(days=1),
+                        "created_at": now,
+                    },
+                    {
+                        "_id": "couple-expired",
+                        "email": "expired@example.com",
+                        "partner1_name": "Expired",
+                        "wedding_id": "wedding-2",
+                        "is_active": False,
+                        "setup_completed": False,
+                        "invite_token": "expired-token",
+                        "invite_token_expires": now - timedelta(minutes=5),
+                        "created_at": now - timedelta(minutes=1),
+                    },
+                ]
+            )
+
+    fake_mongo = SimpleNamespace(
+        db={"couple_users": FakeCouplesCollection()},
+    )
+
+    monkeypatch.setattr(couple_invite_api, "mongo", fake_mongo)
+    monkeypatch.setattr(
+        couple_invite_api.settings,
+        "frontend_url",
+        "http://localhost:3000",
+        raising=False,
+    )
+
+    root_user = ExtendedAuthUser("thedeveloper@thespecialwedding.io", "ROOT_ADMIN", {})
+
+    result = await couple_invite_api.list_couples(current_user=root_user)
+    couples = {couple["email"]: couple for couple in result["couples"]}
+
+    assert couples["live@example.com"]["setup_link"] == "http://localhost:3000/couple/setup/live-token"
+    assert couples["live@example.com"]["setup_link_expires_at"] is not None
+    assert couples["expired@example.com"]["setup_link"] is None
+    assert couples["expired@example.com"]["setup_link_expires_at"] is not None
 
 
 @pytest.mark.asyncio

@@ -81,6 +81,38 @@ async def _ensure_unique_couple_email_for_wedding(email: str, wedding_id: str) -
         )
 
 
+def _normalize_invite_expiry(value: object) -> Optional[datetime]:
+    """Best-effort normalize an invite expiry value into an aware UTC datetime."""
+    if isinstance(value, datetime):
+        if value.tzinfo is None:
+            return value.replace(tzinfo=timezone.utc)
+        return value.astimezone(timezone.utc)
+
+    if isinstance(value, str):
+        try:
+            normalized = value.replace("Z", "+00:00")
+            parsed = datetime.fromisoformat(normalized)
+        except ValueError:
+            return None
+        if parsed.tzinfo is None:
+            return parsed.replace(tzinfo=timezone.utc)
+        return parsed.astimezone(timezone.utc)
+
+    return None
+
+
+def _build_active_setup_link(couple: dict, normalized_frontend_url: str) -> Optional[str]:
+    """Return the current setup link only when the invite token is still active."""
+    if couple.get("setup_completed") or not couple.get("invite_token"):
+        return None
+
+    invite_expires = _normalize_invite_expiry(couple.get("invite_token_expires"))
+    if invite_expires is None or invite_expires <= datetime.now(timezone.utc):
+        return None
+
+    return f"{normalized_frontend_url}/couple/setup/{couple['invite_token']}"
+
+
 @router.post("/couple-portal/invite", tags=["Couple Portal"])
 async def invite_couple(
     data: InviteCoupleRequest,
@@ -433,9 +465,14 @@ async def list_couples(
                 "access_state": couple_lifecycle_service.infer_stored_state(couple),
                 "setup_completed": couple.get("setup_completed", False),
                 "wedding_archived": couple.get("wedding_archived", False),
-                "setup_link": (
-                    f"{normalized_frontend_url}/couple/setup/{couple['invite_token']}"
-                    if couple.get("invite_token") and not couple.get("setup_completed")
+                "setup_link": _build_active_setup_link(
+                    couple, normalized_frontend_url
+                ),
+                "setup_link_expires_at": (
+                    _normalize_invite_expiry(
+                        couple.get("invite_token_expires")
+                    ).isoformat()
+                    if _normalize_invite_expiry(couple.get("invite_token_expires"))
                     else None
                 ),
                 "last_login": couple.get("last_login").isoformat()
