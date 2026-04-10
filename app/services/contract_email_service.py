@@ -4,11 +4,12 @@ Contract Email Service
 Sends contract lifecycle emails using Resend.
 """
 
-from typing import Dict, Any, Optional, List
-from datetime import date, datetime
 import logging
-from app.core.settings import settings
+from datetime import date, datetime
+from typing import Any, Dict, List, Optional
+
 from app.core.database import mongo
+from app.core.settings import settings
 from app.utils.payment_schedule import build_effective_payment_schedule
 
 logger = logging.getLogger(__name__)

@@ -9,16 +9,17 @@ Usage:
 """
 
 import asyncio
-import sys
 import os
-import stripe
+import sys
 from datetime import datetime, timezone
+
+import stripe
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
 
-from app.core.database import mongo, init_database  # noqa: E402
-from app.models.subscription import normalize_subscription_status  # noqa: E402
+from app.core.database import init_database, mongo  # noqa: E402
 from app.core.settings import settings  # noqa: E402
+from app.models.subscription import normalize_subscription_status  # noqa: E402
 
 
 async def sync(email: str):

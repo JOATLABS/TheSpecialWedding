@@ -2,115 +2,116 @@
 Optimized FastAPI application with enhanced security, performance monitoring, and caching
 """
 
+import asyncio
+import json
+import logging
+from contextlib import asynccontextmanager
+from datetime import datetime, timedelta, timezone
+
+from bson import ObjectId
 from fastapi import FastAPI, Request
 from fastapi.encoders import ENCODERS_BY_TYPE
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
-from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
-from contextlib import asynccontextmanager
-import asyncio
-import logging
-import json
-from bson import ObjectId
-from datetime import datetime, timezone, timedelta
 
-# Import settings and core components
-from app.core.settings import settings
-from app.core.database import init_database, close_database
-from app.core.cache import init_cache, close_cache, cache
-from app.core.database_indexes import create_all_indexes
-
-# Import middleware
-from app.middleware.error_handler import ErrorHandlerMiddleware
-from app.middleware.rate_limiting import RateLimitMiddleware
-from app.middleware.security_headers import SecurityHeadersMiddleware
-from app.middleware.audit_logging import AuditLoggingMiddleware
-from app.middleware.performance_monitoring import PerformanceMonitoringMiddleware
-
-# Import API routers
-from app.api.health import router as health_router
-from app.api.guest import router as guest_router
-from app.api.admin_import import router as import_router
-from app.api.rspv import router as rsvp_router
-from app.api.plus_one import router as plus_one_router
-from app.api.admin_rsvp import router as admin_rsvp_router
+from app.api.admin_activity import router as admin_activity_router
 from app.api.admin_auth import router as auth_router
-from app.api.reminder import router as reminder_router
-from app.api.reminder_telnyx import router as reminder_telnyx_router
-from app.api.reminder_twilio import router as reminder_twilio_router
-from app.api.email_reminders import router as email_reminder_router
-from app.api.gallery_public import router as gallery_public_router
-from app.api.gallery_admin import router as gallery_admin_router
-from app.api.wedding import router as wedding_router
-from app.api.reminder_utilities import router as reminder_utils_router
-from app.api.platform_metrics import router as platform_metrics_router
-from app.api.user_management import router as user_management_router
-from app.api.subscription_management import router as subscription_router
-from app.api.saas_config import router as saas_config_router
-from app.api.testimonials import router as testimonials_router
-from app.api.planner_metrics import router as planner_metrics_router
-from app.api.forms import router as forms_router
-from app.api.guest_verification import router as guest_verification_router
-from app.api.trial_management import router as trial_management_router
-from app.api.vendor_forms import router as vendor_forms_router
-from app.api.vendor_dashboard import router as vendor_dashboard_router
-from app.api.vendor_management import router as vendor_management_router
-from app.api.vendor_import import router as vendor_import_router
-from app.api.budget import router as budget_router
-from app.api.otp import router as otp_router
-from app.api.notification_management import router as notification_router
-from app.api.support_management import router as support_router
-from app.api.public_contact import router as public_contact_router
-from app.api.stripe_payment import router as stripe_router
-from app.api.admin_platform_metrics import router as admin_platform_metrics_router
 from app.api.admin_backup import router as backup_router
-from app.api.email_webhooks import router as email_webhooks_router
-from app.api.twilio_webhooks import router as twilio_webhooks_router
+from app.api.admin_campaigns import router as admin_campaigns_router
+from app.api.admin_import import router as import_router
+from app.api.admin_platform_config import router as admin_platform_config_router
+from app.api.admin_platform_metrics import router as admin_platform_metrics_router
+from app.api.admin_rsvp import router as admin_rsvp_router
+from app.api.ai import router as ai_router
+from app.api.autopilot import router as autopilot_router
+from app.api.behavioral_analytics import couple_router as couple_analytics_router
+from app.api.behavioral_analytics import router as behavioral_analytics_router
 from app.api.billing_jobs import router as billing_jobs_router
-from app.api.metering import router as metering_router
-from app.api.planner_calendar import router as planner_calendar_router
-from app.api.packages import router as packages_router
+from app.api.blog import router as blog_router
+from app.api.budget import router as budget_router
+from app.api.config_errors import router as config_errors_router
 from app.api.contracts import (
     client_contracts_admin_router,
     client_contracts_cron_router,
     client_contracts_public_router,
 )
-from app.api.autopilot import router as autopilot_router
-from app.api.ai import router as ai_router
-from app.api.planner_notifications import router as planner_notifications_router
-from app.api.tables import router as tables_router
-from app.api.config_errors import router as config_errors_router
-from app.api.admin_activity import router as admin_activity_router
-from app.api.scheduler_jobs import router as scheduler_jobs_router
-from app.api.guest_export import router as guest_export_router
-from app.api.web_push import router as web_push_router
-from app.api.knowledge_base import router as knowledge_base_router
-from app.api.vendor_contract_public import router as vendor_contract_public_router
-from app.api.notification_stream import router as notification_stream_router
-from app.api.couple_notification_stream import (
-    router as couple_notification_stream_router,
-)
-from app.api.team_management import router as team_management_router
-from app.api.inbound_emails import router as inbound_emails_router
-
-from app.api.vendor_campaigns import router as vendor_campaigns_router
-from app.api.admin_campaigns import router as admin_campaigns_router
-from app.api.planner_ad_interactions import router as planner_ad_interactions_router
-from app.api.admin_platform_config import router as admin_platform_config_router
-from app.api.planner_ad_preferences import router as planner_ad_preferences_router
-from app.api.vendor_public import router as vendor_public_router
-from app.api.vendor_signup import router as vendor_signup_router
-from app.api.blog import router as blog_router
-from app.api.guest_memories import router as guest_memories_router
-from app.api.behavioral_analytics import router as behavioral_analytics_router
-from app.api.behavioral_analytics import couple_router as couple_analytics_router
 
 # Couple Portal routers
 from app.api.couple_auth import router as couple_auth_router
 from app.api.couple_invite import router as couple_invite_router
+from app.api.couple_notification_stream import (
+    router as couple_notification_stream_router,
+)
 from app.api.couple_portal import router as couple_portal_router
+from app.api.email_reminders import router as email_reminder_router
+from app.api.email_webhooks import router as email_webhooks_router
+from app.api.forms import router as forms_router
+from app.api.gallery_admin import router as gallery_admin_router
+from app.api.gallery_public import router as gallery_public_router
+from app.api.guest import router as guest_router
+from app.api.guest_export import router as guest_export_router
+from app.api.guest_memories import router as guest_memories_router
+from app.api.guest_verification import router as guest_verification_router
+
+# Import API routers
+from app.api.health import router as health_router
+from app.api.inbound_emails import router as inbound_emails_router
+from app.api.knowledge_base import router as knowledge_base_router
+from app.api.metering import router as metering_router
+from app.api.notification_management import router as notification_router
+from app.api.notification_stream import router as notification_stream_router
+from app.api.otp import router as otp_router
+from app.api.packages import router as packages_router
+from app.api.planner_ad_interactions import router as planner_ad_interactions_router
+from app.api.planner_ad_preferences import router as planner_ad_preferences_router
+from app.api.planner_calendar import router as planner_calendar_router
+from app.api.planner_metrics import router as planner_metrics_router
+from app.api.planner_notifications import router as planner_notifications_router
+from app.api.platform_metrics import router as platform_metrics_router
+from app.api.plus_one import router as plus_one_router
+from app.api.public_contact import router as public_contact_router
+from app.api.reminder import router as reminder_router
+from app.api.reminder_telnyx import router as reminder_telnyx_router
+from app.api.reminder_twilio import router as reminder_twilio_router
+from app.api.reminder_utilities import router as reminder_utils_router
+from app.api.rspv import router as rsvp_router
+from app.api.saas_config import router as saas_config_router
+from app.api.scheduler_jobs import router as scheduler_jobs_router
+from app.api.stripe_payment import router as stripe_router
+from app.api.subscription_management import router as subscription_router
+from app.api.support_management import router as support_router
+from app.api.tables import router as tables_router
+from app.api.team_management import router as team_management_router
+from app.api.testimonials import router as testimonials_router
+from app.api.trial_management import router as trial_management_router
+from app.api.twilio_webhooks import router as twilio_webhooks_router
+from app.api.user_management import router as user_management_router
+from app.api.vendor_campaigns import router as vendor_campaigns_router
+from app.api.vendor_contract_public import router as vendor_contract_public_router
+from app.api.vendor_dashboard import router as vendor_dashboard_router
+from app.api.vendor_forms import router as vendor_forms_router
+from app.api.vendor_import import router as vendor_import_router
+from app.api.vendor_management import router as vendor_management_router
+from app.api.vendor_public import router as vendor_public_router
+from app.api.vendor_signup import router as vendor_signup_router
+from app.api.web_push import router as web_push_router
+from app.api.wedding import router as wedding_router
+from app.core.cache import cache, close_cache, init_cache
+from app.core.database import close_database, init_database
+from app.core.database_indexes import create_all_indexes
+
+# Import settings and core components
+from app.core.settings import settings
+from app.middleware.audit_logging import AuditLoggingMiddleware
+
+# Import middleware
+from app.middleware.error_handler import ErrorHandlerMiddleware
+from app.middleware.performance_monitoring import PerformanceMonitoringMiddleware
+from app.middleware.rate_limiting import RateLimitMiddleware
+from app.middleware.security_headers import SecurityHeadersMiddleware
 
 # Setup logging
 logging.basicConfig(
@@ -160,9 +161,10 @@ def _build_scheduler_holder_id() -> str:
 
 async def _acquire_scheduler_leadership(holder_id: str) -> bool:
     """Acquire or renew the singleton scheduler lease in MongoDB."""
-    from app.core.database import mongo
     from pymongo import ReturnDocument
     from pymongo.errors import DuplicateKeyError
+
+    from app.core.database import mongo
 
     now = datetime.now(timezone.utc)
     expires_at = now + timedelta(seconds=SCHEDULER_LEASE_TTL_SECONDS)
@@ -1023,7 +1025,7 @@ if __name__ == "__main__":
 
     uvicorn.run(
         "app.main:app",
-        host="0.0.0.0",
+        host="0.0.0.0",  # nosec B104
         port=8000,
         reload=settings.is_development(),
         log_level="info",

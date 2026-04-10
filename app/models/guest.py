@@ -1,10 +1,12 @@
-from pydantic import BaseModel, Field, field_validator, field_serializer
-from typing import Optional
-from datetime import datetime
 import re
+from datetime import datetime
+from typing import Optional
+
+from pydantic import BaseModel, Field, field_serializer, field_validator
+
 from app.utils.contact_sanitizer import (
-    sanitize_phone,
     sanitize_email,
+    sanitize_phone,
     validate_email_format,
 )
 

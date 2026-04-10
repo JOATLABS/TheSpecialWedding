@@ -6,6 +6,7 @@ Used by couple_portal.py and couple_auth.py endpoints.
 """
 
 from fastapi import HTTPException, Request
+
 from app.core.database import mongo
 from app.services.couple_lifecycle_service import couple_lifecycle_service
 from app.utils.auth_utils import verify_token

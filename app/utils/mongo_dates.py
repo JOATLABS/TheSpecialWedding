@@ -1,7 +1,6 @@
 from datetime import date, datetime, time, timezone
 from typing import Optional, Union
 
-
 MongoDateLike = Optional[Union[date, datetime]]
 
 

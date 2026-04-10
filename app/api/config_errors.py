@@ -5,14 +5,15 @@ Public endpoint for frontend to report critical configuration errors.
 Rate-limited and deduplicated to prevent abuse.
 """
 
-import logging
-import uuid
-import re
 import hashlib
+import logging
+import re
+import uuid
 from datetime import datetime, timedelta, timezone
-from typing import Optional, Dict, Any
+from typing import Any, Dict, Optional
+
+from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, field_validator
-from fastapi import APIRouter, Request, HTTPException
 
 from app.core.database import mongo
 from app.core.settings import settings
@@ -87,7 +88,8 @@ def _is_duplicate(report: ConfigErrorReport) -> bool:
         del _recent_errors[k]
 
     error_hash = hashlib.md5(
-        f"{report.error_type}:{report.variable_name}:{report.hostname}".encode()
+        f"{report.error_type}:{report.variable_name}:{report.hostname}".encode(),
+        usedforsecurity=False,
     ).hexdigest()
 
     if error_hash in _recent_errors:

@@ -7,7 +7,7 @@ from typing import Any, Dict, Optional
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, status
 
 from app.core.config import settings
-from app.dependencies.auth_extended import require_root_admin, ExtendedAuthUser
+from app.dependencies.auth_extended import ExtendedAuthUser, require_root_admin
 from app.services.platform_metrics_service import service as metrics_service
 
 logger = logging.getLogger(__name__)
@@ -41,12 +41,16 @@ def _serialize_snapshot_response(document: Dict[str, Any]) -> Dict[str, Any]:
     return {
         "id": document.get("id"),
         "timestamp": document.get("timestamp"),
-        "snapshot_time": snapshot_time.isoformat()
-        if isinstance(snapshot_time, datetime)
-        else snapshot_time,
-        "ingested_at": ingested_at.isoformat()
-        if isinstance(ingested_at, datetime)
-        else ingested_at,
+        "snapshot_time": (
+            snapshot_time.isoformat()
+            if isinstance(snapshot_time, datetime)
+            else snapshot_time
+        ),
+        "ingested_at": (
+            ingested_at.isoformat()
+            if isinstance(ingested_at, datetime)
+            else ingested_at
+        ),
         "metrics": document.get("metrics", {}),
     }
 

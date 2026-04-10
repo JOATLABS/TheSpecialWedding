@@ -1,16 +1,17 @@
-import os
-import boto3
-import qrcode
-import logging
 import hashlib
+import logging
+import os
 import re
+from datetime import datetime, timezone
+from io import BytesIO
 from typing import Iterable, Optional
 from urllib.parse import urlparse
-from io import BytesIO
-from botocore.exceptions import ClientError
+
+import boto3
+import qrcode
 from botocore.config import Config
+from botocore.exceptions import ClientError
 from fastapi import HTTPException, UploadFile
-from datetime import datetime, timezone
 from fastapi.responses import StreamingResponse
 
 logger = logging.getLogger(__name__)
@@ -443,9 +444,11 @@ class GalleryUploadService:
 
         return {
             "items": combined_items,
-            "next_cursor": self._encode_scoped_cursor("legacy", legacy_cursor)
-            if legacy_has_more
-            else None,
+            "next_cursor": (
+                self._encode_scoped_cursor("legacy", legacy_cursor)
+                if legacy_has_more
+                else None
+            ),
             "has_more": legacy_has_more,
         }
 
@@ -650,9 +653,11 @@ class AdUploadService:
             files = [
                 {
                     "key": obj["Key"],
-                    "url": f"{AD_MEDIA_DOMAIN}/{obj['Key']}"
-                    if AD_MEDIA_DOMAIN
-                    else obj["Key"],
+                    "url": (
+                        f"{AD_MEDIA_DOMAIN}/{obj['Key']}"
+                        if AD_MEDIA_DOMAIN
+                        else obj["Key"]
+                    ),
                     "size": obj.get("Size", 0),
                 }
                 for obj in response["Contents"]

@@ -1,12 +1,13 @@
+import logging
+import os
+from html import escape
+from typing import Optional
+
 from fastapi import APIRouter, BackgroundTasks, HTTPException, status
 from pydantic import BaseModel, EmailStr, Field
-from typing import Optional
-from html import escape
-import os
-import logging
 
-from app.services.notification_service import NotificationService
 from app.services.email_service_resend import ResendEmailService
+from app.services.notification_service import NotificationService
 
 logger = logging.getLogger(__name__)
 
@@ -117,8 +118,10 @@ async def submit_contact_request(
 
     return ContactSalesResponse(
         message="Thanks! We received your request.",
-        notification_id=notification_result.get("id")
-        if isinstance(notification_result, dict)
-        else None,
+        notification_id=(
+            notification_result.get("id")
+            if isinstance(notification_result, dict)
+            else None
+        ),
         email_sent=email_sent,
     )

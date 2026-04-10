@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
 import { useAdmin } from '@/contexts/AdminContext';
@@ -11,6 +11,7 @@ import GoogleCalendarConnect from './components/GoogleCalendarConnect';
 import {
   CalendarConnection,
   CATEGORY_LABELS,
+  createCalendarMutationIntent,
   deleteMeeting,
   deleteTask,
   getSharedCalendarView,
@@ -88,6 +89,7 @@ export default function PlannerCalendarPage() {
   const { token, userProfile, fetchUserProfile, isLoading: authLoading } = useAdmin();
   const router = useRouter();
   const { confirm } = useConfirmDialog();
+  const deleteMutationIntentsRef = useRef<Map<string, string>>(new Map());
 
   const [currentYear, setCurrentYear] = useState(new Date().getFullYear());
   const [currentMonth, setCurrentMonth] = useState(new Date().getMonth());
@@ -389,7 +391,13 @@ export default function PlannerCalendarPage() {
 
     try {
       if (task.schedule_item_type === 'meeting' || task.category === 'meeting') {
-        await deleteMeeting(token, task.id);
+        const deleteIntentKey = `${task.id}:${task.version}`;
+        const mutationIntent =
+          deleteMutationIntentsRef.current.get(deleteIntentKey) ||
+          createCalendarMutationIntent();
+        deleteMutationIntentsRef.current.set(deleteIntentKey, mutationIntent);
+        await deleteMeeting(token, task.id, task.version, mutationIntent);
+        deleteMutationIntentsRef.current.delete(deleteIntentKey);
       } else {
         await deleteTask(token, task.id);
       }

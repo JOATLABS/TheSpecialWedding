@@ -6,33 +6,33 @@ invite, accept, update, deactivate, reactivate, remove team members,
 seat limit enforcement, and permission resolution.
 """
 
+import asyncio
+import logging
 import secrets
 import string
-import logging
-import asyncio
 from datetime import datetime, timedelta, timezone
-from typing import Optional, List, Dict, Any
+from typing import Any, Dict, List, Optional
 
 from bson import ObjectId
 from fastapi import HTTPException, status
 
 from app.core.config import settings
 from app.core.database import mongo
-from app.utils.auth_utils import get_password_hash
-from app.utils.id_utils import to_object_id, to_str_id
-from app.services.email_service_resend import ResendEmailService
-from app.services.activity_log_service import activity_log_service
-from app.models.subscription import ACTIVE_SUBSCRIPTION_STATUSES
-from app.models.team_member import (
-    TeamMemberStatus,
-    ROLE_PRESETS,
-    resolve_team_permissions,
-)
-from app.utils.planner_ownership import build_wedding_owner_query
 from app.dependencies.auth_extended import (
     invalidate_team_cache,
     invalidate_team_cache_by_owner,
 )
+from app.models.subscription import ACTIVE_SUBSCRIPTION_STATUSES
+from app.models.team_member import (
+    ROLE_PRESETS,
+    TeamMemberStatus,
+    resolve_team_permissions,
+)
+from app.services.activity_log_service import activity_log_service
+from app.services.email_service_resend import ResendEmailService
+from app.utils.auth_utils import get_password_hash
+from app.utils.id_utils import to_object_id, to_str_id
+from app.utils.planner_ownership import build_wedding_owner_query
 
 logger = logging.getLogger(__name__)
 

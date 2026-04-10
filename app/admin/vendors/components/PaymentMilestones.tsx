@@ -28,7 +28,23 @@ import {
   type PaymentMilestone,
 } from '@/services/vendorContractsApi';
 
-interface PaymentMilestonesProps {
+export interface PaymentMilestonesServices {
+  getPaymentMilestones: typeof getPaymentMilestones;
+  createPaymentMilestones: typeof createPaymentMilestones;
+  recordPayment: typeof recordPayment;
+  createPaymentLink: typeof createPaymentLink;
+  sendPaymentLink: typeof sendPaymentLink;
+}
+
+const defaultPaymentMilestonesServices: PaymentMilestonesServices = {
+  getPaymentMilestones,
+  createPaymentMilestones,
+  recordPayment,
+  createPaymentLink,
+  sendPaymentLink,
+};
+
+export interface PaymentMilestonesProps {
   token: string;
   contractId?: string;
   weddingId?: string;
@@ -41,6 +57,12 @@ interface PaymentMilestonesProps {
   totalAmount?: number;
   readOnly?: boolean;
   onMilestoneUpdated?: () => void;
+  services?: PaymentMilestonesServices;
+  initialNewMilestones?: Array<{
+    description: string;
+    amount: string;
+    due_date: string;
+  }>;
 }
 
 export function PaymentMilestones({
@@ -56,6 +78,8 @@ export function PaymentMilestones({
   totalAmount,
   readOnly = false,
   onMilestoneUpdated,
+  services = defaultPaymentMilestonesServices,
+  initialNewMilestones = [{ description: '', amount: '', due_date: '' }],
 }: PaymentMilestonesProps) {
   const [milestones, setMilestones] = useState<PaymentMilestone[]>([]);
   const [loading, setLoading] = useState(true);
@@ -72,7 +96,7 @@ export function PaymentMilestones({
     description: string;
     amount: string;
     due_date: string;
-  }>>([{ description: '', amount: '', due_date: '' }]);
+  }>>(initialNewMilestones);
 
   // Record payment form
   const [paymentAmount, setPaymentAmount] = useState('');
@@ -83,7 +107,7 @@ export function PaymentMilestones({
   const fetchMilestones = useCallback(async () => {
     setLoading(true);
     try {
-      const data = await getPaymentMilestones(
+      const data = await services.getPaymentMilestones(
         token,
         buildPaymentMilestonesQuery(contractId, weddingId)
       );
@@ -93,7 +117,7 @@ export function PaymentMilestones({
     } finally {
       setLoading(false);
     }
-  }, [token, contractId, weddingId]);
+  }, [token, contractId, weddingId, services]);
 
   // Fetch milestones
   useEffect(() => {
@@ -128,7 +152,7 @@ export function PaymentMilestones({
 
     try {
       setActionLoading(true);
-      await createPaymentMilestones(
+      await services.createPaymentMilestones(
         token,
         contractId,
         validMilestones.map(m => ({
@@ -160,7 +184,7 @@ export function PaymentMilestones({
 
     try {
       setActionLoading(true);
-      await recordPayment(token, selectedMilestone._id, {
+      await services.recordPayment(token, selectedMilestone._id, {
         amount,
         payment_method: paymentMethod,
         payment_date: paymentDate,
@@ -187,7 +211,7 @@ export function PaymentMilestones({
     try {
       setActionLoading(true);
 
-      const paymentLink = await createPaymentLink(token, {
+      const paymentLink = await services.createPaymentLink(token, {
         payer_type: 'couple',
         payer_email: coupleEmail,
         payer_name: coupleNames || 'The Couple',
@@ -202,7 +226,7 @@ export function PaymentMilestones({
         milestone_id: selectedMilestone._id,
       });
 
-      await sendPaymentLink(token, paymentLink._id);
+      await services.sendPaymentLink(token, paymentLink._id);
       toast.success(`Payment link sent to ${coupleEmail}`);
       setShowSendLinkModal(false);
       setSelectedMilestone(null);

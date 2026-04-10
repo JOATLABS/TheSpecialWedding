@@ -14,16 +14,14 @@ Routes:
 """
 
 import logging
+import re
+from typing import List, Optional
+
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field, field_validator
-from typing import Optional, List
-import re
 
-from app.dependencies.auth_extended import (
-    get_current_user_extended,
-    ExtendedAuthUser,
-)
 from app.core.database import mongo
+from app.dependencies.auth_extended import ExtendedAuthUser, get_current_user_extended
 from app.services.vendor_signup_service import VendorSignupService
 
 logger = logging.getLogger(__name__)
@@ -276,9 +274,11 @@ async def vendor_get_push_status(
         "message": (
             "Push notifications are active"
             if is_subscribed
-            else "Not subscribed to push notifications"
-            if is_enabled
-            else "Push notifications not configured on server"
+            else (
+                "Not subscribed to push notifications"
+                if is_enabled
+                else "Push notifications not configured on server"
+            )
         ),
     }
 

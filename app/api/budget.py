@@ -1,20 +1,22 @@
-from fastapi import APIRouter, HTTPException, Depends, Query, Body
-from typing import List, Dict, Optional, Any
+import logging
+from typing import Any, Dict, List, Optional
+
+from bson import ObjectId
+from fastapi import APIRouter, Body, Depends, HTTPException, Query
 from pydantic import BaseModel, Field, model_validator
-from app.services.budget_service import BudgetService
+
 from app.dependencies.auth_extended import (
     ExtendedAuthUser,
     check_wedding_access,
-    require_wedding_planner,
-    require_admin_or_planner,
-    require_team_or_planner,
     enforce_team_permission,
     get_accessible_wedding_ids,
+    require_admin_or_planner,
+    require_team_or_planner,
+    require_wedding_planner,
 )
+from app.services.budget_service import BudgetService
+from app.utils.query_validation import validated_boolean_filter, validated_string_filter
 from app.utils.response import dict_response
-from app.utils.query_validation import validated_string_filter, validated_boolean_filter
-import logging
-from bson import ObjectId
 
 logger = logging.getLogger(__name__)
 
@@ -172,9 +174,11 @@ async def get_budget_payments_overview(
             if accessible_ids is not None:
                 weddings_query["_id"] = {
                     "$in": [
-                        ObjectId(wedding_id)
-                        if ObjectId.is_valid(wedding_id)
-                        else wedding_id
+                        (
+                            ObjectId(wedding_id)
+                            if ObjectId.is_valid(wedding_id)
+                            else wedding_id
+                        )
                         for wedding_id in accessible_ids
                     ]
                 }

@@ -1,11 +1,13 @@
+import asyncio
+import logging
+from datetime import datetime, timezone
+from typing import Dict, List, Optional
+
+from bson import ObjectId
 from fastapi import HTTPException
+
 from app.core.database import mongo
 from app.services.email_service_resend import ResendEmailService
-from typing import List, Dict, Optional
-from datetime import datetime, timezone
-from bson import ObjectId
-import logging
-import asyncio
 
 logger = logging.getLogger(__name__)
 
@@ -293,7 +295,9 @@ class NotificationService:
                                 "error": result.get("error", "Unknown error"),
                             }
                         )
-                except Exception as email_error:  # noqa: BLE001 - capture and record delivery issues
+                except (
+                    Exception
+                ) as email_error:  # noqa: BLE001 - capture and record delivery issues
                     logger.error(
                         "Error sending notification email to %s: %s",
                         recipient.get("email"),
@@ -768,7 +772,9 @@ class NotificationService:
                 )
                 if user:
                     return user
-        except Exception as exc:  # noqa: BLE001 - capture lookup issues without aborting send
+        except (
+            Exception
+        ) as exc:  # noqa: BLE001 - capture lookup issues without aborting send
             logger.debug(
                 "Failed ObjectId lookup for user identifier %s: %s",
                 identifier,

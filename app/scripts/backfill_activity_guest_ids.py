@@ -17,12 +17,13 @@ Usage:
     python -m app.scripts.backfill_activity_guest_ids --verbose
 """
 
-import asyncio
 import argparse
+import asyncio
 import logging
 from collections import defaultdict
 
 from motor.motor_asyncio import AsyncIOMotorClient
+
 from app.core.config import settings
 
 logging.basicConfig(

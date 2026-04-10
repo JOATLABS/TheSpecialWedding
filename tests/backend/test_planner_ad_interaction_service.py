@@ -12,7 +12,7 @@ Total: 30+ tests
 
 import os
 import sys
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock
 
@@ -31,17 +31,16 @@ os.environ.setdefault("ALGORITHM", "HS256")
 os.environ.setdefault("API_KEY", "test-api-key")
 os.environ.setdefault("ROOT_ADMIN_EMAIL", "thedeveloper@thespecialwedding.io")
 
-from app.services.planner_ad_interaction_service import PlannerAdInteractionService
 from app.models.advertising_campaign import CampaignStatus
+from app.services.planner_ad_interaction_service import PlannerAdInteractionService
 from tests.backend.conftest_advertising import (
+    VENDOR_EMAIL,
+    VENDOR_ID,
+    VENDOR_NAME,
     AsyncMockDatabase,
     make_campaign,
     make_creative,
-    VENDOR_ID,
-    VENDOR_EMAIL,
-    VENDOR_NAME,
 )
-
 
 # =============================================================================
 # FIXTURES

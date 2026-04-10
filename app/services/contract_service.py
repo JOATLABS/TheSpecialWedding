@@ -5,11 +5,13 @@ Manages contract lifecycle from creation to completion.
 Handles signing, payment method capture, and status transitions.
 """
 
-from typing import List, Dict, Optional, Any
-from datetime import datetime, date, timedelta, timezone
-from decimal import Decimal
 import logging
+from datetime import date, datetime, timedelta, timezone
+from decimal import Decimal
+from typing import Any, Dict, List, Optional
+
 from bson import ObjectId
+
 from app.core.database import mongo
 from app.models.autopilot import ContractSignature, ScheduledPayment
 from app.utils.mongo_dates import to_mongo_datetime
@@ -633,6 +635,7 @@ class ContractService:
         """
         try:
             import stripe
+
             from app.core.settings import settings
 
             if not settings.stripe_secret_key:
@@ -737,9 +740,11 @@ class ContractService:
                     {"_id": payment["_id"]},
                     {
                         "$set": {
-                            "status": "failed"
-                            if payment_intent.status == "canceled"
-                            else "processing",
+                            "status": (
+                                "failed"
+                                if payment_intent.status == "canceled"
+                                else "processing"
+                            ),
                             "stripe_payment_intent_id": payment_intent.id,
                             "updated_at": datetime.now(timezone.utc),
                         }
@@ -1112,6 +1117,7 @@ class ContractService:
         """
         try:
             import stripe
+
             from app.core.settings import settings
 
             stripe.api_key = settings.stripe_secret_key

@@ -8,11 +8,21 @@ Sprint 1: Setup, login, verify, profile
 Sprint 3: Forgot password, password reset
 """
 
-from fastapi import APIRouter, HTTPException, Depends, Response
-from pydantic import BaseModel, Field
+import logging
+import secrets
+from datetime import datetime, timedelta, timezone
 from typing import Optional
-from datetime import datetime, timezone, timedelta
+
+from fastapi import APIRouter, Depends, HTTPException, Response
+from pydantic import BaseModel, Field
+
 from app.core.database import mongo
+from app.dependencies.couple_auth import require_couple_auth
+from app.services.couple_lifecycle_service import (
+    COUPLE_PORTAL_STATE_ARCHIVED,
+    COUPLE_PORTAL_STATE_PENDING_SETUP,
+    couple_lifecycle_service,
+)
 from app.utils.auth_utils import (
     DUMMY_PASSWORD_HASH,
     clear_auth_cookie,
@@ -21,22 +31,11 @@ from app.utils.auth_utils import (
     set_auth_cookie,
     verify_password,
 )
-from app.dependencies.couple_auth import require_couple_auth
-from app.services.couple_lifecycle_service import (
-    COUPLE_PORTAL_STATE_ARCHIVED,
-    COUPLE_PORTAL_STATE_PENDING_SETUP,
-    couple_lifecycle_service,
-)
-from app.utils.couple_identity import (
-    get_couple_record_id,
-    normalize_couple_email,
-)
+from app.utils.couple_identity import get_couple_record_id, normalize_couple_email
 from app.utils.planner_ownership import (
     normalize_wedding_query_id,
     resolve_wedding_owner_identity,
 )
-import secrets
-import logging
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -429,12 +428,16 @@ async def get_couple_profile(couple: dict = Depends(require_couple_auth)):
         "portal_access_state": couple.get("_portal_access_state"),
         "portal_access_detail": couple.get("_portal_access_detail"),
         "setup_completed": couple.get("setup_completed", False),
-        "last_login": couple.get("last_login", "").isoformat()
-        if couple.get("last_login")
-        else None,
-        "created_at": couple.get("created_at", "").isoformat()
-        if couple.get("created_at")
-        else None,
+        "last_login": (
+            couple.get("last_login", "").isoformat()
+            if couple.get("last_login")
+            else None
+        ),
+        "created_at": (
+            couple.get("created_at", "").isoformat()
+            if couple.get("created_at")
+            else None
+        ),
         **_serialize_onboarding_fields(couple),
     }
 

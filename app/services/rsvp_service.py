@@ -1,10 +1,11 @@
+import logging
+from datetime import datetime, timezone
+
+from bson import ObjectId
 from fastapi import HTTPException
+
 from app.core.database import mongo
 from app.models.rsvp import RSVPModel
-from bson import ObjectId
-from datetime import datetime, timezone
-import logging
-
 from app.services.activity_log_service import activity_log_service
 
 logger = logging.getLogger(__name__)

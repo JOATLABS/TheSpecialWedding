@@ -1,7 +1,4 @@
-from app.utils.blog_content import (
-    blog_content_word_count,
-    sanitize_blog_content,
-)
+from app.utils.blog_content import blog_content_word_count, sanitize_blog_content
 
 
 def test_sanitize_blog_content_preserves_markdown():

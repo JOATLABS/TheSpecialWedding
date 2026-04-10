@@ -1,4 +1,18 @@
+import fs from 'node:fs';
+import path from 'node:path';
 import { defineConfig, devices } from '@playwright/test';
+
+const frontendPort = process.env.PLAYWRIGHT_FRONTEND_PORT ?? '3000';
+const backendPort = process.env.PLAYWRIGHT_BACKEND_PORT ?? '8000';
+const baseURL = process.env.PLAYWRIGHT_BASE_URL ?? `http://localhost:${frontendPort}`;
+const backendHealthUrl = process.env.PLAYWRIGHT_BACKEND_URL ?? `http://localhost:${backendPort}`;
+const localVenvPython = path.join(
+  process.cwd(),
+  '.venv',
+  process.platform === 'win32' ? 'Scripts/python.exe' : 'bin/python',
+);
+const backendPython = process.env.PLAYWRIGHT_BACKEND_PYTHON
+  ?? (fs.existsSync(localVenvPython) ? localVenvPython : 'python3');
 
 /**
  * @see https://playwright.dev/docs/test-configuration
@@ -18,7 +32,7 @@ export default defineConfig({
   /* Shared settings for all the projects below. See https://playwright.dev/docs/api/class-testoptions. */
   use: {
     /* Base URL to use in actions like `await page.goto('/')`. */
-    baseURL: 'http://localhost:3000',
+    baseURL,
 
     /* Collect trace when retrying the failed test. See https://playwright.dev/docs/trace-viewer */
     trace: 'on-first-retry',
@@ -71,13 +85,13 @@ export default defineConfig({
   /* Run your local dev server before starting the tests */
   webServer: [
     {
-      command: 'npm run dev',
-      url: 'http://localhost:3000',
+      command: `npm run dev -- --port ${frontendPort}`,
+      url: baseURL,
       reuseExistingServer: !process.env.CI,
     },
     {
-      command: 'python -m uvicorn app.main:app --host 0.0.0.0 --port 8000',
-      url: 'http://localhost:8000/health',
+      command: `${backendPython} -m uvicorn app.main:app --host 0.0.0.0 --port ${backendPort}`,
+      url: `${backendHealthUrl}/health`,
       reuseExistingServer: !process.env.CI,
     }
   ],

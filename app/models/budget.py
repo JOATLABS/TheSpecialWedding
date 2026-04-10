@@ -1,6 +1,8 @@
-from pydantic import BaseModel, Field, ConfigDict, field_serializer
-from typing import List, Dict, Optional
 from datetime import datetime
+from typing import Dict, List, Optional
+
+from pydantic import BaseModel, ConfigDict, Field, field_serializer
+
 from app.utils.pydantic_objectid import PyObjectId, generate_object_id
 
 

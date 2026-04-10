@@ -1,16 +1,18 @@
-from fastapi import APIRouter, HTTPException, Depends, Request, Response
-from typing import Optional, Literal
+from typing import Literal, Optional
+
+from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from pydantic import BaseModel, Field
-from app.services.guest_verification_service import GuestVerificationService
+
 from app.dependencies.auth_extended import (
-    require_admin_or_planner,
     ExtendedAuthUser,
     check_wedding_access,
+    require_admin_or_planner,
 )
 from app.dependencies.guest_access import (
     get_guest_access_session,
     set_guest_access_session,
 )
+from app.services.guest_verification_service import GuestVerificationService
 
 router = APIRouter()
 verification_service = GuestVerificationService()

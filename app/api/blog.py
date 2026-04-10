@@ -3,19 +3,21 @@ Blog API Endpoints
 Public endpoints for the /resources page (no auth) + Admin CRUD (ROOT_ADMIN only)
 """
 
+import logging
+from typing import List, Optional
+
 from fastapi import APIRouter, Depends, Query, Request
 from pydantic import BaseModel, Field, field_validator
-from typing import Optional, List
-from app.dependencies.auth_extended import require_root_admin, ExtendedAuthUser
-from app.services.blog_service import blog_service
+
+from app.dependencies.auth_extended import ExtendedAuthUser, require_root_admin
 from app.models.blog import BLOG_CATEGORIES
+from app.services.blog_service import blog_service
 from app.utils.rate_limiter import (
-    public_read_limiter,
-    public_slug_limiter,
     check_rate_limit,
     get_client_ip,
+    public_read_limiter,
+    public_slug_limiter,
 )
-import logging
 
 logger = logging.getLogger(__name__)
 

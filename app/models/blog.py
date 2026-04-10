@@ -4,11 +4,12 @@ Separate collection from Knowledge Base — these are SEO-targeted blog posts
 visible on /resources to the public (no auth required).
 """
 
-from pydantic import BaseModel, Field, field_validator
-from typing import Optional, List
 from datetime import datetime
-from app.models.base import MongoModel
+from typing import List, Optional
 
+from pydantic import BaseModel, Field, field_validator
+
+from app.models.base import MongoModel
 
 # Valid blog categories
 BLOG_CATEGORIES = [

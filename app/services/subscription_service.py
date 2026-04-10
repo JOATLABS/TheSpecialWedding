@@ -1,15 +1,17 @@
 import logging
+from datetime import datetime, timedelta, timezone
+from typing import List, Optional
+
 from fastapi import HTTPException
+
 from app.core.database import mongo
-from app.utils.planner_ownership import build_wedding_owner_query, normalize_query_id
 from app.services.couple_lifecycle_service import (
     COUPLE_PORTAL_STATE_REVOKED,
     couple_lifecycle_service,
 )
 from app.services.stripe_service import stripe_service
-from typing import List, Optional
-from datetime import datetime, timedelta, timezone
 from app.utils.id_utils import to_object_id
+from app.utils.planner_ownership import build_wedding_owner_query, normalize_query_id
 
 logger = logging.getLogger(__name__)
 
@@ -554,8 +556,8 @@ class SubscriptionService:
 
             # Phase 6: Notify affected couples
             try:
-                from app.services.email_service_resend import ResendEmailService
                 from app.core.database import mongo
+                from app.services.email_service_resend import ResendEmailService
 
                 couple_users_collection = mongo.db["couple_users"]
                 weddings_query = build_wedding_owner_query(user_id, user_email)

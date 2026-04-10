@@ -1,8 +1,9 @@
-from fastapi import HTTPException
 import re
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Union
 from uuid import uuid4
+
+from fastapi import HTTPException
 
 from app.core.database import mongo
 from app.models.wedding import WeddingCreateModel, WeddingModel

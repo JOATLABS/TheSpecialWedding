@@ -3,12 +3,12 @@ Path Validation Utility - Prevents Directory Traversal and Path Injection
 Implements comprehensive path validation and sanitization for secure file operations.
 """
 
+import logging
 import os
 import re
-import logging
-from typing import Optional, Tuple
-from pathlib import Path
 import unicodedata
+from pathlib import Path
+from typing import Optional, Tuple
 
 # Configure logging
 path_logger = logging.getLogger("wedding_path_security")
@@ -58,7 +58,7 @@ class PathValidator:
             r"/dev/",
             r"/proc/",
             r"/sys/",
-            r"/tmp/",
+            r"/tmp/",  # nosec B108
             # Hidden files and directories
             r"/\\.",
             r"\\\\.",
@@ -129,7 +129,7 @@ class PathValidator:
             "/app/static/",
             "/app/media/",
             "/var/wedding_uploads/",
-            "/tmp/wedding_temp/",
+            "/tmp/wedding_temp/",  # nosec B108
         ]
 
     def validate_path(

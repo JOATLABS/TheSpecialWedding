@@ -2,6 +2,16 @@
 
 import { getApiBaseUrl } from '@/utils/env';
 
+export interface CoupleSessionFailureOptions {
+  blockedFallback?: string;
+  unauthenticatedFallback?: string;
+}
+
+export interface CoupleSessionFailure {
+  kind: 'blocked' | 'unauthenticated';
+  message: string;
+}
+
 export function clearLegacyCoupleStorage(): void {
   if (typeof window === 'undefined') {
     return;
@@ -49,6 +59,29 @@ export async function extractApiErrorMessage(
   }
 
   return fallback;
+}
+
+export function isCoupleSessionFailureStatus(status: number): status is 401 | 403 {
+  return status === 401 || status === 403;
+}
+
+export async function resolveCoupleSessionFailure(
+  response: Response,
+  options: CoupleSessionFailureOptions = {},
+): Promise<CoupleSessionFailure | null> {
+  if (!isCoupleSessionFailureStatus(response.status)) {
+    return null;
+  }
+
+  const kind = response.status === 403 ? 'blocked' : 'unauthenticated';
+  const fallback = kind === 'blocked'
+    ? options.blockedFallback ?? 'This wedding portal is currently unavailable.'
+    : options.unauthenticatedFallback ?? 'Session expired. Please sign in again.';
+
+  return {
+    kind,
+    message: await extractApiErrorMessage(response, fallback),
+  };
 }
 
 export function buildCoupleLoginRedirect(message?: string | null): string {

@@ -80,11 +80,11 @@ export default function AdminGalleryUploadPage() {
     setLoadingImages(true);
     try {
       const baseUrl = getApiBaseUrl();
-      
+
       // Fetch from all folders
       const folders = ['gallery', 'our-story', 'wedding-party'];
       const allImages = [];
-      
+
       for (const folder of folders) {
         const response = await fetch(
           `${baseUrl}/admin/gallery/list?prefix=${folder}/${weddingSlug}/`,
@@ -97,7 +97,7 @@ export default function AdminGalleryUploadPage() {
           allImages.push(...(Array.isArray(data) ? data : []));
         }
       }
-      
+
       console.log('Fetched all images:', allImages);
       setUploadedImages(allImages);
     } catch (err) {
@@ -110,11 +110,11 @@ export default function AdminGalleryUploadPage() {
 
   const handleDeleteImage = async (imageKey: string) => {
     if (!confirm('Are you sure you want to delete this image?')) return;
-    
+
     try {
       const baseUrl = getApiBaseUrl();
       console.log('Deleting image with key:', imageKey);
-      
+
       const response = await fetch(
         `${baseUrl}/admin/gallery?key=${encodeURIComponent(imageKey)}`,
         {
@@ -122,7 +122,7 @@ export default function AdminGalleryUploadPage() {
           headers: { Authorization: `Bearer ${token}` },
         }
       );
-      
+
       if (response.ok) {
         toast.success('Image deleted successfully');
         // Refresh the image list
@@ -423,7 +423,7 @@ export default function AdminGalleryUploadPage() {
                                 </div>
                               )}
                             </div>
-                          
+
                           {/* Image Info */}
                           <div className="mt-2">
                             <p className="text-xs text-gray-600 dark:text-gray-400 truncate">

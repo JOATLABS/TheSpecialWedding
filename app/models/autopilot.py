@@ -5,12 +5,13 @@ Data models for Package, Contract, and ScheduledPayment entities.
 These models power the Package → Contract → Autopilot payment flow.
 """
 
-from datetime import datetime, date
-from typing import List, Optional, Literal
+from datetime import date, datetime
+from typing import List, Literal, Optional
+
 from pydantic import BaseModel, Field, field_serializer
+
 from app.models.base import MongoModel
 from app.utils.pydantic_objectid import PyObjectId, generate_object_id
-
 
 # ============================================================================
 # PACKAGE MODELS (WFA-101)

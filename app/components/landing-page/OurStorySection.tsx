@@ -19,7 +19,7 @@ export const OurStorySection: React.FC<OurStorySectionProps> = ({ wedding }) => 
   // Sort wedding party members
   const sortWeddingParty = () => {
     if (!wedding.wedding_party) return { bridesSide: [], groomsSide: [] };
-    
+
     const bridesSide = wedding.wedding_party
       .filter(member => member.side === 'bride')
       .sort((a, b) => {
@@ -29,7 +29,7 @@ export const OurStorySection: React.FC<OurStorySectionProps> = ({ wedding }) => 
         // Then alphabetically
         return a.name.localeCompare(b.name);
       });
-    
+
     const groomsSide = wedding.wedding_party
       .filter(member => member.side === 'groom')
       .sort((a, b) => {
@@ -39,7 +39,7 @@ export const OurStorySection: React.FC<OurStorySectionProps> = ({ wedding }) => 
         // Then alphabetically
         return a.name.localeCompare(b.name);
       });
-    
+
     return { bridesSide, groomsSide };
   };
 
@@ -76,7 +76,7 @@ export const OurStorySection: React.FC<OurStorySectionProps> = ({ wedding }) => 
             <h2 className="text-3xl font-bold text-center mb-6 theme-primary">
               Our Story
             </h2>
-            
+
             <div className="flex flex-col items-center">
               {wedding.our_story.image_url && (
                 <div className={`relative w-48 h-48 mb-6 overflow-hidden ${getImageShapeClass(wedding.our_story.image_shape)}`}>
@@ -111,7 +111,7 @@ export const OurStorySection: React.FC<OurStorySectionProps> = ({ wedding }) => 
             <h2 className="text-3xl font-bold text-center mb-8 theme-primary">
               Wedding Party
             </h2>
-            
+
             <div className="space-y-8">
               {/* Bride’s Side */}
               {bridesSide.length > 0 && (
@@ -190,7 +190,7 @@ export const OurStorySection: React.FC<OurStorySectionProps> = ({ wedding }) => 
           -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512'%3E%3Cpath d='M462.3 62.6C407.5 15.9 326 24.3 275.7 76.2L256 96.5l-19.7-20.3C186.1 24.3 104.5 15.9 49.7 62.6c-62.8 53.6-66.1 149.8-9.9 207.9l193.5 199.8c12.5 12.9 32.8 12.9 45.3 0l193.5-199.8c56.3-58.1 53-154.3-9.8-207.9z'/%3E%3C/svg%3E") center/contain no-repeat;
           mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512'%3E%3Cpath d='M462.3 62.6C407.5 15.9 326 24.3 275.7 76.2L256 96.5l-19.7-20.3C186.1 24.3 104.5 15.9 49.7 62.6c-62.8 53.6-66.1 149.8-9.9 207.9l193.5 199.8c12.5 12.9 32.8 12.9 45.3 0l193.5-199.8c56.3-58.1 53-154.3-9.8-207.9z'/%3E%3C/svg%3E") center/contain no-repeat;
         }
-        
+
         .hexagon-shape {
           clip-path: polygon(30% 0%, 70% 0%, 100% 50%, 70% 100%, 30% 100%, 0% 50%);
         }

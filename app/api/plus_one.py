@@ -1,15 +1,17 @@
-from fastapi import APIRouter, HTTPException, Path, Body, Depends, Query
-from app.models.plus_one import PlusOneModel
-from app.services.plus_one_service import PlusOneService
-from app.services.guest_service import GuestService
+import logging
+
+from fastapi import APIRouter, Body, Depends, HTTPException, Path, Query
+
 from app.dependencies.auth_extended import (
-    require_wedding_planner_only,
     ExtendedAuthUser,
     check_wedding_access,
     enforce_team_permission,
+    require_wedding_planner_only,
 )
+from app.models.plus_one import PlusOneModel
+from app.services.guest_service import GuestService
+from app.services.plus_one_service import PlusOneService
 from app.services.sse_manager import sse_manager
-import logging
 
 logger = logging.getLogger(__name__)
 

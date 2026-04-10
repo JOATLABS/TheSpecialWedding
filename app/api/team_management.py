@@ -7,23 +7,22 @@ update, deactivate, reactivate, remove, and permission queries.
 Prefix: /admin/team (registered in main.py)
 """
 
-from fastapi import APIRouter, Depends, HTTPException, Request, Query
-from bson import ObjectId
-from bson.errors import InvalidId
 import time
 from collections import defaultdict
 
-from app.dependencies.auth_extended import (
-    ExtendedAuthUser,
-    get_current_user_extended,
-)
+from bson import ObjectId
+from bson.errors import InvalidId
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
+
+from app.dependencies.auth_extended import ExtendedAuthUser, get_current_user_extended
 from app.dependencies.feature_gates import require_team_management
 from app.models.team_member import (
+    AcceptInviteRequest,
     InviteTeamMemberRequest,
     UpdateTeamMemberRequest,
-    AcceptInviteRequest,
 )
 from app.services.team_management_service import TeamManagementService
+
 # dict_response removed — all team endpoints return raw dicts for consistency
 
 router = APIRouter()

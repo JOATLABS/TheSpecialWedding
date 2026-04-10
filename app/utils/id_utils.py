@@ -7,10 +7,11 @@ All IDs should be strings at the API boundary and ObjectIds only when querying M
 Pattern: Use to_object_id() when querying, to_str_id() when returning to API.
 """
 
-from bson import ObjectId
-from typing import Optional, Union, Any
-from fastapi import HTTPException
 import logging
+from typing import Any, Optional, Union
+
+from bson import ObjectId
+from fastapi import HTTPException
 
 logger = logging.getLogger(__name__)
 

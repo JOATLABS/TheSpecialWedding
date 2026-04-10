@@ -16,6 +16,13 @@ from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
 
 from app.dependencies.auth_extended import ExtendedAuthUser, enforce_team_permission
 from app.dependencies.feature_gates import require_vendor_feature
+from app.models.vendor import (
+    AssignVendorRequest,
+    CreatePaymentLinkRequest,
+    CreateVendorProfileRequest,
+    UpdateVendorProfileRequest,
+    VendorCategory,
+)
 from app.models.vendor_contracts import (
     ApplyVendorContractFormDataRequest,
     CreateVendorContractRequest,
@@ -29,13 +36,6 @@ from app.models.vendor_contracts import (
     VendorContractActivityResponse,
     VendorContractFormDataResponse,
     VendorContractRevisionHistoryResponse,
-)
-from app.models.vendor import (
-    AssignVendorRequest,
-    CreatePaymentLinkRequest,
-    CreateVendorProfileRequest,
-    UpdateVendorProfileRequest,
-    VendorCategory,
 )
 from app.services.vendor_service import vendor_service
 

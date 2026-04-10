@@ -14,8 +14,8 @@ from bson import ObjectId
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
-from app.dependencies.auth_extended import require_root_admin, ExtendedAuthUser
 from app.core.database import mongo
+from app.dependencies.auth_extended import ExtendedAuthUser, require_root_admin
 
 router = APIRouter()
 

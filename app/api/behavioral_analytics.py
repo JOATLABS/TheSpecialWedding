@@ -21,6 +21,11 @@ from app.dependencies.auth_extended import (
 )
 from app.dependencies.couple_auth import require_couple_auth
 from app.services.behavioral_analytics_service import service as analytics_service
+from app.utils.couple_archived_read_model import (
+    build_archived_budget_breakdown,
+    build_archived_non_responders,
+    get_archived_wedding_record,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -188,6 +193,17 @@ async def couple_get_non_responders(
         )
 
     try:
+        if couple.get("wedding_archived"):
+            archive = await get_archived_wedding_record(str(wedding_id))
+            non_responders = build_archived_non_responders(archive)
+            return {
+                "wedding_id": str(wedding_id),
+                "non_responders": non_responders,
+                "count": len(non_responders),
+                "archived": True,
+                "read_only": True,
+            }
+
         non_responders = await analytics_service.get_non_responders(str(wedding_id))
         return {
             "wedding_id": str(wedding_id),
@@ -215,6 +231,15 @@ async def couple_get_budget_breakdown(
         )
 
     try:
+        if couple.get("wedding_archived"):
+            archive = await get_archived_wedding_record(str(wedding_id))
+            return {
+                "wedding_id": str(wedding_id),
+                **build_archived_budget_breakdown(archive),
+                "archived": True,
+                "read_only": True,
+            }
+
         breakdown = await analytics_service.get_budget_breakdown(str(wedding_id))
         return {"wedding_id": str(wedding_id), **breakdown}
     except Exception as exc:

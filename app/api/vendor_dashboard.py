@@ -4,11 +4,10 @@ from fastapi import APIRouter, Depends, Query
 
 from app.dependencies.auth_extended import (
     ExtendedAuthUser,
-    require_vendor,
     enforce_team_permission,
+    require_vendor,
 )
 from app.services.vendor_dashboard_service import VendorDashboardService
-
 
 router = APIRouter()
 service = VendorDashboardService()

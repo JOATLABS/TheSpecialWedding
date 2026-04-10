@@ -13,7 +13,7 @@ Pure Pydantic model tests — no database or mongomock needed.
 
 import os
 import sys
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import pytest
@@ -27,32 +27,28 @@ os.environ.setdefault("ALGORITHM", "HS256")
 os.environ.setdefault("API_KEY", "test-api-key")
 os.environ.setdefault("ROOT_ADMIN_EMAIL", "thedeveloper@thespecialwedding.io")
 
-from app.models.advertising_campaign import (
-    # Enums
-    CampaignGoal,
-    CampaignStatus,
-    CreativeReviewStatus,
-    CreativeType,
-    PacingStrategy,
-    BidStrategy,
-    FraudSignalType,
-    FraudSignalStatus,
-    VendorAccountStatus,
-    # Models
+from app.models.advertising_campaign import (  # Enums; Models; Request models
     AdCampaign,
     AdCreative,
-    CampaignDayStats,
-    PlacementDayStats,
     AdFraudSignal,
-    VendorAdBilling,
-    # Request models
+    BidStrategy,
+    CampaignDayStats,
+    CampaignGoal,
+    CampaignStatus,
     CreateCampaignRequest,
-    UpdateCampaignRequest,
     CreateCreativeRequest,
+    CreativeReviewStatus,
+    CreativeType,
+    FraudSignalStatus,
+    FraudSignalType,
+    PacingStrategy,
+    PlacementDayStats,
     ReviewCampaignDecisionRequest,
     ReviewCreativeDecisionRequest,
+    UpdateCampaignRequest,
+    VendorAccountStatus,
+    VendorAdBilling,
 )
-
 
 # =============================================================================
 # ENUM TESTS

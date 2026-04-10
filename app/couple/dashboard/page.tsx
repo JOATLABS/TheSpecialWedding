@@ -23,7 +23,12 @@ import {
   Gift, HelpCircle, QrCode, BellRing, Plus,
   Pencil, Trash2, ExternalLink, Download, BellOff,
 } from 'lucide-react';
-import { coupleFetch, extractApiErrorMessage, logoutCoupleSession } from '@/couple/lib/auth';
+import {
+  coupleFetch,
+  extractApiErrorMessage,
+  logoutCoupleSession,
+  resolveCoupleSessionFailure,
+} from '@/couple/lib/auth';
 import { useCoupleAuth } from '@/contexts/CoupleAuthContext';
 import { getWeddingEventLabel } from '@/utils/weddingEvents';
 
@@ -274,6 +279,29 @@ function isCoupleSection(value: string | null): value is CoupleSection {
   return Boolean(value && COUPLE_SECTIONS.includes(value as CoupleSection));
 }
 
+function useCoupleSessionExpiryHandler() {
+  const { expireSession } = useCoupleAuth();
+
+  return useCallback(
+    async (
+      response: Response,
+      options?: {
+        blockedFallback?: string;
+        unauthenticatedFallback?: string;
+      },
+    ) => {
+      const failure = await resolveCoupleSessionFailure(response, options);
+      if (!failure) {
+        return false;
+      }
+
+      await expireSession(failure.message);
+      return true;
+    },
+    [expireSession],
+  );
+}
+
 // ============================================================================
 // MAIN COMPONENT
 // ============================================================================
@@ -281,7 +309,6 @@ function isCoupleSection(value: string | null): value is CoupleSection {
 export default function CoupleDashboardPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const { logout } = useCoupleAuth();
   const [loading, setLoading] = useState(true);
   const [data, setData] = useState<DashboardData | null>(null);
   const [activeSection, setActiveSection] = useState<CoupleSection>('dashboard');
@@ -293,6 +320,7 @@ export default function CoupleDashboardPage() {
   // Sidebar state
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [isMobile, setIsMobile] = useState(false);
+  const handleSessionFailure = useCoupleSessionExpiryHandler();
 
   useEffect(() => {
     const handleResize = () => {
@@ -309,6 +337,9 @@ export default function CoupleDashboardPage() {
   const fetchUnreadMessageCount = useCallback(async () => {
     try {
       const unreadRes = await coupleFetch('/couple/portal/messages/unread-count');
+      if (await handleSessionFailure(unreadRes)) {
+        return;
+      }
       if (unreadRes.ok) {
         const unreadData = await unreadRes.json();
         setUnreadMessages(unreadData.unread_count || 0);
@@ -316,7 +347,7 @@ export default function CoupleDashboardPage() {
     } catch {
       /* non-critical */
     }
-  }, []);
+  }, [handleSessionFailure]);
 
   const handleMessageSent = useCallback(() => {
     void fetchUnreadMessageCount();
@@ -330,17 +361,13 @@ export default function CoupleDashboardPage() {
     try {
       const res = await coupleFetch('/couple/portal/dashboard');
 
-      if (res.status === 401 || res.status === 403) {
-        const detail = await extractApiErrorMessage(
-          res,
-          res.status === 403
-            ? 'This wedding portal is currently unavailable. Please contact your planner.'
-            : 'Session expired. Please sign in again.',
-        );
-        const accessQuery = res.status === 403 ? '&access=blocked' : '';
-        await logout({
-          redirectTo: `/couple/login?message=${encodeURIComponent(detail)}${accessQuery}`,
-        });
+      if (
+        await handleSessionFailure(res, {
+          blockedFallback:
+            'This wedding portal is currently unavailable. Please contact your planner.',
+          unauthenticatedFallback: 'Session expired. Please sign in again.',
+        })
+      ) {
         return;
       }
 
@@ -359,6 +386,9 @@ export default function CoupleDashboardPage() {
       if (!hasUserDismissedOnboarding) {
         try {
           const onboardingRes = await coupleFetch('/couple/profile/onboarding');
+          if (await handleSessionFailure(onboardingRes)) {
+            return;
+          }
 
           if (onboardingRes.ok) {
             const onboardingData = await onboardingRes.json();
@@ -373,7 +403,7 @@ export default function CoupleDashboardPage() {
     } finally {
       setLoading(false);
     }
-  }, [fetchUnreadMessageCount, hasUserDismissedOnboarding, logout]);
+  }, [fetchUnreadMessageCount, handleSessionFailure, hasUserDismissedOnboarding]);
 
   useEffect(() => {
     fetchDashboard();
@@ -1013,6 +1043,7 @@ function NonRespondersCard({ weddingId, stats }: { weddingId?: string; stats: an
   const [nonResponders, setNonResponders] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   const [expanded, setExpanded] = useState(false);
+  const handleSessionFailure = useCoupleSessionExpiryHandler();
 
   useEffect(() => {
     if (!weddingId || stats.pending === 0) return;
@@ -1021,6 +1052,9 @@ function NonRespondersCard({ weddingId, stats }: { weddingId?: string; stats: an
       setLoading(true);
       try {
         const res = await coupleFetch(`/couple/portal/non-responders`);
+        if (await handleSessionFailure(res)) {
+          return;
+        }
         if (res.ok) {
           const data = await res.json();
           setNonResponders(data.non_responders || []);
@@ -1029,8 +1063,8 @@ function NonRespondersCard({ weddingId, stats }: { weddingId?: string; stats: an
       finally { setLoading(false); }
     };
 
-    fetchNonResponders();
-  }, [weddingId, stats.pending]);
+    void fetchNonResponders();
+  }, [handleSessionFailure, weddingId, stats.pending]);
 
   if (stats.pending === 0 || nonResponders.length === 0) return null;
 
@@ -1105,6 +1139,7 @@ function NonRespondersCard({ weddingId, stats }: { weddingId?: string; stats: an
 function BudgetBreakdownCard({ weddingId }: { weddingId?: string }) {
   const [breakdown, setBreakdown] = useState<any>(null);
   const [loading, setLoading] = useState(false);
+  const handleSessionFailure = useCoupleSessionExpiryHandler();
 
   useEffect(() => {
     if (!weddingId) return;
@@ -1113,6 +1148,9 @@ function BudgetBreakdownCard({ weddingId }: { weddingId?: string }) {
       setLoading(true);
       try {
         const res = await coupleFetch(`/couple/portal/budget-breakdown`);
+        if (await handleSessionFailure(res)) {
+          return;
+        }
         if (res.ok) {
           const data = await res.json();
           setBreakdown(data);
@@ -1121,8 +1159,8 @@ function BudgetBreakdownCard({ weddingId }: { weddingId?: string }) {
       finally { setLoading(false); }
     };
 
-    fetchBreakdown();
-  }, [weddingId]);
+    void fetchBreakdown();
+  }, [handleSessionFailure, weddingId]);
 
   if (!breakdown) return null;
 
@@ -1522,14 +1560,21 @@ function TimelineSection({ events, timezone, archived, onNoteAdded }: { events: 
 function PaymentsSection({ contract }: { contract?: ContractInfo | null }) {
   const [contractDetail, setContractDetail] = useState<ContractDetail | null>(null);
   const [loadingContract, setLoadingContract] = useState(true);
+  const handleSessionFailure = useCoupleSessionExpiryHandler();
 
   useEffect(() => {
     const fetchContract = async () => {
       try {
         const res = await coupleFetch('/couple/portal/contracts');
+        if (await handleSessionFailure(res)) {
+          return;
+        }
         if (res.ok) {
           const data = await res.json();
           setContractDetail(data.contract || null);
+        } else {
+          const detail = await extractApiErrorMessage(res, 'Failed to load contract details');
+          toast.error(detail);
         }
       } catch (err) {
         console.error('Failed to fetch contract', err);
@@ -1537,8 +1582,8 @@ function PaymentsSection({ contract }: { contract?: ContractInfo | null }) {
         setLoadingContract(false);
       }
     };
-    fetchContract();
-  }, []);
+    void fetchContract();
+  }, [handleSessionFailure]);
 
   if (!contract && loadingContract) {
     return (
@@ -1684,6 +1729,7 @@ function PaymentsSection({ contract }: { contract?: ContractInfo | null }) {
 function MeetingsSection({ archived }: { archived: boolean }) {
   const [meetings, setMeetings] = useState<MeetingItem[]>([]);
   const [loadingMeetings, setLoadingMeetings] = useState(true);
+  const handleSessionFailure = useCoupleSessionExpiryHandler();
 
   useEffect(() => {
     const fetchMeetings = async () => {
@@ -1691,6 +1737,10 @@ function MeetingsSection({ archived }: { archived: boolean }) {
         const res = await coupleFetch('/couple/portal/meetings', {
           cache: 'no-store',
         });
+
+        if (await handleSessionFailure(res)) {
+          return;
+        }
 
         if (!res.ok) {
           const detail = await extractApiErrorMessage(res, 'Failed to load meetings');
@@ -1707,8 +1757,8 @@ function MeetingsSection({ archived }: { archived: boolean }) {
       }
     };
 
-    fetchMeetings();
-  }, []);
+    void fetchMeetings();
+  }, [handleSessionFailure]);
 
   const formatMeetingDateTime = (dateValue?: string | null) => {
     if (!dateValue) return 'TBD';
@@ -1843,11 +1893,13 @@ function FormsSection({ forms, archived }: { forms: FormItem[]; archived: boolea
               <div className="flex items-center gap-2 mb-1">
                 <h3 className="font-medium text-slate-900 dark:text-white">{form.title}</h3>
                 <span className={`text-xs px-2 py-0.5 rounded-full ${
-                  form.status === 'submitted'
+                  archived
+                    ? 'bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300'
+                    : form.status === 'submitted'
                     ? 'bg-green-100 dark:bg-green-950/30 text-green-700 dark:text-green-400'
                     : 'bg-amber-100 dark:bg-amber-950/30 text-amber-700 dark:text-amber-400'
                 }`}>
-                  {form.status === 'submitted' ? 'Submitted' : 'Needs your input'}
+                  {archived ? (form.status === 'submitted' ? 'Submitted' : 'View-only') : form.status === 'submitted' ? 'Submitted' : 'Needs your input'}
                 </span>
               </div>
               {form.description && <p className="text-sm text-slate-500 dark:text-slate-400 truncate">{form.description}</p>}
@@ -1894,6 +1946,7 @@ function InboxSection({ updates, onMessageSent, onMessagesRead, messageRefreshSi
   const [sending, setSending] = useState(false);
   const [showChat, setShowChat] = useState(false);
   const [mobileShowDetail, setMobileShowDetail] = useState(false);
+  const handleSessionFailure = useCoupleSessionExpiryHandler();
   const messagesEndRef = useCallback((node: HTMLDivElement | null) => {
     if (node) node.scrollIntoView({ behavior: 'smooth' });
   }, []);
@@ -1903,6 +1956,9 @@ function InboxSection({ updates, onMessageSent, onMessagesRead, messageRefreshSi
       const res = await coupleFetch('/couple/portal/messages/read', {
         method: 'POST',
       });
+      if (await handleSessionFailure(res)) {
+        return;
+      }
       if (res.ok) {
         setMessages((prev) =>
           prev.map((message) =>
@@ -1916,13 +1972,16 @@ function InboxSection({ updates, onMessageSent, onMessagesRead, messageRefreshSi
     } catch {
       // Non-critical: the thread will still render and unread counts can be recovered on refresh.
     }
-  }, [onMessagesRead]);
+  }, [handleSessionFailure, onMessagesRead]);
 
   const fetchMessages = useCallback(async (options?: { markRead?: boolean }) => {
     try {
       const res = await coupleFetch('/couple/portal/messages?limit=100', {
         cache: 'no-store',
       });
+      if (await handleSessionFailure(res)) {
+        return;
+      }
       if (res.ok) {
         const data = await res.json();
         const nextMessages: MessageItem[] = data.messages || [];
@@ -1936,13 +1995,16 @@ function InboxSection({ updates, onMessageSent, onMessagesRead, messageRefreshSi
         } else if (options?.markRead) {
           onMessagesRead();
         }
+      } else {
+        const detail = await extractApiErrorMessage(res, 'Could not load messages. Please try again.');
+        toast.error(detail);
       }
     } catch {
       toast.error('Could not load messages. Please try again.');
     } finally {
       setMsgLoading(false);
     }
-  }, [markMessagesRead, onMessagesRead]);
+  }, [handleSessionFailure, markMessagesRead, onMessagesRead]);
 
   useEffect(() => { fetchMessages(); }, [fetchMessages]);
 
@@ -1960,6 +2022,9 @@ function InboxSection({ updates, onMessageSent, onMessagesRead, messageRefreshSi
         method: 'POST',
         body: JSON.stringify({ content: newMessage.trim() }),
       });
+      if (await handleSessionFailure(res)) {
+        return;
+      }
       if (res.ok) {
         setNewMessage('');
         onMessageSent();

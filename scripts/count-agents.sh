@@ -15,12 +15,12 @@ echo "Total AI Agents: $AGENT_COUNT"
 if [ "$1" == "--update-badge" ]; then
     # Update main README
     sed -i.bak "s/AI%20Agents-[0-9]*%20Intelligent%20Assistants/AI%20Agents-${AGENT_COUNT}%20Intelligent%20Assistants/g" README.md
-    
+
     # Update agents README
     sed -i.bak "s/AI_Agents-[0-9]*/AI_Agents-${AGENT_COUNT}/g" .claude/agents/README.md
-    
+
     # Clean up backup files
     rm -f README.md.bak .claude/agents/README.md.bak
-    
+
     echo "Updated agent count badges to: $AGENT_COUNT"
 fi

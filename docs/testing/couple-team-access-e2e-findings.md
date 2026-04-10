@@ -1,9 +1,9 @@
 # Couple & Team Access E2E Runbook — Test Findings Report
 
-**Date:** April 8, 2026  
-**Tester:** Claude (automated via Chrome MCP)  
-**Runbook:** `docs/testing/couple-team-access-e2e-runbook.md`  
-**Environment:** localhost:3000 (frontend) / localhost:8000 (backend)  
+**Date:** April 8, 2026
+**Tester:** Claude (automated via Chrome MCP)
+**Runbook:** `docs/testing/couple-team-access-e2e-runbook.md`
+**Environment:** localhost:3000 (frontend) / localhost:8000 (backend)
 **Test Account:** test_planner2@thespecialwedding.io (signed up via frontend pricing flow)
 
 ---
@@ -33,12 +33,12 @@ Testing revealed **1 critical blocker**, **2 high-severity issues**, and **4 med
 
 ### CRIT-1: Couple Setup Page Crash Loop (Blocks 7.2, 7.3, 7.4, 7.7)
 
-**Severity:** Critical / Blocker  
-**URL:** `http://localhost:3000/couple/setup/{token}`  
+**Severity:** Critical / Blocker
+**URL:** `http://localhost:3000/couple/setup/{token}`
 **Symptom:** After the planner sends a couple invitation (which succeeds — status shows "Pending Setup"), opening the couple setup link causes the page to rapidly alternate between "Verifying your invitation..." spinner and Chrome's "This page couldn't load" error. The browser eventually gives up.
 
 **Observed behavior:**
-1. Page loads, shows "Verifying your invitation..." 
+1. Page loads, shows "Verifying your invitation..."
 2. Page crashes to "This page couldn't load — Reload to try again, or go back."
 3. Loop repeats rapidly
 
@@ -57,8 +57,8 @@ Testing revealed **1 critical blocker**, **2 high-severity issues**, and **4 med
 
 ### HIGH-1: Login Endpoint Returns 500 (Root Admin)
 
-**Severity:** High  
-**Endpoint:** `POST /admin/token`  
+**Severity:** High
+**Endpoint:** `POST /admin/token`
 **Symptom:** Logging in as root admin (`thedeveloper@thespecialwedding.io`) returns HTTP 500 "An unexpected error occurred." This was tested via both the UI form and direct fetch from the browser.
 
 **Impact:** Root admin cannot log in. This blocks any admin-level testing or user management.
@@ -67,8 +67,8 @@ Testing revealed **1 critical blocker**, **2 high-severity issues**, and **4 med
 
 ### HIGH-2: Dashboard "No Weddings" Message Wrong for Planner Owner
 
-**Severity:** High (UX)  
-**Page:** `/admin/planner` (Dashboard)  
+**Severity:** High (UX)
+**Page:** `/admin/planner` (Dashboard)
 **Symptom:** After signing up as a new planner and logging in, the dashboard says: "No weddings assigned — Contact your administrator to get weddings assigned to you."
 
 **Expected:** A new planner owner should see something like "Create your first wedding to get started" with a CTA button. The "contact your administrator" message implies this is a team member, not the owner.
@@ -81,7 +81,7 @@ Testing revealed **1 critical blocker**, **2 high-severity issues**, and **4 med
 
 ### MED-1: `canAccessSupportInbox()` Overly Permissive
 
-**File:** `app/admin/utils/teamAccess.ts`  
+**File:** `app/admin/utils/teamAccess.ts`
 **Issue:** The function returns `true` for ANY team member with a truthy `team_permissions` object, even `{}`. This means a team member with zero actual permissions could still see the Support Inbox.
 
 ```typescript
@@ -99,7 +99,7 @@ export function canAccessSupportInbox(userProfile?: UserProfile | null): boolean
 
 ### MED-2: Runbook Omits Inbox from "Guest Communications Only" Visible Tabs
 
-**File:** `app/admin/communications/components/CommunicationsTabs.tsx`  
+**File:** `app/admin/communications/components/CommunicationsTabs.tsx`
 **Issue:** The runbook's Scenario 7.6 Case C (team member with `send_reminders` only) states visible tabs should be "Reminders, Individual, History". But `canAccessAnyCommunicationsInbox()` is `true` when `canSendReminders()` is `true` (via `canAccessGuestCommunications`), which means the **Inbox tab would also be visible**.
 
 ### MED-3: Runbook Preconditions Don't Explain Account Creation

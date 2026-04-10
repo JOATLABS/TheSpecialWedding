@@ -7,6 +7,7 @@ Runs on container startup via Dockerfile.coolify.
 import os
 import sys
 from datetime import datetime, timezone
+
 from dotenv import load_dotenv
 
 # Load environment variables

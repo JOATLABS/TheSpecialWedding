@@ -6,11 +6,11 @@ R2 ad-assets bucket (S3_AD_BUCKET_NAME) under the scraped-vendors/ prefix.
 Returns the CDN URL to use as logo_url.
 """
 
+import logging
 import os
 import re
-import logging
-from io import BytesIO
 from datetime import datetime, timezone
+from io import BytesIO
 
 import boto3
 import httpx

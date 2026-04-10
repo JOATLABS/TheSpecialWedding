@@ -1,12 +1,14 @@
 # app/services/reminder_utilities_telnyx.py
 
-from datetime import datetime, timezone
-from fastapi import HTTPException
-from app.core.database import mongo
-from bson import ObjectId
-import telnyx
-import os
 import logging
+import os
+from datetime import datetime, timezone
+
+import telnyx
+from bson import ObjectId
+from fastapi import HTTPException
+
+from app.core.database import mongo
 
 logger = logging.getLogger(__name__)
 

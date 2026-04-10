@@ -10,8 +10,8 @@ Or call seed_knowledge_base() from app startup.
 
 import asyncio
 from datetime import datetime, timezone
-from app.core.database import mongo
 
+from app.core.database import mongo
 
 SEED_ARTICLES = [
     {

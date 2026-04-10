@@ -6,8 +6,9 @@ Used by the public vendor profile page at /vendors/{id}.
 """
 
 import logging
-from fastapi import APIRouter, HTTPException
+
 from bson import ObjectId
+from fastapi import APIRouter, HTTPException
 
 from app.core.database import mongo
 

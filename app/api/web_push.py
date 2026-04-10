@@ -4,12 +4,14 @@ Web Push API Endpoints
 Handles browser push notification subscriptions and sending.
 """
 
-from fastapi import APIRouter, Depends, HTTPException, Request
-from typing import Optional
-from pydantic import BaseModel
-from app.dependencies.auth_extended import require_admin_or_planner, ExtendedAuthUser
-from app.services.web_push_service import web_push_service
 import logging
+from typing import Optional
+
+from fastapi import APIRouter, Depends, HTTPException, Request
+from pydantic import BaseModel
+
+from app.dependencies.auth_extended import ExtendedAuthUser, require_admin_or_planner
+from app.services.web_push_service import web_push_service
 
 logger = logging.getLogger(__name__)
 
@@ -143,9 +145,11 @@ async def get_push_status(
         "message": (
             "Push notifications are active"
             if is_subscribed
-            else "Not subscribed to push notifications"
-            if is_enabled
-            else "Push notifications not configured on server"
+            else (
+                "Not subscribed to push notifications"
+                if is_enabled
+                else "Push notifications not configured on server"
+            )
         ),
     }
 

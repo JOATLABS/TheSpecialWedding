@@ -9,12 +9,27 @@ on:
       - 'cloudflare-workers/**'
   workflow_dispatch:  # Allow manual deployment
 
+permissions:
+  contents: read
+
 jobs:
   deploy-workers:
     name: Deploy Cloudflare Workers
     runs-on: ubuntu-latest
     # Run on main, development branches, or the current feature branch
     if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/heads/development/')
+
+    env:
+      WRANGLER_VERSION: 4.81.1
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      NEXT_PUBLIC_API_BASE_URL: ${{ secrets.NEXT_PUBLIC_API_BASE_URL }}
+      CRON_SECRET: ${{ secrets.CRON_SECRET }}
+      RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+      ALERT_EMAIL: ${{ secrets.ALERT_EMAIL }}
+      ROOT_ADMIN_EMAIL: ${{ secrets.ROOT_ADMIN_EMAIL }}
+      ADMIN_TOKEN: ${{ secrets.ADMIN_TOKEN }}
+      BACKUP_SECRET: ${{ secrets.BACKUP_SECRET }}
+      UPTIME_KV_NAMESPACE_ID: ${{ vars.CLOUDFLARE_UPTIME_KV_NAMESPACE_ID || secrets.CLOUDFLARE_UPTIME_KV_NAMESPACE_ID }}
 
     steps:
       - name: Checkout code
@@ -23,101 +38,92 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v6
         with:
-          node-version: '20'
+          node-version: '22'
 
-      - name: Install Wrangler
-        run: npm install -g wrangler
+      - name: Validate Cloudflare deployment inputs
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          required_vars=(
+            CLOUDFLARE_API_TOKEN
+            NEXT_PUBLIC_API_BASE_URL
+            CRON_SECRET
+            RESEND_API_KEY
+            ALERT_EMAIL
+            ROOT_ADMIN_EMAIL
+            ADMIN_TOKEN
+            BACKUP_SECRET
+            UPTIME_KV_NAMESPACE_ID
+          )
+
+          for var_name in "${required_vars[@]}"; do
+            if [ -z "${!var_name:-}" ]; then
+              echo "Missing required Cloudflare deploy input: ${var_name}"
+              exit 1
+            fi
+          done
+
+      - name: Prepare uptime worker config
+        shell: bash
+        run: |
+          set -euo pipefail
+          sed "s|<UPTIME_KV_NAMESPACE_ID>|${UPTIME_KV_NAMESPACE_ID}|g" \
+            cloudflare-workers/uptime.wrangler.toml > "${RUNNER_TEMP}/uptime.wrangler.toml"
 
       - name: Deploy Autopilot Cron Worker
-        env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        shell: bash
         run: |
-          cd cloudflare-workers
-          wrangler deploy --config autopilot.wrangler.toml
-          echo "${{ secrets.NEXT_PUBLIC_API_BASE_URL }}" | wrangler secret put NEXT_PUBLIC_API_BASE_URL --config autopilot.wrangler.toml
-          echo "${{ secrets.CRON_SECRET }}" | wrangler secret put CRON_SECRET --config autopilot.wrangler.toml
-          echo "${{ secrets.RESEND_API_KEY }}" | wrangler secret put RESEND_API_KEY --config autopilot.wrangler.toml
-          echo "${{ secrets.ALERT_EMAIL }}" | wrangler secret put ALERT_EMAIL --config autopilot.wrangler.toml
-          echo "${{ secrets.ROOT_ADMIN_EMAIL }}" | wrangler secret put ROOT_ADMIN_EMAIL --config autopilot.wrangler.toml
+          set -euo pipefail
+          npx --yes "wrangler@${WRANGLER_VERSION}" deploy --config cloudflare-workers/autopilot.wrangler.toml
+          printf '%s' "$NEXT_PUBLIC_API_BASE_URL" | npx --yes "wrangler@${WRANGLER_VERSION}" secret put NEXT_PUBLIC_API_BASE_URL --config cloudflare-workers/autopilot.wrangler.toml
+          printf '%s' "$CRON_SECRET" | npx --yes "wrangler@${WRANGLER_VERSION}" secret put CRON_SECRET --config cloudflare-workers/autopilot.wrangler.toml
+          printf '%s' "$RESEND_API_KEY" | npx --yes "wrangler@${WRANGLER_VERSION}" secret put RESEND_API_KEY --config cloudflare-workers/autopilot.wrangler.toml
+          printf '%s' "$ALERT_EMAIL" | npx --yes "wrangler@${WRANGLER_VERSION}" secret put ALERT_EMAIL --config cloudflare-workers/autopilot.wrangler.toml
+          printf '%s' "$ROOT_ADMIN_EMAIL" | npx --yes "wrangler@${WRANGLER_VERSION}" secret put ROOT_ADMIN_EMAIL --config cloudflare-workers/autopilot.wrangler.toml
 
       - name: Deploy Metrics Snapshot Worker
-        env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        shell: bash
         run: |
-          cd cloudflare-workers
-          wrangler deploy --config metrics-snapshot.wrangler.toml
-          echo "${{ secrets.NEXT_PUBLIC_API_BASE_URL }}" | wrangler secret put NEXT_PUBLIC_API_BASE_URL --config metrics-snapshot.wrangler.toml
-          echo "${{ secrets.ADMIN_TOKEN }}" | wrangler secret put ADMIN_TOKEN --config metrics-snapshot.wrangler.toml
-          echo "${{ secrets.RESEND_API_KEY }}" | wrangler secret put RESEND_API_KEY --config metrics-snapshot.wrangler.toml
-          echo "${{ secrets.ALERT_EMAIL }}" | wrangler secret put ALERT_EMAIL --config metrics-snapshot.wrangler.toml
-          echo "${{ secrets.ROOT_ADMIN_EMAIL }}" | wrangler secret put ROOT_ADMIN_EMAIL --config metrics-snapshot.wrangler.toml
+          set -euo pipefail
+          npx --yes "wrangler@${WRANGLER_VERSION}" deploy --config cloudflare-workers/metrics-snapshot.wrangler.toml
+          printf '%s' "$NEXT_PUBLIC_API_BASE_URL" | npx --yes "wrangler@${WRANGLER_VERSION}" secret put NEXT_PUBLIC_API_BASE_URL --config cloudflare-workers/metrics-snapshot.wrangler.toml
+          printf '%s' "$ADMIN_TOKEN" | npx --yes "wrangler@${WRANGLER_VERSION}" secret put ADMIN_TOKEN --config cloudflare-workers/metrics-snapshot.wrangler.toml
+          printf '%s' "$RESEND_API_KEY" | npx --yes "wrangler@${WRANGLER_VERSION}" secret put RESEND_API_KEY --config cloudflare-workers/metrics-snapshot.wrangler.toml
+          printf '%s' "$ALERT_EMAIL" | npx --yes "wrangler@${WRANGLER_VERSION}" secret put ALERT_EMAIL --config cloudflare-workers/metrics-snapshot.wrangler.toml
+          printf '%s' "$ROOT_ADMIN_EMAIL" | npx --yes "wrangler@${WRANGLER_VERSION}" secret put ROOT_ADMIN_EMAIL --config cloudflare-workers/metrics-snapshot.wrangler.toml
 
       - name: Deploy Backup Cron Worker
-        env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        shell: bash
         run: |
-          cd cloudflare-workers
-          wrangler deploy --config backup.wrangler.toml
-          echo "${{ secrets.NEXT_PUBLIC_API_BASE_URL }}" | wrangler secret put NEXT_PUBLIC_API_BASE_URL --config backup.wrangler.toml
-          echo "${{ secrets.BACKUP_SECRET }}" | wrangler secret put BACKUP_SECRET --config backup.wrangler.toml
-          echo "${{ secrets.RESEND_API_KEY }}" | wrangler secret put RESEND_API_KEY --config backup.wrangler.toml
-          echo "${{ secrets.ALERT_EMAIL }}" | wrangler secret put ALERT_EMAIL --config backup.wrangler.toml
-          echo "${{ secrets.ROOT_ADMIN_EMAIL }}" | wrangler secret put ROOT_ADMIN_EMAIL --config backup.wrangler.toml
-
-      - name: Create KV Namespace for Uptime Worker
-        env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-        run: |
-          cd cloudflare-workers
-          # Create KV namespace (ignore error if already exists)
-          KV_OUTPUT=$(wrangler kv:namespace create "uptime-state" 2>&1) || true
-          echo "KV creation output: $KV_OUTPUT"
-
-          # Extract ID - try multiple patterns
-          if echo "$KV_OUTPUT" | grep -q "already exists"; then
-            echo "KV namespace already exists, fetching ID from list..."
-            KV_ID=$(wrangler kv:namespace list --json | jq -r '.[] | select(.title | contains("uptime-state")) | .id' | head -1)
-          else
-            # Try to extract from creation output (format varies by wrangler version)
-            KV_ID=$(echo "$KV_OUTPUT" | grep -oE '[a-f0-9]{32}' | head -1)
-            if [ -z "$KV_ID" ]; then
-              KV_ID=$(echo "$KV_OUTPUT" | grep -oP 'id = "\K[^"]+' || true)
-            fi
-          fi
-
-          echo "Extracted KV namespace ID: $KV_ID"
-
-          # Update wrangler.toml with the KV namespace ID (handle both placeholder formats)
-          if [ -n "$KV_ID" ]; then
-            sed -i "s|<YOUR_KV_NAMESPACE_ID>|$KV_ID|g" uptime.wrangler.toml
-            sed -i "s|YOUR_KV_NAMESPACE_ID|$KV_ID|g" uptime.wrangler.toml
-            echo "✓ KV namespace ID set: $KV_ID"
-          else
-            echo "⚠️ Warning: Could not extract KV namespace ID"
-          fi
+          set -euo pipefail
+          npx --yes "wrangler@${WRANGLER_VERSION}" deploy --config cloudflare-workers/backup.wrangler.toml
+          printf '%s' "$NEXT_PUBLIC_API_BASE_URL" | npx --yes "wrangler@${WRANGLER_VERSION}" secret put NEXT_PUBLIC_API_BASE_URL --config cloudflare-workers/backup.wrangler.toml
+          printf '%s' "$BACKUP_SECRET" | npx --yes "wrangler@${WRANGLER_VERSION}" secret put BACKUP_SECRET --config cloudflare-workers/backup.wrangler.toml
+          printf '%s' "$RESEND_API_KEY" | npx --yes "wrangler@${WRANGLER_VERSION}" secret put RESEND_API_KEY --config cloudflare-workers/backup.wrangler.toml
+          printf '%s' "$ALERT_EMAIL" | npx --yes "wrangler@${WRANGLER_VERSION}" secret put ALERT_EMAIL --config cloudflare-workers/backup.wrangler.toml
+          printf '%s' "$ROOT_ADMIN_EMAIL" | npx --yes "wrangler@${WRANGLER_VERSION}" secret put ROOT_ADMIN_EMAIL --config cloudflare-workers/backup.wrangler.toml
 
       - name: Deploy Uptime Cron Worker
-        env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        shell: bash
         run: |
-          cd cloudflare-workers
-          wrangler deploy --config uptime.wrangler.toml
-          echo "${{ secrets.NEXT_PUBLIC_API_BASE_URL }}" | wrangler secret put NEXT_PUBLIC_API_BASE_URL --config uptime.wrangler.toml
-          echo "${{ secrets.RESEND_API_KEY }}" | wrangler secret put RESEND_API_KEY --config uptime.wrangler.toml
-          echo "${{ secrets.ALERT_EMAIL }}" | wrangler secret put ALERT_EMAIL --config uptime.wrangler.toml
-          echo "${{ secrets.ROOT_ADMIN_EMAIL }}" | wrangler secret put ROOT_ADMIN_EMAIL --config uptime.wrangler.toml
+          set -euo pipefail
+          npx --yes "wrangler@${WRANGLER_VERSION}" deploy --config "${RUNNER_TEMP}/uptime.wrangler.toml"
+          printf '%s' "$NEXT_PUBLIC_API_BASE_URL" | npx --yes "wrangler@${WRANGLER_VERSION}" secret put NEXT_PUBLIC_API_BASE_URL --config "${RUNNER_TEMP}/uptime.wrangler.toml"
+          printf '%s' "$RESEND_API_KEY" | npx --yes "wrangler@${WRANGLER_VERSION}" secret put RESEND_API_KEY --config "${RUNNER_TEMP}/uptime.wrangler.toml"
+          printf '%s' "$ALERT_EMAIL" | npx --yes "wrangler@${WRANGLER_VERSION}" secret put ALERT_EMAIL --config "${RUNNER_TEMP}/uptime.wrangler.toml"
+          printf '%s' "$ROOT_ADMIN_EMAIL" | npx --yes "wrangler@${WRANGLER_VERSION}" secret put ROOT_ADMIN_EMAIL --config "${RUNNER_TEMP}/uptime.wrangler.toml"
 
       - name: Deploy Trial Cron Worker
-        env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        shell: bash
         run: |
-          cd cloudflare-workers
-          wrangler deploy --config trial.wrangler.toml
-          echo "${{ secrets.NEXT_PUBLIC_API_BASE_URL }}" | wrangler secret put NEXT_PUBLIC_API_BASE_URL --config trial.wrangler.toml
-          echo "${{ secrets.CRON_SECRET }}" | wrangler secret put CRON_SECRET --config trial.wrangler.toml
-          echo "${{ secrets.RESEND_API_KEY }}" | wrangler secret put RESEND_API_KEY --config trial.wrangler.toml
-          echo "${{ secrets.ALERT_EMAIL }}" | wrangler secret put ALERT_EMAIL --config trial.wrangler.toml
-          echo "${{ secrets.ROOT_ADMIN_EMAIL }}" | wrangler secret put ROOT_ADMIN_EMAIL --config trial.wrangler.toml
+          set -euo pipefail
+          npx --yes "wrangler@${WRANGLER_VERSION}" deploy --config cloudflare-workers/trial.wrangler.toml
+          printf '%s' "$NEXT_PUBLIC_API_BASE_URL" | npx --yes "wrangler@${WRANGLER_VERSION}" secret put NEXT_PUBLIC_API_BASE_URL --config cloudflare-workers/trial.wrangler.toml
+          printf '%s' "$CRON_SECRET" | npx --yes "wrangler@${WRANGLER_VERSION}" secret put CRON_SECRET --config cloudflare-workers/trial.wrangler.toml
+          printf '%s' "$RESEND_API_KEY" | npx --yes "wrangler@${WRANGLER_VERSION}" secret put RESEND_API_KEY --config cloudflare-workers/trial.wrangler.toml
+          printf '%s' "$ALERT_EMAIL" | npx --yes "wrangler@${WRANGLER_VERSION}" secret put ALERT_EMAIL --config cloudflare-workers/trial.wrangler.toml
+          printf '%s' "$ROOT_ADMIN_EMAIL" | npx --yes "wrangler@${WRANGLER_VERSION}" secret put ROOT_ADMIN_EMAIL --config cloudflare-workers/trial.wrangler.toml
 
       - name: Notify on Success
         if: success()

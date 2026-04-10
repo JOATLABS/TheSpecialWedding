@@ -1,16 +1,18 @@
-from typing import cast
-from fastapi import APIRouter, HTTPException, Depends, Request
-from app.services.reminder_service import ReminderService
-from app.dependencies.auth_extended import (
-    require_team_or_planner,
-    enforce_team_permission,
-    ExtendedAuthUser,
-)
-from app.core.database import mongo
-from app.core.config import settings
-from app.utils.support_inbox_links import build_support_inbox_url
-from datetime import datetime, timezone
 import logging
+from datetime import datetime, timezone
+from typing import cast
+
+from fastapi import APIRouter, Depends, HTTPException, Request
+
+from app.core.config import settings
+from app.core.database import mongo
+from app.dependencies.auth_extended import (
+    ExtendedAuthUser,
+    enforce_team_permission,
+    require_team_or_planner,
+)
+from app.services.reminder_service import ReminderService
+from app.utils.support_inbox_links import build_support_inbox_url
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -190,9 +192,11 @@ async def handle_sms_callback(request: Request):
                             "message": "HELP request - Guest requested assistance",
                             "guest_id": str(guest["_id"]) if guest else None,
                             "guest_name": guest.get("name") if guest else None,
-                            "wedding_id": str(guest["wedding_id"])
-                            if guest and guest.get("wedding_id")
-                            else None,
+                            "wedding_id": (
+                                str(guest["wedding_id"])
+                                if guest and guest.get("wedding_id")
+                                else None
+                            ),
                             "wedding_name": wedding_name,
                             "assigned_to": assigned_planner_email,
                             "status": "new",
@@ -270,9 +274,11 @@ async def handle_sms_callback(request: Request):
                         "phone": from_number,
                         "message": payload.get("text", ""),
                         "guest_id": str(guest["_id"]) if guest else None,
-                        "wedding_id": str(guest["wedding_id"])
-                        if guest and guest.get("wedding_id")
-                        else None,
+                        "wedding_id": (
+                            str(guest["wedding_id"])
+                            if guest and guest.get("wedding_id")
+                            else None
+                        ),
                         "wedding_name": wedding_name,
                         "assigned_to": assigned_planner_email,  # ← Route to responsible planner
                         "planner_name": planner_name,
@@ -396,6 +402,7 @@ async def _notify_root_admin_support_ticket(ticket: dict):
     """Send notification to ROOT_ADMIN for tickets without assigned planner"""
     try:
         import os
+
         import requests  # type: ignore[import-untyped]
 
         # Send Slack notification if webhook configured

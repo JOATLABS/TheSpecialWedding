@@ -5,16 +5,18 @@ Admin endpoints for managing wedding service packages.
 All endpoints require planner authentication.
 """
 
-from fastapi import APIRouter, HTTPException, Depends, Query
+import logging
 from typing import List, Optional
+
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
-from app.services.package_service import package_service
+
 from app.dependencies.auth_extended import (
     ExtendedAuthUser,
-    require_team_or_planner,
     enforce_team_permission,
+    require_team_or_planner,
 )
-import logging
+from app.services.package_service import package_service
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -357,12 +359,12 @@ async def get_ai_pricing_suggestion(
     Cost: 3 AI credits
     """
     enforce_team_permission(current_user, "manage_contracts")
-    from app.services.ai_service import (
-        ai_service,
-        InsufficientCreditsError,
-        AIGenerationError,
-    )
     from app.core.settings import settings
+    from app.services.ai_service import (
+        AIGenerationError,
+        InsufficientCreditsError,
+        ai_service,
+    )
 
     try:
         if not settings.ai_enabled:

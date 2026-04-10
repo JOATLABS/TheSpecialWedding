@@ -8,18 +8,19 @@ Users just click "Allow" in their browser and receive notifications.
 No external apps required.
 """
 
-import os
 import json
 import logging
-from typing import Optional, Dict, Any, List
+import os
 from datetime import datetime, timezone
+from typing import Any, Dict, List, Optional
+
 from app.core.database import mongo
 
 logger = logging.getLogger(__name__)
 
 
 def _load_pywebpush():
-    from pywebpush import webpush, WebPushException
+    from pywebpush import WebPushException, webpush
 
     return webpush, WebPushException
 

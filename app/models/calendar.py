@@ -228,6 +228,7 @@ class PlannerTaskModel(BaseModel):
 
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)
+    version: int = Field(default=1, ge=1)
     completed_at: Optional[datetime] = Field(
         None, description="When task was completed"
     )
@@ -342,6 +343,7 @@ class CalendarEventUpdate(BaseModel):
     meeting_status: Optional[str] = None
     sync_target_override_enabled: Optional[bool] = None
     sync_target_connection_ids: Optional[list[str]] = None
+    expected_version: Optional[int] = Field(None, ge=1)
 
     @field_validator("timezone")
     @classmethod

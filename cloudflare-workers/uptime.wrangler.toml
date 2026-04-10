@@ -14,7 +14,8 @@
 
 name = "uptime-cron"
 main = "uptime-cron.js"
-compatibility_date = "2024-10-01"
+compatibility_date = "2026-04-10"
+compatibility_flags = ["nodejs_compat"]
 
 [triggers]
 # Check every 5 minutes
@@ -24,11 +25,10 @@ crons = ["*/5 * * * *"]
 # Required secrets in GitHub: NEXT_PUBLIC_API_BASE_URL, RESEND_API_KEY, ALERT_EMAIL, ROOT_ADMIN_EMAIL
 
 # KV namespace for alert debouncing and state tracking
-# Create with: wrangler kv:namespace create "uptime-state"
-# Then replace <YOUR_KV_NAMESPACE_ID> with the returned ID
+# Provide the production namespace ID via CI and render a temporary deploy config.
 [[kv_namespaces]]
 binding = "UPTIME_KV"
-id = "<YOUR_KV_NAMESPACE_ID>"
+id = "<UPTIME_KV_NAMESPACE_ID>"
 
 # Note: RESEND_API_KEY must be set via wrangler secret or Cloudflare dashboard
 # wrangler secret put RESEND_API_KEY --config cloudflare-workers/uptime.wrangler.toml

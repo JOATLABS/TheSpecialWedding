@@ -7,10 +7,11 @@ of any missing configuration through:
 2. Web Push notification (if admin has subscribed)
 """
 
-import os
 import logging
+import os
 from datetime import datetime, timezone
-from typing import List, Dict
+from typing import Dict, List
+
 from app.core.database import mongo
 
 logger = logging.getLogger(__name__)

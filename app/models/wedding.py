@@ -1,6 +1,8 @@
-from pydantic import BaseModel, Field, field_serializer, field_validator
-from typing import List, Optional
 from datetime import datetime
+from typing import List, Optional
+
+from pydantic import BaseModel, Field, field_serializer, field_validator
+
 from app.utils.event_time import normalize_optional_event_time
 
 

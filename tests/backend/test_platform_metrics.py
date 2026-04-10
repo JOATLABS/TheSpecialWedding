@@ -1,8 +1,8 @@
+import os
+import sys
 from datetime import datetime, timedelta
 from pathlib import Path
-import os
 from types import SimpleNamespace
-import sys
 
 import mongomock
 import pytest
@@ -17,13 +17,13 @@ os.environ.setdefault("SECRET_KEY", "test-secret")
 os.environ.setdefault("ALGORITHM", "HS256")
 os.environ.setdefault("API_KEY", "test-api-key")
 
-import app.api.saas_config as saas_config  # noqa: E402
 import app.api.platform_metrics as platform_metrics_api  # noqa: E402
-from app.core.config import settings  # noqa: E402
+import app.api.saas_config as saas_config  # noqa: E402
 import app.core.database as database_module  # noqa: E402
+import app.services.platform_metrics_service as platform_metrics_service  # noqa: E402
+from app.core.config import settings  # noqa: E402
 from app.dependencies.auth_extended import require_root_admin  # noqa: E402
 from app.services.platform_metrics_service import PlatformMetricsService  # noqa: E402
-import app.services.platform_metrics_service as platform_metrics_service  # noqa: E402
 
 
 class FakeMongo:

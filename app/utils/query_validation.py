@@ -5,9 +5,10 @@ Validates and sanitizes pagination, sorting, and filtering parameters
 to prevent injection and ensure sensible bounds.
 """
 
-from typing import Optional, List
-from fastapi import Query
 import logging
+from typing import List, Optional
+
+from fastapi import Query
 
 logger = logging.getLogger(__name__)
 

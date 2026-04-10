@@ -4,9 +4,9 @@ Automation Attributes Coverage Analyzer
 Analyzes TSX/JSX files to identify automation attribute coverage
 """
 
+import glob
 import os
 import re
-import glob
 from pathlib import Path
 from typing import Dict, List, Tuple
 

@@ -1,9 +1,10 @@
-from fastapi import APIRouter, Path, HTTPException, Request
-from app.services.rsvp_service import RSVPService
-from app.models.rsvp import RSVPModel
-from fastapi import Body
-from app.dependencies.guest_access import get_guest_access_session
 import logging
+
+from fastapi import APIRouter, Body, HTTPException, Path, Request
+
+from app.dependencies.guest_access import get_guest_access_session
+from app.models.rsvp import RSVPModel
+from app.services.rsvp_service import RSVPService
 
 logger = logging.getLogger(__name__)
 

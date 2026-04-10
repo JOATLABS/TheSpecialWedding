@@ -2022,6 +2022,8 @@ async def create_calendar_indexes():
     2. calendar_connections
     3. calendar_event_syncs
     4. meeting_invites
+    5. calendar_jobs
+    6. calendar_idempotency_keys
     """
     try:
         planner_tasks = mongo.get_planner_tasks_collection()
@@ -2112,6 +2114,24 @@ async def create_calendar_indexes():
             name="idx_calendar_syncs_owner_task",
             background=True,
         )
+        await calendar_event_syncs.create_index(
+            [
+                ("sync_status", ASCENDING),
+                ("next_retry_at", ASCENDING),
+                ("retryable_error", ASCENDING),
+            ],
+            name="idx_calendar_syncs_retry_queue",
+            background=True,
+        )
+        await calendar_event_syncs.create_index(
+            [
+                ("sync_status", ASCENDING),
+                ("last_drift_check_at", ASCENDING),
+                ("calendar_connection_id", ASCENDING),
+            ],
+            name="idx_calendar_syncs_drift_checks",
+            background=True,
+        )
 
         meeting_invites = mongo.get_meeting_invites_collection()
         await _deduplicate_meeting_invites(meeting_invites)
@@ -2129,6 +2149,39 @@ async def create_calendar_indexes():
         await meeting_invites.create_index(
             [("wedding_id", ASCENDING), ("response_status", ASCENDING)],
             name="idx_meeting_invites_wedding_response_status",
+            background=True,
+        )
+
+        calendar_jobs = mongo.get_calendar_jobs_collection()
+        await calendar_jobs.create_index(
+            [("status", ASCENDING), ("run_at", ASCENDING)],
+            name="idx_calendar_jobs_status_run_at",
+            background=True,
+        )
+        await calendar_jobs.create_index(
+            [("dedupe_key", ASCENDING)],
+            name="idx_calendar_jobs_dedupe_key",
+            unique=True,
+            background=True,
+        )
+        await calendar_jobs.create_index(
+            [("expires_at", ASCENDING)],
+            name="idx_calendar_jobs_expires_at_ttl",
+            expireAfterSeconds=0,
+            background=True,
+        )
+
+        calendar_idempotency = mongo.get_calendar_idempotency_collection()
+        await calendar_idempotency.create_index(
+            [("scope_key", ASCENDING), ("idempotency_key", ASCENDING)],
+            name="idx_calendar_idempotency_scope_key",
+            unique=True,
+            background=True,
+        )
+        await calendar_idempotency.create_index(
+            [("expires_at", ASCENDING)],
+            name="idx_calendar_idempotency_expires_at_ttl",
+            expireAfterSeconds=0,
             background=True,
         )
 

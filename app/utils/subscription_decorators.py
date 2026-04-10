@@ -1,5 +1,7 @@
 from functools import wraps
+
 from fastapi import HTTPException
+
 from app.dependencies.auth_extended import ExtendedAuthUser
 from app.services.subscription_service import SubscriptionService
 

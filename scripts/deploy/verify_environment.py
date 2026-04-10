@@ -11,7 +11,6 @@ from typing import Optional
 import requests
 import urllib3
 
-
 DEFAULT_TIMEOUT = 15
 
 

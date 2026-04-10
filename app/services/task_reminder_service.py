@@ -13,6 +13,7 @@ Usage:
 import logging
 from datetime import datetime, timedelta, timezone
 from typing import Dict
+
 from app.core.database import mongo
 from app.services.planner_notification_service import planner_notification_service
 
@@ -143,9 +144,11 @@ class TaskReminderService:
             await planner_notification_service.notify_task_reminder(
                 planner_id=planner_email,
                 task_title=task.get("title", "Untitled Task"),
-                due_date=task_date.isoformat()
-                if isinstance(task_date, datetime)
-                else str(task_date),
+                due_date=(
+                    task_date.isoformat()
+                    if isinstance(task_date, datetime)
+                    else str(task_date)
+                ),
                 wedding_id=task.get("wedding_id"),
                 task_id=task_id,
                 reminder_minutes=reminder_minutes,

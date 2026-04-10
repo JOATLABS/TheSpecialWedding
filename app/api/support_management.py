@@ -1,18 +1,20 @@
-from fastapi import APIRouter, HTTPException, Depends, Query, File, UploadFile
-from pydantic import BaseModel, Field, validator
-from typing import Any, Dict, Optional, List
+import logging
 from datetime import datetime, timezone
-from app.dependencies.auth_extended import (
-    require_root_admin,
-    require_admin_or_planner,
-    ExtendedAuthUser,
-)
+from typing import Any, Dict, List, Optional
+
+from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
+from pydantic import BaseModel, Field, validator
+
 from app.core.database import mongo
+from app.dependencies.auth_extended import (
+    ExtendedAuthUser,
+    require_admin_or_planner,
+    require_root_admin,
+)
 from app.services.support_service import SupportService
 from app.utils.contact_sanitizer import sanitize_phone
+from app.utils.query_validation import validated_status_filter, validated_string_filter
 from app.utils.serializers import serialize_mongo_doc
-from app.utils.query_validation import validated_string_filter, validated_status_filter
-import logging
 
 logger = logging.getLogger(__name__)
 
@@ -620,8 +622,9 @@ async def respond_to_sms_ticket(
     - Updates ticket status
     - Calculates response time metrics
     """
-    from app.core.database import mongo
     from bson import ObjectId
+
+    from app.core.database import mongo
     from app.services.sms_service import SMSService
 
     # Get ticket
@@ -719,9 +722,11 @@ async def update_sms_ticket_status(
     current_user: ExtendedAuthUser = Depends(require_admin_or_planner),
 ):
     """Update SMS ticket status without sending a response"""
-    from app.core.database import mongo
-    from bson import ObjectId
     from datetime import datetime, timezone
+
+    from bson import ObjectId
+
+    from app.core.database import mongo
 
     if status not in ["new", "in_progress", "resolved", "closed"]:
         raise HTTPException(status_code=400, detail="Invalid status")

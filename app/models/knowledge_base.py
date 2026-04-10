@@ -3,11 +3,12 @@ Knowledge Base Models for Community-Driven Documentation System
 Provides Pydantic models with validation for KB articles
 """
 
-from pydantic import BaseModel, Field, field_validator
-from typing import Optional, List
 from datetime import datetime, timezone
-from app.models.base import UserRelatedModel
+from typing import List, Optional
 
+from pydantic import BaseModel, Field, field_validator
+
+from app.models.base import UserRelatedModel
 
 # Valid categories for KB articles
 KB_CATEGORIES = [

@@ -25,22 +25,22 @@ create_release() {
     local tag=$1
     local title=$2
     local body=$3
-    
+
     echo "Creating release for $tag..."
-    
+
     # Create temporary file for release notes
     local temp_file=$(mktemp)
     echo "$body" > "$temp_file"
-    
+
     # Create the release
     gh release create "$tag" \
         --title "$title" \
         --notes-file "$temp_file" \
         --target main
-    
+
     # Clean up
     rm "$temp_file"
-    
+
     echo "✅ Created release $tag"
     echo ""
 }

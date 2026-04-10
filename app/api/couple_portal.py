@@ -13,24 +13,39 @@ Sprint 5: Note replies, meeting scheduling
 Sprint 6: Registry CRUD, FAQ CRUD, QR code, push notifications
 """
 
-from fastapi import APIRouter, HTTPException, Request, Query, Depends, Path
+import copy
+import logging
+import os
+import uuid
+from datetime import datetime, timezone
+from typing import Any, List, Optional
+
+from bson import ObjectId
+from bson.errors import InvalidId
+from fastapi import APIRouter, Depends, HTTPException, Path, Query, Request
 from fastapi.responses import Response
 from pydantic import BaseModel, Field
-from typing import Optional, List, Any
-from datetime import datetime, timezone
+
 from app.core.database import mongo
-from app.services.couple_portal_service import couple_portal_service
-from app.services.guest_export_service import guest_export_service
-from app.services.web_push_service import web_push_service
-from app.services.sse_manager import sse_manager
 from app.dependencies.auth_extended import (
     ExtendedAuthUser,
-    require_team_or_planner,
-    enforce_team_permission,
     check_wedding_access,
+    enforce_team_permission,
     get_accessible_wedding_ids,
+    require_team_or_planner,
 )
 from app.dependencies.couple_auth import require_couple_auth
+from app.services.couple_lifecycle_service import couple_lifecycle_service
+from app.services.couple_portal_service import couple_portal_service
+from app.services.guest_export_service import guest_export_service
+from app.services.sse_manager import sse_manager
+from app.services.web_push_service import web_push_service
+from app.utils.couple_archived_read_model import (
+    build_archived_guest_stats,
+    get_archived_faqs,
+    get_archived_registries,
+    get_archived_wedding_record,
+)
 from app.utils.couple_identity import (
     build_couple_principal_key,
     get_couple_record_id,
@@ -38,7 +53,6 @@ from app.utils.couple_identity import (
 )
 from app.utils.couple_realtime import couple_sse_channel
 from app.utils.id_utils import to_str_id
-from app.services.couple_lifecycle_service import couple_lifecycle_service
 from app.utils.planner_ownership import (
     build_team_owner_query,
     list_wedding_ids_for_owner,
@@ -46,12 +60,6 @@ from app.utils.planner_ownership import (
     normalize_wedding_query_id,
     resolve_wedding_owner_identity,
 )
-from bson import ObjectId
-from bson.errors import InvalidId
-import uuid
-import copy
-import logging
-import os
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -149,29 +157,6 @@ def _isoformat_or_none(value: Any) -> Optional[str]:
     if isinstance(value, str):
         return value
     return None
-
-
-def _default_archived_guest_stats() -> dict[str, Any]:
-    return {
-        "planned_total": 0,
-        "guest_list_total": 0,
-        "invited": 0,
-        "responded": 0,
-        "confirmed": 0,
-        "declined": 0,
-        "pending": 0,
-        "not_invited": 0,
-        "response_rate": 0.0,
-        "event_breakdown": [],
-    }
-
-
-def _default_archived_budget_summary() -> dict[str, Any]:
-    return {
-        "total_budget": 0,
-        "total_spent": 0,
-        "remaining": 0,
-    }
 
 
 def _default_archived_memories_summary() -> dict[str, Any]:
@@ -277,16 +262,18 @@ def _build_archived_dashboard_fallback(
             "registries": wedding_snapshot.get("registries", []),
             "faqs": wedding_snapshot.get("faqs", []),
         },
-        "planner": {
-            "name": None,
-            "company": None,
-            "email": archive.get("planner_email"),
-            "phone": None,
-            "profile_image_url": None,
-        }
-        if archive.get("planner_email")
-        else None,
-        "guest_stats": _default_archived_guest_stats(),
+        "planner": (
+            {
+                "name": None,
+                "company": None,
+                "email": archive.get("planner_email"),
+                "phone": None,
+                "profile_image_url": None,
+            }
+            if archive.get("planner_email")
+            else None
+        ),
+        "guest_stats": build_archived_guest_stats(archive),
         "budget_summary": {
             "total_budget": total_budget,
             "total_spent": total_spent,
@@ -309,9 +296,7 @@ async def get_dashboard(couple: dict = Depends(require_couple_auth)):
 
     archive = None
     if couple.get("wedding_archived"):
-        archive = await mongo.db["archived_weddings"].find_one(
-            {"original_wedding_id": wedding_id}
-        )
+        archive = await get_archived_wedding_record(wedding_id)
 
     dashboard = await couple_portal_service.get_portal_dashboard(
         wedding_id, couple["email"]
@@ -326,9 +311,11 @@ async def get_dashboard(couple: dict = Depends(require_couple_auth)):
         return {
             "archived": True,
             **dashboard,
-            "archived_at": _isoformat_or_none(archive.get("archived_at"))
-            if archive
-            else _isoformat_or_none(couple.get("archived_at")),
+            "archived_at": (
+                _isoformat_or_none(archive.get("archived_at"))
+                if archive
+                else _isoformat_or_none(couple.get("archived_at"))
+            ),
             "message": "This wedding has been completed and archived. You can still view your wedding details.",
         }
 
@@ -386,9 +373,11 @@ async def get_updates(
                 "category": update.get("category"),
                 "attachments": update.get("attachments", []),
                 "is_milestone": update.get("is_milestone", False),
-                "created_at": update.get("created_at").isoformat()
-                if update.get("created_at")
-                else None,
+                "created_at": (
+                    update.get("created_at").isoformat()
+                    if update.get("created_at")
+                    else None
+                ),
                 "created_by": update.get("created_by_name"),
             }
         )
@@ -536,14 +525,16 @@ async def get_form_details(form_id: str, couple: dict = Depends(require_couple_a
             "title": form.get("title"),
             "description": form.get("description"),
             "fields": form.get("fields", []),
-            "created_at": form.get("created_at").isoformat()
-            if form.get("created_at")
-            else None,
+            "created_at": (
+                form.get("created_at").isoformat() if form.get("created_at") else None
+            ),
         },
         "existing_responses": submission.get("responses") if submission else None,
-        "submitted_at": submission.get("submitted_at").isoformat()
-        if submission and submission.get("submitted_at")
-        else None,
+        "submitted_at": (
+            submission.get("submitted_at").isoformat()
+            if submission and submission.get("submitted_at")
+            else None
+        ),
         "read_only": bool(couple.get("wedding_archived")),
         "archived": bool(couple.get("wedding_archived")),
         "read_only_reason": (
@@ -1439,9 +1430,9 @@ async def couple_get_messages(
                 "content": msg.get("content"),
                 "read_by_couple": msg.get("read_by_couple", False),
                 "read_by_planner": msg.get("read_by_planner", False),
-                "created_at": msg.get("created_at").isoformat()
-                if msg.get("created_at")
-                else None,
+                "created_at": (
+                    msg.get("created_at").isoformat() if msg.get("created_at") else None
+                ),
             }
         )
 
@@ -1604,9 +1595,9 @@ async def planner_get_messages(
                 "sender_name": msg.get("sender_name"),
                 "content": msg.get("content"),
                 "read_by_couple": msg.get("read_by_couple", False),
-                "created_at": msg.get("created_at").isoformat()
-                if msg.get("created_at")
-                else None,
+                "created_at": (
+                    msg.get("created_at").isoformat() if msg.get("created_at") else None
+                ),
             }
         )
 
@@ -1756,22 +1747,30 @@ async def planner_list_conversations(
         summary = summary_map.get(couple["wedding_id"], {})
         conversations.append(
             {
-                "id": str(couple["_id"])
-                if isinstance(couple["_id"], ObjectId)
-                else couple["_id"],
+                "id": (
+                    str(couple["_id"])
+                    if isinstance(couple["_id"], ObjectId)
+                    else couple["_id"]
+                ),
                 "email": couple["email"],
                 "partner1_name": couple.get("partner1_name"),
                 "partner2_name": couple.get("partner2_name"),
                 "wedding_id": couple.get("wedding_id"),
-                "last_login": couple.get("last_login").isoformat()
-                if couple.get("last_login")
-                else None,
-                "created_at": couple.get("created_at").isoformat()
-                if couple.get("created_at")
-                else None,
-                "last_message_at": summary.get("last_message_at").isoformat()
-                if summary.get("last_message_at")
-                else None,
+                "last_login": (
+                    couple.get("last_login").isoformat()
+                    if couple.get("last_login")
+                    else None
+                ),
+                "created_at": (
+                    couple.get("created_at").isoformat()
+                    if couple.get("created_at")
+                    else None
+                ),
+                "last_message_at": (
+                    summary.get("last_message_at").isoformat()
+                    if summary.get("last_message_at")
+                    else None
+                ),
                 "last_message_preview": summary.get("last_message_preview"),
                 "last_sender_role": summary.get("last_sender_role"),
                 "unread_count": summary.get("unread_count", 0),
@@ -1856,9 +1855,9 @@ async def trigger_couple_digest(
     sent = await couple_portal_service.send_couple_digest_email(couple_doc, digest)
 
     return {
-        "message": "Digest email sent successfully"
-        if sent
-        else "Failed to send digest email",
+        "message": (
+            "Digest email sent successfully" if sent else "Failed to send digest email"
+        ),
         "sent": sent,
         "digest_summary": {
             "unread_messages": digest["unread_messages"],
@@ -2077,9 +2076,9 @@ async def list_custom_templates(
                 "description": tpl.get("description"),
                 "category": tpl.get("category"),
                 "field_count": len(tpl.get("fields", [])),
-                "created_at": tpl.get("created_at").isoformat()
-                if tpl.get("created_at")
-                else None,
+                "created_at": (
+                    tpl.get("created_at").isoformat() if tpl.get("created_at") else None
+                ),
             }
         )
 
@@ -2311,9 +2310,9 @@ def _serialize_meeting(task: dict, include_planner_fields: bool = True) -> dict:
         "id": str(task["_id"]),
         "title": task.get("title", ""),
         "description": task.get("description"),
-        "start_date": task["start_date"].isoformat()
-        if task.get("start_date")
-        else None,
+        "start_date": (
+            task["start_date"].isoformat() if task.get("start_date") else None
+        ),
         "end_date": task["end_date"].isoformat() if task.get("end_date") else None,
         "conference_url": task.get("conference_url"),
         "is_recurring": task.get("is_recurring", False),
@@ -2333,7 +2332,7 @@ def _serialize_meeting(task: dict, include_planner_fields: bool = True) -> dict:
 async def list_meetings_couple(couple: dict = Depends(require_couple_auth)):
     """Couple views their upcoming meetings with the planner."""
     if couple.get("wedding_archived"):
-        return {"meetings": [], "count": 0}
+        return {"meetings": [], "count": 0, "archived": True, "read_only": True}
 
     wedding_id = couple.get("wedding_id")
     if not wedding_id:
@@ -2384,7 +2383,12 @@ class RegistryItemRequest(BaseModel):
 async def list_registries_couple(couple: dict = Depends(require_couple_auth)):
     """Couple views their wedding registries."""
     if couple.get("wedding_archived"):
-        return {"registries": []}
+        archive = await get_archived_wedding_record(couple.get("wedding_id"))
+        return {
+            "registries": get_archived_registries(archive),
+            "archived": True,
+            "read_only": True,
+        }
 
     wedding_id = couple.get("wedding_id")
     wedding = await mongo.get_weddings_collection().find_one(
@@ -2524,7 +2528,12 @@ class FAQItemRequest(BaseModel):
 async def list_faqs_couple(couple: dict = Depends(require_couple_auth)):
     """Couple views their wedding FAQs."""
     if couple.get("wedding_archived"):
-        return {"faqs": []}
+        archive = await get_archived_wedding_record(couple.get("wedding_id"))
+        return {
+            "faqs": get_archived_faqs(archive),
+            "archived": True,
+            "read_only": True,
+        }
 
     wedding_id = couple.get("wedding_id")
     wedding = await mongo.get_weddings_collection().find_one(

@@ -4,6 +4,7 @@ This replaces the deprecated v1 style validators with modern core schema approac
 """
 
 from typing import Any, Dict
+
 from bson import ObjectId
 from pydantic import GetCoreSchemaHandler
 from pydantic_core import core_schema

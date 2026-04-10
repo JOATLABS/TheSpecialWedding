@@ -19,24 +19,24 @@ jobs:
           script: |
             const prTitle = context.payload.pull_request.title;
             console.log(`PR Title: "${prTitle}"`);
-            
+
             // Conventional commit regex
             const conventionalCommitRegex = /^(build|chore|ci|docs|feat|fix|perf|refactor|revert|style|test)(\(.+\))?!?: .+$/;
             // Repo-friendly descriptive title fallback, e.g. "Enhance middleware and error handling"
             const descriptiveTitleRegex = /^[A-Z][A-Za-z0-9/&(),:' -]{9,}$/;
             const isConventional = conventionalCommitRegex.test(prTitle);
             const isDescriptive = descriptiveTitleRegex.test(prTitle);
-            
+
             if (!isConventional && !isDescriptive) {
               const comment = `<!-- pr-title-check -->\n## ❌ PR Title Check Failed
-              
+
               Your PR title should be either:
               - a [Conventional Commits](https://www.conventionalcommits.org/) title, or
               - a clear descriptive sentence in Title Case
-              
+
               ### Preferred Conventional Format:
               \`<type>(<scope>): <subject>\`
-              
+
               ### Valid Types:
               - **feat**: A new feature (triggers minor release)
               - **fix**: A bug fix (triggers patch release)
@@ -47,19 +47,19 @@ jobs:
               - **test**: Adding or updating tests
               - **chore**: Maintenance tasks
               - **ci**: CI/CD changes
-              
+
               ### Examples:
               - \`feat(commands): add docker-compose-setup command\`
               - \`fix: correct file path handling in Windows\`
               - \`docs: update installation instructions\`
               - \`feat!: change command argument format\` (breaking change)
               - \`Improve staging deployment workflow reliability\`
-              
+
               ### Your PR Title:
               \`${prTitle}\`
-              
+
               Please update your PR title so it is either conventional or clearly descriptive.`;
-              
+
               const comments = await github.rest.issues.listComments({
                 issue_number: context.issue.number,
                 owner: context.repo.owner,
@@ -82,7 +82,7 @@ jobs:
                   body: comment
                 });
               }
-              
+
               core.setFailed('PR title must be conventional or clearly descriptive');
             } else {
               const comments = await github.rest.issues.listComments({
@@ -98,10 +98,10 @@ jobs:
                 const match = prTitle.match(/^(\w+)(\(.+\))?(!)?:/);
                 const type = match[1];
                 const isBreaking = match[3] === '!' || prTitle.includes('BREAKING CHANGE');
-                
+
                 let versionBump = 'No version bump';
                 let emoji = '📝';
-                
+
                 if (isBreaking) {
                   versionBump = 'Major version bump (breaking change)';
                   emoji = '💥';
@@ -114,15 +114,15 @@ jobs:
                 }
 
                 comment = `<!-- pr-title-check -->\n## ✅ PR Title Check Passed
-                
+
                 ${emoji} **Version Impact**: ${versionBump}
-                
+
                 Your PR title follows the conventional commits format.`;
               } else {
                 comment = `<!-- pr-title-check -->\n## ✅ PR Title Check Passed
-                
+
                 Your PR title is clear and descriptive.
-                
+
                 Optional improvement: switch to a conventional title like \`feat:\`, \`fix:\`, or \`chore:\` if you want machine-readable release metadata later.`;
               }
 
@@ -159,32 +159,32 @@ jobs:
         id: check-commands
         run: |
           echo "Checking command files..."
-          
+
           # Find all command files
           COMMAND_FILES=$(find .claude/commands -name "*.md" -type f)
           ISSUES_FOUND=false
           REPORT=""
-          
+
           for file in $COMMAND_FILES; do
             filename=$(basename "$file")
-            
+
             # Check for required sections
             if ! grep -q "^# " "$file"; then
               REPORT="${REPORT}❌ $filename: Missing title (# Command Name)\n"
               ISSUES_FOUND=true
             fi
-            
+
             if ! grep -q "^## Instructions" "$file"; then
               REPORT="${REPORT}❌ $filename: Missing ## Instructions section\n"
               ISSUES_FOUND=true
             fi
-            
+
             # Check for proper markdown structure
             if grep -q "^#\{4,\}" "$file"; then
               REPORT="${REPORT}⚠️ $filename: Uses h4+ headers (consider using h3 max)\n"
             fi
           done
-          
+
           echo "issues_found=$ISSUES_FOUND" >> $GITHUB_OUTPUT
           echo "report<<EOF" >> $GITHUB_OUTPUT
           echo -e "$REPORT" >> $GITHUB_OUTPUT
@@ -197,18 +197,18 @@ jobs:
           script: |
             const report = `${{ steps.check-commands.outputs.report }}`;
             const comment = `## 📋 Command Validation Report
-            
+
             ${report}
-            
+
             Please fix these issues before merging.
-            
+
             ### Command Structure Requirements:
             - Must have a title: \`# Command Name\`
             - Must have instructions: \`## Instructions\`
             - Should include clear step-by-step guidance
-            
+
             See [CONTRIBUTING.md](CONTRIBUTING.md#command-development-guidelines) for details.`;
-            
+
             await github.rest.issues.createComment({
               issue_number: context.issue.number,
               owner: context.repo.owner,
@@ -227,10 +227,10 @@ jobs:
           script: |
             const prTitle = context.payload.pull_request.title;
             const prBody = context.payload.pull_request.body || '';
-            
+
             // Create summary
             let summary = '## 📊 PR Summary\n\n';
-            
+
             // Check for command changes
             if (prTitle.includes('command') || prBody.includes('command')) {
               summary += '### 📝 Command Changes Detected\n';
@@ -239,13 +239,13 @@ jobs:
               summary += '- [ ] Documentation is updated\n';
               summary += '- [ ] Commands follow the standard structure\n\n';
             }
-            
+
             // Add checklist based on PR type
             const match = prTitle.match(/^(\w+)(\(.+\))?(!)?:/);
             if (match) {
               const type = match[1];
               summary += `### 🎯 PR Type: ${type}\n\n`;
-              
+
               switch(type) {
                 case 'feat':
                   summary += '**Checklist for new features:**\n';
@@ -267,5 +267,5 @@ jobs:
                   break;
               }
             }
-            
+
             console.log(summary);

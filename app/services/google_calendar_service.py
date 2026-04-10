@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import base64
 import hashlib
+import json
 import logging
 import secrets
 from datetime import UTC, datetime, timedelta
@@ -19,11 +20,13 @@ from google_auth_oauthlib.flow import Flow  # type: ignore[import-untyped]
 from googleapiclient.discovery import build  # type: ignore[import-untyped]
 from googleapiclient.errors import HttpError  # type: ignore[import-untyped]
 
+from app.core.cache import cache
 from app.core.config import settings
 from app.core.database import mongo
 from app.models.calendar import VisibilityMode
 from app.models.calendar_connection import CalendarConnectionStatus
 from app.models.calendar_sync import CalendarSyncStatusValue
+from app.services.calendar_audit_service import calendar_audit_service
 
 logger = logging.getLogger(__name__)
 
@@ -87,6 +90,175 @@ class GoogleCalendarService:
             owner_id=connection_doc.get("owner_planner_id"),
             user_id=connection_doc.get("user_id"),
         )
+
+    def _external_events_cache_key(
+        self,
+        *,
+        connection_id: str,
+        time_min: datetime,
+        time_max: datetime,
+        max_results: int,
+    ) -> str:
+        return (
+            "calendar_external_events:"
+            f"{connection_id}:"
+            f"{time_min.isoformat()}:"
+            f"{time_max.isoformat()}:"
+            f"{max_results}"
+        )
+
+    async def invalidate_connection_events_cache(self, connection_id: str) -> None:
+        await cache.clear_pattern(f"calendar_external_events:{connection_id}:*")
+
+    def _classify_google_exception(self, exc: Exception) -> dict[str, Any]:
+        status_code: Optional[int] = None
+        error_reason: Optional[str] = None
+        message = str(exc)
+
+        if isinstance(exc, HttpError):
+            status_code = int(getattr(exc.resp, "status", 0) or 0)
+            try:
+                payload = json.loads(exc.content.decode("utf-8"))
+            except Exception:
+                payload = {}
+            error_block = payload.get("error", {}) if isinstance(payload, dict) else {}
+            error_rows = error_block.get("errors", [])
+            if isinstance(error_rows, list) and error_rows:
+                first_error = error_rows[0] or {}
+                error_reason = first_error.get("reason")
+                message = (
+                    first_error.get("message") or error_block.get("message") or message
+                )
+            else:
+                error_reason = error_block.get("status")
+                message = error_block.get("message") or message
+        elif isinstance(exc, (TimeoutError, ConnectionError, OSError)):
+            return {
+                "retryable": True,
+                "error_category": "temporary",
+                "status_code": None,
+                "error_reason": "transport_error",
+                "error_message": message,
+            }
+
+        if status_code == 429 or error_reason in {
+            "rateLimitExceeded",
+            "userRateLimitExceeded",
+        }:
+            return {
+                "retryable": True,
+                "error_category": "rate_limited",
+                "status_code": status_code,
+                "error_reason": error_reason,
+                "error_message": message,
+            }
+
+        if status_code == 403 and error_reason in {
+            "quotaExceeded",
+            "dailyLimitExceeded",
+            "calendarUsageLimitsExceeded",
+        }:
+            return {
+                "retryable": False,
+                "error_category": "quota_exceeded",
+                "status_code": status_code,
+                "error_reason": error_reason,
+                "error_message": message,
+            }
+
+        if status_code == 401:
+            return {
+                "retryable": False,
+                "error_category": "auth_revoked",
+                "status_code": status_code,
+                "error_reason": error_reason,
+                "error_message": message,
+            }
+
+        if status_code == 403:
+            return {
+                "retryable": False,
+                "error_category": "permission_denied",
+                "status_code": status_code,
+                "error_reason": error_reason,
+                "error_message": message,
+            }
+
+        if status_code == 404:
+            return {
+                "retryable": False,
+                "error_category": "not_found",
+                "status_code": status_code,
+                "error_reason": error_reason,
+                "error_message": message,
+            }
+
+        if status_code is not None and status_code >= 500:
+            return {
+                "retryable": True,
+                "error_category": "temporary",
+                "status_code": status_code,
+                "error_reason": error_reason,
+                "error_message": message,
+            }
+
+        return {
+            "retryable": False,
+            "error_category": "unknown",
+            "status_code": status_code,
+            "error_reason": error_reason,
+            "error_message": message,
+        }
+
+    async def _apply_provider_error_to_connection(
+        self,
+        connection_doc: dict[str, Any],
+        classification: dict[str, Any],
+    ) -> None:
+        error_category = classification.get("error_category")
+        status = connection_doc.get(
+            "connection_status", CalendarConnectionStatus.ERROR.value
+        )
+        if error_category == "auth_revoked":
+            status = CalendarConnectionStatus.REVOKED.value
+        elif error_category in {"rate_limited", "quota_exceeded", "not_found"}:
+            status = CalendarConnectionStatus.ACTIVE.value
+        else:
+            status = CalendarConnectionStatus.ERROR.value
+
+        await self.connections_collection.update_one(
+            {"_id": connection_doc["_id"]},
+            {
+                "$set": {
+                    "connection_status": status,
+                    "last_error": classification.get("error_message"),
+                    "updated_at": datetime.now(UTC),
+                }
+            },
+        )
+
+    def _build_provider_result(
+        self,
+        *,
+        success: bool,
+        connection_doc: dict[str, Any],
+        external_event_id: Optional[str] = None,
+        etag: Optional[str] = None,
+        classification: Optional[dict[str, Any]] = None,
+        event: Optional[dict[str, Any]] = None,
+    ) -> dict[str, Any]:
+        classification = classification or {}
+        return {
+            "success": success,
+            "calendar_id": connection_doc.get("calendar_id"),
+            "external_event_id": external_event_id,
+            "etag": etag,
+            "retryable": bool(classification.get("retryable", False)),
+            "error_category": classification.get("error_category"),
+            "error_message": classification.get("error_message"),
+            "status_code": classification.get("status_code"),
+            "event": event,
+        }
 
     def _get_client_config(self) -> Dict[str, Any]:
         """Build OAuth client configuration from settings."""
@@ -432,6 +604,20 @@ class GoogleCalendarService:
             upsert=True,
         )
 
+        await calendar_audit_service.log(
+            action="calendar_connection_connected",
+            message=f"Connected Google Calendar account {provider_account_email}",
+            owner_planner_email=owner_email,
+            actor_email=user_email,
+            actor_role="planner" if owner_id == user_id else "team_member",
+            metadata={
+                "provider": "google",
+                "provider_account_email": provider_account_email,
+                "connections_created": len(calendars),
+                "default_write_calendar_id": default_write_id,
+            },
+        )
+
         return {
             "connected": True,
             "calendar_id": default_write_id,
@@ -587,6 +773,9 @@ class GoogleCalendarService:
         self,
         connection_id: str,
         updates: dict[str, Any],
+        *,
+        actor_email: Optional[str] = None,
+        actor_role: Optional[str] = None,
     ) -> dict:
         """Update mutable connection flags."""
         connection_doc = await self._get_connection_doc(connection_id)
@@ -644,6 +833,7 @@ class GoogleCalendarService:
             {"_id": connection_doc["_id"]},
             {"$set": set_doc},
         )
+        await self.invalidate_connection_events_cache(connection_id)
 
         if set_doc.get("sync_enabled") is False and connection_doc.get(
             "is_default_write_target"
@@ -667,6 +857,38 @@ class GoogleCalendarService:
                         }
                     },
                 )
+        if "is_default_write_target" in set_doc and (
+            set_doc["is_default_write_target"]
+            != connection_doc.get("is_default_write_target")
+        ):
+            await calendar_audit_service.log(
+                action="calendar_default_target_changed",
+                message=f"Changed default write target to {connection_doc.get('calendar_name')}",
+                owner_planner_email=connection_doc.get("owner_planner_email"),
+                actor_email=actor_email,
+                actor_role=actor_role,
+                metadata={
+                    "connection_id": connection_id,
+                    "calendar_name": connection_doc.get("calendar_name"),
+                    "is_default_write_target": set_doc["is_default_write_target"],
+                },
+            )
+        if "allowed_scheduler_user_ids" in set_doc and (
+            set_doc["allowed_scheduler_user_ids"]
+            != self._effective_allowed_scheduler_user_ids(connection_doc)
+        ):
+            await calendar_audit_service.log(
+                action="calendar_allowlist_changed",
+                message=f"Updated scheduler allowlist for {connection_doc.get('calendar_name')}",
+                owner_planner_email=connection_doc.get("owner_planner_email"),
+                actor_email=actor_email,
+                actor_role=actor_role,
+                metadata={
+                    "connection_id": connection_id,
+                    "calendar_name": connection_doc.get("calendar_name"),
+                    "allowed_scheduler_user_ids": set_doc["allowed_scheduler_user_ids"],
+                },
+            )
         return self._serialize_connection(await self._get_connection_doc(connection_id))
 
     async def healthcheck_connection(self, connection_id: str) -> dict:
@@ -681,13 +903,25 @@ class GoogleCalendarService:
 
         try:
             service = build("calendar", "v3", credentials=credentials)
-            service.calendarList().get(
-                calendarId=connection_doc["calendar_id"]
-            ).execute()
+            calendar_entry = (
+                service.calendarList()
+                .get(calendarId=connection_doc["calendar_id"])
+                .execute()
+            )
+            is_writable = calendar_entry.get("accessRole") in {"owner", "writer"}
             await self.connections_collection.update_one(
                 {"_id": connection_doc["_id"]},
                 {
                     "$set": {
+                        "access_role": calendar_entry.get("accessRole"),
+                        "calendar_name": calendar_entry.get("summaryOverride")
+                        or calendar_entry.get("summary")
+                        or connection_doc.get("calendar_name"),
+                        "is_primary": bool(calendar_entry.get("primary")),
+                        "is_writable": is_writable,
+                        "sync_enabled": (
+                            connection_doc.get("sync_enabled", False) and is_writable
+                        ),
                         "connection_status": CalendarConnectionStatus.ACTIVE.value,
                         "last_error": None,
                         "last_healthcheck_at": now,
@@ -695,13 +929,38 @@ class GoogleCalendarService:
                     }
                 },
             )
+            if connection_doc.get("is_default_write_target") and not is_writable:
+                replacement = await self.connections_collection.find_one(
+                    {
+                        "user_id": connection_doc["user_id"],
+                        "provider_account_email": connection_doc[
+                            "provider_account_email"
+                        ],
+                        "_id": {"$ne": connection_doc["_id"]},
+                        "is_writable": True,
+                        "sync_enabled": True,
+                    }
+                )
+                if replacement:
+                    await self.connections_collection.update_one(
+                        {"_id": replacement["_id"]},
+                        {
+                            "$set": {
+                                "is_default_write_target": True,
+                                "updated_at": now,
+                            }
+                        },
+                    )
+            await self.invalidate_connection_events_cache(connection_id)
         except Exception as exc:
+            classification = self._classify_google_exception(exc)
+            await self._apply_provider_error_to_connection(
+                connection_doc, classification
+            )
             await self.connections_collection.update_one(
                 {"_id": connection_doc["_id"]},
                 {
                     "$set": {
-                        "connection_status": CalendarConnectionStatus.ERROR.value,
-                        "last_error": str(exc),
                         "last_healthcheck_at": now,
                         "updated_at": now,
                     }
@@ -726,7 +985,13 @@ class GoogleCalendarService:
         except Exception as exc:
             logger.warning("Failed to revoke Google token: %s", exc)
 
-    async def disconnect_connection(self, connection_id: str) -> dict:
+    async def disconnect_connection(
+        self,
+        connection_id: str,
+        *,
+        actor_email: Optional[str] = None,
+        actor_role: Optional[str] = None,
+    ) -> dict:
         """Delete one connection row, revoking access if it is the last row for that account."""
         connection_doc = await self._get_connection_doc(connection_id)
         account_query = {
@@ -741,6 +1006,9 @@ class GoogleCalendarService:
                 "$set": {
                     "sync_status": CalendarSyncStatusValue.ORPHANED.value,
                     "last_error": "Calendar connection disconnected",
+                    "last_error_category": "connection_disconnected",
+                    "retryable_error": False,
+                    "next_retry_at": None,
                     "updated_at": now,
                 },
                 "$unset": {
@@ -750,6 +1018,7 @@ class GoogleCalendarService:
             },
         )
         await self.connections_collection.delete_one({"_id": connection_doc["_id"]})
+        await self.invalidate_connection_events_cache(connection_id)
 
         if sibling_count <= 1:
             await self._revoke_provider_account(connection_doc)
@@ -773,6 +1042,20 @@ class GoogleCalendarService:
                     {"_id": replacement["_id"]},
                     {"$set": {"is_default_write_target": True, "updated_at": now}},
                 )
+
+        await calendar_audit_service.log(
+            action="calendar_connection_disconnected",
+            message=f"Disconnected Google Calendar {connection_doc.get('calendar_name')}",
+            owner_planner_email=connection_doc.get("owner_planner_email"),
+            actor_email=actor_email or connection_doc.get("user_email"),
+            actor_role=actor_role,
+            metadata={
+                "connection_id": connection_id,
+                "provider": connection_doc.get("provider", "google"),
+                "calendar_name": connection_doc.get("calendar_name"),
+                "provider_account_email": connection_doc.get("provider_account_email"),
+            },
+        )
 
         return {"disconnected": True, "connection_id": connection_id}
 
@@ -924,11 +1207,20 @@ class GoogleCalendarService:
         connection_id: str,
         task: Dict[str, Any],
         attendee_emails: Optional[list[str]] = None,
-    ) -> Optional[dict]:
+    ) -> dict[str, Any]:
         """Create an event on a specific Google calendar connection."""
         credentials = await self.get_credentials_for_connection(connection_id)
         if not credentials:
-            return None
+            return {
+                "success": False,
+                "calendar_id": None,
+                "external_event_id": None,
+                "etag": None,
+                "retryable": False,
+                "error_category": "credentials_unavailable",
+                "error_message": "Google credentials are unavailable for this connection",
+                "status_code": None,
+            }
 
         connection_doc = await self._get_connection_doc(connection_id)
         try:
@@ -952,28 +1244,28 @@ class GoogleCalendarService:
                     }
                 },
             )
-            return {
-                "id": event.get("id"),
-                "etag": event.get("etag"),
-                "calendar_id": connection_doc["calendar_id"],
-            }
+            await self.invalidate_connection_events_cache(connection_id)
+            return self._build_provider_result(
+                success=True,
+                connection_doc=connection_doc,
+                external_event_id=event.get("id"),
+                etag=event.get("etag"),
+            )
         except Exception as exc:
-            await self.connections_collection.update_one(
-                {"_id": connection_doc["_id"]},
-                {
-                    "$set": {
-                        "connection_status": CalendarConnectionStatus.ERROR.value,
-                        "last_error": str(exc),
-                        "updated_at": datetime.now(UTC),
-                    }
-                },
+            classification = self._classify_google_exception(exc)
+            await self._apply_provider_error_to_connection(
+                connection_doc, classification
             )
             logger.error(
                 "Failed to create Google event for connection %s: %s",
                 connection_id,
                 exc,
             )
-            return None
+            return self._build_provider_result(
+                success=False,
+                connection_doc=connection_doc,
+                classification=classification,
+            )
 
     async def update_google_event_for_connection(
         self,
@@ -981,20 +1273,33 @@ class GoogleCalendarService:
         external_event_id: str,
         task: Dict[str, Any],
         attendee_emails: Optional[list[str]] = None,
-    ) -> bool:
+    ) -> dict[str, Any]:
         """Update an existing event on a specific Google calendar connection."""
         credentials = await self.get_credentials_for_connection(connection_id)
         if not credentials:
-            return False
+            return {
+                "success": False,
+                "calendar_id": None,
+                "external_event_id": external_event_id,
+                "etag": None,
+                "retryable": False,
+                "error_category": "credentials_unavailable",
+                "error_message": "Google credentials are unavailable for this connection",
+                "status_code": None,
+            }
 
         connection_doc = await self._get_connection_doc(connection_id)
         try:
             service = build("calendar", "v3", credentials=credentials)
-            service.events().update(
-                calendarId=connection_doc["calendar_id"],
-                eventId=external_event_id,
-                body=self._build_event_body(task, attendee_emails),
-            ).execute()
+            event = (
+                service.events()
+                .update(
+                    calendarId=connection_doc["calendar_id"],
+                    eventId=external_event_id,
+                    body=self._build_event_body(task, attendee_emails),
+                )
+                .execute()
+            )
             await self.connections_collection.update_one(
                 {"_id": connection_doc["_id"]},
                 {
@@ -1005,20 +1310,44 @@ class GoogleCalendarService:
                     }
                 },
             )
-            return True
-        except HttpError as exc:
+            await self.invalidate_connection_events_cache(connection_id)
+            return self._build_provider_result(
+                success=True,
+                connection_doc=connection_doc,
+                external_event_id=external_event_id,
+                etag=event.get("etag"),
+            )
+        except Exception as exc:
+            classification = self._classify_google_exception(exc)
+            await self._apply_provider_error_to_connection(
+                connection_doc, classification
+            )
             logger.error("Failed to update Google event %s: %s", external_event_id, exc)
-            return False
+            return self._build_provider_result(
+                success=False,
+                connection_doc=connection_doc,
+                external_event_id=external_event_id,
+                classification=classification,
+            )
 
     async def delete_google_event_for_connection(
         self,
         connection_id: str,
         external_event_id: str,
-    ) -> bool:
+    ) -> dict[str, Any]:
         """Delete an existing event from a specific Google calendar connection."""
         credentials = await self.get_credentials_for_connection(connection_id)
         if not credentials:
-            return False
+            return {
+                "success": False,
+                "calendar_id": None,
+                "external_event_id": external_event_id,
+                "etag": None,
+                "retryable": False,
+                "error_category": "credentials_unavailable",
+                "error_message": "Google credentials are unavailable for this connection",
+                "status_code": None,
+            }
 
         connection_doc = await self._get_connection_doc(connection_id)
         try:
@@ -1027,12 +1356,82 @@ class GoogleCalendarService:
                 calendarId=connection_doc["calendar_id"],
                 eventId=external_event_id,
             ).execute()
-            return True
-        except HttpError as exc:
-            if exc.resp.status == 404:
-                return True
+            await self.invalidate_connection_events_cache(connection_id)
+            return self._build_provider_result(
+                success=True,
+                connection_doc=connection_doc,
+                external_event_id=external_event_id,
+            )
+        except Exception as exc:
+            classification = self._classify_google_exception(exc)
+            if classification.get("error_category") == "not_found":
+                await self.invalidate_connection_events_cache(connection_id)
+                return self._build_provider_result(
+                    success=True,
+                    connection_doc=connection_doc,
+                    external_event_id=external_event_id,
+                    classification=classification,
+                )
+            await self._apply_provider_error_to_connection(
+                connection_doc, classification
+            )
             logger.error("Failed to delete Google event %s: %s", external_event_id, exc)
-            return False
+            return self._build_provider_result(
+                success=False,
+                connection_doc=connection_doc,
+                external_event_id=external_event_id,
+                classification=classification,
+            )
+
+    async def get_google_event_for_connection(
+        self,
+        connection_id: str,
+        external_event_id: str,
+    ) -> dict[str, Any]:
+        """Load one provider event for drift detection."""
+        credentials = await self.get_credentials_for_connection(connection_id)
+        if not credentials:
+            return {
+                "success": False,
+                "calendar_id": None,
+                "external_event_id": external_event_id,
+                "etag": None,
+                "retryable": False,
+                "error_category": "credentials_unavailable",
+                "error_message": "Google credentials are unavailable for this connection",
+                "status_code": None,
+                "event": None,
+            }
+
+        connection_doc = await self._get_connection_doc(connection_id)
+        try:
+            service = build("calendar", "v3", credentials=credentials)
+            event = (
+                service.events()
+                .get(
+                    calendarId=connection_doc["calendar_id"],
+                    eventId=external_event_id,
+                )
+                .execute()
+            )
+            return self._build_provider_result(
+                success=True,
+                connection_doc=connection_doc,
+                external_event_id=external_event_id,
+                etag=event.get("etag"),
+                event=event,
+            )
+        except Exception as exc:
+            classification = self._classify_google_exception(exc)
+            await self._apply_provider_error_to_connection(
+                connection_doc, classification
+            )
+            return self._build_provider_result(
+                success=False,
+                connection_doc=connection_doc,
+                external_event_id=external_event_id,
+                classification=classification,
+            )
 
     async def fetch_google_events_for_connection(
         self,
@@ -1043,15 +1442,31 @@ class GoogleCalendarService:
         max_results: int = 200,
     ) -> List[Dict[str, Any]]:
         """Fetch events from a specific connection for shared-calendar aggregation."""
-        credentials = await self.get_credentials_for_connection(connection_id)
-        if not credentials:
-            return []
-
-        connection_doc = await self._get_connection_doc(connection_id)
         if not time_min:
             time_min = datetime.now(UTC)
         if not time_max:
             time_max = time_min + timedelta(days=30)
+
+        connection_doc = await self._get_connection_doc(connection_id)
+        cache_key = self._external_events_cache_key(
+            connection_id=connection_id,
+            time_min=time_min,
+            time_max=time_max,
+            max_results=max_results,
+        )
+        cached_events = await cache.get(cache_key)
+        if isinstance(cached_events, list):
+            return [
+                {
+                    **event,
+                    "_connection": self._serialize_connection(connection_doc),
+                }
+                for event in cached_events
+            ]
+
+        credentials = await self.get_credentials_for_connection(connection_id)
+        if not credentials:
+            return []
 
         try:
             service = build("calendar", "v3", credentials=credentials)
@@ -1077,10 +1492,19 @@ class GoogleCalendarService:
                     }
                 },
             )
+            await cache.set(
+                cache_key,
+                events,
+                expire=settings.CALENDAR_SHARED_EVENTS_CACHE_SECONDS,
+            )
             for event in events:
                 event["_connection"] = self._serialize_connection(connection_doc)
             return events
         except Exception as exc:
+            classification = self._classify_google_exception(exc)
+            await self._apply_provider_error_to_connection(
+                connection_doc, classification
+            )
             logger.error(
                 "Failed to fetch Google events for connection %s: %s",
                 connection_id,
@@ -1100,7 +1524,7 @@ class GoogleCalendarService:
         result = await self.create_google_event_for_connection(
             str(connection["_id"]), task
         )
-        return result.get("id") if result else None
+        return result.get("external_event_id") if result.get("success") else None
 
     async def update_google_event(
         self,
@@ -1112,9 +1536,10 @@ class GoogleCalendarService:
         connection = await self.get_default_write_connection_for_user(user_email)
         if not connection:
             return False
-        return await self.update_google_event_for_connection(
+        result = await self.update_google_event_for_connection(
             str(connection["_id"]), google_event_id, task
         )
+        return bool(result.get("success"))
 
     async def delete_google_event(
         self,
@@ -1125,9 +1550,10 @@ class GoogleCalendarService:
         connection = await self.get_default_write_connection_for_user(user_email)
         if not connection:
             return False
-        return await self.delete_google_event_for_connection(
+        result = await self.delete_google_event_for_connection(
             str(connection["_id"]), google_event_id
         )
+        return bool(result.get("success"))
 
     async def fetch_google_events(
         self,

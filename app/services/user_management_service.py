@@ -1,19 +1,20 @@
-from fastapi import HTTPException
-from app.core.database import mongo
-from typing import Optional, Any, Dict
-from datetime import datetime, timedelta, timezone
+import logging
+import os
 import secrets
 import string
-import os
-import logging
+from datetime import datetime, timedelta, timezone
+from typing import Any, Dict, Optional
 
-from app.utils.auth_utils import get_password_hash, verify_password
-from app.utils.serializers import serialize_mongo_doc
+from fastapi import HTTPException
+
+from app.core.database import mongo
+from app.core.events import EventFactory, event_bus
 from app.services.email_service_resend import ResendEmailService
 from app.services.planner_onboarding_email_service import (
     planner_onboarding_email_service,
 )
-from app.core.events import event_bus, EventFactory
+from app.utils.auth_utils import get_password_hash, verify_password
+from app.utils.serializers import serialize_mongo_doc
 
 
 class UserManagementService:
@@ -267,9 +268,9 @@ class UserManagementService:
                 {
                     "$set": {
                         "email_status": email_status,
-                        "email_sent_at": datetime.now(timezone.utc)
-                        if email_success
-                        else None,
+                        "email_sent_at": (
+                            datetime.now(timezone.utc) if email_success else None
+                        ),
                     }
                 },
             )
@@ -1792,9 +1793,9 @@ class UserManagementService:
                         "role": doc.get("role", "wedding_planner"),
                         "invite_data": {
                             "plan_id": plan_id,
-                            "plan_name": plans_map.get(plan_id, "Unknown")
-                            if plan_id
-                            else None,
+                            "plan_name": (
+                                plans_map.get(plan_id, "Unknown") if plan_id else None
+                            ),
                             "trial_days": invite_data.get("trial_days", 0),
                             "company_name": invite_data.get("company_name"),
                             "trial_end_behavior": invite_data.get(
@@ -1803,24 +1804,34 @@ class UserManagementService:
                             "admin_notes": invite_data.get("admin_notes"),
                         },
                         "invited_by": doc.get("invited_by"),
-                        "created_at": doc["created_at"].isoformat()
-                        if doc.get("created_at")
-                        else None,
-                        "expires_at": doc["expires_at"].isoformat()
-                        if doc.get("expires_at")
-                        else None,
+                        "created_at": (
+                            doc["created_at"].isoformat()
+                            if doc.get("created_at")
+                            else None
+                        ),
+                        "expires_at": (
+                            doc["expires_at"].isoformat()
+                            if doc.get("expires_at")
+                            else None
+                        ),
                         "status": actual_status,
                         "email_status": doc.get("email_status", "sent"),
-                        "email_sent_at": doc["email_sent_at"].isoformat()
-                        if doc.get("email_sent_at")
-                        else None,
+                        "email_sent_at": (
+                            doc["email_sent_at"].isoformat()
+                            if doc.get("email_sent_at")
+                            else None
+                        ),
                         "resend_count": doc.get("resend_count", 0),
-                        "last_resent_at": doc["last_resent_at"].isoformat()
-                        if doc.get("last_resent_at")
-                        else None,
-                        "completed_at": doc["completed_at"].isoformat()
-                        if doc.get("completed_at")
-                        else None,
+                        "last_resent_at": (
+                            doc["last_resent_at"].isoformat()
+                            if doc.get("last_resent_at")
+                            else None
+                        ),
+                        "completed_at": (
+                            doc["completed_at"].isoformat()
+                            if doc.get("completed_at")
+                            else None
+                        ),
                     }
                 )
 

@@ -1,27 +1,29 @@
 import logging
+from datetime import datetime, timezone
+from typing import Optional
+
 from fastapi import APIRouter, Depends, HTTPException, Query
-from app.models.wedding import WeddingCreateModel
-from app.services.wedding_service import WeddingService
-from app.services.cascade_delete_service import cascade_delete_service
+
+from app.core.database import mongo
 from app.dependencies.auth_extended import (
-    require_root_admin,
-    require_team_or_planner,
     ExtendedAuthUser,
     check_wedding_access,
     enforce_team_permission,
     get_accessible_wedding_ids,
+    require_root_admin,
+    require_team_or_planner,
 )
-from app.services.subscription_service import SubscriptionService
-from app.services.stripe_service import stripe_service
 from app.models.subscription import SubscriptionStatus
+from app.models.wedding import WeddingCreateModel
+from app.services.cascade_delete_service import cascade_delete_service
 from app.services.sse_manager import sse_manager
-from app.core.database import mongo
+from app.services.stripe_service import stripe_service
+from app.services.subscription_service import SubscriptionService
+from app.services.wedding_service import WeddingService
 from app.utils.planner_ownership import (
     extract_wedding_owner_identity,
     normalize_query_id,
 )
-from datetime import datetime, timezone
-from typing import Optional
 
 logger = logging.getLogger(__name__)
 
@@ -378,14 +380,18 @@ async def delete_wedding_admin(
                             {"_id": normalize_query_id(wedding_id)},
                             {
                                 "$set": {
-                                    "meter_reversed_period": current_period
-                                    if reversal_success
-                                    else wedding.get("meter_reversed_period"),
+                                    "meter_reversed_period": (
+                                        current_period
+                                        if reversal_success
+                                        else wedding.get("meter_reversed_period")
+                                    ),
                                     "meter_pending": not reversal_success,
-                                    "meter_pending_reason": None
-                                    if reversal_success
-                                    else reverse_result.get("message")
-                                    or "meter_reversal_failed",
+                                    "meter_pending_reason": (
+                                        None
+                                        if reversal_success
+                                        else reverse_result.get("message")
+                                        or "meter_reversal_failed"
+                                    ),
                                 }
                             },
                         )

@@ -24,11 +24,11 @@ from bson import ObjectId
 from fastapi import HTTPException
 
 from app.core.database import mongo
+from app.core.settings import settings as app_settings
+from app.services.ad_platform_config_service import AdPlatformConfigService
 from app.services.email_service_resend import ResendEmailService
 from app.services.notification_service import NotificationService
-from app.services.ad_platform_config_service import AdPlatformConfigService
 from app.utils.auth_utils import get_password_hash
-from app.core.settings import settings as app_settings
 
 logger = logging.getLogger(__name__)
 

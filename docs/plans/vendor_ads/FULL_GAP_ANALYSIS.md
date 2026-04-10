@@ -526,4 +526,3 @@ The advertising system has a **solid Phase 1 foundation** but is **not monetizat
 - `SponsoredVendorDetailsDrawer.tsx` (exists)
 - `SponsoredMilestoneModule.tsx` (exists)
 - `BoostedVendorCard.tsx` (exists)
-

@@ -12,17 +12,14 @@ PRD Reference: Section 6.8 (Admin Moderation Console)
 """
 
 import logging
-from datetime import datetime, timezone, timedelta
-from typing import List, Dict, Optional, Any
+from datetime import datetime, timedelta, timezone
+from typing import Any, Dict, List, Optional
 
 from bson import ObjectId
 from bson.errors import InvalidId
 from fastapi import HTTPException
 
-from app.models.advertising_campaign import (
-    CampaignStatus,
-    CreativeReviewStatus,
-)
+from app.models.advertising_campaign import CampaignStatus, CreativeReviewStatus
 
 logger = logging.getLogger(__name__)
 
@@ -959,12 +956,16 @@ class AdminCampaignService:
                     {
                         "key": doc["_id"],
                         "count": doc["count"],
-                        "first_event": doc.get("first_event", "").isoformat()
-                        if doc.get("first_event")
-                        else None,
-                        "last_event": doc.get("last_event", "").isoformat()
-                        if doc.get("last_event")
-                        else None,
+                        "first_event": (
+                            doc.get("first_event", "").isoformat()
+                            if doc.get("first_event")
+                            else None
+                        ),
+                        "last_event": (
+                            doc.get("last_event", "").isoformat()
+                            if doc.get("last_event")
+                            else None
+                        ),
                     }
                 )
 

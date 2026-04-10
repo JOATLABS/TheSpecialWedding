@@ -1,241 +1,49 @@
 import { expect, test } from '@playwright/test';
 import { execFileSync } from 'node:child_process';
+import path from 'node:path';
 
-const ROOT = '/Users/emmanuelakinwale/Desktop/WeddingWebApp';
-const PYTHON = `${ROOT}/.venv/bin/python`;
+const ROOT = process.cwd();
+const PYTHON = process.env.PLAYWRIGHT_FIXTURE_PYTHON
+  ?? (process.env.VIRTUAL_ENV
+    ? path.join(
+        process.env.VIRTUAL_ENV,
+        process.platform === 'win32' ? 'Scripts/python.exe' : 'bin/python',
+      )
+    : 'python3');
+const FIXTURE_SCRIPT = path.join(ROOT, 'scripts/testing/couple_portal_lifecycle_fixture.py');
 
 const FIXTURE = {
-  weddingId: 'wedding_1775700014748',
-  plannerEmail: 'test_planner2@thespecialwedding.io',
-  plannerPassword: 'testPass123!',
-  plannerId: '69d705077174afc30187a408',
-  coupleEmail: 'qa_pr2_frontend@thespecialwedding.io',
-  couplePassword: 'QaCouplePass123!!',
-  eventLabel: 'PR2 Timeline Event',
-  formTitle: 'PR2 Archived QA Form',
-  meetingTitle: 'PR2 Planning Session',
+  weddingId: process.env.PLAYWRIGHT_FIXTURE_WEDDING_ID ?? 'wedding_1775700014748',
+  plannerEmail: process.env.PLAYWRIGHT_FIXTURE_PLANNER_EMAIL ?? 'test_planner2@thespecialwedding.io',
+  plannerPassword: process.env.PLAYWRIGHT_FIXTURE_PLANNER_PASSWORD ?? 'testPass123!',
+  plannerId: process.env.PLAYWRIGHT_FIXTURE_PLANNER_ID ?? '69d705077174afc30187a408',
+  coupleEmail: process.env.PLAYWRIGHT_FIXTURE_COUPLE_EMAIL ?? 'qa_pr2_frontend@thespecialwedding.io',
+  couplePassword: process.env.PLAYWRIGHT_FIXTURE_COUPLE_PASSWORD ?? 'QaCouplePass123!!',
+  eventLabel: process.env.PLAYWRIGHT_FIXTURE_EVENT_LABEL ?? 'PR2 Timeline Event',
+  formTitle: process.env.PLAYWRIGHT_FIXTURE_FORM_TITLE ?? 'PR2 Archived QA Form',
+  meetingTitle: process.env.PLAYWRIGHT_FIXTURE_MEETING_TITLE ?? 'PR2 Planning Session',
 } as const;
 
 type CoupleState = 'active' | 'archived' | 'owner_cancelled';
 
 function runPythonJson(code: string) {
-  const raw = execFileSync(PYTHON, ['-c', code], {
+  const raw = execFileSync(PYTHON, [FIXTURE_SCRIPT, ...code.split('\u0000')], {
     cwd: ROOT,
     encoding: 'utf8',
+    env: process.env,
   });
   return JSON.parse(raw.trim() || '{}');
 }
 
 function seedFixture(state: CoupleState) {
-  const payload = JSON.stringify({ ...FIXTURE, state });
-  const code = `
-import json
-from datetime import datetime, timedelta, timezone
-from bson import ObjectId
-from pymongo import MongoClient
-from app.utils.auth_utils import get_password_hash
-
-fixture = json.loads(${JSON.stringify(payload)})
-client = MongoClient("mongodb://localhost:27017")
-db = client["wedding"]
-now = datetime.now(timezone.utc)
-
-db["couple_users"].delete_many({
-    "email": {"$in": [fixture["coupleEmail"], "qa_pr2_couple@thespecialwedding.io"]},
-    "wedding_id": fixture["weddingId"],
-})
-db["forms"].delete_many({"title": fixture["formTitle"], "wedding_id": fixture["weddingId"]})
-db["form_submissions"].delete_many({"submitted_by": fixture["coupleEmail"], "wedding_id": fixture["weddingId"]})
-db["planner_tasks"].delete_many({"title": fixture["meetingTitle"], "wedding_id": fixture["weddingId"]})
-
-form_id = ObjectId()
-meeting_id = ObjectId()
-
-events = list(db["weddings"].find_one({"_id": fixture["weddingId"]}, {"events": 1}).get("events", []))
-events = [event for event in events if event.get("custom_type_label") != fixture["eventLabel"]]
-events.append({
-    "type": "custom",
-    "custom_type_label": fixture["eventLabel"],
-    "date": (now + timedelta(days=1)).date().isoformat(),
-    "details": {
-        "time": "4:00 PM",
-        "venue_name": "QA Ballroom",
-        "location": "QA Suite",
-        "attire": "Formal"
-    },
-    "event_notes": [
-        {
-            "id": "pr2-event-note",
-            "author_role": "couple",
-            "author_name": "QA & Couple",
-            "text": "Existing archived event note",
-            "status": "pending",
-            "created_at": now.isoformat(),
-        }
-    ],
-    "order_of_events": [
-        {
-            "id": "pr2-item-1",
-            "title": "Grand entrance",
-            "description": "Couple entrance for verification",
-            "time": "4:30 PM",
-            "order": 0,
-            "duration_minutes": 10,
-            "notes": [
-                {
-                    "id": "pr2-item-note",
-                    "author_role": "couple",
-                    "author_name": "QA & Couple",
-                    "text": "Archived item note",
-                    "status": "pending",
-                    "created_at": now.isoformat(),
-                }
-            ],
-        }
-    ],
-})
-db["weddings"].update_one({"_id": fixture["weddingId"]}, {"$set": {"events": events}})
-
-db["forms"].insert_one({
-    "_id": form_id,
-    "title": fixture["formTitle"],
-    "description": "Temporary QA form for PR2 lifecycle verification.",
-    "wedding_id": fixture["weddingId"],
-    "created_by": fixture["plannerEmail"],
-    "shared_with_couple": True,
-    "fields": [
-        {"id": "song", "label": "Entrance song", "type": "text", "required": False},
-        {"id": "notes", "label": "Planner notes", "type": "textarea", "required": False},
-    ],
-    "created_at": now,
-    "updated_at": now,
-})
-
-db["form_submissions"].insert_one({
-    "form_id": str(form_id),
-    "wedding_id": fixture["weddingId"],
-    "submitted_by": fixture["coupleEmail"],
-    "submitted_by_name": "QA & Couple",
-    "submitted_by_type": "couple",
-    "responses": {
-        "song": "Best Day Ever",
-        "notes": "Ready for archived verification",
-    },
-    "submitted_at": now,
-    "updated_at": now,
-})
-
-db["planner_tasks"].insert_one({
-    "_id": meeting_id,
-    "wedding_id": fixture["weddingId"],
-    "owner_planner_id": fixture["plannerId"],
-    "owner_planner_email": fixture["plannerEmail"],
-    "planner_email": fixture["plannerEmail"],
-    "title": fixture["meetingTitle"],
-    "description": "Temporary PR2 meeting for browser verification.",
-    "category": "meeting",
-    "status": "scheduled",
-    "start_date": now + timedelta(days=1),
-    "end_date": now + timedelta(days=1, hours=1),
-    "conference_url": "https://meet.example.com/pr2-playwright",
-    "couple_attendee_emails": [fixture["coupleEmail"]],
-    "is_recurring": False,
-    "created_at": now,
-    "updated_at": now,
-})
-
-couple_update = {
-    "email": fixture["coupleEmail"],
-    "wedding_id": fixture["weddingId"],
-    "partner1_name": "QA",
-    "partner2_name": "Couple",
-    "password_hash": get_password_hash(fixture["couplePassword"]),
-    "setup_completed": True,
-    "onboarding_completed": True,
-    "onboarding_completed_at": now,
-    "onboarding_steps_completed": ["welcome", "overview", "guest_tracker", "messages"],
-    "invite_token": None,
-    "invite_token_expires": None,
-    "updated_at": now,
-}
-
-if fixture["state"] == "archived":
-    couple_update.update({
-        "access_state": "active",
-        "is_active": True,
-        "wedding_archived": True,
-        "archived_at": now,
-        "owner_cancelled_at": None,
-        "owner_cancelled_by_planner_id": None,
-        "owner_cancelled_by_planner_email": None,
-        "revoked_at": None,
-        "revoked_by": None,
-    })
-elif fixture["state"] == "owner_cancelled":
-    couple_update.update({
-        "access_state": "owner_cancelled",
-        "is_active": False,
-        "wedding_archived": False,
-        "archived_at": None,
-        "owner_cancelled_at": now,
-        "owner_cancelled_by_planner_id": fixture["plannerId"],
-        "owner_cancelled_by_planner_email": fixture["plannerEmail"],
-        "revoked_at": None,
-        "revoked_by": None,
-    })
-else:
-    couple_update.update({
-        "access_state": "active",
-        "is_active": True,
-        "wedding_archived": False,
-        "archived_at": None,
-        "owner_cancelled_at": None,
-        "owner_cancelled_by_planner_id": None,
-        "owner_cancelled_by_planner_email": None,
-        "revoked_at": None,
-        "revoked_by": None,
-    })
-
-db["couple_users"].update_one(
-    {"email": fixture["coupleEmail"], "wedding_id": fixture["weddingId"]},
-    {"$set": couple_update},
-    upsert=True,
-)
-
-print(json.dumps({
-    "formId": str(form_id),
-    "meetingId": str(meeting_id),
-}))
-`;
-  return runPythonJson(code) as { formId: string; meetingId: string };
+  return runPythonJson(`seed\u0000--state\u0000${state}\u0000--fixture\u0000${JSON.stringify(FIXTURE)}`) as {
+    formId: string;
+    meetingId: string;
+  };
 }
 
 function cleanupFixture() {
-  const payload = JSON.stringify(FIXTURE);
-  const code = `
-import json
-from pymongo import MongoClient
-
-fixture = json.loads(${JSON.stringify(payload)})
-client = MongoClient("mongodb://localhost:27017")
-db = client["wedding"]
-
-db["couple_users"].delete_many({
-    "email": {"$in": [fixture["coupleEmail"], "qa_pr2_couple@thespecialwedding.io"]},
-    "wedding_id": fixture["weddingId"],
-})
-db["forms"].delete_many({"title": fixture["formTitle"], "wedding_id": fixture["weddingId"]})
-db["form_submissions"].delete_many({"submitted_by": fixture["coupleEmail"], "wedding_id": fixture["weddingId"]})
-db["planner_tasks"].delete_many({"title": fixture["meetingTitle"], "wedding_id": fixture["weddingId"]})
-
-wedding = db["weddings"].find_one({"_id": fixture["weddingId"]}, {"events": 1})
-events = list((wedding or {}).get("events", []))
-events = [event for event in events if event.get("custom_type_label") != fixture["eventLabel"]]
-db["weddings"].update_one({"_id": fixture["weddingId"]}, {"$set": {"events": events}})
-
-print(json.dumps({"ok": True}))
-`;
-  return runPythonJson(code);
+  return runPythonJson(`cleanup\u0000--fixture\u0000${JSON.stringify(FIXTURE)}`);
 }
 
 async function loginAdmin(page: import('@playwright/test').Page) {

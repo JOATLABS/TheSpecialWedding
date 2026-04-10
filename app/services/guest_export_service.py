@@ -5,14 +5,14 @@ Generates QR codes for RSVP links, guest list PDFs, and bulk QR code ZIP files.
 Used by planners for physical invitations and printable guest lists.
 """
 
-from typing import List, Dict, Optional
-from html import escape
-from datetime import datetime, timezone
-from io import BytesIO
 import base64
-import zipfile
 import logging
 import os
+import zipfile
+from datetime import datetime, timezone
+from html import escape
+from io import BytesIO
+from typing import Dict, List, Optional
 
 from app.core.database import mongo
 
@@ -46,9 +46,10 @@ class GuestExportService:
             PNG image bytes
         """
         try:
+            from io import BytesIO
+
             import qrcode  # type: ignore
             from qrcode.constants import ERROR_CORRECT_L  # type: ignore
-            from io import BytesIO
 
             qr = qrcode.QRCode(
                 version=1,

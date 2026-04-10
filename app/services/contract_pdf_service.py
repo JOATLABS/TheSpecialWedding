@@ -5,11 +5,12 @@ Generates PDF snapshots of signed contracts using WeasyPrint.
 Uploads to cloud storage (R2/S3) and returns the document URL.
 """
 
-from typing import Dict, Any, Optional
-from datetime import datetime, timezone
 import logging
-from app.core.settings import settings
+from datetime import datetime, timezone
+from typing import Any, Dict, Optional
+
 from app.core.database import mongo
+from app.core.settings import settings
 from app.utils.payment_schedule import build_effective_payment_schedule
 
 logger = logging.getLogger(__name__)

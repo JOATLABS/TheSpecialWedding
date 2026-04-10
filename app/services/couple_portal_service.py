@@ -6,13 +6,14 @@ Sprint 3: Adds email digest generation for unread updates, messages, payments.
 """
 
 import asyncio
-from datetime import datetime, timezone, timedelta
-from typing import Optional, Dict, Any, List
+import logging
+from datetime import datetime, timedelta, timezone
+from typing import Any, Dict, List, Optional
+
+from app.core.cache import CacheKeys, cache
 from app.core.database import mongo
-from app.core.cache import cache, CacheKeys
 from app.services.guest_media_service import guest_media_service
 from app.utils.planner_ownership import resolve_wedding_owner_identity
-import logging
 
 logger = logging.getLogger(__name__)
 
@@ -122,19 +123,23 @@ class CouplePortalService:
                 "registries": wedding.get("registries", []),
                 "faqs": wedding.get("faqs", []),
             },
-            "planner": {
-                "name": f"{planner.get('first_name', '')} {planner.get('last_name', '')}".strip()
+            "planner": (
+                {
+                    "name": (
+                        f"{planner.get('first_name', '')} {planner.get('last_name', '')}".strip()
+                        if planner
+                        else None
+                    ),
+                    "company": planner.get("company_name") if planner else None,
+                    "email": planner_email,
+                    "phone": planner.get("support_phone") if planner else None,
+                    "profile_image_url": (
+                        planner.get("profile_image_url") if planner else None
+                    ),
+                }
                 if planner
-                else None,
-                "company": planner.get("company_name") if planner else None,
-                "email": planner_email,
-                "phone": planner.get("support_phone") if planner else None,
-                "profile_image_url": planner.get("profile_image_url")
-                if planner
-                else None,
-            }
-            if planner
-            else None,
+                else None
+            ),
             "guest_stats": guest_stats,
             "budget_summary": budget_summary,
             "contract": contract_info,
@@ -358,9 +363,11 @@ class CouplePortalService:
                 "id": str(contract["_id"]),
                 "status": contract.get("status"),
                 "package_name": contract.get("package_name"),
-                "signed_at": contract.get("signed_at").isoformat()
-                if contract.get("signed_at")
-                else None,
+                "signed_at": (
+                    contract.get("signed_at").isoformat()
+                    if contract.get("signed_at")
+                    else None
+                ),
                 "payments": payments,
                 "summary": {
                     "total_amount": total_amount,
@@ -419,12 +426,16 @@ class CouplePortalService:
                         "title": form.get("title"),
                         "description": form.get("description"),
                         "status": "submitted" if submission else "pending",
-                        "submitted_at": submission.get("submitted_at").isoformat()
-                        if submission and submission.get("submitted_at")
-                        else None,
-                        "created_at": form.get("created_at").isoformat()
-                        if form.get("created_at")
-                        else None,
+                        "submitted_at": (
+                            submission.get("submitted_at").isoformat()
+                            if submission and submission.get("submitted_at")
+                            else None
+                        ),
+                        "created_at": (
+                            form.get("created_at").isoformat()
+                            if form.get("created_at")
+                            else None
+                        ),
                     }
                 )
 
@@ -468,9 +479,11 @@ class CouplePortalService:
                         ),  # venue, catering, decor, timeline, etc.
                         "attachments": update.get("attachments", []),
                         "is_milestone": update.get("is_milestone", False),
-                        "created_at": update.get("created_at").isoformat()
-                        if update.get("created_at")
-                        else None,
+                        "created_at": (
+                            update.get("created_at").isoformat()
+                            if update.get("created_at")
+                            else None
+                        ),
                         "created_by": update.get("created_by_name"),
                     }
                 )
@@ -541,18 +554,26 @@ class CouplePortalService:
                 "package_name": contract.get("package_name"),
                 "couple_name": contract.get("couple", {}).get("name"),
                 "couple_email": contract.get("couple", {}).get("email"),
-                "signed_at": contract.get("signed_at").isoformat()
-                if contract.get("signed_at")
-                else None,
-                "created_at": contract.get("created_at").isoformat()
-                if contract.get("created_at")
-                else None,
-                "sent_at": contract.get("sent_at").isoformat()
-                if contract.get("sent_at")
-                else None,
-                "viewed_at": contract.get("viewed_at").isoformat()
-                if contract.get("viewed_at")
-                else None,
+                "signed_at": (
+                    contract.get("signed_at").isoformat()
+                    if contract.get("signed_at")
+                    else None
+                ),
+                "created_at": (
+                    contract.get("created_at").isoformat()
+                    if contract.get("created_at")
+                    else None
+                ),
+                "sent_at": (
+                    contract.get("sent_at").isoformat()
+                    if contract.get("sent_at")
+                    else None
+                ),
+                "viewed_at": (
+                    contract.get("viewed_at").isoformat()
+                    if contract.get("viewed_at")
+                    else None
+                ),
                 "sections": sections,
                 "payments": payments,
                 "summary": {
@@ -715,9 +736,11 @@ class CouplePortalService:
                     {
                         "title": update.get("title"),
                         "content": update.get("content", "")[:150],
-                        "created_at": update.get("created_at").isoformat()
-                        if update.get("created_at")
-                        else None,
+                        "created_at": (
+                            update.get("created_at").isoformat()
+                            if update.get("created_at")
+                            else None
+                        ),
                     }
                 )
 

@@ -1,23 +1,25 @@
+import inspect
+import logging
+from typing import Any, List, Literal, Optional
+
+from bson import ObjectId
+from bson.errors import InvalidId
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
-from typing import List, Optional, Literal, Any
-import inspect
-from app.services.guest_service import GuestService
-from app.services.activity_log_service import activity_log_service
-from app.services.sse_manager import sse_manager
-from app.models.guest import UpdateGuestRequest, CreateGuestRequest
+
+from app.core.database import mongo
 from app.dependencies.auth_extended import (
-    require_wedding_planner_only,
     ExtendedAuthUser,
     check_wedding_access,
     enforce_team_permission,
+    require_wedding_planner_only,
 )
-from app.utils.response import dict_response
+from app.models.guest import CreateGuestRequest, UpdateGuestRequest
+from app.services.activity_log_service import activity_log_service
+from app.services.guest_service import GuestService
+from app.services.sse_manager import sse_manager
 from app.utils.query_validation import validated_string_filter
-from app.core.database import mongo
-from bson import ObjectId
-from bson.errors import InvalidId
-import logging
+from app.utils.response import dict_response
 
 logger = logging.getLogger(__name__)
 
@@ -373,9 +375,11 @@ async def get_guest_activity(
                     "$or": [
                         {"wedding_id": wedding_id},
                         {
-                            "wedding_id": ObjectId(wedding_id)
-                            if ObjectId.is_valid(wedding_id)
-                            else wedding_id
+                            "wedding_id": (
+                                ObjectId(wedding_id)
+                                if ObjectId.is_valid(wedding_id)
+                                else wedding_id
+                            )
                         },
                     ]
                 },

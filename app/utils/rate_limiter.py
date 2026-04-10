@@ -4,14 +4,14 @@ Uses Redis when available so limits hold across replicas, with an
 in-memory fallback for local/dev environments without Redis.
 """
 
-import time
 import logging
-from typing import Deque, Dict, Tuple
+import time
 from collections import deque
+from typing import Deque, Dict, Tuple
 
 from fastapi import HTTPException, Request
 
-from app.core.cache import cache, CacheKeys
+from app.core.cache import CacheKeys, cache
 
 logger = logging.getLogger(__name__)
 

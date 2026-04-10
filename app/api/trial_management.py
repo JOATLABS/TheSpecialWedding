@@ -1,10 +1,11 @@
-from fastapi import APIRouter, Depends, HTTPException, Header
-from typing import Optional
-from datetime import datetime, timezone
-import os
 import logging
+import os
+from datetime import datetime, timezone
+from typing import Optional
 
-from app.dependencies.auth_extended import require_root_admin, ExtendedAuthUser
+from fastapi import APIRouter, Depends, Header, HTTPException
+
+from app.dependencies.auth_extended import ExtendedAuthUser, require_root_admin
 from app.services.trial_expiration_service import TrialExpirationService
 
 logger = logging.getLogger(__name__)
@@ -83,8 +84,9 @@ async def get_trial_status(
 ):
     """Get overview of trial statuses - ROOT_ADMIN only"""
     try:
-        from app.core.database import mongo
         from datetime import datetime, timedelta
+
+        from app.core.database import mongo
 
         users_collection = mongo.db["users"]
         now = datetime.now(timezone.utc)

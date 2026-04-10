@@ -10,13 +10,13 @@ from bson import ObjectId
 from fastapi import HTTPException
 
 from app.utils.id_utils import (
-    to_object_id,
-    to_str_id,
+    compare_ids,
+    extract_id_from_doc,
     normalize_doc_id,
     normalize_list_doc_ids,
+    to_object_id,
+    to_str_id,
     validate_object_id,
-    extract_id_from_doc,
-    compare_ids,
 )
 
 

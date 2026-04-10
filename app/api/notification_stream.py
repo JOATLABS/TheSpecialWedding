@@ -13,12 +13,14 @@ admin token refresh.
 import asyncio
 import json
 import logging
+
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import StreamingResponse
+
 from app.dependencies.auth_extended import ExtendedAuthUser, require_admin_or_planner
-from app.services.sse_manager import sse_manager
 from app.services.notification_service import NotificationService
 from app.services.planner_notification_service import planner_notification_service
+from app.services.sse_manager import sse_manager
 
 logger = logging.getLogger(__name__)
 

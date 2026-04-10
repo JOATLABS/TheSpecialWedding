@@ -1,12 +1,13 @@
-from fastapi import APIRouter, Query, Depends, UploadFile, File, Form, HTTPException
-from app.services.gallery_upload_service import GalleryUploadService
-from app.services.wedding_service import WeddingService
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
+
 from app.dependencies.auth_extended import (
     ExtendedAuthUser,
     check_wedding_access,
-    require_team_or_planner,
     enforce_team_permission,
+    require_team_or_planner,
 )
+from app.services.gallery_upload_service import GalleryUploadService
+from app.services.wedding_service import WeddingService
 
 router = APIRouter()
 gallery_service = GalleryUploadService()

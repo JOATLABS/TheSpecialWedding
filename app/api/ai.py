@@ -9,32 +9,33 @@ Provides endpoints for AI-powered features:
 - Package pricing suggestions
 """
 
-from fastapi import APIRouter, Depends, HTTPException
-from typing import Dict, Any, List, Optional
-from pydantic import BaseModel, Field
 import logging
+from typing import Any, Dict, List, Optional
 
-from app.services.ai_service import (
-    ai_service,
-    InsufficientCreditsError,
-    AIGenerationError,
-    AIRateLimitError,
-    AIContentBlockedError,
-    AIServiceUnavailableError,
-    AIQuotaExceededError,
-    AITimeoutError,
-    AIInvalidResponseError,
-    MODEL_PRIMARY,
-    MODEL_ECONOMY,
-)
+from bson import ObjectId
+from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel, Field
+
+from app.core.database import mongo
 from app.core.settings import settings
 from app.dependencies.auth_extended import (
-    require_admin_or_planner,
-    check_wedding_access,
     ExtendedAuthUser,
+    check_wedding_access,
+    require_admin_or_planner,
 )
-from app.core.database import mongo
-from bson import ObjectId
+from app.services.ai_service import (
+    MODEL_ECONOMY,
+    MODEL_PRIMARY,
+    AIContentBlockedError,
+    AIGenerationError,
+    AIInvalidResponseError,
+    AIQuotaExceededError,
+    AIRateLimitError,
+    AIServiceUnavailableError,
+    AITimeoutError,
+    InsufficientCreditsError,
+    ai_service,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -520,9 +521,9 @@ async def get_rsvp_data(wedding_id: str) -> Dict[str, Any]:
             "accepted": accepted,
             "declined": declined,
             "pending": pending,
-            "response_rate": round((len(rsvps) / guest_count * 100), 1)
-            if guest_count > 0
-            else 0,
+            "response_rate": (
+                round((len(rsvps) / guest_count * 100), 1) if guest_count > 0 else 0
+            ),
         }
     except Exception as e:
         logger.error(f"Error fetching RSVP data for wedding {wedding_id}: {str(e)}")
@@ -784,7 +785,8 @@ async def get_dashboard_insights(
         wedding_date_str = wedding.get("date")
         if wedding_date_str and isinstance(wedding_date_str, str):
             try:
-                from datetime import datetime as dt, timezone
+                from datetime import datetime as dt
+                from datetime import timezone
 
                 wedding_date = dt.strptime(wedding_date_str, "%Y-%m-%d").replace(
                     tzinfo=timezone.utc
@@ -1602,9 +1604,9 @@ async def get_vendor_recommendations(
         response = result["response"]
 
         return {
-            "recommendations": response
-            if isinstance(response, dict)
-            else {"raw": response},
+            "recommendations": (
+                response if isinstance(response, dict) else {"raw": response}
+            ),
             "vendor_type": request.vendor_type,
             "cached": result["cached"],
             "credits_used": result["credits_used"],
@@ -1667,7 +1669,8 @@ async def prioritize_tasks(
             raise HTTPException(status_code=404, detail="Wedding not found")
 
         # Calculate days until wedding
-        from datetime import datetime as dt, timedelta, timezone
+        from datetime import datetime as dt
+        from datetime import timedelta, timezone
 
         days_until_wedding = None
         wedding_date_str = wedding.get("date")
@@ -1754,9 +1757,9 @@ async def prioritize_tasks(
         response = result["response"]
 
         return {
-            "prioritization": response
-            if isinstance(response, dict)
-            else {"raw": response},
+            "prioritization": (
+                response if isinstance(response, dict) else {"raw": response}
+            ),
             "wedding_id": wedding_id,
             "days_until_wedding": days_until_wedding,
             "tasks_analyzed": len(pending_tasks),
@@ -1826,7 +1829,8 @@ async def generate_timeline(
             )
 
         # Calculate timeline parameters
-        from datetime import datetime as dt, timezone
+        from datetime import datetime as dt
+        from datetime import timezone
 
         wedding_date = dt.strptime(wedding_date_str, "%Y-%m-%d").replace(
             tzinfo=timezone.utc
@@ -1936,7 +1940,8 @@ async def get_payment_forecast(
         if not wedding:
             raise HTTPException(status_code=404, detail="Wedding not found")
 
-        from datetime import datetime as dt, timezone
+        from datetime import datetime as dt
+        from datetime import timezone
 
         # Get all scheduled payments
         scheduled_payments = (
@@ -2463,9 +2468,9 @@ async def generate_message(
         response = result["response"]
 
         return {
-            "message": response
-            if isinstance(response, dict)
-            else {"body": str(response)},
+            "message": (
+                response if isinstance(response, dict) else {"body": str(response)}
+            ),
             "message_type": request.message_type,
             "tone": request.tone,
             "credits_used": result["credits_used"],
@@ -2558,15 +2563,15 @@ async def generate_form_questions(
         response = result["response"]
 
         return {
-            "questions": response.get("questions", [])
-            if isinstance(response, dict)
-            else [],
-            "form_title": response.get("form_title")
-            if isinstance(response, dict)
-            else None,
-            "form_intro": response.get("form_intro")
-            if isinstance(response, dict)
-            else None,
+            "questions": (
+                response.get("questions", []) if isinstance(response, dict) else []
+            ),
+            "form_title": (
+                response.get("form_title") if isinstance(response, dict) else None
+            ),
+            "form_intro": (
+                response.get("form_intro") if isinstance(response, dict) else None
+            ),
             "form_type": request.form_type,
             "cached": result["cached"],
             "credits_used": result["credits_used"],
@@ -2658,9 +2663,9 @@ async def ai_health_check(
         status["last_24h"] = {
             "total_requests": total_recent,
             "errors": errors_recent,
-            "error_rate": round(errors_recent / total_recent * 100, 1)
-            if total_recent > 0
-            else 0,
+            "error_rate": (
+                round(errors_recent / total_recent * 100, 1) if total_recent > 0 else 0
+            ),
         }
     except Exception:
         # ai_usage_log may not exist yet — non-critical

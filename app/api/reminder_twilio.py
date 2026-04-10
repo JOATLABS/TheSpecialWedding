@@ -1,31 +1,33 @@
 # app/api/reminder_twilio.py
 
 import asyncio
-from fastapi import APIRouter, HTTPException, Depends, Query
-from app.utils.contact_sanitizer import normalize_phone_e164
-from app.services.reminder_service_twilio import (
-    TwilioReminderService,
-    TwilioRSVPReminderHelper,
-    twilio_configured,
-    twilio_client,
-    MESSAGING_SERVICE_SID,
-    SMS_THROTTLE_DELAY_S,
-)
-from app.services.activity_log_service import activity_log_service
-from app.dependencies.auth_extended import (
-    require_root_admin,
-    require_team_or_planner,
-    enforce_team_permission,
-    ExtendedAuthUser,
-    check_wedding_access,
-)
-from app.core.database import mongo
-from pydantic import BaseModel
-from typing import Optional, List
-from app.services.sse_manager import sse_manager
-from datetime import datetime, timezone
 import logging
 import os
+from datetime import datetime, timezone
+from typing import List, Optional
+
+from fastapi import APIRouter, Depends, HTTPException, Query
+from pydantic import BaseModel
+
+from app.core.database import mongo
+from app.dependencies.auth_extended import (
+    ExtendedAuthUser,
+    check_wedding_access,
+    enforce_team_permission,
+    require_root_admin,
+    require_team_or_planner,
+)
+from app.services.activity_log_service import activity_log_service
+from app.services.reminder_service_twilio import (
+    MESSAGING_SERVICE_SID,
+    SMS_THROTTLE_DELAY_S,
+    TwilioReminderService,
+    TwilioRSVPReminderHelper,
+    twilio_client,
+    twilio_configured,
+)
+from app.services.sse_manager import sse_manager
+from app.utils.contact_sanitizer import normalize_phone_e164
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -64,9 +66,11 @@ def get_twilio_status():
     """Check if Twilio services are configured and available"""
     return {
         "available": twilio_configured,
-        "message": "Twilio configured and ready"
-        if twilio_configured
-        else "Twilio not configured",
+        "message": (
+            "Twilio configured and ready"
+            if twilio_configured
+            else "Twilio not configured"
+        ),
     }
 
 
@@ -262,9 +266,9 @@ async def send_individual_reminders(
         log_record = {
             "phone": phone,
             "guest_id": str(guest["_id"]),
-            "wedding_id": str(guest.get("wedding_id"))
-            if guest.get("wedding_id")
-            else None,
+            "wedding_id": (
+                str(guest.get("wedding_id")) if guest.get("wedding_id") else None
+            ),
             "message": payload.message,
             "target_type": "guest",
             "event_type": "individual_reminder",

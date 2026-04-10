@@ -12,7 +12,6 @@ from app.utils.auth_utils import (
     verify_token,
 )
 
-
 GUEST_ACCESS_COOKIE_NAME = "guest_access_session"
 
 

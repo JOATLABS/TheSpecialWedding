@@ -13,11 +13,11 @@ Flow:
 """
 
 import asyncio
+import logging
 import os
 import re
-import logging
 from datetime import datetime, timezone
-from typing import Dict, Optional, Any
+from typing import Any, Dict, Optional
 
 import aiohttp
 import bleach
@@ -529,9 +529,9 @@ class InboundEmailService:
                     "html_body": doc.get("html_content"),
                     "text_body": None,
                     "status": doc.get("status"),
-                    "created_at": doc["sent_at"].isoformat()
-                    if doc.get("sent_at")
-                    else None,
+                    "created_at": (
+                        doc["sent_at"].isoformat() if doc.get("sent_at") else None
+                    ),
                     "is_read": True,
                     "has_attachments": False,
                 }
@@ -681,9 +681,9 @@ class InboundEmailService:
             "wedding_id": thread_ctx.get("wedding_id"),
             "is_read": doc.get("is_read", False),
             "planner_response_sent": doc.get("planner_response_sent", False),
-            "created_at": doc["created_at"].isoformat()
-            if doc.get("created_at")
-            else None,
+            "created_at": (
+                doc["created_at"].isoformat() if doc.get("created_at") else None
+            ),
             "has_attachments": len(doc.get("attachments_metadata", [])) > 0,
             "status": doc.get("status", "received"),
         }

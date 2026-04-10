@@ -9,7 +9,6 @@ take appropriate action (retry, flag phone, alert admin, etc.).
 
 from typing import Optional
 
-
 # Temporary errors — safe to retry with exponential backoff
 TEMPORARY_ERRORS = {
     "30001",  # Queue overflow - message queue is full

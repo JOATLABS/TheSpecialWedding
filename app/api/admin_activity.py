@@ -4,14 +4,16 @@ Admin Activity Log API Endpoints
 Provides endpoints for root admins to view their activity history.
 """
 
-from fastapi import APIRouter, Depends, Query, HTTPException
-from typing import Optional, Dict, Any
-from datetime import datetime, timedelta, timezone
-from app.dependencies.auth_extended import require_root_admin, ExtendedAuthUser
-from app.services.admin_activity_service import admin_activity_service
-from app.utils.response import dict_response
-from app.utils.query_validation import validated_string_filter, validated_enum_filter
 import logging
+from datetime import datetime, timedelta, timezone
+from typing import Any, Dict, Optional
+
+from fastapi import APIRouter, Depends, HTTPException, Query
+
+from app.dependencies.auth_extended import ExtendedAuthUser, require_root_admin
+from app.services.admin_activity_service import admin_activity_service
+from app.utils.query_validation import validated_enum_filter, validated_string_filter
+from app.utils.response import dict_response
 
 logger = logging.getLogger(__name__)
 

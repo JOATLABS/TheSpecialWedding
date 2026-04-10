@@ -19,7 +19,6 @@ from app.utils.planner_ownership import (
     resolve_planner_identity,
 )
 
-
 COUPLE_PORTAL_STATE_PENDING_SETUP = "pending_setup"
 COUPLE_PORTAL_STATE_ACTIVE = "active"
 COUPLE_PORTAL_STATE_REVOKED = "revoked_by_planner"

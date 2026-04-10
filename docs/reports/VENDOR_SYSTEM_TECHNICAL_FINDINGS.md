@@ -948,4 +948,3 @@ async def get_contract_for_vendor(
 | Missing transactions | vendor_service.py | 1549-1636 | CRITICAL | Implementation provided above |
 | Contract signing issues | vendor_service.py | 1077-1173 | CRITICAL | Refactored code provided above |
 | Token in URL | vendorManagementApi.ts | 1040 | MEDIUM | Alternative provided above |
-

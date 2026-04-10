@@ -1,15 +1,16 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
+
 from app.dependencies.auth_extended import (
-    require_root_admin,
-    require_admin_or_planner,
     ExtendedAuthUser,
+    require_admin_or_planner,
+    require_root_admin,
 )
-from app.services.subscription_service import SubscriptionService
 from app.models.subscription import (
+    AssignSubscriptionRequest,
     CreateSubscriptionPlanRequest,
     UpdateSubscriptionPlanRequest,
-    AssignSubscriptionRequest,
 )
+from app.services.subscription_service import SubscriptionService
 
 router = APIRouter()
 subscription_service = SubscriptionService()

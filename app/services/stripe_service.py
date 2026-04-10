@@ -1,22 +1,23 @@
 """Stripe payment utilities used to manage subscription checkout and lifecycle."""
 
-import stripe
-from stripe import StripeError, InvalidRequestError, SignatureVerificationError
-from fastapi import HTTPException
-from typing import Optional, Dict, Any
-from datetime import datetime, timedelta, timezone
-from app.core.settings import settings
-from app.core.database import mongo
-from bson import ObjectId
-from pymongo.errors import DuplicateKeyError
 import logging
+from datetime import datetime, timedelta, timezone
+from typing import Any, Dict, Optional
 
+import stripe
+from bson import ObjectId
+from fastapi import HTTPException
+from pymongo.errors import DuplicateKeyError
+from stripe import InvalidRequestError, SignatureVerificationError, StripeError
+
+from app.core.database import mongo
+from app.core.settings import settings
 from app.models.subscription import SubscriptionStatus, normalize_subscription_status
-from app.services.email_service_resend import ResendEmailService
 from app.services.couple_lifecycle_service import (
     COUPLE_PORTAL_STATE_REVOKED,
     couple_lifecycle_service,
 )
+from app.services.email_service_resend import ResendEmailService
 from app.utils.id_utils import to_object_id
 from app.utils.planner_ownership import (
     build_wedding_owner_query,
@@ -775,9 +776,11 @@ class StripeService:
                 first_item = (
                     items_list[0]
                     if isinstance(items_list[0], dict)
-                    else items_list[0].to_dict()
-                    if hasattr(items_list[0], "to_dict")
-                    else {}
+                    else (
+                        items_list[0].to_dict()
+                        if hasattr(items_list[0], "to_dict")
+                        else {}
+                    )
                 )
                 current_period_start = current_period_start or self._parse_timestamp(
                     first_item.get("current_period_start")
@@ -3077,9 +3080,10 @@ class StripeService:
                         {"_id": normalize_query_id(wedding_id)}
                     )
                     if wedding:
-                        planner_id, wedding_planner_email = (
-                            extract_wedding_owner_identity(wedding)
-                        )
+                        (
+                            planner_id,
+                            wedding_planner_email,
+                        ) = extract_wedding_owner_identity(wedding)
                         planner_email = await resolve_planner_email(
                             planner_id, wedding_planner_email
                         )
@@ -3118,13 +3122,13 @@ class StripeService:
         """Render payment success email HTML"""
         download_section = ""
         if invoice_pdf:
-            download_section = f'''
+            download_section = f"""
                 <tr>
                   <td style="padding:20px 40px 0;">
                     <a href="{invoice_pdf}" style="display:inline-block;padding:12px 24px;background:#2563eb;color:#ffffff;text-decoration:none;border-radius:8px;font-size:14px;font-weight:500;">Download Invoice PDF</a>
                   </td>
                 </tr>
-            '''
+            """
 
         return f"""
         <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color:#f8fafc;padding:40px 0;">
@@ -3186,7 +3190,7 @@ class StripeService:
         self, user_name: str, plan_name: str, amount: float, currency: str
     ) -> str:
         """Render payment failed email HTML"""
-        return f'''
+        return f"""
         <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color:#f8fafc;padding:40px 0;">
           <tr>
             <td align="center" style="padding:0 16px;">
@@ -3235,7 +3239,7 @@ class StripeService:
             </td>
           </tr>
         </table>
-        '''
+        """
 
     # ==================== CONNECT / MARKETPLACE ====================
 

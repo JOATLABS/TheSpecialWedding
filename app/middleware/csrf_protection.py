@@ -2,14 +2,15 @@
 CSRF Protection Middleware
 """
 
+import hashlib
+import secrets
+import time
+from typing import Dict, Optional
+
 from fastapi import Request
 from fastapi.responses import JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import Response
-import secrets
-import hashlib
-import time
-from typing import Dict, Optional
 
 
 class CSRFProtectionMiddleware(BaseHTTPMiddleware):

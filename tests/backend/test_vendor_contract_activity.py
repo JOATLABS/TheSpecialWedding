@@ -502,9 +502,15 @@ async def test_create_payment_milestones_and_record_payment_log_activity(
 async def test_create_payment_milestones_rejects_historical_contract_versions(
     configured_vendor_service,
 ) -> None:
-    service, contracts, activities, milestones, _, _, vendor_profile_id = (
-        configured_vendor_service
-    )
+    (
+        service,
+        contracts,
+        activities,
+        milestones,
+        _,
+        _,
+        vendor_profile_id,
+    ) = configured_vendor_service
     contract = make_contract_doc(
         status=ContractStatus.SIGNED.value,
         is_current_version=False,

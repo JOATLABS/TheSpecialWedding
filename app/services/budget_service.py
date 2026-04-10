@@ -1,19 +1,20 @@
-from typing import List, Dict, Optional, Any
+import logging
 from datetime import datetime, timezone
-from app.utils.pydantic_objectid import PyObjectId
+from typing import Any, Dict, List, Optional
+
 from app.core.database import mongo
 from app.models.budget import (
-    BudgetCategory,
-    VendorQuote,
-    BudgetTemplate,
-    BudgetSummary,
-    PaymentRecord,
     BudgetAlert,
+    BudgetCategory,
+    BudgetSummary,
+    BudgetTemplate,
+    PaymentRecord,
+    VendorQuote,
 )
+from app.utils.id_utils import to_object_id, to_str_id
+from app.utils.pydantic_objectid import PyObjectId
 from app.utils.security_validator import SecurityValidator
 from app.utils.serializers import serialize_mongo_doc
-from app.utils.id_utils import to_object_id, to_str_id
-import logging
 
 logger = logging.getLogger(__name__)
 
@@ -837,11 +838,11 @@ class BudgetService:
                         "budgeted": float(category.get("budgeted_amount", 0) or 0),
                         "status": category.get("payment_status") or "pending",
                         "due_date": None,
-                        "paid_at": serialize_mongo_doc(latest_payment).get(
-                            "payment_date"
-                        )
-                        if latest_payment
-                        else None,
+                        "paid_at": (
+                            serialize_mongo_doc(latest_payment).get("payment_date")
+                            if latest_payment
+                            else None
+                        ),
                     }
                 )
 
@@ -1340,20 +1341,24 @@ class BudgetService:
             )
             payment_frequency[month] = payment_frequency.get(month, 0) + 1
         return {
-            "budget_utilization": (total_spent / total_budgeted * 100)
-            if total_budgeted > 0
-            else 0,
+            "budget_utilization": (
+                (total_spent / total_budgeted * 100) if total_budgeted > 0 else 0
+            ),
             "most_expensive_category": {
                 "name": most_expensive["name"],
                 "amount": most_expensive.get("budgeted_amount", 0),
             },
-            "highest_variance": {
-                "category": highest_variance[0] if highest_variance else None,
-                "variance_percentage": highest_variance[1] if highest_variance else 0,
-                "variance_amount": highest_variance[2] if highest_variance else 0,
-            }
-            if highest_variance
-            else None,
+            "highest_variance": (
+                {
+                    "category": highest_variance[0] if highest_variance else None,
+                    "variance_percentage": (
+                        highest_variance[1] if highest_variance else 0
+                    ),
+                    "variance_amount": highest_variance[2] if highest_variance else 0,
+                }
+                if highest_variance
+                else None
+            ),
             "payment_frequency": payment_frequency,
             "categories_on_budget": len(
                 [

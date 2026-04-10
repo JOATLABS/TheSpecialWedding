@@ -120,10 +120,40 @@ jobs:
           echo "- **Backend**: ${{ steps.target.outputs.backend }}" >> "$GITHUB_STEP_SUMMARY"
           echo "- **Frontend**: ${{ steps.target.outputs.frontend }}" >> "$GITHUB_STEP_SUMMARY"
 
+  validate-images:
+    name: Validate target images (${{ inputs.environment_name }})
+    runs-on: ubuntu-latest
+    needs: prepare
+    steps:
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+
+      - name: Verify requested image tags exist in GHCR
+        env:
+          TAG: ${{ needs.prepare.outputs.image-tag }}
+          DEPLOY_BACKEND: ${{ needs.prepare.outputs.deploy-backend }}
+          DEPLOY_FRONTEND: ${{ needs.prepare.outputs.deploy-frontend }}
+        run: |
+          set -euo pipefail
+
+          if [ "$DEPLOY_BACKEND" = "true" ]; then
+            docker manifest inspect "${{ env.BACKEND_IMAGE }}:${TAG}" >/dev/null
+            echo "Validated backend target image: ${{ env.BACKEND_IMAGE }}:${TAG}" >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+          if [ "$DEPLOY_FRONTEND" = "true" ]; then
+            docker manifest inspect "${{ env.FRONTEND_IMAGE }}:${TAG}" >/dev/null
+            echo "Validated frontend target image: ${{ env.FRONTEND_IMAGE }}:${TAG}" >> "$GITHUB_STEP_SUMMARY"
+          fi
+
   deploy-backend:
     name: Deploy backend (${{ inputs.environment_name }})
     runs-on: ubuntu-latest
-    needs: prepare
+    needs: [prepare, validate-images]
     if: needs.prepare.outputs.deploy-backend == 'true'
     outputs:
       previous-name: ${{ steps.rollback-target.outputs.name }}
@@ -132,33 +162,16 @@ jobs:
       name: ${{ inputs.environment_name }}
       url: ${{ inputs.api_url }}
     steps:
-      - name: Read current backend image name
+      - name: Read current backend image reference
         id: current-image
+        env:
+          COOLIFY_BASE_URL: ${{ secrets.COOLIFY_BASE_URL }}
+          COOLIFY_API_TOKEN: ${{ secrets.COOLIFY_API_TOKEN }}
         run: |
-          RESPONSE=$(curl -sf \
-            "${{ secrets.COOLIFY_BASE_URL }}/api/v1/applications/${{ secrets.COOLIFY_BACKEND_UUID }}" \
-            -H "Authorization: Bearer ${{ secrets.COOLIFY_API_TOKEN }}")
-
-          NAME=$(printf '%s' "$RESPONSE" | python3 -c "import json,sys; print((json.load(sys.stdin).get('docker_registry_image_name') or '').strip())")
-          if [ -z "$NAME" ]; then
-            echo "Current backend image name is empty; refusing to continue."
-            exit 1
-          fi
-          echo "name=$NAME" >> "$GITHUB_OUTPUT"
-
-      - name: Read current backend image tag
-        id: current-tag
-        run: |
-          RESPONSE=$(curl -sf \
-            "${{ secrets.COOLIFY_BASE_URL }}/api/v1/applications/${{ secrets.COOLIFY_BACKEND_UUID }}" \
-            -H "Authorization: Bearer ${{ secrets.COOLIFY_API_TOKEN }}")
-
-          TAG=$(printf '%s' "$RESPONSE" | python3 -c "import json,sys; print((json.load(sys.stdin).get('docker_registry_image_tag') or '').strip())")
-          if [ -z "$TAG" ]; then
-            echo "Current backend image tag is empty; refusing to continue without a rollback target."
-            exit 1
-          fi
-          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          python3 scripts/deploy/coolify_api.py image-ref \
+            --uuid "${{ secrets.COOLIFY_BACKEND_UUID }}" \
+            --github-output "$GITHUB_OUTPUT" \
+            --summary-file "$GITHUB_STEP_SUMMARY"
 
       - name: Log in to GHCR for rollback validation
         uses: docker/login-action@v3
@@ -171,7 +184,7 @@ jobs:
         id: rollback-target
         env:
           NAME: ${{ steps.current-image.outputs.name }}
-          TAG: ${{ steps.current-tag.outputs.tag }}
+          TAG: ${{ steps.current-image.outputs.tag }}
         run: |
           set -euo pipefail
 
@@ -189,25 +202,30 @@ jobs:
           fi
 
       - name: Update backend image reference
+        env:
+          COOLIFY_BASE_URL: ${{ secrets.COOLIFY_BASE_URL }}
+          COOLIFY_API_TOKEN: ${{ secrets.COOLIFY_API_TOKEN }}
         run: |
           TAG="${{ needs.prepare.outputs.image-tag }}"
-          curl -sf -X PATCH \
-            "${{ secrets.COOLIFY_BASE_URL }}/api/v1/applications/${{ secrets.COOLIFY_BACKEND_UUID }}" \
-            -H "Authorization: Bearer ${{ secrets.COOLIFY_API_TOKEN }}" \
-            -H "Content-Type: application/json" \
-            -d "{\"docker_registry_image_name\": \"${{ env.BACKEND_IMAGE }}\", \"docker_registry_image_tag\": \"${TAG}\"}"
+          python3 scripts/deploy/coolify_api.py set-image \
+            --uuid "${{ secrets.COOLIFY_BACKEND_UUID }}" \
+            --image-name "${{ env.BACKEND_IMAGE }}" \
+            --image-tag "${TAG}" \
+            --summary-file "$GITHUB_STEP_SUMMARY"
 
       - name: Restart backend
+        env:
+          COOLIFY_BASE_URL: ${{ secrets.COOLIFY_BASE_URL }}
+          COOLIFY_API_TOKEN: ${{ secrets.COOLIFY_API_TOKEN }}
         run: |
-          curl -sf -X POST \
-            "${{ secrets.COOLIFY_BASE_URL }}/api/v1/applications/${{ secrets.COOLIFY_BACKEND_UUID }}/restart" \
-            -H "Authorization: Bearer ${{ secrets.COOLIFY_API_TOKEN }}" \
-            -H "Content-Type: application/json"
+          python3 scripts/deploy/coolify_api.py restart \
+            --uuid "${{ secrets.COOLIFY_BACKEND_UUID }}" \
+            --summary-file "$GITHUB_STEP_SUMMARY"
 
   deploy-frontend:
     name: Deploy frontend (${{ inputs.environment_name }})
     runs-on: ubuntu-latest
-    needs: prepare
+    needs: [prepare, validate-images]
     if: needs.prepare.outputs.deploy-frontend == 'true'
     outputs:
       previous-name: ${{ steps.rollback-target.outputs.name }}
@@ -216,33 +234,16 @@ jobs:
       name: ${{ inputs.environment_name }}
       url: ${{ inputs.frontend_url }}
     steps:
-      - name: Read current frontend image name
+      - name: Read current frontend image reference
         id: current-image
+        env:
+          COOLIFY_BASE_URL: ${{ secrets.COOLIFY_BASE_URL }}
+          COOLIFY_API_TOKEN: ${{ secrets.COOLIFY_API_TOKEN }}
         run: |
-          RESPONSE=$(curl -sf \
-            "${{ secrets.COOLIFY_BASE_URL }}/api/v1/applications/${{ secrets.COOLIFY_FRONTEND_UUID }}" \
-            -H "Authorization: Bearer ${{ secrets.COOLIFY_API_TOKEN }}")
-
-          NAME=$(printf '%s' "$RESPONSE" | python3 -c "import json,sys; print((json.load(sys.stdin).get('docker_registry_image_name') or '').strip())")
-          if [ -z "$NAME" ]; then
-            echo "Current frontend image name is empty; refusing to continue."
-            exit 1
-          fi
-          echo "name=$NAME" >> "$GITHUB_OUTPUT"
-
-      - name: Read current frontend image tag
-        id: current-tag
-        run: |
-          RESPONSE=$(curl -sf \
-            "${{ secrets.COOLIFY_BASE_URL }}/api/v1/applications/${{ secrets.COOLIFY_FRONTEND_UUID }}" \
-            -H "Authorization: Bearer ${{ secrets.COOLIFY_API_TOKEN }}")
-
-          TAG=$(printf '%s' "$RESPONSE" | python3 -c "import json,sys; print((json.load(sys.stdin).get('docker_registry_image_tag') or '').strip())")
-          if [ -z "$TAG" ]; then
-            echo "Current frontend image tag is empty; refusing to continue without an immutable rollback target."
-            exit 1
-          fi
-          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          python3 scripts/deploy/coolify_api.py image-ref \
+            --uuid "${{ secrets.COOLIFY_FRONTEND_UUID }}" \
+            --github-output "$GITHUB_OUTPUT" \
+            --summary-file "$GITHUB_STEP_SUMMARY"
 
       - name: Log in to GHCR for rollback validation
         uses: docker/login-action@v3
@@ -255,7 +256,7 @@ jobs:
         id: rollback-target
         env:
           NAME: ${{ steps.current-image.outputs.name }}
-          TAG: ${{ steps.current-tag.outputs.tag }}
+          TAG: ${{ steps.current-image.outputs.tag }}
         run: |
           set -euo pipefail
 
@@ -273,20 +274,25 @@ jobs:
           fi
 
       - name: Update frontend image reference
+        env:
+          COOLIFY_BASE_URL: ${{ secrets.COOLIFY_BASE_URL }}
+          COOLIFY_API_TOKEN: ${{ secrets.COOLIFY_API_TOKEN }}
         run: |
           TAG="${{ needs.prepare.outputs.image-tag }}"
-          curl -sf -X PATCH \
-            "${{ secrets.COOLIFY_BASE_URL }}/api/v1/applications/${{ secrets.COOLIFY_FRONTEND_UUID }}" \
-            -H "Authorization: Bearer ${{ secrets.COOLIFY_API_TOKEN }}" \
-            -H "Content-Type: application/json" \
-            -d "{\"docker_registry_image_name\": \"${{ env.FRONTEND_IMAGE }}\", \"docker_registry_image_tag\": \"${TAG}\"}"
+          python3 scripts/deploy/coolify_api.py set-image \
+            --uuid "${{ secrets.COOLIFY_FRONTEND_UUID }}" \
+            --image-name "${{ env.FRONTEND_IMAGE }}" \
+            --image-tag "${TAG}" \
+            --summary-file "$GITHUB_STEP_SUMMARY"
 
       - name: Restart frontend
+        env:
+          COOLIFY_BASE_URL: ${{ secrets.COOLIFY_BASE_URL }}
+          COOLIFY_API_TOKEN: ${{ secrets.COOLIFY_API_TOKEN }}
         run: |
-          curl -sf -X POST \
-            "${{ secrets.COOLIFY_BASE_URL }}/api/v1/applications/${{ secrets.COOLIFY_FRONTEND_UUID }}/restart" \
-            -H "Authorization: Bearer ${{ secrets.COOLIFY_API_TOKEN }}" \
-            -H "Content-Type: application/json"
+          python3 scripts/deploy/coolify_api.py restart \
+            --uuid "${{ secrets.COOLIFY_FRONTEND_UUID }}" \
+            --summary-file "$GITHUB_STEP_SUMMARY"
 
   verify:
     name: Verify ${{ inputs.environment_name }}
@@ -374,6 +380,9 @@ jobs:
             needs.deploy-backend.outputs.previous-tag != '' &&
             (needs.deploy-backend.result == 'failure' || needs.verify.result == 'failure')
           }}
+        env:
+          COOLIFY_BASE_URL: ${{ secrets.COOLIFY_BASE_URL }}
+          COOLIFY_API_TOKEN: ${{ secrets.COOLIFY_API_TOKEN }}
         run: |
           NAME="${{ needs.deploy-backend.outputs.previous-name }}"
           TAG="${{ needs.deploy-backend.outputs.previous-tag }}"
@@ -386,16 +395,15 @@ jobs:
             exit 1
           fi
 
-          curl -sf -X PATCH \
-            "${{ secrets.COOLIFY_BASE_URL }}/api/v1/applications/${{ secrets.COOLIFY_BACKEND_UUID }}" \
-            -H "Authorization: Bearer ${{ secrets.COOLIFY_API_TOKEN }}" \
-            -H "Content-Type: application/json" \
-            -d "{\"docker_registry_image_name\": \"${NAME}\", \"docker_registry_image_tag\": \"${TAG}\"}"
+          python3 scripts/deploy/coolify_api.py set-image \
+            --uuid "${{ secrets.COOLIFY_BACKEND_UUID }}" \
+            --image-name "${NAME}" \
+            --image-tag "${TAG}" \
+            --summary-file "$GITHUB_STEP_SUMMARY"
 
-          curl -sf -X POST \
-            "${{ secrets.COOLIFY_BASE_URL }}/api/v1/applications/${{ secrets.COOLIFY_BACKEND_UUID }}/restart" \
-            -H "Authorization: Bearer ${{ secrets.COOLIFY_API_TOKEN }}" \
-            -H "Content-Type: application/json"
+          python3 scripts/deploy/coolify_api.py restart \
+            --uuid "${{ secrets.COOLIFY_BACKEND_UUID }}" \
+            --summary-file "$GITHUB_STEP_SUMMARY"
 
       - name: Roll back frontend
         if: >-
@@ -405,6 +413,9 @@ jobs:
             needs.deploy-frontend.outputs.previous-tag != '' &&
             (needs.deploy-frontend.result == 'failure' || needs.verify.result == 'failure')
           }}
+        env:
+          COOLIFY_BASE_URL: ${{ secrets.COOLIFY_BASE_URL }}
+          COOLIFY_API_TOKEN: ${{ secrets.COOLIFY_API_TOKEN }}
         run: |
           NAME="${{ needs.deploy-frontend.outputs.previous-name }}"
           TAG="${{ needs.deploy-frontend.outputs.previous-tag }}"
@@ -417,13 +428,12 @@ jobs:
             exit 1
           fi
 
-          curl -sf -X PATCH \
-            "${{ secrets.COOLIFY_BASE_URL }}/api/v1/applications/${{ secrets.COOLIFY_FRONTEND_UUID }}" \
-            -H "Authorization: Bearer ${{ secrets.COOLIFY_API_TOKEN }}" \
-            -H "Content-Type: application/json" \
-            -d "{\"docker_registry_image_name\": \"${NAME}\", \"docker_registry_image_tag\": \"${TAG}\"}"
+          python3 scripts/deploy/coolify_api.py set-image \
+            --uuid "${{ secrets.COOLIFY_FRONTEND_UUID }}" \
+            --image-name "${NAME}" \
+            --image-tag "${TAG}" \
+            --summary-file "$GITHUB_STEP_SUMMARY"
 
-          curl -sf -X POST \
-            "${{ secrets.COOLIFY_BASE_URL }}/api/v1/applications/${{ secrets.COOLIFY_FRONTEND_UUID }}/restart" \
-            -H "Authorization: Bearer ${{ secrets.COOLIFY_API_TOKEN }}" \
-            -H "Content-Type: application/json"
+          python3 scripts/deploy/coolify_api.py restart \
+            --uuid "${{ secrets.COOLIFY_FRONTEND_UUID }}" \
+            --summary-file "$GITHUB_STEP_SUMMARY"

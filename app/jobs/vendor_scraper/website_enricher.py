@@ -9,9 +9,9 @@ This is a best-effort enrichment step. If it fails, the vendor
 still gets inserted with Google Places data only.
 """
 
-import re
 import ipaddress
 import logging
+import re
 from typing import Dict, Optional, Tuple
 from urllib.parse import urlparse
 

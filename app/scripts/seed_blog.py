@@ -10,9 +10,10 @@ Or call seed_blog() from app startup.
 
 import asyncio
 from datetime import datetime, timezone
-from bson import ObjectId
-from app.core.database import mongo
 
+from bson import ObjectId
+
+from app.core.database import mongo
 
 BLOG_ARTICLES = [
     {

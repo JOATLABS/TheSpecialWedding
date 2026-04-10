@@ -11,17 +11,14 @@ Images stored in separate R2 bucket: vendor-ad-assets (S3_AD_BUCKET_NAME).
 """
 
 import logging
-from datetime import datetime, timezone, timedelta
-from typing import List, Dict, Optional, Any
+from datetime import datetime, timedelta, timezone
+from typing import Any, Dict, List, Optional
 
 from bson import ObjectId
 from bson.errors import InvalidId
 from fastapi import HTTPException
 
-from app.models.advertising_campaign import (
-    CampaignStatus,
-    CreativeReviewStatus,
-)
+from app.models.advertising_campaign import CampaignStatus, CreativeReviewStatus
 
 logger = logging.getLogger(__name__)
 
@@ -68,8 +65,8 @@ class VendorCampaignService:
     ) -> Dict[str, Any]:
         """Create a new draft campaign for an advertising vendor."""
         # ── Profile Completeness Gate (Phase 10) ──────────────────
-        from app.services.vendor_signup_service import check_profile_completeness
         from app.services.ad_platform_config_service import AdPlatformConfigService
+        from app.services.vendor_signup_service import check_profile_completeness
 
         config_svc = AdPlatformConfigService(self.db)
         config = await config_svc.get_config()
@@ -593,9 +590,9 @@ class VendorCampaignService:
                 "leads": campaign.get("lead_count", 0),
                 "conversions": conversions,
                 "ctr": round(clicks / impressions * 100, 2) if impressions > 0 else 0.0,
-                "conversion_rate": round(conversions / clicks * 100, 2)
-                if clicks > 0
-                else 0.0,
+                "conversion_rate": (
+                    round(conversions / clicks * 100, 2) if clicks > 0 else 0.0
+                ),
                 "spend": spend,
             },
             "daily_series": daily_stats,

@@ -1,17 +1,19 @@
 # app/api/reminder_telnyx.py
 
-from fastapi import APIRouter, HTTPException, Depends, Query
-from app.services.reminder_service_telnyx import TelnyxReminderService
-from app.services.reminder_utilities_telnyx import TelnyxRSVPReminderHelper
+from typing import Optional
+
+from fastapi import APIRouter, Depends, HTTPException, Query
+from pydantic import BaseModel
+
 from app.dependencies.auth_extended import (
-    require_wedding_planner_only,
     ExtendedAuthUser,
     check_wedding_access,
     enforce_team_permission,
+    require_wedding_planner_only,
 )
+from app.services.reminder_service_telnyx import TelnyxReminderService
+from app.services.reminder_utilities_telnyx import TelnyxRSVPReminderHelper
 from app.services.wedding_service import WeddingService
-from pydantic import BaseModel
-from typing import Optional
 
 router = APIRouter()
 wedding_service = WeddingService()
@@ -45,9 +47,11 @@ def get_telnyx_status():
     """Check if Telnyx services are configured and available"""
     return {
         "available": telnyx_available,
-        "message": "Telnyx configured and ready"
-        if telnyx_available
-        else "Telnyx not configured",
+        "message": (
+            "Telnyx configured and ready"
+            if telnyx_available
+            else "Telnyx not configured"
+        ),
     }
 
 

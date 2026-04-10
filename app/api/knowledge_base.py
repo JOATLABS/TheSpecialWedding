@@ -3,24 +3,26 @@ Knowledge Base API Endpoints
 Community-driven documentation system for wedding planners
 """
 
+import logging
+from typing import List, Optional
+
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, Field, field_validator
-from typing import Optional, List
+
 from app.dependencies.auth_extended import (
-    require_root_admin,
-    require_admin_or_planner,
     ExtendedAuthUser,
+    require_admin_or_planner,
+    require_root_admin,
 )
-from app.services.knowledge_base_service import knowledge_base_service
 from app.models.knowledge_base import KB_CATEGORIES, KB_STATUSES
+from app.services.knowledge_base_service import knowledge_base_service
 from app.utils.rate_limiter import (
+    check_rate_limit,
+    get_client_ip,
     public_read_limiter,
     public_search_limiter,
     public_slug_limiter,
-    check_rate_limit,
-    get_client_ip,
 )
-import logging
 
 logger = logging.getLogger(__name__)
 

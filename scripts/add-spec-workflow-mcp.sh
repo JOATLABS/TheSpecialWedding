@@ -44,7 +44,7 @@ check_existing_mcp() {
         echo "3) Backup and create new"
         echo "4) Cancel"
         read -p "Choose option (1-4): " choice
-        
+
         case $choice in
             1)
                 add_to_existing
@@ -72,7 +72,7 @@ check_existing_mcp() {
 # Function to create new .mcp.json
 create_new_mcp() {
     print_info "Creating .mcp.json with spec-workflow configuration..."
-    
+
     cat > .mcp.json << 'EOF'
 {
   "mcpServers": {
@@ -84,20 +84,20 @@ create_new_mcp() {
   }
 }
 EOF
-    
+
     print_success ".mcp.json created successfully"
 }
 
 # Function to add spec-workflow to existing .mcp.json
 add_to_existing() {
     print_info "Adding spec-workflow to existing .mcp.json..."
-    
+
     # Check if spec-workflow already exists
     if grep -q '"spec-workflow"' .mcp.json; then
         print_warning "spec-workflow is already configured in .mcp.json"
         exit 0
     fi
-    
+
     # This is a simplified approach - for production, use proper JSON parsing
     # Create a temporary file with the merged configuration
     python3 -c "
@@ -107,19 +107,19 @@ import sys
 try:
     with open('.mcp.json', 'r') as f:
         config = json.load(f)
-    
+
     if 'mcpServers' not in config:
         config['mcpServers'] = {}
-    
+
     config['mcpServers']['spec-workflow'] = {
         'command': 'npx',
         'args': ['-y', '@pimzino/spec-workflow-mcp@latest', '.', '--AutoStartDashboard'],
         'env': {}
     }
-    
+
     with open('.mcp.json', 'w') as f:
         json.dump(config, f, indent=2)
-    
+
     print('Successfully added spec-workflow to .mcp.json')
 except Exception as e:
     print(f'Error: {e}', file=sys.stderr)
@@ -129,7 +129,7 @@ except Exception as e:
     print_info "You may need to manually edit .mcp.json"
     exit 1
 }
-    
+
     print_success "spec-workflow added to existing .mcp.json"
 }
 
@@ -137,7 +137,7 @@ except Exception as e:
 replace_existing() {
     print_info "Backing up existing .mcp.json..."
     cp .mcp.json ".mcp.json.backup.$(date +%Y%m%d_%H%M%S)"
-    
+
     create_new_mcp
 }
 
@@ -146,7 +146,7 @@ backup_and_create() {
     print_info "Backing up existing .mcp.json..."
     cp .mcp.json ".mcp.json.backup.$(date +%Y%m%d_%H%M%S)"
     print_success "Backup created"
-    
+
     create_new_mcp
 }
 
@@ -158,7 +158,7 @@ configure_dashboard() {
     echo "2) Manual dashboard start"
     echo "3) No dashboard"
     read -p "Choose option (1-3) [1]: " dashboard_choice
-    
+
     case ${dashboard_choice:-1} in
         1)
             # Default configuration already includes --AutoStartDashboard
@@ -208,13 +208,13 @@ create_spec_workflow_config() {
         print_info ".spec-workflow.json already exists, skipping creation"
         return
     fi
-    
+
     echo
     read -p "Create .spec-workflow.json configuration file? (y/N): " create_config
-    
+
     if [[ $create_config =~ ^[Yy]$ ]]; then
         print_info "Creating .spec-workflow.json..."
-        
+
         cat > .spec-workflow.json << 'EOF'
 {
   "version": "1.0.0",
@@ -240,9 +240,9 @@ create_spec_workflow_config() {
   }
 }
 EOF
-        
+
         print_success ".spec-workflow.json created"
-        
+
         # Create directories if they don't exist
         mkdir -p specifications tasks
         print_info "Created specifications/ and tasks/ directories"
@@ -253,7 +253,7 @@ EOF
 verify_configuration() {
     echo
     print_info "Verifying configuration..."
-    
+
     if [ -f ".mcp.json" ]; then
         if grep -q '"spec-workflow"' .mcp.json; then
             print_success "spec-workflow is configured in .mcp.json"
@@ -263,13 +263,13 @@ verify_configuration() {
     else
         print_error ".mcp.json not found"
     fi
-    
+
     if [ -f ".spec-workflow.json" ]; then
         print_success ".spec-workflow.json configuration found"
     else
         print_warning ".spec-workflow.json not found (optional)"
     fi
-    
+
     # Check if Claude Code is running
     if pgrep -x "claude" > /dev/null; then
         print_warning "Claude Code is running. Please restart it to load the new MCP configuration"
@@ -361,21 +361,21 @@ main() {
     echo "Spec-Workflow MCP Configuration"
     echo "=================================="
     echo
-    
+
     # Check if we're in a git repository (optional)
     if git rev-parse --git-dir > /dev/null 2>&1; then
         print_info "Git repository detected"
     else
         print_warning "Not in a git repository - .mcp.json won't be version controlled"
     fi
-    
+
     # Handle .mcp.json
     if [ "$FORCE" = true ] && [ -f ".mcp.json" ]; then
         backup_and_create
     else
         check_existing_mcp
     fi
-    
+
     # Configure dashboard unless --no-dashboard
     if [ "$NO_DASHBOARD" = false ]; then
         configure_dashboard
@@ -395,12 +395,12 @@ with open('.mcp.json', 'w') as f:
 " 2>/dev/null || true
         fi
     fi
-    
+
     # Create spec-workflow configuration unless --no-config
     if [ "$NO_CONFIG" = false ]; then
         create_spec_workflow_config
     fi
-    
+
     # Verify and show next steps
     verify_configuration
     show_next_steps

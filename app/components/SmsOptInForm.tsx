@@ -13,11 +13,11 @@ interface SmsOptInFormProps {
   privacyUrl?: string;
 }
 
-export function SmsOptInForm({ 
-  weddingName, 
-  onSubmit, 
+export function SmsOptInForm({
+  weddingName,
+  onSubmit,
   termsUrl = '/terms',
-  privacyUrl = '/privacy' 
+  privacyUrl = '/privacy'
 }: SmsOptInFormProps) {
   const [phone, setPhone] = useState('');
   const [smsTransactional, setSmsTransactional] = useState(false);
@@ -37,7 +37,7 @@ export function SmsOptInForm({
   const formatPhoneNumber = (value: string) => {
     const phoneNumber = value.replace(/[^\d]/g, '');
     const phoneNumberLength = phoneNumber.length;
-    
+
     if (phoneNumberLength < 4) return phoneNumber;
     if (phoneNumberLength < 7) {
       return `(${phoneNumber.slice(0, 3)}) ${phoneNumber.slice(3)}`;
@@ -66,7 +66,7 @@ export function SmsOptInForm({
     <form onSubmit={handleSubmit} className="space-y-6">
       <div>
         <h3 className="text-lg font-semibold mb-4">SMS Notifications</h3>
-        
+
         <div className="mb-4">
           <label htmlFor="phone" className="block text-sm font-medium text-gray-700 mb-2">
             Phone Number
@@ -117,11 +117,11 @@ export function SmsOptInForm({
         <div className="mt-6 p-4 bg-gray-50 rounded-md">
           <p className="text-xs text-gray-600 leading-relaxed">
             <strong>IMPORTANT:</strong> You are subscribing to wedding reminders from JOAT Labs.
-            Reply STOP to opt out. Reply HELP for help. Standard message and data rates may apply. 
+            Reply STOP to opt out. Reply HELP for help. Standard message and data rates may apply.
             Message frequency may vary.
           </p>
           <p className="text-xs text-gray-600 mt-2">
-            By checking the box(es) above and submitting this form, you consent to receive 
+            By checking the box(es) above and submitting this form, you consent to receive
             automated text messages from JOAT Labs for the couple: {weddingName} at the phone number provided.
             Consent is not a condition of any purchase.
           </p>
