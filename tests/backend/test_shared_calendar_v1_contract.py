@@ -18,9 +18,11 @@ from app.api.planner_calendar import (
 from app.core import database_indexes as database_indexes_module
 from app.dependencies.auth_extended import (
     ExtendedAuthUser,
+    require_calendar_permission,
     resolve_owner_scoped_user_assignments,
 )
 from app.models.calendar import CalendarEventCreate, CalendarEventUpdate
+from app.models.team_member import ROLE_PRESETS, resolve_team_permissions
 from app.services.meeting_invite_service import MeetingInviteService
 from app.services.calendar_aggregation_service import CalendarAggregationService
 from app.services.calendar_sync_service import CalendarSyncService
@@ -154,6 +156,52 @@ def test_google_oauth_state_rejects_expired_token() -> None:
 
     assert exc_info.value.status_code == 400
     assert exc_info.value.detail == "OAuth state has expired"
+
+
+def test_editor_role_includes_generic_calendar_task_permissions() -> None:
+    assert ROLE_PRESETS["editor"]["manage_calendar_tasks"] is True
+    assert ROLE_PRESETS["editor"]["sync_calendar_tasks"] is True
+    assert ROLE_PRESETS["viewer"]["manage_calendar_tasks"] is False
+    assert ROLE_PRESETS["viewer"]["sync_calendar_tasks"] is False
+
+
+def test_legacy_permission_blobs_inherit_generic_calendar_task_defaults() -> None:
+    resolved = resolve_team_permissions("editor", {"manage_guests": True})
+
+    assert resolved["manage_calendar_tasks"] is True
+    assert resolved["sync_calendar_tasks"] is True
+
+
+@pytest.mark.asyncio
+async def test_manage_calendar_tasks_permission_requires_calendar_task_access() -> None:
+    checker = require_calendar_permission("manage_calendar_tasks")
+    user = ExtendedAuthUser("team@example.com", "team_member", {})
+    user.team_permissions = {
+        "view_shared_calendar": True,
+        "manage_calendar_tasks": False,
+    }
+
+    with pytest.raises(HTTPException) as exc_info:
+        await checker(current_user=user)
+
+    assert exc_info.value.status_code == 403
+    assert "manage calendar tasks" in exc_info.value.detail.lower()
+
+
+@pytest.mark.asyncio
+async def test_sync_calendar_tasks_permission_requires_calendar_task_access() -> None:
+    checker = require_calendar_permission("sync_calendar_tasks")
+    user = ExtendedAuthUser("team@example.com", "team_member", {})
+    user.team_permissions = {
+        "view_shared_calendar": True,
+        "sync_calendar_tasks": False,
+    }
+
+    with pytest.raises(HTTPException) as exc_info:
+        await checker(current_user=user)
+
+    assert exc_info.value.status_code == 403
+    assert "sync calendar tasks" in exc_info.value.detail.lower()
 
 
 @pytest.mark.asyncio

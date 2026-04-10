@@ -40,6 +40,8 @@ interface TaskModalProps {
   weddings?: Array<{ id: string; couple_names: string }>;
   defaultDate?: Date;
   defaultCategory?: TaskCategory;
+  allowGeneralTasks?: boolean;
+  allowMeetings?: boolean;
   connections?: CalendarConnection[];
   staffOptions?: StaffOption[];
   onSuccess?: () => void;
@@ -137,6 +139,8 @@ export default function TaskModal({
   weddings = [],
   defaultDate,
   defaultCategory = 'other',
+  allowGeneralTasks = true,
+  allowMeetings = true,
   connections = [],
   staffOptions = [],
   onSuccess,
@@ -187,6 +191,24 @@ export default function TaskModal({
       ),
     [connections]
   );
+  const availableCategories = useMemo(() => {
+    const allowed = new Set<TaskCategory>(
+      CATEGORIES.filter((item) => {
+        if (item === 'meeting') return allowMeetings;
+        return allowGeneralTasks;
+      })
+    );
+    if (task?.category && CATEGORIES.includes(task.category as TaskCategory)) {
+      allowed.add(task.category as TaskCategory);
+    }
+    return CATEGORIES.filter((item) => allowed.has(item));
+  }, [allowGeneralTasks, allowMeetings, task?.category]);
+  const defaultSelectableCategory = useMemo(() => {
+    if (availableCategories.includes(defaultCategory)) {
+      return defaultCategory;
+    }
+    return availableCategories[0] || 'meeting';
+  }, [availableCategories, defaultCategory]);
 
   const isMeetingMode =
     category === 'meeting' || task?.schedule_item_type === 'meeting' || task?.category === 'meeting';
@@ -245,7 +267,7 @@ export default function TaskModal({
       setTitle('');
       setDescription('');
       setWeddingId('');
-      setCategory(defaultCategory);
+      setCategory(defaultSelectableCategory);
       setPriority('medium');
       setStartDate(initialDate);
       setStartTime('09:00');
@@ -274,7 +296,7 @@ export default function TaskModal({
     }
 
     setError('');
-  }, [defaultCategory, open, task, defaultDate]);
+  }, [defaultSelectableCategory, open, task, defaultDate]);
 
   useEffect(() => {
     if (category !== 'meeting') {
@@ -472,8 +494,9 @@ export default function TaskModal({
                 value={category}
                 onChange={(event) => setCategory(event.target.value as TaskCategory)}
                 className="w-full rounded-xl border border-slate-300 px-3 py-2.5 text-slate-900"
+                disabled={!isEditing && availableCategories.length === 1}
               >
-                {CATEGORIES.map((item) => (
+                {availableCategories.map((item) => (
                   <option key={item} value={item}>
                     {CATEGORY_LABELS[item]}
                   </option>

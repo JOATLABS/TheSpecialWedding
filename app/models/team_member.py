@@ -65,6 +65,8 @@ ROLE_PRESETS: Dict[str, Dict[str, bool]] = {
         "cancel_meetings": True,
         "send_meeting_invites": True,
         "view_team_availability": True,
+        "manage_calendar_tasks": True,
+        "sync_calendar_tasks": True,
     },
     "editor": {
         "manage_guests": True,
@@ -90,6 +92,8 @@ ROLE_PRESETS: Dict[str, Dict[str, bool]] = {
         "cancel_meetings": True,
         "send_meeting_invites": True,
         "view_team_availability": True,
+        "manage_calendar_tasks": True,
+        "sync_calendar_tasks": True,
     },
     "viewer": {
         "manage_guests": False,
@@ -115,6 +119,8 @@ ROLE_PRESETS: Dict[str, Dict[str, bool]] = {
         "cancel_meetings": False,
         "send_meeting_invites": False,
         "view_team_availability": False,
+        "manage_calendar_tasks": False,
+        "sync_calendar_tasks": False,
     },
 }
 
@@ -161,6 +167,8 @@ class TeamPermissions(BaseModel):
     cancel_meetings: bool = False
     send_meeting_invites: bool = False
     view_team_availability: bool = False
+    manage_calendar_tasks: bool = False
+    sync_calendar_tasks: bool = False
 
     def to_dict(self) -> Dict[str, bool]:
         """Convert to plain dict for MongoDB storage"""

@@ -20,8 +20,6 @@ from app.dependencies.auth_extended import (
     resolve_owner_scoped_user_assignments,
     require_calendar_access,
     require_calendar_permission,
-    require_wedding_planner,
-    enforce_team_permission,
 )
 from app.utils.query_validation import (
     validated_string_filter,
@@ -899,7 +897,9 @@ async def get_staff_availability(
 )
 async def create_task(
     task_data: CalendarEventCreate,
-    current_user: ExtendedAuthUser = Depends(require_wedding_planner),
+    current_user: ExtendedAuthUser = Depends(
+        require_calendar_permission("manage_calendar_tasks")
+    ),
 ) -> TaskResponse:
     """
     Create a new task/event for the planner's calendar.
@@ -907,7 +907,6 @@ async def create_task(
     If Google Calendar is connected and sync_to_google is True,
     the event will also be created in Google Calendar.
     """
-    enforce_team_permission(current_user, "manage_wedding_settings")
     tasks_collection = mongo.get_planner_tasks_collection()
 
     now = datetime.now(UTC)
@@ -1016,7 +1015,7 @@ async def create_task(
     response_model=TaskListResponse,
 )
 async def list_tasks(
-    current_user: ExtendedAuthUser = Depends(require_wedding_planner),
+    current_user: ExtendedAuthUser = Depends(require_calendar_access),
     wedding_id: Optional[str] = Query(None, description="Filter by wedding ID"),
     status: Optional[str] = Query(None, description="Filter by status"),
     category: Optional[str] = Query(None, description="Filter by category"),
@@ -1103,7 +1102,7 @@ async def list_tasks(
 )
 async def get_task(
     task_id: str,
-    current_user: ExtendedAuthUser = Depends(require_wedding_planner),
+    current_user: ExtendedAuthUser = Depends(require_calendar_access),
 ) -> TaskResponse:
     """
     Get a specific task by ID.
@@ -1133,7 +1132,9 @@ async def get_task(
 async def update_task(
     task_id: str,
     updates: CalendarEventUpdate,
-    current_user: ExtendedAuthUser = Depends(require_wedding_planner),
+    current_user: ExtendedAuthUser = Depends(
+        require_calendar_permission("manage_calendar_tasks")
+    ),
 ) -> TaskResponse:
     """
     Update an existing task.
@@ -1141,7 +1142,6 @@ async def update_task(
     If the task is synced to Google Calendar, the Google event
     will also be updated.
     """
-    enforce_team_permission(current_user, "manage_wedding_settings")
     tasks_collection = mongo.get_planner_tasks_collection()
 
     try:
@@ -1231,7 +1231,9 @@ async def update_task(
 )
 async def delete_task(
     task_id: str,
-    current_user: ExtendedAuthUser = Depends(require_wedding_planner),
+    current_user: ExtendedAuthUser = Depends(
+        require_calendar_permission("manage_calendar_tasks")
+    ),
 ) -> dict:
     """
     Delete a task.
@@ -1239,7 +1241,6 @@ async def delete_task(
     If the task is synced to Google Calendar, the Google event
     will also be deleted.
     """
-    enforce_team_permission(current_user, "manage_wedding_settings")
     tasks_collection = mongo.get_planner_tasks_collection()
 
     try:
@@ -1270,7 +1271,9 @@ async def delete_task(
 )
 async def sync_task_to_google(
     task_id: str,
-    current_user: ExtendedAuthUser = Depends(require_wedding_planner),
+    current_user: ExtendedAuthUser = Depends(
+        require_calendar_permission("sync_calendar_tasks")
+    ),
 ) -> TaskResponse:
     """
     Manually sync a specific task to Google Calendar.
@@ -1278,7 +1281,6 @@ async def sync_task_to_google(
     Creates the event in Google Calendar if not already synced,
     or updates it if already synced.
     """
-    enforce_team_permission(current_user, "manage_wedding_settings")
     # Check if Google Calendar is connected
     status = await google_calendar_service.get_connection_status(
         _calendar_owner_email(current_user)
@@ -1355,12 +1357,13 @@ async def sync_task_to_google(
 async def bulk_update_task_status(
     task_ids: List[str],
     status: str = Query(..., description="New status for all tasks"),
-    current_user: ExtendedAuthUser = Depends(require_wedding_planner),
+    current_user: ExtendedAuthUser = Depends(
+        require_calendar_permission("manage_calendar_tasks")
+    ),
 ) -> dict:
     """
     Update status for multiple tasks at once.
     """
-    enforce_team_permission(current_user, "manage_wedding_settings")
     if status not in ["pending", "in_progress", "completed", "cancelled"]:
         raise HTTPException(status_code=400, detail="Invalid status value")
 
@@ -1413,7 +1416,7 @@ async def bulk_update_task_status(
 async def get_month_tasks(
     year: int,
     month: int,
-    current_user: ExtendedAuthUser = Depends(require_wedding_planner),
+    current_user: ExtendedAuthUser = Depends(require_calendar_access),
 ) -> List[TaskResponse]:
     """
     Get all tasks for a specific month.
@@ -1478,7 +1481,7 @@ async def get_month_tasks(
     tags=["Planner Calendar"],
 )
 async def get_upcoming_tasks(
-    current_user: ExtendedAuthUser = Depends(require_wedding_planner),
+    current_user: ExtendedAuthUser = Depends(require_calendar_access),
     days: int = Query(default=7, ge=1, le=90, description="Days ahead to fetch"),
     limit: int = Query(default=20, ge=1, le=100, description="Maximum tasks to return"),
 ) -> List[TaskResponse]:
