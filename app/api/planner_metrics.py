@@ -378,9 +378,9 @@ async def get_planner_metrics(
 
             metrics["summary"]["confirmed_rsvps"] += confirmed
             metrics["summary"]["confirmed_plus_ones_allowed"] += confirmed_plus_allowed
-            metrics["summary"][
-                "confirmed_plus_ones_submitted"
-            ] += confirmed_plus_ones_submitted
+            metrics["summary"]["confirmed_plus_ones_submitted"] += (
+                confirmed_plus_ones_submitted
+            )
             metrics["summary"]["declined_rsvps"] += declined
             metrics["summary"]["pending_rsvps"] += pending
             metrics["summary"]["pending_plus_ones_allowed"] += pending_plus_allowed

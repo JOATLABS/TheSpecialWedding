@@ -677,13 +677,13 @@ class SupportService:
             )
             async for agent in cursor:
                 agent["_id"] = str(agent["_id"])
-                agent["assigned_tickets"] = (
-                    await self.tickets_collection.count_documents(
-                        {
-                            "assigned_to": agent["email"],
-                            "status": {"$in": ["open", "in_progress"]},
-                        }
-                    )
+                agent[
+                    "assigned_tickets"
+                ] = await self.tickets_collection.count_documents(
+                    {
+                        "assigned_to": agent["email"],
+                        "status": {"$in": ["open", "in_progress"]},
+                    }
                 )
                 agents.append(agent)
 
