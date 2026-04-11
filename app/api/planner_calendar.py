@@ -1967,11 +1967,11 @@ async def update_meeting(
             "couple_attendee_emails" in update_fields
             and update_fields["couple_attendee_emails"] is not None
         ):
-            update_doc["couple_attendee_emails"] = (
-                await _resolve_couple_attendee_emails(
-                    update_fields.get("wedding_id") or task.get("wedding_id"),
-                    update_fields["couple_attendee_emails"],
-                )
+            update_doc[
+                "couple_attendee_emails"
+            ] = await _resolve_couple_attendee_emails(
+                update_fields.get("wedding_id") or task.get("wedding_id"),
+                update_fields["couple_attendee_emails"],
             )
         for key, value in update_fields.items():
             if key in {"assigned_user_ids", "couple_attendee_emails"}:

@@ -303,9 +303,7 @@ class NotificationService:
                                 "error": result.get("error", "Unknown error"),
                             }
                         )
-                except (
-                    Exception
-                ) as email_error:  # noqa: BLE001 - capture and record delivery issues
+                except Exception as email_error:  # noqa: BLE001 - capture and record delivery issues
                     logger.error(
                         "Error sending notification email to %s: %s",
                         recipient.get("email"),
@@ -782,9 +780,7 @@ class NotificationService:
                 )
                 if user:
                     return user
-        except (
-            Exception
-        ) as exc:  # noqa: BLE001 - capture lookup issues without aborting send
+        except Exception as exc:  # noqa: BLE001 - capture lookup issues without aborting send
             logger.debug(
                 "Failed ObjectId lookup for user identifier %s: %s",
                 identifier,
