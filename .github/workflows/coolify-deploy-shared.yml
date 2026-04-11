@@ -162,6 +162,8 @@ jobs:
       name: ${{ inputs.environment_name }}
       url: ${{ inputs.api_url }}
     steps:
+      - uses: actions/checkout@v6
+
       - name: Read current backend image reference
         id: current-image
         env:
@@ -234,6 +236,8 @@ jobs:
       name: ${{ inputs.environment_name }}
       url: ${{ inputs.frontend_url }}
     steps:
+      - uses: actions/checkout@v6
+
       - name: Read current frontend image reference
         id: current-image
         env:
@@ -372,6 +376,8 @@ jobs:
       name: ${{ inputs.environment_name }}
       url: ${{ inputs.frontend_url }}
     steps:
+      - uses: actions/checkout@v6
+
       - name: Roll back backend
         if: >-
           ${{
