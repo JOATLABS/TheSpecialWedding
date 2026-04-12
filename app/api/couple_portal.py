@@ -2321,7 +2321,6 @@ def _serialize_meeting(task: dict, include_planner_fields: bool = True) -> dict:
     }
     if include_planner_fields:
         result["reminder_minutes"] = task.get("reminder_minutes")
-        result["synced_to_google"] = task.get("synced_to_google", False)
     return result
 
 
@@ -2382,15 +2381,17 @@ class RegistryItemRequest(BaseModel):
 @router.get("/couple/portal/registries", tags=["Couple Portal - Registry"])
 async def list_registries_couple(couple: dict = Depends(require_couple_auth)):
     """Couple views their wedding registries."""
+    wedding_id = couple.get("wedding_id")
+    if not isinstance(wedding_id, str) or not wedding_id:
+        raise HTTPException(status_code=404, detail="Wedding not found")
+
     if couple.get("wedding_archived"):
-        archive = await get_archived_wedding_record(couple.get("wedding_id"))
+        archive = await get_archived_wedding_record(wedding_id)
         return {
             "registries": get_archived_registries(archive),
             "archived": True,
             "read_only": True,
         }
-
-    wedding_id = couple.get("wedding_id")
     wedding = await mongo.get_weddings_collection().find_one(
         {"_id": wedding_id}, {"registries": 1}
     )
@@ -2527,15 +2528,17 @@ class FAQItemRequest(BaseModel):
 @router.get("/couple/portal/faqs", tags=["Couple Portal - FAQ"])
 async def list_faqs_couple(couple: dict = Depends(require_couple_auth)):
     """Couple views their wedding FAQs."""
+    wedding_id = couple.get("wedding_id")
+    if not isinstance(wedding_id, str) or not wedding_id:
+        raise HTTPException(status_code=404, detail="Wedding not found")
+
     if couple.get("wedding_archived"):
-        archive = await get_archived_wedding_record(couple.get("wedding_id"))
+        archive = await get_archived_wedding_record(wedding_id)
         return {
             "faqs": get_archived_faqs(archive),
             "archived": True,
             "read_only": True,
         }
-
-    wedding_id = couple.get("wedding_id")
     wedding = await mongo.get_weddings_collection().find_one(
         {"_id": wedding_id}, {"faqs": 1}
     )

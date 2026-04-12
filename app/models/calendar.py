@@ -170,6 +170,10 @@ class PlannerTaskModel(BaseModel):
         description="Whether explicit connection targets should override default sync resolution",
     )
     sync_target_connection_ids: list[str] = Field(default_factory=list)
+    external_sync_requested: bool = Field(
+        default=False,
+        description="Canonical request to project this internal item onto external calendars",
+    )
 
     # Scheduling fields
     start_date: datetime = Field(..., description="Task start date/time")
@@ -203,6 +207,8 @@ class PlannerTaskModel(BaseModel):
     )
 
     # Legacy Google Calendar sync fields
+    # These remain only for backwards-compatible reads while sync mappings are the
+    # real source of truth.
     google_event_id: Optional[str] = Field(
         None, description="Legacy Google Calendar event ID if synced"
     )
@@ -270,6 +276,10 @@ class CalendarEventCreate(BaseModel):
         default=True, description="Legacy compatibility toggle for task sync"
     )
     sync_target_connection_ids: list[str] = Field(default_factory=list)
+    external_sync_requested: Optional[bool] = Field(
+        default=None,
+        description="Explicit request to project this task onto external calendars",
+    )
 
     @field_validator("timezone")
     @classmethod
@@ -343,6 +353,14 @@ class CalendarEventUpdate(BaseModel):
     meeting_status: Optional[str] = None
     sync_target_override_enabled: Optional[bool] = None
     sync_target_connection_ids: Optional[list[str]] = None
+    sync_to_google: Optional[bool] = Field(
+        default=None,
+        description="Compatibility toggle for generic task external projection",
+    )
+    external_sync_requested: Optional[bool] = Field(
+        default=None,
+        description="Canonical request to project this task onto external calendars",
+    )
     expected_version: Optional[int] = Field(None, ge=1)
 
     @field_validator("timezone")

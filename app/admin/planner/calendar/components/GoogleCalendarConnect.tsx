@@ -17,14 +17,35 @@ interface StaffOption {
   id: string;
   email: string;
   label: string;
+  role?: string;
 }
 
 interface GoogleCalendarConnectProps {
   connections: CalendarConnection[];
   staffOptions?: StaffOption[];
+  weddings?: Array<{ id: string; couple_names: string }>;
   loading?: boolean;
   onRefresh: () => Promise<void> | void;
 }
+
+const SCHEDULER_ROLE_OPTIONS: Array<{
+  value: 'owner' | 'admin' | 'editor' | 'viewer';
+  label: string;
+}> = [
+  { value: 'owner', label: 'Owner' },
+  { value: 'admin', label: 'Admin' },
+  { value: 'editor', label: 'Editor' },
+  { value: 'viewer', label: 'Viewer' },
+];
+
+const SCHEDULE_ITEM_TYPE_OPTIONS: Array<{
+  value: 'task' | 'meeting' | 'blocked_time';
+  label: string;
+}> = [
+  { value: 'task', label: 'Tasks' },
+  { value: 'meeting', label: 'Meetings' },
+  { value: 'blocked_time', label: 'Blocked time' },
+];
 
 function statusTone(status: string) {
   switch (status) {
@@ -48,6 +69,7 @@ function visibilityLabel(mode: string) {
 export default function GoogleCalendarConnect({
   connections,
   staffOptions = [],
+  weddings = [],
   loading = false,
   onRefresh,
 }: GoogleCalendarConnectProps) {
@@ -147,6 +169,9 @@ export default function GoogleCalendarConnect({
       Pick<
         CalendarConnection,
         | 'allowed_scheduler_user_ids'
+        | 'allowed_scheduler_roles'
+        | 'allowed_schedule_item_types'
+        | 'allowed_wedding_ids'
         | 'is_shared_in_team_view'
         | 'details_visibility'
         | 'sync_enabled'
@@ -176,6 +201,54 @@ export default function GoogleCalendarConnect({
       connection,
       { allowed_scheduler_user_ids: nextIds },
       'Calendar scheduler access updated'
+    );
+  };
+
+  const handleSchedulerRoleToggle = async (
+    connection: CalendarConnection,
+    schedulerRole: 'owner' | 'admin' | 'editor' | 'viewer'
+  ) => {
+    const currentRoles = connection.allowed_scheduler_roles || [];
+    const nextRoles = currentRoles.includes(schedulerRole)
+      ? currentRoles.filter((value) => value !== schedulerRole)
+      : [...currentRoles, schedulerRole];
+
+    await handleToggle(
+      connection,
+      { allowed_scheduler_roles: nextRoles },
+      'Calendar scheduler roles updated'
+    );
+  };
+
+  const handleScheduleItemTypeToggle = async (
+    connection: CalendarConnection,
+    scheduleItemType: 'task' | 'meeting' | 'blocked_time'
+  ) => {
+    const currentTypes = connection.allowed_schedule_item_types || [];
+    const nextTypes = currentTypes.includes(scheduleItemType)
+      ? currentTypes.filter((value) => value !== scheduleItemType)
+      : [...currentTypes, scheduleItemType];
+
+    await handleToggle(
+      connection,
+      { allowed_schedule_item_types: nextTypes },
+      'Calendar item policy updated'
+    );
+  };
+
+  const handleWeddingScopeToggle = async (
+    connection: CalendarConnection,
+    weddingId: string
+  ) => {
+    const currentWeddingIds = connection.allowed_wedding_ids || [];
+    const nextWeddingIds = currentWeddingIds.includes(weddingId)
+      ? currentWeddingIds.filter((value) => value !== weddingId)
+      : [...currentWeddingIds, weddingId];
+
+    await handleToggle(
+      connection,
+      { allowed_wedding_ids: nextWeddingIds },
+      'Calendar wedding scope updated'
     );
   };
 
@@ -322,50 +395,155 @@ export default function GoogleCalendarConnect({
                           )}
 
                           {connection.is_writable && (
-                            <div className="rounded-xl border border-slate-200 bg-white p-3">
+                            <div className="space-y-3 rounded-xl border border-slate-200 bg-white p-3">
                               <div className="flex flex-col gap-1">
                                 <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
                                   Scheduler access
                                 </p>
                                 {connection.user_id === connection.owner_planner_id &&
-                                connection.allowed_scheduler_user_ids.length === 0 ? (
+                                connection.allowed_scheduler_user_ids.length === 0 &&
+                                connection.allowed_scheduler_roles.length === 0 ? (
                                   <p className="text-xs text-slate-500">
                                     Owner calendar uses the business fallback by default. Team
                                     schedulers can target it when sync policy allows it.
                                   </p>
                                 ) : (
                                   <p className="text-xs text-slate-500">
-                                    Choose which internal users may schedule onto this connected
-                                    calendar.
+                                    Restrict who can write onto this calendar by internal user,
+                                    role, item type, and wedding scope.
                                   </p>
                                 )}
                               </div>
 
                               {connection.user_id !== connection.owner_planner_id &&
                               staffOptions.length > 0 ? (
-                                <div className="mt-3 flex flex-wrap gap-2">
-                                  {staffOptions.map((staff) => {
-                                    const checked = connection.allowed_scheduler_user_ids.includes(
-                                      staff.id
+                                <div>
+                                  <p className="mb-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-400">
+                                    Allowed schedulers
+                                  </p>
+                                  <div className="flex flex-wrap gap-2">
+                                    {staffOptions.map((staff) => {
+                                      const checked = connection.allowed_scheduler_user_ids.includes(
+                                        staff.id
+                                      );
+                                      return (
+                                        <label
+                                          key={`${connection.id}-${staff.id}`}
+                                          className="inline-flex items-center gap-2 rounded-full border border-slate-200 px-3 py-1.5 text-xs text-slate-700"
+                                        >
+                                          <input
+                                            type="checkbox"
+                                            checked={checked}
+                                            onChange={() =>
+                                              void handleSchedulerToggle(connection, staff.id)
+                                            }
+                                            disabled={updateLoading}
+                                            className="h-3.5 w-3.5 rounded border-slate-300 text-slate-900"
+                                          />
+                                          {staff.label}
+                                        </label>
+                                      );
+                                    })}
+                                  </div>
+                                </div>
+                              ) : null}
+
+                              <div>
+                                <p className="mb-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-400">
+                                  Allowed roles
+                                </p>
+                                <div className="flex flex-wrap gap-2">
+                                  {SCHEDULER_ROLE_OPTIONS.map((role) => {
+                                    const checked = connection.allowed_scheduler_roles.includes(
+                                      role.value
                                     );
                                     return (
                                       <label
-                                        key={`${connection.id}-${staff.id}`}
+                                        key={`${connection.id}-${role.value}`}
                                         className="inline-flex items-center gap-2 rounded-full border border-slate-200 px-3 py-1.5 text-xs text-slate-700"
                                       >
                                         <input
                                           type="checkbox"
                                           checked={checked}
                                           onChange={() =>
-                                            void handleSchedulerToggle(connection, staff.id)
+                                            void handleSchedulerRoleToggle(connection, role.value)
                                           }
                                           disabled={updateLoading}
                                           className="h-3.5 w-3.5 rounded border-slate-300 text-slate-900"
                                         />
-                                        {staff.label}
+                                        {role.label}
                                       </label>
                                     );
                                   })}
+                                </div>
+                              </div>
+
+                              <div>
+                                <p className="mb-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-400">
+                                  Allowed item types
+                                </p>
+                                <div className="flex flex-wrap gap-2">
+                                  {SCHEDULE_ITEM_TYPE_OPTIONS.map((itemType) => {
+                                    const checked =
+                                      connection.allowed_schedule_item_types.includes(
+                                        itemType.value
+                                      );
+                                    return (
+                                      <label
+                                        key={`${connection.id}-${itemType.value}`}
+                                        className="inline-flex items-center gap-2 rounded-full border border-slate-200 px-3 py-1.5 text-xs text-slate-700"
+                                      >
+                                        <input
+                                          type="checkbox"
+                                          checked={checked}
+                                          onChange={() =>
+                                            void handleScheduleItemTypeToggle(
+                                              connection,
+                                              itemType.value
+                                            )
+                                          }
+                                          disabled={updateLoading}
+                                          className="h-3.5 w-3.5 rounded border-slate-300 text-slate-900"
+                                        />
+                                        {itemType.label}
+                                      </label>
+                                    );
+                                  })}
+                                </div>
+                              </div>
+
+                              {weddings.length > 0 ? (
+                                <div>
+                                  <p className="mb-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-400">
+                                    Wedding scope
+                                  </p>
+                                  <p className="mb-2 text-xs text-slate-500">
+                                    Leave empty to allow all workspace weddings on this calendar.
+                                  </p>
+                                  <div className="flex flex-wrap gap-2">
+                                    {weddings.map((wedding) => {
+                                      const checked = connection.allowed_wedding_ids.includes(
+                                        wedding.id
+                                      );
+                                      return (
+                                        <label
+                                          key={`${connection.id}-${wedding.id}`}
+                                          className="inline-flex items-center gap-2 rounded-full border border-slate-200 px-3 py-1.5 text-xs text-slate-700"
+                                        >
+                                          <input
+                                            type="checkbox"
+                                            checked={checked}
+                                            onChange={() =>
+                                              void handleWeddingScopeToggle(connection, wedding.id)
+                                            }
+                                            disabled={updateLoading}
+                                            className="h-3.5 w-3.5 rounded border-slate-300 text-slate-900"
+                                          />
+                                          {wedding.couple_names}
+                                        </label>
+                                      );
+                                    })}
+                                  </div>
                                 </div>
                               ) : null}
                             </div>

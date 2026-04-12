@@ -239,7 +239,7 @@ export default function TaskModal({
       setReminderMinutes(task.reminder_minutes ?? '');
       setNotes(task.notes || '');
       setColor(task.color || '');
-      setSyncToGoogle(task.synced_to_google);
+      setSyncToGoogle(task.external_sync_requested ?? task.synced_to_google);
       setIsRecurring(task.is_recurring || false);
       setAssignedUserIds(task.assigned_user_ids || []);
       setCoupleAttendeeEmails((task.couple_attendee_emails || []).join(', '));
@@ -393,7 +393,7 @@ export default function TaskModal({
       invite_delivery_mode: isMeetingMode ? inviteDeliveryMode : undefined,
       sync_target_connection_ids:
         isMeetingMode && customTargetsEnabled ? selectedConnectionIds : undefined,
-      sync_to_google: !isMeetingMode ? syncToGoogle : undefined,
+      external_sync_requested: !isMeetingMode ? syncToGoogle : undefined,
       expected_version: isMeetingMode && task ? task.version : undefined,
     };
 
@@ -635,7 +635,7 @@ export default function TaskModal({
               />
             </label>
 
-            {!isMeetingMode && !isEditing && (
+            {!isMeetingMode && (
               <label className="flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-sm text-slate-700">
                 <input
                   type="checkbox"

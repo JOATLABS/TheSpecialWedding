@@ -433,6 +433,107 @@ async def test_sync_targets_block_unlisted_staff_calendar_for_team_scheduler() -
 
 
 @pytest.mark.asyncio
+async def test_sync_targets_require_allowed_scheduler_role_when_configured() -> None:
+    service = CalendarSyncService.__new__(CalendarSyncService)
+
+    async def fake_get_connection_docs(_query: dict) -> list[dict]:
+        return [
+            {
+                "_id": "staff-1-default",
+                "user_id": "staff-1",
+                "owner_planner_id": "owner-1",
+                "is_default_write_target": True,
+                "allowed_scheduler_roles": ["editor"],
+            }
+        ]
+
+    setattr(service, "_get_connection_docs", fake_get_connection_docs)
+
+    task = {
+        "owner_planner_id": "owner-1",
+        "assigned_user_ids": ["staff-1"],
+        "calendar_sync_policy": "assigned_only",
+    }
+
+    blocked = await service.resolve_sync_targets(
+        task,
+        actor_user_id="staff-1",
+        actor_is_owner=False,
+        actor_role_scope="viewer",
+    )
+    allowed = await service.resolve_sync_targets(
+        task,
+        actor_user_id="staff-1",
+        actor_is_owner=False,
+        actor_role_scope="editor",
+    )
+
+    assert blocked == []
+    assert [str(row["_id"]) for row in allowed] == ["staff-1-default"]
+
+
+@pytest.mark.asyncio
+async def test_sync_targets_block_disallowed_schedule_item_types() -> None:
+    service = CalendarSyncService.__new__(CalendarSyncService)
+
+    async def fake_get_connection_docs(_query: dict) -> list[dict]:
+        return [
+            {
+                "_id": "owner-default",
+                "user_id": "owner-1",
+                "owner_planner_id": "owner-1",
+                "is_default_write_target": True,
+                "allowed_schedule_item_types": ["task"],
+            }
+        ]
+
+    setattr(service, "_get_connection_docs", fake_get_connection_docs)
+
+    task = {
+        "_id": "meeting-1",
+        "owner_planner_id": "owner-1",
+        "category": "meeting",
+        "schedule_item_type": "meeting",
+        "calendar_sync_policy": "owner_only",
+    }
+
+    result = await service.resolve_sync_targets(task, actor_is_owner=True)
+
+    assert result == []
+
+
+@pytest.mark.asyncio
+async def test_sync_targets_block_disallowed_wedding_scope() -> None:
+    service = CalendarSyncService.__new__(CalendarSyncService)
+
+    async def fake_get_connection_docs(_query: dict) -> list[dict]:
+        return [
+            {
+                "_id": "owner-default",
+                "user_id": "owner-1",
+                "owner_planner_id": "owner-1",
+                "is_default_write_target": True,
+                "allowed_wedding_ids": ["wedding-1"],
+            }
+        ]
+
+    setattr(service, "_get_connection_docs", fake_get_connection_docs)
+
+    task = {
+        "_id": "meeting-1",
+        "owner_planner_id": "owner-1",
+        "category": "meeting",
+        "schedule_item_type": "meeting",
+        "wedding_id": "wedding-2",
+        "calendar_sync_policy": "owner_only",
+    }
+
+    result = await service.resolve_sync_targets(task, actor_is_owner=True)
+
+    assert result == []
+
+
+@pytest.mark.asyncio
 async def test_sync_targets_fall_back_to_owner_default_when_staff_calendar_is_not_allowed() -> (
     None
 ):
@@ -575,6 +676,7 @@ async def test_create_meeting_normalizes_owner_scope_for_team_members(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     inserted_docs: list[dict[str, object]] = []
+    sync_schedule_item = AsyncMock(return_value=[])
 
     class FakeTasksCollection:
         async def insert_one(self, document: dict[str, object]) -> SimpleNamespace:
@@ -602,7 +704,7 @@ async def test_create_meeting_normalizes_owner_scope_for_team_members(
     monkeypatch.setattr(
         planner_calendar_api.calendar_sync_service,
         "sync_schedule_item",
-        AsyncMock(return_value=[]),
+        sync_schedule_item,
     )
     monkeypatch.setattr(
         planner_calendar_api,
@@ -652,6 +754,13 @@ async def test_create_meeting_normalizes_owner_scope_for_team_members(
     assert inserted_docs[0]["planner_email"] == "owner@example.com"
     assert inserted_docs[0]["owner_planner_email"] == "owner@example.com"
     assert inserted_docs[0]["created_by_email"] == "team@example.com"
+    assert inserted_docs[0]["external_sync_requested"] is True
+    assert "google_event_id" not in inserted_docs[0]
+    assert "synced_to_google" not in inserted_docs[0]
+    assert "last_google_sync" not in inserted_docs[0]
+    sync_schedule_item.assert_awaited_once()
+    assert sync_schedule_item.await_args is not None
+    assert sync_schedule_item.await_args.kwargs["actor_role_scope"] == "viewer"
     assert response.meeting["owner_planner_email"] == "owner@example.com"
 
 
@@ -704,10 +813,11 @@ async def test_update_meeting_sends_updated_ics_for_material_email_ics_change(
         "mongo",
         SimpleNamespace(get_planner_tasks_collection=lambda: FakeTasksCollection()),
     )
+    sync_schedule_item = AsyncMock(return_value=[])
     monkeypatch.setattr(
         planner_calendar_api.calendar_sync_service,
         "sync_schedule_item",
-        AsyncMock(return_value=[]),
+        sync_schedule_item,
     )
     enqueue_invite_job = AsyncMock(return_value=[{"success": True, "status": "queued"}])
     monkeypatch.setattr(
@@ -763,6 +873,9 @@ async def test_update_meeting_sends_updated_ics_for_material_email_ics_change(
         method="REQUEST",
         reason="meeting_updated",
     )
+    sync_schedule_item.assert_awaited_once()
+    assert sync_schedule_item.await_args is not None
+    assert sync_schedule_item.await_args.kwargs["actor_role_scope"] == "owner"
     assert response.invite_status == [{"success": True, "status": "queued"}]
 
 
@@ -981,7 +1094,6 @@ async def test_disconnect_connection_orphans_sync_rows() -> None:
     cast(Any, service).connections_collection = _RecordingCollection(
         count=1, find_one_result=None
     )
-    cast(Any, service).tokens_collection = _RecordingCollection()
     cast(Any, service).syncs_collection = _RecordingCollection()
 
     async def fake_get_connection_doc(_connection_id: str) -> dict:
