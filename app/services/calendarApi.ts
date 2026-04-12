@@ -33,6 +33,11 @@ export type InviteDeliveryMode = 'none' | 'email_ics' | 'portal_only';
 export type ConnectionStatus = 'active' | 'expired' | 'revoked' | 'error';
 export type SyncStatusValue = 'pending' | 'synced' | 'failed' | 'orphaned' | 'not_configured';
 export type CalendarSchedulerRole = 'owner' | 'admin' | 'editor' | 'viewer';
+export type CalendarSchedulerAccessMode =
+  | 'workspace_default'
+  | 'owner_only'
+  | 'owner_and_connection_user'
+  | 'workspace_permitted';
 
 export interface TaskSyncSummary {
   row_count: number;
@@ -62,8 +67,6 @@ export interface PlannerTask {
   all_day: boolean;
   due_date?: string | null;
   reminder_minutes?: number | null;
-  google_event_id?: string | null;
-  synced_to_google: boolean;
   external_sync_requested: boolean;
   is_recurring: boolean;
   recurrence_rule?: string | null;
@@ -115,6 +118,7 @@ export interface CalendarConnection {
   is_writable: boolean;
   is_primary: boolean;
   is_default_write_target: boolean;
+  scheduler_access_mode: CalendarSchedulerAccessMode;
   allowed_scheduler_user_ids: string[];
   allowed_scheduler_roles: CalendarSchedulerRole[];
   allowed_schedule_item_types: ScheduleItemType[];
@@ -225,7 +229,6 @@ export interface ScheduleItemPayload {
   recurrence_rule?: string;
   color?: string;
   notes?: string;
-  sync_to_google?: boolean;
   external_sync_requested?: boolean;
   assigned_user_ids?: string[];
   assigned_user_emails?: string[];
@@ -490,6 +493,7 @@ export async function updateCalendarConnection(
       | 'allowed_scheduler_roles'
       | 'allowed_schedule_item_types'
       | 'allowed_wedding_ids'
+      | 'scheduler_access_mode'
       | 'is_shared_in_team_view'
       | 'details_visibility'
       | 'sync_enabled'

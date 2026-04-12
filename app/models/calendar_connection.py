@@ -35,6 +35,15 @@ class CalendarSchedulerRole(str, Enum):
     VIEWER = "viewer"
 
 
+class CalendarSchedulerAccessMode(str, Enum):
+    """Base actor-eligibility policy for scheduling onto a connection."""
+
+    WORKSPACE_DEFAULT = "workspace_default"
+    OWNER_ONLY = "owner_only"
+    OWNER_AND_CONNECTION_USER = "owner_and_connection_user"
+    WORKSPACE_PERMITTED = "workspace_permitted"
+
+
 class CalendarConnectionModel(BaseModel):
     """A single connected external calendar row."""
 
@@ -52,6 +61,9 @@ class CalendarConnectionModel(BaseModel):
     is_writable: bool = False
     is_primary: bool = False
     is_default_write_target: bool = False
+    scheduler_access_mode: str = Field(
+        default=CalendarSchedulerAccessMode.WORKSPACE_DEFAULT.value
+    )
     allowed_scheduler_user_ids: list[str] = Field(default_factory=list)
     allowed_scheduler_roles: list[str] = Field(default_factory=list)
     allowed_schedule_item_types: list[str] = Field(default_factory=list)
@@ -78,6 +90,7 @@ class CalendarConnectionUpdateRequest(BaseModel):
     """Allowed mutable fields for a calendar connection."""
 
     is_default_write_target: Optional[bool] = None
+    scheduler_access_mode: Optional[str] = None
     allowed_scheduler_user_ids: Optional[list[str]] = None
     allowed_scheduler_roles: Optional[list[str]] = None
     allowed_schedule_item_types: Optional[list[str]] = None

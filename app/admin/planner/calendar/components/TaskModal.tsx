@@ -239,7 +239,7 @@ export default function TaskModal({
       setReminderMinutes(task.reminder_minutes ?? '');
       setNotes(task.notes || '');
       setColor(task.color || '');
-      setSyncToGoogle(task.external_sync_requested ?? task.synced_to_google);
+      setSyncToGoogle(task.external_sync_requested);
       setIsRecurring(task.is_recurring || false);
       setAssignedUserIds(task.assigned_user_ids || []);
       setCoupleAttendeeEmails((task.couple_attendee_emails || []).join(', '));

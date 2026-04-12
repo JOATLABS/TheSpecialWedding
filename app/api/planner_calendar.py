@@ -91,8 +91,6 @@ class TaskResponse(BaseModel):
     all_day: bool
     due_date: Optional[str] = None
     reminder_minutes: Optional[int] = None
-    google_event_id: Optional[str] = None
-    synced_to_google: bool = False
     external_sync_requested: bool = False
     is_recurring: bool
     recurrence_rule: Optional[str] = None
@@ -163,6 +161,7 @@ class CalendarConnectionResponse(BaseModel):
     is_writable: bool = False
     is_primary: bool = False
     is_default_write_target: bool = False
+    scheduler_access_mode: str
     allowed_scheduler_user_ids: list[str] = Field(default_factory=list)
     allowed_scheduler_roles: list[str] = Field(default_factory=list)
     allowed_schedule_item_types: list[str] = Field(default_factory=list)
@@ -268,14 +267,6 @@ def _serialize_task(
 ) -> TaskResponse:
     """Serialize a task document to response model."""
     summary = _serialize_task_sync_summary(sync_summary or {})
-    primary_external_event_id = summary.primary_external_event_id or task.get(
-        "google_event_id"
-    )
-    synced_to_google = (
-        summary.has_synced_target
-        if sync_summary is not None
-        else bool(task.get("synced_to_google", False))
-    )
     external_sync_requested = bool(
         task.get(
             "external_sync_requested",
@@ -297,8 +288,6 @@ def _serialize_task(
         all_day=task.get("all_day", False),
         due_date=_isoformat(task.get("due_date")),
         reminder_minutes=task.get("reminder_minutes"),
-        google_event_id=primary_external_event_id,
-        synced_to_google=synced_to_google,
         external_sync_requested=external_sync_requested,
         is_recurring=task.get("is_recurring", False),
         recurrence_rule=task.get("recurrence_rule"),
@@ -910,6 +899,7 @@ async def update_calendar_connection(
 
     if not (is_owner or can_manage_all):
         restricted_fields = {
+            "scheduler_access_mode",
             "allowed_scheduler_user_ids",
             "allowed_scheduler_roles",
             "allowed_schedule_item_types",
@@ -1124,9 +1114,6 @@ async def create_task(
 ) -> TaskResponse:
     """
     Create a new task/event for the planner's calendar.
-
-    If Google Calendar is connected and sync_to_google is True,
-    the event will also be created in Google Calendar.
     """
     tasks_collection = mongo.get_planner_tasks_collection()
 
@@ -1353,9 +1340,6 @@ async def update_task(
 ) -> TaskResponse:
     """
     Update an existing task.
-
-    If the task is synced to Google Calendar, the Google event
-    will also be updated.
     """
     tasks_collection = mongo.get_planner_tasks_collection()
 

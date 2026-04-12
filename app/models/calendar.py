@@ -103,32 +103,6 @@ def attach_timezone_if_naive(
     return value.replace(tzinfo=ZoneInfo(timezone_name))
 
 
-class CalendarTokenModel(BaseModel):
-    """Legacy Google Calendar OAuth tokens keyed by planner email."""
-
-    id: str = Field(..., alias="_id")
-    user_email: str = Field(..., description="Planner's email address")
-    access_token: str = Field(..., description="Google OAuth access token")
-    refresh_token: str = Field(
-        ..., description="Google OAuth refresh token for renewal"
-    )
-    token_expiry: datetime = Field(..., description="When the access token expires")
-    calendar_id: Optional[str] = Field(
-        None, description="Primary calendar ID to sync with (defaults to 'primary')"
-    )
-    sync_enabled: bool = Field(
-        default=True, description="Whether calendar sync is active"
-    )
-    last_sync_at: Optional[datetime] = Field(
-        None, description="Last successful sync timestamp"
-    )
-    created_at: datetime = Field(default_factory=datetime.utcnow)
-    updated_at: datetime = Field(default_factory=datetime.utcnow)
-
-    class Config:
-        populate_by_name = True
-
-
 class PlannerTaskModel(BaseModel):
     """Canonical planner schedule item stored in planner_tasks."""
 
@@ -204,19 +178,6 @@ class PlannerTaskModel(BaseModel):
     reminder_minutes: Optional[int] = Field(
         None,
         description="Minutes before to send reminder (e.g., 30, 60, 1440 for 1 day)",
-    )
-
-    # Legacy Google Calendar sync fields
-    # These remain only for backwards-compatible reads while sync mappings are the
-    # real source of truth.
-    google_event_id: Optional[str] = Field(
-        None, description="Legacy Google Calendar event ID if synced"
-    )
-    synced_to_google: bool = Field(
-        default=False, description="Legacy flag for Google Calendar sync"
-    )
-    last_google_sync: Optional[datetime] = Field(
-        None, description="Legacy timestamp for last Google sync"
     )
 
     # Recurrence (optional)
