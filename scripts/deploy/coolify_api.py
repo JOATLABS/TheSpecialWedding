@@ -204,6 +204,7 @@ class CoolifyClient:
             headers={
                 "Authorization": f"Bearer {self.token}",
                 "Accept": "application/json",
+                "User-Agent": "weddingwebapp-coolify-deploy/1.0",
                 **({"Content-Type": "application/json"} if body is not None else {}),
             },
         )
