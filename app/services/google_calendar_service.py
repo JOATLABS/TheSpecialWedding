@@ -23,8 +23,11 @@ from googleapiclient.errors import HttpError  # type: ignore[import-untyped]
 from app.core.cache import cache
 from app.core.config import settings
 from app.core.database import mongo
-from app.models.calendar import VisibilityMode
-from app.models.calendar_connection import CalendarConnectionStatus
+from app.models.calendar import ScheduleItemType, VisibilityMode
+from app.models.calendar_connection import (
+    CalendarConnectionStatus,
+    CalendarSchedulerRole,
+)
 from app.models.calendar_sync import CalendarSyncStatusValue
 from app.services.calendar_audit_service import calendar_audit_service
 
@@ -35,7 +38,6 @@ class GoogleCalendarService:
     """Handles Google Calendar OAuth, connection lifecycle, and event projection."""
 
     def __init__(self):
-        self.tokens_collection = mongo.get_calendar_tokens_collection()
         self.connections_collection = mongo.get_calendar_connections_collection()
         self.syncs_collection = mongo.get_calendar_event_syncs_collection()
         self.tasks_collection = mongo.get_planner_tasks_collection()
@@ -90,6 +92,33 @@ class GoogleCalendarService:
             owner_id=connection_doc.get("owner_planner_id"),
             user_id=connection_doc.get("user_id"),
         )
+
+    def _normalize_string_list(self, values: list[Any] | None) -> list[str]:
+        if not values:
+            return []
+        return list(dict.fromkeys(str(value) for value in values if value))
+
+    def _normalize_scheduler_roles(self, values: list[Any] | None) -> list[str]:
+        normalized = self._normalize_string_list(values)
+        valid_values = {role.value for role in CalendarSchedulerRole}
+        invalid = [value for value in normalized if value not in valid_values]
+        if invalid:
+            raise HTTPException(
+                status_code=400,
+                detail="Invalid scheduler roles supplied for this calendar connection",
+            )
+        return normalized
+
+    def _normalize_schedule_item_types(self, values: list[Any] | None) -> list[str]:
+        normalized = self._normalize_string_list(values)
+        valid_values = {item.value for item in ScheduleItemType}
+        invalid = [value for value in normalized if value not in valid_values]
+        if invalid:
+            raise HTTPException(
+                status_code=400,
+                detail="Invalid schedule item types supplied for this calendar connection",
+            )
+        return normalized
 
     def _external_events_cache_key(
         self,
@@ -586,24 +615,6 @@ class GoogleCalendarService:
                 },
             )
 
-        # Keep the legacy collection updated for smooth backward compatibility.
-        await self.tokens_collection.update_one(
-            {"user_email": user_email},
-            {
-                "$set": {
-                    "user_email": user_email,
-                    "access_token": encrypted_access,
-                    "refresh_token": encrypted_refresh,
-                    "token_expiry": credentials.expiry,
-                    "calendar_id": default_write_id or "primary",
-                    "sync_enabled": True,
-                    "updated_at": now,
-                },
-                "$setOnInsert": {"created_at": now},
-            },
-            upsert=True,
-        )
-
         await calendar_audit_service.log(
             action="calendar_connection_connected",
             message=f"Connected Google Calendar account {provider_account_email}",
@@ -645,6 +656,15 @@ class GoogleCalendarService:
             "is_default_write_target": doc.get("is_default_write_target", False),
             "allowed_scheduler_user_ids": self._effective_allowed_scheduler_user_ids(
                 doc
+            ),
+            "allowed_scheduler_roles": self._normalize_scheduler_roles(
+                doc.get("allowed_scheduler_roles", [])
+            ),
+            "allowed_schedule_item_types": self._normalize_schedule_item_types(
+                doc.get("allowed_schedule_item_types", [])
+            ),
+            "allowed_wedding_ids": self._normalize_string_list(
+                doc.get("allowed_wedding_ids", [])
             ),
             "is_shared_in_team_view": doc.get("is_shared_in_team_view", False),
             "details_visibility": doc.get(
@@ -786,6 +806,9 @@ class GoogleCalendarService:
             in {
                 "is_default_write_target",
                 "allowed_scheduler_user_ids",
+                "allowed_scheduler_roles",
+                "allowed_schedule_item_types",
+                "allowed_wedding_ids",
                 "is_shared_in_team_view",
                 "details_visibility",
                 "sync_enabled",
@@ -796,12 +819,22 @@ class GoogleCalendarService:
             return self._serialize_connection(connection_doc)
 
         if "allowed_scheduler_user_ids" in set_doc:
-            set_doc["allowed_scheduler_user_ids"] = list(
-                dict.fromkeys(
-                    str(value)
-                    for value in set_doc["allowed_scheduler_user_ids"]
-                    if value
+            set_doc["allowed_scheduler_user_ids"] = self._normalize_string_list(
+                set_doc["allowed_scheduler_user_ids"]
+            )
+        if "allowed_scheduler_roles" in set_doc:
+            set_doc["allowed_scheduler_roles"] = self._normalize_scheduler_roles(
+                set_doc["allowed_scheduler_roles"]
+            )
+        if "allowed_schedule_item_types" in set_doc:
+            set_doc["allowed_schedule_item_types"] = (
+                self._normalize_schedule_item_types(
+                    set_doc["allowed_schedule_item_types"]
                 )
+            )
+        if "allowed_wedding_ids" in set_doc:
+            set_doc["allowed_wedding_ids"] = self._normalize_string_list(
+                set_doc["allowed_wedding_ids"]
             )
 
         if set_doc.get("is_default_write_target") and not (
@@ -887,6 +920,43 @@ class GoogleCalendarService:
                     "connection_id": connection_id,
                     "calendar_name": connection_doc.get("calendar_name"),
                     "allowed_scheduler_user_ids": set_doc["allowed_scheduler_user_ids"],
+                },
+            )
+        if any(
+            key in set_doc
+            for key in (
+                "allowed_scheduler_roles",
+                "allowed_schedule_item_types",
+                "allowed_wedding_ids",
+            )
+        ):
+            await calendar_audit_service.log(
+                action="calendar_policy_changed",
+                message=f"Updated connection policy for {connection_doc.get('calendar_name')}",
+                owner_planner_email=connection_doc.get("owner_planner_email"),
+                actor_email=actor_email,
+                actor_role=actor_role,
+                metadata={
+                    "connection_id": connection_id,
+                    "calendar_name": connection_doc.get("calendar_name"),
+                    "allowed_scheduler_roles": set_doc.get(
+                        "allowed_scheduler_roles",
+                        self._normalize_scheduler_roles(
+                            connection_doc.get("allowed_scheduler_roles", [])
+                        ),
+                    ),
+                    "allowed_schedule_item_types": set_doc.get(
+                        "allowed_schedule_item_types",
+                        self._normalize_schedule_item_types(
+                            connection_doc.get("allowed_schedule_item_types", [])
+                        ),
+                    ),
+                    "allowed_wedding_ids": set_doc.get(
+                        "allowed_wedding_ids",
+                        self._normalize_string_list(
+                            connection_doc.get("allowed_wedding_ids", [])
+                        ),
+                    ),
                 },
             )
         return self._serialize_connection(await self._get_connection_doc(connection_id))
@@ -1022,9 +1092,6 @@ class GoogleCalendarService:
 
         if sibling_count <= 1:
             await self._revoke_provider_account(connection_doc)
-            await self.tokens_collection.delete_many(
-                {"user_email": connection_doc["user_email"]}
-            )
 
         promoted = await self.connections_collection.find_one(
             {
@@ -1110,18 +1177,6 @@ class GoogleCalendarService:
         ).to_list(length=200)
         for doc in docs:
             await self.disconnect_connection(str(doc["_id"]))
-
-        await self.tasks_collection.update_many(
-            {"planner_email": user_email},
-            {
-                "$set": {
-                    "synced_to_google": False,
-                    "google_event_id": None,
-                    "last_google_sync": None,
-                    "updated_at": datetime.now(UTC),
-                }
-            },
-        )
         return {"disconnected": True, "message": "Google Calendar disconnected"}
 
     def _coerce_datetime(self, value: Any, field_name: str) -> datetime:
@@ -1512,49 +1567,6 @@ class GoogleCalendarService:
             )
             return []
 
-    async def create_google_event(
-        self,
-        user_email: str,
-        task: Dict[str, Any],
-    ) -> Optional[str]:
-        """Legacy wrapper for single-user task sync."""
-        connection = await self.get_default_write_connection_for_user(user_email)
-        if not connection:
-            return None
-        result = await self.create_google_event_for_connection(
-            str(connection["_id"]), task
-        )
-        return result.get("external_event_id") if result.get("success") else None
-
-    async def update_google_event(
-        self,
-        user_email: str,
-        google_event_id: str,
-        task: Dict[str, Any],
-    ) -> bool:
-        """Legacy wrapper for single-user task sync updates."""
-        connection = await self.get_default_write_connection_for_user(user_email)
-        if not connection:
-            return False
-        result = await self.update_google_event_for_connection(
-            str(connection["_id"]), google_event_id, task
-        )
-        return bool(result.get("success"))
-
-    async def delete_google_event(
-        self,
-        user_email: str,
-        google_event_id: str,
-    ) -> bool:
-        """Legacy wrapper for single-user task sync deletions."""
-        connection = await self.get_default_write_connection_for_user(user_email)
-        if not connection:
-            return False
-        result = await self.delete_google_event_for_connection(
-            str(connection["_id"]), google_event_id
-        )
-        return bool(result.get("success"))
-
     async def fetch_google_events(
         self,
         user_email: str,
@@ -1572,45 +1584,6 @@ class GoogleCalendarService:
             time_max=time_max,
             max_results=max_results,
         )
-
-    async def sync_task_to_google(
-        self,
-        user_email: str,
-        task_id: str,
-    ) -> bool:
-        """Legacy wrapper to sync one canonical planner task using the user's default connection."""
-        try:
-            task_oid = ObjectId(task_id)
-        except Exception:
-            return False
-
-        task = await self.tasks_collection.find_one({"_id": task_oid})
-        if not task:
-            return False
-
-        if task.get("google_event_id"):
-            return await self.update_google_event(
-                user_email,
-                task["google_event_id"],
-                task,
-            )
-
-        google_event_id = await self.create_google_event(user_email, task)
-        if not google_event_id:
-            return False
-
-        await self.tasks_collection.update_one(
-            {"_id": task_oid},
-            {
-                "$set": {
-                    "google_event_id": google_event_id,
-                    "synced_to_google": True,
-                    "last_google_sync": datetime.now(UTC),
-                    "updated_at": datetime.now(UTC),
-                }
-            },
-        )
-        return True
 
 
 # Singleton instance

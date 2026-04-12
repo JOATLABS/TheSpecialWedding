@@ -108,6 +108,9 @@ class ExtendedAuthUser:
         self.team_member_id: Optional[str] = (
             user_data.get("team_member_id") if user_data else None
         )
+        self.team_role: Optional[str] = (
+            user_data.get("team_role") if user_data else None
+        )
         self.team_permissions: Optional[dict] = None
         self.team_wedding_access: Optional[str] = None  # "all" or "assigned"
         self.team_assigned_wedding_ids: List[str] = []
@@ -337,6 +340,7 @@ async def get_current_user_extended(
                         team_doc.get("role", "viewer"),
                         team_doc.get("custom_permissions", {}),
                     )
+                    auth_user.team_role = team_doc.get("role", "viewer")
                     auth_user.team_wedding_access = team_doc.get(
                         "wedding_access", "all"
                     )

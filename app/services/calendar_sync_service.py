@@ -13,7 +13,8 @@ from pymongo.errors import DuplicateKeyError
 
 from app.core.config import settings
 from app.core.database import mongo
-from app.models.calendar import CalendarSyncPolicy
+from app.models.calendar import CalendarSyncPolicy, ScheduleItemType
+from app.models.calendar_connection import CalendarSchedulerRole
 from app.models.calendar_sync import CalendarSyncStatusValue
 from app.services.calendar_audit_service import calendar_audit_service
 from app.services.google_calendar_service import google_calendar_service
@@ -36,6 +37,7 @@ class CalendarSyncService:
         *,
         actor_user_id: str | None,
         actor_is_owner: bool,
+        actor_role_scope: str | None = None,
     ) -> bool:
         if actor_is_owner:
             return True
@@ -48,13 +50,113 @@ class CalendarSyncService:
             if value
         ]
         if explicit_allowed_scheduler_user_ids:
-            return actor_user_id in set(explicit_allowed_scheduler_user_ids)
+            if actor_user_id not in set(explicit_allowed_scheduler_user_ids):
+                return False
+
+        explicit_allowed_scheduler_roles = [
+            str(value)
+            for value in connection_doc.get("allowed_scheduler_roles", [])
+            if value
+        ]
+        if explicit_allowed_scheduler_roles:
+            effective_role = actor_role_scope or CalendarSchedulerRole.VIEWER.value
+            if effective_role not in set(explicit_allowed_scheduler_roles):
+                return False
 
         owner_id = str(connection_doc.get("owner_planner_id") or "")
         connection_user_id = str(connection_doc.get("user_id") or "")
         if owner_id and connection_user_id and owner_id == connection_user_id:
             return True
         return actor_user_id == connection_user_id
+
+    def _task_schedule_item_type(self, task: dict[str, Any]) -> str:
+        raw_type = str(task.get("schedule_item_type") or "").strip()
+        valid_types = {item.value for item in ScheduleItemType}
+        if raw_type in valid_types:
+            return raw_type
+        if str(task.get("category") or "") == "meeting":
+            return ScheduleItemType.MEETING.value
+        return ScheduleItemType.TASK.value
+
+    def _connection_allows_task(
+        self,
+        connection_doc: dict[str, Any],
+        task: dict[str, Any],
+    ) -> bool:
+        allowed_schedule_item_types = {
+            str(value)
+            for value in connection_doc.get("allowed_schedule_item_types", [])
+            if value
+        }
+        if allowed_schedule_item_types and (
+            self._task_schedule_item_type(task) not in allowed_schedule_item_types
+        ):
+            return False
+
+        allowed_wedding_ids = {
+            str(value)
+            for value in connection_doc.get("allowed_wedding_ids", [])
+            if value
+        }
+        if allowed_wedding_ids:
+            task_wedding_id = task.get("wedding_id")
+            if not task_wedding_id:
+                return False
+            if str(task_wedding_id) not in allowed_wedding_ids:
+                return False
+
+        return True
+
+    def _summarize_sync_docs(self, sync_docs: list[dict[str, Any]]) -> dict[str, Any]:
+        status_counts = {
+            CalendarSyncStatusValue.SYNCED.value: 0,
+            CalendarSyncStatusValue.FAILED.value: 0,
+            CalendarSyncStatusValue.ORPHANED.value: 0,
+            CalendarSyncStatusValue.NOT_CONFIGURED.value: 0,
+            CalendarSyncStatusValue.PENDING.value: 0,
+        }
+        primary_external_event_id: str | None = None
+        last_sync_at: datetime | None = None
+
+        for doc in sync_docs:
+            status = str(
+                doc.get("sync_status") or CalendarSyncStatusValue.PENDING.value
+            )
+            if status in status_counts:
+                status_counts[status] += 1
+            if not primary_external_event_id and doc.get("external_event_id"):
+                primary_external_event_id = str(doc["external_event_id"])
+            sync_time = doc.get("last_sync_at")
+            if isinstance(sync_time, datetime) and (
+                last_sync_at is None or sync_time > last_sync_at
+            ):
+                last_sync_at = sync_time
+
+        return {
+            "row_count": len(sync_docs),
+            "synced_target_count": status_counts[CalendarSyncStatusValue.SYNCED.value],
+            "failed_target_count": status_counts[CalendarSyncStatusValue.FAILED.value],
+            "orphaned_target_count": status_counts[
+                CalendarSyncStatusValue.ORPHANED.value
+            ],
+            "not_configured_target_count": status_counts[
+                CalendarSyncStatusValue.NOT_CONFIGURED.value
+            ],
+            "pending_target_count": status_counts[
+                CalendarSyncStatusValue.PENDING.value
+            ],
+            "has_synced_target": bool(
+                status_counts[CalendarSyncStatusValue.SYNCED.value]
+            ),
+            "has_configured_target": any(
+                doc.get("calendar_connection_id")
+                and doc.get("sync_status")
+                != CalendarSyncStatusValue.NOT_CONFIGURED.value
+                for doc in sync_docs
+            ),
+            "primary_external_event_id": primary_external_event_id,
+            "last_sync_at": last_sync_at,
+        }
 
     def _sync_row_base(
         self,
@@ -253,6 +355,7 @@ class CalendarSyncService:
         *,
         actor_user_id: str | None = None,
         actor_is_owner: bool = False,
+        actor_role_scope: str | None = None,
     ) -> list[dict]:
         """Resolve effective writable target connections for a canonical schedule item."""
         owner_id = task.get("owner_planner_id")
@@ -296,7 +399,9 @@ class CalendarSyncService:
                 doc,
                 actor_user_id=actor_user_id,
                 actor_is_owner=actor_is_owner,
+                actor_role_scope=actor_role_scope,
             )
+            and self._connection_allows_task(doc, task)
         ]
         allowed_by_id = {str(doc["_id"]): doc for doc in allowed_connections}
 
@@ -362,6 +467,7 @@ class CalendarSyncService:
         attendee_emails: list[str] | None = None,
         actor_user_id: str | None = None,
         actor_is_owner: bool = False,
+        actor_role_scope: str | None = None,
     ) -> list[dict]:
         """Create or update all required external sync mappings for a task."""
         task_id = str(task["_id"])
@@ -374,6 +480,7 @@ class CalendarSyncService:
             explicit_connection_ids,
             actor_user_id=actor_user_id,
             actor_is_owner=actor_is_owner,
+            actor_role_scope=actor_role_scope,
         )
         existing_by_connection_id = {
             sync_doc.get("calendar_connection_id"): sync_doc
@@ -860,6 +967,39 @@ class CalendarSyncService:
                 }
             )
         return result
+
+    async def get_sync_summary(self, task_id: str) -> dict[str, Any]:
+        """Summarize sync rows for one canonical schedule item."""
+        sync_docs = await self.syncs_collection.find({"task_id": task_id}).to_list(
+            length=200
+        )
+        return self._summarize_sync_docs(sync_docs)
+
+    async def get_sync_summary_map(
+        self, task_ids: list[str]
+    ) -> dict[str, dict[str, Any]]:
+        """Load sync summaries for multiple schedule items in one query."""
+        normalized_ids = list(
+            dict.fromkeys(str(task_id) for task_id in task_ids if task_id)
+        )
+        if not normalized_ids:
+            return {}
+
+        sync_docs = await self.syncs_collection.find(
+            {"task_id": {"$in": normalized_ids}}
+        ).to_list(length=5000)
+        grouped: dict[str, list[dict[str, Any]]] = {
+            task_id: [] for task_id in normalized_ids
+        }
+        for doc in sync_docs:
+            task_id = str(doc.get("task_id") or "")
+            if not task_id:
+                continue
+            grouped.setdefault(task_id, []).append(doc)
+        return {
+            task_id: self._summarize_sync_docs(grouped.get(task_id, []))
+            for task_id in normalized_ids
+        }
 
 
 calendar_sync_service = CalendarSyncService()

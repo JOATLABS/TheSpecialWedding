@@ -47,6 +47,7 @@ from app.utils.query_validation import (
     validated_status_filter,
     validated_string_filter,
 )
+from app.utils.planner_ownership import list_wedding_ids_for_owner
 
 logger = logging.getLogger(__name__)
 
@@ -56,6 +57,21 @@ router = APIRouter()
 # ============================================================================
 # Response Models
 # ============================================================================
+
+
+class TaskSyncSummaryResponse(BaseModel):
+    """Compatibility summary derived from per-target sync rows."""
+
+    row_count: int = 0
+    synced_target_count: int = 0
+    failed_target_count: int = 0
+    orphaned_target_count: int = 0
+    not_configured_target_count: int = 0
+    pending_target_count: int = 0
+    has_synced_target: bool = False
+    has_configured_target: bool = False
+    primary_external_event_id: Optional[str] = None
+    last_sync_at: Optional[str] = None
 
 
 class TaskResponse(BaseModel):
@@ -76,7 +92,8 @@ class TaskResponse(BaseModel):
     due_date: Optional[str] = None
     reminder_minutes: Optional[int] = None
     google_event_id: Optional[str] = None
-    synced_to_google: bool
+    synced_to_google: bool = False
+    external_sync_requested: bool = False
     is_recurring: bool
     recurrence_rule: Optional[str] = None
     color: Optional[str] = None
@@ -102,6 +119,7 @@ class TaskResponse(BaseModel):
     updated_at: str
     version: int = 1
     completed_at: Optional[str] = None
+    sync_status_summary: Optional[TaskSyncSummaryResponse] = None
 
 
 class TaskListResponse(BaseModel):
@@ -146,6 +164,9 @@ class CalendarConnectionResponse(BaseModel):
     is_primary: bool = False
     is_default_write_target: bool = False
     allowed_scheduler_user_ids: list[str] = Field(default_factory=list)
+    allowed_scheduler_roles: list[str] = Field(default_factory=list)
+    allowed_schedule_item_types: list[str] = Field(default_factory=list)
+    allowed_wedding_ids: list[str] = Field(default_factory=list)
     is_shared_in_team_view: bool = False
     details_visibility: str = VisibilityMode.BUSY_ONLY.value
     sync_enabled: bool = False
@@ -223,8 +244,44 @@ async def _get_wedding_name(wedding_id: Optional[str]) -> Optional[str]:
         return None
 
 
-def _serialize_task(task: dict, wedding_name: Optional[str] = None) -> TaskResponse:
+def _serialize_task_sync_summary(summary: dict[str, Any]) -> TaskSyncSummaryResponse:
+    return TaskSyncSummaryResponse(
+        row_count=int(summary.get("row_count") or 0),
+        synced_target_count=int(summary.get("synced_target_count") or 0),
+        failed_target_count=int(summary.get("failed_target_count") or 0),
+        orphaned_target_count=int(summary.get("orphaned_target_count") or 0),
+        not_configured_target_count=int(
+            summary.get("not_configured_target_count") or 0
+        ),
+        pending_target_count=int(summary.get("pending_target_count") or 0),
+        has_synced_target=bool(summary.get("has_synced_target", False)),
+        has_configured_target=bool(summary.get("has_configured_target", False)),
+        primary_external_event_id=summary.get("primary_external_event_id"),
+        last_sync_at=_isoformat(summary.get("last_sync_at")),
+    )
+
+
+def _serialize_task(
+    task: dict,
+    wedding_name: Optional[str] = None,
+    sync_summary: Optional[dict[str, Any]] = None,
+) -> TaskResponse:
     """Serialize a task document to response model."""
+    summary = _serialize_task_sync_summary(sync_summary or {})
+    primary_external_event_id = summary.primary_external_event_id or task.get(
+        "google_event_id"
+    )
+    synced_to_google = (
+        summary.has_synced_target
+        if sync_summary is not None
+        else bool(task.get("synced_to_google", False))
+    )
+    external_sync_requested = bool(
+        task.get(
+            "external_sync_requested",
+            task.get("schedule_item_type") == ScheduleItemType.MEETING.value,
+        )
+    )
     return TaskResponse(
         id=str(task.get("_id")),
         planner_email=task.get("planner_email", ""),
@@ -240,8 +297,9 @@ def _serialize_task(task: dict, wedding_name: Optional[str] = None) -> TaskRespo
         all_day=task.get("all_day", False),
         due_date=_isoformat(task.get("due_date")),
         reminder_minutes=task.get("reminder_minutes"),
-        google_event_id=task.get("google_event_id"),
-        synced_to_google=task.get("synced_to_google", False),
+        google_event_id=primary_external_event_id,
+        synced_to_google=synced_to_google,
+        external_sync_requested=external_sync_requested,
         is_recurring=task.get("is_recurring", False),
         recurrence_rule=task.get("recurrence_rule"),
         color=task.get("color"),
@@ -267,7 +325,15 @@ def _serialize_task(task: dict, wedding_name: Optional[str] = None) -> TaskRespo
         updated_at=_isoformat(task.get("updated_at")) or "",
         version=int(task.get("version") or 1),
         completed_at=_isoformat(task.get("completed_at")),
+        sync_status_summary=summary,
     )
+
+
+async def _load_task_sync_summary_map(
+    tasks: list[dict[str, Any]],
+) -> dict[str, dict[str, Any]]:
+    task_ids = [str(task["_id"]) for task in tasks if task.get("_id")]
+    return await calendar_sync_service.get_sync_summary_map(task_ids)
 
 
 def _require_document(document: Any, detail: str) -> dict[str, Any]:
@@ -286,6 +352,34 @@ def _calendar_user_id(current_user: ExtendedAuthUser) -> Optional[str]:
     context = get_calendar_owner_identity(current_user)
     user_id = context.get("user_id")
     return str(user_id) if user_id else None
+
+
+def _calendar_actor_role_scope(current_user: ExtendedAuthUser) -> str:
+    if current_user.is_root_admin or current_user.is_wedding_planner:
+        return "owner"
+    return str(getattr(current_user, "team_role", None) or "viewer")
+
+
+async def _resolve_owner_scoped_wedding_ids(
+    owner_id: Optional[str],
+    owner_email: Optional[str],
+    wedding_ids: list[str],
+) -> list[str]:
+    requested_ids = list(dict.fromkeys(str(value) for value in wedding_ids if value))
+    if not requested_ids:
+        return []
+
+    owned_ids = await list_wedding_ids_for_owner(
+        planner_id=owner_id,
+        planner_email=owner_email,
+        accessible_wedding_ids=requested_ids,
+    )
+    if len(set(owned_ids)) != len(set(requested_ids)):
+        raise HTTPException(
+            status_code=400,
+            detail="Calendar connection wedding scope must stay inside the planner owner workspace.",
+        )
+    return requested_ids
 
 
 def _connection_matches_owner_scope(
@@ -469,6 +563,7 @@ def _serialize_meeting_payload(task: dict) -> dict[str, Any]:
         "assigned_user_emails": task.get("assigned_user_emails", []),
         "couple_attendee_emails": task.get("couple_attendee_emails", []),
         "calendar_sync_policy": task.get("calendar_sync_policy"),
+        "external_sync_requested": bool(task.get("external_sync_requested", True)),
         "sync_target_override_enabled": task.get("sync_target_override_enabled", False),
         "sync_target_connection_ids": task.get("sync_target_connection_ids", []),
         "invite_delivery_mode": task.get("invite_delivery_mode"),
@@ -816,6 +911,9 @@ async def update_calendar_connection(
     if not (is_owner or can_manage_all):
         restricted_fields = {
             "allowed_scheduler_user_ids",
+            "allowed_scheduler_roles",
+            "allowed_schedule_item_types",
+            "allowed_wedding_ids",
             "is_shared_in_team_view",
             "details_visibility",
         }
@@ -832,6 +930,12 @@ async def update_calendar_connection(
             updates["allowed_scheduler_user_ids"],
         )
         updates["allowed_scheduler_user_ids"] = resolved_ids
+    if "allowed_wedding_ids" in updates:
+        updates["allowed_wedding_ids"] = await _resolve_owner_scoped_wedding_ids(
+            connection_doc.get("owner_planner_id"),
+            connection_doc.get("owner_planner_email"),
+            updates["allowed_wedding_ids"],
+        )
 
     updated = await google_calendar_service.update_connection(
         connection_id,
@@ -1029,6 +1133,14 @@ async def create_task(
     now = datetime.now(UTC)
     owner_context = get_calendar_owner_identity(current_user)
     owner_email = _calendar_owner_email(current_user)
+    external_sync_requested = bool(
+        task_data.external_sync_requested
+        if task_data.external_sync_requested is not None
+        else (
+            task_data.sync_to_google
+            or task_data.schedule_item_type == ScheduleItemType.MEETING.value
+        )
+    )
     assigned_user_ids = task_data.assigned_user_ids
     assigned_user_emails = task_data.assigned_user_emails
     if assigned_user_ids:
@@ -1059,6 +1171,7 @@ async def create_task(
         "schedule_item_type": task_data.schedule_item_type,
         "visibility_mode": task_data.visibility_mode,
         "calendar_sync_policy": task_data.calendar_sync_policy,
+        "external_sync_requested": external_sync_requested,
         "start_date": task_data.start_date,
         "end_date": task_data.end_date or task_data.start_date,
         "all_day": task_data.all_day,
@@ -1075,9 +1188,6 @@ async def create_task(
         "recurrence_rule": task_data.recurrence_rule,
         "color": task_data.color,
         "notes": task_data.notes,
-        "synced_to_google": False,
-        "google_event_id": None,
-        "last_google_sync": None,
         "attachments": [],
         "created_at": now,
         "updated_at": now,
@@ -1088,42 +1198,22 @@ async def create_task(
     task_doc["_id"] = result.inserted_id
 
     # Sync to Google Calendar if requested and connected
-    if task_data.sync_to_google:
-        sync_status = await calendar_sync_service.sync_schedule_item(
+    if external_sync_requested:
+        await calendar_sync_service.sync_schedule_item(
             task_doc,
             actor_user_id=_calendar_user_id(current_user),
             actor_is_owner=bool(
                 current_user.is_root_admin or current_user.is_wedding_planner
             ),
+            actor_role_scope=_calendar_actor_role_scope(current_user),
         )
-        successful_sync = next(
-            (
-                item
-                for item in sync_status
-                if item.get("sync_status") == CalendarSyncStatusValue.SYNCED.value
-                and item.get("external_event_id")
-            ),
-            None,
-        )
-        if successful_sync:
-            await tasks_collection.update_one(
-                {"_id": result.inserted_id},
-                {
-                    "$set": {
-                        "google_event_id": successful_sync.get("external_event_id"),
-                        "synced_to_google": True,
-                        "last_google_sync": now,
-                    }
-                },
-            )
-            task_doc["google_event_id"] = successful_sync.get("external_event_id")
-            task_doc["synced_to_google"] = True
 
     wedding_name = await _get_wedding_name(task_data.wedding_id)
+    sync_summary = await calendar_sync_service.get_sync_summary(str(result.inserted_id))
 
     logger.info(f"Created task {result.inserted_id} for planner {current_user.email}")
 
-    return _serialize_task(task_doc, wedding_name)
+    return _serialize_task(task_doc, wedding_name, sync_summary)
 
 
 @router.get(
@@ -1200,8 +1290,15 @@ async def list_tasks(
             except Exception:
                 pass
 
+    sync_summary_map = await _load_task_sync_summary_map(tasks)
+
     serialized_tasks = [
-        _serialize_task(t, wedding_names.get(t.get("wedding_id"))) for t in tasks
+        _serialize_task(
+            t,
+            wedding_names.get(t.get("wedding_id")),
+            sync_summary_map.get(str(t.get("_id")), {}),
+        )
+        for t in tasks
     ]
 
     return TaskListResponse(
@@ -1237,8 +1334,9 @@ async def get_task(
     task = _require_document(task, "Task not found")
 
     wedding_name = await _get_wedding_name(task.get("wedding_id"))
+    sync_summary = await calendar_sync_service.get_sync_summary(task_id)
 
-    return _serialize_task(task, wedding_name)
+    return _serialize_task(task, wedding_name, sync_summary)
 
 
 @router.patch(
@@ -1277,6 +1375,13 @@ async def update_task(
 
     update_fields = updates.model_dump(exclude_unset=True)
     owner_context = get_calendar_owner_identity(current_user)
+    requested_sync_state = None
+    if update_fields.get("external_sync_requested") is not None:
+        requested_sync_state = bool(update_fields.pop("external_sync_requested"))
+    elif update_fields.get("sync_to_google") is not None:
+        requested_sync_state = bool(update_fields.pop("sync_to_google"))
+    if requested_sync_state is not None:
+        update_doc["external_sync_requested"] = requested_sync_state
     if (
         "assigned_user_ids" in update_fields
         and update_fields["assigned_user_ids"] is not None
@@ -1298,50 +1403,34 @@ async def update_task(
     elif updates.status and updates.status != "completed":
         update_doc["completed_at"] = None
 
+    existing_sync_summary = await calendar_sync_service.get_sync_summary(task_id)
     updated_task_doc = {**task, **update_doc, "_id": oid}
 
     await tasks_collection.update_one({"_id": oid}, {"$set": update_doc})
 
-    if task.get("synced_to_google") or task.get("google_event_id"):
-        sync_status = await calendar_sync_service.sync_schedule_item(
+    if requested_sync_state is False and existing_sync_summary.get("row_count"):
+        await calendar_sync_service.delete_schedule_item_syncs(task_id)
+    elif updated_task_doc.get("external_sync_requested") or existing_sync_summary.get(
+        "row_count"
+    ):
+        await calendar_sync_service.sync_schedule_item(
             updated_task_doc,
             actor_user_id=_calendar_user_id(current_user),
             actor_is_owner=bool(
                 current_user.is_root_admin or current_user.is_wedding_planner
             ),
-        )
-        successful_sync = next(
-            (
-                item
-                for item in sync_status
-                if item.get("sync_status") == CalendarSyncStatusValue.SYNCED.value
-                and item.get("external_event_id")
-            ),
-            None,
-        )
-        await tasks_collection.update_one(
-            {"_id": oid},
-            {
-                "$set": {
-                    "google_event_id": (
-                        successful_sync.get("external_event_id")
-                        if successful_sync
-                        else None
-                    ),
-                    "synced_to_google": bool(successful_sync),
-                    "last_google_sync": datetime.now(UTC) if successful_sync else None,
-                }
-            },
+            actor_role_scope=_calendar_actor_role_scope(current_user),
         )
 
     # Fetch updated task
     updated_task = await tasks_collection.find_one({"_id": oid})
     updated_task = _require_document(updated_task, "Task not found after update")
     wedding_name = await _get_wedding_name(updated_task.get("wedding_id"))
+    sync_summary = await calendar_sync_service.get_sync_summary(task_id)
 
     logger.info(f"Updated task {task_id} for planner {current_user.email}")
 
-    return _serialize_task(updated_task, wedding_name)
+    return _serialize_task(updated_task, wedding_name, sync_summary)
 
 
 @router.delete(
@@ -1400,16 +1489,6 @@ async def sync_task_to_google(
     Creates the event in Google Calendar if not already synced,
     or updates it if already synced.
     """
-    # Check if Google Calendar is connected
-    status = await google_calendar_service.get_connection_status(
-        _calendar_owner_email(current_user)
-    )
-    if not status.get("connected"):
-        raise HTTPException(
-            status_code=400,
-            detail="Google Calendar not connected. Please connect first.",
-        )
-
     tasks_collection = mongo.get_planner_tasks_collection()
 
     try:
@@ -1422,13 +1501,24 @@ async def sync_task_to_google(
     )
     task = _require_document(task, "Task not found")
 
-    # Sync to Google
+    await tasks_collection.update_one(
+        {"_id": oid},
+        {
+            "$set": {
+                "external_sync_requested": True,
+                "updated_at": datetime.now(UTC),
+            }
+        },
+    )
+    task["external_sync_requested"] = True
+
     sync_status = await calendar_sync_service.sync_schedule_item(
         task,
         actor_user_id=_calendar_user_id(current_user),
         actor_is_owner=bool(
             current_user.is_root_admin or current_user.is_wedding_planner
         ),
+        actor_role_scope=_calendar_actor_role_scope(current_user),
     )
     successful_sync = next(
         (
@@ -1442,26 +1532,17 @@ async def sync_task_to_google(
 
     if not successful_sync:
         raise HTTPException(
-            status_code=500, detail="Failed to sync task to Google Calendar"
+            status_code=400,
+            detail="No eligible writable calendar target is currently available for this task.",
         )
-
-    await tasks_collection.update_one(
-        {"_id": oid},
-        {
-            "$set": {
-                "google_event_id": successful_sync.get("external_event_id"),
-                "synced_to_google": True,
-                "last_google_sync": datetime.now(UTC),
-            }
-        },
-    )
 
     # Fetch updated task
     updated_task = await tasks_collection.find_one({"_id": oid})
     updated_task = _require_document(updated_task, "Task not found after sync")
     wedding_name = await _get_wedding_name(updated_task.get("wedding_id"))
+    sync_summary = await calendar_sync_service.get_sync_summary(task_id)
 
-    return _serialize_task(updated_task, wedding_name)
+    return _serialize_task(updated_task, wedding_name, sync_summary)
 
 
 # ============================================================================
@@ -1591,8 +1672,16 @@ async def get_month_tasks(
                     wedding_names[wid] = wedding.get("couple_names", "")
             except Exception:
                 pass
+    sync_summary_map = await _load_task_sync_summary_map(tasks)
 
-    return [_serialize_task(t, wedding_names.get(t.get("wedding_id"))) for t in tasks]
+    return [
+        _serialize_task(
+            t,
+            wedding_names.get(t.get("wedding_id")),
+            sync_summary_map.get(str(t.get("_id")), {}),
+        )
+        for t in tasks
+    ]
 
 
 @router.get(
@@ -1645,8 +1734,16 @@ async def get_upcoming_tasks(
                     wedding_names[wid] = wedding.get("couple_names", "")
             except Exception:
                 pass
+    sync_summary_map = await _load_task_sync_summary_map(tasks)
 
-    return [_serialize_task(t, wedding_names.get(t.get("wedding_id"))) for t in tasks]
+    return [
+        _serialize_task(
+            t,
+            wedding_names.get(t.get("wedding_id")),
+            sync_summary_map.get(str(t.get("_id")), {}),
+        )
+        for t in tasks
+    ]
 
 
 # ============================================================================
@@ -1748,6 +1845,7 @@ async def create_meeting(
         "schedule_item_type": ScheduleItemType.MEETING.value,
         "visibility_mode": data.visibility_mode,
         "calendar_sync_policy": sync_policy,
+        "external_sync_requested": True,
         "sync_target_override_enabled": data.sync_target_override_enabled,
         "sync_target_connection_ids": (
             data.sync_target_connection_ids if data.sync_target_override_enabled else []
@@ -1764,9 +1862,6 @@ async def create_meeting(
         "invite_delivery_mode": invite_mode,
         "meeting_status": MeetingLifecycleStatus.SCHEDULED.value,
         "reminder_minutes": data.reminder_minutes,
-        "google_event_id": None,
-        "synced_to_google": False,
-        "last_google_sync": None,
         "is_recurring": data.is_recurring,
         "recurrence_rule": data.recurrence_rule if data.is_recurring else None,
         "color": data.color,
@@ -1792,28 +1887,8 @@ async def create_meeting(
             actor_is_owner=bool(
                 current_user.is_root_admin or current_user.is_wedding_planner
             ),
+            actor_role_scope=_calendar_actor_role_scope(current_user),
         )
-        first_synced = next(
-            (
-                row
-                for row in sync_status
-                if row.get("sync_status") == "synced" and row.get("external_event_id")
-            ),
-            None,
-        )
-        if first_synced:
-            await mongo.get_planner_tasks_collection().update_one(
-                {"_id": result.inserted_id},
-                {
-                    "$set": {
-                        "google_event_id": first_synced.get("external_event_id"),
-                        "synced_to_google": True,
-                        "last_google_sync": datetime.now(UTC),
-                    }
-                },
-            )
-            task_doc["google_event_id"] = first_synced.get("external_event_id")
-            task_doc["synced_to_google"] = True
 
         invite_status: list[dict[str, Any]] = []
         if (
@@ -1936,6 +2011,7 @@ async def update_meeting(
         update_doc: dict[str, Any] = {"updated_at": datetime.now(UTC)}
         update_fields = updates.model_dump(exclude_unset=True)
         update_fields.pop("expected_version", None)
+        update_doc["external_sync_requested"] = True
         if update_fields.get(
             "invite_delivery_mode"
         ) == InviteDeliveryMode.EMAIL_ICS.value and not _can_send_meeting_invites(
@@ -2020,6 +2096,7 @@ async def update_meeting(
                 actor_is_owner=bool(
                     current_user.is_root_admin or current_user.is_wedding_planner
                 ),
+                actor_role_scope=_calendar_actor_role_scope(current_user),
             )
 
             invite_status: list[dict[str, Any]] = []
@@ -2311,12 +2388,23 @@ async def sync_meeting(
     except Exception:
         raise HTTPException(status_code=400, detail="Invalid meeting ID format")
     task = await _get_scoped_meeting(oid, current_user)
+    await mongo.get_planner_tasks_collection().update_one(
+        {"_id": oid},
+        {
+            "$set": {
+                "external_sync_requested": True,
+                "updated_at": datetime.now(UTC),
+            }
+        },
+    )
+    task["external_sync_requested"] = True
     sync_status = await calendar_sync_service.sync_schedule_item(
         task,
         actor_user_id=_calendar_user_id(current_user),
         actor_is_owner=bool(
             current_user.is_root_admin or current_user.is_wedding_planner
         ),
+        actor_role_scope=_calendar_actor_role_scope(current_user),
     )
     return {"meeting_id": meeting_id, "sync_status": sync_status}
 

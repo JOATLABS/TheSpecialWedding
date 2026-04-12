@@ -26,6 +26,15 @@ class CalendarConnectionStatus(str, Enum):
     ERROR = "error"
 
 
+class CalendarSchedulerRole(str, Enum):
+    """Workspace roles that can be allowed to schedule onto a connection."""
+
+    OWNER = "owner"
+    ADMIN = "admin"
+    EDITOR = "editor"
+    VIEWER = "viewer"
+
+
 class CalendarConnectionModel(BaseModel):
     """A single connected external calendar row."""
 
@@ -44,6 +53,9 @@ class CalendarConnectionModel(BaseModel):
     is_primary: bool = False
     is_default_write_target: bool = False
     allowed_scheduler_user_ids: list[str] = Field(default_factory=list)
+    allowed_scheduler_roles: list[str] = Field(default_factory=list)
+    allowed_schedule_item_types: list[str] = Field(default_factory=list)
+    allowed_wedding_ids: list[str] = Field(default_factory=list)
     is_shared_in_team_view: bool = False
     details_visibility: str = Field(default=VisibilityMode.BUSY_ONLY.value)
     sync_enabled: bool = True
@@ -67,6 +79,9 @@ class CalendarConnectionUpdateRequest(BaseModel):
 
     is_default_write_target: Optional[bool] = None
     allowed_scheduler_user_ids: Optional[list[str]] = None
+    allowed_scheduler_roles: Optional[list[str]] = None
+    allowed_schedule_item_types: Optional[list[str]] = None
+    allowed_wedding_ids: Optional[list[str]] = None
     is_shared_in_team_view: Optional[bool] = None
     details_visibility: Optional[str] = None
     sync_enabled: Optional[bool] = None

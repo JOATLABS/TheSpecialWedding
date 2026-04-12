@@ -32,6 +32,20 @@ export type CalendarSyncPolicy = 'owner_only' | 'assigned_only' | 'owner_and_ass
 export type InviteDeliveryMode = 'none' | 'email_ics' | 'portal_only';
 export type ConnectionStatus = 'active' | 'expired' | 'revoked' | 'error';
 export type SyncStatusValue = 'pending' | 'synced' | 'failed' | 'orphaned' | 'not_configured';
+export type CalendarSchedulerRole = 'owner' | 'admin' | 'editor' | 'viewer';
+
+export interface TaskSyncSummary {
+  row_count: number;
+  synced_target_count: number;
+  failed_target_count: number;
+  orphaned_target_count: number;
+  not_configured_target_count: number;
+  pending_target_count: number;
+  has_synced_target: boolean;
+  has_configured_target: boolean;
+  primary_external_event_id?: string | null;
+  last_sync_at?: string | null;
+}
 
 export interface PlannerTask {
   id: string;
@@ -50,6 +64,7 @@ export interface PlannerTask {
   reminder_minutes?: number | null;
   google_event_id?: string | null;
   synced_to_google: boolean;
+  external_sync_requested: boolean;
   is_recurring: boolean;
   recurrence_rule?: string | null;
   color?: string | null;
@@ -75,6 +90,7 @@ export interface PlannerTask {
   updated_at: string;
   version: number;
   completed_at?: string | null;
+  sync_status_summary?: TaskSyncSummary | null;
 }
 
 export interface TaskListResponse {
@@ -100,6 +116,9 @@ export interface CalendarConnection {
   is_primary: boolean;
   is_default_write_target: boolean;
   allowed_scheduler_user_ids: string[];
+  allowed_scheduler_roles: CalendarSchedulerRole[];
+  allowed_schedule_item_types: ScheduleItemType[];
+  allowed_wedding_ids: string[];
   is_shared_in_team_view: boolean;
   details_visibility: VisibilityMode;
   sync_enabled: boolean;
@@ -167,14 +186,6 @@ export interface MeetingUpsertResponse {
   invite_status: Array<Record<string, unknown>>;
 }
 
-export interface GoogleCalendarStatus {
-  connected: boolean;
-  calendar_id?: string | null;
-  last_sync?: string | null;
-  sync_enabled: boolean;
-  events_synced: number;
-}
-
 export interface GoogleAuthUrlResponse {
   auth_url: string;
   message: string;
@@ -215,6 +226,7 @@ export interface ScheduleItemPayload {
   color?: string;
   notes?: string;
   sync_to_google?: boolean;
+  external_sync_requested?: boolean;
   assigned_user_ids?: string[];
   assigned_user_emails?: string[];
   schedule_item_type?: ScheduleItemType;
@@ -346,30 +358,6 @@ async function authFetch<T>(
   return response.json() as Promise<T>;
 }
 
-export async function getGoogleCalendarStatus(token: string): Promise<GoogleCalendarStatus> {
-  return authFetch<GoogleCalendarStatus>(token, '/admin/planner/calendar/google/status');
-}
-
-export async function getGoogleAuthUrl(token: string): Promise<GoogleAuthUrlResponse> {
-  return authFetch<GoogleAuthUrlResponse>(token, '/admin/planner/calendar/google/connect');
-}
-
-export async function disconnectGoogleCalendar(token: string): Promise<void> {
-  await authFetch<void>(token, '/admin/planner/calendar/google/disconnect', {
-    method: 'DELETE',
-  });
-}
-
-export async function fetchGoogleEvents(
-  token: string,
-  daysAhead: number = 30
-): Promise<unknown[]> {
-  return authFetch<unknown[]>(
-    token,
-    `/admin/planner/calendar/google/events?days_ahead=${daysAhead}`
-  );
-}
-
 export async function createTask(token: string, task: ScheduleItemPayload): Promise<PlannerTask> {
   return authFetch<PlannerTask>(token, '/admin/planner/calendar/tasks', {
     method: 'POST',
@@ -499,6 +487,9 @@ export async function updateCalendarConnection(
     Pick<
       CalendarConnection,
       | 'allowed_scheduler_user_ids'
+      | 'allowed_scheduler_roles'
+      | 'allowed_schedule_item_types'
+      | 'allowed_wedding_ids'
       | 'is_shared_in_team_view'
       | 'details_visibility'
       | 'sync_enabled'

@@ -509,6 +509,7 @@ export default function PlannerCalendarPage() {
       <GoogleCalendarConnect
         connections={connections}
         staffOptions={staffOptions}
+        weddings={weddings}
         loading={loading}
         onRefresh={refreshAll}
       />
