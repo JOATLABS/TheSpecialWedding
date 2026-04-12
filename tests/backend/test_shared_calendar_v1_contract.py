@@ -263,6 +263,31 @@ def test_google_service_requires_explicit_security_keys_in_production(
     assert "TOKEN_ENCRYPTION_KEY" in str(exc_info.value)
 
 
+def test_connection_serialization_hides_redundant_default_self_grant() -> None:
+    serialized = google_calendar_service._serialize_connection(
+        {
+            "_id": "connection-1",
+            "owner_planner_id": "owner-1",
+            "owner_planner_email": "owner@example.com",
+            "user_id": "staff-1",
+            "user_email": "staff@example.com",
+            "provider": "google",
+            "provider_account_email": "staff@example.com",
+            "calendar_id": "calendar-1",
+            "calendar_name": "Staff Calendar",
+            "is_writable": True,
+            "is_primary": True,
+            "is_default_write_target": True,
+            "scheduler_access_mode": "workspace_default",
+            "allowed_scheduler_user_ids": ["staff-1"],
+            "sync_enabled": True,
+            "connection_status": "active",
+        }
+    )
+
+    assert serialized["allowed_scheduler_user_ids"] == []
+
+
 @pytest.mark.asyncio
 async def test_sync_targets_prefer_explicit_allowed_override() -> None:
     service = CalendarSyncService.__new__(CalendarSyncService)
@@ -430,6 +455,154 @@ async def test_sync_targets_block_unlisted_staff_calendar_for_team_scheduler() -
     )
 
     assert result == []
+
+
+@pytest.mark.asyncio
+async def test_sync_targets_owner_only_blocks_non_owner_scheduler() -> None:
+    service = CalendarSyncService.__new__(CalendarSyncService)
+
+    async def fake_get_connection_docs(_query: dict) -> list[dict]:
+        return [
+            {
+                "_id": "owner-default",
+                "user_id": "owner-1",
+                "owner_planner_id": "owner-1",
+                "scheduler_access_mode": "owner_only",
+                "is_default_write_target": True,
+            }
+        ]
+
+    setattr(service, "_get_connection_docs", fake_get_connection_docs)
+
+    task = {
+        "owner_planner_id": "owner-1",
+        "assigned_user_ids": ["owner-1"],
+        "calendar_sync_policy": "owner_only",
+    }
+
+    blocked = await service.resolve_sync_targets(
+        task,
+        actor_user_id="team-1",
+        actor_is_owner=False,
+        actor_role_scope="editor",
+    )
+    allowed = await service.resolve_sync_targets(
+        task,
+        actor_user_id="owner-1",
+        actor_is_owner=True,
+    )
+
+    assert blocked == []
+    assert [str(row["_id"]) for row in allowed] == ["owner-default"]
+
+
+@pytest.mark.asyncio
+async def test_sync_targets_owner_and_connection_user_blocks_peer_without_grant() -> (
+    None
+):
+    service = CalendarSyncService.__new__(CalendarSyncService)
+
+    async def fake_get_connection_docs(_query: dict) -> list[dict]:
+        return [
+            {
+                "_id": "staff-2-default",
+                "user_id": "staff-2",
+                "owner_planner_id": "owner-1",
+                "scheduler_access_mode": "owner_and_connection_user",
+                "is_default_write_target": True,
+            }
+        ]
+
+    setattr(service, "_get_connection_docs", fake_get_connection_docs)
+
+    task = {
+        "owner_planner_id": "owner-1",
+        "assigned_user_ids": ["staff-2"],
+        "calendar_sync_policy": "assigned_only",
+    }
+
+    blocked = await service.resolve_sync_targets(
+        task,
+        actor_user_id="staff-1",
+        actor_is_owner=False,
+        actor_role_scope="editor",
+    )
+    allowed = await service.resolve_sync_targets(
+        task,
+        actor_user_id="staff-2",
+        actor_is_owner=False,
+        actor_role_scope="editor",
+    )
+
+    assert blocked == []
+    assert [str(row["_id"]) for row in allowed] == ["staff-2-default"]
+
+
+@pytest.mark.asyncio
+async def test_sync_targets_workspace_permitted_allows_peer_scheduler() -> None:
+    service = CalendarSyncService.__new__(CalendarSyncService)
+
+    async def fake_get_connection_docs(_query: dict) -> list[dict]:
+        return [
+            {
+                "_id": "staff-2-default",
+                "user_id": "staff-2",
+                "owner_planner_id": "owner-1",
+                "scheduler_access_mode": "workspace_permitted",
+                "is_default_write_target": True,
+            }
+        ]
+
+    setattr(service, "_get_connection_docs", fake_get_connection_docs)
+
+    task = {
+        "owner_planner_id": "owner-1",
+        "assigned_user_ids": ["staff-2"],
+        "calendar_sync_policy": "assigned_only",
+    }
+
+    result = await service.resolve_sync_targets(
+        task,
+        actor_user_id="staff-1",
+        actor_is_owner=False,
+        actor_role_scope="editor",
+    )
+
+    assert [str(row["_id"]) for row in result] == ["staff-2-default"]
+
+
+@pytest.mark.asyncio
+async def test_sync_targets_extra_user_grant_widens_staff_calendar_access() -> None:
+    service = CalendarSyncService.__new__(CalendarSyncService)
+
+    async def fake_get_connection_docs(_query: dict) -> list[dict]:
+        return [
+            {
+                "_id": "staff-2-default",
+                "user_id": "staff-2",
+                "owner_planner_id": "owner-1",
+                "scheduler_access_mode": "owner_and_connection_user",
+                "allowed_scheduler_user_ids": ["staff-1"],
+                "is_default_write_target": True,
+            }
+        ]
+
+    setattr(service, "_get_connection_docs", fake_get_connection_docs)
+
+    task = {
+        "owner_planner_id": "owner-1",
+        "assigned_user_ids": ["staff-2"],
+        "calendar_sync_policy": "assigned_only",
+    }
+
+    result = await service.resolve_sync_targets(
+        task,
+        actor_user_id="staff-1",
+        actor_is_owner=False,
+        actor_role_scope="editor",
+    )
+
+    assert [str(row["_id"]) for row in result] == ["staff-2-default"]
 
 
 @pytest.mark.asyncio
@@ -652,6 +825,46 @@ def test_calendar_event_create_attaches_timezone_to_naive_datetimes() -> None:
     assert payload.end_date is not None
     assert payload.end_date.tzinfo is not None
     assert payload.start_date.utcoffset() == timedelta(hours=-5)
+
+
+def test_task_response_drops_legacy_google_projection_fields() -> None:
+    now = datetime(2026, 4, 8, 12, 0, tzinfo=UTC)
+    task = {
+        "_id": "task-1",
+        "planner_email": "owner@example.com",
+        "title": "Planning Call",
+        "category": "meeting",
+        "priority": "medium",
+        "status": "pending",
+        "start_date": now,
+        "end_date": now + timedelta(hours=1),
+        "all_day": False,
+        "is_recurring": False,
+        "created_at": now,
+        "updated_at": now,
+        "external_sync_requested": True,
+        "google_event_id": "legacy-google-id",
+        "synced_to_google": True,
+    }
+
+    serialized = planner_calendar_api._serialize_task(
+        task,
+        sync_summary={
+            "row_count": 1,
+            "synced_target_count": 1,
+            "has_synced_target": True,
+            "has_configured_target": True,
+            "primary_external_event_id": "sync-row-google-id",
+        },
+    ).model_dump()
+
+    assert "google_event_id" not in serialized
+    assert "synced_to_google" not in serialized
+    assert serialized["external_sync_requested"] is True
+    assert (
+        serialized["sync_status_summary"]["primary_external_event_id"]
+        == "sync-row-google-id"
+    )
 
 
 def test_calendar_event_create_rejects_google_attendee_delivery_mode() -> None:

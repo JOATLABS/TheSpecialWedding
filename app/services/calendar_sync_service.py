@@ -14,7 +14,10 @@ from pymongo.errors import DuplicateKeyError
 from app.core.config import settings
 from app.core.database import mongo
 from app.models.calendar import CalendarSyncPolicy, ScheduleItemType
-from app.models.calendar_connection import CalendarSchedulerRole
+from app.models.calendar_connection import (
+    CalendarSchedulerAccessMode,
+    CalendarSchedulerRole,
+)
 from app.models.calendar_sync import CalendarSyncStatusValue
 from app.services.calendar_audit_service import calendar_audit_service
 from app.services.google_calendar_service import google_calendar_service
@@ -44,14 +47,45 @@ class CalendarSyncService:
         if not actor_user_id:
             return False
 
-        explicit_allowed_scheduler_user_ids = [
+        scheduler_access_mode = str(
+            connection_doc.get("scheduler_access_mode")
+            or CalendarSchedulerAccessMode.WORKSPACE_DEFAULT.value
+        )
+        explicit_allowed_scheduler_user_ids = {
             str(value)
             for value in connection_doc.get("allowed_scheduler_user_ids", [])
             if value
-        ]
-        if explicit_allowed_scheduler_user_ids:
-            if actor_user_id not in set(explicit_allowed_scheduler_user_ids):
-                return False
+        }
+        owner_id = str(connection_doc.get("owner_planner_id") or "")
+        connection_user_id = str(connection_doc.get("user_id") or "")
+
+        base_allowed = False
+        if scheduler_access_mode == CalendarSchedulerAccessMode.OWNER_ONLY.value:
+            base_allowed = False
+        elif (
+            scheduler_access_mode
+            == CalendarSchedulerAccessMode.OWNER_AND_CONNECTION_USER.value
+        ):
+            base_allowed = bool(
+                connection_user_id and actor_user_id == connection_user_id
+            )
+        elif (
+            scheduler_access_mode
+            == CalendarSchedulerAccessMode.WORKSPACE_PERMITTED.value
+        ):
+            base_allowed = True
+        else:
+            owner_connection = bool(
+                owner_id and connection_user_id and owner_id == connection_user_id
+            )
+            base_allowed = owner_connection or (
+                bool(connection_user_id) and actor_user_id == connection_user_id
+            )
+
+        # Precedence is explicit: base access mode defines the default actor set,
+        # user grants can widen that set, and role/item/wedding rules only narrow it.
+        if not (base_allowed or actor_user_id in explicit_allowed_scheduler_user_ids):
+            return False
 
         explicit_allowed_scheduler_roles = [
             str(value)
@@ -63,11 +97,7 @@ class CalendarSyncService:
             if effective_role not in set(explicit_allowed_scheduler_roles):
                 return False
 
-        owner_id = str(connection_doc.get("owner_planner_id") or "")
-        connection_user_id = str(connection_doc.get("user_id") or "")
-        if owner_id and connection_user_id and owner_id == connection_user_id:
-            return True
-        return actor_user_id == connection_user_id
+        return True
 
     def _task_schedule_item_type(self, task: dict[str, Any]) -> str:
         raw_type = str(task.get("schedule_item_type") or "").strip()

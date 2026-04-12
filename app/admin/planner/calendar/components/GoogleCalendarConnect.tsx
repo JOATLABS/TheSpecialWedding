@@ -8,6 +8,7 @@ import {
   healthcheckCalendarConnection,
   updateCalendarConnection,
 } from '@/services/calendarApi';
+import type { CalendarSchedulerAccessMode } from '@/services/calendarApi';
 import { useAdmin } from '@/contexts/AdminContext';
 import { useConfirmDialog } from '@/components/ui/ConfirmDialog';
 import { formatAdminTimestamp } from '@/utils/dateFormat';
@@ -45,6 +46,37 @@ const SCHEDULE_ITEM_TYPE_OPTIONS: Array<{
   { value: 'task', label: 'Tasks' },
   { value: 'meeting', label: 'Meetings' },
   { value: 'blocked_time', label: 'Blocked time' },
+];
+
+const SCHEDULER_ACCESS_MODE_OPTIONS: Array<{
+  value: CalendarSchedulerAccessMode;
+  label: string;
+  description: string;
+}> = [
+  {
+    value: 'workspace_default',
+    label: 'Workspace default',
+    description:
+      'Owner calendars are available to permitted team schedulers. Staff calendars stay limited to the owner and the connected staff user unless extra user grants are added.',
+  },
+  {
+    value: 'owner_only',
+    label: 'Owner only',
+    description:
+      'Only the planner owner can target this calendar unless you add specific user grants.',
+  },
+  {
+    value: 'owner_and_connection_user',
+    label: 'Owner + connected user',
+    description:
+      'Only the planner owner and the workspace user who connected this calendar can target it unless you add specific user grants.',
+  },
+  {
+    value: 'workspace_permitted',
+    label: 'Any permitted scheduler',
+    description:
+      'Any workspace scheduler inside owner scope can target this calendar, then role, item-type, and wedding filters narrow access.',
+  },
 ];
 
 function statusTone(status: string) {
@@ -172,6 +204,7 @@ export default function GoogleCalendarConnect({
         | 'allowed_scheduler_roles'
         | 'allowed_schedule_item_types'
         | 'allowed_wedding_ids'
+        | 'scheduler_access_mode'
         | 'is_shared_in_team_view'
         | 'details_visibility'
         | 'sync_enabled'
@@ -217,6 +250,17 @@ export default function GoogleCalendarConnect({
       connection,
       { allowed_scheduler_roles: nextRoles },
       'Calendar scheduler roles updated'
+    );
+  };
+
+  const handleSchedulerAccessModeChange = async (
+    connection: CalendarConnection,
+    schedulerAccessMode: CalendarSchedulerAccessMode
+  ) => {
+    await handleToggle(
+      connection,
+      { scheduler_access_mode: schedulerAccessMode },
+      'Calendar scheduling policy updated'
     );
   };
 
@@ -400,26 +444,52 @@ export default function GoogleCalendarConnect({
                                 <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
                                   Scheduler access
                                 </p>
-                                {connection.user_id === connection.owner_planner_id &&
-                                connection.allowed_scheduler_user_ids.length === 0 &&
-                                connection.allowed_scheduler_roles.length === 0 ? (
-                                  <p className="text-xs text-slate-500">
-                                    Owner calendar uses the business fallback by default. Team
-                                    schedulers can target it when sync policy allows it.
-                                  </p>
-                                ) : (
-                                  <p className="text-xs text-slate-500">
-                                    Restrict who can write onto this calendar by internal user,
-                                    role, item type, and wedding scope.
-                                  </p>
-                                )}
+                                <p className="text-xs text-slate-500">
+                                  Precedence is fixed: base scheduling access, then extra user
+                                  grants, then restrictive role, item-type, and wedding filters.
+                                  Sync policy chooses targets only after a connection survives that
+                                  check.
+                                </p>
                               </div>
 
-                              {connection.user_id !== connection.owner_planner_id &&
-                              staffOptions.length > 0 ? (
+                              <label className="block rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-xs text-slate-700">
+                                <span className="mb-2 block text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-400">
+                                  Base scheduling access
+                                </span>
+                                <select
+                                  value={connection.scheduler_access_mode}
+                                  onChange={(event) =>
+                                    void handleSchedulerAccessModeChange(
+                                      connection,
+                                      event.target.value as CalendarSchedulerAccessMode
+                                    )
+                                  }
+                                  disabled={updateLoading}
+                                  className="w-full rounded-lg border border-slate-300 bg-white px-2 py-2 text-xs text-slate-900"
+                                >
+                                  {SCHEDULER_ACCESS_MODE_OPTIONS.map((option) => (
+                                    <option key={option.value} value={option.value}>
+                                      {option.label}
+                                    </option>
+                                  ))}
+                                </select>
+                                <p className="mt-2 text-xs text-slate-500">
+                                  {
+                                    SCHEDULER_ACCESS_MODE_OPTIONS.find(
+                                      (option) => option.value === connection.scheduler_access_mode
+                                    )?.description
+                                  }
+                                </p>
+                              </label>
+
+                              {staffOptions.length > 0 ? (
                                 <div>
                                   <p className="mb-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-400">
-                                    Allowed schedulers
+                                    Extra user grants
+                                  </p>
+                                  <p className="mb-2 text-xs text-slate-500">
+                                    Use this to allow specific staff onto a calendar even when the
+                                    base access mode would normally block them.
                                   </p>
                                   <div className="flex flex-wrap gap-2">
                                     {staffOptions.map((staff) => {

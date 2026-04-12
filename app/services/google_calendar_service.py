@@ -25,6 +25,7 @@ from app.core.config import settings
 from app.core.database import mongo
 from app.models.calendar import ScheduleItemType, VisibilityMode
 from app.models.calendar_connection import (
+    CalendarSchedulerAccessMode,
     CalendarConnectionStatus,
     CalendarSchedulerRole,
 )
@@ -66,37 +67,43 @@ class GoogleCalendarService:
                 + ", ".join(missing_keys)
             )
 
-    def _default_allowed_scheduler_user_ids(
-        self,
-        *,
-        owner_id: Optional[str],
-        user_id: Optional[str],
-    ) -> list[str]:
-        values = []
-        if user_id and owner_id and str(user_id) != str(owner_id):
-            values.append(user_id)
-        return list(dict.fromkeys(str(value) for value in values))
-
-    def _effective_allowed_scheduler_user_ids(
-        self,
-        connection_doc: dict[str, Any],
-    ) -> list[str]:
-        explicit_ids = [
-            str(value)
-            for value in connection_doc.get("allowed_scheduler_user_ids", [])
-            if value
-        ]
-        if explicit_ids:
-            return list(dict.fromkeys(explicit_ids))
-        return self._default_allowed_scheduler_user_ids(
-            owner_id=connection_doc.get("owner_planner_id"),
-            user_id=connection_doc.get("user_id"),
-        )
-
     def _normalize_string_list(self, values: list[Any] | None) -> list[str]:
         if not values:
             return []
         return list(dict.fromkeys(str(value) for value in values if value))
+
+    def _normalize_scheduler_user_grants(self, values: list[Any] | None) -> list[str]:
+        return self._normalize_string_list(values)
+
+    def _serialized_scheduler_user_grants(
+        self, connection_doc: dict[str, Any]
+    ) -> list[str]:
+        grants = self._normalize_scheduler_user_grants(
+            connection_doc.get("allowed_scheduler_user_ids", [])
+        )
+        access_mode = self._normalize_scheduler_access_mode(
+            connection_doc.get("scheduler_access_mode")
+        )
+        owner_id = str(connection_doc.get("owner_planner_id") or "")
+        user_id = str(connection_doc.get("user_id") or "")
+        if (
+            access_mode == CalendarSchedulerAccessMode.WORKSPACE_DEFAULT.value
+            and owner_id
+            and user_id
+            and owner_id != user_id
+        ):
+            return [value for value in grants if value != user_id]
+        return grants
+
+    def _normalize_scheduler_access_mode(self, value: Any) -> str:
+        normalized = str(value or CalendarSchedulerAccessMode.WORKSPACE_DEFAULT.value)
+        valid_values = {mode.value for mode in CalendarSchedulerAccessMode}
+        if normalized not in valid_values:
+            raise HTTPException(
+                status_code=400,
+                detail="Invalid scheduler access mode supplied for this calendar connection",
+            )
+        return normalized
 
     def _normalize_scheduler_roles(self, values: list[Any] | None) -> list[str]:
         normalized = self._normalize_string_list(values)
@@ -544,12 +551,15 @@ class GoogleCalendarService:
                         else calendar_id == default_write_id
                     )
                 ),
-                "allowed_scheduler_user_ids": self._effective_allowed_scheduler_user_ids(
-                    existing_doc
-                    or {
-                        "owner_planner_id": owner_id,
-                        "user_id": user_id,
-                    }
+                "scheduler_access_mode": self._normalize_scheduler_access_mode(
+                    existing_doc.get("scheduler_access_mode")
+                    if existing_doc is not None
+                    else CalendarSchedulerAccessMode.WORKSPACE_DEFAULT.value
+                ),
+                "allowed_scheduler_user_ids": self._normalize_scheduler_user_grants(
+                    existing_doc.get("allowed_scheduler_user_ids", [])
+                    if existing_doc is not None
+                    else []
                 ),
                 "is_shared_in_team_view": (
                     existing_doc.get("is_shared_in_team_view", False)
@@ -654,9 +664,10 @@ class GoogleCalendarService:
             "is_writable": doc.get("is_writable", False),
             "is_primary": doc.get("is_primary", False),
             "is_default_write_target": doc.get("is_default_write_target", False),
-            "allowed_scheduler_user_ids": self._effective_allowed_scheduler_user_ids(
-                doc
+            "scheduler_access_mode": self._normalize_scheduler_access_mode(
+                doc.get("scheduler_access_mode")
             ),
+            "allowed_scheduler_user_ids": self._serialized_scheduler_user_grants(doc),
             "allowed_scheduler_roles": self._normalize_scheduler_roles(
                 doc.get("allowed_scheduler_roles", [])
             ),
@@ -805,6 +816,7 @@ class GoogleCalendarService:
             if k
             in {
                 "is_default_write_target",
+                "scheduler_access_mode",
                 "allowed_scheduler_user_ids",
                 "allowed_scheduler_roles",
                 "allowed_schedule_item_types",
@@ -819,8 +831,14 @@ class GoogleCalendarService:
             return self._serialize_connection(connection_doc)
 
         if "allowed_scheduler_user_ids" in set_doc:
-            set_doc["allowed_scheduler_user_ids"] = self._normalize_string_list(
-                set_doc["allowed_scheduler_user_ids"]
+            set_doc["allowed_scheduler_user_ids"] = (
+                self._normalize_scheduler_user_grants(
+                    set_doc["allowed_scheduler_user_ids"]
+                )
+            )
+        if "scheduler_access_mode" in set_doc:
+            set_doc["scheduler_access_mode"] = self._normalize_scheduler_access_mode(
+                set_doc["scheduler_access_mode"]
             )
         if "allowed_scheduler_roles" in set_doc:
             set_doc["allowed_scheduler_roles"] = self._normalize_scheduler_roles(
@@ -908,7 +926,9 @@ class GoogleCalendarService:
             )
         if "allowed_scheduler_user_ids" in set_doc and (
             set_doc["allowed_scheduler_user_ids"]
-            != self._effective_allowed_scheduler_user_ids(connection_doc)
+            != self._normalize_scheduler_user_grants(
+                connection_doc.get("allowed_scheduler_user_ids", [])
+            )
         ):
             await calendar_audit_service.log(
                 action="calendar_allowlist_changed",
@@ -925,6 +945,7 @@ class GoogleCalendarService:
         if any(
             key in set_doc
             for key in (
+                "scheduler_access_mode",
                 "allowed_scheduler_roles",
                 "allowed_schedule_item_types",
                 "allowed_wedding_ids",
@@ -939,6 +960,12 @@ class GoogleCalendarService:
                 metadata={
                     "connection_id": connection_id,
                     "calendar_name": connection_doc.get("calendar_name"),
+                    "scheduler_access_mode": set_doc.get(
+                        "scheduler_access_mode",
+                        self._normalize_scheduler_access_mode(
+                            connection_doc.get("scheduler_access_mode")
+                        ),
+                    ),
                     "allowed_scheduler_roles": set_doc.get(
                         "allowed_scheduler_roles",
                         self._normalize_scheduler_roles(
