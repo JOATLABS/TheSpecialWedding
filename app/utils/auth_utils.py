@@ -59,12 +59,40 @@ def verify_token(token: str):
         raise ValueError("Invalid token")
 
 
+def _get_cookie_domain() -> str | None:
+    """Return a domain value so the cookie is visible across subdomains.
+
+    For staging/production the cookie is set on the apex domain
+    (e.g. ".thespecialwedding.io") so both ``api.staging.*`` and
+    ``staging.*`` can share it.  Returns ``None`` in development so
+    localhost cookies work without a domain restriction.
+    """
+    if settings.environment in (Environment.STAGING, Environment.PRODUCTION):
+        # COOKIE_DOMAIN can be overridden via env var; sensible default
+        # is derived from FRONTEND_URL if available.
+        explicit = getattr(settings, "cookie_domain", None)
+        if explicit:
+            return explicit
+        frontend = getattr(settings, "frontend_url", "")
+        if frontend:
+            from urllib.parse import urlparse
+
+            host = urlparse(frontend).hostname or ""
+            # strip the first subdomain (e.g. "staging.thespecialwedding.io" → ".thespecialwedding.io")
+            parts = host.split(".")
+            if len(parts) > 2:
+                return "." + ".".join(parts[-2:])
+            return "." + host
+    return None
+
+
 def set_auth_cookie(
     response: Response,
     cookie_name: str,
     token: str,
     max_age: int = ACCESS_TOKEN_COOKIE_MAX_AGE,
 ) -> None:
+    domain = _get_cookie_domain()
     response.set_cookie(
         key=cookie_name,
         value=token,
@@ -72,14 +100,17 @@ def set_auth_cookie(
         expires=max_age,
         httponly=True,
         secure=settings.environment in (Environment.STAGING, Environment.PRODUCTION),
-        samesite="strict",
+        samesite="lax",
+        domain=domain,
         path="/",
     )
 
 
 def clear_auth_cookie(response: Response, cookie_name: str) -> None:
+    domain = _get_cookie_domain()
     response.delete_cookie(
         key=cookie_name,
         path="/",
-        samesite="strict",
+        domain=domain,
+        samesite="lax",
     )
