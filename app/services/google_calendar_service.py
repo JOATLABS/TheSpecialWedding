@@ -26,6 +26,7 @@ from app.core.database import mongo
 from app.models.calendar import ScheduleItemType, VisibilityMode
 from app.models.calendar_connection import (
     CalendarSchedulerAccessMode,
+    CalendarSyncTargetingMode,
     CalendarConnectionStatus,
     CalendarSchedulerRole,
 )
@@ -102,6 +103,16 @@ class GoogleCalendarService:
             raise HTTPException(
                 status_code=400,
                 detail="Invalid scheduler access mode supplied for this calendar connection",
+            )
+        return normalized
+
+    def _normalize_sync_targeting_mode(self, value: Any) -> str:
+        normalized = str(value or CalendarSyncTargetingMode.AUTOMATIC_AND_MANUAL.value)
+        valid_values = {mode.value for mode in CalendarSyncTargetingMode}
+        if normalized not in valid_values:
+            raise HTTPException(
+                status_code=400,
+                detail="Invalid sync targeting mode supplied for this calendar connection",
             )
         return normalized
 
@@ -556,6 +567,11 @@ class GoogleCalendarService:
                     if existing_doc is not None
                     else CalendarSchedulerAccessMode.WORKSPACE_DEFAULT.value
                 ),
+                "sync_targeting_mode": self._normalize_sync_targeting_mode(
+                    existing_doc.get("sync_targeting_mode")
+                    if existing_doc is not None
+                    else CalendarSyncTargetingMode.AUTOMATIC_AND_MANUAL.value
+                ),
                 "allowed_scheduler_user_ids": self._normalize_scheduler_user_grants(
                     existing_doc.get("allowed_scheduler_user_ids", [])
                     if existing_doc is not None
@@ -666,6 +682,9 @@ class GoogleCalendarService:
             "is_default_write_target": doc.get("is_default_write_target", False),
             "scheduler_access_mode": self._normalize_scheduler_access_mode(
                 doc.get("scheduler_access_mode")
+            ),
+            "sync_targeting_mode": self._normalize_sync_targeting_mode(
+                doc.get("sync_targeting_mode")
             ),
             "allowed_scheduler_user_ids": self._serialized_scheduler_user_grants(doc),
             "allowed_scheduler_roles": self._normalize_scheduler_roles(
@@ -817,6 +836,7 @@ class GoogleCalendarService:
             in {
                 "is_default_write_target",
                 "scheduler_access_mode",
+                "sync_targeting_mode",
                 "allowed_scheduler_user_ids",
                 "allowed_scheduler_roles",
                 "allowed_schedule_item_types",
@@ -839,6 +859,10 @@ class GoogleCalendarService:
         if "scheduler_access_mode" in set_doc:
             set_doc["scheduler_access_mode"] = self._normalize_scheduler_access_mode(
                 set_doc["scheduler_access_mode"]
+            )
+        if "sync_targeting_mode" in set_doc:
+            set_doc["sync_targeting_mode"] = self._normalize_sync_targeting_mode(
+                set_doc["sync_targeting_mode"]
             )
         if "allowed_scheduler_roles" in set_doc:
             set_doc["allowed_scheduler_roles"] = self._normalize_scheduler_roles(
@@ -946,6 +970,7 @@ class GoogleCalendarService:
             key in set_doc
             for key in (
                 "scheduler_access_mode",
+                "sync_targeting_mode",
                 "allowed_scheduler_roles",
                 "allowed_schedule_item_types",
                 "allowed_wedding_ids",
@@ -964,6 +989,12 @@ class GoogleCalendarService:
                         "scheduler_access_mode",
                         self._normalize_scheduler_access_mode(
                             connection_doc.get("scheduler_access_mode")
+                        ),
+                    ),
+                    "sync_targeting_mode": set_doc.get(
+                        "sync_targeting_mode",
+                        self._normalize_sync_targeting_mode(
+                            connection_doc.get("sync_targeting_mode")
                         ),
                     ),
                     "allowed_scheduler_roles": set_doc.get(

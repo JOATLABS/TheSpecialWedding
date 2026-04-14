@@ -8,7 +8,10 @@ import {
   healthcheckCalendarConnection,
   updateCalendarConnection,
 } from '@/services/calendarApi';
-import type { CalendarSchedulerAccessMode } from '@/services/calendarApi';
+import type {
+  CalendarSchedulerAccessMode,
+  CalendarSyncTargetingMode,
+} from '@/services/calendarApi';
 import { useAdmin } from '@/contexts/AdminContext';
 import { useConfirmDialog } from '@/components/ui/ConfirmDialog';
 import { formatAdminTimestamp } from '@/utils/dateFormat';
@@ -76,6 +79,25 @@ const SCHEDULER_ACCESS_MODE_OPTIONS: Array<{
     label: 'Any permitted scheduler',
     description:
       'Any workspace scheduler inside owner scope can target this calendar, then role, item-type, and wedding filters narrow access.',
+  },
+];
+
+const SYNC_TARGETING_MODE_OPTIONS: Array<{
+  value: CalendarSyncTargetingMode;
+  label: string;
+  description: string;
+}> = [
+  {
+    value: 'automatic_and_manual',
+    label: 'Automatic + manual',
+    description:
+      'This calendar can be selected automatically by sync policy and by explicit scheduler override.',
+  },
+  {
+    value: 'manual_only',
+    label: 'Manual override only',
+    description:
+      'This calendar is never auto-selected by sync policy. It can only be used when a scheduler explicitly picks it.',
   },
 ];
 
@@ -205,6 +227,7 @@ export default function GoogleCalendarConnect({
         | 'allowed_schedule_item_types'
         | 'allowed_wedding_ids'
         | 'scheduler_access_mode'
+        | 'sync_targeting_mode'
         | 'is_shared_in_team_view'
         | 'details_visibility'
         | 'sync_enabled'
@@ -261,6 +284,17 @@ export default function GoogleCalendarConnect({
       connection,
       { scheduler_access_mode: schedulerAccessMode },
       'Calendar scheduling policy updated'
+    );
+  };
+
+  const handleSyncTargetingModeChange = async (
+    connection: CalendarConnection,
+    syncTargetingMode: CalendarSyncTargetingMode
+  ) => {
+    await handleToggle(
+      connection,
+      { sync_targeting_mode: syncTargetingMode },
+      'Calendar targeting mode updated'
     );
   };
 
@@ -446,9 +480,8 @@ export default function GoogleCalendarConnect({
                                 </p>
                                 <p className="text-xs text-slate-500">
                                   Precedence is fixed: base scheduling access, then extra user
-                                  grants, then restrictive role, item-type, and wedding filters.
-                                  Sync policy chooses targets only after a connection survives that
-                                  check.
+                                  grants, then restrictive role, item-type, and wedding filters,
+                                  then targeting mode, and only then sync policy chooses targets.
                                 </p>
                               </div>
 
@@ -477,6 +510,36 @@ export default function GoogleCalendarConnect({
                                   {
                                     SCHEDULER_ACCESS_MODE_OPTIONS.find(
                                       (option) => option.value === connection.scheduler_access_mode
+                                    )?.description
+                                  }
+                                </p>
+                              </label>
+
+                              <label className="block rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-xs text-slate-700">
+                                <span className="mb-2 block text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-400">
+                                  Targeting mode
+                                </span>
+                                <select
+                                  value={connection.sync_targeting_mode}
+                                  onChange={(event) =>
+                                    void handleSyncTargetingModeChange(
+                                      connection,
+                                      event.target.value as CalendarSyncTargetingMode
+                                    )
+                                  }
+                                  disabled={updateLoading}
+                                  className="w-full rounded-lg border border-slate-300 bg-white px-2 py-2 text-xs text-slate-900"
+                                >
+                                  {SYNC_TARGETING_MODE_OPTIONS.map((option) => (
+                                    <option key={option.value} value={option.value}>
+                                      {option.label}
+                                    </option>
+                                  ))}
+                                </select>
+                                <p className="mt-2 text-xs text-slate-500">
+                                  {
+                                    SYNC_TARGETING_MODE_OPTIONS.find(
+                                      (option) => option.value === connection.sync_targeting_mode
                                     )?.description
                                   }
                                 </p>

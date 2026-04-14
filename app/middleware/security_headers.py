@@ -187,6 +187,10 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         user_agent = request.headers.get("user-agent", "")
         path = request.url.path
 
+        # Skip suspicious-request checks for localhost health probes (e.g. Coolify Wget)
+        if client_ip in ("127.0.0.1", "::1") and path.startswith("/health/"):
+            return
+
         indicators = []
         if self._is_suspicious_user_agent(user_agent):
             indicators.append("suspicious_user_agent")

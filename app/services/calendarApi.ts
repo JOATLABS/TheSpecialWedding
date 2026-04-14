@@ -38,6 +38,7 @@ export type CalendarSchedulerAccessMode =
   | 'owner_only'
   | 'owner_and_connection_user'
   | 'workspace_permitted';
+export type CalendarSyncTargetingMode = 'automatic_and_manual' | 'manual_only';
 
 export interface TaskSyncSummary {
   row_count: number;
@@ -119,6 +120,7 @@ export interface CalendarConnection {
   is_primary: boolean;
   is_default_write_target: boolean;
   scheduler_access_mode: CalendarSchedulerAccessMode;
+  sync_targeting_mode: CalendarSyncTargetingMode;
   allowed_scheduler_user_ids: string[];
   allowed_scheduler_roles: CalendarSchedulerRole[];
   allowed_schedule_item_types: ScheduleItemType[];
@@ -494,6 +496,7 @@ export async function updateCalendarConnection(
       | 'allowed_schedule_item_types'
       | 'allowed_wedding_ids'
       | 'scheduler_access_mode'
+      | 'sync_targeting_mode'
       | 'is_shared_in_team_view'
       | 'details_visibility'
       | 'sync_enabled'

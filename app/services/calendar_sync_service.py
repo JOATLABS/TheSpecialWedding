@@ -17,6 +17,7 @@ from app.models.calendar import CalendarSyncPolicy, ScheduleItemType
 from app.models.calendar_connection import (
     CalendarSchedulerAccessMode,
     CalendarSchedulerRole,
+    CalendarSyncTargetingMode,
 )
 from app.models.calendar_sync import CalendarSyncStatusValue
 from app.services.calendar_audit_service import calendar_audit_service
@@ -136,6 +137,16 @@ class CalendarSyncService:
                 return False
 
         return True
+
+    def _connection_allows_automatic_targeting(
+        self,
+        connection_doc: dict[str, Any],
+    ) -> bool:
+        targeting_mode = str(
+            connection_doc.get("sync_targeting_mode")
+            or CalendarSyncTargetingMode.AUTOMATIC_AND_MANUAL.value
+        )
+        return targeting_mode == CalendarSyncTargetingMode.AUTOMATIC_AND_MANUAL.value
 
     def _summarize_sync_docs(self, sync_docs: list[dict[str, Any]]) -> dict[str, Any]:
         status_counts = {
@@ -434,6 +445,11 @@ class CalendarSyncService:
             and self._connection_allows_task(doc, task)
         ]
         allowed_by_id = {str(doc["_id"]): doc for doc in allowed_connections}
+        automatically_selectable_connections = [
+            doc
+            for doc in allowed_connections
+            if self._connection_allows_automatic_targeting(doc)
+        ]
 
         if effective_explicit_ids is not None:
             explicit_targets = [
@@ -458,7 +474,7 @@ class CalendarSyncService:
                 default_connection = next(
                     (
                         doc
-                        for doc in allowed_connections
+                        for doc in automatically_selectable_connections
                         if doc.get("user_id") == assigned_user_id
                         and doc.get("is_default_write_target")
                     ),
@@ -478,7 +494,7 @@ class CalendarSyncService:
             owner_default = next(
                 (
                     doc
-                    for doc in allowed_connections
+                    for doc in automatically_selectable_connections
                     if doc.get("user_id") == owner_id
                     and doc.get("is_default_write_target")
                 ),
