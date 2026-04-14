@@ -311,11 +311,26 @@ Those calls are now versioned in the repo through [`.github/workflows/calendar-s
 
 Default behavior:
 
-- production invite queue runs every 5 minutes
-- production calendar maintenance runs every 15 minutes
+- production invite queue runs every 5 minutes against the production
+  environment-scoped `SCHEDULER_BASE_URL`
+- production calendar maintenance runs every 15 minutes against the same
+  production environment-scoped `SCHEDULER_BASE_URL`
 - staging is manual-only so test scheduling does not spam staging invite recipients
 
 The workflow signs requests with HMAC using the environment-specific scheduler secret. That secret must match the backend `SCHEDULER_HMAC_SECRET` for the same environment.
+The workflow also reads the environment-scoped GitHub Actions variable `SCHEDULER_BASE_URL` for the target API base URL.
+
+Required GitHub configuration:
+
+- environment variable `SCHEDULER_BASE_URL=https://api.staging.thespecialwedding.io`
+  on the `staging` GitHub environment
+- environment variable `SCHEDULER_BASE_URL=https://api.thespecialwedding.io`
+  on the `production` GitHub environment
+
+The scheduler workflow probes `GET /health/readyz` and the scheduler routes
+before triggering jobs. If the configured target is missing, unhealthy, or does
+not expose the scheduler endpoints yet, the run is skipped successfully instead
+of failing.
 
 Manual examples:
 
@@ -336,6 +351,7 @@ Manual examples:
 - [ ] `FRONTEND_URL` and `INTERNAL_API_BASE_URL` set correctly on both frontend apps
 - [ ] Backend env vars separated by environment
 - [ ] GitHub secrets added
+- [ ] GitHub environment variable `SCHEDULER_BASE_URL` set on both environments
 - [ ] `SCHEDULER_HMAC_SECRET` set on both backend environments
 - [ ] Calendar scheduler workflow has production secrets and succeeds on a manual dry run
 - [ ] Dedicated smoke-test accounts created

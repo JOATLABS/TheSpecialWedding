@@ -204,11 +204,20 @@ async def scheduler_health():
     Health check endpoint for scheduler monitoring.
     Does not require authentication.
     """
-    scheduler_configured = bool(os.getenv("SCHEDULER_API_KEY"))
+    hmac_configured = bool(os.getenv("SCHEDULER_HMAC_SECRET"))
+    legacy_key_configured = bool(os.getenv("SCHEDULER_API_KEY"))
+    scheduler_configured = hmac_configured or legacy_key_configured
+    if hmac_configured:
+        auth_mode = "hmac"
+    elif legacy_key_configured:
+        auth_mode = "api_key"
+    else:
+        auth_mode = "disabled"
 
     return {
         "status": "healthy",
         "scheduler_configured": scheduler_configured,
+        "auth_mode": auth_mode,
         "timestamp": datetime.now(timezone.utc).isoformat(),
     }
 
