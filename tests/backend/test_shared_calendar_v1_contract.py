@@ -572,6 +572,82 @@ async def test_sync_targets_workspace_permitted_allows_peer_scheduler() -> None:
 
 
 @pytest.mark.asyncio
+async def test_sync_targets_manual_only_connection_is_not_auto_selected() -> None:
+    service = CalendarSyncService.__new__(CalendarSyncService)
+
+    async def fake_get_connection_docs(_query: dict) -> list[dict]:
+        return [
+            {
+                "_id": "staff-2-manual",
+                "user_id": "staff-2",
+                "owner_planner_id": "owner-1",
+                "scheduler_access_mode": "workspace_permitted",
+                "sync_targeting_mode": "manual_only",
+                "is_default_write_target": True,
+            },
+            {
+                "_id": "owner-default",
+                "user_id": "owner-1",
+                "owner_planner_id": "owner-1",
+                "sync_targeting_mode": "automatic_and_manual",
+                "is_default_write_target": True,
+            },
+        ]
+
+    setattr(service, "_get_connection_docs", fake_get_connection_docs)
+
+    task = {
+        "owner_planner_id": "owner-1",
+        "assigned_user_ids": ["staff-2"],
+        "calendar_sync_policy": "owner_and_assigned",
+    }
+
+    result = await service.resolve_sync_targets(
+        task,
+        actor_user_id="staff-1",
+        actor_is_owner=False,
+        actor_role_scope="editor",
+    )
+
+    assert [str(row["_id"]) for row in result] == ["owner-default"]
+
+
+@pytest.mark.asyncio
+async def test_sync_targets_manual_only_connection_allows_explicit_override() -> None:
+    service = CalendarSyncService.__new__(CalendarSyncService)
+
+    async def fake_get_connection_docs(_query: dict) -> list[dict]:
+        return [
+            {
+                "_id": "staff-2-manual",
+                "user_id": "staff-2",
+                "owner_planner_id": "owner-1",
+                "scheduler_access_mode": "workspace_permitted",
+                "sync_targeting_mode": "manual_only",
+                "is_default_write_target": True,
+            }
+        ]
+
+    setattr(service, "_get_connection_docs", fake_get_connection_docs)
+
+    task = {
+        "owner_planner_id": "owner-1",
+        "assigned_user_ids": ["staff-2"],
+        "calendar_sync_policy": "assigned_only",
+    }
+
+    result = await service.resolve_sync_targets(
+        task,
+        explicit_connection_ids=["staff-2-manual"],
+        actor_user_id="staff-1",
+        actor_is_owner=False,
+        actor_role_scope="editor",
+    )
+
+    assert [str(row["_id"]) for row in result] == ["staff-2-manual"]
+
+
+@pytest.mark.asyncio
 async def test_sync_targets_extra_user_grant_widens_staff_calendar_access() -> None:
     service = CalendarSyncService.__new__(CalendarSyncService)
 
@@ -825,6 +901,37 @@ def test_calendar_event_create_attaches_timezone_to_naive_datetimes() -> None:
     assert payload.end_date is not None
     assert payload.end_date.tzinfo is not None
     assert payload.start_date.utcoffset() == timedelta(hours=-5)
+
+
+def test_calendar_event_create_rejects_legacy_sync_to_google() -> None:
+    with pytest.raises(ValueError) as exc_info:
+        CalendarEventCreate.model_validate(
+            {
+                "title": "Planning Call",
+                "description": None,
+                "start_date": datetime(2026, 4, 8, 9, 0, 0),
+                "end_date": datetime(2026, 4, 8, 10, 0, 0),
+                "reminder_minutes": None,
+                "color": None,
+                "timezone": "America/Chicago",
+                "schedule_item_type": "task",
+                "sync_to_google": True,
+            }
+        )
+
+    assert "sync_to_google is no longer supported" in str(exc_info.value)
+
+
+def test_calendar_event_update_rejects_legacy_sync_to_google() -> None:
+    with pytest.raises(ValueError) as exc_info:
+        CalendarEventUpdate.model_validate(
+            {
+                "timezone": "America/Chicago",
+                "sync_to_google": False,
+            }
+        )
+
+    assert "sync_to_google is no longer supported" in str(exc_info.value)
 
 
 def test_task_response_drops_legacy_google_projection_fields() -> None:

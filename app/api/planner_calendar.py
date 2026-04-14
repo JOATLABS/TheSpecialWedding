@@ -162,6 +162,7 @@ class CalendarConnectionResponse(BaseModel):
     is_primary: bool = False
     is_default_write_target: bool = False
     scheduler_access_mode: str
+    sync_targeting_mode: str
     allowed_scheduler_user_ids: list[str] = Field(default_factory=list)
     allowed_scheduler_roles: list[str] = Field(default_factory=list)
     allowed_schedule_item_types: list[str] = Field(default_factory=list)
@@ -900,6 +901,7 @@ async def update_calendar_connection(
     if not (is_owner or can_manage_all):
         restricted_fields = {
             "scheduler_access_mode",
+            "sync_targeting_mode",
             "allowed_scheduler_user_ids",
             "allowed_scheduler_roles",
             "allowed_schedule_item_types",
@@ -1123,10 +1125,7 @@ async def create_task(
     external_sync_requested = bool(
         task_data.external_sync_requested
         if task_data.external_sync_requested is not None
-        else (
-            task_data.sync_to_google
-            or task_data.schedule_item_type == ScheduleItemType.MEETING.value
-        )
+        else task_data.schedule_item_type == ScheduleItemType.MEETING.value
     )
     assigned_user_ids = task_data.assigned_user_ids
     assigned_user_emails = task_data.assigned_user_emails
@@ -1362,8 +1361,6 @@ async def update_task(
     requested_sync_state = None
     if update_fields.get("external_sync_requested") is not None:
         requested_sync_state = bool(update_fields.pop("external_sync_requested"))
-    elif update_fields.get("sync_to_google") is not None:
-        requested_sync_state = bool(update_fields.pop("sync_to_google"))
     if requested_sync_state is not None:
         update_doc["external_sync_requested"] = requested_sync_state
     if (

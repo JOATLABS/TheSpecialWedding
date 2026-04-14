@@ -233,14 +233,20 @@ class CalendarEventCreate(BaseModel):
     invite_delivery_mode: str = Field(default=InviteDeliveryMode.NONE.value)
     meeting_status: Optional[str] = None
     sync_target_override_enabled: bool = False
-    sync_to_google: bool = Field(
-        default=True, description="Legacy compatibility toggle for task sync"
-    )
     sync_target_connection_ids: list[str] = Field(default_factory=list)
     external_sync_requested: Optional[bool] = Field(
         default=None,
         description="Explicit request to project this task onto external calendars",
     )
+
+    @model_validator(mode="before")
+    @classmethod
+    def reject_legacy_sync_to_google(cls, data: object) -> object:
+        if isinstance(data, dict) and "sync_to_google" in data:
+            raise ValueError(
+                "sync_to_google is no longer supported; use external_sync_requested"
+            )
+        return data
 
     @field_validator("timezone")
     @classmethod
@@ -314,15 +320,20 @@ class CalendarEventUpdate(BaseModel):
     meeting_status: Optional[str] = None
     sync_target_override_enabled: Optional[bool] = None
     sync_target_connection_ids: Optional[list[str]] = None
-    sync_to_google: Optional[bool] = Field(
-        default=None,
-        description="Compatibility toggle for generic task external projection",
-    )
     external_sync_requested: Optional[bool] = Field(
         default=None,
         description="Canonical request to project this task onto external calendars",
     )
     expected_version: Optional[int] = Field(None, ge=1)
+
+    @model_validator(mode="before")
+    @classmethod
+    def reject_legacy_sync_to_google(cls, data: object) -> object:
+        if isinstance(data, dict) and "sync_to_google" in data:
+            raise ValueError(
+                "sync_to_google is no longer supported; use external_sync_requested"
+            )
+        return data
 
     @field_validator("timezone")
     @classmethod

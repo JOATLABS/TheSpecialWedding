@@ -200,9 +200,9 @@ reply_note = _create_reply_note(current_user.email, note_id, data.text)
 
 ### 🟡 MAINTAINABILITY: Inconsistent error handling in Google Calendar sync (Lines 1512-1532, 1611-1618)
 
-**Issue**: Google Calendar sync failures are logged but silently ignored (non-blocking). However, inconsistent patterns:
+**Issue**: The retired pre-v1 planner-side Google sync path logged provider failures but treated them as silent non-blocking behavior. This is historical context only; the canonical planner calendar flow now uses sync rows plus explicit failure state instead of the old `sync_to_google` branch.
 
-**schedule_meeting** (lines 1512-1532):
+**Retired `schedule_meeting` alias flow** (lines 1512-1532 in the historical snapshot):
 ```python
 if data.sync_to_google:
     try:

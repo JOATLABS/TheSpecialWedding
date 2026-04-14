@@ -44,6 +44,13 @@ class CalendarSchedulerAccessMode(str, Enum):
     WORKSPACE_PERMITTED = "workspace_permitted"
 
 
+class CalendarSyncTargetingMode(str, Enum):
+    """Whether a connection can be auto-targeted or only used by explicit override."""
+
+    AUTOMATIC_AND_MANUAL = "automatic_and_manual"
+    MANUAL_ONLY = "manual_only"
+
+
 class CalendarConnectionModel(BaseModel):
     """A single connected external calendar row."""
 
@@ -63,6 +70,9 @@ class CalendarConnectionModel(BaseModel):
     is_default_write_target: bool = False
     scheduler_access_mode: str = Field(
         default=CalendarSchedulerAccessMode.WORKSPACE_DEFAULT.value
+    )
+    sync_targeting_mode: str = Field(
+        default=CalendarSyncTargetingMode.AUTOMATIC_AND_MANUAL.value
     )
     allowed_scheduler_user_ids: list[str] = Field(default_factory=list)
     allowed_scheduler_roles: list[str] = Field(default_factory=list)
@@ -91,6 +101,7 @@ class CalendarConnectionUpdateRequest(BaseModel):
 
     is_default_write_target: Optional[bool] = None
     scheduler_access_mode: Optional[str] = None
+    sync_targeting_mode: Optional[str] = None
     allowed_scheduler_user_ids: Optional[list[str]] = None
     allowed_scheduler_roles: Optional[list[str]] = None
     allowed_schedule_item_types: Optional[list[str]] = None
