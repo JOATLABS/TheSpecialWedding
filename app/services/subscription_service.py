@@ -9,6 +9,9 @@ from app.services.couple_lifecycle_service import (
     COUPLE_PORTAL_STATE_REVOKED,
     couple_lifecycle_service,
 )
+from app.services.planner_access_lifecycle_service import (
+    planner_access_lifecycle_service,
+)
 from app.services.stripe_service import stripe_service
 from app.utils.id_utils import to_object_id
 from app.utils.planner_ownership import build_wedding_owner_query, normalize_query_id
@@ -471,75 +474,25 @@ class SubscriptionService:
                 "couples_notified": 0,
             }
 
-            # Phase 1: Deactivate team members
-            try:
-                from app.services.team_management_service import TeamManagementService
-
-                team_service = TeamManagementService()
-                team_result = await team_service.bulk_deactivate_by_owner(
-                    user_id, "owner_subscription_cancelled"
+            lifecycle_cleanup = (
+                await planner_access_lifecycle_service.suspend_planner_access(
+                    planner_id=user_id,
+                    planner_email=user_email,
+                    team_reason="owner_subscription_cancelled",
                 )
-                cleanup_results["team_members_deactivated"] = team_result.get(
-                    "deactivated_count", 0
-                )
-                logger.info(
-                    f"Deactivated team members for user {user_id}: {team_result}"
-                )
-            except Exception as e:
-                logger.warning(
-                    f"Failed to deactivate team members for user {user_id}: {str(e)}"
-                )
-
-            # Phase 2: Block couple portal access for owned weddings
-            try:
-                couple_result = (
-                    await couple_lifecycle_service.bulk_mark_owner_cancelled(
-                        planner_id=user_id,
-                        planner_email=user_email,
-                    )
-                )
-                cleanup_results["couples_blocked"] = couple_result.get(
-                    "updated_count", 0
-                )
-                logger.info(
-                    f"Blocked couple portal access for user {user_id}: {couple_result}"
-                )
-            except Exception as e:
-                logger.warning(
-                    f"Failed to block couple portal access for user {user_id}: {str(e)}"
-                )
-
-            # Phase 3: Suspend planner data
-            try:
-                from app.services.cascade_delete_service import cascade_delete_service
-
-                suspend_result = await cascade_delete_service.suspend_planner_data(
-                    user_id, user_email
-                )
-                cleanup_results["data_suspended"] = suspend_result
-                logger.info(
-                    f"Suspended planner data for user {user_id}: {suspend_result}"
-                )
-            except Exception as e:
-                logger.warning(
-                    f"Failed to suspend planner data for user {user_id}: {str(e)}"
-                )
-
-            # Phase 4: Pause couple payments
-            try:
-                from app.services.package_service import package_service
-
-                payments_result = await package_service.pause_planner_payment_links(
-                    user_id, user_email
-                )
-                cleanup_results["payments_paused"] = payments_result
-                logger.info(
-                    f"Paused payment links for user {user_id}: {payments_result}"
-                )
-            except Exception as e:
-                logger.warning(
-                    f"Failed to pause payment links for user {user_id}: {str(e)}"
-                )
+            )
+            cleanup_results["team_members_deactivated"] = lifecycle_cleanup.get(
+                "team_members_deactivated", 0
+            )
+            cleanup_results["couples_blocked"] = lifecycle_cleanup.get(
+                "couples_blocked", 0
+            )
+            cleanup_results["data_suspended"] = lifecycle_cleanup.get(
+                "data_suspended", {}
+            )
+            cleanup_results["payments_paused"] = lifecycle_cleanup.get(
+                "payments_paused", {}
+            )
 
             # Phase 5: Send cancellation email to planner
             try:

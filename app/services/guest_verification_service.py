@@ -61,6 +61,14 @@ class GuestVerificationService:
         guest_response.pop("token", None)
         return guest_response
 
+    async def invalidate_wedding_privacy_info(self, slug: Optional[str]) -> None:
+        """Invalidate cached privacy bootstrap data for a wedding slug."""
+        normalized_slug = self._sanitize_input(slug or "", "slug", max_length=100)
+        if not normalized_slug:
+            return
+
+        await cache.delete(CacheKeys.wedding_privacy_info(normalized_slug))
+
     async def _load_rsvp_data(self, guest_id: str) -> Optional[Dict[str, Any]]:
         existing_rsvp = await self.rsvp_collection.find_one(
             {

@@ -27,7 +27,7 @@ jobs:
       RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
       ALERT_EMAIL: ${{ secrets.ALERT_EMAIL }}
       ROOT_ADMIN_EMAIL: ${{ secrets.ROOT_ADMIN_EMAIL }}
-      ADMIN_TOKEN: ${{ secrets.ADMIN_TOKEN }}
+      PLATFORM_METRICS_TOKEN: ${{ secrets.PLATFORM_METRICS_TOKEN }}
       BACKUP_SECRET: ${{ secrets.BACKUP_SECRET }}
       UPTIME_KV_NAMESPACE_ID: ${{ vars.CLOUDFLARE_UPTIME_KV_NAMESPACE_ID || secrets.CLOUDFLARE_UPTIME_KV_NAMESPACE_ID }}
 
@@ -52,7 +52,7 @@ jobs:
             RESEND_API_KEY
             ALERT_EMAIL
             ROOT_ADMIN_EMAIL
-            ADMIN_TOKEN
+            PLATFORM_METRICS_TOKEN
             BACKUP_SECRET
             UPTIME_KV_NAMESPACE_ID
           )
@@ -88,7 +88,7 @@ jobs:
           set -euo pipefail
           npx --yes "wrangler@${WRANGLER_VERSION}" deploy --config cloudflare-workers/metrics-snapshot.wrangler.toml
           printf '%s' "$NEXT_PUBLIC_API_BASE_URL" | npx --yes "wrangler@${WRANGLER_VERSION}" secret put NEXT_PUBLIC_API_BASE_URL --config cloudflare-workers/metrics-snapshot.wrangler.toml
-          printf '%s' "$ADMIN_TOKEN" | npx --yes "wrangler@${WRANGLER_VERSION}" secret put ADMIN_TOKEN --config cloudflare-workers/metrics-snapshot.wrangler.toml
+          printf '%s' "$PLATFORM_METRICS_TOKEN" | npx --yes "wrangler@${WRANGLER_VERSION}" secret put PLATFORM_METRICS_TOKEN --config cloudflare-workers/metrics-snapshot.wrangler.toml
           printf '%s' "$RESEND_API_KEY" | npx --yes "wrangler@${WRANGLER_VERSION}" secret put RESEND_API_KEY --config cloudflare-workers/metrics-snapshot.wrangler.toml
           printf '%s' "$ALERT_EMAIL" | npx --yes "wrangler@${WRANGLER_VERSION}" secret put ALERT_EMAIL --config cloudflare-workers/metrics-snapshot.wrangler.toml
           printf '%s' "$ROOT_ADMIN_EMAIL" | npx --yes "wrangler@${WRANGLER_VERSION}" secret put ROOT_ADMIN_EMAIL --config cloudflare-workers/metrics-snapshot.wrangler.toml

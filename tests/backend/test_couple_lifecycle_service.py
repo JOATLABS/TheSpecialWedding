@@ -178,3 +178,46 @@ async def test_owner_identity_resolution_does_not_fallback_to_couple_mirrors(
         "planner_id": None,
         "planner_email": None,
     }
+
+
+@pytest.mark.asyncio
+async def test_owner_is_blocked_ignores_stale_wedding_suspension_for_active_planner(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    service = CoupleLifecycleService()
+
+    async def fake_resolve(planner_id, planner_email):
+        return {
+            "planner_id": "owner-1",
+            "planner_email": "owner@example.com",
+        }
+
+    class FakeUsersCollection:
+        async def find_one(self, query, projection=None):
+            return {
+                "_id": "owner-1",
+                "email": "owner@example.com",
+                "is_active": True,
+                "subscription_status": "active",
+            }
+
+    class FakeSubscriptionsCollection:
+        async def find_one(self, query, projection=None):
+            return None
+
+    monkeypatch.setattr(
+        couple_lifecycle_module, "resolve_planner_identity", fake_resolve
+    )
+    service.users_collection = FakeUsersCollection()
+    service.subscriptions_collection = FakeSubscriptionsCollection()
+
+    blocked = await service._owner_is_blocked(
+        {"wedding_id": "wedding-1"},
+        wedding={
+            "assigned_planner_id": "owner-1",
+            "assigned_planner_email": "owner@example.com",
+            "data_access_suspended_reason": "planner_subscription_cancelled",
+        },
+    )
+
+    assert blocked is False

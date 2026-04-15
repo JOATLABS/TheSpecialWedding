@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from datetime import datetime, timezone
 from typing import Any, Optional
 
@@ -31,6 +32,8 @@ COUPLE_PORTAL_MUTABLE_STATES = {
     COUPLE_PORTAL_STATE_REVOKED,
     COUPLE_PORTAL_STATE_OWNER_CANCELLED,
 }
+
+logger = logging.getLogger(__name__)
 
 
 class CoupleLifecycleService:
@@ -79,12 +82,9 @@ class CoupleLifecycleService:
     async def _owner_is_blocked(
         self, couple: dict, wedding: Optional[dict] = None
     ) -> bool:
-        if (
-            wedding
-            and wedding.get("data_access_suspended_reason")
-            == "planner_subscription_cancelled"
-        ):
-            return True
+        suspended_reason = (
+            wedding.get("data_access_suspended_reason") if wedding else None
+        )
 
         owner_identity = await self._resolve_owner_identity(couple, wedding=wedding)
         planner_id = owner_identity.get("planner_id")
@@ -119,12 +119,19 @@ class CoupleLifecycleService:
                 {"user_id": planner_user_id},
                 {"status": 1},
             )
-            if (
-                subscription_record
-                and normalize_subscription_status(subscription_record.get("status"))
-                in PLANNER_BLOCKED_SUBSCRIPTION_STATUSES
-            ):
-                return True
+        if (
+            subscription_record
+            and normalize_subscription_status(subscription_record.get("status"))
+            in PLANNER_BLOCKED_SUBSCRIPTION_STATUSES
+        ):
+            return True
+
+        if suspended_reason == "planner_subscription_cancelled":
+            logger.warning(
+                "Ignoring stale wedding suspension flag for active planner %s on wedding %s",
+                planner_user_id or planner.get("email"),
+                couple.get("wedding_id"),
+            )
 
         return False
 

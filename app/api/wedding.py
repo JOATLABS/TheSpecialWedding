@@ -16,6 +16,7 @@ from app.dependencies.auth_extended import (
 from app.models.subscription import SubscriptionStatus
 from app.models.wedding import WeddingCreateModel
 from app.services.cascade_delete_service import cascade_delete_service
+from app.services.guest_verification_service import GuestVerificationService
 from app.services.sse_manager import sse_manager
 from app.services.stripe_service import stripe_service
 from app.services.subscription_service import SubscriptionService
@@ -30,6 +31,7 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 wedding_service = WeddingService()
 subscription_service = SubscriptionService()
+guest_verification_service = GuestVerificationService()
 
 
 def _get_planner_scope(
@@ -47,7 +49,7 @@ async def _sync_couple_owner_mirrors(wedding_id: str) -> None:
         {"assigned_planner_id": 1, "assigned_planner_email": 1},
     )
     owner_id, owner_email = extract_wedding_owner_identity(wedding)
-    set_fields = {"updated_at": datetime.now(timezone.utc)}
+    set_fields: dict = {"updated_at": datetime.now(timezone.utc)}
     if owner_id:
         set_fields["planner_id"] = owner_id
     if owner_email:
@@ -264,6 +266,10 @@ async def update_wedding_admin(
     if not await check_wedding_access(current_user, wedding_id):
         raise HTTPException(status_code=403, detail="Access to this wedding denied")
 
+    existing_wedding = await wedding_service.get_wedding(wedding_id)
+    previous_slug = existing_wedding.get("slug")
+    should_invalidate_privacy = "privacy_settings" in wedding or "slug" in wedding
+
     # Add update metadata
     wedding["updated_by"] = current_user.email
     if not current_user.is_root_admin:
@@ -275,6 +281,16 @@ async def update_wedding_admin(
 
     result = await wedding_service.update_wedding(wedding_id, wedding)
     await _sync_couple_owner_mirrors(wedding_id)
+
+    if should_invalidate_privacy:
+        updated_slug = wedding.get("slug") or previous_slug
+        slugs_to_invalidate = []
+        for slug in (previous_slug, updated_slug):
+            if slug and slug not in slugs_to_invalidate:
+                slugs_to_invalidate.append(slug)
+
+        for slug in slugs_to_invalidate:
+            await guest_verification_service.invalidate_wedding_privacy_info(slug)
 
     # Broadcast SSE data-change so planner UI updates
     await sse_manager.broadcast_data_change(

@@ -20,7 +20,8 @@ ANALYTICS_INDEX = "special-wedding"
 # All env vars are set via GitHub secrets during deployment (see deploy-workers.yml)
 # Required secrets in GitHub:
 # - NEXT_PUBLIC_API_BASE_URL: Backend API URL (e.g., https://api.thespecialwedding.io)
-# - ADMIN_TOKEN: JWT token for ROOT_ADMIN authentication
+# - PLATFORM_METRICS_TOKEN: Shared bearer token for /metrics/snapshot ingestion.
+#   Must match the backend `PLATFORM_METRICS_TOKEN` env var. Rotate on both sides together.
 # - RESEND_API_KEY: For sending alert emails
 # - ALERT_EMAIL: From address for alerts
 # - ROOT_ADMIN_EMAIL: Recipient for alerts
