@@ -476,11 +476,12 @@ describe('vendorContractsApi request normalization', () => {
   });
 
   it('getPublicContract uses the canonical path-token route', async () => {
-    const fetchMock = mock.fn(async (input: RequestInfo | URL) => {
+    const fetchMock = mock.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       assert.equal(
         input.toString(),
         'https://api.example.com/vendor-contract/public/contracts/contract_1/raw-token'
       );
+      assert.equal(init?.cache, 'no-store');
 
       return new Response(
         JSON.stringify({
