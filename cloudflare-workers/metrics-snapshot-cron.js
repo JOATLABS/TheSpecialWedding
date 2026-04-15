@@ -10,7 +10,9 @@
  * 3. Paste this code
  * 4. Add environment variables (via GitHub secrets):
  *    - NEXT_PUBLIC_API_BASE_URL: (backend API URL)
- *    - ADMIN_TOKEN: (JWT token for ROOT_ADMIN - get from login)
+ *    - PLATFORM_METRICS_TOKEN: Shared secret that matches the backend
+ *      `PLATFORM_METRICS_TOKEN` env var. Scoped to metrics ingestion only
+ *      (NOT a user JWT). Rotate by regenerating and updating both sides.
  *    - Optional: DEPLOYMENT_ENV (production, staging, development)
  *    - Optional: ANALYTICS_INDEX (sampling key for Analytics Engine)
  * 5. Bind Workers Analytics Engine dataset (Wrangler automatically provisions
@@ -31,10 +33,10 @@ const worker = {
     console.log('Saving metrics snapshot...');
 
     try {
-      const response = await fetch(`${env.NEXT_PUBLIC_API_BASE_URL}/admin/platform/metrics/snapshot`, {
+      const response = await fetch(`${env.NEXT_PUBLIC_API_BASE_URL}/metrics/snapshot`, {
         method: 'POST',
         headers: {
-          Authorization: `Bearer ${env.ADMIN_TOKEN}`,
+          Authorization: `Bearer ${env.PLATFORM_METRICS_TOKEN}`,
           'Content-Type': 'application/json',
         },
       });

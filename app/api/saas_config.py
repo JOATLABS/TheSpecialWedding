@@ -5,8 +5,14 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 
 from app.core.database import mongo
 from app.dependencies.auth_extended import ExtendedAuthUser, require_root_admin
-from app.models.subscription import ACTIVE_SUBSCRIPTION_STATUSES
+from app.models.subscription import (
+    ACTIVE_SUBSCRIPTION_STATUSES,
+    normalize_subscription_status,
+)
 from app.services.platform_metrics_service import PlatformMetricsService
+from app.services.planner_access_lifecycle_service import (
+    planner_access_lifecycle_service,
+)
 from app.utils.pydantic_objectid import PyObjectId
 
 router = APIRouter()
@@ -552,6 +558,8 @@ async def toggle_planner_status(
             raise HTTPException(status_code=404, detail="Wedding planner not found")
 
         new_status = not planner.get("is_active", True)
+        planner_email = planner.get("email", "")
+        now = datetime.now(timezone.utc)
 
         # Update status
         await mongo.get_users_collection().update_one(
@@ -560,13 +568,41 @@ async def toggle_planner_status(
                 "$set": {
                     "is_active": new_status,
                     "updated_by": current_user.email,
-                    "updated_at": datetime.now(timezone.utc),
+                    "updated_at": now,
                 }
             },
         )
+
+        subscription_status = normalize_subscription_status(
+            planner.get("subscription_status")
+        )
+
+        if new_status and subscription_status in ACTIVE_SUBSCRIPTION_STATUSES:
+            lifecycle_sync = await (
+                planner_access_lifecycle_service.restore_planner_access(
+                    planner_id=planner_id,
+                    planner_email=planner_email,
+                )
+            )
+        elif new_status:
+            lifecycle_sync = {
+                "skipped": True,
+                "reason": "planner_subscription_not_restored",
+                "detail": "Planner account was activated, but downstream access remains suspended until the subscription is restored.",
+            }
+        else:
+            lifecycle_sync = (
+                await planner_access_lifecycle_service.suspend_planner_access(
+                    planner_id=planner_id,
+                    planner_email=planner_email,
+                    team_reason="root_admin_deactivated",
+                )
+            )
+
         return {
             "message": f"Planner {'activated' if new_status else 'deactivated'} successfully",
             "new_status": new_status,
+            "lifecycle_sync": lifecycle_sync,
         }
     except HTTPException:
         raise

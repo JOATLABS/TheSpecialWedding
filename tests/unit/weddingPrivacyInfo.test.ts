@@ -3,8 +3,6 @@ import assert from 'node:assert/strict';
 
 process.env.NEXT_PUBLIC_API_BASE_URL = 'https://api.example.com/admin';
 process.env.INTERNAL_API_BASE_URL = 'http://127.0.0.1:8000';
-process.env.WEDDING_PRIVACY_INFO_REVALIDATE_SECONDS = '45';
-
 let fetchWeddingPrivacyInfo: typeof import('../../app/utils/weddingPrivacyInfo')['fetchWeddingPrivacyInfo'];
 
 const originalFetch = globalThis.fetch;
@@ -63,10 +61,7 @@ describe('fetchWeddingPrivacyInfo', () => {
         'http://127.0.0.1:8000/weddings/privacy-info/jordan-and-alex',
       );
       assert.deepEqual(init, {
-        next: {
-          revalidate: 45,
-          tags: ['wedding-privacy:jordan-and-alex'],
-        },
+        cache: 'no-store',
       });
       return new Response(JSON.stringify(payload), { status: 200 });
     }) as unknown as typeof fetch;

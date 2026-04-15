@@ -1,5 +1,3 @@
-import { cache } from 'react';
-
 import { getServerApiBaseUrl } from '@/utils/env';
 import { isNonWeddingSlug } from '@/utils/slug-constants';
 
@@ -28,15 +26,7 @@ export type WeddingPrivacyInfoResult =
   | { kind: 'not_found' }
   | { kind: 'error'; status: number | null; message: string };
 
-function getPrivacyInfoRevalidateSeconds(): number {
-  const parsed = Number.parseInt(process.env.WEDDING_PRIVACY_INFO_REVALIDATE_SECONDS ?? '30', 10);
-  if (Number.isFinite(parsed) && parsed > 0) {
-    return parsed;
-  }
-  return 30;
-}
-
-export const fetchWeddingPrivacyInfo = cache(async (slug: string): Promise<WeddingPrivacyInfoResult> => {
+export async function fetchWeddingPrivacyInfo(slug: string): Promise<WeddingPrivacyInfoResult> {
   if (isNonWeddingSlug(slug)) {
     return { kind: 'not_found' };
   }
@@ -46,10 +36,7 @@ export const fetchWeddingPrivacyInfo = cache(async (slug: string): Promise<Weddi
 
   try {
     const response = await fetch(`${apiUrl}/weddings/privacy-info/${slug}`, {
-      next: {
-        revalidate: getPrivacyInfoRevalidateSeconds(),
-        tags: [`wedding-privacy:${slug}`],
-      },
+      cache: 'no-store',
     });
 
     if (response.status === 404) {
@@ -87,4 +74,4 @@ export const fetchWeddingPrivacyInfo = cache(async (slug: string): Promise<Weddi
       message: `Privacy bootstrap request failed: ${message}`,
     };
   }
-});
+}

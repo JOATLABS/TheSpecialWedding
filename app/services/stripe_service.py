@@ -18,6 +18,9 @@ from app.services.couple_lifecycle_service import (
     couple_lifecycle_service,
 )
 from app.services.email_service_resend import ResendEmailService
+from app.services.planner_access_lifecycle_service import (
+    planner_access_lifecycle_service,
+)
 from app.utils.id_utils import to_object_id
 from app.utils.planner_ownership import (
     build_wedding_owner_query,
@@ -1081,80 +1084,23 @@ class StripeService:
 
         user_email = user.get("email", "")
 
-        # Phase 1: Reactivate team members
-        try:
-            from app.services.team_management_service import TeamManagementService
-
-            team_service = TeamManagementService()
-            team_result = await team_service.bulk_reactivate_by_owner(owner_id=user_id)
-            logger.info(
-                "[Reactivation] Phase 1 complete: reactivated %d team members for user %s",
-                team_result.get("reactivated_count", 0),
-                user_id,
-            )
-        except Exception as e:
-            logger.error(
-                "[Reactivation] Phase 1 (team reactivation) failed for user %s: %s",
-                user_id,
-                str(e),
-            )
-
-        # Phase 2: Restore couple portal access previously blocked by owner cancellation
-        try:
-            couple_result = await couple_lifecycle_service.bulk_restore_owner_cancelled(
+        lifecycle_result = (
+            await planner_access_lifecycle_service.restore_planner_access(
                 planner_id=user_id,
                 planner_email=user_email,
             )
-            logger.info(
-                "[Reactivation] Phase 2 complete: restored %d couple accounts for user %s",
-                couple_result.get("updated_count", 0),
-                user_id,
-            )
-        except Exception as e:
+        )
+        if lifecycle_result.get("errors"):
             logger.error(
-                "[Reactivation] Phase 2 (couple restore) failed for user %s: %s",
+                "[Reactivation] Planner access restore completed with errors for user %s: %s",
                 user_id,
-                str(e),
+                lifecycle_result["errors"],
             )
-
-        # Phase 3: Unsuspend planner data
-        try:
-            from app.services.cascade_delete_service import CascadeDeleteService
-
-            cascade_service = CascadeDeleteService()
-            data_result = await cascade_service.unsuspend_planner_data(
-                planner_id=user_id, planner_email=user_email
-            )
+        else:
             logger.info(
-                "[Reactivation] Phase 3 complete: unsuspended data for user %s — %s",
+                "[Reactivation] Planner access restore completed for user %s: %s",
                 user_id,
-                str(data_result),
-            )
-        except Exception as e:
-            logger.error(
-                "[Reactivation] Phase 3 (data unsuspend) failed for user %s: %s",
-                user_id,
-                str(e),
-            )
-
-        # Phase 4: Resume payment links & scheduled payments
-        try:
-            from app.services.package_service import PackageService
-
-            package_service = PackageService()
-            payment_result = await package_service.resume_planner_payment_links(
-                planner_id=user_id, planner_email=user_email
-            )
-            logger.info(
-                "[Reactivation] Phase 4 complete: resumed payments for user %s — %s",
-                user_id,
-                str(payment_result),
-            )
-        except Exception as e:
-            logger.error(
-                "[Reactivation] Phase 4 (payment resume) failed for user %s: %s",
-                user_id,
-                str(e),
+                lifecycle_result,
             )
 
         # Phase 5: Clear the cancellation and reactivation-in-progress flags
@@ -1868,60 +1814,24 @@ class StripeService:
             logger.warning(f"Failed to fetch user {user_id}: {str(e)}")
             return {"status": "success", "subscription_id": stripe_sub_id}
 
-        # Phase 1: Deactivate team members
-        try:
-            from app.services.team_management_service import TeamManagementService
-
-            team_service = TeamManagementService()
-            team_result = await team_service.bulk_deactivate_by_owner(
-                user_id, "webhook_subscription_cancelled"
-            )
-            logger.info(f"Deactivated team members for user {user_id}: {team_result}")
-        except Exception as e:
-            logger.warning(
-                f"Failed to deactivate team members for user {user_id}: {str(e)}"
-            )
-
-        # Phase 2: Block couple portal access for owned weddings
-        try:
-            couple_result = await couple_lifecycle_service.bulk_mark_owner_cancelled(
+        lifecycle_result = (
+            await planner_access_lifecycle_service.suspend_planner_access(
                 planner_id=user_id,
                 planner_email=user_email,
+                team_reason="webhook_subscription_cancelled",
             )
-            logger.info(
-                "Blocked couple portal access for user %s: %s",
+        )
+        if lifecycle_result.get("errors"):
+            logger.warning(
+                "Planner access suspension completed with errors for user %s: %s",
                 user_id,
-                str(couple_result),
+                lifecycle_result["errors"],
             )
-        except Exception as e:
-            logger.warning(
-                f"Failed to block couple portal access for user {user_id}: {str(e)}"
-            )
-
-        # Phase 3: Suspend planner data
-        try:
-            from app.services.cascade_delete_service import cascade_delete_service
-
-            suspend_result = await cascade_delete_service.suspend_planner_data(
-                user_id, user_email
-            )
-            logger.info(f"Suspended planner data for user {user_id}: {suspend_result}")
-        except Exception as e:
-            logger.warning(
-                f"Failed to suspend planner data for user {user_id}: {str(e)}"
-            )
-
-        # Phase 4: Pause couple payments
-        try:
-            from app.services.package_service import package_service
-
-            payments_result = await package_service.pause_planner_payment_links(
-                user_id, user_email
-            )
-            logger.info(f"Paused payment links for user {user_id}: {payments_result}")
-        except Exception as e:
-            logger.warning(
-                f"Failed to pause payment links for user {user_id}: {str(e)}"
+        else:
+            logger.info(
+                "Planner access suspension completed for user %s: %s",
+                user_id,
+                lifecycle_result,
             )
 
         # Phase 5: Send cancellation email to planner
