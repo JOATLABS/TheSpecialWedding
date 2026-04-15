@@ -6,6 +6,10 @@ from fastapi.responses import JSONResponse
 from app.dependencies.auth_extended import ExtendedAuthUser, get_current_user_extended
 from app.models.admin_user import AdminLoginModel
 from app.services.auth_service import AuthService
+from app.utils.planner_billing_scope import (
+    is_planner_billing_role,
+    strip_planner_billing_fields,
+)
 from app.utils.auth_utils import clear_auth_cookie, create_access_token, set_auth_cookie
 from app.utils.response import dict_response
 from app.utils.serializers import serialize_mongo_doc
@@ -61,6 +65,9 @@ async def get_current_user_profile(
     """Get current user profile information with cache-busting headers"""
     # Serialize user_data first to handle all datetime and ObjectId fields recursively
     serialized_user_data = serialize_mongo_doc(current_user.user_data) or {}
+    if not is_planner_billing_role(current_user.role):
+        serialized_user_data = strip_planner_billing_fields(serialized_user_data)
+
     profile_data = {
         "id": serialized_user_data.get("_id", ""),
         "email": current_user.email,
@@ -85,9 +92,17 @@ async def get_current_user_profile(
         "onboarding_steps_completed": serialized_user_data.get(
             "onboarding_steps_completed", []
         ),
-        # Subscription fields for billing and access control
-        "subscription_status": serialized_user_data.get("subscription_status"),
-        "trial_end_date": serialized_user_data.get("trial_end_date"),
+        # Planner billing fields are exposed only to planner accounts.
+        "subscription_status": (
+            serialized_user_data.get("subscription_status")
+            if is_planner_billing_role(current_user.role)
+            else None
+        ),
+        "trial_end_date": (
+            serialized_user_data.get("trial_end_date")
+            if is_planner_billing_role(current_user.role)
+            else None
+        ),
         "_subscription_blocked": serialized_user_data.get(
             "_subscription_blocked", False
         ),

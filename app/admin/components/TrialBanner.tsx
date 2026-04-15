@@ -1,63 +1,16 @@
 'use client';
 
-import React, { useMemo } from 'react';
+import React from 'react';
 import { useAdmin } from '@/contexts/AdminContext';
 import { useRouter } from 'next/navigation';
 import { AlertTriangle, Clock, XCircle } from 'lucide-react';
-import { isBlockedSubscriptionStatus, normalizeSubscriptionStatus } from '@/utils/subscriptionStatus';
+import { getTrialBannerState } from './trialBannerState';
 
 export default function TrialBanner() {
   const { userProfile } = useAdmin();
   const router = useRouter();
 
-  const bannerState = useMemo(() => {
-    if (!userProfile) return null;
-
-    // Support both data paths: user_data (full profile) and top-level fields
-    const ud = userProfile.user_data || {};
-    const status = normalizeSubscriptionStatus(ud.subscription_status || userProfile.subscription_status);
-    const trialEnd = ud.trial_end_date || userProfile.trial_end_date;
-
-    if (!status) return null;
-
-    // Show banner for unpaid/expired/blocked users
-    if (isBlockedSubscriptionStatus(status)) {
-      return {
-        type: 'expired' as const,
-        message:
-          ud._subscription_block_reason ||
-          (status === 'inactive'
-            ? 'Choose a plan and complete checkout to access the platform.'
-            : 'Your subscription needs attention.'),
-        urgent: true,
-      };
-    }
-
-    // Show countdown banner for trial users within 3 days of expiration
-    if (status === 'trial' && trialEnd) {
-      const endDate = new Date(trialEnd);
-      const now = new Date();
-      const daysLeft = Math.ceil((endDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
-
-      if (daysLeft <= 0) {
-        return {
-          type: 'expired' as const,
-          message: 'Your free trial has ended. Upgrade now to keep your data.',
-          urgent: true,
-        };
-      }
-
-      if (daysLeft <= 3) {
-        return {
-          type: 'warning' as const,
-          message: `Your free trial ends in ${daysLeft} day${daysLeft !== 1 ? 's' : ''}. Upgrade now to avoid losing access.`,
-          urgent: daysLeft <= 1,
-        };
-      }
-    }
-
-    return null;
-  }, [userProfile]);
+  const bannerState = getTrialBannerState(userProfile);
 
   if (!bannerState) return null;
 
