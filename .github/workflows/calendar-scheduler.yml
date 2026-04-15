@@ -112,16 +112,26 @@ jobs:
         run: |
           set -euo pipefail
 
-          BASE_URL="${SCHEDULER_BASE_URL:-}"
+          BASE_URL="$(printf '%s' "${SCHEDULER_BASE_URL:-}" | tr -d '\r\n' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
           if [ -z "$BASE_URL" ]; then
             echo "available=false" >> "$GITHUB_OUTPUT"
             echo "reason=SCHEDULER_BASE_URL is not configured for the production environment." >> "$GITHUB_OUTPUT"
             exit 0
           fi
 
-          READYZ_STATUS="$(curl -sS -o /tmp/prod_readyz_body.txt -w '%{http_code}' "${BASE_URL%/}/health/readyz" || true)"
+          if [[ ! "$BASE_URL" =~ ^https?:// ]]; then
+            echo "available=false" >> "$GITHUB_OUTPUT"
+            echo "reason=SCHEDULER_BASE_URL must start with http:// or https:// for the production environment." >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          READYZ_BODY_FILE="$(mktemp)"
+          READYZ_STATUS="$(curl -sS -o "$READYZ_BODY_FILE" -w '%{http_code}' "${BASE_URL%/}/health/readyz" || true)"
           if [ "$READYZ_STATUS" != "200" ]; then
-            BODY="$(tr '\n' ' ' </tmp/prod_readyz_body.txt 2>/dev/null | cut -c1-200)"
+            BODY=""
+            if [ -f "$READYZ_BODY_FILE" ]; then
+              BODY="$(tr '\n' ' ' <"$READYZ_BODY_FILE" | cut -c1-200)"
+            fi
             echo "available=false" >> "$GITHUB_OUTPUT"
             echo "reason=Backend readiness check failed for ${BASE_URL%/}/health/readyz (HTTP ${READYZ_STATUS:-000}${BODY:+: ${BODY}})." >> "$GITHUB_OUTPUT"
             exit 0
@@ -131,14 +141,18 @@ jobs:
             local path="$1"
             local label="$2"
             local status
-            status="$(curl -sS -o /tmp/scheduler_probe_body.txt -w '%{http_code}' -X POST "${BASE_URL%/}${path}" || true)"
+            local body_file
+            local body=""
+            body_file="$(mktemp)"
+            status="$(curl -sS -o "$body_file" -w '%{http_code}' -X POST "${BASE_URL%/}${path}" || true)"
             case "$status" in
               200|202|401)
                 return 0
                 ;;
               *)
-                local body=""
-                body="$(tr '\n' ' ' </tmp/scheduler_probe_body.txt 2>/dev/null | cut -c1-200)"
+                if [ -f "$body_file" ]; then
+                  body="$(tr '\n' ' ' <"$body_file" | cut -c1-200)"
+                fi
                 echo "available=false" >> "$GITHUB_OUTPUT"
                 echo "reason=${label} is not available at ${BASE_URL%/}${path} (HTTP ${status:-000}${body:+: ${body}})." >> "$GITHUB_OUTPUT"
                 exit 0
@@ -227,16 +241,26 @@ jobs:
         run: |
           set -euo pipefail
 
-          BASE_URL="${SCHEDULER_BASE_URL:-}"
+          BASE_URL="$(printf '%s' "${SCHEDULER_BASE_URL:-}" | tr -d '\r\n' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
           if [ -z "$BASE_URL" ]; then
             echo "available=false" >> "$GITHUB_OUTPUT"
             echo "reason=SCHEDULER_BASE_URL is not configured for the staging environment." >> "$GITHUB_OUTPUT"
             exit 0
           fi
 
-          READYZ_STATUS="$(curl -sS -o /tmp/staging_readyz_body.txt -w '%{http_code}' "${BASE_URL%/}/health/readyz" || true)"
+          if [[ ! "$BASE_URL" =~ ^https?:// ]]; then
+            echo "available=false" >> "$GITHUB_OUTPUT"
+            echo "reason=SCHEDULER_BASE_URL must start with http:// or https:// for the staging environment." >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          READYZ_BODY_FILE="$(mktemp)"
+          READYZ_STATUS="$(curl -sS -o "$READYZ_BODY_FILE" -w '%{http_code}' "${BASE_URL%/}/health/readyz" || true)"
           if [ "$READYZ_STATUS" != "200" ]; then
-            BODY="$(tr '\n' ' ' </tmp/staging_readyz_body.txt 2>/dev/null | cut -c1-200)"
+            BODY=""
+            if [ -f "$READYZ_BODY_FILE" ]; then
+              BODY="$(tr '\n' ' ' <"$READYZ_BODY_FILE" | cut -c1-200)"
+            fi
             echo "available=false" >> "$GITHUB_OUTPUT"
             echo "reason=Backend readiness check failed for ${BASE_URL%/}/health/readyz (HTTP ${READYZ_STATUS:-000}${BODY:+: ${BODY}})." >> "$GITHUB_OUTPUT"
             exit 0
@@ -246,14 +270,18 @@ jobs:
             local path="$1"
             local label="$2"
             local status
-            status="$(curl -sS -o /tmp/scheduler_probe_body.txt -w '%{http_code}' -X POST "${BASE_URL%/}${path}" || true)"
+            local body_file
+            local body=""
+            body_file="$(mktemp)"
+            status="$(curl -sS -o "$body_file" -w '%{http_code}' -X POST "${BASE_URL%/}${path}" || true)"
             case "$status" in
               200|202|401)
                 return 0
                 ;;
               *)
-                local body=""
-                body="$(tr '\n' ' ' </tmp/scheduler_probe_body.txt 2>/dev/null | cut -c1-200)"
+                if [ -f "$body_file" ]; then
+                  body="$(tr '\n' ' ' <"$body_file" | cut -c1-200)"
+                fi
                 echo "available=false" >> "$GITHUB_OUTPUT"
                 echo "reason=${label} is not available at ${BASE_URL%/}${path} (HTTP ${status:-000}${body:+: ${body}})." >> "$GITHUB_OUTPUT"
                 exit 0

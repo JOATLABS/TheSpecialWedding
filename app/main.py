@@ -979,6 +979,7 @@ async def add_cache_headers(request: Request, call_next):
             or path.startswith("/couple-portal/")
             or path.startswith("/couple/")
             or path.startswith("/admin/")
+            or path.startswith("/vendor-contract/")
         ):
             # All dynamic API/portal endpoints — no caching
             response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"

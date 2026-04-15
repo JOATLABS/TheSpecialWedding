@@ -5,6 +5,11 @@ export interface PublicContractErrorState {
   isReplacedVersion: boolean;
 }
 
+export interface PublicContractErrorPayload {
+  detail?: string;
+  message?: string;
+}
+
 export function resolveVendorContractAccessToken(
   routeToken?: string | null,
   queryToken?: string | null
@@ -46,6 +51,26 @@ export function getPublicContractErrorState(status: number): PublicContractError
     hint: 'If you believe this is an error, please contact the wedding planner who sent you this contract.',
     isReplacedVersion: false,
   };
+}
+
+export function getPublicContractSignErrorMessage(
+  status: number,
+  payload?: PublicContractErrorPayload | null
+): string {
+  if (status === 410) {
+    return getPublicContractErrorState(410).message;
+  }
+
+  const detail = payload?.detail?.trim() || payload?.message?.trim();
+  if (detail) {
+    return detail;
+  }
+
+  if (status === 503) {
+    return 'Contract signing is temporarily unavailable. Please try again later.';
+  }
+
+  return "We couldn't complete the signature. Please try again.";
 }
 
 export function isPublicContractAlreadySigned(status?: string | null): boolean {

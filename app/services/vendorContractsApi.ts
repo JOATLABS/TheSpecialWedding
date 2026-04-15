@@ -763,7 +763,10 @@ export async function getPublicContract(
   accessToken: string
 ): Promise<PublicContract> {
   const response = await fetch(
-    `${API_BASE}/vendor-contract/public/contracts/${contractId}/${encodeURIComponent(accessToken)}`
+    `${API_BASE}/vendor-contract/public/contracts/${contractId}/${encodeURIComponent(accessToken)}`,
+    {
+      cache: 'no-store',
+    }
   );
 
   if (!response.ok) {

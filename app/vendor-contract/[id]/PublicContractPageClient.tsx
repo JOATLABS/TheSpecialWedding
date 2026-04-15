@@ -7,6 +7,7 @@ import VendorContractPreview from '@/components/contracts/VendorContractPreview'
 import {
   canShowPublicContractSignControls,
   getPublicContractErrorState,
+  getPublicContractSignErrorMessage,
   isPublicContractAlreadySigned,
   resolveVendorContractAccessToken,
 } from '../publicContractPageState';
@@ -84,11 +85,15 @@ function PublicContractPageContent({
     }
 
     setLoading(true);
+    setError(null);
     setIsReplacedVersion(false);
     try {
       const API_BASE = getApiBaseUrl();
       const response = await fetchImpl(
         `${API_BASE}/vendor-contract/public/contracts/${contractId}/${encodeURIComponent(token)}`,
+        {
+          cache: 'no-store',
+        },
       );
 
       if (!response.ok) {
@@ -99,13 +104,11 @@ function PublicContractPageContent({
       }
 
       const data = await response.json();
+      setError(null);
       setContract(data);
       setSignerName(data.vendor_name);
       setSignerEmail(data.vendor_email);
-
-      if (isPublicContractAlreadySigned(data.status)) {
-        setSigned(true);
-      }
+      setSigned(isPublicContractAlreadySigned(data.status));
     } catch (err) {
       console.error('Error fetching contract:', err);
       setError('Failed to load contract. Please check your internet connection and try again.');
@@ -133,6 +136,7 @@ function PublicContractPageContent({
           headers: {
             'Content-Type': 'application/json',
           },
+          cache: 'no-store',
           body: JSON.stringify({
             signer_name: signerName,
             signer_email: signerEmail,
@@ -149,7 +153,23 @@ function PublicContractPageContent({
           return;
         }
 
-        throw new Error('Failed to sign contract');
+        let errorPayload: { detail?: string; message?: string } | null = null;
+        try {
+          errorPayload = (await response.json()) as { detail?: string; message?: string };
+        } catch {
+          errorPayload = null;
+        }
+
+        const detail = errorPayload?.detail?.trim() || errorPayload?.message?.trim() || '';
+        if (response.status === 400 && detail === 'Contract has already been signed') {
+          setSigned(true);
+          setShowSignModal(false);
+          setError(null);
+          await fetchContract();
+          return;
+        }
+
+        throw new Error(getPublicContractSignErrorMessage(response.status, errorPayload));
       }
 
       setSigned(true);
@@ -157,7 +177,11 @@ function PublicContractPageContent({
       void fetchContract();
     } catch (err) {
       console.error('Error signing contract:', err);
-      setError("We couldn't complete the signature. Please check your connection and try again.");
+      setError(
+        err instanceof Error && err.message
+          ? err.message
+          : "We couldn't complete the signature. Please try again.",
+      );
     } finally {
       setSigning(false);
     }
