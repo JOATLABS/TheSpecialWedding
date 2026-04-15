@@ -14,6 +14,8 @@ from botocore.exceptions import ClientError
 from fastapi import HTTPException, UploadFile
 from fastapi.responses import StreamingResponse
 
+from app.core.settings import settings
+
 logger = logging.getLogger(__name__)
 
 # Allowed MIME types for gallery uploads
@@ -26,8 +28,8 @@ ALLOWED_GALLERY_TYPES = {
     "video/quicktime",
 }
 
-# Get MEDIA_DOMAIN from environment - no fallback
-_raw_media_domain = os.getenv("MEDIA_DOMAIN")
+# Get MEDIA_DOMAIN from settings with raw env fallback for legacy runtime shells
+_raw_media_domain = settings.media_domain or os.getenv("MEDIA_DOMAIN")
 if not _raw_media_domain:
     logger.warning("MEDIA_DOMAIN environment variable is not set")
     MEDIA_DOMAIN = None
@@ -41,12 +43,20 @@ else:
 
 class GalleryUploadService:
     def __init__(self):
-        self.bucket_name = os.getenv("S3_BUCKET_NAME")
+        self.bucket_name = settings.s3_bucket_name or os.getenv("S3_BUCKET_NAME")
+        self.endpoint_url = settings.s3_endpoint_url or os.getenv("S3_ENDPOINT_URL")
+        self.access_key_id = settings.s3_access_key_id or os.getenv("S3_ACCESS_KEY_ID")
+        self.secret_access_key = settings.s3_secret_access_key or os.getenv(
+            "S3_SECRET_ACCESS_KEY"
+        )
+        self.region_name = settings.s3_region or os.getenv("S3_REGION")
+        self.frontend_url = settings.frontend_url or os.getenv("FRONTEND_URL")
         self.s3 = boto3.client(
             "s3",
-            endpoint_url=os.getenv("S3_ENDPOINT_URL"),
-            aws_access_key_id=os.getenv("S3_ACCESS_KEY_ID"),
-            aws_secret_access_key=os.getenv("S3_SECRET_ACCESS_KEY"),
+            endpoint_url=self.endpoint_url,
+            aws_access_key_id=self.access_key_id,
+            aws_secret_access_key=self.secret_access_key,
+            region_name=self.region_name,
             config=Config(signature_version="s3v4"),
         )
 
@@ -460,9 +470,8 @@ class GalleryUploadService:
                 raise HTTPException(status_code=400, detail="Invalid URL scheme")
             allowed_domains = []
 
-            frontend_url = os.getenv("FRONTEND_URL")
-            if frontend_url:
-                allowed_domains.append(urlparse(frontend_url).netloc)
+            if self.frontend_url:
+                allowed_domains.append(urlparse(self.frontend_url).netloc)
 
             if MEDIA_DOMAIN:
                 # MEDIA_DOMAIN might contain protocol
