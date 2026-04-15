@@ -17,12 +17,6 @@ on:
         required: false
         default: both
         type: string
-      frontend_url:
-        required: true
-        type: string
-      api_url:
-        required: true
-        type: string
       verify_couple:
         required: false
         default: false
@@ -71,10 +65,14 @@ jobs:
   prepare:
     name: Prepare ${{ inputs.environment_name }} deploy
     runs-on: ubuntu-latest
+    environment:
+      name: ${{ inputs.environment_name }}
     outputs:
       image-tag: ${{ steps.tag.outputs.tag }}
       deploy-backend: ${{ steps.target.outputs.backend }}
       deploy-frontend: ${{ steps.target.outputs.frontend }}
+      frontend-url: ${{ steps.urls.outputs.frontend_url }}
+      api-url: ${{ steps.urls.outputs.api_url }}
     steps:
       - name: Normalize image tag
         id: tag
@@ -112,6 +110,27 @@ jobs:
               ;;
           esac
 
+      - name: Resolve environment URLs
+        id: urls
+        env:
+          FRONTEND_URL_VALUE: ${{ vars.FRONTEND_URL }}
+          API_URL_VALUE: ${{ vars.NEXT_PUBLIC_API_BASE_URL }}
+        run: |
+          set -euo pipefail
+
+          if [ -z "${FRONTEND_URL_VALUE:-}" ]; then
+            echo "Missing required environment variable FRONTEND_URL for ${{ inputs.environment_name }}."
+            exit 1
+          fi
+
+          if [ -z "${API_URL_VALUE:-}" ]; then
+            echo "Missing required environment variable NEXT_PUBLIC_API_BASE_URL for ${{ inputs.environment_name }}."
+            exit 1
+          fi
+
+          echo "frontend_url=${FRONTEND_URL_VALUE}" >> "$GITHUB_OUTPUT"
+          echo "api_url=${API_URL_VALUE}" >> "$GITHUB_OUTPUT"
+
       - name: Summary
         run: |
           echo "## Coolify Deploy Plan" >> "$GITHUB_STEP_SUMMARY"
@@ -119,6 +138,8 @@ jobs:
           echo "- **Image tag**: \`${{ steps.tag.outputs.tag }}\`" >> "$GITHUB_STEP_SUMMARY"
           echo "- **Backend**: ${{ steps.target.outputs.backend }}" >> "$GITHUB_STEP_SUMMARY"
           echo "- **Frontend**: ${{ steps.target.outputs.frontend }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **Frontend URL**: \`${{ steps.urls.outputs.frontend_url }}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **API URL**: \`${{ steps.urls.outputs.api_url }}\`" >> "$GITHUB_STEP_SUMMARY"
 
   validate-images:
     name: Validate target images (${{ inputs.environment_name }})
@@ -160,7 +181,7 @@ jobs:
       previous-tag: ${{ steps.rollback-target.outputs.tag }}
     environment:
       name: ${{ inputs.environment_name }}
-      url: ${{ inputs.api_url }}
+      url: ${{ needs.prepare.outputs.api-url }}
     steps:
       - uses: actions/checkout@v6
 
@@ -234,7 +255,7 @@ jobs:
       previous-tag: ${{ steps.rollback-target.outputs.tag }}
     environment:
       name: ${{ inputs.environment_name }}
-      url: ${{ inputs.frontend_url }}
+      url: ${{ needs.prepare.outputs.frontend-url }}
     steps:
       - uses: actions/checkout@v6
 
@@ -313,7 +334,7 @@ jobs:
       }}
     environment:
       name: ${{ inputs.environment_name }}
-      url: ${{ inputs.frontend_url }}
+      url: ${{ needs.prepare.outputs.frontend-url }}
     steps:
       - uses: actions/checkout@v6
 
@@ -329,8 +350,8 @@ jobs:
 
       - name: Run smoke verification
         env:
-          FRONTEND_URL: ${{ inputs.frontend_url }}
-          API_URL: ${{ inputs.api_url }}
+          FRONTEND_URL: ${{ needs.prepare.outputs.frontend-url }}
+          API_URL: ${{ needs.prepare.outputs.api-url }}
           SMOKE_ADMIN_EMAIL: ${{ secrets.SMOKE_ADMIN_EMAIL }}
           SMOKE_ADMIN_PASSWORD: ${{ secrets.SMOKE_ADMIN_PASSWORD }}
           SMOKE_COUPLE_EMAIL: ${{ secrets.SMOKE_COUPLE_EMAIL }}
@@ -374,7 +395,7 @@ jobs:
     if: failure()
     environment:
       name: ${{ inputs.environment_name }}
-      url: ${{ inputs.frontend_url }}
+      url: ${{ needs.prepare.outputs.frontend-url }}
     steps:
       - uses: actions/checkout@v6
 

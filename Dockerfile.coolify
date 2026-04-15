@@ -90,9 +90,7 @@ COPY <<'EOF' /usr/local/bin/start-backend.sh
 #!/bin/sh
 set -eu
 
-python scripts/setup_admin_user.py --auto-create
-python scripts/seed_subscription_plans.py
-python -m app.scripts.migrate_subscription_fields
+python scripts/bootstrap_runtime.py
 
 WEB_CONCURRENCY="${WEB_CONCURRENCY:-2}"
 
