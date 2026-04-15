@@ -131,7 +131,8 @@ class GuestVerificationService:
                 raise HTTPException(status_code=404, detail="Guest not found")
 
             guest_response = self._serialize_guest_response(guest)
-            rsvp_data = await self._load_rsvp_data(str(guest_response["id"]))
+            if guest_response is not None:
+                rsvp_data = await self._load_rsvp_data(str(guest_response["id"]))
 
         return {
             "access": True,
@@ -265,7 +266,7 @@ class GuestVerificationService:
         self,
         identifier: str,
         namespace: str = "guest_access",
-        lock_seconds: int = None,
+        lock_seconds: int = 0,
     ) -> Optional[str]:
         duration = lock_seconds or self._attempt_lock_duration
         lock_key = self._build_attempt_lock_key(namespace, identifier)
@@ -302,8 +303,8 @@ class GuestVerificationService:
         self,
         identifier: str,
         namespace: str = "guest_access",
-        max_attempts: int = None,
-        window_seconds: int = None,
+        max_attempts: Optional[int] = None,
+        window_seconds: Optional[int] = None,
     ) -> bool:
         """Check if request is rate limited. Returns True if allowed."""
         limit = max_attempts or self._default_max_attempts
@@ -330,8 +331,8 @@ class GuestVerificationService:
         self,
         identifier: str,
         namespace: str = "guest_access",
-        max_attempts: int = None,
-        window_seconds: int = None,
+        max_attempts: Optional[int] = None,
+        window_seconds: Optional[int] = None,
     ):
         """Record a failed authentication attempt"""
         window = window_seconds or self._default_lockout_duration
@@ -452,6 +453,8 @@ class GuestVerificationService:
             )
 
             guest = self._serialize_guest_response(guest)
+            if not guest:
+                raise HTTPException(status_code=404, detail="Guest not found")
             guest_id_str = str(guest.get("id"))
             rsvp_data = await self._load_rsvp_data(guest_id_str)
 
@@ -935,6 +938,7 @@ class GuestVerificationService:
 
             # Look up guest by contact
             guest = None
+            digits_only = ""  # Initialize for use in sending phase
             if contact_type == "phone":
                 # Phones may be stored in various formats, try multiple lookups
                 # Extract digits only from input
