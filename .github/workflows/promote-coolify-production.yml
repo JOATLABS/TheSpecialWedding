@@ -31,8 +31,6 @@ jobs:
       environment_name: production
       image_tag: ${{ github.event.inputs.image-tag }}
       service: ${{ github.event.inputs.service }}
-      frontend_url: https://thespecialwedding.io
-      api_url: https://api.thespecialwedding.io
       verify_couple: false
       verify_sse: false
     secrets:

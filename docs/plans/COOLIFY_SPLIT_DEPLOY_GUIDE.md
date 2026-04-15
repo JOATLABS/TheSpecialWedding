@@ -37,7 +37,7 @@ These files now implement the rollout:
 | [`.github/workflows/ci.yml`](/Users/emmanuelakinwale/Desktop/WeddingWebApp/.github/workflows/ci.yml) | Lint, test, build, push immutable images to GHCR, and smoke-test the built images |
 | [`.github/workflows/deploy-coolify.yml`](/Users/emmanuelakinwale/Desktop/WeddingWebApp/.github/workflows/deploy-coolify.yml) | Auto-deploy staging after CI succeeds on `main`, or manually redeploy staging by tag |
 | [`.github/workflows/promote-coolify-production.yml`](/Users/emmanuelakinwale/Desktop/WeddingWebApp/.github/workflows/promote-coolify-production.yml) | Manual production promotion of an explicit SHA tag |
-| [`.github/workflows/coolify-deploy-shared.yml`](/Users/emmanuelakinwale/Desktop/WeddingWebApp/.github/workflows/coolify-deploy-shared.yml) | Shared deploy, verify, and rollback logic for both environments |
+| [`.github/workflows/coolify-deploy-shared.yml`](/Users/emmanuelakinwale/Desktop/WeddingWebApp/.github/workflows/coolify-deploy-shared.yml) | Shared deploy, verify, and rollback logic for both environments, using environment-scoped `FRONTEND_URL` and `NEXT_PUBLIC_API_BASE_URL` |
 | [`.github/workflows/calendar-scheduler.yml`](/Users/emmanuelakinwale/Desktop/WeddingWebApp/.github/workflows/calendar-scheduler.yml) | Runs production calendar invite jobs every 5 minutes and calendar maintenance every 15 minutes; staging can be triggered manually |
 | [`scripts/deploy/verify_environment.py`](/Users/emmanuelakinwale/Desktop/WeddingWebApp/scripts/deploy/verify_environment.py) | Post-deploy smoke verification used by both workflows |
 | [`scripts/deploy/trigger_scheduler.py`](/Users/emmanuelakinwale/Desktop/WeddingWebApp/scripts/deploy/trigger_scheduler.py) | Sends HMAC-signed scheduler requests to backend cron endpoints |
@@ -124,6 +124,7 @@ Required for both `frontend-prod` and `frontend-staging`:
 - `NODE_ENV=production`
 - `FRONTEND_URL=https://thespecialwedding.io` or `https://staging.thespecialwedding.io`
 - `INTERNAL_API_BASE_URL=...`
+- `NEXT_PUBLIC_API_BASE_URL=https://api.thespecialwedding.io` or `https://api.staging.thespecialwedding.io`
 
 Important note:
 
@@ -211,6 +212,12 @@ Add these repository secrets.
 - `PRODUCTION_SCHEDULER_HMAC_SECRET`
 
 Use dedicated smoke accounts. Do not use a real planner or couple account as your deploy verification identity.
+
+Runtime note:
+
+- GitHub deploy secrets only power workflow verification.
+- Backend runtime seeding now reads either generic `SMOKE_*` vars or environment-scoped `STAGING_SMOKE_*` / `PRODUCTION_SMOKE_*` vars from the container environment.
+- `*_SMOKE_PUBLIC_WEDDING_SLUG` should be the public wedding path segment, but the runtime seeder and verifier also tolerate a full URL and normalize it back to the slug.
 
 ### Automate secret sync and later rotation
 
@@ -349,6 +356,8 @@ Manual examples:
 - [ ] Domains assigned correctly
 - [ ] Health checks configured correctly
 - [ ] `FRONTEND_URL` and `INTERNAL_API_BASE_URL` set correctly on both frontend apps
+- [ ] GitHub environment variable `FRONTEND_URL` set on both environments
+- [ ] GitHub environment variable `NEXT_PUBLIC_API_BASE_URL` set on both environments
 - [ ] Backend env vars separated by environment
 - [ ] GitHub secrets added
 - [ ] GitHub environment variable `SCHEDULER_BASE_URL` set on both environments

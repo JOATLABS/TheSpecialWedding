@@ -108,10 +108,9 @@ services:
       timeout: 5s
       retries: 15
       start_period: 20s
-    # Override default CMD to skip seed scripts (we seed in tests)
+    # Bootstrap remains safe in tests because smoke accounts only seed when env vars exist.
     command: >
-      sh -c "python scripts/setup_admin_user.py --auto-create &&
-             python scripts/seed_subscription_plans.py &&
+      sh -c "python scripts/bootstrap_runtime.py &&
              uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 1"
 
   # ── Frontend (optional - for E2E tests later) ─────────────────────────────

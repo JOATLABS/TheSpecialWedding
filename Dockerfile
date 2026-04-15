@@ -23,7 +23,7 @@ ENV PYTHONUNBUFFERED=1
 RUN useradd -u 10001 -m appuser && chown -R appuser:appuser /app
 USER appuser
 
-CMD ["sh", "-c", "python scripts/setup_admin_user.py --auto-create && python scripts/seed_subscription_plans.py && python -m app.scripts.migrate_subscription_fields; uvicorn app.main:app --host 0.0.0.0 --port 8000"]
+CMD ["sh", "-c", "python scripts/bootstrap_runtime.py && uvicorn app.main:app --host 0.0.0.0 --port 8000"]
 
 # Expose the port the app runs on
 EXPOSE 8000

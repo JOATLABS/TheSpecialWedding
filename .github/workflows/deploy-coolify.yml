@@ -73,8 +73,6 @@ jobs:
       environment_name: staging
       image_tag: ${{ needs.prepare.outputs.image-tag }}
       service: ${{ needs.prepare.outputs.service }}
-      frontend_url: https://staging.thespecialwedding.io
-      api_url: https://api.staging.thespecialwedding.io
       verify_couple: true
       verify_sse: true
       allow_insecure_tls: true

@@ -7,6 +7,7 @@ import argparse
 import sys
 import time
 from typing import Optional
+from urllib.parse import urlparse
 
 import requests
 import urllib3
@@ -16,6 +17,14 @@ DEFAULT_TIMEOUT = 15
 
 def log_step(message: str) -> None:
     print(f"[verify] {message}", flush=True)
+
+
+def normalize_public_slug(value: str) -> str:
+    raw = value.strip()
+    parsed = urlparse(raw)
+    if parsed.scheme and parsed.netloc:
+        raw = parsed.path
+    return raw.lstrip("/")
 
 
 def build_auth_headers(token: Optional[str]) -> dict[str, str]:
@@ -67,7 +76,8 @@ def wait_for_http_ok(
 def verify_public_route(
     session: requests.Session, frontend_base: str, slug: str
 ) -> None:
-    url = f"{frontend_base.rstrip('/')}/{slug.lstrip('/')}"
+    normalized_slug = normalize_public_slug(slug)
+    url = f"{frontend_base.rstrip('/')}/{normalized_slug}"
     response = request(session, "GET", url)
     ensure_response_ok(response, f"public wedding route {url}")
     log_step(f"Public wedding route OK: {url}")
