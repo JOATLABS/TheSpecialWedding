@@ -1033,10 +1033,15 @@ async def get_subscription_details(
         # transaction failed during webhook), reconstruct from the users collection
         # which is also updated by _sync_subscription_state.
         if not subscription_record:
-            from bson import ObjectId as _ObjId
+            from app.utils.planner_ownership import normalize_query_id
 
+            # `normalize_query_id` handles both ObjectId-backed user ids (regular
+            # signups) and string-backed ids (e.g. ROOT_ADMIN created by
+            # scripts/setup_admin_user.py with `_id = "user_<timestamp>"`).
+            # Calling ObjectId() directly on the latter raises bson.InvalidId and
+            # bubbles up as a 500 — see prior staging regression on /stripe/subscription.
             user_doc = await mongo.db["users"].find_one(
-                {"_id": _ObjId(user_id)},
+                {"_id": normalize_query_id(user_id)},
                 {
                     "subscription_status": 1,
                     "plan_id": 1,
