@@ -10,7 +10,8 @@ from app.dependencies.auth_extended import (
     require_admin_or_planner,
     require_root_admin,
 )
-from app.services.gallery_upload_service import GalleryUploadService
+from app.services.gallery_media_service import GalleryUploadService
+from app.services.media_storage import StorageTarget
 from app.services.planner_onboarding_email_service import (
     planner_onboarding_email_service,
 )
@@ -501,7 +502,6 @@ async def upload_profile_image(
     current_user: ExtendedAuthUser = Depends(require_admin_or_planner),
 ):
     """Upload a profile image for the current user"""
-    import os
     from datetime import datetime, timezone
 
     # Validate file type
@@ -538,24 +538,14 @@ async def upload_profile_image(
 
     # Upload to S3/R2
     try:
-        gallery_service.s3.upload_fileobj(
+        gallery_service.storage.upload_fileobj(
             file.file,
-            gallery_service.bucket_name,
+            StorageTarget.PRIMARY,
             key,
-            ExtraArgs={"ContentType": file.content_type},
+            extra_args={"ContentType": file.content_type},
         )
 
-        # Generate the public URL
-        custom_domain = os.getenv("MEDIA_DOMAIN")
-        if not custom_domain:
-            raise HTTPException(
-                status_code=500,
-                detail="MEDIA_DOMAIN environment variable is not configured",
-            )
-        # Ensure URL has https:// prefix
-        if not custom_domain.startswith(("http://", "https://")):
-            custom_domain = f"https://{custom_domain}"
-        image_url = f"{custom_domain}/{key}"
+        image_url = gallery_service.build_public_url(key)
 
         # Update user profile with new image URL
         await user_service.update_profile_info(
@@ -581,19 +571,15 @@ async def delete_profile_image(
 
     if current_image:
         # Extract key from URL
-        custom_domain = os.getenv("MEDIA_DOMAIN")
-        if custom_domain:
-            # Ensure URL comparison accounts for https:// prefix
-            if not custom_domain.startswith(("http://", "https://")):
-                custom_domain = f"https://{custom_domain}"
-            if current_image.startswith(custom_domain):
-                key = current_image.replace(f"{custom_domain}/", "")
-                try:
-                    gallery_service.s3.delete_object(
-                        Bucket=gallery_service.bucket_name, Key=key
-                    )
-                except Exception:
-                    pass  # Ignore deletion errors
+        custom_domain = gallery_service.storage.target(
+            StorageTarget.PRIMARY
+        ).public_domain
+        if custom_domain and current_image.startswith(custom_domain):
+            key = current_image.replace(f"{custom_domain}/", "")
+            try:
+                gallery_service.storage.delete_object(StorageTarget.PRIMARY, key)
+            except Exception:
+                pass  # Ignore deletion errors
 
     # Update user profile to remove image URL
     await user_service.update_profile_info(

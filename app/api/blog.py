@@ -261,7 +261,7 @@ async def get_blog_image_upload_url(
     current_user: ExtendedAuthUser = Depends(require_root_admin),
 ):
     """Get a presigned URL to upload a blog image directly to R2 (ROOT_ADMIN only)"""
-    from app.services.gallery_upload_service import BlogUploadService
+    from app.services.blog_upload_service import BlogUploadService
 
     blog_upload = BlogUploadService()
     return blog_upload.create_presigned_upload_url(
