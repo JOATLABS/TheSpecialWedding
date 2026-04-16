@@ -4,8 +4,11 @@ Settings Tests
 Focus on environment-sensitive settings that gate production behavior.
 """
 
-from app.core.settings import Settings
+import logging
+
+from app.core.settings import Environment, Settings
 from app.main import build_root_response
+from app.utils.auth_utils import legacy_cookie_cleanup_domains, resolve_cookie_domain
 
 
 def build_settings(**overrides) -> Settings:
@@ -155,3 +158,73 @@ def test_security_log_file_can_be_overridden():
     settings = build_settings(SECURITY_LOG_FILE="/tmp/custom-security.log")
 
     assert settings.security_log_file == "/tmp/custom-security.log"
+
+
+def test_cookie_domain_normalizes_explicit_env_value():
+    settings = build_settings(
+        ENVIRONMENT="production",
+        COOKIE_DOMAIN="staging.thespecialwedding.io",
+    )
+
+    assert settings.cookie_domain == ".staging.thespecialwedding.io"
+
+
+def test_cookie_domain_prefers_explicit_cookie_domain():
+    domain = resolve_cookie_domain(
+        environment=Environment.STAGING,
+        explicit_cookie_domain=".staging.thespecialwedding.io",
+        frontend_url="https://staging.thespecialwedding.io",
+        api_base_url="https://api.staging.thespecialwedding.io",
+    )
+
+    assert domain == ".staging.thespecialwedding.io"
+
+
+def test_cookie_domain_derives_from_frontend_url():
+    domain = resolve_cookie_domain(
+        environment=Environment.STAGING,
+        frontend_url="https://staging.thespecialwedding.io",
+        api_base_url="https://api.staging.thespecialwedding.io",
+    )
+
+    assert domain == ".staging.thespecialwedding.io"
+
+
+def test_cookie_domain_derives_from_api_base_url_when_frontend_missing():
+    domain = resolve_cookie_domain(
+        environment=Environment.STAGING,
+        api_base_url="https://api.staging.thespecialwedding.io",
+    )
+
+    assert domain == ".staging.thespecialwedding.io"
+
+
+def test_cookie_domain_logs_critical_when_staging_domains_do_not_overlap(caplog):
+    with caplog.at_level(logging.CRITICAL):
+        domain = resolve_cookie_domain(
+            environment=Environment.STAGING,
+            frontend_url="https://staging.thespecialwedding.io",
+            api_base_url="https://api.otherdomain.example",
+        )
+
+    assert domain is None
+    assert any(
+        record.levelno == logging.CRITICAL
+        and "No shared auth cookie domain could be derived" in record.message
+        for record in caplog.records
+    )
+
+
+def test_cookie_cleanup_domains_include_legacy_host_scopes():
+    domains = legacy_cookie_cleanup_domains(
+        environment=Environment.STAGING,
+        frontend_url="https://staging.thespecialwedding.io",
+        api_base_url="https://api.staging.thespecialwedding.io",
+    )
+
+    assert domains == [
+        None,
+        ".staging.thespecialwedding.io",
+        "staging.thespecialwedding.io",
+        "api.staging.thespecialwedding.io",
+    ]

@@ -75,7 +75,8 @@ docs/                  # Architecture docs, migration guides, QA reports
 
 ### Prerequisites
 
-- Node.js 20+
+- Node.js 20.x or 24.x
+- npm 10+
 - Python 3.11+
 - MongoDB 5.0+
 - Redis 7+
@@ -84,7 +85,10 @@ docs/                  # Architecture docs, migration guides, QA reports
 
 ```bash
 # 1. Install frontend dependencies
-npm install --legacy-peer-deps
+npm ci
+
+# Validate the local dependency tree before starting the frontend
+npm run deps:doctor
 
 # 2. Install backend dependencies
 pip install -r requirements.txt
@@ -108,6 +112,17 @@ uvicorn app.main:app --reload --port 8000
 # 8. Start the frontend (separate terminal)
 npm run dev
 ```
+
+This repository is `npm`-only. Use `package-lock.json` as the canonical lockfile.
+If your install becomes stale or partially missing, recover with:
+
+```bash
+rm -rf node_modules
+npm ci
+npm run deps:doctor
+```
+
+If you intentionally change frontend dependencies, use `npm install` and commit the updated `package-lock.json`.
 
 ### Environment Variables
 
