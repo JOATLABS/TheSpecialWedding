@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { toast } from 'sonner';
 import {
@@ -104,6 +104,7 @@ export default function GuestMemoriesUploadClient({
   const [submitting, setSubmitting] = useState(false);
   const [uploadingLabel, setUploadingLabel] = useState<string>('');
   const [successCount, setSuccessCount] = useState<number>(0);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   const uploadCloseLabel = formatDateLabel(context?.guest_media.upload_closes_at);
   const totalSelectedBytes = selectedFiles.reduce((sum, item) => sum + item.file.size, 0);
@@ -210,6 +211,23 @@ export default function GuestMemoriesUploadClient({
       }
       return nextFiles;
     });
+  };
+
+  const openFilePicker = () => {
+    if (submitting) return;
+    const picker = fileInputRef.current as (HTMLInputElement & { showPicker?: () => void }) | null;
+    if (!picker) return;
+
+    try {
+      if (typeof picker.showPicker === 'function') {
+        picker.showPicker();
+        return;
+      }
+    } catch {
+      // Fall back to click() for browsers that reject showPicker on hidden inputs.
+    }
+
+    picker.click();
   };
 
   const resetUploads = () => {
@@ -533,7 +551,12 @@ export default function GuestMemoriesUploadClient({
                   </button>
                 </div>
 
-                <label className="flex cursor-pointer flex-col items-center justify-center rounded-[1.75rem] border border-dashed border-rose-300 bg-rose-50/70 px-6 py-10 text-center transition hover:bg-rose-50">
+                <button
+                  type="button"
+                  onClick={openFilePicker}
+                  disabled={submitting}
+                  className="flex w-full cursor-pointer flex-col items-center justify-center rounded-[1.75rem] border border-dashed border-rose-300 bg-rose-50/70 px-6 py-10 text-center transition hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-70"
+                >
                   <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-white text-rose-600 shadow-sm">
                     <Camera className="h-6 w-6" />
                   </div>
@@ -541,14 +564,17 @@ export default function GuestMemoriesUploadClient({
                   <p className="mt-2 max-w-sm text-sm leading-6 text-slate-500">
                     Your phone can use the camera, your gallery, or your files app. Guests can upload up to {context.limits.max_files_per_batch} items per batch.
                   </p>
-                  <input
-                    type="file"
-                    accept={context.limits.accepted_types.join(',')}
-                    multiple
-                    className="sr-only"
-                    onChange={handleFileSelection}
-                  />
-                </label>
+                </button>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept={context.limits.accepted_types.join(',')}
+                  multiple
+                  className="sr-only"
+                  onChange={handleFileSelection}
+                  tabIndex={-1}
+                  aria-hidden="true"
+                />
 
                 <div className="grid gap-3 rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-600 sm:grid-cols-3">
                   <div>

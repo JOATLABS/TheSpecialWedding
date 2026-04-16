@@ -391,7 +391,8 @@ export default function CoupleMemoriesSection({
 
       {!settings?.storage_ready && (
         <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-900/30 dark:bg-red-950/30 dark:text-red-200">
-          Guest media storage is not configured yet. Set the guest memories R2 bucket and domain before opening uploads to guests.
+          {settings?.storage_issue ||
+            'Guest media storage is not configured or is currently inaccessible. Restore the guest memories bucket and signer before opening uploads to guests.'}
         </div>
       )}
 

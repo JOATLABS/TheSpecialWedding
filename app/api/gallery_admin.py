@@ -6,7 +6,7 @@ from app.dependencies.auth_extended import (
     enforce_team_permission,
     require_team_or_planner,
 )
-from app.services.gallery_upload_service import GalleryUploadService
+from app.services.gallery_media_service import GalleryUploadService
 from app.services.wedding_service import WeddingService
 
 router = APIRouter()

@@ -16,9 +16,7 @@ from copy import deepcopy
 from datetime import datetime, timedelta, timezone
 from typing import TYPE_CHECKING, Any, Awaitable, Callable, Dict, List, Optional
 
-import boto3
 import stripe
-from botocore.config import Config
 from botocore.exceptions import ClientError
 from bson import ObjectId
 from bson.errors import InvalidId
@@ -36,6 +34,7 @@ from app.models.vendor import (
 )
 from app.models.vendor_contracts import VendorContractActivityType
 from app.services.email_service_resend import ResendEmailService
+from app.services.media_storage import MediaStorage, StorageTarget
 
 if TYPE_CHECKING:
     from mypy_boto3_s3.client import S3Client
@@ -50,10 +49,6 @@ TOKEN_EXPIRY_DAYS = int(os.getenv("CONTRACT_TOKEN_EXPIRY_DAYS", "30"))
 DEPOSIT_DUE_DAYS = int(os.getenv("DEPOSIT_DUE_DAYS", "7"))
 MAX_FILE_SIZE_MB = int(os.getenv("MAX_CONTRACT_FILE_SIZE_MB", "10"))
 MAX_FILE_SIZE_BYTES = MAX_FILE_SIZE_MB * 1024 * 1024
-MEDIA_DOMAIN = os.getenv("MEDIA_DOMAIN")
-if not MEDIA_DOMAIN:
-    logging.getLogger(__name__).warning("MEDIA_DOMAIN environment variable is not set")
-
 # Allowed MIME types for contract uploads
 ALLOWED_CONTRACT_TYPES = {
     "application/pdf",
@@ -78,14 +73,6 @@ def validate_object_id(id_str: str, field_name: str = "ID") -> ObjectId:
         return ObjectId(id_str)
     except InvalidId:
         raise HTTPException(status_code=400, detail=f"Invalid {field_name} format")
-
-
-def require_env(name: str) -> str:
-    """Return a required environment variable or fail fast during service setup."""
-    value = os.getenv(name)
-    if not value:
-        raise RuntimeError(f"{name} environment variable is required")
-    return value
 
 
 class VendorService:
@@ -113,16 +100,13 @@ class VendorService:
         # Services
         self.email_service = ResendEmailService()
 
-        # S3 Client for document storage (Cloudflare R2 requires s3v4 signature)
-        self.s3: S3Client = boto3.client(
-            "s3",
-            endpoint_url=os.getenv("S3_ENDPOINT_URL"),
-            aws_access_key_id=os.getenv("S3_ACCESS_KEY_ID"),
-            aws_secret_access_key=os.getenv("S3_SECRET_ACCESS_KEY"),
-            config=Config(signature_version="s3v4"),
-        )
-        self.bucket_name = require_env("S3_BUCKET_NAME")
-        self.media_domain = MEDIA_DOMAIN or ""
+        self.storage = MediaStorage()
+        self.s3: S3Client = self.storage.client
+        primary_target = self.storage.target(StorageTarget.PRIMARY)
+        if not primary_target.bucket_name:
+            raise RuntimeError("S3_BUCKET_NAME environment variable is required")
+        self.bucket_name = primary_target.bucket_name
+        self.media_domain = primary_target.public_domain or ""
 
     # =========================================================================
     # UTILITY METHODS

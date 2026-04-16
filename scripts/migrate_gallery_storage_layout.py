@@ -17,10 +17,10 @@ load_dotenv(ROOT / ".env")
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from botocore.exceptions import ClientError
+from botocore.exceptions import ClientError  # noqa: E402
 
-from app.core.database import mongo
-from app.services.gallery_upload_service import GalleryUploadService
+from app.core.database import mongo  # noqa: E402
+from app.services.gallery_media_service import GalleryUploadService  # noqa: E402
 
 GALLERY_FOLDERS = ("gallery", "our-story", "wedding-party")
 

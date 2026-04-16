@@ -82,6 +82,40 @@ def _expand_loopback_origins(origins: list[str]) -> list[str]:
     return expanded
 
 
+def _normalize_optional_public_base(value: Any) -> Optional[str]:
+    """Normalize optional public base URLs/domains to https://host style."""
+    if value in (None, ""):
+        return None
+
+    normalized = str(value).strip()
+    if not normalized:
+        return None
+
+    if normalized.startswith(("http://", "https://")):
+        return normalized.rstrip("/")
+
+    return f"https://{normalized}".rstrip("/")
+
+
+def _normalize_origin(value: Any) -> Optional[str]:
+    """Normalize an origin-like value to scheme://host[:port]."""
+    if value in (None, ""):
+        return None
+
+    candidate = str(value).strip()
+    if not candidate:
+        return None
+
+    if "://" not in candidate:
+        return None
+
+    parsed = urlparse(candidate)
+    if not parsed.scheme or not parsed.hostname:
+        return None
+
+    return f"{parsed.scheme}://{parsed.netloc}".rstrip("/")
+
+
 class Settings(BaseSettings):
     """
     Application settings with validation and type checking
@@ -102,6 +136,9 @@ class Settings(BaseSettings):
     frontend_url: Optional[str] = Field(default=None, alias="FRONTEND_URL")
     api_base_url: Optional[str] = Field(default=None, alias="NEXT_PUBLIC_API_BASE_URL")
     media_domain: Optional[str] = Field(default=None, alias="MEDIA_DOMAIN")
+    guest_media_domain: Optional[str] = Field(default=None, alias="GUEST_MEDIA_DOMAIN")
+    ad_media_domain: Optional[str] = Field(default=None, alias="AD_MEDIA_DOMAIN")
+    blog_media_domain: Optional[str] = Field(default=None, alias="BLOG_MEDIA_DOMAIN")
 
     # Security
     secret_key: str = Field(
@@ -211,8 +248,24 @@ class Settings(BaseSettings):
         default=None, alias="S3_SECRET_ACCESS_KEY"
     )
     s3_bucket_name: Optional[str] = Field(default=None, alias="S3_BUCKET_NAME")
+    s3_guest_media_bucket_name: Optional[str] = Field(
+        default=None, alias="S3_GUEST_MEDIA_BUCKET_NAME"
+    )
+    s3_ad_bucket_name: Optional[str] = Field(default=None, alias="S3_AD_BUCKET_NAME")
+    s3_blog_bucket_name: Optional[str] = Field(
+        default=None, alias="S3_BLOG_BUCKET_NAME"
+    )
     s3_region: str = Field(default="auto", alias="S3_REGION")
     s3_endpoint_url: Optional[str] = Field(default=None, alias="S3_ENDPOINT_URL")
+    s3_healthcheck_ttl_seconds: int = Field(
+        default=60, alias="S3_HEALTHCHECK_TTL_SECONDS"
+    )
+    cloudflare_account_id: Optional[str] = Field(
+        default=None, alias="CLOUDFLARE_ACCOUNT_ID"
+    )
+    cloudflare_api_token: Optional[str] = Field(
+        default=None, alias="CLOUDFLARE_API_TOKEN"
+    )
     # Security Features
     # CSRF disabled - JWT Bearer auth is already CSRF-immune (browsers don't auto-attach
     # Authorization headers cross-origin), and guest endpoints use token-based auth
@@ -363,6 +416,93 @@ class Settings(BaseSettings):
     def is_testing(self) -> bool:
         """Check if running in testing mode"""
         return self.testing or self.environment == Environment.TESTING
+
+    @property
+    def normalized_media_domain(self) -> Optional[str]:
+        """Canonical public domain/base URL for primary media assets."""
+        return _normalize_optional_public_base(self.media_domain)
+
+    @property
+    def normalized_ad_media_domain(self) -> Optional[str]:
+        """Canonical public domain/base URL for ad assets."""
+        return _normalize_optional_public_base(self.ad_media_domain)
+
+    @property
+    def normalized_guest_media_domain(self) -> Optional[str]:
+        """Canonical public domain/base URL for guest media assets."""
+        return _normalize_optional_public_base(self.guest_media_domain)
+
+    @property
+    def normalized_blog_media_domain(self) -> Optional[str]:
+        """Canonical public domain/base URL for blog assets."""
+        return _normalize_optional_public_base(self.blog_media_domain)
+
+    @property
+    def browser_upload_origins(self) -> List[str]:
+        """
+        Browser origins that are expected to perform direct presigned uploads.
+
+        This is intentionally frontend-focused, not a copy of the backend CORS
+        allowlist. The API origin itself does not need to be present in bucket
+        CORS for browser-direct uploads.
+        """
+        origins: list[str] = []
+        api_origin = _normalize_origin(self.api_base_url)
+        excluded_origins = (
+            set(_expand_loopback_origins([api_origin])) if api_origin else set()
+        )
+        frontend_origin = _normalize_origin(self.frontend_url)
+
+        def is_loopback_origin(origin: str) -> bool:
+            parsed = urlparse(origin)
+            return parsed.hostname in {"localhost", "127.0.0.1", "::1"}
+
+        def add_origin(candidate: Any) -> None:
+            origin = _normalize_origin(candidate)
+            if not origin or origin in excluded_origins:
+                return
+            if origin not in origins:
+                origins.append(origin)
+
+        add_origin(self.frontend_url)
+        for origin in self.cors_origins:
+            normalized_origin = _normalize_origin(origin)
+            if (
+                normalized_origin
+                and normalized_origin != frontend_origin
+                and is_loopback_origin(normalized_origin)
+            ):
+                continue
+            add_origin(origin)
+
+        return origins
+
+    @property
+    def primary_media_bucket_name(self) -> Optional[str]:
+        """Canonical primary bucket for gallery/profile/document media."""
+        return self.s3_bucket_name
+
+    @property
+    def guest_media_bucket_name(self) -> Optional[str]:
+        """Dedicated guest media bucket."""
+        return self.s3_guest_media_bucket_name
+
+    @property
+    def ad_media_bucket_name(self) -> Optional[str]:
+        """Dedicated ad asset bucket."""
+        return self.s3_ad_bucket_name
+
+    @property
+    def blog_media_bucket_name(self) -> Optional[str]:
+        """Dedicated blog asset bucket."""
+        return self.s3_blog_bucket_name
+
+    @property
+    def s3_credentials_configured(self) -> bool:
+        """Whether shared S3/R2 credentials are configured."""
+        return bool(
+            self.s3_endpoint_url and self.s3_access_key_id and self.s3_secret_access_key
+        )
 
     @property
     def api_docs_enabled(self) -> bool:

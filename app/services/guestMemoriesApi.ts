@@ -20,6 +20,8 @@ export interface GuestMemoriesSummary {
   link_status: 'open' | 'closed';
   upload_closes_at?: string | null;
   storage_ready: boolean;
+  storage_status?: 'ready' | 'unconfigured' | 'unavailable';
+  storage_issue?: string | null;
   stream_configured: boolean;
 }
 
@@ -44,6 +46,8 @@ export interface PublicGuestMemoriesContext {
     upload_closes_at?: string | null;
     link_status: 'open';
     storage_ready: boolean;
+    storage_status?: 'ready' | 'unconfigured' | 'unavailable';
+    storage_issue?: string | null;
     stream_configured: boolean;
   };
   events: GuestMemoriesEventOption[];

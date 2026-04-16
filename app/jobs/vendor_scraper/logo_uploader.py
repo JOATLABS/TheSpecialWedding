@@ -7,50 +7,24 @@ Returns the CDN URL to use as logo_url.
 """
 
 import logging
-import os
 import re
 from datetime import datetime, timezone
 from io import BytesIO
 
-import boto3
 import httpx
-from botocore.config import Config as BotoConfig
 
 from app.jobs.vendor_scraper.config import R2_LOGO_PREFIX
+from app.services.media_storage import MediaStorage, StorageTarget
 
 logger = logging.getLogger(__name__)
 
-# ─── R2 / S3 config from env (same creds as AdUploadService) ─────────────────
-_S3_ENDPOINT_URL = os.getenv("S3_ENDPOINT_URL")
-_S3_ACCESS_KEY_ID = os.getenv("S3_ACCESS_KEY_ID")
-_S3_SECRET_ACCESS_KEY = os.getenv("S3_SECRET_ACCESS_KEY")
-_AD_BUCKET_NAME = os.getenv("S3_AD_BUCKET_NAME")
-
-# Build AD_MEDIA_DOMAIN the same way gallery_upload_service.py does
-_raw_ad_media_domain = os.getenv("AD_MEDIA_DOMAIN")
-if _raw_ad_media_domain:
-    if _raw_ad_media_domain.startswith(("http://", "https://")):
-        AD_MEDIA_DOMAIN = _raw_ad_media_domain.rstrip("/")
-    else:
-        AD_MEDIA_DOMAIN = f"https://{_raw_ad_media_domain}".rstrip("/")
-else:
-    AD_MEDIA_DOMAIN = None
+_media_storage = MediaStorage()
 
 
 def _slugify(text: str) -> str:
     """Simple slugify: lowercase, replace non-alnum with hyphens, collapse."""
     slug = re.sub(r"[^a-z0-9]+", "-", text.lower()).strip("-")
     return re.sub(r"-{2,}", "-", slug)[:80]
-
-
-def _get_s3_client():
-    return boto3.client(
-        "s3",
-        endpoint_url=_S3_ENDPOINT_URL,
-        aws_access_key_id=_S3_ACCESS_KEY_ID,
-        aws_secret_access_key=_S3_SECRET_ACCESS_KEY,
-        config=BotoConfig(signature_version="s3v4"),
-    )
 
 
 async def download_and_upload_logo(
@@ -66,10 +40,11 @@ async def download_and_upload_logo(
     Key format: scraped-vendors/{location_slug}/{timestamp}_{business_slug}.jpg
     Uses city when available, falls back to state for the directory slug.
     """
-    if not _AD_BUCKET_NAME:
+    ad_target = _media_storage.target(StorageTarget.AD_ASSETS)
+    if not ad_target.bucket_name:
         logger.warning("S3_AD_BUCKET_NAME not set — skipping logo upload")
         return None
-    if not AD_MEDIA_DOMAIN:
+    if not ad_target.public_domain:
         logger.warning("AD_MEDIA_DOMAIN not set — skipping logo upload")
         return None
 
@@ -98,15 +73,14 @@ async def download_and_upload_logo(
         key = f"{R2_LOGO_PREFIX}/{location_slug}/{timestamp}_{name_slug}.{ext}"
 
         # Upload to R2
-        s3 = _get_s3_client()
-        s3.upload_fileobj(
+        _media_storage.upload_fileobj(
             BytesIO(image_bytes),
-            _AD_BUCKET_NAME,
+            StorageTarget.AD_ASSETS,
             key,
-            ExtraArgs={"ContentType": content_type},
+            extra_args={"ContentType": content_type},
         )
 
-        cdn_url = f"{AD_MEDIA_DOMAIN}/{key}"
+        cdn_url = _media_storage.build_public_url(StorageTarget.AD_ASSETS, key)
         logger.info(f"Uploaded logo for '{business_name}' → {cdn_url}")
         return cdn_url
 
