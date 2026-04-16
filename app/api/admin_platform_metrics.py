@@ -200,8 +200,15 @@ def _extract_error_detail(error: Dict[str, Any]) -> Dict[str, Any]:
         "metadata": error.get("metadata"),
         # Full error message (unsanitized for root admin)
         "full_error_message": error.get("error_message") or error.get("message"),
-        # Original exception type
-        "exception_type": error.get("error_type") or type(error).__name__,
+        # Original exception type — only set when the stored document has a real
+        # Python exception class name (written by the unhandled-exception
+        # middleware). For audit_logs-sourced entries (handled HTTPExceptions like
+        # /stripe/subscription 500s) this field is absent; returning None lets
+        # the frontend fall through to `error_type`, which the summary already
+        # populates from `event_type` (e.g. "billing", "authentication").
+        # Previously this defaulted to `type(error).__name__`, which rendered as
+        # the literal string "dict" because `error` is the raw MongoDB document.
+        "exception_type": error.get("error_type"),
     }
 
     # Preserve any acknowledgement metadata if present
