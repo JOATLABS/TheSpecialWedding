@@ -40,10 +40,10 @@ async def refresh_access_token(
 ):
     """Issue a fresh JWT for an already-authenticated user.
 
-    The caller must present a valid (non-expired) Bearer token. A new token is
-    returned with a fresh 60-minute expiry window. This keeps the session alive
-    without requiring the user to re-enter credentials, and prevents the SSE
-    notification stream from hitting 401s when the original JWT expires.
+    The caller must present either a valid Bearer token or the existing
+    `admin_token` cookie. A new token is returned with a fresh 60-minute expiry
+    window and is also written back to the cookie so the frontend proxy,
+    silent-refresh flow, and notification SSE stay on the same auth contract.
     """
     token_data = {"sub": current_user.email, "role": current_user.role}
     access_token_expires = timedelta(minutes=60)
