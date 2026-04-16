@@ -492,27 +492,29 @@ export const AdminProvider = ({ children }: { children: React.ReactNode }) => {
                 // If webhook hasn't updated users collection yet, the subscription
                 // endpoint may have fresher data. Fetch it to override the profile if needed.
                 let billingBlocked = false;
-                try {
-                    const subResponse = await fetch(`${baseUrl}/stripe/subscription`, {
-                        method: 'GET',
-                        headers: {
-                            'Authorization': `Bearer ${activeToken}`,
-                            'Content-Type': 'application/json',
-                        },
-                        credentials: 'include',
-                    });
+                if (profile.is_wedding_planner) {
+                    try {
+                        const subResponse = await fetch(`${baseUrl}/stripe/subscription`, {
+                            method: 'GET',
+                            headers: {
+                                'Authorization': `Bearer ${activeToken}`,
+                                'Content-Type': 'application/json',
+                            },
+                            credentials: 'include',
+                        });
 
-                    if (subResponse.ok) {
-                        const subData = await subResponse.json();
-                        const freshStatus = normalizeSubscriptionStatus(subData.status || subData.subscription_status);
-                        if (isBlockedSubscriptionStatus(freshStatus)) {
-                            console.info(`Subscription verification: endpoint returned blocked status '${freshStatus}', overriding profile`);
-                            billingBlocked = true;
+                        if (subResponse.ok) {
+                            const subData = await subResponse.json();
+                            const freshStatus = normalizeSubscriptionStatus(subData.status || subData.subscription_status);
+                            if (isBlockedSubscriptionStatus(freshStatus)) {
+                                console.info(`Subscription verification: endpoint returned blocked status '${freshStatus}', overriding profile`);
+                                billingBlocked = true;
+                            }
                         }
+                    } catch (error) {
+                        // Network error or endpoint unavailable — fall back to profile data
+                        console.debug(`Could not verify subscription status: ${error}`);
                     }
-                } catch (error) {
-                    // Network error or endpoint unavailable — fall back to profile data
-                    console.debug(`Could not verify subscription status: ${error}`);
                 }
 
                 // If subscription verification didn't set billingBlocked, check profile flags
