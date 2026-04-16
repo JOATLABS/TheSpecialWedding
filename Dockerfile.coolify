@@ -13,10 +13,10 @@ FROM node:20-alpine AS frontend-builder
 WORKDIR /app
 
 # Copy package files first for better layer caching
-COPY package.json package-lock.json* ./
+COPY package.json package-lock.json* .npmrc ./
 
-# Install dependencies with legacy peer deps for React 19 compatibility
-RUN npm ci --legacy-peer-deps || npm install --legacy-peer-deps
+# Install dependencies with the repo npm policy
+RUN npm ci
 
 # Copy all source files (controlled by .dockerignore)
 COPY . .

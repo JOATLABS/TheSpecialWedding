@@ -8,6 +8,27 @@ and unauthorized access rejection.
 import pytest
 
 
+def _read_initial_notification_event(response, timeout_lines: int = 25) -> bool:
+    saw_notification_event = False
+
+    for line_count, raw_line in enumerate(response.iter_lines(decode_unicode=True), 1):
+        if raw_line is None:
+            continue
+
+        line = raw_line.strip()
+        if line.startswith("event: notification-count"):
+            saw_notification_event = True
+            continue
+
+        if saw_notification_event and line.startswith("data:"):
+            return True
+
+        if line_count >= timeout_lines:
+            break
+
+    return False
+
+
 @pytest.mark.integration
 class TestAuthentication:
     def test_login_with_valid_credentials(self, api):
@@ -22,6 +43,10 @@ class TestAuthentication:
         data = resp.json()
         assert "access_token" in data
         assert data["token_type"] == "bearer"
+
+    def test_login_sets_admin_cookie(self, admin_session):
+        """Admin login also issues the admin_token cookie used by the frontend."""
+        assert admin_session.cookies.get("admin_token")
 
     def test_login_with_invalid_credentials(self, api):
         """Invalid credentials return 401."""
@@ -74,3 +99,31 @@ class TestAuthentication:
         data = resp.json()
         assert "access_token" in data
         assert data["token_type"] == "bearer"
+
+    def test_token_refresh_with_cookie_auth(self, api_url, admin_session):
+        """Silent refresh works with the cookie contract alone."""
+        resp = admin_session.post(f"{api_url}/admin/token/refresh", timeout=15)
+        assert resp.status_code == 200
+        data = resp.json()
+        assert "access_token" in data
+        assert data["token_type"] == "bearer"
+        assert admin_session.cookies.get("admin_token")
+
+    def test_notification_stream_with_cookie_auth(self, api_url, admin_session):
+        """SSE connects with the admin_token cookie and emits an initial count."""
+        response = admin_session.get(
+            f"{api_url}/admin/notifications/stream",
+            headers={
+                "Accept": "text/event-stream",
+                "Cache-Control": "no-cache",
+            },
+            timeout=(10, 20),
+            stream=True,
+        )
+
+        try:
+            assert response.status_code == 200
+            assert "text/event-stream" in response.headers.get("content-type", "")
+            assert _read_initial_notification_event(response) is True
+        finally:
+            response.close()

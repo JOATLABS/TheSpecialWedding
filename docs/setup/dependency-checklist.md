@@ -9,21 +9,28 @@ The admin dashboard and marketing landing experience rely on UI libraries that m
 
 ## Installation
 
+This repository uses `npm` and `package-lock.json` as the only supported frontend dependency workflow.
 Install the dependencies with the workspace lockfile to ensure consistent versions:
 
 ```bash
 npm ci
+npm run deps:doctor
 ```
 
-If the modules are missing in an existing clone, reinstall them explicitly:
+If the local tree is stale, partially installed, or missing expected binaries, reset it completely:
 
 ```bash
-npm install lucide-react tailwind-merge
+rm -rf node_modules
+npm ci
+npm run deps:doctor
 ```
 
-After installation, verify that Next.js can load the optimized image pipeline without reporting missing packages:
+If you intentionally changed frontend dependencies, use `npm install` and commit the updated `package-lock.json`.
+
+After installation, verify that the frontend toolchain still resolves cleanly:
 
 ```bash
 npm run lint
 npm run type-check
+npm run build
 ```
