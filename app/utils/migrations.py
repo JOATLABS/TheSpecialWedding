@@ -16,6 +16,7 @@ from datetime import datetime, timezone
 from typing import Any, Callable, Dict, List, Optional
 
 from app.core.database import mongo
+from app.utils.planner_billing_scope import planner_billing_unset_fields
 
 logger = logging.getLogger(__name__)
 
@@ -323,9 +324,12 @@ class Migration003:
 
     @staticmethod
     async def up(db):
-        # Update users without subscription fields
+        # Only planner accounts participate in planner billing.
         result = await db["users"].update_many(
-            {"subscription_status": {"$exists": False}},
+            {
+                "role": "wedding_planner",
+                "subscription_status": {"$exists": False},
+            },
             {
                 "$set": {
                     "subscription_status": "inactive",
@@ -350,6 +354,30 @@ class Migration003:
             },
         )
         logger.info(f"Removed subscription fields from {result.modified_count} users")
+
+
+@migration_registry.register(
+    "008",
+    "Remove planner billing fields from non-planner users",
+    "Scrubs planner-only billing state from root admin, vendor, and team-member user documents",
+)
+async def migration_008_strip_non_planner_billing_fields(db):
+    """Enforce planner-billing fields as planner-only state."""
+
+    billing_field_exists = [
+        {field: {"$exists": True}} for field in planner_billing_unset_fields()
+    ]
+    result = await db["users"].update_many(
+        {
+            "role": {"$ne": "wedding_planner"},
+            "$or": billing_field_exists,
+        },
+        {"$unset": planner_billing_unset_fields()},
+    )
+    logger.info(
+        "Removed planner billing fields from %s non-planner users",
+        result.modified_count,
+    )
 
 
 @migration_registry.register(

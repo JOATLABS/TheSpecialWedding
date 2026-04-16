@@ -29,6 +29,7 @@ async def setup_admin_user(auto_create: bool = False):
 
     # Import after path setup
     from app.core.database import mongo
+    from app.utils.planner_billing_scope import planner_billing_unset_fields
     from app.utils.auth_utils import get_password_hash
 
     # Get credentials from environment
@@ -67,7 +68,11 @@ async def setup_admin_user(auto_create: bool = False):
                 update_fields["role"] = "ROOT_ADMIN"
                 print("[UPDATED] Upgraded user role to ROOT_ADMIN")
             await users_collection.update_one(
-                {"email": admin_email}, {"$set": update_fields}
+                {"email": admin_email},
+                {
+                    "$set": update_fields,
+                    "$unset": planner_billing_unset_fields(),
+                },
             )
             print("[SYNCED] Password hash and active status synced from environment")
             return True
@@ -84,7 +89,8 @@ async def setup_admin_user(auto_create: bool = False):
                         "email": admin_email,
                         "password_hash": password_hash,
                         "updated_at": datetime.now(timezone.utc),
-                    }
+                    },
+                    "$unset": planner_billing_unset_fields(),
                 },
             )
             print(f"[MIGRATED] Root admin email updated: {old_email} → {admin_email}")
