@@ -3,6 +3,7 @@ Centralized configuration management using Pydantic Settings
 """
 
 import json
+import ipaddress
 from enum import Enum
 from functools import lru_cache
 from typing import Annotated, Any, Dict, List, Optional
@@ -116,6 +117,41 @@ def _normalize_origin(value: Any) -> Optional[str]:
     return f"{parsed.scheme}://{parsed.netloc}".rstrip("/")
 
 
+def _normalize_cookie_domain(value: Any) -> Optional[str]:
+    """Normalize cookie domains to a consistent, browser-compatible shape."""
+    if value in (None, ""):
+        return None
+
+    candidate = str(value).strip().lower()
+    if not candidate:
+        return None
+
+    if "://" in candidate:
+        parsed = urlparse(candidate)
+        candidate = (parsed.hostname or "").strip().lower()
+
+    candidate = candidate.lstrip(".")
+    if not candidate:
+        return None
+
+    if "/" in candidate:
+        raise ValueError("COOKIE_DOMAIN must be a bare host/domain, not a URL path")
+
+    try:
+        ipaddress.ip_address(candidate)
+        return candidate
+    except ValueError:
+        pass
+
+    if candidate == "localhost":
+        return candidate
+
+    if "." not in candidate:
+        raise ValueError("COOKIE_DOMAIN must contain a valid shared domain")
+
+    return f".{candidate}"
+
+
 class Settings(BaseSettings):
     """
     Application settings with validation and type checking
@@ -135,6 +171,7 @@ class Settings(BaseSettings):
     # URL Configuration - Single source of truth, NO FALLBACKS
     frontend_url: Optional[str] = Field(default=None, alias="FRONTEND_URL")
     api_base_url: Optional[str] = Field(default=None, alias="NEXT_PUBLIC_API_BASE_URL")
+    cookie_domain: Optional[str] = Field(default=None, alias="COOKIE_DOMAIN")
     media_domain: Optional[str] = Field(default=None, alias="MEDIA_DOMAIN")
     guest_media_domain: Optional[str] = Field(default=None, alias="GUEST_MEDIA_DOMAIN")
     ad_media_domain: Optional[str] = Field(default=None, alias="AD_MEDIA_DOMAIN")
@@ -382,6 +419,12 @@ class Settings(BaseSettings):
             elif info.data["environment"] == Environment.DEVELOPMENT:
                 return True
         return v
+
+    @field_validator("cookie_domain", mode="before")
+    @classmethod
+    def normalize_cookie_domain(cls, v):
+        """Accept either example.com or .example.com for shared auth cookies."""
+        return _normalize_cookie_domain(v)
 
     def get_database_url(self) -> str:
         """Get full database URL with options"""

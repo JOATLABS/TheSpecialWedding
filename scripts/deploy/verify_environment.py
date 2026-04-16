@@ -7,7 +7,7 @@ import argparse
 import sys
 import time
 from typing import Optional
-from urllib.parse import urlparse
+from urllib.parse import urljoin, urlparse
 
 import requests
 import urllib3
@@ -25,6 +25,31 @@ def normalize_public_slug(value: str) -> str:
     if parsed.scheme and parsed.netloc:
         raw = parsed.path
     return raw.lstrip("/")
+
+
+def host_matches_cookie_domain(host: str, cookie_domain: str) -> bool:
+    normalized_host = host.strip().lower()
+    normalized_domain = cookie_domain.lstrip(".").strip().lower()
+    return normalized_host == normalized_domain or normalized_host.endswith(
+        f".{normalized_domain}"
+    )
+
+
+def get_set_cookie_headers(response: requests.Response) -> list[str]:
+    raw_headers = getattr(response.raw, "headers", None)
+    if raw_headers is not None and hasattr(raw_headers, "getlist"):
+        return list(raw_headers.getlist("Set-Cookie"))
+
+    header = response.headers.get("Set-Cookie")
+    return [header] if header else []
+
+
+def extract_domain_attribute(set_cookie_header: str) -> str | None:
+    for part in set_cookie_header.split(";")[1:]:
+        key, separator, value = part.strip().partition("=")
+        if separator and key.lower() == "domain":
+            return value.strip()
+    return None
 
 
 def build_auth_headers(token: Optional[str]) -> dict[str, str]:
@@ -83,6 +108,88 @@ def verify_public_route(
     log_step(f"Public wedding route OK: {url}")
 
 
+def verify_auth_cookie_scope(
+    session: requests.Session,
+    frontend_base: str,
+    cookie_name: str = "admin_token",
+) -> None:
+    frontend_host = urlparse(frontend_base).hostname
+    if not frontend_host:
+        raise RuntimeError(f"Could not determine frontend host from {frontend_base}")
+
+    cookie = next((c for c in session.cookies if c.name == cookie_name), None)
+    if cookie is None:
+        raise RuntimeError(f"{cookie_name} cookie was not stored after admin login")
+
+    cookie_domain = cookie.domain or frontend_host
+    if not host_matches_cookie_domain(frontend_host, cookie_domain):
+        raise RuntimeError(
+            f"{cookie_name} cookie domain {cookie_domain!r} is not visible to frontend host {frontend_host!r}"
+        )
+
+    log_step(
+        f"{cookie_name} cookie is visible to the frontend host via domain {cookie_domain!r}"
+    )
+
+
+def verify_auth_cookie_response(
+    response: requests.Response, frontend_base: str, cookie_name: str = "admin_token"
+) -> None:
+    frontend_host = urlparse(frontend_base).hostname
+    if not frontend_host:
+        raise RuntimeError(f"Could not determine frontend host from {frontend_base}")
+
+    set_cookie_headers = get_set_cookie_headers(response)
+    active_cookie_headers = [
+        header
+        for header in set_cookie_headers
+        if header.lower().startswith(f"{cookie_name.lower()}=")
+        and "max-age=0" not in header.lower()
+    ]
+    if not active_cookie_headers:
+        raise RuntimeError(
+            f"admin login did not emit an active {cookie_name} Set-Cookie header"
+        )
+
+    for header in active_cookie_headers:
+        cookie_domain = extract_domain_attribute(header)
+        if cookie_domain and host_matches_cookie_domain(frontend_host, cookie_domain):
+            log_step(
+                f"{cookie_name} Set-Cookie header scopes the cookie to frontend-visible domain {cookie_domain!r}"
+            )
+            return
+
+    raise RuntimeError(
+        f"{cookie_name} Set-Cookie headers did not include a Domain attribute visible to frontend host {frontend_host!r}"
+    )
+
+
+def verify_frontend_admin_route(
+    session: requests.Session, frontend_base: str, path: str
+) -> None:
+    url = f"{frontend_base.rstrip('/')}{path}"
+    response = request(session, "GET", url, allow_redirects=False)
+
+    if response.is_redirect:
+        location = response.headers.get("location", "")
+        redirected_path = urlparse(urljoin(url, location)).path
+        if redirected_path.startswith("/admin/login"):
+            raise RuntimeError(
+                f"frontend route {path} redirected back to /admin/login despite an authenticated admin session"
+            )
+
+    ensure_response_ok(response, f"frontend route {path}")
+    log_step(f"Frontend admin route OK: {path}")
+
+
+def verify_frontend_admin_session(
+    session: requests.Session, frontend_base: str
+) -> None:
+    verify_auth_cookie_scope(session, frontend_base)
+    verify_frontend_admin_route(session, frontend_base, "/admin")
+    verify_frontend_admin_route(session, frontend_base, "/admin/planner")
+
+
 def verify_health(session: requests.Session, api_base: str, frontend_base: str) -> None:
     wait_for_http_ok(session, f"{frontend_base.rstrip('/')}/", "frontend")
     wait_for_http_ok(
@@ -95,7 +202,11 @@ def verify_health(session: requests.Session, api_base: str, frontend_base: str) 
 
 
 def login_admin(
-    session: requests.Session, api_base: str, email: str, password: str
+    session: requests.Session,
+    api_base: str,
+    frontend_base: str,
+    email: str,
+    password: str,
 ) -> str:
     response = request(
         session,
@@ -104,6 +215,7 @@ def login_admin(
         json={"email": email, "password": password},
     )
     ensure_response_ok(response, "admin login")
+    verify_auth_cookie_response(response, frontend_base)
 
     payload = response.json()
     token = payload.get("access_token")
@@ -133,12 +245,11 @@ def login_admin(
 
 
 def verify_sse(
-    session: requests.Session, api_base: str, token: str, timeout_seconds: int = 25
+    session: requests.Session, api_base: str, timeout_seconds: int = 25
 ) -> None:
     response = session.get(
         f"{api_base.rstrip('/')}/admin/notifications/stream",
         headers={
-            **build_auth_headers(token),
             "Accept": "text/event-stream",
             "Cache-Control": "no-cache",
         },
@@ -250,12 +361,17 @@ def main() -> int:
 
     admin_session = requests.Session()
     admin_session.verify = session.verify
-    admin_token = login_admin(
-        admin_session, args.api_base, args.admin_email, args.admin_password
+    login_admin(
+        admin_session,
+        args.api_base,
+        args.frontend_base,
+        args.admin_email,
+        args.admin_password,
     )
+    verify_frontend_admin_session(admin_session, args.frontend_base)
 
     if not args.skip_sse:
-        verify_sse(admin_session, args.api_base, admin_token)
+        verify_sse(admin_session, args.api_base)
 
     if args.couple_email or args.couple_password:
         if not (args.couple_email and args.couple_password):

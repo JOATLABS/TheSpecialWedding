@@ -3,12 +3,17 @@
   "version": "2.0.0",
   "license": "UNLICENSED",
   "description": "Wedding planning platform for professional wedding planners",
+  "engines": {
+    "node": ">=20.9 <25",
+    "npm": ">=10"
+  },
   "scripts": {
     "dev": "node scripts/ensure-deps.mjs && next dev --webpack",
-    "build": "next build --webpack",
+    "build": "node scripts/ensure-deps.mjs && next build --webpack",
     "start": "next start",
-    "lint": "eslint .",
-    "test": "tsx --test tests/**/*.test.ts tests/**/*.test.tsx",
+    "lint": "node scripts/ensure-deps.mjs && eslint .",
+    "type-check": "node scripts/ensure-deps.mjs && tsc --noEmit --pretty",
+    "test": "node scripts/ensure-deps.mjs && tsx --test tests/**/*.test.ts tests/**/*.test.tsx",
     "changelog": "conventional-changelog -p angular -i CHANGELOG.md -s",
     "changelog:auto": "auto-changelog -p --commit-limit false",
     "version": "npm run changelog && git add CHANGELOG.md",
@@ -19,6 +24,7 @@
     "security": "npm run audit && npm run lint",
     "security:check": "npm audit --audit-level=moderate",
     "security:update": "npm update && npm audit fix",
+    "deps:doctor": "node scripts/ensure-deps.mjs --doctor",
     "deps:check": "npm outdated",
     "deps:update": "node scripts/update-deps.mjs --auto",
     "deps:update:dry": "node scripts/update-deps.mjs --dry-run",

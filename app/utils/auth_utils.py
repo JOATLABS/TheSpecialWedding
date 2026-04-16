@@ -1,6 +1,8 @@
 import os
+import logging
 from datetime import datetime, timedelta, timezone
 from typing import Optional
+from urllib.parse import urlparse
 
 import bcrypt
 import jwt
@@ -10,6 +12,8 @@ from fastapi import Response
 from app.core.settings import Environment, settings
 
 load_dotenv()
+
+logger = logging.getLogger(__name__)
 
 SECRET_KEY: str = os.getenv("SECRET_KEY")  # type: ignore
 if not SECRET_KEY:
@@ -59,31 +63,186 @@ def verify_token(token: str):
         raise ValueError("Invalid token")
 
 
-def _get_cookie_domain() -> str | None:
-    """Return a domain value so the cookie is visible across subdomains.
+def _extract_cookie_host(value: str | None) -> str | None:
+    if not value:
+        return None
 
-    For staging/production the cookie is set on the apex domain
-    (e.g. ".thespecialwedding.io") so both ``api.staging.*`` and
-    ``staging.*`` can share it.  Returns ``None`` in development so
-    localhost cookies work without a domain restriction.
+    candidate = str(value).strip()
+    if not candidate:
+        return None
+
+    if "://" in candidate:
+        return (urlparse(candidate).hostname or "").strip().lower() or None
+
+    return candidate.lstrip(".").strip().lower() or None
+
+
+def _cookie_domain_matches_host(domain: str, host: str | None) -> bool:
+    if not host:
+        return True
+
+    normalized_domain = domain.lstrip(".").lower()
+    normalized_host = host.lower()
+    return normalized_host == normalized_domain or normalized_host.endswith(
+        f".{normalized_domain}"
+    )
+
+
+def _derive_cookie_domain_from_host(host: str | None) -> str | None:
+    if not host:
+        return None
+
+    labels = host.split(".")
+    if len(labels) < 2:
+        return None
+
+    return f".{host}"
+
+
+def _derive_cookie_domain_from_api_host(host: str | None) -> str | None:
+    if not host:
+        return None
+
+    labels = host.split(".")
+    if len(labels) < 2:
+        return None
+
+    if len(labels) == 2:
+        return f".{host}"
+
+    return "." + ".".join(labels[1:])
+
+
+def _derive_shared_cookie_domain(frontend_host: str, api_host: str) -> str | None:
+    frontend_labels = frontend_host.split(".")
+    api_labels = api_host.split(".")
+    shared_labels: list[str] = []
+
+    while frontend_labels and api_labels and frontend_labels[-1] == api_labels[-1]:
+        shared_labels.insert(0, frontend_labels.pop())
+        api_labels.pop()
+
+    if len(shared_labels) < 2:
+        return None
+
+    return "." + ".".join(shared_labels)
+
+
+def legacy_cookie_cleanup_domains(
+    environment: Environment,
+    explicit_cookie_domain: str | None = None,
+    frontend_url: str | None = None,
+    api_base_url: str | None = None,
+) -> list[str | None]:
+    """Return cookie-domain variants worth clearing during auth transitions."""
+    if environment not in (Environment.STAGING, Environment.PRODUCTION):
+        return [None]
+
+    cleanup_domains: list[str | None] = [None]
+    seen = {None}
+
+    def add(domain: str | None) -> None:
+        if domain in seen:
+            return
+        seen.add(domain)
+        cleanup_domains.append(domain)
+
+    resolved_domain = resolve_cookie_domain(
+        environment=environment,
+        explicit_cookie_domain=explicit_cookie_domain,
+        frontend_url=frontend_url,
+        api_base_url=api_base_url,
+    )
+    add(resolved_domain)
+
+    frontend_host = _extract_cookie_host(frontend_url)
+    api_host = _extract_cookie_host(api_base_url)
+
+    if frontend_host and "." in frontend_host:
+        add(frontend_host)
+    if api_host and "." in api_host:
+        add(api_host)
+
+    return cleanup_domains
+
+
+def resolve_cookie_domain(
+    environment: Environment,
+    explicit_cookie_domain: str | None = None,
+    frontend_url: str | None = None,
+    api_base_url: str | None = None,
+) -> str | None:
+    """Return the shared auth-cookie domain for production-like environments.
+
+    Staging/production need a domain visible to both the API host and the
+    frontend host so login, silent refresh, the notification stream, and the
+    Next.js proxy all share the same `admin_token` cookie contract.
     """
-    if settings.environment in (Environment.STAGING, Environment.PRODUCTION):
-        # COOKIE_DOMAIN can be overridden via env var; sensible default
-        # is derived from FRONTEND_URL if available.
-        explicit = getattr(settings, "cookie_domain", None)
-        if explicit:
-            return explicit
-        frontend = getattr(settings, "frontend_url", "")
-        if frontend:
-            from urllib.parse import urlparse
+    if environment not in (Environment.STAGING, Environment.PRODUCTION):
+        return None
 
-            host = urlparse(frontend).hostname or ""
-            # strip the first subdomain (e.g. "staging.thespecialwedding.io" → ".thespecialwedding.io")
-            parts = host.split(".")
-            if len(parts) > 2:
-                return "." + ".".join(parts[-2:])
-            return "." + host
+    frontend_host = _extract_cookie_host(frontend_url)
+    api_host = _extract_cookie_host(api_base_url)
+
+    if explicit_cookie_domain:
+        if _cookie_domain_matches_host(
+            explicit_cookie_domain, frontend_host
+        ) and _cookie_domain_matches_host(explicit_cookie_domain, api_host):
+            return explicit_cookie_domain
+
+        logger.critical(
+            "COOKIE_DOMAIN=%s is not shared by FRONTEND_URL=%s and NEXT_PUBLIC_API_BASE_URL=%s",
+            explicit_cookie_domain,
+            frontend_url,
+            api_base_url,
+        )
+
+    if frontend_host and api_host:
+        shared_domain = _derive_shared_cookie_domain(frontend_host, api_host)
+        if shared_domain:
+            return shared_domain
+
+    if frontend_host:
+        frontend_domain = _derive_cookie_domain_from_host(frontend_host)
+        if frontend_domain and _cookie_domain_matches_host(frontend_domain, api_host):
+            return frontend_domain
+
+    if api_host:
+        api_domain = _derive_cookie_domain_from_api_host(api_host)
+        if api_domain and _cookie_domain_matches_host(api_domain, frontend_host):
+            return api_domain
+
+    logger.critical(
+        "No shared auth cookie domain could be derived from COOKIE_DOMAIN=%s FRONTEND_URL=%s NEXT_PUBLIC_API_BASE_URL=%s; falling back to a host-only cookie.",
+        explicit_cookie_domain,
+        frontend_url,
+        api_base_url,
+    )
     return None
+
+
+def _get_cookie_domain() -> str | None:
+    return resolve_cookie_domain(
+        environment=settings.environment,
+        explicit_cookie_domain=settings.cookie_domain,
+        frontend_url=settings.frontend_url,
+        api_base_url=settings.api_base_url,
+    )
+
+
+def _clear_auth_cookie_variants(response: Response, cookie_name: str) -> None:
+    for domain in legacy_cookie_cleanup_domains(
+        environment=settings.environment,
+        explicit_cookie_domain=settings.cookie_domain,
+        frontend_url=settings.frontend_url,
+        api_base_url=settings.api_base_url,
+    ):
+        response.delete_cookie(
+            key=cookie_name,
+            path="/",
+            domain=domain,
+            samesite="lax",
+        )
 
 
 def set_auth_cookie(
@@ -92,6 +251,10 @@ def set_auth_cookie(
     token: str,
     max_age: int = ACCESS_TOKEN_COOKIE_MAX_AGE,
 ) -> None:
+    # Flush older host-only or narrowly-scoped variants before issuing the
+    # canonical shared-domain cookie so existing staging sessions do not keep
+    # sending a stale `admin_token` alongside the new one.
+    _clear_auth_cookie_variants(response, cookie_name)
     domain = _get_cookie_domain()
     response.set_cookie(
         key=cookie_name,
@@ -107,10 +270,4 @@ def set_auth_cookie(
 
 
 def clear_auth_cookie(response: Response, cookie_name: str) -> None:
-    domain = _get_cookie_domain()
-    response.delete_cookie(
-        key=cookie_name,
-        path="/",
-        domain=domain,
-        samesite="lax",
-    )
+    _clear_auth_cookie_variants(response, cookie_name)
