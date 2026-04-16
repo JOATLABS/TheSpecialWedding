@@ -13,6 +13,8 @@ from datetime import datetime, timezone
 from typing import Dict, List
 
 from app.core.database import mongo
+from app.core.settings import settings
+from app.services.media_storage import MediaStorage, StorageTarget
 
 logger = logging.getLogger(__name__)
 
@@ -48,7 +50,7 @@ CRITICAL_ENV_VARS = {
     "GOOGLE_REDIRECT_URI": "Google OAuth callback URL",
 }
 
-# Optional but recommended environment variables
+# Optional but recommended environment variables that are not storage-target specific
 RECOMMENDED_ENV_VARS = {
     "VAPID_PUBLIC_KEY": "Web Push VAPID public key for notifications",
     "VAPID_PRIVATE_KEY": "Web Push VAPID private key for notifications",
@@ -56,14 +58,102 @@ RECOMMENDED_ENV_VARS = {
     "STRIPE_SECRET_KEY": "Payment processing API key",
     "STRIPE_WEBHOOK_SECRET": "Stripe webhook signature verification",
     "TWILIO_ACCOUNT_SID": "SMS service credentials",
+    "CLOUDFLARE_ACCOUNT_ID": "Cloudflare account identifier for Stream ingest",
+    "CLOUDFLARE_STREAM_API_TOKEN": "Cloudflare API token with Stream permissions",
+}
+
+STORAGE_RECOMMENDED_ENV_VARS = {
     "S3_ENDPOINT_URL": "S3/R2 storage endpoint URL",
     "S3_ACCESS_KEY_ID": "S3/R2 access key ID",
     "S3_SECRET_ACCESS_KEY": "S3/R2 secret access key",
     "S3_BUCKET_NAME": "S3/R2 bucket name for file uploads",
     "S3_GUEST_MEDIA_BUCKET_NAME": "Dedicated guest memories R2 bucket",
-    "CLOUDFLARE_ACCOUNT_ID": "Cloudflare account identifier for Stream ingest",
-    "CLOUDFLARE_STREAM_API_TOKEN": "Cloudflare API token with Stream permissions",
+    "S3_AD_BUCKET_NAME": "Dedicated ad-assets R2 bucket",
+    "S3_BLOG_BUCKET_NAME": "Dedicated blog-assets R2 bucket",
 }
+
+
+def _collect_storage_recommendations(storage: MediaStorage | None = None) -> List[str]:
+    recommended: List[str] = []
+
+    if not settings.s3_endpoint_url:
+        recommended.append(
+            f"S3_ENDPOINT_URL: {STORAGE_RECOMMENDED_ENV_VARS['S3_ENDPOINT_URL']}"
+        )
+    if not settings.s3_access_key_id:
+        recommended.append(
+            f"S3_ACCESS_KEY_ID: {STORAGE_RECOMMENDED_ENV_VARS['S3_ACCESS_KEY_ID']}"
+        )
+    if not settings.s3_secret_access_key:
+        recommended.append(
+            f"S3_SECRET_ACCESS_KEY: {STORAGE_RECOMMENDED_ENV_VARS['S3_SECRET_ACCESS_KEY']}"
+        )
+    if not settings.primary_media_bucket_name:
+        recommended.append(
+            f"S3_BUCKET_NAME: {STORAGE_RECOMMENDED_ENV_VARS['S3_BUCKET_NAME']}"
+        )
+    if not settings.guest_media_bucket_name:
+        recommended.append(
+            "S3_GUEST_MEDIA_BUCKET_NAME: "
+            f"{STORAGE_RECOMMENDED_ENV_VARS['S3_GUEST_MEDIA_BUCKET_NAME']}"
+        )
+    if not settings.ad_media_bucket_name:
+        recommended.append(
+            f"S3_AD_BUCKET_NAME: {STORAGE_RECOMMENDED_ENV_VARS['S3_AD_BUCKET_NAME']}"
+        )
+    if not settings.blog_media_bucket_name:
+        recommended.append(
+            f"S3_BLOG_BUCKET_NAME: {STORAGE_RECOMMENDED_ENV_VARS['S3_BLOG_BUCKET_NAME']}"
+        )
+
+    if settings.ad_media_bucket_name and not settings.ad_media_domain:
+        recommended.append("AD_MEDIA_DOMAIN: Public CDN/domain for ad asset URLs")
+    if settings.blog_media_bucket_name and not settings.blog_media_domain:
+        recommended.append("BLOG_MEDIA_DOMAIN: Public CDN/domain for blog asset URLs")
+
+    if settings.s3_credentials_configured:
+        storage = storage or MediaStorage()
+        target_env_map = {
+            StorageTarget.PRIMARY: "S3_BUCKET_NAME",
+            StorageTarget.GUEST_MEDIA: "S3_GUEST_MEDIA_BUCKET_NAME",
+            StorageTarget.AD_ASSETS: "S3_AD_BUCKET_NAME",
+            StorageTarget.BLOG_ASSETS: "S3_BLOG_BUCKET_NAME",
+        }
+        for target, env_name in target_env_map.items():
+            health = storage.target_health(target)
+            if health.bucket_name and health.status == "unavailable":
+                recommended.append(
+                    f"{env_name}: {health.issue} Verify the bucket name and signer permissions."
+                )
+
+    return recommended
+
+
+async def _collect_browser_upload_recommendations(storage: MediaStorage) -> List[str]:
+    recommendations: List[str] = []
+    browser_origins = settings.browser_upload_origins
+    if not browser_origins:
+        return recommendations
+
+    target_env_map = {
+        StorageTarget.PRIMARY: "S3_BUCKET_NAME",
+        StorageTarget.GUEST_MEDIA: "S3_GUEST_MEDIA_BUCKET_NAME",
+        StorageTarget.AD_ASSETS: "S3_AD_BUCKET_NAME",
+        StorageTarget.BLOG_ASSETS: "S3_BLOG_BUCKET_NAME",
+    }
+
+    for target, env_name in target_env_map.items():
+        target_health = storage.target_health(target)
+        if not getattr(target_health, "is_ready", target_health.status == "ready"):
+            continue
+
+        upload_health = await storage.browser_upload_health(
+            target, settings.browser_upload_origins
+        )
+        if upload_health.status in {"misconfigured", "error"} and upload_health.issue:
+            recommendations.append(f"{env_name}: {upload_health.issue}")
+
+    return recommendations
 
 
 async def validate_environment_and_notify() -> Dict[str, List[str]]:
@@ -88,9 +178,14 @@ async def validate_environment_and_notify() -> Dict[str, List[str]]:
     for var_name, description in RECOMMENDED_ENV_VARS.items():
         if not os.getenv(var_name):
             missing_recommended.append(f"{var_name}: {description}")
-            logger.warning(
-                f"RECOMMENDED: Missing environment variable {var_name} - {description}"
-            )
+    storage = MediaStorage() if settings.s3_credentials_configured else None
+    missing_recommended.extend(_collect_storage_recommendations(storage))
+    if storage is not None:
+        missing_recommended.extend(
+            await _collect_browser_upload_recommendations(storage)
+        )
+    for item in missing_recommended:
+        logger.warning(f"RECOMMENDED: {item}")
 
     # If any critical vars are missing, notify root admin
     if missing_critical:
@@ -106,6 +201,8 @@ async def validate_environment_and_notify() -> Dict[str, List[str]]:
             message=_build_notification_message([], missing_recommended),
             priority="high",
         )
+    else:
+        await clear_config_notifications()
 
     return {
         "missing_critical": missing_critical,

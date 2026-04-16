@@ -350,13 +350,17 @@ export default function ArticleEditor({ article, onSuccess, onCancel }: ArticleE
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   {/* Card Image */}
                   <div>
-                    <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-2">
+                    <label
+                      htmlFor="kb-card-image-url"
+                      className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-2"
+                    >
                       Card / Thumbnail Image
                     </label>
                     {cardImage ? (
                       <div className="relative group rounded-lg overflow-hidden border border-slate-200 dark:border-slate-600">
                         <img src={cardImage} alt="Card" className="w-full h-32 object-cover" />
                         <button
+                          type="button"
                           onClick={() => setCardImage('')}
                           className="absolute top-2 right-2 p-1 bg-red-500 text-white rounded-full opacity-0 group-hover:opacity-100 transition"
                         >
@@ -365,8 +369,10 @@ export default function ArticleEditor({ article, onSuccess, onCancel }: ArticleE
                       </div>
                     ) : (
                       <button
+                        type="button"
                         onClick={() => cardFileRef.current?.click()}
                         disabled={uploadingCard}
+                        aria-controls="kb-card-image-upload"
                         className="w-full h-32 flex flex-col items-center justify-center rounded-lg border-2 border-dashed border-slate-300 dark:border-slate-600 hover:border-blue-400 dark:hover:border-blue-500 transition text-slate-400 hover:text-blue-500"
                       >
                         {uploadingCard ? (
@@ -380,10 +386,12 @@ export default function ArticleEditor({ article, onSuccess, onCancel }: ArticleE
                       </button>
                     )}
                     <input
+                      id="kb-card-image-upload"
                       ref={cardFileRef}
                       type="file"
                       accept="image/jpeg,image/png,image/webp"
                       className="hidden"
+                      aria-label="KB card image file"
                       onChange={(e) => {
                         const f = e.target.files?.[0];
                         if (f) handleCardImageUpload(f);
@@ -392,23 +400,29 @@ export default function ArticleEditor({ article, onSuccess, onCancel }: ArticleE
                     />
                     {/* Manual URL input */}
                     <input
+                      id="kb-card-image-url"
                       type="text"
                       value={cardImage}
                       onChange={(e) => setCardImage(e.target.value)}
-                      placeholder="Or paste CDN URL"
+                      placeholder="or paste CDN URL..."
+                      aria-label="KB card image CDN URL"
                       className="mt-2 w-full px-3 py-1.5 text-xs border border-slate-200 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-gray-700 dark:text-gray-300"
                     />
                   </div>
 
                   {/* OG / Social Image */}
                   <div>
-                    <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-2">
+                    <label
+                      htmlFor="kb-og-image-url"
+                      className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-2"
+                    >
                       OG / Social Share Image
                     </label>
                     {ogImage ? (
                       <div className="relative group rounded-lg overflow-hidden border border-slate-200 dark:border-slate-600">
                         <img src={ogImage} alt="OG" className="w-full h-32 object-cover" />
                         <button
+                          type="button"
                           onClick={() => setOgImage('')}
                           className="absolute top-2 right-2 p-1 bg-red-500 text-white rounded-full opacity-0 group-hover:opacity-100 transition"
                         >
@@ -417,8 +431,10 @@ export default function ArticleEditor({ article, onSuccess, onCancel }: ArticleE
                       </div>
                     ) : (
                       <button
+                        type="button"
                         onClick={() => ogFileRef.current?.click()}
                         disabled={uploadingOg}
+                        aria-controls="kb-og-image-upload"
                         className="w-full h-32 flex flex-col items-center justify-center rounded-lg border-2 border-dashed border-slate-300 dark:border-slate-600 hover:border-blue-400 dark:hover:border-blue-500 transition text-slate-400 hover:text-blue-500"
                       >
                         {uploadingOg ? (
@@ -432,10 +448,12 @@ export default function ArticleEditor({ article, onSuccess, onCancel }: ArticleE
                       </button>
                     )}
                     <input
+                      id="kb-og-image-upload"
                       ref={ogFileRef}
                       type="file"
                       accept="image/jpeg,image/png,image/webp"
                       className="hidden"
+                      aria-label="KB OG image file"
                       onChange={(e) => {
                         const f = e.target.files?.[0];
                         if (f) handleOgImageUpload(f);
@@ -443,10 +461,12 @@ export default function ArticleEditor({ article, onSuccess, onCancel }: ArticleE
                       }}
                     />
                     <input
+                      id="kb-og-image-url"
                       type="text"
                       value={ogImage}
                       onChange={(e) => setOgImage(e.target.value)}
-                      placeholder="Or paste CDN URL"
+                      placeholder="or paste CDN URL..."
+                      aria-label="KB OG image CDN URL"
                       className="mt-2 w-full px-3 py-1.5 text-xs border border-slate-200 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-gray-700 dark:text-gray-300"
                     />
                   </div>

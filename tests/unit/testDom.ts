@@ -84,6 +84,22 @@ export function installDom(): DomHandle {
     window.HTMLElement.prototype.scrollIntoView = () => {};
   }
 
+  if (!('attachEvent' in window.HTMLElement.prototype)) {
+    Object.defineProperty(window.HTMLElement.prototype, 'attachEvent', {
+      configurable: true,
+      writable: true,
+      value: () => {},
+    });
+  }
+
+  if (!('detachEvent' in window.HTMLElement.prototype)) {
+    Object.defineProperty(window.HTMLElement.prototype, 'detachEvent', {
+      configurable: true,
+      writable: true,
+      value: () => {},
+    });
+  }
+
   for (const key of ['TextEncoder', 'TextDecoder', 'URL', 'Blob', 'File'] as const) {
     if (!(key in globalThis) && key in window) {
       copyWindowProperty(globalThis, window as unknown as Window & typeof globalThis, key);

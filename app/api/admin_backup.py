@@ -20,10 +20,12 @@ from fastapi import APIRouter, Depends, Header, HTTPException
 
 from app.core.database import mongo
 from app.dependencies.auth_extended import ExtendedAuthUser, require_root_admin
+from app.services.media_storage import MediaStorage, StorageTarget
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/backup", tags=["ROOT_ADMIN", "Backup"])
+media_storage = MediaStorage()
 
 # Backup secret for Cloudflare Workers authentication
 BACKUP_SECRET = os.getenv("BACKUP_SECRET")
@@ -109,19 +111,8 @@ async def trigger_backup(
 
         # Upload to R2 using boto3 (you already have S3 config for R2!)
         try:
-            import boto3
-            from botocore.config import Config
-
-            # Create S3 client for R2
-            s3_client = boto3.client(
-                "s3",
-                endpoint_url=os.getenv("S3_ENDPOINT_URL"),
-                aws_access_key_id=os.getenv("S3_ACCESS_KEY_ID"),
-                aws_secret_access_key=os.getenv("S3_SECRET_ACCESS_KEY"),
-                config=Config(signature_version="s3v4"),
-            )
-
-            bucket_name = os.getenv("S3_BUCKET_NAME")
+            s3_client = media_storage.client
+            bucket_name = media_storage.target(StorageTarget.PRIMARY).bucket_name
             if not bucket_name:
                 raise Exception("S3_BUCKET_NAME not set")
 
@@ -358,9 +349,9 @@ async def get_restore_info(
 ```bash
 # Using AWS CLI (configure with R2 credentials)
 aws s3 cp \\
-  s3://{os.getenv("S3_BUCKET_NAME")}/{backup["storage_key"]} \\
+  s3://{media_storage.target(StorageTarget.PRIMARY).bucket_name}/{backup["storage_key"]} \\
   /tmp/{backup["filename"]} \\
-  --endpoint-url {os.getenv("S3_ENDPOINT_URL")}
+  --endpoint-url {media_storage.endpoint_url}
 ```
 
 ## Step 2: Restore MongoDB
@@ -413,18 +404,8 @@ async def manual_cleanup_old_backups(
         days: Delete backups older than this many days
     """
     try:
-        import boto3
-        from botocore.config import Config
-
-        s3_client = boto3.client(
-            "s3",
-            endpoint_url=os.getenv("S3_ENDPOINT_URL"),
-            aws_access_key_id=os.getenv("S3_ACCESS_KEY_ID"),
-            aws_secret_access_key=os.getenv("S3_SECRET_ACCESS_KEY"),
-            config=Config(signature_version="s3v4"),
-        )
-
-        bucket_name = os.getenv("S3_BUCKET_NAME")
+        s3_client = media_storage.client
+        bucket_name = media_storage.target(StorageTarget.PRIMARY).bucket_name
         if not bucket_name:
             raise HTTPException(
                 status_code=500,

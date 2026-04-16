@@ -229,11 +229,17 @@ export default function BlogArticleEditor({ article, onSave, onCancel }: BlogArt
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               {/* Card Image */}
               <div>
-                <label className="mb-1.5 block text-xs font-medium text-slate-600 dark:text-slate-400">Card Image</label>
+                <label
+                  htmlFor="blog-card-image-url"
+                  className="mb-1.5 block text-xs font-medium text-slate-600 dark:text-slate-400"
+                >
+                  Card Image
+                </label>
                 {cardImage ? (
                   <div className="relative overflow-hidden rounded-lg border border-slate-200 dark:border-white/10">
                     <img src={cardImage} alt="Card" className="w-full h-32 object-cover" />
                     <button
+                      type="button"
                       onClick={() => setCardImage('')}
                       className="absolute top-2 right-2 p-1 rounded-full bg-black/60 text-white hover:bg-black/80 transition"
                     >
@@ -242,8 +248,10 @@ export default function BlogArticleEditor({ article, onSave, onCancel }: BlogArt
                   </div>
                 ) : (
                   <button
+                    type="button"
                     onClick={() => cardFileRef.current?.click()}
                     disabled={uploadingCard}
+                    aria-controls="blog-card-image-upload"
                     className="flex h-32 w-full flex-col items-center justify-center gap-2 rounded-lg border-2 border-dashed border-slate-300 text-slate-500 transition hover:border-wedding-rose/40 hover:text-slate-700 dark:border-white/10 dark:text-slate-500 dark:hover:border-wedding-rose/30 dark:hover:text-slate-300"
                   >
                     {uploadingCard ? (
@@ -257,10 +265,12 @@ export default function BlogArticleEditor({ article, onSave, onCancel }: BlogArt
                   </button>
                 )}
                 <input
+                  id="blog-card-image-upload"
                   ref={cardFileRef}
                   type="file"
                   accept="image/jpeg,image/png,image/webp"
                   className="hidden"
+                  aria-label="Blog card image file"
                   onChange={(e) => {
                     const file = e.target.files?.[0];
                     if (file) handleCardImageUpload(file);
@@ -269,21 +279,29 @@ export default function BlogArticleEditor({ article, onSave, onCancel }: BlogArt
                 />
                 {/* Manual URL input */}
                 <input
+                  id="blog-card-image-url"
                   type="text"
                   value={cardImage}
                   onChange={(e) => setCardImage(e.target.value)}
                   placeholder="or paste CDN URL..."
+                  aria-label="Blog card image CDN URL"
                   className="mt-2 w-full rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs text-slate-900 placeholder-slate-400 shadow-sm focus:outline-none focus:border-wedding-rose/50 dark:border-white/10 dark:bg-white/5 dark:text-white dark:placeholder-slate-600 dark:shadow-none"
                 />
               </div>
 
               {/* OG Image */}
               <div>
-                <label className="mb-1.5 block text-xs font-medium text-slate-600 dark:text-slate-400">OG / Social Image</label>
+                <label
+                  htmlFor="blog-og-image-url"
+                  className="mb-1.5 block text-xs font-medium text-slate-600 dark:text-slate-400"
+                >
+                  OG / Social Image
+                </label>
                 {ogImage ? (
                   <div className="relative overflow-hidden rounded-lg border border-slate-200 dark:border-white/10">
                     <img src={ogImage} alt="OG" className="w-full h-32 object-cover" />
                     <button
+                      type="button"
                       onClick={() => setOgImage('')}
                       className="absolute top-2 right-2 p-1 rounded-full bg-black/60 text-white hover:bg-black/80 transition"
                     >
@@ -292,8 +310,10 @@ export default function BlogArticleEditor({ article, onSave, onCancel }: BlogArt
                   </div>
                 ) : (
                   <button
+                    type="button"
                     onClick={() => ogFileRef.current?.click()}
                     disabled={uploadingOg}
+                    aria-controls="blog-og-image-upload"
                     className="flex h-32 w-full flex-col items-center justify-center gap-2 rounded-lg border-2 border-dashed border-slate-300 text-slate-500 transition hover:border-wedding-rose/40 hover:text-slate-700 dark:border-white/10 dark:text-slate-500 dark:hover:border-wedding-rose/30 dark:hover:text-slate-300"
                   >
                     {uploadingOg ? (
@@ -307,10 +327,12 @@ export default function BlogArticleEditor({ article, onSave, onCancel }: BlogArt
                   </button>
                 )}
                 <input
+                  id="blog-og-image-upload"
                   ref={ogFileRef}
                   type="file"
                   accept="image/jpeg,image/png,image/webp"
                   className="hidden"
+                  aria-label="Blog OG image file"
                   onChange={(e) => {
                     const file = e.target.files?.[0];
                     if (file) handleOgImageUpload(file);
@@ -318,10 +340,12 @@ export default function BlogArticleEditor({ article, onSave, onCancel }: BlogArt
                   }}
                 />
                 <input
+                  id="blog-og-image-url"
                   type="text"
                   value={ogImage}
                   onChange={(e) => setOgImage(e.target.value)}
                   placeholder="or paste CDN URL..."
+                  aria-label="Blog OG image CDN URL"
                   className="mt-2 w-full rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs text-slate-900 placeholder-slate-400 shadow-sm focus:outline-none focus:border-wedding-rose/50 dark:border-white/10 dark:bg-white/5 dark:text-white dark:placeholder-slate-600 dark:shadow-none"
                 />
               </div>
