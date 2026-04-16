@@ -13,10 +13,12 @@ def build_settings(**overrides) -> Settings:
         "SECRET_KEY": "test-secret-key-this-is-long-enough-for-validation-testing-purposes-2026",
         "CORS_ORIGINS": ["http://localhost:3000"],
         "ENVIRONMENT": "development",
+        "TESTING": False,
         "ENABLE_API_DOCS": None,
+        "ALLOWED_HOSTS": [],
     }
     base.update(overrides)
-    return Settings(_env_file=None, **base)
+    return Settings.model_validate(base)
 
 
 def test_api_docs_enabled_by_default_outside_production():
@@ -70,7 +72,25 @@ def test_trusted_hosts_include_local_dev_defaults():
         CORS_ORIGINS=["http://localhost:3000"],
     )
 
-    assert settings.trusted_hosts == ["localhost", "127.0.0.1", "testserver"]
+    assert settings.trusted_hosts == ["localhost", "127.0.0.1", "::1", "testserver"]
+
+
+def test_browser_upload_origins_follow_frontend_not_api_hosts():
+    settings = build_settings(
+        ENVIRONMENT="development",
+        FRONTEND_URL="http://localhost:3000/dashboard",
+        NEXT_PUBLIC_API_BASE_URL="http://localhost:8000",
+        CORS_ORIGINS=[
+            "http://localhost:3000",
+            "http://localhost:8000",
+            "https://staging.thespecialwedding.io",
+        ],
+    )
+
+    assert settings.browser_upload_origins == [
+        "http://localhost:3000",
+        "https://staging.thespecialwedding.io",
+    ]
 
 
 def test_allowed_hosts_override_accepts_comma_separated_values():
@@ -98,7 +118,11 @@ def test_env_cors_origins_accepts_comma_separated_values(monkeypatch):
 
     assert settings.cors_origins == [
         "http://localhost:3000",
+        "http://127.0.0.1:3000",
+        "http://[::1]:3000",
         "http://localhost:8000",
+        "http://127.0.0.1:8000",
+        "http://[::1]:8000",
     ]
 
 

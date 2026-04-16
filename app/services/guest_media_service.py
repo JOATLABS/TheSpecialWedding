@@ -13,12 +13,11 @@ from typing import Any, Optional
 from urllib.parse import urlparse
 
 import aiohttp
-import boto3
-from botocore.config import Config
 from fastapi import HTTPException
 
 from app.core.database import mongo
 from app.core.settings import settings
+from app.services.media_storage import MediaStorage, StorageTarget, StorageTargetHealth
 from app.utils.serializers import serialize_mongo_doc
 
 logger = logging.getLogger(__name__)
@@ -87,25 +86,31 @@ def _coerce_datetime(value: Any) -> Optional[datetime]:
 
 class GuestMediaStorage:
     def __init__(self):
-        self.bucket_name = os.getenv("S3_GUEST_MEDIA_BUCKET_NAME") or os.getenv(
-            "S3_BUCKET_NAME"
-        )
-        self.s3 = boto3.client(
-            "s3",
-            endpoint_url=os.getenv("S3_ENDPOINT_URL"),
-            aws_access_key_id=os.getenv("S3_ACCESS_KEY_ID"),
-            aws_secret_access_key=os.getenv("S3_SECRET_ACCESS_KEY"),
-            config=Config(signature_version="s3v4"),
-        )
+        self.storage = MediaStorage()
+
+    @property
+    def health(self) -> StorageTargetHealth:
+        return self.storage.target_health(StorageTarget.GUEST_MEDIA)
+
+    @property
+    def bucket_name(self) -> Optional[str]:
+        return self.storage.target(StorageTarget.GUEST_MEDIA).bucket_name
+
+    @property
+    def s3(self):
+        return self.storage.client
 
     @property
     def is_configured(self) -> bool:
-        return bool(
-            self.bucket_name
-            and os.getenv("S3_ENDPOINT_URL")
-            and os.getenv("S3_ACCESS_KEY_ID")
-            and os.getenv("S3_SECRET_ACCESS_KEY")
-        )
+        return self.health.is_ready
+
+    @property
+    def status(self) -> str:
+        return self.health.status
+
+    @property
+    def issue(self) -> Optional[str]:
+        return self.health.issue
 
     def build_key(
         self, wedding_slug: str, upload_batch_id: str, asset_id: str, filename: str
@@ -130,14 +135,11 @@ class GuestMediaStorage:
             raise HTTPException(
                 status_code=503, detail="Guest media storage bucket is not configured"
             )
-        return self.s3.generate_presigned_url(
-            ClientMethod="put_object",
-            Params={
-                "Bucket": self.bucket_name,
-                "Key": key,
-                "ContentType": content_type,
-            },
-            ExpiresIn=expires_in,
+        return self.storage.generate_presigned_put_url(
+            StorageTarget.GUEST_MEDIA,
+            key=key,
+            expires_in=expires_in,
+            content_type=content_type,
         )
 
     def create_presigned_download_url(
@@ -151,16 +153,17 @@ class GuestMediaStorage:
                 status_code=503, detail="Guest media storage bucket is not configured"
             )
 
-        params: dict[str, Any] = {"Bucket": self.bucket_name, "Key": key}
+        params: dict[str, Any] = {}
         if filename:
             params["ResponseContentDisposition"] = (
                 f'attachment; filename="{_safe_filename(filename)}"'
             )
 
-        return self.s3.generate_presigned_url(
-            ClientMethod="get_object",
-            Params=params,
-            ExpiresIn=expires_in,
+        return self.storage.generate_presigned_get_url(
+            StorageTarget.GUEST_MEDIA,
+            key=key,
+            expires_in=expires_in,
+            extra_params=params,
         )
 
     def head_object(self, key: str) -> dict[str, Any]:
@@ -168,7 +171,7 @@ class GuestMediaStorage:
             raise HTTPException(
                 status_code=503, detail="Guest media storage bucket is not configured"
             )
-        return self.s3.head_object(Bucket=self.bucket_name, Key=key)
+        return self.storage.head_object(StorageTarget.GUEST_MEDIA, key)
 
     def upload_file(self, local_path: str, key: str, content_type: str) -> None:
         if not self.bucket_name:
@@ -176,11 +179,11 @@ class GuestMediaStorage:
                 status_code=503, detail="Guest media storage bucket is not configured"
             )
         with open(local_path, "rb") as file_handle:
-            self.s3.upload_fileobj(
+            self.storage.upload_fileobj(
                 file_handle,
-                self.bucket_name,
+                StorageTarget.GUEST_MEDIA,
                 key,
-                ExtraArgs={"ContentType": content_type},
+                extra_args={"ContentType": content_type},
             )
 
     def get_object_bytes(self, key: str) -> bytes:
@@ -188,8 +191,7 @@ class GuestMediaStorage:
             raise HTTPException(
                 status_code=503, detail="Guest media storage bucket is not configured"
             )
-        response = self.s3.get_object(Bucket=self.bucket_name, Key=key)
-        return response["Body"].read()
+        return self.storage.get_object_bytes(StorageTarget.GUEST_MEDIA, key)
 
 
 class GuestMediaService:
@@ -588,7 +590,9 @@ class GuestMediaService:
     ) -> dict[str, Any]:
         if not self.storage.is_configured:
             raise HTTPException(
-                status_code=503, detail="Guest media uploads are not configured"
+                status_code=503,
+                detail=self.storage.issue
+                or "Guest media uploads are not currently available",
             )
 
         validated = await self.validate_public_upload_access(slug, upload_token)
@@ -608,6 +612,8 @@ class GuestMediaService:
                 ),
                 "link_status": "open",
                 "storage_ready": self.storage.is_configured,
+                "storage_status": self.storage.status,
+                "storage_issue": self.storage.issue,
                 "stream_configured": self.stream_is_configured,
             },
             "events": self._event_options(wedding),
@@ -631,7 +637,9 @@ class GuestMediaService:
     ) -> dict[str, Any]:
         if not self.storage.is_configured:
             raise HTTPException(
-                status_code=503, detail="Guest media uploads are not configured"
+                status_code=503,
+                detail=self.storage.issue
+                or "Guest media uploads are not currently available",
             )
 
         validated = await self.validate_public_upload_access(slug, upload_token)
@@ -1114,6 +1122,8 @@ class GuestMediaService:
             "link_status": "open" if is_open else "closed",
             "upload_closes_at": self._serialize_datetime(upload_closes_at),
             "storage_ready": self.storage.is_configured,
+            "storage_status": self.storage.status,
+            "storage_issue": self.storage.issue,
             "stream_configured": self.stream_is_configured,
         }
 

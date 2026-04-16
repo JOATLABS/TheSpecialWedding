@@ -38,17 +38,28 @@
 ### Environment Variables
 
 - [ ] `NEXT_PUBLIC_API_BASE_URL` set to production API URL (e.g. `https://api.thespecialwedding.io`)
-- [ ] `S3_BLOG_BUCKET_NAME` set (currently `knowledgebase-saas-blogs`)
+- [ ] `S3_BLOG_BUCKET_NAME` set (currently `knowledgeable-saas-blogs`)
 - [ ] `BLOG_MEDIA_DOMAIN` set (currently `blogs.thespecialwedding.io`)
 - [ ] `S3_ENDPOINT_URL` set (Cloudflare R2 endpoint)
 - [ ] `S3_ACCESS_KEY_ID` and `S3_SECRET_ACCESS_KEY` set (shared R2 credentials)
-- [ ] `MEDIA_DOMAIN` set (gallery CDN fallback)
-- [ ] `AD_MEDIA_DOMAIN` set (ad assets CDN fallback)
+- [ ] `S3_BUCKET_NAME` set for the primary gallery/profile/document bucket
+- [ ] `MEDIA_DOMAIN` set for the primary gallery/profile/document CDN
+- [ ] `S3_GUEST_MEDIA_BUCKET_NAME` set if guest memories should live outside the primary bucket
+- [ ] `GUEST_MEDIA_DOMAIN` set if guest memories should resolve through a dedicated CDN instead of the primary media domain
+- [ ] `S3_AD_BUCKET_NAME` set for ad assets when vendor creative or scraped logos are enabled
+- [ ] `AD_MEDIA_DOMAIN` set for the ad-assets CDN
+
+### Centralized Storage Contract
+
+- [ ] All media bucket/domain env vars above are configured at deploy time; backend services no longer hand-roll raw `os.getenv(...)` fallbacks for gallery/blog/ad/guest-media paths
+- [ ] Dedicated guest/ad/blog bucket values are explicit when those upload flows are enabled; missing buckets now fail closed instead of silently falling back to the primary media bucket
+- [ ] Dedicated guest/ad/blog media domains are explicit when those assets must resolve via CDN; missing domains no longer silently reuse another media surface
 
 ### R2 Bucket Configuration
 
-- [ ] `knowledgebase-saas-blogs` R2 bucket exists and is accessible
+- [ ] `knowledgeable-saas-blogs` R2 bucket exists and is accessible
 - [ ] Bucket CORS allows PUT from your frontend domain (for presigned uploads)
+- [ ] Guest memories bucket CORS allows `PUT`, `GET`, and `HEAD` from your frontend/upload origins when presigned browser uploads are enabled
 - [ ] CDN domain `blogs.thespecialwedding.io` resolves and points to R2 bucket
 - [ ] Test presigned URL upload works: `GET /admin/blog/upload-url?filename=test.jpg&content_type=image/jpeg&folder=blog`
 - [ ] Test KB upload path works: `GET /admin/blog/upload-url?filename=test.jpg&content_type=image/jpeg&folder=kb/cards`

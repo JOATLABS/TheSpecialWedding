@@ -4,7 +4,7 @@ from fastapi import APIRouter, HTTPException, Query, Request
 from pydantic import BaseModel, Field
 
 from app.dependencies.guest_access import get_guest_access_session
-from app.services.gallery_upload_service import GalleryUploadService
+from app.services.gallery_media_service import GalleryUploadService
 from app.services.wedding_service import WeddingService
 
 router = APIRouter()

@@ -116,6 +116,8 @@ interface MemoriesSummary {
   link_status: 'open' | 'closed';
   upload_closes_at?: string | null;
   storage_ready: boolean;
+  storage_status?: 'ready' | 'unconfigured' | 'unavailable';
+  storage_issue?: string | null;
   stream_configured: boolean;
 }
 
@@ -614,6 +616,8 @@ function DashboardSection({ data }: { data: DashboardData }) {
     link_status: 'closed' as const,
     upload_closes_at: null,
     storage_ready: false,
+    storage_status: 'unconfigured' as const,
+    storage_issue: null,
     stream_configured: false,
   };
   const budgetPercent = budget.total_budget > 0 ? Math.min(100, (budget.total_spent / budget.total_budget) * 100) : 0;

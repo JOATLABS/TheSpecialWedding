@@ -44,13 +44,13 @@ def _install_test_stubs() -> None:
 
 _install_test_stubs()
 
-from app.services.gallery_upload_service import GalleryUploadService
+from app.services.gallery_media_service import GalleryUploadService  # noqa: E402
 
 
 def _build_service() -> GalleryUploadService:
     service = GalleryUploadService.__new__(GalleryUploadService)
     service.bucket_name = "test-bucket"
-    service.s3 = object()
+    service.storage = object()
     return service
 
 

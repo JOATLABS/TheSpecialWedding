@@ -89,8 +89,14 @@ Use this checklist to ensure you don't miss any steps during deployment.
 - [ ] `S3_ENDPOINT_URL` - R2/S3 endpoint
 - [ ] `S3_ACCESS_KEY_ID` - Access key
 - [ ] `S3_SECRET_ACCESS_KEY` - Secret key
-- [ ] `S3_BUCKET_NAME` - Bucket name
-- [ ] `MEDIA_DOMAIN` - Public CDN URL
+- [ ] `S3_BUCKET_NAME` - Primary gallery/profile/document bucket
+- [ ] `MEDIA_DOMAIN` - Public CDN URL for the primary media bucket
+- [ ] `S3_GUEST_MEDIA_BUCKET_NAME` - Guest memories bucket when guest uploads are enabled
+- [ ] `GUEST_MEDIA_DOMAIN` - Public CDN URL for guest media assets if guest media is served through a dedicated domain
+- [ ] `S3_AD_BUCKET_NAME` - Dedicated ad-assets bucket when vendor ads/logo storage is enabled
+- [ ] `AD_MEDIA_DOMAIN` - Public CDN URL for ad assets
+- [ ] `S3_BLOG_BUCKET_NAME` - Dedicated blog/knowledge-base bucket when blog image uploads are enabled
+- [ ] `BLOG_MEDIA_DOMAIN` - Public CDN URL for blog assets
 
 ### Payment Secrets (Stripe)
 - [ ] `STRIPE_SECRET_KEY` - Stripe secret key
