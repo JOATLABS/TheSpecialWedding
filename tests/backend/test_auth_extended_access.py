@@ -4,6 +4,7 @@ from fastapi import HTTPException
 from app.dependencies.auth_extended import (
     ExtendedAuthUser,
     require_wedding_planner_only,
+    should_backfill_vendor_email_verification,
 )
 
 
@@ -34,3 +35,38 @@ async def test_require_wedding_planner_only_rejects_non_planner_roles():
 
     assert exc_info.value.status_code == 403
     assert exc_info.value.detail == "Wedding planner access required"
+
+
+def test_should_backfill_vendor_email_verification_only_for_active_vendor_self_signups():
+    assert (
+        should_backfill_vendor_email_verification(
+            {
+                "registration_source": "vendor_self_signup",
+                "vendor_account_status": "active",
+            },
+            "advertising_vendor",
+        )
+        is True
+    )
+
+    assert (
+        should_backfill_vendor_email_verification(
+            {
+                "registration_source": "vendor_self_signup",
+                "vendor_account_status": "pending_approval",
+            },
+            "advertising_vendor",
+        )
+        is False
+    )
+
+    assert (
+        should_backfill_vendor_email_verification(
+            {
+                "registration_source": "public_signup",
+                "vendor_account_status": "active",
+            },
+            "advertising_vendor",
+        )
+        is False
+    )

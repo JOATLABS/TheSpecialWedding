@@ -76,6 +76,7 @@ export default function NewCampaignWizard() {
   const router = useRouter();
   const [currentStep, setCurrentStep] = useState<WizardStep>('basics');
   const [submitting, setSubmitting] = useState(false);
+  const [creativeMediaUploading, setCreativeMediaUploading] = useState(false);
 
   // Campaign data
   const [campaignData, setCampaignData] = useState<CreateCampaignRequest>({
@@ -107,12 +108,15 @@ export default function NewCampaignWizard() {
   const stepIndex = STEPS.findIndex((s) => s.id === currentStep);
   const canGoBack = stepIndex > 0;
   const canGoForward = stepIndex < STEPS.length - 1;
+  const creativeStepLocked = currentStep === 'creative' && creativeMediaUploading;
 
   const goNext = () => {
+    if (creativeStepLocked) return;
     if (canGoForward) setCurrentStep(STEPS[stepIndex + 1].id);
   };
 
   const goBack = () => {
+    if (creativeStepLocked) return;
     if (canGoBack) setCurrentStep(STEPS[stepIndex - 1].id);
   };
 
@@ -139,6 +143,11 @@ export default function NewCampaignWizard() {
     }
     if (!creativeData.headline.trim() || !creativeData.description.trim()) {
       toast.error('Creative headline and description are required');
+      setCurrentStep('creative');
+      return;
+    }
+    if (creativeMediaUploading) {
+      toast.error('Wait for the creative image to finish uploading before submitting.');
       setCurrentStep('creative');
       return;
     }
@@ -171,6 +180,11 @@ export default function NewCampaignWizard() {
   const handleSaveDraft = async () => {
     if (!token || !campaignData.campaign_name.trim()) {
       toast.error('Campaign name is required');
+      return;
+    }
+    if (creativeMediaUploading) {
+      toast.error('Wait for the creative image to finish uploading before saving.');
+      setCurrentStep('creative');
       return;
     }
 
@@ -214,12 +228,16 @@ export default function NewCampaignWizard() {
           return (
             <React.Fragment key={step.id}>
               <button
-                onClick={() => setCurrentStep(step.id)}
+                onClick={() => {
+                  if (creativeStepLocked) return;
+                  setCurrentStep(step.id);
+                }}
+                disabled={creativeStepLocked}
                 className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium transition-colors whitespace-nowrap ${
                   isActive ? 'bg-primary-500 text-white' :
                   isPast ? 'bg-primary-100 text-primary-700' :
                   'bg-slate-100 dark:bg-slate-700 text-slate-500'
-                }`}
+                } disabled:cursor-not-allowed disabled:opacity-60`}
               >
                 {isPast ? <CheckCircle2 size={14} /> : <Icon size={14} />}
                 <span className="hidden sm:inline">{step.label}</span>
@@ -365,10 +383,16 @@ export default function NewCampaignWizard() {
               label="Creative Image"
               value={creativeData.image_url ?? null}
               onChange={(url) => updateCreative({ image_url: url })}
+              onUploadStateChange={setCreativeMediaUploading}
               previewAlt={creativeData.image_alt_text || creativeData.headline || 'Campaign creative image'}
               emptyTitle="Upload the image planners will see"
               emptyDescription="Use the same shared upload flow as the rest of the platform so this campaign creative stays on-brand."
             />
+            {creativeMediaUploading ? (
+              <p className="text-sm text-amber-600 dark:text-amber-300">
+                Finish the image upload before leaving this step or saving the campaign.
+              </p>
+            ) : null}
             <div>
               <label className="block text-sm font-medium text-slate-700 dark:text-slate-200 mb-1.5">Headline *</label>
               <input
@@ -544,7 +568,7 @@ export default function NewCampaignWizard() {
       <div className="flex items-center justify-between mt-6">
         <button
           onClick={goBack}
-          disabled={!canGoBack}
+          disabled={!canGoBack || creativeStepLocked}
           className="flex items-center gap-1.5 px-4 py-2 text-sm text-slate-600 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg transition-colors disabled:opacity-30 disabled:pointer-events-none"
         >
           <ArrowLeft size={14} /> Back
@@ -554,25 +578,26 @@ export default function NewCampaignWizard() {
             <>
               <button
                 onClick={handleSaveDraft}
-                disabled={submitting}
+                disabled={submitting || creativeMediaUploading}
                 className="px-4 py-2 text-sm border border-slate-200 dark:border-slate-600 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700 rounded-lg transition-colors disabled:opacity-50"
               >
-                Save as Draft
+                {creativeMediaUploading ? 'Uploading image…' : 'Save as Draft'}
               </button>
               <button
                 onClick={handleSubmit}
-                disabled={submitting}
+                disabled={submitting || creativeMediaUploading}
                 className="flex items-center gap-2 px-5 py-2 bg-primary-500 hover:bg-primary-600 text-white text-sm font-medium rounded-lg transition-colors disabled:opacity-50"
               >
-                <Send size={14} /> {submitting ? 'Creating campaign...' : 'Submit for Review'}
+                <Send size={14} /> {creativeMediaUploading ? 'Uploading image…' : submitting ? 'Creating campaign...' : 'Submit for Review'}
               </button>
             </>
           ) : (
             <button
               onClick={goNext}
-              className="flex items-center gap-1.5 px-4 py-2 bg-primary-500 hover:bg-primary-600 text-white text-sm font-medium rounded-lg transition-colors"
+              disabled={creativeStepLocked}
+              className="flex items-center gap-1.5 px-4 py-2 bg-primary-500 hover:bg-primary-600 text-white text-sm font-medium rounded-lg transition-colors disabled:opacity-50"
             >
-              Next <ArrowRight size={14} />
+              {creativeStepLocked ? 'Uploading image…' : 'Next'} <ArrowRight size={14} />
             </button>
           )}
         </div>
