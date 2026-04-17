@@ -80,7 +80,11 @@ async def get_current_user_profile(
         "first_name": serialized_user_data.get("first_name"),
         "last_name": serialized_user_data.get("last_name"),
         "company_name": serialized_user_data.get("company_name"),
+        "business_name": serialized_user_data.get("business_name"),
         "profile_image_url": serialized_user_data.get("profile_image_url"),
+        "logo_url": serialized_user_data.get("logo_url"),
+        "vendor_account_status": serialized_user_data.get("vendor_account_status"),
+        "must_change_password": serialized_user_data.get("must_change_password", False),
         "push_notifications_enabled": serialized_user_data.get(
             "push_notifications_enabled", True
         ),  # Default to True

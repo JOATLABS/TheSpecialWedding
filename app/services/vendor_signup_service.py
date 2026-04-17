@@ -279,6 +279,8 @@ class VendorSignupService:
                 "$set": {
                     "vendor_account_status": "active",
                     "password_hash": password_hash,
+                    "email_verified": True,
+                    "email_verified_at": now,
                     "must_change_password": True,
                     "temp_password_expires_at": now + timedelta(hours=72),
                     "is_active": True,

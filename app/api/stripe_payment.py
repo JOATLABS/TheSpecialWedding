@@ -55,6 +55,29 @@ async def _get_payment_request_by_public_token(public_token: str) -> dict:
     return payment_request
 
 
+def _build_public_payment_response(
+    payment_request: dict,
+    payment_intent,
+    *,
+    include_client_secret: bool = False,
+) -> dict:
+    response = {
+        "payment_token": payment_request["public_token"],
+        "amount": payment_intent.amount / 100,
+        "currency": payment_intent.currency,
+        "status": payment_intent.status,
+        "description": payment_intent.description,
+    }
+
+    if (
+        include_client_secret
+        and payment_intent.status in PAYABLE_PAYMENT_INTENT_STATUSES
+    ):
+        response["client_secret"] = payment_intent.client_secret
+
+    return response
+
+
 class CreateCheckoutSessionRequest(BaseModel):
     """Request model for creating a Stripe Checkout Session"""
 
@@ -327,10 +350,10 @@ async def get_checkout_session(
         )
 
 
-@router.get("/payment-intent/{id}")
-async def get_payment_intent_details(id: str):
+@router.get("/payment-request/{payment_token}")
+async def get_public_payment_request_details(payment_token: str):
     """
-    Public endpoint to retrieve PaymentIntent details for the payment page.
+    Public endpoint to retrieve payment-request details for the payment page.
     No auth required as couples pay without login.
     """
     try:
@@ -343,22 +366,14 @@ async def get_payment_intent_details(id: str):
 
         stripe.api_key = settings.stripe_secret_key
 
-        payment_request = await _get_payment_request_by_public_token(id)
+        payment_request = await _get_payment_request_by_public_token(payment_token)
         pi = stripe.PaymentIntent.retrieve(payment_request["payment_intent_id"])
 
-        response = {
-            "id": pi.id,
-            "amount": pi.amount / 100,
-            "currency": pi.currency,
-            "status": pi.status,
-            "description": pi.description,
-            "public_token": payment_request["public_token"],
-        }
-
-        if pi.status in PAYABLE_PAYMENT_INTENT_STATUSES:
-            response["client_secret"] = pi.client_secret
-
-        return response
+        return _build_public_payment_response(
+            payment_request,
+            pi,
+            include_client_secret=True,
+        )
     except HTTPException:
         raise
     except Exception as e:
@@ -366,10 +381,10 @@ async def get_payment_intent_details(id: str):
         raise HTTPException(status_code=404, detail="Payment request not found")
 
 
-@router.get("/payment-intent/{id}/summary")
-async def get_payment_intent_summary(id: str):
+@router.get("/payment-request/{payment_token}/summary")
+async def get_public_payment_request_summary(payment_token: str):
     """
-    Public endpoint to retrieve non-secret PaymentIntent details for the success page.
+    Public endpoint to retrieve non-secret payment-request details for the success page.
     """
     try:
         import stripe
@@ -381,22 +396,27 @@ async def get_payment_intent_summary(id: str):
 
         stripe.api_key = settings.stripe_secret_key
 
-        payment_request = await _get_payment_request_by_public_token(id)
+        payment_request = await _get_payment_request_by_public_token(payment_token)
         pi = stripe.PaymentIntent.retrieve(payment_request["payment_intent_id"])
 
-        return {
-            "id": pi.id,
-            "amount": pi.amount / 100,
-            "currency": pi.currency,
-            "status": pi.status,
-            "description": pi.description,
-            "public_token": payment_request["public_token"],
-        }
+        return _build_public_payment_response(payment_request, pi)
     except HTTPException:
         raise
     except Exception as e:
         logger.error(f"Error retrieving PI summary: {e}")
         raise HTTPException(status_code=404, detail="Payment request not found")
+
+
+@router.get("/payment-intent/{id}")
+async def get_payment_intent_details(id: str):
+    """Backward-compatible alias for public payment-request details."""
+    return await get_public_payment_request_details(id)
+
+
+@router.get("/payment-intent/{id}/summary")
+async def get_payment_intent_summary(id: str):
+    """Backward-compatible alias for public payment-request summaries."""
+    return await get_public_payment_request_summary(id)
 
 
 # ==================== CUSTOMER PORTAL ENDPOINTS ====================
