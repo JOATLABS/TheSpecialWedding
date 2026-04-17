@@ -1,3 +1,5 @@
+# ruff: noqa: E402
+
 """
 Comprehensive test suite for the Vendor Campaigns API Router (/portal/ads).
 
@@ -19,9 +21,8 @@ Auth strategy:
 
 import os
 import sys
-from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from bson import ObjectId
@@ -43,6 +44,8 @@ os.environ.setdefault("ROOT_ADMIN_EMAIL", "thedeveloper@thespecialwedding.io")
 from fastapi import FastAPI
 
 from app.api.vendor_campaigns import (
+    get_ad_billing_service,
+    get_ad_upload_service,
     get_vendor_campaign_service,
     require_advertising_vendor,
 )
@@ -112,10 +115,41 @@ def mock_service():
 def vendor_client(mock_service):
     """TestClient with vendor user authenticated."""
     vendor_user = make_mock_vendor_user()
+    mock_billing_service = AsyncMock()
+    mock_billing_service.get_vendor_free_tier_status.return_value = {
+        "is_free": True,
+        "reason": "free_tier",
+        "expires_at": None,
+    }
+    mock_billing_service.get_lead_charges.return_value = []
+    mock_billing_service.get_vendor_billing_periods.return_value = []
     app.dependency_overrides[require_advertising_vendor] = lambda: vendor_user
     app.dependency_overrides[get_vendor_campaign_service] = lambda: mock_service
+    app.dependency_overrides[get_ad_billing_service] = lambda: mock_billing_service
     client = TestClient(app)
     yield client
+    app.dependency_overrides.clear()
+
+
+@pytest.fixture
+def vendor_client_with_upload(mock_service):
+    """TestClient with vendor auth and upload service override."""
+    vendor_user = make_mock_vendor_user()
+    mock_upload_service = MagicMock()
+    mock_billing_service = AsyncMock()
+    mock_billing_service.get_vendor_free_tier_status.return_value = {
+        "is_free": True,
+        "reason": "free_tier",
+        "expires_at": None,
+    }
+    mock_billing_service.get_lead_charges.return_value = []
+    mock_billing_service.get_vendor_billing_periods.return_value = []
+    app.dependency_overrides[require_advertising_vendor] = lambda: vendor_user
+    app.dependency_overrides[get_vendor_campaign_service] = lambda: mock_service
+    app.dependency_overrides[get_ad_upload_service] = lambda: mock_upload_service
+    app.dependency_overrides[get_ad_billing_service] = lambda: mock_billing_service
+    client = TestClient(app)
+    yield client, mock_upload_service
     app.dependency_overrides.clear()
 
 
@@ -123,8 +157,17 @@ def vendor_client(mock_service):
 def admin_client(mock_service):
     """TestClient with admin user authenticated."""
     admin_user = make_mock_admin_user()
+    mock_billing_service = AsyncMock()
+    mock_billing_service.get_vendor_free_tier_status.return_value = {
+        "is_free": True,
+        "reason": "free_tier",
+        "expires_at": None,
+    }
+    mock_billing_service.get_lead_charges.return_value = []
+    mock_billing_service.get_vendor_billing_periods.return_value = []
     app.dependency_overrides[require_advertising_vendor] = lambda: admin_user
     app.dependency_overrides[get_vendor_campaign_service] = lambda: mock_service
+    app.dependency_overrides[get_ad_billing_service] = lambda: mock_billing_service
     client = TestClient(app)
     yield client
     app.dependency_overrides.clear()
@@ -144,8 +187,17 @@ def planner_client(mock_service):
             status_code=403, detail="Advertising vendor access required"
         )
 
+    mock_billing_service = AsyncMock()
+    mock_billing_service.get_vendor_free_tier_status.return_value = {
+        "is_free": True,
+        "reason": "free_tier",
+        "expires_at": None,
+    }
+    mock_billing_service.get_lead_charges.return_value = []
+    mock_billing_service.get_vendor_billing_periods.return_value = []
     app.dependency_overrides[require_advertising_vendor] = raise_403
     app.dependency_overrides[get_vendor_campaign_service] = lambda: mock_service
+    app.dependency_overrides[get_ad_billing_service] = lambda: mock_billing_service
     client = TestClient(app, raise_server_exceptions=False)
     yield client
     app.dependency_overrides.clear()
@@ -212,6 +264,86 @@ class TestAuthBoundaries:
     def test_planner_gets_403_on_get_campaign(self, planner_client, mock_service):
         """Planner gets 403 on get campaign."""
         resp = planner_client.get(f"/portal/ads/campaigns/{CAMPAIGN_ID}")
+        assert resp.status_code == 403
+
+    def test_vendor_can_request_vendor_scoped_media_upload(
+        self, vendor_client_with_upload, mock_service
+    ):
+        """Vendor can request a presigned media upload URL."""
+        client, mock_upload_service = vendor_client_with_upload
+        mock_upload_service.create_presigned_upload_url.return_value = {
+            "upload_url": "https://uploads.example.com/put",
+            "key": f"ads/{VENDOR_ID}/creative.png",
+            "cdn_url": "https://ads.example.com/ads/vendor/creative.png",
+            "asset_kind": "creative",
+            "max_size_bytes": 5242880,
+            "allowed_content_types": ["image/jpeg", "image/png", "image/webp"],
+        }
+
+        resp = client.post(
+            "/portal/ads/media/upload-url",
+            json={
+                "filename": "creative.png",
+                "content_type": "image/png",
+                "asset_kind": "creative",
+            },
+        )
+
+        assert resp.status_code == 200
+        mock_upload_service.create_presigned_upload_url.assert_called_once_with(
+            filename="creative.png",
+            vendor_id=VENDOR_ID,
+            content_type="image/png",
+            asset_kind="creative",
+            replace_url=None,
+        )
+
+    def test_vendor_logo_upload_request_preserves_replace_url(
+        self, vendor_client_with_upload, mock_service
+    ):
+        """Vendor logo uploads preserve asset kind and replace_url routing."""
+        client, mock_upload_service = vendor_client_with_upload
+        previous_logo_url = (
+            f"https://ads.example.com/vendor-profiles/{VENDOR_ID}/logo/existing.png"
+        )
+        mock_upload_service.create_presigned_upload_url.return_value = {
+            "upload_url": "https://uploads.example.com/put",
+            "key": f"vendor-profiles/{VENDOR_ID}/logo/new-logo.png",
+            "cdn_url": f"https://ads.example.com/vendor-profiles/{VENDOR_ID}/logo/new-logo.png",
+            "asset_kind": "vendor_logo",
+            "max_size_bytes": 5242880,
+            "allowed_content_types": ["image/jpeg", "image/png", "image/webp"],
+        }
+
+        resp = client.post(
+            "/portal/ads/media/upload-url",
+            json={
+                "filename": "logo.png",
+                "content_type": "image/png",
+                "asset_kind": "vendor_logo",
+                "replace_url": previous_logo_url,
+            },
+        )
+
+        assert resp.status_code == 200
+        mock_upload_service.create_presigned_upload_url.assert_called_once_with(
+            filename="logo.png",
+            vendor_id=VENDOR_ID,
+            content_type="image/png",
+            asset_kind="vendor_logo",
+            replace_url=previous_logo_url,
+        )
+
+    def test_planner_gets_403_on_media_upload_url(self, planner_client, mock_service):
+        """Planner gets 403 on vendor media upload URL creation."""
+        resp = planner_client.post(
+            "/portal/ads/media/upload-url",
+            json={
+                "filename": "creative.png",
+                "content_type": "image/png",
+                "asset_kind": "creative",
+            },
+        )
         assert resp.status_code == 403
 
 
@@ -645,7 +777,9 @@ class TestBilling:
         resp = vendor_client.get("/portal/ads/billing")
         assert resp.status_code == 200
         data = resp.json()
-        assert data["billing_status"] == "free_tier"
+        assert data["billing_model"] == "cpl"
+        assert data["is_free_tier"] is True
+        assert data["free_tier_reason"] == "free_tier"
         assert data["total_spend"] == 0.0
         assert data["currency"] == "USD"
 
@@ -658,17 +792,16 @@ class TestBilling:
         assert data["vendor_id"] == VENDOR_ID
 
     def test_get_billing_summary_no_service_call(self, vendor_client, mock_service):
-        """GET /billing doesn't call service (hardcoded response)."""
+        """GET /billing does not use the campaign service dependency."""
         resp = vendor_client.get("/portal/ads/billing")
         assert resp.status_code == 200
-        # Service should not be called for billing
         mock_service.get_vendor_leads.assert_not_called()
 
     def test_admin_can_get_billing(self, admin_client, mock_service):
         """Root admin can access billing endpoint."""
         resp = admin_client.get("/portal/ads/billing")
         assert resp.status_code == 200
-        assert resp.json()["billing_status"] == "free_tier"
+        assert resp.json()["billing_model"] == "cpl"
 
     def test_planner_gets_403_on_billing(self, planner_client, mock_service):
         """Planner gets 403 on billing access."""
@@ -759,7 +892,6 @@ class TestIntegration:
     def test_multiple_vendors_isolated(self, mock_service):
         """Different vendors have isolated campaigns."""
         vendor1 = make_mock_vendor_user(vendor_id=VENDOR_ID)
-        vendor2 = make_mock_vendor_user(vendor_id=OTHER_VENDOR_ID)
 
         app.dependency_overrides[require_advertising_vendor] = lambda: vendor1
         app.dependency_overrides[get_vendor_campaign_service] = lambda: mock_service
@@ -904,10 +1036,13 @@ class TestResponseShapes:
         resp = vendor_client.get("/portal/ads/billing")
         assert resp.status_code == 200
         data = resp.json()
-        assert data["billing_status"] == "free_tier"
+        assert data["billing_model"] == "cpl"
+        assert data["is_free_tier"] is True
         assert data["total_spend"] == 0.0
         assert data["currency"] == "USD"
-        assert "message" in data
+        assert "quote_request_leads" in data
+        assert "directory_add_leads" in data
+        assert "billing_periods" in data
         assert "vendor_id" in data
 
     def test_stats_response_structure(self, vendor_client, mock_service):

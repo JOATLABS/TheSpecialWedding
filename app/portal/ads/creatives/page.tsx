@@ -15,6 +15,7 @@ import {
   type AdCreative,
   type CreateCreativeRequest,
 } from '@/services/campaignAdvertisingApi';
+import { VendorMediaUploader } from '../components/VendorMediaUploader';
 import {
   Image as ImageIcon,
   Plus,
@@ -24,6 +25,18 @@ import {
   CheckCircle2,
 } from 'lucide-react';
 
+function createEmptyCreativeForm(): CreateCreativeRequest {
+  return {
+    headline: '',
+    description: '',
+    offer: '',
+    call_to_action: 'View Portfolio',
+    is_primary: false,
+    image_url: null,
+    image_alt_text: null,
+  };
+}
+
 export default function VendorCreativesPage() {
   const { token } = useVendorAuth();
   const [campaigns, setCampaigns] = useState<AdCampaign[]>([]);
@@ -32,13 +45,7 @@ export default function VendorCreativesPage() {
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
-  const [formData, setFormData] = useState<CreateCreativeRequest>({
-    headline: '',
-    description: '',
-    offer: '',
-    call_to_action: 'View Portfolio',
-    is_primary: false,
-  });
+  const [formData, setFormData] = useState<CreateCreativeRequest>(createEmptyCreativeForm);
   const [saving, setSaving] = useState(false);
 
   // Load campaigns
@@ -75,16 +82,21 @@ export default function VendorCreativesPage() {
 
     try {
       setSaving(true);
+      const payload: CreateCreativeRequest = {
+        ...formData,
+        creative_type: formData.image_url ? 'image' : 'text',
+        image_alt_text: formData.image_url ? formData.headline.trim() || 'Vendor creative image' : null,
+      };
       if (editingId) {
-        await updateCreative(token, editingId, formData);
+        await updateCreative(token, editingId, payload);
         toast.success('Creative updated');
       } else {
-        await createCreative(token, selectedCampaignId, formData);
+        await createCreative(token, selectedCampaignId, payload);
         toast.success('Creative created');
       }
       setShowForm(false);
       setEditingId(null);
-      setFormData({ headline: '', description: '', offer: '', call_to_action: 'View Portfolio', is_primary: false });
+      setFormData(createEmptyCreativeForm());
       loadCreatives();
     } catch (err: any) {
       toast.error(err.message);
@@ -106,6 +118,9 @@ export default function VendorCreativesPage() {
 
   const startEdit = (creative: AdCreative) => {
     setFormData({
+      creative_type: creative.creative_type,
+      image_url: creative.image_url ?? null,
+      image_alt_text: creative.image_alt_text ?? null,
       headline: creative.headline,
       description: creative.description,
       offer: creative.offer,
@@ -132,7 +147,7 @@ export default function VendorCreativesPage() {
           <p className="text-sm text-slate-500 mt-1">Manage ad creatives for your campaigns</p>
         </div>
         <button
-          onClick={() => { setShowForm(true); setEditingId(null); setFormData({ headline: '', description: '', offer: '', call_to_action: 'View Portfolio', is_primary: false }); }}
+          onClick={() => { setShowForm(true); setEditingId(null); setFormData(createEmptyCreativeForm()); }}
           className="inline-flex items-center gap-2 px-4 py-2.5 bg-primary-500 hover:bg-primary-600 text-white text-sm font-medium rounded-lg transition-colors"
         >
           <Plus size={16} /> New Creative
@@ -159,6 +174,16 @@ export default function VendorCreativesPage() {
           <h3 className="text-base font-semibold text-slate-900 dark:text-white">
             {editingId ? 'Edit Creative' : 'New Creative'}
           </h3>
+          <VendorMediaUploader
+            inputId="vendor-creative-image-upload"
+            assetKind="creative"
+            label="Creative Image"
+            value={formData.image_url ?? null}
+            onChange={(url) => setFormData((current) => ({ ...current, image_url: url }))}
+            previewAlt={formData.image_alt_text || formData.headline || 'Vendor creative image'}
+            emptyTitle="Upload an image for this creative"
+            emptyDescription="Use a polished image that planners should see alongside your headline and call to action."
+          />
           <div>
             <label className="block text-sm font-medium text-slate-700 dark:text-slate-200 mb-1">Headline *</label>
             <input

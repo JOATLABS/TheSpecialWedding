@@ -25,6 +25,7 @@ from fastapi import HTTPException
 
 from app.core.database import mongo
 from app.core.settings import settings as app_settings
+from app.services.ad_upload_service import AdUploadService, VendorMediaAssetKind
 from app.services.ad_platform_config_service import AdPlatformConfigService
 from app.services.email_service_resend import ResendEmailService
 from app.services.notification_service import NotificationService
@@ -498,6 +499,21 @@ class VendorSignupService:
         if not filtered:
             raise HTTPException(status_code=400, detail="No valid fields to update")
 
+        vendor = await self.users.find_one(
+            {"email": vendor_email, "role": "advertising_vendor"}
+        )
+        if not vendor:
+            raise HTTPException(status_code=404, detail="Vendor not found")
+
+        previous_logo_url = vendor.get("logo_url")
+        if "logo_url" in filtered:
+            filtered["logo_url"] = AdUploadService().ensure_vendor_asset_url(
+                filtered.get("logo_url"),
+                str(vendor["_id"]),
+                VendorMediaAssetKind.VENDOR_LOGO,
+                field_name="logo_url",
+            )
+
         filtered["updated_at"] = datetime.now(timezone.utc)
 
         result = await self.users.update_one(
@@ -506,6 +522,24 @@ class VendorSignupService:
         )
         if result.matched_count == 0:
             raise HTTPException(status_code=404, detail="Vendor not found")
+
+        if "logo_url" in filtered:
+            new_logo_url = filtered.get("logo_url")
+            await self.db["ad_campaigns"].update_many(
+                {"vendor_id": str(vendor["_id"])},
+                {
+                    "$set": {
+                        "vendor_logo_url": new_logo_url,
+                        "updated_at": datetime.now(timezone.utc),
+                    }
+                },
+            )
+            if previous_logo_url and previous_logo_url != new_logo_url:
+                AdUploadService().delete_asset_url(
+                    previous_logo_url,
+                    str(vendor["_id"]),
+                    VendorMediaAssetKind.VENDOR_LOGO,
+                )
 
         # Fetch updated doc for completeness check
         vendor = await self.users.find_one({"email": vendor_email})
