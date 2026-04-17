@@ -10,6 +10,8 @@ import { Button } from '@/components/ui/Button';
 import { useConfirmDialog } from '@/components/ui/ConfirmDialog';
 import { formsApi, type DuplicateFormPayload, type BlankFormPayload } from '@/services/formsApi';
 import { formatDate as formatUtcDate } from '@/utils/dateFormat';
+import { logError } from '@/utils/errorHandler';
+import { resolveBrowserUrl } from '@/utils/env';
 import PageHeader from '../components/PageHeader';
 import { Copy, FileText, Trash2, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
@@ -167,6 +169,18 @@ export default function FormsManagementPage(): ReactElement {
   const [customTplLoading, setCustomTplLoading] = useState(true);
   const [creatingFromTpl, setCreatingFromTpl] = useState<string | null>(null);
   const [newTplFormName, setNewTplFormName] = useState('');
+
+  const openPreview = useCallback((formId: string) => {
+    try {
+      const previewWindow = window.open(resolveBrowserUrl(`/forms/${formId}`), '_blank', 'noopener');
+      if (!previewWindow) {
+        toast.error('Form preview was blocked. Allow pop-ups and try again.');
+      }
+    } catch (err) {
+      logError(err, 'FormsManagementPage.openPreview');
+      toast.error(err instanceof Error ? err.message : 'Unable to open form preview.');
+    }
+  }, []);
 
   const fetchCustomTemplates = useCallback(async () => {
     if (!token) return;
@@ -473,9 +487,6 @@ export default function FormsManagementPage(): ReactElement {
         ) : (
           <div className="grid gap-6 p-6 sm:grid-cols-2 xl:grid-cols-3">
             {forms.map((form) => {
-              const origin = typeof window !== 'undefined' ? window.location.origin : '';
-              const previewHref = origin ? `${origin}/forms/${form.id}` : `https://wedding.app/forms/${form.id}`;
-
               return (
                 <article
                   key={form.id}
@@ -543,7 +554,7 @@ export default function FormsManagementPage(): ReactElement {
                     <Button
                       variant="secondary"
                       className="flex-1 min-w-[110px]"
-                      onClick={() => window.open(previewHref, '_blank', 'noopener')}
+                      onClick={() => openPreview(form.id)}
                     >
                       Preview
                     </Button>

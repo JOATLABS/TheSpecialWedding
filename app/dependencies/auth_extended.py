@@ -100,6 +100,9 @@ class ExtendedAuthUser:
         self.email = email
         self.role = role
         self.user_data = user_data or {}
+        self.subscription_status: Optional[str] = (
+            self.user_data.get("subscription_status") if self.user_data else None
+        )
         # Role-specific properties
         root_admin_email = os.getenv(
             "ROOT_ADMIN_EMAIL", "thedeveloper@thespecialwedding.io"
