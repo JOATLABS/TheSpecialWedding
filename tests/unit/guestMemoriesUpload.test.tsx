@@ -9,6 +9,16 @@ import { installDom } from './testDom';
 let GuestMemoriesUploadClient: typeof import('../../app/[slug]/upload/[uploadToken]/upload-client').default;
 let domHandle: ReturnType<typeof installDom> | null = null;
 let originalShowPickerDescriptor: PropertyDescriptor | undefined;
+type InputPrototypeWithOptionalShowPicker = HTMLInputElement & {
+  showPicker?: () => void;
+};
+
+function removeShowPickerPrototype() {
+  Reflect.deleteProperty(
+    window.HTMLInputElement.prototype as InputPrototypeWithOptionalShowPicker,
+    'showPicker'
+  );
+}
 
 const contextPayload = {
   wedding: {
@@ -59,7 +69,7 @@ describe('GuestMemoriesUploadClient upload picker', () => {
     if (originalShowPickerDescriptor) {
       Object.defineProperty(window.HTMLInputElement.prototype, 'showPicker', originalShowPickerDescriptor);
     } else {
-      delete (window.HTMLInputElement.prototype as HTMLInputElement & { showPicker?: () => void }).showPicker;
+      removeShowPickerPrototype();
     }
   });
 
@@ -115,7 +125,7 @@ describe('GuestMemoriesUploadClient upload picker', () => {
 
   it('falls back to click when showPicker is unavailable', async () => {
     const clickCalls: unknown[][] = [];
-    delete (window.HTMLInputElement.prototype as HTMLInputElement & { showPicker?: () => void }).showPicker;
+    removeShowPickerPrototype();
     mock.method(window.HTMLInputElement.prototype, 'click', function (...args: unknown[]) {
       clickCalls.push(args);
     });
