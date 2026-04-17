@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { getApiBaseUrl, getServerApiBaseUrl } from '../../app/utils/env';
+import { getApiBaseUrl, getBrowserOrigin, getServerApiBaseUrl, resolveBrowserUrl } from '../../app/utils/env';
 
 const originalWindow = globalThis.window;
 const originalNavigator = globalThis.navigator;
@@ -17,6 +17,8 @@ function setBrowserLocation(url: string) {
   Object.defineProperty(globalThis, 'window', {
     value: {
       location: {
+        origin: parsed.origin,
+        host: parsed.host,
         hostname: parsed.hostname,
         protocol: parsed.protocol,
       },
@@ -91,4 +93,32 @@ test('server runtime derives API host from FRONTEND_URL when public env is not b
 
   assert.equal(getServerApiBaseUrl(), 'https://api.staging.thespecialwedding.io');
   assert.equal(getApiBaseUrl(), 'https://api.staging.thespecialwedding.io');
+});
+
+test('server runtime fails loudly when no API base URL can be resolved', () => {
+  delete process.env.INTERNAL_API_BASE_URL;
+  delete process.env.NEXT_PUBLIC_API_BASE_URL;
+  delete process.env.FRONTEND_URL;
+  mutableEnv.NODE_ENV = 'development';
+
+  assert.throws(
+    () => getServerApiBaseUrl(),
+    /Could not resolve API base URL/,
+  );
+  assert.throws(
+    () => getApiBaseUrl(),
+    /Could not resolve API base URL/,
+  );
+});
+
+test('browser runtime resolves current-origin URLs without hardcoded fallbacks', () => {
+  setBrowserLocation('https://staging.thespecialwedding.io');
+
+  assert.equal(getBrowserOrigin(), 'https://staging.thespecialwedding.io');
+  assert.equal(resolveBrowserUrl('/forms/form_123'), 'https://staging.thespecialwedding.io/forms/form_123');
+});
+
+test('browser URL resolution fails loudly outside the browser runtime', () => {
+  assert.throws(() => getBrowserOrigin(), /Unable to determine this app URL outside the browser\./);
+  assert.throws(() => resolveBrowserUrl('/forms/form_123'), /Unable to determine this app URL outside the browser\./);
 });
