@@ -30,6 +30,7 @@ import {
   vendorSecondaryButtonClass,
   vendorTextareaClass,
 } from '../components/styles';
+import { VendorMediaUploader } from '../components/VendorMediaUploader';
 
 const API_BASE = getApiBaseUrl();
 
@@ -84,7 +85,7 @@ export default function VendorSettingsPage() {
   const [phone, setPhone] = useState('');
   const [website, setWebsite] = useState('');
   const [description, setDescription] = useState('');
-  const [logoUrl, setLogoUrl] = useState('');
+  const [logoUrl, setLogoUrl] = useState<string | null>(null);
 
   // Push notification state
   const [pushSupported, setPushSupported] = useState(false);
@@ -204,7 +205,7 @@ export default function VendorSettingsPage() {
       setPhone(data.vendor_phone || '');
       setWebsite(data.vendor_website || '');
       setDescription(data.vendor_description || '');
-      setLogoUrl(data.logo_url || '');
+      setLogoUrl(data.logo_url || null);
     } catch (err: any) {
       const message = err.message || 'Failed to load profile';
       setLoadError(message);
@@ -236,7 +237,7 @@ export default function VendorSettingsPage() {
       if (phone !== (profile?.vendor_phone || '')) updates.vendor_phone = phone;
       if (website !== (profile?.vendor_website || '')) updates.vendor_website = website;
       if (description !== (profile?.vendor_description || '')) updates.vendor_description = description;
-      if (logoUrl !== (profile?.logo_url || '')) updates.logo_url = logoUrl;
+      if (logoUrl !== (profile?.logo_url || null)) updates.logo_url = logoUrl;
 
       if (Object.keys(updates).length === 0) {
         toast.info('No changes to save.');
@@ -515,19 +516,17 @@ export default function VendorSettingsPage() {
           />
         </div>
 
-        {/* Logo URL */}
-        <div>
-          <label className="block text-sm font-medium text-slate-700 dark:text-slate-200 mb-1.5">
-            Logo URL
-          </label>
-          <input
-            type="url"
-            value={logoUrl}
-            onChange={(e) => setLogoUrl(e.target.value)}
-            className={vendorInputClass}
-            placeholder="https://example.com/logo.png"
-          />
-        </div>
+        <VendorMediaUploader
+          inputId="vendor-logo-image-upload"
+          assetKind="vendor_logo"
+          label="Business Logo"
+          value={logoUrl}
+          onChange={setLogoUrl}
+          previewAlt={businessName || 'Vendor logo'}
+          helperText="Upload the logo planners should see across your vendor profile and campaign cards."
+          emptyTitle="Upload your business logo"
+          emptyDescription="Use a clean JPEG, PNG, or WebP image. You can replace or remove it at any time."
+        />
 
         {/* Push Notifications */}
         {pushSupported && (

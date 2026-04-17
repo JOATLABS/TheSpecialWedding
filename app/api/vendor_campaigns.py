@@ -12,9 +12,10 @@ Routes: /portal/ads/campaigns/*
 """
 
 import logging
-from typing import Optional
+from typing import Literal, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from pydantic import BaseModel, Field
 
 from app.core.database import mongo
 from app.dependencies.auth_extended import ExtendedAuthUser, get_current_user_extended
@@ -23,6 +24,8 @@ from app.models.advertising_campaign import (
     CreateCreativeRequest,
     UpdateCampaignRequest,
 )
+from app.services.ad_billing_service import AdBillingService
+from app.services.ad_upload_service import AdUploadService
 from app.services.vendor_campaign_service import VendorCampaignService
 
 logger = logging.getLogger(__name__)
@@ -38,6 +41,16 @@ router = APIRouter(prefix="/portal/ads", tags=["Vendor Campaigns"])
 async def get_vendor_campaign_service() -> VendorCampaignService:
     """Get vendor campaign service instance."""
     return VendorCampaignService(mongo.db)
+
+
+async def get_ad_upload_service() -> AdUploadService:
+    """Get the vendor ad-media upload service."""
+    return AdUploadService()
+
+
+async def get_ad_billing_service() -> AdBillingService:
+    """Get the vendor ad-billing service."""
+    return AdBillingService(mongo.db)
 
 
 async def require_advertising_vendor(
@@ -65,6 +78,13 @@ def _get_vendor_id(user: ExtendedAuthUser) -> str:
     if not vendor_id:
         raise HTTPException(status_code=400, detail="Vendor identity not found")
     return str(vendor_id)
+
+
+class VendorMediaUploadRequest(BaseModel):
+    filename: str = Field(..., min_length=1, max_length=255)
+    content_type: str = Field(..., min_length=1, max_length=200)
+    asset_kind: Literal["creative", "vendor_logo"] = Field(default="creative")
+    replace_url: Optional[str] = Field(default=None, max_length=2000)
 
 
 # =============================================================================
@@ -220,6 +240,23 @@ async def get_campaign_stats(
 # =============================================================================
 
 
+@router.post("/media/upload-url")
+async def create_vendor_media_upload_url(
+    request: VendorMediaUploadRequest,
+    upload_service: AdUploadService = Depends(get_ad_upload_service),
+    current_user: ExtendedAuthUser = Depends(require_advertising_vendor),
+):
+    """Create a vendor-scoped upload contract for ad creative or logo assets."""
+    vendor_id = _get_vendor_id(current_user)
+    return upload_service.create_presigned_upload_url(
+        filename=request.filename,
+        vendor_id=vendor_id,
+        content_type=request.content_type,
+        asset_kind=request.asset_kind,
+        replace_url=request.replace_url,
+    )
+
+
 @router.post("/campaigns/{campaign_id}/creatives", status_code=201)
 async def create_creative(
     campaign_id: str,
@@ -321,6 +358,7 @@ async def get_vendor_leads(
 
 @router.get("/billing")
 async def get_billing_summary(
+    billing_svc: AdBillingService = Depends(get_ad_billing_service),
     current_user: ExtendedAuthUser = Depends(require_advertising_vendor),
 ):
     """
@@ -330,10 +368,6 @@ async def get_billing_summary(
     and per-campaign breakdowns.
     """
     vendor_id = _get_vendor_id(current_user)
-
-    from app.services.ad_billing_service import AdBillingService
-
-    billing_svc = AdBillingService(mongo.db)
 
     # Check free tier status
     free_tier = await billing_svc.get_vendor_free_tier_status(vendor_id)
@@ -347,16 +381,7 @@ async def get_billing_summary(
     directory_adds = sum(1 for c in charges if c.get("lead_type") == "add_to_directory")
 
     # Get period billing records
-    billing_records = []
-    cursor = (
-        billing_svc.billing.find({"vendor_id": vendor_id})
-        .sort("billing_period_start", -1)
-        .limit(12)
-    )
-    async for doc in cursor:
-        if "_id" in doc:
-            doc["_id"] = str(doc["_id"])
-        billing_records.append(doc)
+    billing_records = await billing_svc.get_vendor_billing_periods(vendor_id, limit=12)
 
     return {
         "vendor_id": vendor_id,
@@ -378,13 +403,11 @@ async def get_billing_charges(
     campaign_id: Optional[str] = Query(None, description="Filter by campaign"),
     limit: int = Query(50, ge=1, le=200),
     skip: int = Query(0, ge=0),
+    billing_svc: AdBillingService = Depends(get_ad_billing_service),
     current_user: ExtendedAuthUser = Depends(require_advertising_vendor),
 ):
     """List individual CPL charges for the vendor."""
     vendor_id = _get_vendor_id(current_user)
-    from app.services.ad_billing_service import AdBillingService
-
-    billing_svc = AdBillingService(mongo.db)
 
     if campaign_id:
         # Verify campaign belongs to this vendor

@@ -536,6 +536,19 @@ class AdBillingService:
         )
         return [_serialize(doc) async for doc in cursor]
 
+    async def get_vendor_billing_periods(
+        self,
+        vendor_id: str,
+        limit: int = 12,
+    ) -> List[Dict[str, Any]]:
+        """List recent billing periods for a vendor."""
+        cursor = (
+            self.billing.find({"vendor_id": vendor_id})
+            .sort("billing_period_start", -1)
+            .limit(limit)
+        )
+        return [_serialize(doc) async for doc in cursor]
+
     async def get_campaign_billing_summary(self, campaign_id: str) -> Dict[str, Any]:
         """Get billing summary for a specific campaign."""
         pipeline = [

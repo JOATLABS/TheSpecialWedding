@@ -24,6 +24,7 @@ export type BidStrategy = 'fixed' | 'auto';
 export type FraudSignalType = 'unusual_traffic' | 'duplicate_click' | 'bot_pattern' | 'geographic_anomaly' | 'rapid_clicks';
 export type FraudSignalStatus = 'pending' | 'investigated' | 'false_alarm' | 'confirmed_fraud';
 export type VendorAccountStatus = 'pending_approval' | 'active' | 'suspended' | 'inactive';
+export type VendorMediaAssetKind = 'creative' | 'vendor_logo';
 
 // =============================================================================
 // TYPES — Campaign Models
@@ -194,14 +195,35 @@ export interface UpdateCampaignRequest {
 
 export interface CreateCreativeRequest {
   creative_type?: CreativeType;
-  image_url?: string;
-  image_alt_text?: string;
+  image_url?: string | null;
+  image_alt_text?: string | null;
   headline: string;
   description: string;
   offer?: string;
   call_to_action?: string;
   is_primary?: boolean;
   metadata?: Record<string, any>;
+}
+
+export interface VendorMediaUploadRequest {
+  filename: string;
+  content_type: string;
+  asset_kind: VendorMediaAssetKind;
+  replace_url?: string | null;
+}
+
+export interface VendorMediaUploadResponse {
+  upload_url: string;
+  key: string;
+  cdn_url: string;
+  asset_kind: VendorMediaAssetKind;
+  max_size_bytes: number;
+  allowed_content_types: string[];
+  replaced_asset?: {
+    key: string;
+    cdn_url: string;
+    asset_kind: VendorMediaAssetKind;
+  };
 }
 
 export interface ReviewDecisionRequest {
@@ -584,6 +606,46 @@ export async function setPrimaryCreative(
     { method: 'POST', headers: authHeaders(token) }
   );
   return handleResponse<AdCreative>(response, 'Failed to set primary creative');
+}
+
+/** Request a vendor-scoped upload contract for ad portal media. */
+export async function requestVendorMediaUpload(
+  token: string,
+  data: VendorMediaUploadRequest
+): Promise<VendorMediaUploadResponse> {
+  const response = await fetch(buildUrl('/portal/ads/media/upload-url'), {
+    method: 'POST',
+    headers: jsonHeaders(token),
+    body: JSON.stringify(data),
+  });
+  return handleResponse<VendorMediaUploadResponse>(response, 'Failed to create upload URL');
+}
+
+/** Upload a vendor media file and return the persisted upload contract. */
+export async function uploadVendorMediaAsset(
+  token: string,
+  file: File,
+  assetKind: VendorMediaAssetKind,
+  replaceUrl?: string | null
+): Promise<VendorMediaUploadResponse> {
+  const upload = await requestVendorMediaUpload(token, {
+    filename: file.name,
+    content_type: file.type,
+    asset_kind: assetKind,
+    replace_url: replaceUrl ?? undefined,
+  });
+
+  const uploadResponse = await fetch(upload.upload_url, {
+    method: 'PUT',
+    headers: { 'Content-Type': file.type },
+    body: file,
+  });
+
+  if (!uploadResponse.ok) {
+    throw new Error(`Upload failed: ${uploadResponse.status}`);
+  }
+
+  return upload;
 }
 
 /** Get vendor's leads */
