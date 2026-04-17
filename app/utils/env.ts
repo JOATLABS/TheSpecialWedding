@@ -39,6 +39,24 @@ function normalizeBaseUrl(url: string): string {
   return url.trim().replace(/\/+$/, '');
 }
 
+export function getBrowserOrigin(): string {
+  if (typeof window === 'undefined') {
+    throw new Error('Unable to determine this app URL outside the browser.');
+  }
+
+  const origin = window.location?.origin?.trim();
+  if (origin) {
+    return normalizeBaseUrl(origin);
+  }
+
+  throw new Error('Unable to determine this app URL. Refresh and try again.');
+}
+
+export function resolveBrowserUrl(pathname: string): string {
+  const normalizedPath = pathname.startsWith('/') ? pathname : `/${pathname}`;
+  return new URL(normalizedPath, `${getBrowserOrigin()}/`).toString();
+}
+
 function deriveApiOrigin(protocol: string, hostname: string): string | null {
   if (!hostname) {
     return null;
@@ -93,10 +111,6 @@ function getConfiguredApiBaseUrl(): string {
   const derivedFromFrontend = deriveApiBaseUrlFromFrontendUrl(process.env.FRONTEND_URL?.trim());
   if (derivedFromFrontend) {
     return derivedFromFrontend;
-  }
-
-  if (process.env.NODE_ENV !== 'production') {
-    return 'http://localhost:8000';
   }
 
   const errorMsg = 'CRITICAL: Could not resolve API base URL. Configure INTERNAL_API_BASE_URL, ' +
