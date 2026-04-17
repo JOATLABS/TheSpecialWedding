@@ -47,6 +47,7 @@ export default function VendorCreativesPage() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [formData, setFormData] = useState<CreateCreativeRequest>(createEmptyCreativeForm);
   const [saving, setSaving] = useState(false);
+  const [mediaUploading, setMediaUploading] = useState(false);
 
   // Load campaigns
   useEffect(() => {
@@ -77,6 +78,10 @@ export default function VendorCreativesPage() {
     if (!token || !selectedCampaignId) return;
     if (!formData.headline.trim() || !formData.description.trim()) {
       toast.error('Headline and description are required');
+      return;
+    }
+    if (mediaUploading) {
+      toast.error('Wait for the creative image to finish uploading before saving.');
       return;
     }
 
@@ -180,6 +185,7 @@ export default function VendorCreativesPage() {
             label="Creative Image"
             value={formData.image_url ?? null}
             onChange={(url) => setFormData((current) => ({ ...current, image_url: url }))}
+            onUploadStateChange={setMediaUploading}
             previewAlt={formData.image_alt_text || formData.headline || 'Vendor creative image'}
             emptyTitle="Upload an image for this creative"
             emptyDescription="Use a polished image that planners should see alongside your headline and call to action."
@@ -230,8 +236,8 @@ export default function VendorCreativesPage() {
             </select>
           </div>
           <div className="flex gap-3">
-            <button onClick={handleSave} disabled={saving} className="px-4 py-2 bg-primary-500 text-white text-sm font-medium rounded-lg hover:bg-primary-600 disabled:opacity-50">
-              {saving ? 'Saving...' : editingId ? 'Update' : 'Create'}
+            <button onClick={handleSave} disabled={saving || mediaUploading} className="px-4 py-2 bg-primary-500 text-white text-sm font-medium rounded-lg hover:bg-primary-600 disabled:opacity-50">
+              {mediaUploading ? 'Uploading image…' : saving ? 'Saving...' : editingId ? 'Update' : 'Create'}
             </button>
             <button onClick={() => { setShowForm(false); setEditingId(null); }} className="px-4 py-2 text-sm text-slate-600 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg">
               Cancel

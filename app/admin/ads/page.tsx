@@ -824,7 +824,7 @@ function VendorAccountsTab({ token }: { token: string }) {
     try {
       setLoading(true);
       const data = await getAdminVendorAccounts(token, { status: statusFilter || undefined, limit: 100 });
-      setVendors(Array.isArray(data) ? data : (data as any).items ?? []);
+      setVendors(data.vendors ?? []);
     } catch (err: any) {
       toast.error(err.message);
     } finally {
@@ -901,7 +901,10 @@ function VendorAccountsTab({ token }: { token: string }) {
         <EmptyState icon={Building2} title="No vendor accounts" description="No advertising vendors have registered yet." />
       ) : (
         <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
-          {vendors.map((vendor) => (
+          {vendors.map((vendor) => {
+            const vendorStatus = vendor.status || 'inactive';
+
+            return (
             <div key={vendor.vendor_id} className={`${ADS_PANEL_CLASS} p-4 sm:p-5`}>
               <div className="flex items-start justify-between mb-3">
                 <div className="min-w-0">
@@ -909,12 +912,12 @@ function VendorAccountsTab({ token }: { token: string }) {
                   <p className="text-xs text-slate-500 truncate">{vendor.vendor_email}</p>
                 </div>
                 <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${
-                  vendor.status === 'active' ? 'bg-emerald-100 text-emerald-700' :
-                  vendor.status === 'pending_approval' ? 'bg-amber-100 text-amber-700' :
-                  vendor.status === 'suspended' ? 'bg-red-100 text-red-700' :
+                  vendorStatus === 'active' ? 'bg-emerald-100 text-emerald-700' :
+                  vendorStatus === 'pending_approval' ? 'bg-amber-100 text-amber-700' :
+                  vendorStatus === 'suspended' ? 'bg-red-100 text-red-700' :
                   'bg-slate-100 text-slate-700'
                 }`}>
-                  {vendor.status.replace('_', ' ')}
+                  {vendorStatus.replace('_', ' ')}
                 </span>
               </div>
               <div className="grid grid-cols-3 gap-2 text-center">
@@ -937,7 +940,7 @@ function VendorAccountsTab({ token }: { token: string }) {
               </div>
               {/* Action Buttons */}
               <div className="flex gap-2 mt-4">
-                {vendor.status === 'pending_approval' && (
+                {vendorStatus === 'pending_approval' && (
                   <button
                     onClick={() => handleApprove(vendor.vendor_id)}
                     disabled={actionLoading === vendor.vendor_id}
@@ -946,7 +949,7 @@ function VendorAccountsTab({ token }: { token: string }) {
                     Approve
                   </button>
                 )}
-                {vendor.status === 'active' && (
+                {vendorStatus === 'active' && (
                   <button
                     onClick={() => handleSuspend(vendor.vendor_id)}
                     disabled={actionLoading === vendor.vendor_id}
@@ -955,7 +958,7 @@ function VendorAccountsTab({ token }: { token: string }) {
                     Suspend
                   </button>
                 )}
-                {vendor.status === 'suspended' && (
+                {vendorStatus === 'suspended' && (
                   <button
                     onClick={() => handleReactivate(vendor.vendor_id)}
                     disabled={actionLoading === vendor.vendor_id}
@@ -978,7 +981,7 @@ function VendorAccountsTab({ token }: { token: string }) {
                 </button>
               </div>
             </div>
-          ))}
+          )})}
         </div>
       )}
     </div>

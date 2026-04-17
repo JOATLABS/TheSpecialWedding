@@ -201,6 +201,15 @@ SECRET_KEY = os.getenv("SECRET_KEY")
 ALGORITHM = "HS256"
 
 
+def should_backfill_vendor_email_verification(user_data: dict, role: str) -> bool:
+    """Allow legacy approved vendor self-signups to self-heal missing verification."""
+    return (
+        role == "advertising_vendor"
+        and user_data.get("registration_source") == "vendor_self_signup"
+        and user_data.get("vendor_account_status") == "active"
+    )
+
+
 class ExtendedAuthUser:
     """Extended auth user supporting multiple roles including team members"""
 
@@ -313,11 +322,27 @@ async def get_current_user_extended(
                 )
             # Check email verification for new accounts
             if not user_data.get("email_verified"):
-                raise HTTPException(
-                    status_code=status.HTTP_401_UNAUTHORIZED,
-                    detail="Email address not verified. Please check your email and verify your account.",
-                    headers={"WWW-Authenticate": "Bearer"},
-                )
+                if should_backfill_vendor_email_verification(user_data, role):
+                    verified_at = user_data.get("approved_at") or datetime.now(
+                        timezone.utc
+                    )
+                    await mongo.get_users_collection().update_one(
+                        {"email": email},
+                        {
+                            "$set": {
+                                "email_verified": True,
+                                "email_verified_at": verified_at,
+                            }
+                        },
+                    )
+                    user_data["email_verified"] = True
+                    user_data["email_verified_at"] = verified_at
+                else:
+                    raise HTTPException(
+                        status_code=status.HTTP_401_UNAUTHORIZED,
+                        detail="Email address not verified. Please check your email and verify your account.",
+                        headers={"WWW-Authenticate": "Bearer"},
+                    )
             # Tag users with subscription issues — don't block here so they can
             # still access profile and billing endpoints to upgrade/reactivate.
             sub_status = normalize_subscription_status(

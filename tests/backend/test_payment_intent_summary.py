@@ -1,3 +1,5 @@
+# ruff: noqa: E402
+
 import asyncio
 import os
 import sys
@@ -77,14 +79,14 @@ def test_payment_intent_summary_omits_client_secret(monkeypatch):
     )
 
     assert result == {
-        "id": "pi_123",
+        "payment_token": "public-token-123",
         "amount": 125.0,
         "currency": "usd",
         "status": "succeeded",
         "description": "Deposit payment",
-        "public_token": "public-token-123",
     }
     assert "client_secret" not in result
+    assert "id" not in result
 
 
 def test_payment_intent_details_require_public_token(monkeypatch):
@@ -116,14 +118,14 @@ def test_payment_intent_details_require_public_token(monkeypatch):
     )
 
     assert result == {
-        "id": "pi_123",
+        "payment_token": "public-token-123",
         "client_secret": "pi_secret_123",
         "amount": 125.0,
         "currency": "usd",
         "status": "requires_payment_method",
         "description": "Deposit payment",
-        "public_token": "public-token-123",
     }
+    assert "id" not in result
 
 
 def test_payment_intent_details_omit_client_secret_when_not_payable(monkeypatch):
@@ -155,14 +157,14 @@ def test_payment_intent_details_omit_client_secret_when_not_payable(monkeypatch)
     )
 
     assert result == {
-        "id": "pi_123",
+        "payment_token": "public-token-123",
         "amount": 125.0,
         "currency": "usd",
         "status": "succeeded",
         "description": "Deposit payment",
-        "public_token": "public-token-123",
     }
     assert "client_secret" not in result
+    assert "id" not in result
 
 
 def test_payment_intent_summary_rejects_raw_payment_intent_id(monkeypatch):
@@ -185,6 +187,29 @@ def test_payment_intent_summary_rejects_raw_payment_intent_id(monkeypatch):
     else:
         raise AssertionError(
             "Expected summary lookup by raw payment_intent_id to be rejected"
+        )
+
+
+def test_payment_request_details_reject_raw_payment_intent_id(monkeypatch):
+    fake_mongo = FakeMongo(
+        {
+            "public_token": "public-token-123",
+            "payment_intent_id": "pi_123",
+        }
+    )
+    monkeypatch.setattr(database_module, "mongo", fake_mongo)
+    monkeypatch.setattr(
+        settings_module.settings, "stripe_secret_key", "sk_test_123", raising=False
+    )
+
+    try:
+        asyncio.run(stripe_payment_module.get_public_payment_request_details("pi_123"))
+    except HTTPException as exc:
+        assert exc.status_code == 404
+        assert exc.detail == "Payment request not found"
+    else:
+        raise AssertionError(
+            "Expected details lookup by raw payment_intent_id to be rejected"
         )
 
 

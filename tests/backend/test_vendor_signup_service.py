@@ -126,3 +126,46 @@ async def test_update_vendor_profile_clears_logo_and_deletes_previous_managed_as
     assert vendor["logo_url"] is None
     assert campaign["vendor_logo_url"] is None
     assert deleted_assets == [(previous_logo_url, str(vendor_id), "vendor_logo")]
+
+
+@pytest.mark.asyncio
+async def test_approve_vendor_marks_email_verified_and_requires_password_change(
+    service_and_db, monkeypatch
+):
+    service, raw_db, vendor_id = service_and_db
+    raw_db["users"].update_one(
+        {"_id": vendor_id},
+        {
+            "$set": {
+                "vendor_account_status": "pending_approval",
+                "is_active": False,
+                "password_hash": None,
+            }
+        },
+    )
+
+    sent_passwords: list[str] = []
+
+    async def _capture_approval_email(email: str, temp_password: str):
+        assert email == "qa-vendor@example.com"
+        sent_passwords.append(temp_password)
+
+    monkeypatch.setattr(service, "_send_approval_email", _capture_approval_email)
+
+    result = await service._approve_vendor(
+        str(vendor_id),
+        "qa-vendor@example.com",
+        admin_email="admin@example.com",
+    )
+
+    vendor = raw_db["users"].find_one({"_id": vendor_id})
+
+    assert result["status"] == "active"
+    assert vendor["vendor_account_status"] == "active"
+    assert vendor["is_active"] is True
+    assert vendor["must_change_password"] is True
+    assert vendor["email_verified"] is True
+    assert vendor["email_verified_at"] is not None
+    assert vendor["temp_password_expires_at"] is not None
+    assert vendor["password_hash"]
+    assert sent_passwords

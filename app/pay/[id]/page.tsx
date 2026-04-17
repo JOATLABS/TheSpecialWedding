@@ -13,12 +13,12 @@ function CheckoutForm({
   amount,
   currency,
   clientSecret,
-  paymentId,
+  paymentToken,
 }: {
   amount: number;
   currency: string;
   clientSecret: string;
-  paymentId: string;
+  paymentToken: string;
 }) {
   const router = useRouter();
   const stripe = useStripe();
@@ -37,7 +37,7 @@ function CheckoutForm({
     const { error, paymentIntent } = await stripe.confirmPayment({
       elements,
       confirmParams: {
-        return_url: `${window.location.origin}/pay/success?payment_id=${encodeURIComponent(paymentId)}`,
+        return_url: `${window.location.origin}/pay/success?payment_token=${encodeURIComponent(paymentToken)}`,
       },
       redirect: 'if_required',
     });
@@ -49,7 +49,7 @@ function CheckoutForm({
     }
 
     if (paymentIntent) {
-      router.push(`/pay/success?payment_id=${encodeURIComponent(paymentId)}`);
+      router.push(`/pay/success?payment_token=${encodeURIComponent(paymentToken)}`);
       return;
     }
 
@@ -97,10 +97,10 @@ function CheckoutForm({
 export default function PaymentPage({ params }: { params: Promise<{ id: string }> }) {
   const router = useRouter();
   const [clientSecret, setClientSecret] = useState<string | null>(null);
-  const [id, setId] = useState<string | null>(null);
+  const [paymentToken, setPaymentToken] = useState<string | null>(null);
 
   useEffect(() => {
-    params.then(p => setId(p.id));
+    params.then((p) => setPaymentToken(p.id));
   }, [params]);
   const [amount, setAmount] = useState<number>(0);
   const [currency, setCurrency] = useState<string>('usd');
@@ -111,13 +111,13 @@ export default function PaymentPage({ params }: { params: Promise<{ id: string }
 
   useEffect(() => {
     const fetchPaymentDetails = async () => {
-      if (!id) return;
+      if (!paymentToken) return;
       try {
         const stripe = getStripeClient();
         setStripePromiseState(stripe);
         preloadStripeClient().catch(() => undefined);
 
-        const res = await fetch(`${getApiBaseUrl()}/stripe/payment-intent/${id}`);
+        const res = await fetch(`${getApiBaseUrl()}/stripe/payment-request/${paymentToken}`);
 
         if (!res.ok) {
            throw new Error("Payment link invalid or expired");
@@ -130,7 +130,7 @@ export default function PaymentPage({ params }: { params: Promise<{ id: string }
         setCurrency(data.currency);
 
         if (data.status === 'succeeded' || data.status === 'processing') {
-          router.replace(`/pay/success?payment_id=${encodeURIComponent(id)}`);
+          router.replace(`/pay/success?payment_token=${encodeURIComponent(paymentToken)}`);
           return;
         }
 
@@ -146,7 +146,7 @@ export default function PaymentPage({ params }: { params: Promise<{ id: string }
     };
 
     fetchPaymentDetails();
-  }, [id, router]);
+  }, [paymentToken, router]);
 
 
   if (loading) {
@@ -187,7 +187,7 @@ export default function PaymentPage({ params }: { params: Promise<{ id: string }
     );
   }
 
-  if (!id || !clientSecret || !stripePromiseState) return null;
+  if (!paymentToken || !clientSecret || !stripePromiseState) return null;
 
   return (
     <div className="min-h-screen flex flex-col items-center justify-center bg-gray-50 dark:bg-slate-900 p-4 py-12">
@@ -200,7 +200,7 @@ export default function PaymentPage({ params }: { params: Promise<{ id: string }
 
           <div className="p-6">
             <Elements stripe={stripePromiseState} options={{ clientSecret, appearance: { theme: 'stripe' } }}>
-              <CheckoutForm amount={amount} currency={currency} clientSecret={clientSecret} paymentId={id} />
+              <CheckoutForm amount={amount} currency={currency} clientSecret={clientSecret} paymentToken={paymentToken} />
             </Elements>
           </div>
         </div>

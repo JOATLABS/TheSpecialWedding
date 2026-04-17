@@ -2,15 +2,17 @@ import { copyFileSync, existsSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import path from 'node:path';
 
+import { config as loadDotEnv } from 'dotenv';
 import { expect, test } from '@playwright/test';
 
 const ROOT = process.cwd();
+loadDotEnv({ path: path.join(ROOT, '.env') });
 const SAMPLE_IMAGE = path.join(ROOT, 'output/playwright/codex-test.png');
 const SAMPLE_IMAGE_REPLACEMENT = path.join(ROOT, 'output/playwright/codex-test-replace.png');
 const VENDOR_FIXTURE_SCRIPT = path.join(ROOT, 'scripts/testing/vendor_ad_media_fixture.py');
 const ROOT_ADMIN_EMAIL =
-  process.env.PLAYWRIGHT_ROOT_ADMIN_EMAIL ?? 'thedeveloper@thespecialwedding.io';
-const ROOT_ADMIN_PASSWORD = process.env.PLAYWRIGHT_ROOT_ADMIN_PASSWORD;
+  process.env.ROOT_ADMIN_EMAIL ?? 'thedeveloper@thespecialwedding.io';
+const ROOT_ADMIN_PASSWORD = process.env.ROOT_ADMIN_PASSWORD;
 const PLANNER_EMAIL =
   process.env.PLAYWRIGHT_MEDIA_PLANNER_EMAIL ?? 'test_planner2@thespecialwedding.io';
 const PLANNER_PASSWORD =
@@ -75,7 +77,7 @@ async function loginVendor(page: import('@playwright/test').Page, email: string,
 async function logoutVendor(page: import('@playwright/test').Page) {
   await page.goto('/portal/ads');
   await page.getByRole('button', { name: /sign out|log out|logout/i }).click();
-  await expect(page.getByRole('heading', { name: 'Vendor Ad Portal' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Welcome back' })).toBeVisible();
 }
 
 function ensureVendorReplacementImage() {
@@ -245,7 +247,7 @@ test.describe('media storage centralization browser verification', () => {
   });
 
   test('root admin knowledge-base card and og image uploads work from the real editor UI', async ({ page }) => {
-    test.skip(!ROOT_ADMIN_PASSWORD, 'Set PLAYWRIGHT_ROOT_ADMIN_PASSWORD to verify root-admin KB image uploads.');
+    test.skip(!ROOT_ADMIN_PASSWORD, 'Set ROOT_ADMIN_PASSWORD to verify root-admin KB image uploads.');
 
     let uploadedCardUrl: string | null = null;
     let uploadedOgUrl: string | null = null;
@@ -285,7 +287,7 @@ test.describe('media storage centralization browser verification', () => {
   });
 
   test('root admin blog card and og image uploads work from the real editor UI', async ({ page }) => {
-    test.skip(!ROOT_ADMIN_PASSWORD, 'Set PLAYWRIGHT_ROOT_ADMIN_PASSWORD to verify root-admin blog image uploads.');
+    test.skip(!ROOT_ADMIN_PASSWORD, 'Set ROOT_ADMIN_PASSWORD to verify root-admin blog image uploads.');
 
     let uploadedCardUrl: string | null = null;
     let uploadedOgUrl: string | null = null;
@@ -449,6 +451,9 @@ test.describe('media storage centralization browser verification', () => {
       await page.locator('#vendor-logo-image-upload').setInputFiles(SAMPLE_IMAGE);
       const logoPreview = page.getByAltText(VENDOR_FIXTURE_CONFIG.businessName);
       await expect(logoPreview).toBeVisible();
+      await expect
+        .poll(async () => await logoPreview.getAttribute('src'), { timeout: 15000 })
+        .toContain(`/vendor-profiles/${vendorFixture!.vendorId}/logo/`);
       const firstLogoSrc = await logoPreview.getAttribute('src');
       await page.getByRole('button', { name: 'Save Profile' }).click();
       await expect(page.getByText(/Profile updated successfully/i)).toBeVisible();
@@ -460,6 +465,9 @@ test.describe('media storage centralization browser verification', () => {
 
       await page.locator('#vendor-logo-image-upload').setInputFiles(SAMPLE_IMAGE_REPLACEMENT);
       const replacedLogoPreview = page.getByAltText(VENDOR_FIXTURE_CONFIG.businessName);
+      await expect
+        .poll(async () => await replacedLogoPreview.getAttribute('src'), { timeout: 15000 })
+        .not.toBe(firstLogoSrc);
       const secondLogoSrc = await replacedLogoPreview.getAttribute('src');
       expect(secondLogoSrc).not.toBe(firstLogoSrc);
       await page.getByRole('button', { name: 'Save Profile' }).click();

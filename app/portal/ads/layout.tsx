@@ -45,6 +45,23 @@ import {
 } from './components/VendorAuthContext';
 
 const API_BASE = getApiBaseUrl();
+const PUBLIC_VENDOR_PORTAL_ROUTES = new Set(['/portal/ads/signup']);
+
+type VendorPortalProfile = {
+  _id?: string;
+  id?: string;
+  email?: string;
+  role?: string;
+  is_root_admin?: boolean;
+  company_name?: string;
+  business_name?: string;
+  must_change_password?: boolean;
+  user_data?: {
+    business_name?: string;
+    company_name?: string;
+    must_change_password?: boolean;
+  };
+};
 
 function clearLegacyVendorPortalStorage() {
   if (typeof window === 'undefined') {
@@ -53,6 +70,29 @@ function clearLegacyVendorPortalStorage() {
 
   localStorage.removeItem('vendor_ad_token');
   localStorage.removeItem('vendor_ad_user');
+}
+
+function shapeVendorPortalUser(
+  profile: VendorPortalProfile,
+  fallbackEmail = '',
+): VendorUser {
+  const businessName =
+    profile.business_name ||
+    profile.user_data?.business_name ||
+    profile.company_name ||
+    profile.user_data?.company_name ||
+    profile.email ||
+    fallbackEmail ||
+    'Advertising Vendor';
+
+  return {
+    _id: profile._id || profile.id || '',
+    email: profile.email || fallbackEmail,
+    name: businessName,
+    role: profile.is_root_admin ? 'root_admin' : (profile.role || 'advertising_vendor'),
+    must_change_password:
+      profile.must_change_password || profile.user_data?.must_change_password || false,
+  };
 }
 
 // =============================================================================
@@ -83,17 +123,27 @@ export default function VendorPortalLayout({ children }: { children: React.React
 
 function VendorPortalLayoutInner({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
-  const isPublicPage = pathname === '/portal/ads/signup';
+  const isPublicPage = PUBLIC_VENDOR_PORTAL_ROUTES.has(pathname);
   const [token, setToken] = useState<string | null>(null);
   const [user, setUser] = useState<VendorUser | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(() => !isPublicPage);
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [isMobile, setIsMobile] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
 
+    if (isPublicPage) {
+      setLoading(false);
+      return () => {
+        cancelled = true;
+      };
+    }
+
     const bootstrapVendorSession = async () => {
+      if (!cancelled) {
+        setLoading(true);
+      }
       clearLegacyVendorPortalStorage();
 
       try {
@@ -120,13 +170,7 @@ function VendorPortalLayoutInner({ children }: { children: React.ReactNode }) {
 
         if (!cancelled) {
           setToken(accessToken);
-          setUser({
-            _id: profile._id || profile.id || '',
-            email: profile.email || '',
-            name: profile.business_name || profile.company_name || profile.email || 'Advertising Vendor',
-            role: profile.is_root_admin ? 'root_admin' : (profile.role || 'advertising_vendor'),
-            must_change_password: profile.must_change_password || false,
-          });
+          setUser(shapeVendorPortalUser(profile));
         }
       } finally {
         if (!cancelled) {
@@ -140,7 +184,7 @@ function VendorPortalLayoutInner({ children }: { children: React.ReactNode }) {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [isPublicPage]);
 
   useEffect(() => {
     const handleResize = () => {
@@ -190,14 +234,7 @@ function VendorPortalLayoutInner({ children }: { children: React.ReactNode }) {
 
     persistAdminAuthToken(accessToken, true);
     setToken(accessToken);
-    const vendorUser: VendorUser = {
-      _id: profile._id || profile.id || '',
-      email: profile.email || email,
-      name: profile.business_name || profile.company_name || email,
-      role: profile.role || 'advertising_vendor',
-      must_change_password: profile.must_change_password || false,
-    };
-    setUser(vendorUser);
+    setUser(shapeVendorPortalUser(profile, email));
   };
 
   const logout = useCallback(() => {

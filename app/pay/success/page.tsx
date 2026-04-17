@@ -7,8 +7,8 @@ import { Card, CardContent, CardFooter, CardHeader, CardTitle } from '@/componen
 import { Button } from '@/components/ui/Button';
 import { getApiBaseUrl } from '@/utils/env';
 
-interface PaymentIntentSummary {
-  id: string;
+interface PaymentRequestSummary {
+  payment_token: string;
   amount: number;
   currency: string;
   status: string;
@@ -20,12 +20,12 @@ function PaymentSuccessPageContent() {
   const searchParams = useSearchParams();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [paymentIntent, setPaymentIntent] = useState<PaymentIntentSummary | null>(null);
+  const [paymentRequest, setPaymentRequest] = useState<PaymentRequestSummary | null>(null);
 
   useEffect(() => {
-    const paymentId = searchParams.get('payment_id');
+    const paymentToken = searchParams.get('payment_token') || searchParams.get('payment_id');
 
-    if (!paymentId) {
+    if (!paymentToken) {
       setError('No payment confirmation was found for this session.');
       setLoading(false);
       return;
@@ -33,20 +33,16 @@ function PaymentSuccessPageContent() {
 
     const verifyPayment = async () => {
       try {
-        const response = await fetch(`${getApiBaseUrl()}/stripe/payment-intent/${encodeURIComponent(paymentId)}/summary`);
+        const response = await fetch(
+          `${getApiBaseUrl()}/stripe/payment-request/${encodeURIComponent(paymentToken)}/summary`,
+        );
         if (!response.ok) {
           throw new Error('Unable to verify this payment right now.');
         }
 
-        const stripePaymentIntent = await response.json();
+        const publicPaymentRequest = await response.json();
 
-        setPaymentIntent({
-          id: stripePaymentIntent.id,
-          amount: stripePaymentIntent.amount,
-          currency: stripePaymentIntent.currency,
-          status: stripePaymentIntent.status,
-          description: stripePaymentIntent.description ?? undefined,
-        });
+        setPaymentRequest(publicPaymentRequest);
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Unable to verify this payment right now.');
       } finally {
@@ -89,9 +85,9 @@ function PaymentSuccessPageContent() {
     );
   }
 
-  const isProcessing = paymentIntent?.status === 'processing';
-  const isSucceeded = paymentIntent?.status === 'succeeded';
-  const paymentId = searchParams.get('payment_id');
+  const isProcessing = paymentRequest?.status === 'processing';
+  const isSucceeded = paymentRequest?.status === 'succeeded';
+  const paymentToken = searchParams.get('payment_token') || searchParams.get('payment_id');
   const heading = isSucceeded
     ? 'Payment Successful'
     : isProcessing
@@ -117,22 +113,22 @@ function PaymentSuccessPageContent() {
         <CardContent className="space-y-4">
           <p className="text-center text-sm text-gray-600 dark:text-gray-300">{summary}</p>
           <div className="rounded-xl bg-gray-50 p-4 text-sm dark:bg-slate-800">
-            {paymentIntent?.description && (
+            {paymentRequest?.description && (
               <div className="mb-3 flex items-center justify-between gap-3">
                 <span className="text-gray-500 dark:text-gray-400">Description</span>
-                <span className="text-right font-medium text-gray-900 dark:text-white">{paymentIntent.description}</span>
+                <span className="text-right font-medium text-gray-900 dark:text-white">{paymentRequest.description}</span>
               </div>
             )}
             <div className="mb-3 flex items-center justify-between gap-3">
               <span className="text-gray-500 dark:text-gray-400">Amount</span>
               <span className="font-medium text-gray-900 dark:text-white">
-                ${paymentIntent?.amount?.toFixed(2)} {paymentIntent?.currency?.toUpperCase()}
+                ${paymentRequest?.amount?.toFixed(2)} {paymentRequest?.currency?.toUpperCase()}
               </span>
             </div>
             <div className="flex items-center justify-between gap-3">
               <span className="text-gray-500 dark:text-gray-400">Status</span>
               <span className="font-medium capitalize text-gray-900 dark:text-white">
-                {paymentIntent?.status?.replace(/_/g, ' ')}
+                {paymentRequest?.status?.replace(/_/g, ' ')}
               </span>
             </div>
           </div>
@@ -143,8 +139,8 @@ function PaymentSuccessPageContent() {
           )}
         </CardContent>
         <CardFooter className="justify-center">
-          {paymentId && !isSucceeded && !isProcessing ? (
-            <Button variant="outline" onClick={() => router.replace(`/pay/${paymentId}`)}>
+          {paymentToken && !isSucceeded && !isProcessing ? (
+            <Button variant="outline" onClick={() => router.replace(`/pay/${paymentToken}`)}>
               Try Payment Again
             </Button>
           ) : (
