@@ -8,6 +8,7 @@ from pathlib import Path
 import mongomock
 import pytest
 from bson import ObjectId
+from fastapi import HTTPException
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 if str(PROJECT_ROOT) not in sys.path:
@@ -169,3 +170,39 @@ async def test_approve_vendor_marks_email_verified_and_requires_password_change(
     assert vendor["temp_password_expires_at"] is not None
     assert vendor["password_hash"]
     assert sent_passwords
+
+
+@pytest.mark.asyncio
+async def test_approve_vendor_fails_closed_when_frontend_url_missing(
+    service_and_db, monkeypatch
+):
+    service, raw_db, vendor_id = service_and_db
+    raw_db["users"].update_one(
+        {"_id": vendor_id},
+        {
+            "$set": {
+                "vendor_account_status": "pending_approval",
+                "is_active": False,
+                "password_hash": None,
+            }
+        },
+    )
+
+    monkeypatch.setattr(
+        "app.services.vendor_signup_service.app_settings.frontend_url", None
+    )
+
+    with pytest.raises(HTTPException) as exc_info:
+        await service._approve_vendor(
+            str(vendor_id),
+            "qa-vendor@example.com",
+            admin_email="admin@example.com",
+        )
+
+    vendor = raw_db["users"].find_one({"_id": vendor_id})
+
+    assert exc_info.value.status_code == 500
+    assert exc_info.value.detail == "Vendor portal URL is not configured"
+    assert vendor["vendor_account_status"] == "pending_approval"
+    assert vendor["is_active"] is False
+    assert vendor["password_hash"] is None

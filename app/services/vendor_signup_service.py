@@ -33,12 +33,18 @@ from app.utils.auth_utils import get_password_hash
 
 logger = logging.getLogger(__name__)
 
-# Resolve the portal URL from settings, with a sensible fallback
-_PORTAL_URL = (
-    f"{app_settings.frontend_url}/portal/ads"
-    if app_settings.frontend_url
-    else "https://thespecialwedding.com/portal/ads"
-)
+
+def _require_vendor_portal_url() -> str:
+    frontend_url = (app_settings.frontend_url or "").strip().rstrip("/")
+    if not frontend_url:
+        logger.error(
+            "Vendor approval email could not be prepared because FRONTEND_URL is not configured."
+        )
+        raise HTTPException(
+            status_code=500,
+            detail="Vendor portal URL is not configured",
+        )
+    return f"{frontend_url}/portal/ads"
 
 
 # ─── Profile Completeness ─────────────────────────────────────────────
@@ -269,6 +275,7 @@ class VendorSignupService:
         self, vendor_id: str, vendor_email: str, admin_email: str
     ) -> Dict[str, Any]:
         """Internal approval logic shared by manual and auto-approve paths."""
+        _require_vendor_portal_url()
         temp_password = self._generate_temp_password()
         password_hash = get_password_hash(temp_password)
         now = datetime.now(timezone.utc)
@@ -648,6 +655,7 @@ class VendorSignupService:
 
     async def _send_approval_email(self, email: str, temp_password: str) -> None:
         """Send approval email with temporary password."""
+        portal_url = _require_vendor_portal_url()
         html = f"""
         <!DOCTYPE html>
         <html>
@@ -672,7 +680,7 @@ class VendorSignupService:
                             Expires in 72 hours. You will be required to change it on first login.
                         </p>
                     </div>
-                    <a href="{_PORTAL_URL}"
+                    <a href="{portal_url}"
                        style="display: block; text-align: center; background: #6366f1; color: #fff; padding: 12px 24px; border-radius: 8px; text-decoration: none; font-weight: 600; font-size: 14px;">
                         Sign In to Vendor Portal
                     </a>
