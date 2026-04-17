@@ -146,6 +146,18 @@ def test_gallery_ad_and_blog_services_use_target_buckets_and_public_urls(monkeyp
     )
     assert ad_upload["upload_url"].startswith("put_object:ad-bucket:ads/vendor-123/")
     assert ad_upload["cdn_url"].startswith("https://ads.example.com/ads/vendor-123/")
+    logo_upload = ad_service.create_presigned_upload_url(
+        filename="logo.png",
+        vendor_id="vendor-123",
+        content_type="image/png",
+        asset_kind="vendor_logo",
+    )
+    assert logo_upload["upload_url"].startswith(
+        "put_object:ad-bucket:vendor-profiles/vendor-123/logo/"
+    )
+    assert logo_upload["cdn_url"].startswith(
+        "https://ads.example.com/vendor-profiles/vendor-123/logo/"
+    )
 
     blog_upload = blog_service.create_presigned_upload_url(
         filename="header.png",

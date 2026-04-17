@@ -1,3 +1,5 @@
+# ruff: noqa: E402
+
 """
 Comprehensive test suite for VendorCampaignService (Phase 2).
 
@@ -32,6 +34,7 @@ os.environ.setdefault("API_KEY", "test-api-key")
 os.environ.setdefault("ROOT_ADMIN_EMAIL", "thedeveloper@thespecialwedding.io")
 
 from app.models.advertising_campaign import CampaignStatus, CreativeReviewStatus
+from app.services.ad_platform_config_service import invalidate_config_cache
 from app.services.vendor_campaign_service import VendorCampaignService
 from tests.backend.conftest_advertising import (
     VENDOR_EMAIL,
@@ -53,6 +56,21 @@ def service_and_db():
     """Create a fresh VendorCampaignService with mongomock database."""
     client = mongomock.MongoClient()
     raw_db = client["test_vendor_campaigns"]
+    invalidate_config_cache()
+    raw_db["users"].insert_one(
+        {
+            "_id": ObjectId(VENDOR_ID),
+            "email": VENDOR_EMAIL,
+            "business_name": VENDOR_NAME,
+            "role": "advertising_vendor",
+            "vendor_category": "florist",
+            "vendor_location": "Dallas, TX",
+            "vendor_phone": "",
+            "vendor_website": "",
+            "vendor_description": "",
+            "logo_url": None,
+        }
+    )
     db = AsyncMockDatabase(raw_db)
     service = VendorCampaignService(db)
     return service, db, raw_db
@@ -104,6 +122,34 @@ async def test_create_campaign_stores_vendor_identity(service_and_db):
     assert result["vendor_name"] == VENDOR_NAME
     assert result["vendor_category"] == "florist"
     assert result["created_by"] == VENDOR_EMAIL
+
+
+@pytest.mark.asyncio
+async def test_create_campaign_uses_vendor_profile_logo_for_campaign_cards(
+    service_and_db,
+):
+    """Verify campaign vendor_logo_url is sourced from the vendor profile."""
+    service, db, raw_db = service_and_db
+    raw_db["users"].update_one(
+        {"_id": ObjectId(VENDOR_ID)},
+        {
+            "$set": {
+                "logo_url": "https://ads.example.com/vendor-profiles/vendor-123/logo/current.png"
+            }
+        },
+    )
+
+    result = await service.create_campaign(
+        vendor_id=VENDOR_ID,
+        vendor_email=VENDOR_EMAIL,
+        vendor_name=VENDOR_NAME,
+        data={"campaign_name": "Logo Sync Campaign"},
+    )
+
+    assert (
+        result["vendor_logo_url"]
+        == "https://ads.example.com/vendor-profiles/vendor-123/logo/current.png"
+    )
 
 
 @pytest.mark.asyncio
@@ -498,6 +544,45 @@ async def test_create_creative_sets_primary_if_first(service_and_db):
 
 
 @pytest.mark.asyncio
+async def test_create_creative_validates_vendor_owned_image_url(
+    service_and_db, monkeypatch
+):
+    """Verify creative image URLs are normalized through vendor-owned asset validation."""
+    service, db, raw_db = service_and_db
+
+    campaign_oid = ObjectId()
+    raw_db["ad_campaigns"].insert_one(
+        {"_id": campaign_oid, **make_campaign(vendor_id=VENDOR_ID)}
+    )
+
+    validation_calls = {}
+
+    def fake_ensure_vendor_asset_url(url, vendor_id, asset_kind, *, field_name):
+        validation_calls["args"] = (url, vendor_id, asset_kind, field_name)
+        return "https://ads.example.com/ads/vendor-123/validated.png"
+
+    monkeypatch.setattr(
+        service.ad_upload_service,
+        "ensure_vendor_asset_url",
+        fake_ensure_vendor_asset_url,
+    )
+
+    result = await service.create_creative(
+        campaign_id=str(campaign_oid),
+        vendor_id=VENDOR_ID,
+        data={
+            "headline": "Spring Flowers",
+            "description": "Beautiful bouquets",
+            "image_url": "https://ads.example.com/ads/vendor-123/raw.png",
+        },
+    )
+
+    assert result["image_url"] == "https://ads.example.com/ads/vendor-123/validated.png"
+    assert validation_calls["args"][1] == VENDOR_ID
+    assert validation_calls["args"][3] == "image_url"
+
+
+@pytest.mark.asyncio
 async def test_create_creative_explicit_primary(service_and_db):
     """Verify is_primary=True overrides the default behavior."""
     service, db, raw_db = service_and_db
@@ -580,6 +665,53 @@ async def test_update_creative_resets_review_on_content_change(service_and_db):
 
     assert result["review_status"] == CreativeReviewStatus.PENDING.value
     assert result["submitted_at"] is not None
+
+
+@pytest.mark.asyncio
+async def test_update_creative_deletes_replaced_managed_image(
+    service_and_db, monkeypatch
+):
+    """Verify a replaced managed creative image is deleted after the DB update succeeds."""
+    service, db, raw_db = service_and_db
+
+    creative_oid = ObjectId()
+    old_url = "https://ads.example.com/ads/vendor-123/old.png"
+    new_url = "https://ads.example.com/ads/vendor-123/new.png"
+    raw_db["ad_creatives"].insert_one(
+        {
+            "_id": creative_oid,
+            **make_creative(
+                str(ObjectId()),
+                vendor_id=VENDOR_ID,
+                image_url=old_url,
+                review_status=CreativeReviewStatus.PENDING.value,
+            ),
+        }
+    )
+
+    deleted_assets: list[tuple[str, str, object]] = []
+
+    monkeypatch.setattr(
+        service.ad_upload_service,
+        "ensure_vendor_asset_url",
+        lambda url, *_args, **_kwargs: url,
+    )
+    monkeypatch.setattr(
+        service.ad_upload_service,
+        "delete_asset_url",
+        lambda url, vendor_id, asset_kind: (
+            deleted_assets.append((url, vendor_id, asset_kind)) or True
+        ),
+    )
+
+    result = await service.update_creative(
+        creative_id=str(creative_oid),
+        vendor_id=VENDOR_ID,
+        updates={"image_url": new_url},
+    )
+
+    assert result["image_url"] == new_url
+    assert deleted_assets == [(old_url, VENDOR_ID, "creative")]
 
 
 @pytest.mark.asyncio

@@ -4,6 +4,7 @@ import React, { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useVendorAuth } from '../../components/VendorAuthContext';
 import { toast } from 'sonner';
+import { VendorMediaUploader } from '../../components/VendorMediaUploader';
 import {
   createCampaign,
   createCreative,
@@ -99,6 +100,8 @@ export default function NewCampaignWizard() {
     offer: '',
     call_to_action: 'View Portfolio',
     is_primary: true,
+    image_url: null,
+    image_alt_text: null,
   });
 
   const stepIndex = STEPS.findIndex((s) => s.id === currentStep);
@@ -147,7 +150,11 @@ export default function NewCampaignWizard() {
       const campaign = await createCampaign(token, campaignData);
 
       // 2. Create creative
-      await createCreative(token, campaign._id, creativeData);
+      await createCreative(token, campaign._id, {
+        ...creativeData,
+        creative_type: creativeData.image_url ? 'image' : 'text',
+        image_alt_text: creativeData.image_url ? creativeData.headline.trim() || 'Vendor creative image' : null,
+      });
 
       // 3. Submit for review
       await submitCampaignForReview(token, campaign._id);
@@ -172,7 +179,11 @@ export default function NewCampaignWizard() {
       const campaign = await createCampaign(token, campaignData);
 
       if (creativeData.headline.trim() && creativeData.description.trim()) {
-        await createCreative(token, campaign._id, creativeData);
+        await createCreative(token, campaign._id, {
+          ...creativeData,
+          creative_type: creativeData.image_url ? 'image' : 'text',
+          image_alt_text: creativeData.image_url ? creativeData.headline.trim() || 'Vendor creative image' : null,
+        });
       }
 
       toast.success('Campaign saved as draft');
@@ -348,6 +359,16 @@ export default function NewCampaignWizard() {
         {currentStep === 'creative' && (
           <div className="space-y-4">
             <h2 className="text-lg font-semibold text-slate-900 dark:text-white">Ad Creative</h2>
+            <VendorMediaUploader
+              inputId="vendor-campaign-creative-image-upload"
+              assetKind="creative"
+              label="Creative Image"
+              value={creativeData.image_url ?? null}
+              onChange={(url) => updateCreative({ image_url: url })}
+              previewAlt={creativeData.image_alt_text || creativeData.headline || 'Campaign creative image'}
+              emptyTitle="Upload the image planners will see"
+              emptyDescription="Use the same shared upload flow as the rest of the platform so this campaign creative stays on-brand."
+            />
             <div>
               <label className="block text-sm font-medium text-slate-700 dark:text-slate-200 mb-1.5">Headline *</label>
               <input

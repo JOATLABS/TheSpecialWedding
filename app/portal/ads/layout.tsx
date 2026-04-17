@@ -5,7 +5,11 @@ import Link from 'next/link';
 import NextImage from 'next/image';
 import { usePathname } from 'next/navigation';
 import { getApiBaseUrl } from '@/utils/env';
-import { bootstrapAdminAuthToken, clearAdminAuthStorage } from '@/utils/adminAuthStorage';
+import {
+  bootstrapAdminAuthToken,
+  clearAdminAuthStorage,
+  persistAdminAuthToken,
+} from '@/utils/adminAuthStorage';
 import {
   LayoutDashboard,
   Megaphone,
@@ -21,14 +25,20 @@ import {
   Moon,
   Bell,
   ExternalLink,
+  ArrowRight,
+  CheckCircle2,
+  ShieldCheck,
 } from 'lucide-react';
 import { ThemeProvider, useTheme } from '@/contexts/ThemeContext';
 import { Toaster } from 'sonner';
 import {
   vendorInputClass,
+  vendorInsetClass,
   vendorPrimaryButtonClass,
+  vendorSecondaryButtonClass,
   vendorSurfaceClass,
 } from './components/styles';
+import { VendorAuthShell, VendorAuthShowcase } from './components/VendorAuthShell';
 import {
   VendorAuthContext,
   type VendorUser,
@@ -178,6 +188,7 @@ function VendorPortalLayoutInner({ children }: { children: React.ReactNode }) {
       throw new Error('This portal is for advertising vendors only');
     }
 
+    persistAdminAuthToken(accessToken, true);
     setToken(accessToken);
     const vendorUser: VendorUser = {
       _id: profile._id || profile.id || '',
@@ -210,7 +221,7 @@ function VendorPortalLayoutInner({ children }: { children: React.ReactNode }) {
   if (isPublicPage) {
     return (
       <VendorAuthContext.Provider value={authValue}>
-        <div className="min-h-screen bg-light-bg text-light-text transition-colors duration-300 dark:bg-dark-bg dark:text-dark-text font-sans">
+        <div className="min-h-screen bg-light-bg text-light-text transition-colors duration-300 dark:bg-dark-bg dark:text-dark-text">
           <PortalBackground />
           <main className="relative z-10 min-h-screen">
             {children}
@@ -252,7 +263,7 @@ function VendorPortalLayoutInner({ children }: { children: React.ReactNode }) {
   // Loading state
   if (loading) {
     return (
-      <div className="min-h-screen bg-light-bg text-light-text transition-colors duration-300 dark:bg-dark-bg dark:text-dark-text font-sans">
+      <div className="min-h-screen bg-light-bg text-light-text transition-colors duration-300 dark:bg-dark-bg dark:text-dark-text">
         <PortalBackground />
         <div className="relative z-10 flex min-h-screen items-center justify-center">
           <div className={`${vendorSurfaceClass} flex items-center gap-3 px-6 py-4 text-sm text-slate-600 dark:text-slate-300`}>
@@ -266,7 +277,7 @@ function VendorPortalLayoutInner({ children }: { children: React.ReactNode }) {
 
   return (
     <VendorAuthContext.Provider value={authValue}>
-      <div className="min-h-screen overflow-x-hidden bg-light-bg text-light-text transition-colors duration-300 dark:bg-dark-bg dark:text-dark-text font-sans">
+      <div className="min-h-screen overflow-x-hidden bg-light-bg text-light-text transition-colors duration-300 dark:bg-dark-bg dark:text-dark-text">
         <PortalBackground />
 
         <VendorSidebar
@@ -573,64 +584,109 @@ function LoginPage({ onLogin }: { onLogin: (email: string, password: string) => 
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 dark:from-slate-900 dark:to-slate-800 flex items-center justify-center p-4">
-      <div className="w-full max-w-md">
-        {/* Logo */}
-        <div className="text-center mb-8">
-          <div className="w-16 h-16 bg-primary-500 rounded-2xl flex items-center justify-center mx-auto mb-4">
-            <Megaphone size={32} className="text-white" />
+    <VendorAuthShell
+      showcase={(
+        <VendorAuthShowcase
+          eyebrow="Vendor ads"
+          title="Show up like a premium partner, not a pasted listing."
+          description="Sign in to manage your campaign creative, business profile, and lead flow inside the same branded workspace the rest of the platform already uses."
+          highlights={[
+            {
+              label: 'Campaigns that look polished',
+              description: 'Build creative, swap media, and keep your brand assets aligned without pasting raw URLs into forms.',
+            },
+            {
+              label: 'One place for leads and spend',
+              description: 'Track campaigns, incoming leads, and billing from the same workspace your team uses every day.',
+            },
+          ]}
+          stats={[
+            { value: 'Shared', caption: 'Media flow across creatives, campaigns, and logo settings' },
+            { value: 'Live', caption: 'Lead and campaign visibility from the vendor dashboard' },
+          ]}
+        />
+      )}
+    >
+      <div className="flex h-full flex-col justify-center">
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-[0.28em] text-wedding-rose/70">Vendor portal</p>
+            <h2 className="mt-2 text-[1.75rem] font-semibold leading-tight text-wedding-navy dark:text-white">Welcome back</h2>
+            <p className="mt-2 text-[0.95rem] leading-relaxed text-wedding-navy/70 dark:text-slate-300">
+              Access your campaigns, creative assets, and profile settings without leaving The Special Wedding ecosystem.
+            </p>
           </div>
-          <h1 className="text-2xl font-bold text-slate-900 dark:text-white">Vendor Ad Portal</h1>
-          <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">
-            Manage your advertising campaigns on The Special Wedding
-          </p>
+          <div className="hidden rounded-full bg-white/55 p-4 text-wedding-rose shadow-sm backdrop-blur sm:block dark:bg-slate-800/65">
+            <Megaphone className="h-8 w-8" />
+          </div>
         </div>
 
-        {/* Login Form */}
-        <form onSubmit={handleSubmit} className="bg-white dark:bg-slate-800 rounded-2xl shadow-lg p-6 space-y-4">
-          {error && (
-            <div className="bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 text-sm p-3 rounded-lg">
+        <form onSubmit={handleSubmit} className="mt-8 space-y-5" noValidate>
+          {error ? (
+            <div className="rounded-2xl border border-red-200/70 bg-red-50/80 px-4 py-3 text-sm text-red-700 dark:border-red-900/60 dark:bg-red-950/30 dark:text-red-300">
               {error}
             </div>
-          )}
-          <div>
-            <label className="block text-sm font-medium text-slate-700 dark:text-slate-200 mb-1.5">Email</label>
-            <input
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              required
-              className="w-full px-3 py-2.5 border border-slate-200 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-slate-900 dark:text-white text-sm focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
-              placeholder="vendor@example.com"
-            />
+          ) : null}
+
+          <div className={`${vendorInsetClass} space-y-5 p-5`}>
+            <div className="space-y-2">
+              <label htmlFor="vendor-email" className="text-sm font-medium text-wedding-navy dark:text-slate-200">
+                Email address
+              </label>
+              <input
+                id="vendor-email"
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                required
+                className={vendorInputClass}
+                placeholder="vendor@example.com"
+                autoComplete="email"
+              />
+            </div>
+            <div className="space-y-2">
+              <label htmlFor="vendor-password" className="text-sm font-medium text-wedding-navy dark:text-slate-200">
+                Password
+              </label>
+              <input
+                id="vendor-password"
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                required
+                className={vendorInputClass}
+                placeholder="Enter your password"
+                autoComplete="current-password"
+              />
+            </div>
           </div>
-          <div>
-            <label className="block text-sm font-medium text-slate-700 dark:text-slate-200 mb-1.5">Password</label>
-            <input
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              required
-              className="w-full px-3 py-2.5 border border-slate-200 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-slate-900 dark:text-white text-sm focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
-              placeholder="Enter your password"
-            />
-          </div>
-          <button
-            type="submit"
-            disabled={loading}
-            className="w-full py-2.5 bg-primary-500 hover:bg-primary-600 text-white font-medium rounded-lg transition-colors disabled:opacity-50 text-sm"
-          >
-            {loading ? 'Signing in...' : 'Sign In'}
-          </button>
-          <p className="text-center text-xs text-slate-500 dark:text-slate-400">
-            Don&apos;t have an account?{' '}
-            <a href="/portal/ads/signup" className="text-primary-500 hover:underline">
+
+          <div className="flex flex-col gap-3 sm:flex-row">
+            <button
+              type="submit"
+              disabled={loading}
+              className={`${vendorPrimaryButtonClass} w-full sm:flex-1`}
+            >
+              {loading ? 'Signing in...' : 'Sign In'}
+              {!loading ? <ArrowRight className="h-4 w-4" /> : null}
+            </button>
+            <Link href="/portal/ads/signup" className={`${vendorSecondaryButtonClass} w-full sm:w-auto`}>
               Register as a vendor
-            </a>
-          </p>
+            </Link>
+          </div>
+
+          <div className="flex flex-wrap items-center justify-between gap-3 border-t border-white/35 pt-4 text-sm text-wedding-navy/65 dark:border-slate-700/60 dark:text-slate-400">
+            <Link href="/vendors" className="transition hover:text-wedding-rose dark:hover:text-primary-300">
+              Back to vendor directory
+            </Link>
+            <div className="flex items-center gap-2">
+              <ShieldCheck className="h-4 w-4 text-wedding-sage" />
+              <span>Secure vendor access</span>
+            </div>
+          </div>
         </form>
       </div>
-    </div>
+    </VendorAuthShell>
   );
 }
 
@@ -700,89 +756,115 @@ function ForcePasswordChangePage({
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 dark:from-slate-900 dark:to-slate-800 flex items-center justify-center p-4">
-      <div className="w-full max-w-md">
-        <div className="text-center mb-8">
-          <div className="w-16 h-16 bg-amber-500 rounded-2xl flex items-center justify-center mx-auto mb-4">
-            <svg xmlns="http://www.w3.org/2000/svg" className="w-8 h-8 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z" />
-            </svg>
-          </div>
-          <h1 className="text-2xl font-bold text-slate-900 dark:text-white">Change Your Password</h1>
-          <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">
-            You must change your temporary password before accessing the portal.
-          </p>
-        </div>
-
-        <form onSubmit={handleSubmit} className="bg-white dark:bg-slate-800 rounded-2xl shadow-lg p-6 space-y-4">
-          {error && (
-            <div className="bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 text-sm p-3 rounded-lg">
-              {error}
-            </div>
-          )}
-
+    <VendorAuthShell
+      showcase={(
+        <VendorAuthShowcase
+          eyebrow="First sign-in"
+          title="Lock in your vendor account before you start publishing."
+          description="Update the temporary password that was sent to your inbox, then continue into the same vendor workspace used for campaigns, billing, and profile management."
+          highlights={[
+            {
+              label: 'Secure the workspace first',
+              description: 'Protect your campaigns, leads, and profile assets before you start editing or publishing anything.',
+            },
+            {
+              label: 'One-time setup, then you are in',
+              description: 'After this password update, you move straight into the same vendor dashboard used for daily campaign management.',
+            },
+          ]}
+          stats={[
+            { value: 'Required', caption: 'Before first access to the vendor workspace' },
+            { value: 'Secure', caption: 'Shared auth path with the rest of the platform' },
+          ]}
+        />
+      )}
+    >
+      <div className="flex h-full flex-col justify-center">
+        <div className="flex items-start justify-between gap-4">
           <div>
-            <label className="block text-sm font-medium text-slate-700 dark:text-slate-200 mb-1.5">
-              Temporary Password
-            </label>
-            <input
-              type="password"
-              value={currentPassword}
-              onChange={(e) => setCurrentPassword(e.target.value)}
-              required
-              className="w-full px-3 py-2.5 border border-slate-200 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-slate-900 dark:text-white text-sm focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
-              placeholder="Enter your temporary password"
-            />
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-slate-700 dark:text-slate-200 mb-1.5">
-              New Password
-            </label>
-            <input
-              type="password"
-              value={newPassword}
-              onChange={(e) => setNewPassword(e.target.value)}
-              required
-              className="w-full px-3 py-2.5 border border-slate-200 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-slate-900 dark:text-white text-sm focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
-              placeholder="At least 8 characters"
-            />
-            <p className="text-xs text-slate-400 mt-1">
-              Must include uppercase, lowercase, number, and special character.
+            <p className="text-xs font-semibold uppercase tracking-[0.28em] text-wedding-rose/70">Account security</p>
+            <h2 className="mt-2 text-[1.75rem] font-semibold leading-tight text-wedding-navy dark:text-white">Change your password</h2>
+            <p className="mt-2 text-[0.95rem] leading-relaxed text-wedding-navy/70 dark:text-slate-300">
+              This is required once before you can access the vendor portal as <span className="font-medium">{userEmail}</span>.
             </p>
           </div>
+          <div className="hidden rounded-full bg-white/55 p-4 text-wedding-gold shadow-sm backdrop-blur sm:block dark:bg-slate-800/65">
+            <ShieldCheck className="h-8 w-8" />
+          </div>
+        </div>
 
-          <div>
-            <label className="block text-sm font-medium text-slate-700 dark:text-slate-200 mb-1.5">
-              Confirm New Password
-            </label>
-            <input
-              type="password"
-              value={confirmPassword}
-              onChange={(e) => setConfirmPassword(e.target.value)}
-              required
-              className="w-full px-3 py-2.5 border border-slate-200 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-slate-900 dark:text-white text-sm focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
-              placeholder="Re-enter new password"
-            />
+        <form onSubmit={handleSubmit} className="mt-8 space-y-5">
+          {error ? (
+            <div className="rounded-2xl border border-red-200/70 bg-red-50/80 px-4 py-3 text-sm text-red-700 dark:border-red-900/60 dark:bg-red-950/30 dark:text-red-300">
+              {error}
+            </div>
+          ) : null}
+
+          <div className={`${vendorInsetClass} space-y-5 p-5`}>
+            <div className="space-y-2">
+              <label htmlFor="vendor-temp-password" className="text-sm font-medium text-wedding-navy dark:text-slate-200">
+                Temporary password
+              </label>
+              <input
+                id="vendor-temp-password"
+                type="password"
+                value={currentPassword}
+                onChange={(e) => setCurrentPassword(e.target.value)}
+                required
+                className={vendorInputClass}
+                placeholder="Enter your temporary password"
+                autoComplete="current-password"
+              />
+            </div>
+
+            <div className="space-y-2">
+              <label htmlFor="vendor-new-password" className="text-sm font-medium text-wedding-navy dark:text-slate-200">
+                New password
+              </label>
+              <input
+                id="vendor-new-password"
+                type="password"
+                value={newPassword}
+                onChange={(e) => setNewPassword(e.target.value)}
+                required
+                className={vendorInputClass}
+                placeholder="At least 8 characters"
+                autoComplete="new-password"
+              />
+              <p className="flex items-center gap-2 text-xs text-wedding-navy/60 dark:text-slate-400">
+                <CheckCircle2 className="h-3.5 w-3.5 text-wedding-sage" />
+                Must include uppercase, lowercase, number, and special character.
+              </p>
+            </div>
+
+            <div className="space-y-2">
+              <label htmlFor="vendor-confirm-password" className="text-sm font-medium text-wedding-navy dark:text-slate-200">
+                Confirm new password
+              </label>
+              <input
+                id="vendor-confirm-password"
+                type="password"
+                value={confirmPassword}
+                onChange={(e) => setConfirmPassword(e.target.value)}
+                required
+                className={vendorInputClass}
+                placeholder="Repeat your new password"
+                autoComplete="new-password"
+              />
+            </div>
           </div>
 
-          <button
-            type="submit"
-            disabled={loading}
-            className="w-full py-2.5 bg-amber-500 hover:bg-amber-600 text-white font-medium rounded-lg transition-colors disabled:opacity-50 text-sm"
-          >
-            {loading ? 'Changing Password...' : 'Change Password & Continue'}
-          </button>
-
-          <button
-            type="button"
-            onClick={onLogout}
-            className="w-full py-2 text-sm text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 transition-colors"
-          >
-            Sign Out
-          </button>
+          <div className="flex flex-col gap-3 sm:flex-row">
+            <button type="submit" disabled={loading} className={`${vendorPrimaryButtonClass} w-full sm:flex-1`}>
+              {loading ? 'Changing Password...' : 'Change Password & Continue'}
+              {!loading ? <ArrowRight className="h-4 w-4" /> : null}
+            </button>
+            <button type="button" onClick={onLogout} className={`${vendorSecondaryButtonClass} w-full sm:w-auto`}>
+              Sign Out
+            </button>
+          </div>
         </form>
       </div>
-    </div>
+    </VendorAuthShell>
   );
 }
