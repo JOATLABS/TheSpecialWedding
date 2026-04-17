@@ -157,7 +157,7 @@ async def update_vendor_profile(
     current_user: ExtendedAuthUser = Depends(require_advertising_vendor),
 ):
     """Update vendor profile fields."""
-    updates = {k: v for k, v in data.model_dump().items() if v is not None}
+    updates = data.model_dump(exclude_unset=True)
     return await service.update_vendor_profile(current_user.email, updates)
 
 

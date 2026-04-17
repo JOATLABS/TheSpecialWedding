@@ -19,6 +19,7 @@ from bson.errors import InvalidId
 from fastapi import HTTPException
 
 from app.models.advertising_campaign import CampaignStatus, CreativeReviewStatus
+from app.services.ad_upload_service import AdUploadService, VendorMediaAssetKind
 
 logger = logging.getLogger(__name__)
 
@@ -53,6 +54,7 @@ class VendorCampaignService:
         self.creatives = db["ad_creatives"]
         self.ad_events = db["ad_events"]
         self.ad_leads = db["ad_leads"]
+        self.ad_upload_service = AdUploadService()
 
     # ─── Campaign CRUD ───────────────────────────────────────────────
 
@@ -96,6 +98,9 @@ class VendorCampaignService:
         # ──────────────────────────────────────────────────────────
 
         now = datetime.now(timezone.utc)
+        vendor_doc = await self.db["users"].find_one({"_id": ObjectId(vendor_id)})
+        if not vendor_doc:
+            raise HTTPException(status_code=404, detail="Vendor account not found")
 
         campaign = {
             "vendor_id": vendor_id,
@@ -140,7 +145,7 @@ class VendorCampaignService:
             # Vendor info for planner-facing cards
             "vendor_category": data.get("vendor_category"),
             "vendor_service_area": data.get("vendor_service_area"),
-            "vendor_logo_url": data.get("vendor_logo_url"),
+            "vendor_logo_url": vendor_doc.get("logo_url"),
             # System
             "created_by": vendor_email,
             "metadata": data.get("metadata", {}),
@@ -358,14 +363,18 @@ class VendorCampaignService:
         # Verify campaign ownership
         campaign = await self.get_campaign(campaign_id, vendor_id)
         now = datetime.now(timezone.utc)
+        image_url = self.ad_upload_service.ensure_vendor_asset_url(
+            data.get("image_url"),
+            vendor_id,
+            VendorMediaAssetKind.CREATIVE,
+            field_name="image_url",
+        )
 
         creative = {
             "campaign_id": campaign_id,
             "vendor_id": vendor_id,
             "creative_type": data.get("creative_type", "image"),
-            "image_url": data.get(
-                "image_url"
-            ),  # CDN URL from vendor-ad-assets R2 bucket
+            "image_url": image_url,  # CDN URL from vendor-ad-assets R2 bucket
             "image_alt_text": data.get("image_alt_text"),
             "headline": data["headline"],
             "description": data["description"],
@@ -447,8 +456,18 @@ class VendorCampaignService:
         if existing is None:
             raise HTTPException(status_code=404, detail="Creative not found")
 
+        previous_image_url = existing.get("image_url")
+
         for key in ("_id", "campaign_id", "vendor_id", "created_at"):
             updates.pop(key, None)
+
+        if "image_url" in updates:
+            updates["image_url"] = self.ad_upload_service.ensure_vendor_asset_url(
+                updates.get("image_url"),
+                vendor_id,
+                VendorMediaAssetKind.CREATIVE,
+                field_name="image_url",
+            )
 
         updates["updated_at"] = datetime.now(timezone.utc)
 
@@ -475,6 +494,18 @@ class VendorCampaignService:
         )
         if updated is None:
             raise HTTPException(status_code=404, detail="Creative not found")
+
+        new_image_url = updated.get("image_url")
+        if (
+            "image_url" in updates
+            and previous_image_url
+            and previous_image_url != new_image_url
+        ):
+            self.ad_upload_service.delete_asset_url(
+                previous_image_url,
+                vendor_id,
+                VendorMediaAssetKind.CREATIVE,
+            )
 
         logger.info(f"Updated creative {creative_id}")
         return _serialize(updated)

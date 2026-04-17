@@ -13,6 +13,7 @@ const localVenvPython = path.join(
 );
 const backendPython = process.env.PLAYWRIGHT_BACKEND_PYTHON
   ?? (fs.existsSync(localVenvPython) ? localVenvPython : 'python3');
+const useExistingServersOnly = process.env.PLAYWRIGHT_USE_EXISTING_SERVER === '1';
 
 /**
  * @see https://playwright.dev/docs/test-configuration
@@ -83,16 +84,18 @@ export default defineConfig({
   ],
 
   /* Run your local dev server before starting the tests */
-  webServer: [
-    {
-      command: `npm run dev -- --port ${frontendPort}`,
-      url: baseURL,
-      reuseExistingServer: !process.env.CI,
-    },
-    {
-      command: `${backendPython} -m uvicorn app.main:app --host 0.0.0.0 --port ${backendPort}`,
-      url: `${backendHealthUrl}/health`,
-      reuseExistingServer: !process.env.CI,
-    }
-  ],
+  webServer: useExistingServersOnly
+    ? undefined
+    : [
+        {
+          command: `npm run dev -- --port ${frontendPort}`,
+          url: baseURL,
+          reuseExistingServer: !process.env.CI,
+        },
+        {
+          command: `${backendPython} -m uvicorn app.main:app --host 0.0.0.0 --port ${backendPort}`,
+          url: `${backendHealthUrl}/health`,
+          reuseExistingServer: !process.env.CI,
+        },
+      ],
 });
