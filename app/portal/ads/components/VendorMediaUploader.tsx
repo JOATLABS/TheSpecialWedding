@@ -25,6 +25,7 @@ interface VendorMediaUploaderProps {
   label: string;
   value: string | null;
   onChange: (url: string | null) => void;
+  onUploadStateChange?: (uploading: boolean) => void;
   previewAlt: string;
   helperText?: string;
   emptyTitle: string;
@@ -42,6 +43,7 @@ export function VendorMediaUploader({
   label,
   value,
   onChange,
+  onUploadStateChange,
   previewAlt,
   helperText,
   emptyTitle,
@@ -77,6 +79,7 @@ export function VendorMediaUploader({
 
     try {
       validateFile(file);
+      onUploadStateChange?.(true);
       setIsUploading(true);
       setError('');
       const uploaded = await uploadVendorMediaAsset(token, file, assetKind, value);
@@ -84,6 +87,7 @@ export function VendorMediaUploader({
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Upload failed.');
     } finally {
+      onUploadStateChange?.(false);
       setIsUploading(false);
       setIsDragActive(false);
       if (inputRef.current) {

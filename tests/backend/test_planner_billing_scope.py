@@ -71,6 +71,35 @@ async def test_root_admin_profile_omits_planner_billing_fields(monkeypatch):
         assert field not in payload["user_data"]
 
 
+@pytest.mark.asyncio
+async def test_advertising_vendor_profile_exposes_onboarding_fields():
+    current_user = ExtendedAuthUser(
+        email="vendor@example.com",
+        role="advertising_vendor",
+        user_data={
+            "_id": "vendor_user",
+            "email": "vendor@example.com",
+            "role": "advertising_vendor",
+            "business_name": "Floral Atelier",
+            "vendor_account_status": "active",
+            "must_change_password": True,
+            "logo_url": "https://ads.example.com/vendor-profiles/vendor_user/logo/logo.png",
+        },
+    )
+
+    response = await get_current_user_profile(current_user)
+    payload = json.loads(response.body)
+
+    assert payload["role"] == "advertising_vendor"
+    assert payload["business_name"] == "Floral Atelier"
+    assert payload["vendor_account_status"] == "active"
+    assert payload["must_change_password"] is True
+    assert payload["logo_url"] == (
+        "https://ads.example.com/vendor-profiles/vendor_user/logo/logo.png"
+    )
+    assert payload["user_data"]["must_change_password"] is True
+
+
 class _FakeCollection:
     def __init__(self):
         self.calls = []

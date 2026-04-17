@@ -361,6 +361,27 @@ export interface VendorAccountSummary {
   joined_at: string;
 }
 
+interface RawVendorAccountSummary {
+  _id?: string;
+  vendor_id?: string;
+  email?: string;
+  vendor_email?: string;
+  business_name?: string;
+  vendor_name?: string;
+  name?: string;
+  vendor_account_status?: VendorAccountStatus;
+  status?: VendorAccountStatus;
+  is_free_tier?: boolean;
+  campaigns_count?: number;
+  total_campaigns?: number;
+  active_campaigns?: number;
+  total_impressions?: number;
+  total_clicks?: number;
+  total_leads?: number;
+  joined_at?: string;
+  created_at?: string;
+}
+
 export interface PlatformConfig {
   // Feature Flags
   ads_enabled: boolean;
@@ -443,6 +464,13 @@ function jsonHeaders(token: string): HeadersInit {
   };
 }
 
+function authenticatedGet(path: string, token: string, params?: Record<string, string | number | boolean | undefined>) {
+  return fetch(buildUrl(path, params), {
+    headers: authHeaders(token),
+    cache: 'no-store',
+  });
+}
+
 async function handleResponse<T>(response: Response, errorPrefix: string): Promise<T> {
   if (!response.ok) {
     const error = await response.json().catch(() => ({}));
@@ -473,10 +501,7 @@ export async function listVendorCampaigns(
   token: string,
   params?: { status?: string; limit?: number; skip?: number }
 ): Promise<AdCampaign[]> {
-  const response = await fetch(
-    buildUrl('/portal/ads/campaigns', params),
-    { headers: authHeaders(token) }
-  );
+  const response = await authenticatedGet('/portal/ads/campaigns', token, params);
   return handleResponse<AdCampaign[]>(response, 'Failed to fetch campaigns');
 }
 
@@ -485,10 +510,7 @@ export async function getVendorCampaign(
   token: string,
   campaignId: string
 ): Promise<AdCampaign> {
-  const response = await fetch(
-    buildUrl(`/portal/ads/campaigns/${campaignId}`),
-    { headers: authHeaders(token) }
-  );
+  const response = await authenticatedGet(`/portal/ads/campaigns/${campaignId}`, token);
   return handleResponse<AdCampaign>(response, 'Failed to fetch campaign');
 }
 
@@ -548,10 +570,7 @@ export async function getCampaignStats(
   campaignId: string,
   days?: number
 ): Promise<CampaignStatsResponse> {
-  const response = await fetch(
-    buildUrl(`/portal/ads/campaigns/${campaignId}/stats`, { days }),
-    { headers: authHeaders(token) }
-  );
+  const response = await authenticatedGet(`/portal/ads/campaigns/${campaignId}/stats`, token, { days });
   return handleResponse<CampaignStatsResponse>(response, 'Failed to fetch campaign stats');
 }
 
@@ -574,10 +593,7 @@ export async function listCreatives(
   token: string,
   campaignId: string
 ): Promise<AdCreative[]> {
-  const response = await fetch(
-    buildUrl(`/portal/ads/campaigns/${campaignId}/creatives`),
-    { headers: authHeaders(token) }
-  );
+  const response = await authenticatedGet(`/portal/ads/campaigns/${campaignId}/creatives`, token);
   return handleResponse<AdCreative[]>(response, 'Failed to fetch creatives');
 }
 
@@ -653,19 +669,13 @@ export async function getVendorLeads(
   token: string,
   params?: { status?: string; lead_type?: string; limit?: number; skip?: number }
 ): Promise<any[]> {
-  const response = await fetch(
-    buildUrl('/portal/ads/leads', params),
-    { headers: authHeaders(token) }
-  );
+  const response = await authenticatedGet('/portal/ads/leads', token, params);
   return handleResponse<any[]>(response, 'Failed to fetch leads');
 }
 
 /** Get vendor billing summary */
 export async function getVendorBilling(token: string): Promise<BillingSummaryResponse> {
-  const response = await fetch(
-    buildUrl('/portal/ads/billing'),
-    { headers: authHeaders(token) }
-  );
+  const response = await authenticatedGet('/portal/ads/billing', token);
   return handleResponse<BillingSummaryResponse>(response, 'Failed to fetch billing');
 }
 
@@ -678,19 +688,17 @@ export async function getAdminReviewQueue(
   token: string,
   params?: { status?: string; limit?: number; skip?: number }
 ): Promise<AdCampaign[]> {
-  const response = await fetch(
-    buildUrl('/admin/ads/campaigns/review', { status: params?.status ?? 'pending_review', ...params }),
-    { headers: authHeaders(token) }
+  const response = await authenticatedGet(
+    '/admin/ads/campaigns/review',
+    token,
+    { status: params?.status ?? 'pending_review', ...params },
   );
   return handleResponse<AdCampaign[]>(response, 'Failed to fetch review queue');
 }
 
 /** Get review queue status counts */
 export async function getAdminReviewCounts(token: string): Promise<ReviewCounts> {
-  const response = await fetch(
-    buildUrl('/admin/ads/campaigns/review/counts'),
-    { headers: authHeaders(token) }
-  );
+  const response = await authenticatedGet('/admin/ads/campaigns/review/counts', token);
   return handleResponse<ReviewCounts>(response, 'Failed to fetch review counts');
 }
 
@@ -741,10 +749,7 @@ export async function getCreativeReviewQueue(
   token: string,
   params?: { limit?: number; skip?: number }
 ): Promise<AdCreative[]> {
-  const response = await fetch(
-    buildUrl('/admin/ads/campaigns/review/creatives', params),
-    { headers: authHeaders(token) }
-  );
+  const response = await authenticatedGet('/admin/ads/campaigns/review/creatives', token, params);
   return handleResponse<AdCreative[]>(response, 'Failed to fetch creative review queue');
 }
 
@@ -779,10 +784,7 @@ export async function getAdminCampaigns(
   token: string,
   params?: { status?: string; vendor_id?: string; limit?: number; skip?: number }
 ): Promise<AdCampaign[]> {
-  const response = await fetch(
-    buildUrl('/admin/ads/campaigns/', params),
-    { headers: authHeaders(token) }
-  );
+  const response = await authenticatedGet('/admin/ads/campaigns/', token, params);
   return handleResponse<AdCampaign[]>(response, 'Failed to fetch campaigns');
 }
 
@@ -819,10 +821,7 @@ export async function getAdminRevenue(
   token: string,
   days?: number
 ): Promise<RevenueResponse> {
-  const response = await fetch(
-    buildUrl('/admin/ads/campaigns/revenue', { days }),
-    { headers: authHeaders(token) }
-  );
+  const response = await authenticatedGet('/admin/ads/campaigns/revenue', token, { days });
   return handleResponse<RevenueResponse>(response, 'Failed to fetch revenue data');
 }
 
@@ -831,10 +830,7 @@ export async function getAdminFeedback(
   token: string,
   params?: { limit?: number; skip?: number }
 ): Promise<PlannerFeedbackEntry[]> {
-  const response = await fetch(
-    buildUrl('/admin/ads/campaigns/feedback', params),
-    { headers: authHeaders(token) }
-  );
+  const response = await authenticatedGet('/admin/ads/campaigns/feedback', token, params);
   return handleResponse<PlannerFeedbackEntry[]>(response, 'Failed to fetch feedback');
 }
 
@@ -843,10 +839,7 @@ export async function getAdminFraudSignals(
   token: string,
   params?: { status?: string; limit?: number; skip?: number }
 ): Promise<AdFraudSignal[]> {
-  const response = await fetch(
-    buildUrl('/admin/ads/campaigns/fraud-signals', params),
-    { headers: authHeaders(token) }
-  );
+  const response = await authenticatedGet('/admin/ads/campaigns/fraud-signals', token, params);
   return handleResponse<AdFraudSignal[]>(response, 'Failed to fetch fraud signals');
 }
 
@@ -915,19 +908,39 @@ export async function getAdminVendorAccounts(
     skip?: number;
   }
 ): Promise<{ vendors: VendorAccountSummary[]; total: number; page: number; page_size: number }> {
-  const response = await fetch(
-    buildUrl('/admin/ads/campaigns/vendors', params),
-    { headers: authHeaders(token) }
-  );
-  return handleResponse<{ vendors: VendorAccountSummary[]; total: number; page: number; page_size: number }>(response, 'Failed to fetch vendor accounts');
+  const response = await authenticatedGet('/admin/ads/campaigns/vendors', token, params);
+  const payload = await handleResponse<{ items?: RawVendorAccountSummary[]; total?: number; limit?: number; skip?: number }>(response, 'Failed to fetch vendor accounts');
+
+  const vendors = (payload.items || []).map((vendor): VendorAccountSummary => ({
+    vendor_id: vendor.vendor_id || vendor._id || '',
+    vendor_email: vendor.vendor_email || vendor.email || '',
+    vendor_name: vendor.vendor_name || vendor.business_name || vendor.name || 'Unknown vendor',
+    status: vendor.status || vendor.vendor_account_status || 'inactive',
+    is_free_tier: vendor.is_free_tier || false,
+    campaigns_count: vendor.campaigns_count ?? vendor.total_campaigns ?? 0,
+    active_campaigns: vendor.active_campaigns ?? 0,
+    total_impressions: vendor.total_impressions ?? 0,
+    total_clicks: vendor.total_clicks ?? 0,
+    total_leads: vendor.total_leads ?? 0,
+    joined_at: vendor.joined_at || vendor.created_at || '',
+  }));
+
+  const limit = payload.limit || params?.limit || vendors.length;
+  const skip = payload.skip || params?.skip || 0;
+  const pageSize = limit > 0 ? limit : vendors.length || 1;
+  const page = Math.floor(skip / pageSize) + 1;
+
+  return {
+    vendors,
+    total: payload.total || vendors.length,
+    page,
+    page_size: pageSize,
+  };
 }
 
 /** Get platform advertising config */
 export async function getAdminConfig(token: string): Promise<PlatformConfig> {
-  const response = await fetch(
-    buildUrl('/admin/ads/config'),
-    { headers: authHeaders(token) }
-  );
+  const response = await authenticatedGet('/admin/ads/config', token);
   return handleResponse<PlatformConfig>(response, 'Failed to fetch config');
 }
 
@@ -946,10 +959,7 @@ export async function updateAdminConfig(
 
 /** Get data pipeline status */
 export async function getAdminPipelineStatus(token: string): Promise<PipelineStatus> {
-  const response = await fetch(
-    buildUrl('/admin/ads/config/pipeline'),
-    { headers: authHeaders(token) }
-  );
+  const response = await authenticatedGet('/admin/ads/config/pipeline', token);
   return handleResponse<PipelineStatus>(response, 'Failed to fetch pipeline status');
 }
 
@@ -961,15 +971,12 @@ export async function exportAdminData(
   format: string = 'json',
   limit: number = 1000
 ): Promise<ExportResponse> {
-  const response = await fetch(
-    buildUrl('/admin/ads/config/export', {
-      dataset,
-      date_range: dateRange,
-      format,
-      limit,
-    }),
-    { headers: authHeaders(token) }
-  );
+  const response = await authenticatedGet('/admin/ads/config/export', token, {
+    dataset,
+    date_range: dateRange,
+    format,
+    limit,
+  });
   return handleResponse<ExportResponse>(response, 'Failed to export data');
 }
 
@@ -982,10 +989,7 @@ export async function getSponsoredCards(
   token: string,
   params?: { location?: string; categories?: string; limit?: number }
 ): Promise<SponsoredCardsResponse> {
-  const response = await fetch(
-    buildUrl('/planner/ads/sponsored-cards', params),
-    { headers: authHeaders(token) }
-  );
+  const response = await authenticatedGet('/planner/ads/sponsored-cards', token, params);
   return handleResponse<SponsoredCardsResponse>(response, 'Failed to fetch sponsored cards');
 }
 
@@ -1048,10 +1052,7 @@ export async function getDirectoryStatus(
   token: string,
   campaignId: string
 ): Promise<DirectoryStatusResponse> {
-  const response = await fetch(
-    buildUrl('/planner/ads/directory-status', { campaign_id: campaignId }),
-    { headers: authHeaders(token) }
-  );
+  const response = await authenticatedGet('/planner/ads/directory-status', token, { campaign_id: campaignId });
   return handleResponse<DirectoryStatusResponse>(response, 'Failed to check directory status');
 }
 
@@ -1068,10 +1069,7 @@ export interface PlannerAdPreferences {
 
 /** Get planner's ad preferences */
 export async function getAdPreferences(token: string): Promise<PlannerAdPreferences> {
-  const response = await fetch(
-    buildUrl('/planner/ads/preferences'),
-    { headers: authHeaders(token) }
-  );
+  const response = await authenticatedGet('/planner/ads/preferences', token);
   return handleResponse<PlannerAdPreferences>(response, 'Failed to fetch ad preferences');
 }
 

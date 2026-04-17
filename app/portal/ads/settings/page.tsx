@@ -77,6 +77,7 @@ export default function VendorSettingsPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [loadError, setLoadError] = useState('');
+  const [logoUploading, setLogoUploading] = useState(false);
 
   // Form fields
   const [businessName, setBusinessName] = useState('');
@@ -225,6 +226,10 @@ export default function VendorSettingsPage() {
     e.preventDefault();
     if (!token || isRootAdminView) {
       toast.info('Switch to a vendor account to edit vendor profile settings.');
+      return;
+    }
+    if (logoUploading) {
+      toast.error('Wait for the business logo upload to finish before saving.');
       return;
     }
     setSaving(true);
@@ -522,6 +527,7 @@ export default function VendorSettingsPage() {
           label="Business Logo"
           value={logoUrl}
           onChange={setLogoUrl}
+          onUploadStateChange={setLogoUploading}
           previewAlt={businessName || 'Vendor logo'}
           helperText="Upload the logo planners should see across your vendor profile and campaign cards."
           emptyTitle="Upload your business logo"
@@ -568,10 +574,15 @@ export default function VendorSettingsPage() {
         {/* Submit */}
         <button
           type="submit"
-          disabled={saving}
+          disabled={saving || logoUploading}
           className={`w-full ${vendorPrimaryButtonClass}`}
         >
-          {saving ? (
+          {logoUploading ? (
+            <>
+              <Loader2 className="w-4 h-4 animate-spin" />
+              Uploading logo...
+            </>
+          ) : saving ? (
             <>
               <Loader2 className="w-4 h-4 animate-spin" />
               Saving...

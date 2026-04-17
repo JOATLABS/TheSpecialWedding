@@ -37,9 +37,28 @@ export function CollectPaymentModal({
   const [amount, setAmount] = useState('');
   const [description, setDescription] = useState('');
   const [paymentLink, setPaymentLink] = useState('');
+  const [createdPaymentRequest, setCreatedPaymentRequest] = useState<any | null>(null);
   const [weddings, setWeddings] = useState<Wedding[]>([]);
   const [selectedWeddingId, setSelectedWeddingId] = useState<string>(weddingId || '');
   const [fetchingWeddings, setFetchingWeddings] = useState(false);
+
+  const copyPaymentLink = async (link: string) => {
+    if (!link) {
+      return false;
+    }
+
+    if (!navigator?.clipboard?.writeText) {
+      return false;
+    }
+
+    try {
+      await navigator.clipboard.writeText(link);
+      return true;
+    } catch (error) {
+      console.warn('Clipboard copy failed for payment link', error);
+      return false;
+    }
+  };
 
   // Fetch weddings if not provided
   React.useEffect(() => {
@@ -129,13 +148,14 @@ export function CollectPaymentModal({
 
       toast.success('Payment request created successfully!');
 
-      if (onPaymentCreated) {
-        onPaymentCreated(paymentIntent);
-      }
+      setCreatedPaymentRequest(paymentIntent);
 
-      // Copy to clipboard
-      navigator.clipboard.writeText(link);
-      toast.success('Payment link copied to clipboard!');
+      const copiedToClipboard = await copyPaymentLink(link);
+      if (copiedToClipboard) {
+        toast.success('Payment link copied to clipboard!');
+      } else {
+        toast.info('Payment link is ready. Copy it from the dialog.');
+      }
     } catch (error: any) {
       console.error('Payment creation error:', error);
       toast.error(error.message || 'Failed to create payment request');
@@ -145,9 +165,13 @@ export function CollectPaymentModal({
   };
 
   const handleClose = () => {
+    if (createdPaymentRequest && onPaymentCreated) {
+      onPaymentCreated(createdPaymentRequest);
+    }
     setAmount('');
     setDescription('');
     setPaymentLink('');
+    setCreatedPaymentRequest(null);
     onClose();
   };
 
@@ -236,9 +260,13 @@ export function CollectPaymentModal({
                 <Button
                   variant="outline"
                   className="flex-1"
-                  onClick={() => {
-                    navigator.clipboard.writeText(paymentLink);
-                    toast.success('Link copied!');
+                  onClick={async () => {
+                    const copiedToClipboard = await copyPaymentLink(paymentLink);
+                    if (copiedToClipboard) {
+                      toast.success('Link copied!');
+                    } else {
+                      toast.error('Clipboard access is unavailable. Copy the link manually.');
+                    }
                   }}
                 >
                   Copy Link
