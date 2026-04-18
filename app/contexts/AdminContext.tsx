@@ -585,16 +585,46 @@ export const AdminProvider = ({ children }: { children: React.ReactNode }) => {
                 router.replace('/admin/planner/billing');
                 return;
             } else {
-                // Profile fetch failed — do not grant access without a confirmed role
-                console.error('Profile fetch failed after login');
+                // Profile fetch failed — do not grant access without a confirmed role.
+                // Inline status/statusText/url/body into the primary message string so
+                // the Next.js error overlay cannot swallow the object payload (it has
+                // been observed rendering the second console.error arg as `{}`).
+                let bodyText = '';
+                try {
+                    bodyText = await profileResponse.text();
+                } catch {
+                    bodyText = '<unable to read response body>';
+                }
+                const truncatedBody = bodyText.slice(0, 500);
+                const debugLine =
+                    `Profile fetch failed after login — ` +
+                    `status=${profileResponse.status} ` +
+                    `statusText="${profileResponse.statusText}" ` +
+                    `url="${profileResponse.url}" ` +
+                    `body="${truncatedBody.replace(/"/g, '\\"')}"`;
+                console.error(debugLine);
+                // Also log the structured form in case the overlay does expand it.
+                console.error('Profile fetch failure details:', {
+                    status: profileResponse.status,
+                    statusText: profileResponse.statusText,
+                    url: profileResponse.url,
+                    body: truncatedBody,
+                });
                 clearAdminAuthStorage();
                 setToken(null);
                 setAuthStatus('unauthenticated');
-                toast.error('Unable to verify your account. Please try again.');
+                toast.error(
+                    `Unable to verify your account (HTTP ${profileResponse.status}). Please try again or contact support.`,
+                );
                 return;
             }
         } catch (err: any) {
-            toast.error(err.message);
+            // Network-level failure (CORS, DNS, backend down, etc.) lands here.
+            // Without this log, the only signal is a toast, which leaves us blind.
+            console.error(
+                `Login flow threw: name="${err?.name}" message="${err?.message}" stack=${err?.stack}`,
+            );
+            toast.error(err.message || 'Login failed due to a network error');
             throw err;
         }
     };
