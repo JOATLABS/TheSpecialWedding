@@ -4,10 +4,10 @@ import React, { useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
 import { useVendorAuth } from './components/VendorAuthContext';
 import { toast } from 'sonner';
+import PageHeader from '@/components/ui/PageHeader';
 import {
   listVendorCampaigns,
   getVendorLeads,
-  getVendorBilling,
   getCampaignStatusLabel,
   getCampaignStatusColor,
   formatNumber,
@@ -19,7 +19,6 @@ import {
   Eye,
   MousePointerClick,
   Users,
-  TrendingUp,
   Plus,
   ArrowRight,
   RefreshCw,
@@ -69,23 +68,44 @@ export default function VendorOverviewPage() {
 
   return (
     <div className="space-y-6">
-      {/* Welcome Hero */}
-      <div className="bg-gradient-to-r from-primary-500 to-primary-600 rounded-2xl p-6 text-white">
-        <h1 className="text-2xl font-bold">Welcome back{user?.name ? `, ${user.name}` : ''}!</h1>
-        <p className="text-primary-100 mt-1 text-sm">
-          Manage your advertising campaigns and connect with wedding planners.
-        </p>
+      <PageHeader
+        title="Dashboard"
+        description={
+          user?.name
+            ? `Manage ${user.name}'s campaigns, creative assets, and incoming leads from one workspace.`
+            : 'Manage campaigns, creative assets, and incoming leads from one workspace.'
+        }
+      >
         <Link
           href="/portal/ads/campaigns/new"
-          className="inline-flex items-center gap-2 mt-4 px-5 py-2.5 bg-white text-primary-600 font-medium rounded-lg hover:bg-primary-50 transition-colors text-sm"
+          className="inline-flex items-center gap-2 rounded-xl bg-primary-500 px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-primary-600"
         >
           <Plus size={16} />
           Create Campaign
         </Link>
+      </PageHeader>
+
+      <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-700 dark:bg-slate-800/95">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+          <div>
+            <p className="text-sm font-semibold text-slate-900 dark:text-white">
+              Campaign performance at a glance
+            </p>
+            <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+              Keep campaign spend, creative performance, and incoming leads in one focused workspace.
+            </p>
+          </div>
+          <Link
+            href="/portal/ads/settings"
+            className="inline-flex items-center gap-2 text-sm font-medium text-primary-500 transition-colors hover:text-primary-600"
+          >
+            Review business profile
+            <ArrowRight size={14} />
+          </Link>
+        </div>
       </div>
 
-      {/* KPI Cards */}
-      <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
+      <div className="grid grid-cols-2 gap-4 lg:grid-cols-5">
         <KPICard label="Active Campaigns" value={activeCampaigns.length} icon={Megaphone} color="text-primary-500" />
         <KPICard label="Impressions" value={formatNumber(totalImpressions)} icon={Eye} color="text-blue-500" />
         <KPICard label="Clicks" value={formatNumber(totalClicks)} icon={MousePointerClick} color="text-purple-500" />
@@ -93,8 +113,7 @@ export default function VendorOverviewPage() {
         <KPICard label="Avg CTR" value={formatPercent(avgCtr)} icon={BarChart3} color="text-emerald-500" />
       </div>
 
-      {/* Recent Campaigns */}
-      <div className="bg-white dark:bg-slate-800/95 rounded-2xl shadow-lg border border-slate-200 dark:border-slate-700 p-5">
+      <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-700 dark:bg-slate-800/95">
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-lg font-semibold text-slate-900 dark:text-white">Your Campaigns</h2>
           <Link
@@ -112,7 +131,7 @@ export default function VendorOverviewPage() {
             <p className="text-sm text-slate-500 mt-1">Create your first campaign to start reaching wedding planners.</p>
             <Link
               href="/portal/ads/campaigns/new"
-              className="inline-flex items-center gap-2 mt-4 px-4 py-2 bg-primary-500 text-white text-sm font-medium rounded-lg hover:bg-primary-600 transition-colors"
+              className="mt-4 inline-flex items-center gap-2 rounded-xl bg-primary-500 px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-primary-600"
             >
               <Plus size={14} /> Create Campaign
             </Link>
@@ -154,7 +173,7 @@ export default function VendorOverviewPage() {
 
       {/* Quick Stats: Lead Funnel */}
       {totalLeads > 0 && (
-        <div className="bg-white dark:bg-slate-800/95 rounded-2xl shadow-lg border border-slate-200 dark:border-slate-700 p-5">
+        <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-700 dark:bg-slate-800/95">
           <h2 className="text-lg font-semibold text-slate-900 dark:text-white mb-4">Lead Funnel</h2>
           <div className="flex items-center gap-2">
             <FunnelStep label="Impressions" value={totalImpressions} color="bg-blue-500" />
@@ -178,7 +197,7 @@ function KPICard({ label, value, icon: Icon, color }: {
   color: string;
 }) {
   return (
-    <div className="bg-white dark:bg-slate-800/95 rounded-2xl shadow-lg border border-slate-200 dark:border-slate-700 p-4">
+    <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-700 dark:bg-slate-800/95">
       <div className={`p-2 rounded-lg bg-slate-50 dark:bg-slate-700 w-fit ${color}`}>
         <Icon size={18} />
       </div>
