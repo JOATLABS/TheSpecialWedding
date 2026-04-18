@@ -572,7 +572,13 @@ export function PlannerAuthSection({
 
         persistAdminAuthToken(payload.access_token, values.rememberMe);
         toast.success('Login successful');
-        window.location.href = '/admin';
+        // Send planners directly to their dashboard. Previously this hard-redirected
+        // to `/admin` (root-admin Platform Health page), which relied on an
+        // in-page useEffect to bounce planners to `/admin/planner` — producing
+        // a brief content flash and contributing to a pushState loop. The
+        // AdminRouteGuard still handles expired/blocked planners by bouncing
+        // them to `/admin/planner/billing`.
+        window.location.href = '/admin/planner';
       } catch (error) {
         const message =
           error instanceof Error && error.message.includes('NEXT_PUBLIC_API_BASE_URL')
@@ -585,7 +591,7 @@ export function PlannerAuthSection({
     return (
       <form className="space-y-5" onSubmit={onSubmit} noValidate>
         <div>
-          <SocialAuthButtons flow="login" redirectPath="/admin" />
+          <SocialAuthButtons flow="login" redirectPath="/admin/planner" />
           <p className="mt-3 text-xs text-slate-500">
             Use Google Workspace or Apple ID for instant access with enforced multi-factor security.
           </p>
