@@ -174,29 +174,40 @@ export default function AdminMetricsDashboard() {
   }, []);
 
   // Redirect wedding planners to their dashboard
+  //
+  // Deps are narrowed to stable primitives (booleans / strings) instead of the
+  // full `userProfile` object. Previously, every `setUserProfile` call (session
+  // revalidation on focus, 2-min polling, etc.) produced a new profile object
+  // reference, re-firing this effect and stacking `router.push` history entries
+  // — hitting the browser's 100-pushState-per-10s limit and producing a
+  // SecurityError. `router.replace` also avoids polluting the back stack.
+  const isPlanner = !!userProfile?.is_wedding_planner;
+  const isTeamMember = userProfile?.role === 'team_member' || !!userProfile?.is_team_member;
+  const effectiveSubStatus = userProfile?.user_data?.subscription_status || userProfile?.subscription_status;
+  const hasUserProfile = !!userProfile;
   useEffect(() => {
     if (!token) {
-      router.push('/admin/login');
+      router.replace('/admin/login');
       return;
     }
 
-    if (!userProfile) {
+    if (!hasUserProfile) {
       fetchUserProfile();
       return;
     }
 
     // Only ROOT_ADMIN can access Platform Health Overview
     // Redirect planners and team members to the planner dashboard (or billing if unpaid/expired)
-    if (userProfile && (userProfile.is_wedding_planner || userProfile.role === 'team_member' || userProfile.is_team_member)) {
-      const subStatus = normalizeSubscriptionStatus(userProfile.user_data?.subscription_status || userProfile.subscription_status);
+    if (isPlanner || isTeamMember) {
+      const subStatus = normalizeSubscriptionStatus(effectiveSubStatus);
       if (isBlockedSubscriptionStatus(subStatus)) {
         router.replace('/admin/planner/billing');
       } else {
-        router.push('/admin/planner');
+        router.replace('/admin/planner');
       }
       return;
     }
-  }, [token, userProfile, fetchUserProfile, router]);
+  }, [token, hasUserProfile, isPlanner, isTeamMember, effectiveSubStatus, fetchUserProfile, router]);
 
   useEffect(() => {
     // Only fetch metrics if user is ROOT_ADMIN (after profile is loaded)
@@ -284,9 +295,12 @@ export default function AdminMetricsDashboard() {
       }));
   }, [metrics]);
 
-  // Guard: Show loading state until we confirm user is root admin
-  // This prevents wedding planners from seeing admin dashboard content during redirects
-  if (!userProfile || userProfile.is_wedding_planner) {
+  // Guard: Show loading state until we confirm user is root admin.
+  // This prevents any non-root-admin (planner, team member, or anyone else)
+  // from seeing Platform Health content during the redirect round-trip.
+  // The previous check only blocked `is_wedding_planner`, so team members
+  // fell through and rendered the admin dashboard for a frame.
+  if (!userProfile || !userProfile.is_root_admin) {
     return (
       <div className="flex items-center justify-center py-24">
         <div className="text-center">

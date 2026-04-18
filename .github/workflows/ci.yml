@@ -58,6 +58,8 @@ jobs:
 
       - name: Frontend build
         run: npm run build
+        env:
+          FRONTEND_URL: ${{ env.FRONTEND_BUILD_URL }}
 
   # ── Frontend: Tests ────────────────────────────────────────────────────────
   frontend-test:
