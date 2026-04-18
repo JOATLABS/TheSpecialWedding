@@ -1,15 +1,16 @@
 'use client';
 
 import React from 'react';
-import Link from 'next/link';
-import NextImage from 'next/image';
 import { usePathname } from 'next/navigation';
 import { useAdmin } from '@/contexts/AdminContext';
 import { getAllowedTeamNavNames } from '@/admin/utils/teamAccess';
 import {
+  WorkspaceSidebar,
+  type WorkspaceNavItem,
+} from '@/components/layout/WorkspaceChrome';
+import {
   Bell,
   Calendar,
-  ChevronLeft,
   CreditCard,
   ExternalLink,
   FileText,
@@ -19,7 +20,6 @@ import {
   Layers,
   LayoutDashboard,
   LayoutGrid,
-  LogOut,
   Mail,
   Megaphone,
   Package,
@@ -29,7 +29,6 @@ import {
   UserPlus,
   Users,
   Wallet,
-  X,
 } from 'lucide-react';
 
 interface SidebarProps {
@@ -126,145 +125,47 @@ export default function Sidebar({ isOpen, setIsOpen, isMobile }: SidebarProps) {
   };
 
   const filteredNavItems = getNavItems();
+  const mainItems: WorkspaceNavItem[] = filteredNavItems
+    .filter((item) => !item.shortcut)
+    .map((item) => ({
+      key: item.name,
+      name: item.name,
+      href: item.href,
+      icon: item.icon,
+      active: isActive(item.href),
+      external: item.external,
+    }));
+
+  const secondaryItems: WorkspaceNavItem[] = filteredNavItems
+    .filter((item) => item.shortcut)
+    .map((item) => ({
+      key: item.name,
+      name: item.name,
+      href: item.href,
+      icon: item.icon,
+      active: false,
+      external: item.external,
+      tone: 'shortcut',
+      badge: 'shortcut',
+    }));
 
   return (
-    <>
-      {/* Mobile overlay */}
-      {isMobile && isOpen && (
-        <div
-          onClick={() => setIsOpen(false)}
-          className="fixed inset-0 bg-black/50 z-40 lg:hidden transition-opacity duration-200"
-          aria-hidden="true"
-        />
-      )}
-
-      {/* Sidebar */}
-      <aside
-        className={`
-          fixed top-0 left-0 z-50 h-screen
-          bg-white/80 dark:bg-slate-900/80 backdrop-blur-xl
-          border-r border-slate-200/50 dark:border-slate-700/50
-          flex flex-col
-          transition-[width,transform] duration-300 ease-out
-          ${isMobile ? (isOpen ? 'translate-x-0' : '-translate-x-full') : ''}
-        `}
-        style={{ width: isOpen ? '18rem' : '5rem' }}
-        role="navigation"
-        aria-label="Main navigation"
-      >
-        {/* Logo Section */}
-        <div className="flex items-center justify-between h-16 px-3 border-b border-slate-200/50 dark:border-slate-700/50">
-          <Link href={userProfile?.is_root_admin ? '/admin' : '/admin/planner'} className="flex items-center flex-1 min-w-0 mr-2">
-            {isOpen ? (
-              <img
-                src="/logo.svg"
-                alt="The Special Wedding"
-                width={144}
-                height={36}
-                className="block shrink-0"
-              />
-            ) : (
-              <NextImage
-                src="/favicon.svg"
-                alt="The Special Wedding"
-                width={32}
-                height={32}
-                className="h-8 w-8"
-                priority
-              />
-            )}
-          </Link>
-
-          {isMobile ? (
-            <button
-              onClick={() => setIsOpen(false)}
-              className="p-2 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg"
-              aria-label="Close sidebar"
-            >
-              <X size={20} />
-            </button>
-          ) : (
-            <button
-              onClick={() => setIsOpen(!isOpen)}
-              className="p-2 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors"
-              aria-label={isOpen ? 'Collapse sidebar' : 'Expand sidebar'}
-              aria-expanded={isOpen}
-            >
-              <ChevronLeft className={`w-5 h-5 transition-transform ${!isOpen ? 'rotate-180' : ''}`} />
-            </button>
-          )}
-        </div>
-
-        {/* Navigation */}
-        <nav className="flex-1 overflow-y-auto py-4 px-3 space-y-1" aria-label="Sidebar navigation menu">
-          {filteredNavItems.map((item, index) => {
-            const Icon = item.icon;
-            const active = !item.shortcut && isActive(item.href);
-
-            // Show "Shortcuts" section label before first shortcut item
-            const isFirstShortcut = item.shortcut && (index === 0 || !filteredNavItems[index - 1]?.shortcut);
-
-            return (
-              <React.Fragment key={item.name + item.href}>
-                {isFirstShortcut && isOpen && (
-                  <p className="px-3 pt-4 pb-1 text-[10px] font-bold uppercase tracking-widest text-slate-400 dark:text-slate-500">
-                    Shortcuts
-                  </p>
-                )}
-                <Link
-                  key={item.href}
-                  href={item.href}
-                  onClick={() => isMobile && setIsOpen(false)}
-                  {...(item.external ? { target: '_blank', rel: 'noopener noreferrer' } : {})}
-                  className={`
-                    flex items-center gap-3 px-3 py-2.5 rounded-xl
-                    transition-colors duration-200
-                    ${item.shortcut
-                      ? 'text-wedding-gold hover:bg-amber-50 dark:hover:bg-amber-900/10'
-                      : active
-                        ? 'bg-primary-50 dark:bg-primary-900/20 text-primary-600 dark:text-primary-400'
-                        : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
-                    }
-                  `}
-                  aria-current={active ? 'page' : undefined}
-                  title={!isOpen ? item.name : undefined}
-                >
-                  <Icon size={20} className={item.shortcut ? 'text-wedding-gold' : active ? 'text-primary-500' : ''} aria-hidden="true" />
-                  {isOpen && (
-                    <>
-                      <span className="font-medium text-sm whitespace-nowrap overflow-hidden">
-                        {item.name}
-                      </span>
-                      {item.shortcut && (
-                        <span className="ml-auto text-[9px] font-extrabold uppercase tracking-wide bg-wedding-gold text-slate-900 px-1.5 py-0.5 rounded">
-                          shortcut
-                        </span>
-                      )}
-                    </>
-                  )}
-                </Link>
-              </React.Fragment>
-            );
-          })}
-        </nav>
-
-        {/* User Section */}
-        <div className="p-3 border-t border-slate-200/50 dark:border-slate-700/50">
-          <button
-            onClick={() => logout()}
-            className="flex items-center gap-3 w-full px-3 py-2.5 rounded-xl text-slate-600 dark:text-slate-400 hover:bg-red-50 dark:hover:bg-red-900/20 hover:text-red-600 dark:hover:text-red-400 transition-colors"
-            aria-label="Logout from account"
-            title="Logout"
-          >
-            <LogOut size={20} aria-hidden="true" />
-            {isOpen && (
-              <span className="font-medium text-sm">
-                Logout
-              </span>
-            )}
-          </button>
-        </div>
-      </aside>
-    </>
+    <WorkspaceSidebar
+      brandHref={userProfile?.is_root_admin ? '/admin' : '/admin/planner'}
+      navigationLabel="Main navigation"
+      isOpen={isOpen}
+      isMobile={isMobile}
+      onClose={() => setIsOpen(false)}
+      onToggle={() => setIsOpen(!isOpen)}
+      mainItems={mainItems}
+      secondaryItems={secondaryItems}
+      secondarySectionLabel="Shortcuts"
+      footerAction={{
+        label: 'Logout',
+        ariaLabel: 'Logout from account',
+        title: 'Logout',
+        onClick: () => logout(),
+      }}
+    />
   );
 }
