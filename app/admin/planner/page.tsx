@@ -192,20 +192,47 @@ export default function WeddingPlannerDashboard() {
    }
  }, [selectedInsightWedding, fetchAIInsights]);
 
+ // Role-gate effect. Deps are narrowed to stable primitives instead of the
+ // full `userProfile` object so this effect doesn't re-fire — and re-push
+ // — every time AdminContext re-emits the profile (focus revalidation,
+ // 2-min polling, etc.). `router.replace` keeps the browser's back stack
+ // sane and avoids the pushState rate-limit SecurityError.
+ //
+ // Both wedding planners AND their team members use this dashboard (team
+ // members see a filtered view via Sidebar's `getAllowedTeamNavNames`).
+ // The earlier gate only allowed `is_wedding_planner`, which bounced team
+ // members to `/admin`, where the new AdminRouteGuard bounced them back
+ // here — an infinite ping-pong that manifested as either the pushState
+ // SecurityError or the "Loading your weddings..." screen getting stuck.
+ const plannerPageIsPlanner = !!userProfile?.is_wedding_planner;
+ const plannerPageIsTeamMember = userProfile?.role === 'team_member' || !!userProfile?.is_team_member;
+ const plannerPageCanAccess = plannerPageIsPlanner || plannerPageIsTeamMember;
+ const plannerPageIsRootAdmin = !!userProfile?.is_root_admin;
+ const plannerPageHasProfile = !!userProfile;
  useEffect(() => {
  if (!token) {
- router.push('/admin/login');
+ router.replace('/admin/login');
  return;
  }
 
- if (!userProfile) {
+ if (!plannerPageHasProfile) {
  fetchUserProfile();
  return;
  }
 
- // Only wedding planners can access this dashboard (strict role separation)
- if (userProfile && !userProfile.is_wedding_planner) {
- router.push('/admin');
+ // Root admins get bounced to their own dashboard (existing behavior —
+ // handled by AdminRouteGuard.getRootAdminRedirect, but keep the in-page
+ // check so this page doesn't try to fetch planner data for a root admin).
+ if (plannerPageIsRootAdmin) {
+ router.replace('/admin');
+ return;
+ }
+
+ // Anyone else who isn't a planner or team member: log out defensively.
+ // (Should be unreachable in practice — AdminContext rejects unknown
+ // roles at login.)
+ if (!plannerPageCanAccess) {
+ router.replace('/admin/login');
  return;
  }
 
@@ -217,7 +244,7 @@ export default function WeddingPlannerDashboard() {
      .then((data) => setEngagementSignals(data.signals))
      .catch((err) => console.error('[Planner] Failed to load engagement signals:', err));
  }
- }, [fetchMyWeddings, fetchUserProfile, router, token, userProfile]);
+ }, [fetchMyWeddings, fetchUserProfile, router, token, plannerPageHasProfile, plannerPageCanAccess, plannerPageIsRootAdmin]);
 
  // Real-time updates via SSE — refetch wedding list when the server
  // signals any wedding, guest, or RSVP change.
