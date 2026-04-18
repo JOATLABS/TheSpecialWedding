@@ -2,7 +2,6 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
-import NextImage from 'next/image';
 import { usePathname } from 'next/navigation';
 import { getApiBaseUrl } from '@/utils/env';
 import {
@@ -18,19 +17,22 @@ import {
   CreditCard,
   Settings,
   LogOut,
-  Menu,
-  X,
-  ChevronLeft,
-  Sun,
-  Moon,
   Bell,
   ExternalLink,
   ArrowRight,
   CheckCircle2,
   ShieldCheck,
 } from 'lucide-react';
-import { ThemeProvider, useTheme } from '@/contexts/ThemeContext';
+import { ThemeProvider } from '@/contexts/ThemeContext';
 import { Toaster } from 'sonner';
+import {
+  WorkspaceBackground,
+  WorkspaceShellFrame,
+  WorkspaceSidebar,
+  WorkspaceTopHeader,
+  useResponsiveWorkspaceSidebar,
+  type WorkspaceNavItem,
+} from '@/components/layout/WorkspaceChrome';
 import {
   vendorInputClass,
   vendorInsetClass,
@@ -127,8 +129,11 @@ function VendorPortalLayoutInner({ children }: { children: React.ReactNode }) {
   const [token, setToken] = useState<string | null>(null);
   const [user, setUser] = useState<VendorUser | null>(null);
   const [loading, setLoading] = useState(() => !isPublicPage);
-  const [sidebarOpen, setSidebarOpen] = useState(true);
-  const [isMobile, setIsMobile] = useState(false);
+  const {
+    isMobile,
+    isSidebarOpen: sidebarOpen,
+    setIsSidebarOpen: setSidebarOpen,
+  } = useResponsiveWorkspaceSidebar();
 
   useEffect(() => {
     let cancelled = false;
@@ -185,18 +190,6 @@ function VendorPortalLayoutInner({ children }: { children: React.ReactNode }) {
       cancelled = true;
     };
   }, [isPublicPage]);
-
-  useEffect(() => {
-    const handleResize = () => {
-      const mobile = window.innerWidth < 1024;
-      setIsMobile(mobile);
-      setSidebarOpen(!mobile);
-    };
-
-    handleResize();
-    window.addEventListener('resize', handleResize);
-    return () => window.removeEventListener('resize', handleResize);
-  }, []);
 
   const login = async (email: string, password: string) => {
     // Uses the same /admin/token endpoint as AdminContext — it's role-agnostic
@@ -259,7 +252,7 @@ function VendorPortalLayoutInner({ children }: { children: React.ReactNode }) {
     return (
       <VendorAuthContext.Provider value={authValue}>
         <div className="min-h-screen bg-light-bg text-light-text transition-colors duration-300 dark:bg-dark-bg dark:text-dark-text">
-          <PortalBackground />
+          <WorkspaceBackground />
           <main className="relative z-10 min-h-screen">
             {children}
           </main>
@@ -301,7 +294,7 @@ function VendorPortalLayoutInner({ children }: { children: React.ReactNode }) {
   if (loading) {
     return (
       <div className="min-h-screen bg-light-bg text-light-text transition-colors duration-300 dark:bg-dark-bg dark:text-dark-text">
-        <PortalBackground />
+        <WorkspaceBackground />
         <div className="relative z-10 flex min-h-screen items-center justify-center">
           <div className={`${vendorSurfaceClass} flex items-center gap-3 px-6 py-4 text-sm text-slate-600 dark:text-slate-300`}>
             <div className="h-5 w-5 animate-spin rounded-full border-2 border-primary-500 border-t-transparent" />
@@ -314,47 +307,33 @@ function VendorPortalLayoutInner({ children }: { children: React.ReactNode }) {
 
   return (
     <VendorAuthContext.Provider value={authValue}>
-      <div className="min-h-screen overflow-x-hidden bg-light-bg text-light-text transition-colors duration-300 dark:bg-dark-bg dark:text-dark-text">
-        <PortalBackground />
-
-        <VendorSidebar
-          user={user}
-          isOpen={sidebarOpen}
-          isMobile={isMobile}
-          onClose={() => setSidebarOpen(false)}
-          onToggle={() => setSidebarOpen(!sidebarOpen)}
-          onLogout={logout}
-          isActive={isActive}
-        />
-
-        <div
-          className="relative z-10 flex min-h-screen flex-col transition-[margin] duration-300 ease-out"
-          style={{ marginLeft: !isMobile ? (sidebarOpen ? '18rem' : '5rem') : '0' }}
-        >
+      <WorkspaceShellFrame
+        sidebar={
+          <VendorSidebar
+            user={user}
+            isOpen={sidebarOpen}
+            isMobile={isMobile}
+            onClose={() => setSidebarOpen(false)}
+            onToggle={() => setSidebarOpen(!sidebarOpen)}
+            onLogout={logout}
+            isActive={isActive}
+          />
+        }
+        header={
           <VendorTopHeader
             user={user}
+            token={token}
             onMenuClick={() => setSidebarOpen(!sidebarOpen)}
+            onLogout={logout}
           />
-
-          <main className="flex-1 overflow-x-hidden p-4 sm:p-6 lg:p-8">
-            {children}
-          </main>
-        </div>
-      </div>
-      <Toaster position="top-right" richColors theme="system" />
+        }
+        isMobile={isMobile}
+        isSidebarOpen={sidebarOpen}
+        afterShell={<Toaster position="top-right" richColors theme="system" />}
+      >
+        {children}
+      </WorkspaceShellFrame>
     </VendorAuthContext.Provider>
-  );
-}
-
-function PortalBackground() {
-  return (
-    <div className="fixed inset-0 z-0 pointer-events-none overflow-hidden opacity-40 dark:opacity-20" aria-hidden="true">
-      <div className="absolute left-[-10%] top-[-10%] h-[40%] w-[40%] rounded-full bg-primary-400/30 blur-[100px] animate-float" />
-      <div
-        className="absolute bottom-[-10%] right-[-10%] h-[40%] w-[40%] rounded-full bg-secondary-400/30 blur-[100px] animate-float"
-        style={{ animationDelay: '-3s' }}
-      />
-    </div>
   );
 }
 
@@ -375,213 +354,144 @@ function VendorSidebar({
   onLogout: () => void;
   isActive: (href: string) => boolean;
 }) {
+  const mainItems: WorkspaceNavItem[] = navItems.map((item) => ({
+    key: item.name,
+    name: item.name,
+    href: item.href,
+    icon: item.icon,
+    active: isActive(item.href),
+  }));
+  const secondaryItems: WorkspaceNavItem[] = user?.role === 'root_admin'
+    ? [
+        {
+          key: 'back-to-admin',
+          name: 'Back to Admin',
+          href: '/admin/ads',
+          icon: ExternalLink,
+          active: false,
+          tone: 'shortcut',
+          badge: 'Admin',
+        },
+      ]
+    : [];
+
   return (
-    <>
-      {isMobile && isOpen && (
-        <div
-          onClick={onClose}
-          className="fixed inset-0 z-40 bg-black/50 transition-opacity duration-200 lg:hidden"
-          aria-hidden="true"
-        />
-      )}
-
-      <aside
-        className={`
-          fixed left-0 top-0 z-50 flex h-screen flex-col border-r border-slate-200/50 bg-white/80 backdrop-blur-xl transition-[width,transform] duration-300 ease-out dark:border-slate-700/50 dark:bg-slate-900/80
-          ${isMobile ? (isOpen ? 'translate-x-0' : '-translate-x-full') : ''}
-        `}
-        style={{ width: isOpen ? '18rem' : '5rem' }}
-        role="navigation"
-        aria-label="Vendor portal navigation"
-      >
-        <div className="flex h-16 items-center justify-between border-b border-slate-200/50 px-3 dark:border-slate-700/50">
-          <Link href="/portal/ads" className="mr-2 flex min-w-0 flex-1 items-center">
-            {isOpen ? (
-              <div className="flex items-center gap-3">
-                <img
-                  src="/logo.svg"
-                  alt="The Special Wedding"
-                  width={144}
-                  height={36}
-                  className="block shrink-0"
-                />
-                <span className="rounded-full border border-primary-200 bg-primary-50 px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.2em] text-primary-600 dark:border-primary-800 dark:bg-primary-900/20 dark:text-primary-300">
-                  Ads
-                </span>
-              </div>
-            ) : (
-              <NextImage
-                src="/favicon.svg"
-                alt="The Special Wedding"
-                width={32}
-                height={32}
-                className="h-8 w-8"
-                priority
-              />
-            )}
-          </Link>
-
-          {isMobile ? (
-            <button
-              onClick={onClose}
-              className="rounded-lg p-2 transition-colors hover:bg-slate-100 dark:hover:bg-slate-800"
-              aria-label="Close sidebar"
-            >
-              <X size={20} />
-            </button>
-          ) : (
-            <button
-              onClick={onToggle}
-              className="rounded-lg p-2 transition-colors hover:bg-slate-100 dark:hover:bg-slate-800"
-              aria-label={isOpen ? 'Collapse sidebar' : 'Expand sidebar'}
-              aria-expanded={isOpen}
-            >
-              <ChevronLeft className={`h-5 w-5 transition-transform ${!isOpen ? 'rotate-180' : ''}`} />
-            </button>
-          )}
-        </div>
-
-        <nav className="flex-1 space-y-1 overflow-y-auto px-3 py-4" aria-label="Vendor portal pages">
-          {navItems.map((item) => {
-            const Icon = item.icon;
-            const active = isActive(item.href);
-
-            return (
-              <Link
-                key={item.href}
-                href={item.href}
-                onClick={() => isMobile && onClose()}
-                className={`
-                  flex items-center gap-3 rounded-xl px-3 py-2.5 transition-colors duration-200
-                  ${active
-                    ? 'bg-primary-50 text-primary-600 dark:bg-primary-900/20 dark:text-primary-400'
-                    : 'text-slate-600 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800'
-                  }
-                `}
-                aria-current={active ? 'page' : undefined}
-                title={!isOpen ? item.name : undefined}
-              >
-                <Icon size={20} className={active ? 'text-primary-500' : ''} aria-hidden="true" />
-                {isOpen && (
-                  <span className="flex-1 overflow-hidden whitespace-nowrap text-sm font-medium text-left">
-                    {item.name}
-                  </span>
-                )}
-              </Link>
-            );
-          })}
-
-          {user?.role === 'root_admin' && isOpen && (
-            <>
-              <p className="px-3 pt-4 pb-1 text-[10px] font-bold uppercase tracking-widest text-slate-400 dark:text-slate-500">
-                Shortcuts
-              </p>
-              <Link
-                href="/admin/ads"
-                className="flex items-center gap-3 rounded-xl px-3 py-2.5 text-wedding-gold transition-colors duration-200 hover:bg-amber-50 dark:hover:bg-amber-900/10"
-              >
-                <ExternalLink size={20} className="text-wedding-gold" aria-hidden="true" />
-                <span className="text-sm font-medium">Back to Admin</span>
-                <span className="ml-auto rounded bg-wedding-gold px-1.5 py-0.5 text-[9px] font-extrabold uppercase tracking-wide text-slate-900">
-                  Admin
-                </span>
-              </Link>
-            </>
-          )}
-        </nav>
-
-        <div className="border-t border-slate-200/50 p-3 dark:border-slate-700/50">
-          {isOpen && user && (
-            <div className="mb-2 rounded-xl border border-white/40 bg-white/50 px-3 py-2 dark:border-slate-700 dark:bg-slate-800/60">
-              <p className="truncate text-sm font-medium text-slate-900 dark:text-white">{user.name}</p>
-              <p className="truncate text-xs text-slate-500 dark:text-slate-400">{user.email}</p>
-            </div>
-          )}
-          <button
-            onClick={onLogout}
-            className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-slate-600 transition-colors hover:bg-red-50 hover:text-red-600 dark:text-slate-400 dark:hover:bg-red-900/20 dark:hover:text-red-400"
-            aria-label="Sign out"
-            title="Sign out"
-          >
-            <LogOut size={20} aria-hidden="true" />
-            {isOpen && <span className="text-sm font-medium">Sign Out</span>}
-          </button>
-        </div>
-      </aside>
-    </>
+    <WorkspaceSidebar
+      brandHref="/portal/ads"
+      navigationLabel="Vendor portal navigation"
+      isOpen={isOpen}
+      isMobile={isMobile}
+      onClose={onClose}
+      onToggle={onToggle}
+      mainItems={mainItems}
+      secondaryItems={secondaryItems}
+      secondarySectionLabel="Shortcuts"
+      footerAction={{
+        label: 'Sign Out',
+        ariaLabel: 'Sign out',
+        title: 'Sign out',
+        onClick: onLogout,
+      }}
+    />
   );
 }
 
 function VendorTopHeader({
   user,
+  token,
   onMenuClick,
+  onLogout,
 }: {
   user: VendorUser | null;
+  token: string | null;
   onMenuClick: () => void;
+  onLogout: () => void;
 }) {
-  const { resolvedTheme, setTheme } = useTheme();
+  const [unreadCount, setUnreadCount] = useState(0);
+
+  const fetchUnreadCount = useCallback(async () => {
+    if (!token) {
+      return 0;
+    }
+
+    try {
+      const response = await fetch(`${API_BASE}/admin/user/notifications/count`, {
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        credentials: 'include',
+        cache: 'no-store',
+      });
+
+      if (!response.ok) {
+        return null;
+      }
+
+      const data = await response.json();
+      return data.unread || 0;
+    } catch {
+      // Keep the bell quiet on transient failures.
+      return null;
+    }
+  }, [token]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadUnreadCount = async () => {
+      const nextUnreadCount = await fetchUnreadCount();
+      if (!cancelled && typeof nextUnreadCount === 'number') {
+        setUnreadCount(nextUnreadCount);
+      }
+    };
+
+    void loadUnreadCount();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [fetchUnreadCount]);
+
+  useEffect(() => {
+    const handleNotificationsUpdated = () => {
+      void fetchUnreadCount().then((nextUnreadCount) => {
+        if (typeof nextUnreadCount === 'number') {
+          setUnreadCount(nextUnreadCount);
+        }
+      });
+    };
+
+    window.addEventListener('notifications-updated', handleNotificationsUpdated);
+    return () => window.removeEventListener('notifications-updated', handleNotificationsUpdated);
+  }, [fetchUnreadCount]);
 
   return (
-    <header className="sticky top-0 z-30 border-b border-slate-200/50 bg-white/80 backdrop-blur-xl dark:border-slate-700/50 dark:bg-slate-900/80" role="banner">
-      <div className="flex h-16 items-center justify-between px-4 sm:px-6 lg:px-8">
-        <div className="flex items-center gap-4">
-          <button
-            onClick={onMenuClick}
-            className="rounded-lg p-2 transition-colors hover:bg-slate-100 dark:hover:bg-slate-800 lg:hidden"
-            aria-label="Toggle navigation menu"
-          >
-            <Menu size={20} className="text-slate-600 dark:text-slate-400" aria-hidden="true" />
-          </button>
-
-          <div className="hidden sm:block">
-            <p className="text-[10px] font-bold uppercase tracking-[0.28em] text-primary-500/80 dark:text-primary-300/80">
-              Ad Platform
-            </p>
-            <p className="text-sm font-medium text-slate-600 dark:text-slate-300">
-              Vendor Portal
-            </p>
-          </div>
-        </div>
-
-        <div className="flex items-center gap-2">
-          <button
-            onClick={() => setTheme(resolvedTheme === 'dark' ? 'light' : 'dark')}
-            className="rounded-lg p-2 transition-colors hover:bg-slate-100 dark:hover:bg-slate-800"
-            aria-label={`Switch to ${resolvedTheme === 'dark' ? 'light' : 'dark'} theme`}
-            title={`Switch to ${resolvedTheme === 'dark' ? 'light' : 'dark'} theme`}
-          >
-            {resolvedTheme === 'dark' ? (
-              <Sun size={20} className="text-amber-500" aria-hidden="true" />
-            ) : (
-              <Moon size={20} className="text-slate-600" aria-hidden="true" />
-            )}
-          </button>
-
-          <Link
-            href="/portal/ads/notifications"
-            className="rounded-lg p-2 transition-colors hover:bg-slate-100 dark:hover:bg-slate-800"
-            aria-label="Open notifications"
-            title="Notifications"
-          >
-            <Bell size={20} className="text-slate-600 dark:text-slate-400" aria-hidden="true" />
-          </Link>
-
-          {user && (
-            <div className="ml-1 hidden items-center gap-3 rounded-xl border border-white/40 bg-white/60 px-3 py-2 dark:border-slate-700 dark:bg-slate-800/60 sm:flex">
-              <div className="flex h-8 w-8 items-center justify-center rounded-full bg-gradient-to-br from-primary-400 to-secondary-400 text-sm font-semibold text-white">
-                {getUserInitials(user)}
-              </div>
-              <div className="min-w-0">
-                <p className="truncate text-sm font-medium text-slate-900 dark:text-white">{user.name}</p>
-                <p className="truncate text-xs text-slate-500 dark:text-slate-400">
-                  {user.role === 'root_admin' ? 'Root Admin' : 'Advertising Vendor'}
-                </p>
-              </div>
-            </div>
-          )}
-        </div>
-      </div>
-    </header>
+    <WorkspaceTopHeader
+      onMenuClick={onMenuClick}
+      notificationHref="/portal/ads/notifications"
+      notificationCount={unreadCount}
+      user={{
+        name: user?.name || user?.email?.split('@')[0] || 'Vendor',
+        email: user?.email,
+        initials: user ? getUserInitials(user) : 'VP',
+      }}
+      menuItems={[
+        {
+          key: 'settings',
+          label: 'Account Settings',
+          icon: Settings,
+          href: '/portal/ads/settings',
+        },
+        {
+          key: 'logout',
+          label: 'Logout',
+          icon: LogOut,
+          tone: 'danger',
+          onSelect: onLogout,
+        },
+      ]}
+    />
   );
 }
 

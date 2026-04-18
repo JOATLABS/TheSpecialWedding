@@ -70,13 +70,14 @@ async function loginVendor(page: import('@playwright/test').Page, email: string,
   await page.locator('input[type="email"]').fill(email);
   await page.locator('input[type="password"]').first().fill(password);
   await page.getByRole('button', { name: 'Sign In' }).click();
-  await expect(page.getByRole('button', { name: /sign out/i })).toBeVisible({ timeout: 15000 });
-  await expect(page.getByText(/Welcome back/i)).toBeVisible({ timeout: 15000 });
+  await page.waitForURL((url) => url.pathname.startsWith('/portal/ads') && url.pathname !== '/portal/ads/signup');
+  await expect(page.getByRole('button', { name: 'User menu' })).toBeVisible({ timeout: 15000 });
+  await expect(page.getByRole('heading', { name: 'Dashboard' })).toBeVisible({ timeout: 15000 });
 }
 
 async function logoutVendor(page: import('@playwright/test').Page) {
   await page.goto('/portal/ads');
-  await page.getByRole('button', { name: /sign out|log out|logout/i }).click();
+  await page.getByRole('button', { name: /sign out/i }).click();
   await expect(page.getByRole('heading', { name: 'Welcome back' })).toBeVisible();
 }
 
