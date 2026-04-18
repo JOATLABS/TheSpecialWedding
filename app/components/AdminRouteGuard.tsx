@@ -24,6 +24,18 @@ function getRootAdminRedirect(path: string): string | null {
   return null;
 }
 
+// Inverse of getRootAdminRedirect: paths that ONLY root admins should access.
+// Non-root users (planners, team members) hitting these get bounced to
+// their own dashboard. Keep this list conservative — most /admin/* routes
+// are shared between root admin and planners (guests, weddings, budget, etc.).
+function getNonRootAdminRedirect(path: string): string | null {
+  // `/admin` exactly is the Platform Health Overview — root admin only.
+  if (path === '/admin') {
+    return '/admin/planner';
+  }
+  return null;
+}
+
 function isAllowedForExpired(path: string): boolean {
   if (BILLING_PATHS.some((p) => path === p || path.startsWith(p + '/'))) return true;
   if (path.startsWith('/admin/team/accept')) return true;
@@ -53,6 +65,13 @@ export default function AdminRouteGuard({ children }: { children: React.ReactNod
     if (isAuthenticated && userProfile) {
       if (userProfile.is_root_admin) {
         const redirectPath = getRootAdminRedirect(pathname);
+        if (redirectPath && redirectPath !== pathname) {
+          router.replace(redirectPath);
+          return;
+        }
+      } else {
+        // Planner or team member: keep them out of root-admin-only paths.
+        const redirectPath = getNonRootAdminRedirect(pathname);
         if (redirectPath && redirectPath !== pathname) {
           router.replace(redirectPath);
           return;
@@ -91,6 +110,11 @@ export default function AdminRouteGuard({ children }: { children: React.ReactNod
   if (isAuthenticated && userProfile) {
     if (userProfile.is_root_admin) {
       const redirectPath = getRootAdminRedirect(pathname);
+      if (redirectPath && redirectPath !== pathname) {
+        return null;
+      }
+    } else {
+      const redirectPath = getNonRootAdminRedirect(pathname);
       if (redirectPath && redirectPath !== pathname) {
         return null;
       }

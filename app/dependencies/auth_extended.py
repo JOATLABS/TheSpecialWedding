@@ -26,6 +26,36 @@ from app.utils.planner_ownership import (
 
 logger = logging.getLogger(__name__)
 
+# ── Subscription block reasons (shared between planner and team-member paths) ──
+_SUB_BLOCK_REASONS = {
+    "pending": "Please complete your subscription checkout to access the platform.",
+    "pending_checkout": "Please complete your Stripe checkout to activate your subscription.",
+    "pending_payment": "Please complete your subscription payment to access the platform.",
+    "inactive": "Please choose a plan and complete checkout to access the platform.",
+    "cancelled": "Your subscription has been cancelled. Please resubscribe to continue.",
+    "past_due": "Your latest subscription payment failed. Please update your payment method to continue.",
+    "suspended": "Your subscription is suspended due to a payment issue. Please update your payment method.",
+    "expired": "Free trial has expired. Please upgrade your subscription to continue using the platform.",
+}
+_DEFAULT_SUB_BLOCK_REASON = "Subscription issue. Please contact support."
+
+
+def _build_team_member_block_reason(
+    owner_sub_status: Optional[str], owner_email: Optional[str]
+) -> str:
+    """Build a 402 detail string for a team member whose owning planner is blocked.
+
+    Team members cannot pay on the planner's behalf, so the message directs
+    them to contact the planner instead of taking a billing action themselves.
+    """
+    contact_hint = f" at {owner_email}" if owner_email else ""
+    status_hint = f" (status: {owner_sub_status})" if owner_sub_status else ""
+    return (
+        f"Your team's subscription requires attention{status_hint}. "
+        f"Please contact your planner{contact_hint} to restore access."
+    )
+
+
 # ── Team member data cache (bounded, thread-safe, with invalidation) ──
 _TEAM_CACHE_TTL = 60  # seconds
 _TEAM_CACHE_MAX_SIZE = 500
@@ -74,6 +104,93 @@ def invalidate_team_cache_by_owner(owner_id: str) -> None:
     ]
     for k in keys_to_remove:
         _team_cache.pop(k, None)
+
+
+async def compute_owner_subscription_block(
+    owner_id: Optional[str], owner_email: Optional[str]
+) -> tuple[bool, Optional[str]]:
+    """Decide whether a team member should inherit a billing block from their owning planner.
+
+    Returns (is_blocked, owner_sub_status).
+
+    A team member is blocked when their owning planner's subscription is in any of
+    PLANNER_BLOCKED_SUBSCRIPTION_STATUSES. This mirrors the planner-side gate so
+    that planners cannot keep managing weddings for free by routing work through
+    their team when their own subscription is past_due/suspended/expired.
+
+    Looks up the owner document by _id first, then falls back to email. Also
+    cross-checks user_subscriptions to catch the webhook race where users
+    collection hasn't been updated yet but user_subscriptions has the newer
+    status (same prong-1 logic as the planner self-check below).
+
+    Returns (False, None) when:
+      - both owner_id and owner_email are missing
+      - the owner document cannot be located (orphaned team member — handled
+        by the team-deactivation lifecycle elsewhere)
+      - the owner's status is active/trial/trial_expiring or otherwise not in
+        PLANNER_BLOCKED_SUBSCRIPTION_STATUSES
+    """
+    if not owner_id and not owner_email:
+        return False, None
+
+    owner_doc = None
+    try:
+        users_coll = mongo.get_users_collection()
+        # Prefer lookup by _id (ObjectId) since that's the canonical key
+        if owner_id:
+            try:
+                owner_doc = await users_coll.find_one({"_id": ObjectId(owner_id)})
+            except Exception:
+                # owner_id may already be a plain string or malformed — fall through
+                owner_doc = await users_coll.find_one({"_id": owner_id})
+        if not owner_doc and owner_email:
+            owner_doc = await users_coll.find_one({"email": owner_email})
+    except Exception as e:
+        # Database errors are non-fatal: fail open (don't block) and let the
+        # request proceed. The planner gate will catch any still-broken
+        # subscriptions on the planner's own next request.
+        logger.warning(
+            f"compute_owner_subscription_block: failed to load owner "
+            f"(id={owner_id}, email={owner_email}): {e}"
+        )
+        return False, None
+
+    if not owner_doc:
+        return False, None
+
+    owner_sub_status = normalize_subscription_status(
+        owner_doc.get("subscription_status")
+    )
+
+    # Cross-check user_subscriptions for webhook race (same pattern as planner self-check)
+    owner_id_str = str(owner_doc.get("_id", ""))
+    if owner_id_str:
+        try:
+            subscription_record = await mongo.db["user_subscriptions"].find_one(
+                {"user_id": owner_id_str}, {"status": 1}
+            )
+            if subscription_record:
+                sub_record_status = normalize_subscription_status(
+                    subscription_record.get("status")
+                )
+                if (
+                    sub_record_status in PLANNER_BLOCKED_SUBSCRIPTION_STATUSES
+                    and owner_sub_status not in PLANNER_BLOCKED_SUBSCRIPTION_STATUSES
+                ):
+                    logger.info(
+                        f"Owner webhook race detected: user_subscriptions has "
+                        f"'{sub_record_status}' but users has '{owner_sub_status}' "
+                        f"for owner {owner_email}. Trusting user_subscriptions."
+                    )
+                    owner_sub_status = sub_record_status
+        except Exception as e:
+            logger.warning(
+                f"compute_owner_subscription_block: user_subscriptions cross-check "
+                f"failed for owner {owner_email}: {e}"
+            )
+
+    is_blocked = owner_sub_status in PLANNER_BLOCKED_SUBSCRIPTION_STATUSES
+    return is_blocked, owner_sub_status
 
 
 # Security scheme
@@ -244,16 +361,9 @@ async def get_current_user_extended(
                 and sub_status in PLANNER_BLOCKED_SUBSCRIPTION_STATUSES
             ):
                 user_data["_subscription_blocked"] = True
-                user_data["_subscription_block_reason"] = {
-                    "pending": "Please complete your subscription checkout to access the platform.",
-                    "pending_checkout": "Please complete your Stripe checkout to activate your subscription.",
-                    "pending_payment": "Please complete your subscription payment to access the platform.",
-                    "inactive": "Please choose a plan and complete checkout to access the platform.",
-                    "cancelled": "Your subscription has been cancelled. Please resubscribe to continue.",
-                    "past_due": "Your latest subscription payment failed. Please update your payment method to continue.",
-                    "suspended": "Your subscription is suspended due to a payment issue. Please update your payment method.",
-                    "expired": "Free trial has expired. Please upgrade your subscription to continue using the platform.",
-                }.get(sub_status, "Subscription issue. Please contact support.")
+                user_data["_subscription_block_reason"] = _SUB_BLOCK_REASONS.get(
+                    sub_status, _DEFAULT_SUB_BLOCK_REASON
+                )
             # Check trial expiration for wedding planners
             if (
                 role == "wedding_planner"
@@ -354,6 +464,31 @@ async def get_current_user_extended(
                         team_doc.get("owner_id")
                     )
 
+                    # ── Team-member billing gate ──────────────────────
+                    # Inherit the subscription block from the owning planner.
+                    # If the planner's subscription is past_due/suspended/expired/etc.,
+                    # the whole team (including this member) is blocked from feature
+                    # routes, mirroring the planner-side 402 behavior. Team members
+                    # cannot pay on the planner's behalf, so the error message directs
+                    # them to contact their planner.
+                    (
+                        owner_is_blocked,
+                        owner_sub_status,
+                    ) = await compute_owner_subscription_block(
+                        owner_id=auth_user.parent_planner_id,
+                        owner_email=auth_user.team_owner_email,
+                    )
+                    if owner_is_blocked:
+                        user_data["_subscription_blocked"] = True
+                        user_data["_subscription_block_reason"] = (
+                            _build_team_member_block_reason(
+                                owner_sub_status, auth_user.team_owner_email
+                            )
+                        )
+                        user_data["_blocked_reason_source"] = "owner_subscription"
+                        user_data["_owner_email"] = auth_user.team_owner_email
+                        user_data["_owner_subscription_status"] = owner_sub_status
+
                     # Update last_active_at with throttle (only if > 5 minutes old)
                     last_active = team_doc.get("last_active_at")
                     should_update = not last_active
@@ -407,6 +542,8 @@ async def get_current_user_extended(
             _SUB_WHITELIST = (
                 "/admin/profile",
                 "/admin/token",
+                "/admin/logout",  # blocked team members must be able to sign out
+                "/admin/team/permissions",  # blocked-page UX reads its own permission metadata
                 "/stripe/",
                 "/api/stripe/",
                 "/public/",
