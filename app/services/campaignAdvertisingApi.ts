@@ -8,6 +8,7 @@
  */
 
 import { getApiBaseUrl } from '@/utils/env';
+import { redirectOnBillingBlock } from '@/utils/adminApiAuthGuard';
 
 const API_BASE = getApiBaseUrl();
 
@@ -473,6 +474,10 @@ function authenticatedGet(path: string, token: string, params?: Record<string, s
 
 async function handleResponse<T>(response: Response, errorPrefix: string): Promise<T> {
   if (!response.ok) {
+    // Centralized 402 → /admin/planner/billing redirect. See
+    // AGENTS.md → "Known Open Issues" item 5. The throw below still fires
+    // but the page unloads before any UI can render the error.
+    redirectOnBillingBlock(response);
     const error = await response.json().catch(() => ({}));
     throw new Error(error.detail?.message || error.detail || `${errorPrefix}`);
   }

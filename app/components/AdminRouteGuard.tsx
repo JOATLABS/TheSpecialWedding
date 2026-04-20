@@ -4,13 +4,29 @@ import { useEffect } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 import { useAdmin } from '@/contexts/AdminContext';
 import { isBlockedSubscriptionStatus, normalizeSubscriptionStatus } from '@/utils/subscriptionStatus';
+import { isAllowedForExpired } from '@/utils/adminApiAuthGuard';
+import TeamMemberSubscriptionBlocked from '@/admin/components/TeamMemberSubscriptionBlocked';
 
-// Pages that expired/blocked planners are allowed to access
-const BILLING_PATHS = [
+// Pages a blocked team member can still see. We keep this conservative —
+// the whole point of the gate is to stop the dashboard + its 402-noisy
+// feature fetches from rendering. Kept separate from planner-billing paths
+// in adminApiAuthGuard because team-member block UX is distinct (no self-
+// serve billing page; they contact the planner).
+const TEAM_MEMBER_BLOCKED_ALLOWED_PATHS = [
   '/admin/login',
-  '/admin/planner/billing',
-  '/admin/billing',
+  '/admin/team/accept',
 ];
+
+function isTeamMemberBlockedAllowedPath(path: string): boolean {
+  return TEAM_MEMBER_BLOCKED_ALLOWED_PATHS.some(
+    (p) => path === p || path.startsWith(p + '/'),
+  );
+}
+
+function isTeamMemberRole(profile: { role?: string; is_team_member?: boolean } | null | undefined): boolean {
+  if (!profile) return false;
+  return profile.is_team_member === true || profile.role === 'team_member';
+}
 
 function getRootAdminRedirect(path: string): string | null {
   if (path === '/admin/planner' || path.startsWith('/admin/planner/')) {
@@ -34,12 +50,6 @@ function getNonRootAdminRedirect(path: string): string | null {
     return '/admin/planner';
   }
   return null;
-}
-
-function isAllowedForExpired(path: string): boolean {
-  if (BILLING_PATHS.some((p) => path === p || path.startsWith(p + '/'))) return true;
-  if (path.startsWith('/admin/team/accept')) return true;
-  return false;
 }
 
 export default function AdminRouteGuard({ children }: { children: React.ReactNode }) {
@@ -127,6 +137,21 @@ export default function AdminRouteGuard({ children }: { children: React.ReactNod
 
     if (isPlanner && isBlocked && !isAllowedForExpired(pathname)) {
       return null; // Don't render — useEffect above will redirect
+    }
+
+    // Team-member subscription gate: when the parent planner's subscription
+    // is blocked, the backend tags the team member's profile with
+    // _subscription_blocked=true. Render a dedicated blocked shell so the
+    // team member never sees the normal dashboard (which would fire every
+    // gated feature endpoint and surface raw 402 console errors).
+    //
+    // We DO NOT redirect — there's no team-member-owned billing page, only
+    // the planner can resolve this. The shell tells them to contact the
+    // planner and lets them sign out.
+    const teamBlocked =
+      userProfile._subscription_blocked === true && isTeamMemberRole(userProfile);
+    if (teamBlocked && !isTeamMemberBlockedAllowedPath(pathname)) {
+      return <TeamMemberSubscriptionBlocked />;
     }
   }
 
