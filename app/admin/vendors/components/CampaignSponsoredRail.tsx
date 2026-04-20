@@ -31,7 +31,16 @@ export function CampaignSponsoredRail({
   onWeddingChange,
   onVisibilityChange,
 }: CampaignSponsoredRailProps) {
-  const { token } = useAdmin();
+  const { token, userProfile } = useAdmin();
+  // Planners and root admins always see every control. Team members can
+  // view the rail but only mutate (add to directory, request quote, hide,
+  // change preferences) when their planner has granted `manage_vendors`.
+  const canAddVendors =
+    !!userProfile &&
+    (userProfile.is_root_admin ||
+      userProfile.is_wedding_planner ||
+      (userProfile.is_team_member === true &&
+        userProfile.team_permissions?.manage_vendors === true));
   const [cards, setCards] = useState<SponsoredCard[]>([]);
   const [loading, setLoading] = useState(true);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
@@ -130,6 +139,7 @@ export function CampaignSponsoredRail({
   };
 
   const handleHideCard = async (campaignId: string) => {
+    if (!canAddVendors) return; // Defense in depth — card also guards its own button
     const card = cards.find((c) => c.campaign_id === campaignId);
     setCards((prev) => prev.filter((c) => c.campaign_id !== campaignId));
     // Persist hide to backend
@@ -143,6 +153,7 @@ export function CampaignSponsoredRail({
   };
 
   const handleToggleFrequency = async () => {
+    if (!canAddVendors) return;
     const newVal = !reducedFreq;
     setReducedFreq(newVal);
     if (token) {
@@ -191,13 +202,15 @@ export function CampaignSponsoredRail({
             <h3 className="text-base font-semibold text-wedding-navy">Sponsored Vendors</h3>
           </div>
         </div>
-        <button
-          onClick={() => setShowPrefs(!showPrefs)}
-          className="hidden lg:inline-flex items-center gap-1 text-[10px] text-gray-600 hover:text-wedding-sage transition-colors"
-        >
-          <Settings size={10} />
-          Preferences
-        </button>
+        {canAddVendors && (
+          <button
+            onClick={() => setShowPrefs(!showPrefs)}
+            className="hidden lg:inline-flex items-center gap-1 text-[10px] text-gray-600 hover:text-wedding-sage transition-colors"
+          >
+            <Settings size={10} />
+            Preferences
+          </button>
+        )}
         <div className="relative lg:hidden">
           <button
             onClick={() => setShowTooltip(!showTooltip)}
@@ -215,7 +228,7 @@ export function CampaignSponsoredRail({
       </div>
 
       {/* Ad Preferences Panel */}
-      {showPrefs && (
+      {showPrefs && canAddVendors && (
         <div className="bg-gray-50 dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-lg p-3 space-y-2">
           <div className="flex items-center justify-between">
             <span className="text-[11px] text-gray-700 dark:text-gray-300">Show fewer sponsored vendors</span>
@@ -273,6 +286,7 @@ export function CampaignSponsoredRail({
             onHide={() => handleHideCard(card.campaign_id)}
             weddingId={selectedWeddingId || weddings?.[0]?.id}
             weddingName={selectedWedding?.name}
+            canAddVendors={canAddVendors}
           />
         ))}
       </div>
@@ -292,6 +306,7 @@ export function CampaignSponsoredRail({
                 onHide={() => handleHideCard(card.campaign_id)}
                 weddingId={selectedWeddingId || weddings?.[0]?.id}
                 weddingName={selectedWedding?.name}
+                canAddVendors={canAddVendors}
               />
             </div>
           ))}
@@ -329,7 +344,11 @@ export function CampaignSponsoredRail({
             See more vendors &rsaquo;
           </a>
         </div>
-        <p className="text-[9px] text-gray-400 text-center">You can hide any vendor you&rsquo;re not interested in</p>
+        <p className="text-[9px] text-gray-400 text-center">
+          {canAddVendors
+            ? 'You can hide any vendor you\u2019re not interested in'
+            : 'Ask your planner for the \u201cmanage vendors\u201d permission to add or hide vendors.'}
+        </p>
       </div>
 
       {showTooltip && (
@@ -342,7 +361,11 @@ export function CampaignSponsoredRail({
         <a href="/admin/vendors" className="text-xs text-gray-600 hover:text-wedding-sage transition-colors">
           See more vendors &rsaquo;
         </a>
-        <span className="text-[10px] text-gray-400">You can hide any vendor you&rsquo;re not interested in</span>
+        <span className="text-[10px] text-gray-400">
+          {canAddVendors
+            ? 'You can hide any vendor you\u2019re not interested in'
+            : 'Ask your planner for the \u201cmanage vendors\u201d permission to add or hide vendors.'}
+        </span>
       </div>
 
       {/* Quote Request Modal */}

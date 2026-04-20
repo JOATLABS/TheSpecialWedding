@@ -35,6 +35,14 @@ interface CampaignSponsoredCardProps {
   onHide: () => void;
   weddingId?: string;
   weddingName?: string;
+  /**
+   * Whether the current user can mutate the vendor directory / ad preferences.
+   * False for team members whose planner has not granted `manage_vendors` —
+   * they still see the card but the CTAs and hide action are disabled.
+   * Defaults to true so existing callers (planner-only surfaces) keep their
+   * previous behavior.
+   */
+  canAddVendors?: boolean;
 }
 
 export function CampaignSponsoredCard({
@@ -43,6 +51,7 @@ export function CampaignSponsoredCard({
   onHide,
   weddingId,
   weddingName,
+  canAddVendors = true,
 }: CampaignSponsoredCardProps) {
   const { token } = useAdmin();
   const cardRef = useRef<HTMLDivElement>(null);
@@ -53,6 +62,7 @@ export function CampaignSponsoredCard({
 
   const handleAddToDirectory = async () => {
     if (!token) return;
+    if (!canAddVendors) return; // UI disables the button, but be defensive
 
     try {
       setAddError(null);
@@ -72,9 +82,12 @@ export function CampaignSponsoredCard({
   };
 
   const handleHide = () => {
+    if (!canAddVendors) return;
     setIsHidden(true);
     onHide();
   };
+
+  const permissionTooltip = 'Ask your planner for the \u201Cmanage vendors\u201D permission to do this.';
 
   if (isHidden) return null;
 
@@ -87,15 +100,17 @@ export function CampaignSponsoredCard({
       aria-label={`Sponsored vendor: ${card.vendor_name}`}
       className="relative w-72 flex-shrink-0 lg:w-full lg:flex-shrink rounded-lg border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-800/95 shadow-sm hover:shadow-md hover:border-wedding-sage transition-all overflow-hidden lg:mb-2.5 focus-within:ring-2 focus-within:ring-wedding-sage focus-within:ring-offset-1"
     >
-      {/* Hide Button */}
-      <button
-        onClick={(e) => { e.stopPropagation(); handleHide(); }}
-        className="absolute top-1 right-1 z-10 w-11 h-11 flex items-center justify-center rounded-full hover:bg-gray-100 dark:hover:bg-slate-700 transition-colors text-gray-500 dark:text-gray-400 hover:text-red-500"
-        aria-label={`Hide ${card.vendor_name} from sponsored vendors`}
-        title="Hide this vendor"
-      >
-        <X size={14} />
-      </button>
+      {/* Hide Button — only rendered when the caller can mutate the directory */}
+      {canAddVendors && (
+        <button
+          onClick={(e) => { e.stopPropagation(); handleHide(); }}
+          className="absolute top-1 right-1 z-10 w-11 h-11 flex items-center justify-center rounded-full hover:bg-gray-100 dark:hover:bg-slate-700 transition-colors text-gray-500 dark:text-gray-400 hover:text-red-500"
+          aria-label={`Hide ${card.vendor_name} from sponsored vendors`}
+          title="Hide this vendor"
+        >
+          <X size={14} />
+        </button>
+      )}
 
       {/* Card Content */}
       <div className="block p-3 space-y-2">
@@ -158,13 +173,22 @@ export function CampaignSponsoredCard({
       <div className="flex gap-1.5 px-3 pb-3">
         <button
           onClick={handleAddToDirectory}
-          disabled={addedToDirectory}
+          disabled={addedToDirectory || !canAddVendors}
+          title={!canAddVendors ? permissionTooltip : undefined}
           className={`flex-1 flex items-center justify-center gap-1 px-2 py-1.5 text-[11px] font-semibold rounded-md transition-colors text-center min-h-[44px] ${
             addedToDirectory
               ? 'bg-green-100 text-green-700 cursor-default'
+              : !canAddVendors
+              ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
               : 'text-white bg-wedding-sage hover:bg-wedding-navy'
           }`}
-          aria-label={addedToDirectory ? `${card.vendor_name} is in your directory` : `Add ${card.vendor_name} to directory`}
+          aria-label={
+            addedToDirectory
+              ? `${card.vendor_name} is in your directory`
+              : !canAddVendors
+              ? `Add to Directory is disabled — ${permissionTooltip}`
+              : `Add ${card.vendor_name} to directory`
+          }
         >
           {addedToDirectory ? (
             '\u2713 In Directory'
@@ -177,8 +201,18 @@ export function CampaignSponsoredCard({
         </button>
         <button
           onClick={onRequestQuote}
-          className="flex-1 px-2 py-1.5 text-[11px] font-semibold text-wedding-sage bg-white border border-wedding-sage hover:bg-wedding-sage/5 rounded-md transition-colors text-center min-h-[44px]"
-          aria-label={`Request quote from ${card.vendor_name}`}
+          disabled={!canAddVendors}
+          title={!canAddVendors ? permissionTooltip : undefined}
+          className={`flex-1 px-2 py-1.5 text-[11px] font-semibold rounded-md transition-colors text-center min-h-[44px] ${
+            !canAddVendors
+              ? 'bg-gray-100 text-gray-400 border border-gray-200 cursor-not-allowed'
+              : 'text-wedding-sage bg-white border border-wedding-sage hover:bg-wedding-sage/5'
+          }`}
+          aria-label={
+            !canAddVendors
+              ? `Request Quote is disabled — ${permissionTooltip}`
+              : `Request quote from ${card.vendor_name}`
+          }
         >
           Request Quote
         </button>
