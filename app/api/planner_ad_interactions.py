@@ -13,7 +13,12 @@ Endpoints:
   GET  /planner/ads/directory-status    — Check if vendor already in directory
   POST /planner/ads/draft-quote         — AI-generate a personalized quote request
 
-Auth: wedding_planner role or root admin.
+Auth model:
+- Reads (``/sponsored-cards``, ``/directory-status``) — wedding_planner,
+  root admin, or team member (``require_team_or_planner``).
+- Mutations (``/add-to-directory``, ``/request-quote``, ``/draft-quote``) —
+  wedding_planner, root admin, or team member with the
+  ``manage_vendors`` permission (``require_team_permission``).
 """
 
 import logging
@@ -23,7 +28,13 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 
 from app.core.database import mongo
-from app.dependencies.auth_extended import ExtendedAuthUser, get_current_user_extended
+from app.dependencies.auth_extended import (
+    ExtendedAuthUser,
+    get_current_user_extended,
+    get_owner_identity,
+    require_team_or_planner,
+    require_team_permission,
+)
 from app.services.planner_ad_interaction_service import PlannerAdInteractionService
 
 logger = logging.getLogger(__name__)
@@ -134,7 +145,16 @@ def get_planner_ad_interaction_service() -> PlannerAdInteractionService:
 async def require_planner_or_admin(
     current_user: ExtendedAuthUser = Depends(get_current_user_extended),
 ) -> ExtendedAuthUser:
-    """Require wedding_planner role or root admin."""
+    """Require wedding_planner role or root admin.
+
+    NOTE: Sponsored-card endpoints no longer depend on this gate directly —
+    they use ``require_team_or_planner`` for reads and
+    ``require_team_permission('manage_vendors')`` for mutations so team
+    members can see the rail and perform directory actions only when their
+    planner has granted the ``manage_vendors`` permission. This helper is
+    retained because downstream tests override it, and removing it would
+    silently break those overrides.
+    """
     if current_user.is_root_admin or current_user.is_wedding_planner:
         return current_user
     raise HTTPException(
@@ -169,22 +189,40 @@ async def require_ads_enabled() -> bool:
 
 
 def _get_planner_email(user: ExtendedAuthUser) -> str:
-    """Extract planner email from auth user."""
+    """Resolve the planner-scoped email for directory/lead attribution.
+
+    Team members operate on their owning planner's directory, so leads,
+    adds, and quote requests must attribute to the planner rather than the
+    team member's own email. Falls back to the caller's own email for
+    root-admin callers where ``get_owner_identity`` returns ``(None, None)``.
+    """
+    _, owner_email = get_owner_identity(user)
+    if owner_email:
+        return owner_email
     return user.email
 
 
 def _get_planner_id(user: ExtendedAuthUser) -> str:
-    """Extract planner user ID for directory scoping.
+    """Resolve the planner-scoped user id for directory scoping.
 
-    Falls back to email when _id is not available (e.g. in tests).
+    Falls back to the caller's own id (or email) when the caller has no
+    owning planner — typically a root-admin session.
     """
+    owner_id, _ = get_owner_identity(user)
+    if owner_id:
+        return owner_id
     data = user.user_data or {}
     uid = data.get("_id")
     return str(uid) if uid else user.email
 
 
 def _get_planner_name(user: ExtendedAuthUser) -> str:
-    """Extract planner display name from auth user."""
+    """Extract the display name used as the sender on quote requests.
+
+    For team members we keep the actual caller's name — the vendor-facing
+    email is signed by the person who clicked the button, not by the
+    owning planner, which mirrors how real teams introduce themselves.
+    """
     data = user.user_data or {}
     return data.get("name") or data.get("display_name") or user.email
 
@@ -201,7 +239,7 @@ async def get_sponsored_cards(
         None, description="Comma-separated vendor categories"
     ),
     limit: int = Query(3, ge=1, le=10, description="Max cards to return"),
-    current_user: ExtendedAuthUser = Depends(require_planner_or_admin),
+    current_user: ExtendedAuthUser = Depends(require_team_or_planner),
     service: PlannerAdInteractionService = Depends(get_planner_ad_interaction_service),
     _ads_on: bool = Depends(require_ads_enabled),
 ):
@@ -210,6 +248,11 @@ async def get_sponsored_cards(
 
     Returns active campaigns enriched with primary creative info,
     filtered to exclude vendors the planner already added.
+
+    Team members can read the rail regardless of ``manage_vendors`` so
+    they see what the planner sees; the mutating endpoints
+    (``add-to-directory``, ``request-quote``, ``draft-quote``) are the
+    ones gated on ``manage_vendors``.
     """
     planner_email = _get_planner_email(current_user)
     planner_id = _get_planner_id(current_user)
@@ -228,7 +271,7 @@ async def get_sponsored_cards(
 @router.post("/add-to-directory", status_code=201)
 async def add_to_directory(
     body: AddToDirectoryRequest,
-    current_user: ExtendedAuthUser = Depends(require_planner_or_admin),
+    current_user: ExtendedAuthUser = Depends(require_team_permission("manage_vendors")),
     service: PlannerAdInteractionService = Depends(get_planner_ad_interaction_service),
     _ads_on: bool = Depends(require_ads_enabled),
 ):
@@ -254,7 +297,7 @@ async def add_to_directory(
 @router.post("/request-quote", status_code=201)
 async def request_quote(
     body: RequestQuoteRequest,
-    current_user: ExtendedAuthUser = Depends(require_planner_or_admin),
+    current_user: ExtendedAuthUser = Depends(require_team_permission("manage_vendors")),
     service: PlannerAdInteractionService = Depends(get_planner_ad_interaction_service),
     _ads_on: bool = Depends(require_ads_enabled),
 ):
@@ -287,7 +330,7 @@ async def request_quote(
 @router.get("/directory-status")
 async def check_directory_status(
     campaign_id: str = Query(..., description="Campaign ID to check"),
-    current_user: ExtendedAuthUser = Depends(require_planner_or_admin),
+    current_user: ExtendedAuthUser = Depends(require_team_or_planner),
     service: PlannerAdInteractionService = Depends(get_planner_ad_interaction_service),
     _ads_on: bool = Depends(require_ads_enabled),
 ):
@@ -305,7 +348,7 @@ async def check_directory_status(
 @router.post("/draft-quote")
 async def draft_quote(
     body: DraftQuoteRequest,
-    current_user: ExtendedAuthUser = Depends(require_planner_or_admin),
+    current_user: ExtendedAuthUser = Depends(require_team_permission("manage_vendors")),
     service: PlannerAdInteractionService = Depends(get_planner_ad_interaction_service),
     _ads_on: bool = Depends(require_ads_enabled),
 ):
