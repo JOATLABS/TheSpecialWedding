@@ -16,6 +16,7 @@ import {
     refreshAdminAuthToken,
     wasAdminSessionRemembered,
 } from '@/utils/adminAuthStorage';
+import { redirectOnBillingBlock } from '@/utils/adminApiAuthGuard';
 
 export interface UserProfile {
     id?: string;
@@ -407,8 +408,22 @@ export const AdminProvider = ({ children }: { children: React.ReactNode }) => {
             });
 
             if (!res.ok) {
-                const err = await res.json();
-                throw new Error(err.detail || 'Login failed');
+                const err = await res.json().catch(() => ({}));
+                const detail = err?.detail || 'Login failed';
+                // 402 at /admin/token = blocked-team-member (or blocked planner)
+                // login-time gate. This is an expected response with a real
+                // detail string, NOT a network failure. Tag the thrown error so
+                // the catch block below skips the `console.error("Login flow
+                // threw: ...")` + redundant toast (the login page already
+                // surfaces the detail inline via setError). See AGENTS.md
+                // → "Known Open Issues" item 4.
+                const loginError: Error & { status?: number; isAuthBlock?: boolean } =
+                    new Error(detail);
+                if (res.status === 402) {
+                    loginError.status = 402;
+                    loginError.isAuthBlock = true;
+                }
+                throw loginError;
             }
 
             const { access_token } = await res.json();
@@ -619,6 +634,15 @@ export const AdminProvider = ({ children }: { children: React.ReactNode }) => {
                 return;
             }
         } catch (err: any) {
+            // Expected auth-block responses (402 from the team-member or
+            // planner subscription gate) are NOT network failures. The login
+            // page already renders the detail inline via setError, so we
+            // skip the console.error noise + the duplicate "network error"
+            // toast and just rethrow for the page handler. See AGENTS.md
+            // → "Known Open Issues" item 4.
+            if (err?.isAuthBlock) {
+                throw err;
+            }
             // Network-level failure (CORS, DNS, backend down, etc.) lands here.
             // Without this log, the only signal is a toast, which leaves us blind.
             console.error(
@@ -652,9 +676,11 @@ export const AdminProvider = ({ children }: { children: React.ReactNode }) => {
                 expireSession();
                 return undefined;
             }
-            // 402 = subscription expired/blocked — redirect to billing
-            if (response.status === 402) {
-                window.location.href = '/admin/planner/billing';
+            // 402 = subscription expired/blocked — centralized redirect to
+            // billing (see app/utils/adminApiAuthGuard.ts). Step 5 of PR1
+            // will extend this branch to logout+redirect team-members to
+            // /admin/login?error=<reason>.
+            if (redirectOnBillingBlock(response)) {
                 return undefined;
             }
             // 403 = permission denied — don't logout, let the caller handle it
