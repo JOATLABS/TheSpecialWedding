@@ -86,6 +86,19 @@ const INVITE_OPTIONS: Array<{ value: InviteDeliveryMode; label: string }> = [
   { value: 'portal_only', label: 'Portal only' },
 ];
 
+const FIELD_CLASS =
+  'w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-slate-900 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100';
+const LABEL_CLASS = 'mb-1.5 block font-medium text-slate-700 dark:text-slate-300';
+const CHECKBOX_TEXT_CLASS = 'text-sm text-slate-700 dark:text-slate-200';
+const SUBTLE_PANEL_CLASS =
+  'rounded-2xl border border-slate-200 bg-slate-50 dark:border-slate-700 dark:bg-slate-900/60';
+const INNER_PANEL_CLASS =
+  'rounded-2xl border border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-800';
+const SECONDARY_BUTTON_CLASS =
+  'rounded-xl border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50 disabled:opacity-60 dark:border-slate-600 dark:text-slate-200 dark:hover:bg-slate-700/60';
+const PRIMARY_BUTTON_CLASS =
+  'rounded-xl bg-slate-900 px-4 py-2 text-sm font-medium text-white transition hover:bg-slate-700 disabled:opacity-60 dark:bg-slate-100 dark:text-slate-900 dark:hover:bg-slate-200';
+
 function getZonedDateParts(value: string, timezone: string) {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return null;
@@ -460,30 +473,30 @@ export default function TaskModal({
 
         <form onSubmit={handleSubmit} className="space-y-5">
           {error && (
-            <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
+            <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700 dark:border-rose-900 dark:bg-rose-950/40 dark:text-rose-200">
               {error}
             </div>
           )}
 
           <div className="grid gap-4 md:grid-cols-2">
             <div className="md:col-span-2">
-              <label className="mb-1.5 block text-sm font-medium text-slate-700">Title</label>
+              <label className={`text-sm ${LABEL_CLASS}`}>Title</label>
               <input
                 type="text"
                 value={title}
                 onChange={(event) => setTitle(event.target.value)}
-                className="w-full rounded-xl border border-slate-300 px-3 py-2.5 text-sm text-slate-900"
+                className={`${FIELD_CLASS} text-sm`}
                 placeholder="Planning call, venue walkthrough, checklist review..."
                 required
               />
             </div>
 
             <label className="text-sm">
-              <span className="mb-1.5 block font-medium text-slate-700">Wedding</span>
+              <span className={LABEL_CLASS}>Wedding</span>
               <select
                 value={weddingId}
                 onChange={(event) => setWeddingId(event.target.value)}
-                className="w-full rounded-xl border border-slate-300 px-3 py-2.5 text-slate-900"
+                className={FIELD_CLASS}
               >
                 <option value="">No wedding</option>
                 {weddings.map((wedding) => (
@@ -495,11 +508,11 @@ export default function TaskModal({
             </label>
 
             <label className="text-sm">
-              <span className="mb-1.5 block font-medium text-slate-700">Type</span>
+              <span className={LABEL_CLASS}>Type</span>
               <select
                 value={category}
                 onChange={(event) => setCategory(event.target.value as TaskCategory)}
-                className="w-full rounded-xl border border-slate-300 px-3 py-2.5 text-slate-900"
+                className={FIELD_CLASS}
                 disabled={!isEditing && availableCategories.length === 1}
               >
                 {availableCategories.map((item) => (
@@ -511,11 +524,11 @@ export default function TaskModal({
             </label>
 
             <label className="text-sm">
-              <span className="mb-1.5 block font-medium text-slate-700">Priority</span>
+              <span className={LABEL_CLASS}>Priority</span>
               <select
                 value={priority}
                 onChange={(event) => setPriority(event.target.value as TaskPriority)}
-                className="w-full rounded-xl border border-slate-300 px-3 py-2.5 text-slate-900"
+                className={FIELD_CLASS}
               >
                 {PRIORITIES.map((item) => (
                   <option key={item} value={item}>
@@ -526,12 +539,12 @@ export default function TaskModal({
             </label>
 
             <label className="text-sm">
-              <span className="mb-1.5 block font-medium text-slate-700">Timezone</span>
+              <span className={LABEL_CLASS}>Timezone</span>
               <input
                 type="text"
                 value={timezone}
                 onChange={(event) => setTimezone(event.target.value)}
-                className="w-full rounded-xl border border-slate-300 px-3 py-2.5 text-slate-900"
+                className={FIELD_CLASS}
                 placeholder="America/Chicago"
               />
             </label>
@@ -539,13 +552,13 @@ export default function TaskModal({
 
           <div className="grid gap-4 md:grid-cols-2">
             <div className="space-y-2">
-              <label className="block text-sm font-medium text-slate-700">Start</label>
+              <label className={`block text-sm ${LABEL_CLASS}`}>Start</label>
               <div className="flex gap-2">
                 <input
                   type="date"
                   value={startDate}
                   onChange={(event) => setStartDate(event.target.value)}
-                  className="w-full rounded-xl border border-slate-300 px-3 py-2.5 text-sm text-slate-900"
+                  className={`${FIELD_CLASS} text-sm`}
                   required
                 />
                 {!allDay && (
@@ -553,27 +566,27 @@ export default function TaskModal({
                     type="time"
                     value={startTime}
                     onChange={(event) => setStartTime(event.target.value)}
-                    className="w-36 rounded-xl border border-slate-300 px-3 py-2.5 text-sm text-slate-900"
+                    className={`w-36 ${FIELD_CLASS} text-sm`}
                   />
                 )}
               </div>
             </div>
 
             <div className="space-y-2">
-              <label className="block text-sm font-medium text-slate-700">End</label>
+              <label className={`block text-sm ${LABEL_CLASS}`}>End</label>
               <div className="flex gap-2">
                 <input
                   type="date"
                   value={endDate}
                   onChange={(event) => setEndDate(event.target.value)}
-                  className="w-full rounded-xl border border-slate-300 px-3 py-2.5 text-sm text-slate-900"
+                  className={`${FIELD_CLASS} text-sm`}
                 />
                 {!allDay && (
                   <input
                     type="time"
                     value={endTime}
                     onChange={(event) => setEndTime(event.target.value)}
-                    className="w-36 rounded-xl border border-slate-300 px-3 py-2.5 text-sm text-slate-900"
+                    className={`w-36 ${FIELD_CLASS} text-sm`}
                   />
                 )}
               </div>
@@ -581,24 +594,24 @@ export default function TaskModal({
           </div>
 
           <div className="grid gap-4 md:grid-cols-4">
-            <label className="flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-sm text-slate-700">
+            <label className={`flex items-center gap-2 px-3 py-3 ${SUBTLE_PANEL_CLASS} ${CHECKBOX_TEXT_CLASS}`}>
               <input
                 type="checkbox"
                 checked={allDay}
                 onChange={(event) => setAllDay(event.target.checked)}
-                className="h-4 w-4 rounded border-slate-300 text-slate-900"
+                className="h-4 w-4 rounded border-slate-300 text-slate-900 dark:border-slate-600 dark:bg-slate-800"
               />
               All day
             </label>
 
             <label className="text-sm md:col-span-2">
-              <span className="mb-1.5 block font-medium text-slate-700">Reminder</span>
+              <span className={LABEL_CLASS}>Reminder</span>
               <select
                 value={reminderMinutes}
                 onChange={(event) =>
                   setReminderMinutes(event.target.value ? Number(event.target.value) : '')
                 }
-                className="w-full rounded-xl border border-slate-300 px-3 py-2.5 text-slate-900"
+                className={FIELD_CLASS}
               >
                 {reminderOptions.map((option) => (
                   <option key={String(option.value)} value={option.value}>
@@ -609,11 +622,11 @@ export default function TaskModal({
             </label>
 
             <label className="text-sm">
-              <span className="mb-1.5 block font-medium text-slate-700">Color</span>
+              <span className={LABEL_CLASS}>Color</span>
               <select
                 value={color}
                 onChange={(event) => setColor(event.target.value)}
-                className="w-full rounded-xl border border-slate-300 px-3 py-2.5 text-slate-900"
+                className={FIELD_CLASS}
               >
                 {colorOptions.map((option) => (
                   <option key={option.value || 'default'} value={option.value}>
@@ -626,36 +639,36 @@ export default function TaskModal({
 
           <div className="grid gap-4 md:grid-cols-2">
             <label className="text-sm">
-              <span className="mb-1.5 block font-medium text-slate-700">Due date</span>
+              <span className={LABEL_CLASS}>Due date</span>
               <input
                 type="date"
                 value={dueDate}
                 onChange={(event) => setDueDate(event.target.value)}
-                className="w-full rounded-xl border border-slate-300 px-3 py-2.5 text-slate-900"
+                className={FIELD_CLASS}
               />
             </label>
 
             {!isMeetingMode && (
-              <label className="flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-sm text-slate-700">
+              <label className={`flex items-center gap-2 px-3 py-3 ${SUBTLE_PANEL_CLASS} ${CHECKBOX_TEXT_CLASS}`}>
                 <input
                   type="checkbox"
                   checked={syncToGoogle}
                   onChange={(event) => setSyncToGoogle(event.target.checked)}
-                  className="h-4 w-4 rounded border-slate-300 text-slate-900"
+                  className="h-4 w-4 rounded border-slate-300 text-slate-900 dark:border-slate-600 dark:bg-slate-800"
                 />
                 Sync this task to the default writable calendar
               </label>
             )}
           </div>
 
-          <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+          <div className={`${SUBTLE_PANEL_CLASS} p-4`}>
             <div className="flex flex-wrap items-center gap-4">
-              <label className="flex items-center gap-2 text-sm text-slate-700">
+              <label className={`flex items-center gap-2 ${CHECKBOX_TEXT_CLASS}`}>
                 <input
                   type="checkbox"
                   checked={isRecurring}
                   onChange={(event) => setIsRecurring(event.target.checked)}
-                  className="h-4 w-4 rounded border-slate-300 text-slate-900"
+                  className="h-4 w-4 rounded border-slate-300 text-slate-900 dark:border-slate-600 dark:bg-slate-800"
                 />
                 Recurring
               </label>
@@ -666,7 +679,7 @@ export default function TaskModal({
                     onChange={(event) =>
                       setRecurrencePreset(event.target.value as 'weekly' | 'biweekly' | 'monthly')
                     }
-                    className="rounded-xl border border-slate-300 px-3 py-2 text-sm text-slate-900"
+                    className={`${FIELD_CLASS} text-sm`}
                   >
                     <option value="weekly">Weekly</option>
                     <option value="biweekly">Every 2 weeks</option>
@@ -682,7 +695,7 @@ export default function TaskModal({
                         Math.max(1, Math.min(52, Number.parseInt(event.target.value || '1', 10)))
                       )
                     }
-                    className="w-28 rounded-xl border border-slate-300 px-3 py-2 text-sm text-slate-900"
+                    className={`w-28 ${FIELD_CLASS} text-sm`}
                   />
                 </>
               )}
@@ -690,21 +703,21 @@ export default function TaskModal({
           </div>
 
           <div className="space-y-2">
-            <label className="block text-sm font-medium text-slate-700">Description</label>
+            <label className={`block text-sm ${LABEL_CLASS}`}>Description</label>
             <textarea
               value={description}
               onChange={(event) => setDescription(event.target.value)}
               rows={3}
-              className="w-full rounded-xl border border-slate-300 px-3 py-2.5 text-sm text-slate-900"
+              className={`${FIELD_CLASS} text-sm`}
               placeholder="Agenda, context, next steps, or task notes..."
             />
           </div>
 
           {isMeetingMode && (
-            <section className="space-y-4 rounded-2xl border border-slate-200 bg-white p-4">
+            <section className={`space-y-4 p-4 ${INNER_PANEL_CLASS}`}>
               <div>
-                <h3 className="text-sm font-semibold text-slate-900">Meeting delivery and sync</h3>
-                <p className="mt-1 text-xs leading-6 text-slate-500">
+                <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100">Meeting delivery and sync</h3>
+                <p className="mt-1 text-xs leading-6 text-slate-500 dark:text-slate-400">
                   Default target resolution is: explicit override, else assigned staff default
                   writable calendar if allowed, else owner default writable calendar if allowed,
                   else internal-only with sync marked not configured.
@@ -713,15 +726,15 @@ export default function TaskModal({
 
               <div className="grid gap-4 md:grid-cols-2">
                 <div className="space-y-2">
-                  <label className="block text-sm font-medium text-slate-700">Assigned staff</label>
-                  <div className="space-y-2 rounded-2xl border border-slate-200 bg-slate-50 p-3">
+                  <label className={`block text-sm ${LABEL_CLASS}`}>Assigned staff</label>
+                  <div className={`space-y-2 p-3 ${SUBTLE_PANEL_CLASS}`}>
                     {staffOptions.length === 0 ? (
-                      <p className="text-xs text-slate-500">No staff options available.</p>
+                      <p className="text-xs text-slate-500 dark:text-slate-400">No staff options available.</p>
                     ) : (
                       staffOptions.map((staff) => (
                         <label
                           key={staff.id}
-                          className="flex items-center gap-2 text-sm text-slate-700"
+                          className={`flex items-center gap-2 ${CHECKBOX_TEXT_CLASS}`}
                         >
                           <input
                             type="checkbox"
@@ -729,7 +742,7 @@ export default function TaskModal({
                             onChange={() =>
                               toggleArrayValue(staff.id, assignedUserIds, setAssignedUserIds)
                             }
-                            className="h-4 w-4 rounded border-slate-300 text-slate-900"
+                            className="h-4 w-4 rounded border-slate-300 text-slate-900 dark:border-slate-600 dark:bg-slate-800"
                           />
                           {staff.label}
                         </label>
@@ -740,26 +753,26 @@ export default function TaskModal({
 
                 <div className="space-y-4">
                   <label className="text-sm">
-                    <span className="mb-1.5 block font-medium text-slate-700">
+                    <span className={LABEL_CLASS}>
                       Couple attendee emails
                     </span>
                     <textarea
                       value={coupleAttendeeEmails}
                       onChange={(event) => setCoupleAttendeeEmails(event.target.value)}
                       rows={4}
-                      className="w-full rounded-xl border border-slate-300 px-3 py-2.5 text-sm text-slate-900"
+                      className={`${FIELD_CLASS} text-sm`}
                       placeholder="comma-separated emails"
                     />
                   </label>
 
                   <label className="text-sm">
-                    <span className="mb-1.5 block font-medium text-slate-700">Invite delivery</span>
+                    <span className={LABEL_CLASS}>Invite delivery</span>
                     <select
                       value={inviteDeliveryMode}
                       onChange={(event) =>
                         setInviteDeliveryMode(event.target.value as InviteDeliveryMode)
                       }
-                      className="w-full rounded-xl border border-slate-300 px-3 py-2.5 text-slate-900"
+                      className={FIELD_CLASS}
                     >
                       {INVITE_OPTIONS.map((option) => (
                         <option key={option.value} value={option.value}>
@@ -773,14 +786,14 @@ export default function TaskModal({
 
               <div className="grid gap-4 md:grid-cols-2">
                 <label className="text-sm">
-                  <span className="mb-1.5 block font-medium text-slate-700">Sync policy</span>
+                  <span className={LABEL_CLASS}>Sync policy</span>
                   <select
                     value={calendarSyncPolicy}
                     onChange={(event) => {
                       setCalendarSyncPolicy(event.target.value as CalendarSyncPolicy);
                       setSyncPolicyTouched(true);
                     }}
-                    className="w-full rounded-xl border border-slate-300 px-3 py-2.5 text-slate-900"
+                    className={FIELD_CLASS}
                   >
                     {SYNC_POLICY_OPTIONS.map((option) => (
                       <option key={option.value} value={option.value}>
@@ -791,11 +804,11 @@ export default function TaskModal({
                 </label>
 
                 <label className="text-sm">
-                  <span className="mb-1.5 block font-medium text-slate-700">Internal visibility</span>
+                  <span className={LABEL_CLASS}>Internal visibility</span>
                   <select
                     value={visibilityMode}
                     onChange={(event) => setVisibilityMode(event.target.value as VisibilityMode)}
-                    className="w-full rounded-xl border border-slate-300 px-3 py-2.5 text-slate-900"
+                    className={FIELD_CLASS}
                   >
                     {VISIBILITY_OPTIONS.map((option) => (
                       <option key={option.value} value={option.value}>
@@ -808,32 +821,32 @@ export default function TaskModal({
 
               <div className="grid gap-4 md:grid-cols-2">
                 <label className="text-sm">
-                  <span className="mb-1.5 block font-medium text-slate-700">
+                  <span className={LABEL_CLASS}>
                     Conference provider
                   </span>
                   <input
                     type="text"
                     value={conferenceProvider}
                     onChange={(event) => setConferenceProvider(event.target.value)}
-                    className="w-full rounded-xl border border-slate-300 px-3 py-2.5 text-slate-900"
+                    className={FIELD_CLASS}
                     placeholder="Zoom, Google Meet, phone call..."
                   />
                 </label>
 
                 <label className="text-sm">
-                  <span className="mb-1.5 block font-medium text-slate-700">Conference URL</span>
+                  <span className={LABEL_CLASS}>Conference URL</span>
                   <input
                     type="url"
                     value={conferenceUrl}
                     onChange={(event) => setConferenceUrl(event.target.value)}
-                    className="w-full rounded-xl border border-slate-300 px-3 py-2.5 text-slate-900"
+                    className={FIELD_CLASS}
                     placeholder="https://..."
                   />
                 </label>
               </div>
 
-              <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-                <label className="flex items-center gap-2 text-sm font-medium text-slate-700">
+              <div className={`${SUBTLE_PANEL_CLASS} p-4`}>
+                <label className={`flex items-center gap-2 text-sm font-medium text-slate-700 dark:text-slate-200`}>
                   <input
                     type="checkbox"
                     checked={customTargetsEnabled}
@@ -843,7 +856,7 @@ export default function TaskModal({
                         setSelectedConnectionIds([]);
                       }
                     }}
-                    className="h-4 w-4 rounded border-slate-300 text-slate-900"
+                    className="h-4 w-4 rounded border-slate-300 text-slate-900 dark:border-slate-600 dark:bg-slate-800"
                   />
                   Use explicit calendar target override
                 </label>
@@ -851,14 +864,14 @@ export default function TaskModal({
                 {customTargetsEnabled && (
                   <div className="mt-3 space-y-2">
                     {writableConnections.length === 0 ? (
-                      <p className="text-xs text-slate-500">
+                      <p className="text-xs text-slate-500 dark:text-slate-400">
                         No writable active calendar connections are available.
                       </p>
                     ) : (
                       writableConnections.map((connection) => (
                         <label
                           key={connection.id}
-                          className="flex items-center gap-2 text-sm text-slate-700"
+                          className={`flex items-center gap-2 ${CHECKBOX_TEXT_CLASS}`}
                         >
                           <input
                             type="checkbox"
@@ -870,7 +883,7 @@ export default function TaskModal({
                                 setSelectedConnectionIds
                               )
                             }
-                            className="h-4 w-4 rounded border-slate-300 text-slate-900"
+                            className="h-4 w-4 rounded border-slate-300 text-slate-900 dark:border-slate-600 dark:bg-slate-800"
                           />
                           <span>
                             {connection.calendar_name || connection.calendar_id || 'Calendar'} •{' '}
@@ -879,7 +892,7 @@ export default function TaskModal({
                         </label>
                       ))
                     )}
-                    <p className="text-xs leading-6 text-slate-500">
+                    <p className="text-xs leading-6 text-slate-500 dark:text-slate-400">
                       Only targets allowed by permission and sync policy will be honored. If none
                       are allowed, the meeting stays internal-only.
                     </p>
@@ -889,7 +902,7 @@ export default function TaskModal({
             </section>
           )}
 
-          <DialogFooter className="border-t border-slate-200 pt-4">
+          <DialogFooter className="border-t border-slate-200 pt-4 dark:border-slate-700">
             <div className="flex w-full flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <div>
                 {isEditing && task && onDelete && (
@@ -897,7 +910,7 @@ export default function TaskModal({
                     type="button"
                     onClick={() => void onDelete(task)}
                     disabled={loading}
-                    className="rounded-xl border border-rose-300 px-4 py-2 text-sm font-medium text-rose-700 transition hover:bg-rose-50 disabled:opacity-60"
+                    className="rounded-xl border border-rose-300 px-4 py-2 text-sm font-medium text-rose-700 transition hover:bg-rose-50 disabled:opacity-60 dark:border-rose-900 dark:text-rose-200 dark:hover:bg-rose-950/40"
                   >
                     Delete
                   </button>
@@ -909,14 +922,14 @@ export default function TaskModal({
                   type="button"
                   onClick={() => onOpenChange(false)}
                   disabled={loading}
-                  className="rounded-xl border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50 disabled:opacity-60"
+                  className={SECONDARY_BUTTON_CLASS}
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
                   disabled={loading}
-                  className="rounded-xl bg-slate-900 px-4 py-2 text-sm font-medium text-white transition hover:bg-slate-700 disabled:opacity-60"
+                  className={PRIMARY_BUTTON_CLASS}
                 >
                   {loading ? 'Saving...' : isEditing ? 'Save changes' : 'Create'}
                 </button>
