@@ -108,14 +108,32 @@ def verify_public_route(
     log_step(f"Public wedding route OK: {url}")
 
 
-def verify_auth_cookie_scope(
-    session: requests.Session,
-    frontend_base: str,
-    cookie_name: str = "admin_token",
-) -> None:
+def _resolve_host_pair(frontend_base: str, api_base: str) -> tuple[str, str]:
+    """Return the (frontend_host, api_host) pair used for cookie visibility checks.
+
+    Both hosts must be present because a cookie that scopes correctly for the
+    frontend but not the API (or vice versa) still breaks the admin session —
+    the backend sets the cookie during login, the proxy reads it during
+    navigation, and silent misconfig should fail CI, not production.
+    """
     frontend_host = urlparse(frontend_base).hostname
     if not frontend_host:
         raise RuntimeError(f"Could not determine frontend host from {frontend_base}")
+
+    api_host = urlparse(api_base).hostname
+    if not api_host:
+        raise RuntimeError(f"Could not determine API host from {api_base}")
+
+    return frontend_host, api_host
+
+
+def verify_auth_cookie_scope(
+    session: requests.Session,
+    frontend_base: str,
+    api_base: str,
+    cookie_name: str = "admin_token",
+) -> None:
+    frontend_host, api_host = _resolve_host_pair(frontend_base, api_base)
 
     cookie = next((c for c in session.cookies if c.name == cookie_name), None)
     if cookie is None:
@@ -126,18 +144,23 @@ def verify_auth_cookie_scope(
         raise RuntimeError(
             f"{cookie_name} cookie domain {cookie_domain!r} is not visible to frontend host {frontend_host!r}"
         )
+    if not host_matches_cookie_domain(api_host, cookie_domain):
+        raise RuntimeError(
+            f"{cookie_name} cookie domain {cookie_domain!r} is not visible to API host {api_host!r}"
+        )
 
     log_step(
-        f"{cookie_name} cookie is visible to the frontend host via domain {cookie_domain!r}"
+        f"{cookie_name} cookie is visible to frontend host {frontend_host!r} and API host {api_host!r} via domain {cookie_domain!r}"
     )
 
 
 def verify_auth_cookie_response(
-    response: requests.Response, frontend_base: str, cookie_name: str = "admin_token"
+    response: requests.Response,
+    frontend_base: str,
+    api_base: str,
+    cookie_name: str = "admin_token",
 ) -> None:
-    frontend_host = urlparse(frontend_base).hostname
-    if not frontend_host:
-        raise RuntimeError(f"Could not determine frontend host from {frontend_base}")
+    frontend_host, api_host = _resolve_host_pair(frontend_base, api_base)
 
     set_cookie_headers = get_set_cookie_headers(response)
     active_cookie_headers = [
@@ -151,16 +174,26 @@ def verify_auth_cookie_response(
             f"admin login did not emit an active {cookie_name} Set-Cookie header"
         )
 
+    # Require at least one active Set-Cookie with a Domain attribute visible to
+    # BOTH hosts. Checking only the frontend host masks the exact regression
+    # mechanism documented in
+    # docs/reports/FIX_ADMIN_COOKIE_DOMAIN_DRIFT_RETROSPECTIVE.md — a cookie
+    # domain that resolves for the browser but not the API (or vice versa)
+    # still breaks admin navigation through proxy.ts.
     for header in active_cookie_headers:
         cookie_domain = extract_domain_attribute(header)
-        if cookie_domain and host_matches_cookie_domain(frontend_host, cookie_domain):
+        if (
+            cookie_domain
+            and host_matches_cookie_domain(frontend_host, cookie_domain)
+            and host_matches_cookie_domain(api_host, cookie_domain)
+        ):
             log_step(
-                f"{cookie_name} Set-Cookie header scopes the cookie to frontend-visible domain {cookie_domain!r}"
+                f"{cookie_name} Set-Cookie header scopes the cookie to domain {cookie_domain!r}, visible to frontend {frontend_host!r} and API {api_host!r}"
             )
             return
 
     raise RuntimeError(
-        f"{cookie_name} Set-Cookie headers did not include a Domain attribute visible to frontend host {frontend_host!r}"
+        f"{cookie_name} Set-Cookie headers did not include a Domain attribute visible to both frontend host {frontend_host!r} and API host {api_host!r}"
     )
 
 
@@ -183,9 +216,9 @@ def verify_frontend_admin_route(
 
 
 def verify_frontend_admin_session(
-    session: requests.Session, frontend_base: str
+    session: requests.Session, frontend_base: str, api_base: str
 ) -> None:
-    verify_auth_cookie_scope(session, frontend_base)
+    verify_auth_cookie_scope(session, frontend_base, api_base)
     verify_frontend_admin_route(session, frontend_base, "/admin")
     verify_frontend_admin_route(session, frontend_base, "/admin/planner")
 
@@ -215,7 +248,7 @@ def login_admin(
         json={"email": email, "password": password},
     )
     ensure_response_ok(response, "admin login")
-    verify_auth_cookie_response(response, frontend_base)
+    verify_auth_cookie_response(response, frontend_base, api_base)
 
     payload = response.json()
     token = payload.get("access_token")
@@ -368,7 +401,7 @@ def main() -> int:
         args.admin_email,
         args.admin_password,
     )
-    verify_frontend_admin_session(admin_session, args.frontend_base)
+    verify_frontend_admin_session(admin_session, args.frontend_base, args.api_base)
 
     if not args.skip_sse:
         verify_sse(admin_session, args.api_base)
