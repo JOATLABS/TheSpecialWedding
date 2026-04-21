@@ -11,6 +11,7 @@ from fastapi import HTTPException
 
 from app.core.cache import CacheKeys, cache
 from app.core.database import mongo
+from app.services.gallery_media_service import GalleryUploadService
 from app.services.guest_service import GuestService
 from app.services.otp_service import OTPService
 from app.services.wedding_service import WeddingService
@@ -34,16 +35,20 @@ class GuestVerificationService:
         self.guest_service = GuestService()
         self.wedding_service = WeddingService()
         self.otp_service = OTPService()
+        self.gallery_service = GalleryUploadService()
         self.weddings_collection = mongo.db["weddings"]
         self.guests_collection = mongo.get_guest_collection()
         self.rsvp_collection = mongo.db["rsvps"]
         self.plus_ones_collection = mongo.db["plus_ones"]
 
-    @staticmethod
-    def _serialize_wedding_response(wedding: Dict[str, Any]) -> Dict[str, Any]:
+    def _serialize_wedding_response(self, wedding: Dict[str, Any]) -> Dict[str, Any]:
+        # Resolve raw R2 keys on featured_image / our_story / wedding_party to
+        # full public URLs so the frontend never has to concatenate
+        # NEXT_PUBLIC_MEDIA_DOMAIN (which is build-time inlined and fragile).
+        resolved = self.gallery_service.resolve_wedding_media_urls(wedding)
         return {
-            **wedding,
-            "id": str(wedding.get("_id")),
+            **resolved,
+            "id": str(resolved.get("_id")),
         }
 
     @staticmethod
@@ -772,18 +777,22 @@ class GuestVerificationService:
             # Log privacy mode for debugging - don't expose settings (may contain password)
             security_logger.debug(f"Privacy info request for slug: {slug}")
 
+            # Resolve raw R2 keys on asset fields to full public URLs so the
+            # frontend doesn't have to concatenate NEXT_PUBLIC_MEDIA_DOMAIN.
+            resolved_wedding = self.gallery_service.resolve_wedding_media_urls(wedding)
+
             # Base response with privacy info
             response = {
-                "id": str(wedding.get("_id")),
-                "couple_names": wedding.get("couple_names"),
-                "date": wedding.get("date"),
+                "id": str(resolved_wedding.get("_id")),
+                "couple_names": resolved_wedding.get("couple_names"),
+                "date": resolved_wedding.get("date"),
                 "privacy_mode": privacy_mode,
                 "requires_password": privacy_mode == "password",
                 "requires_guest_verification": privacy_mode == "private",
-                "featured_image": wedding.get("featured_image"),
-                "theme_config": wedding.get("theme_config"),
-                "rsvp_config": wedding.get("rsvp_config"),
-                "events": wedding.get("events", []),
+                "featured_image": resolved_wedding.get("featured_image"),
+                "theme_config": resolved_wedding.get("theme_config"),
+                "rsvp_config": resolved_wedding.get("rsvp_config"),
+                "events": resolved_wedding.get("events", []),
                 "verification_requirements": {
                     "otp_enabled": True,
                     "supports_phone": True,
@@ -795,11 +804,11 @@ class GuestVerificationService:
             if privacy_mode == "public":
                 response.update(
                     {
-                        "registries": wedding.get("registries", []),
-                        "faqs": wedding.get("faqs", []),
-                        "our_story": wedding.get("our_story"),
-                        "venue": wedding.get("venue"),
-                        "wedding_party": wedding.get("wedding_party", []),
+                        "registries": resolved_wedding.get("registries", []),
+                        "faqs": resolved_wedding.get("faqs", []),
+                        "our_story": resolved_wedding.get("our_story"),
+                        "venue": resolved_wedding.get("venue"),
+                        "wedding_party": resolved_wedding.get("wedding_party", []),
                     }
                 )
 

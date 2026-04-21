@@ -170,6 +170,65 @@ class GalleryUploadService:
     def build_public_url(self, key: str) -> str:
         return self.storage.build_public_url(StorageTarget.PRIMARY, key)
 
+    def resolve_asset_url(self, value: Optional[str]) -> Optional[str]:
+        """Resolve a stored wedding asset reference to a full public URL.
+
+        Accepts either a raw R2 object key (e.g. ``our-story/planner-XYZ/slug/file.jpg``)
+        or an already-resolved absolute URL (``https://media.../our-story/...``). In the
+        latter case the value is returned unchanged so existing rows that were saved
+        with a full URL continue to work. Blank or ``None`` values pass through.
+        """
+        if not value or not isinstance(value, str):
+            return value
+        if value.startswith(("http://", "https://")):
+            return value
+        return self.build_public_url(value)
+
+    def resolve_wedding_media_urls(self, wedding: Optional[dict]) -> Optional[dict]:
+        """Replace stored keys on wedding asset fields with full public URLs.
+
+        Guest-facing endpoints should run the wedding dict through this helper so
+        the frontend never needs to concatenate ``NEXT_PUBLIC_MEDIA_DOMAIN``
+        (which is inlined at build time and therefore fragile across deploys).
+        Admin endpoints, which round-trip the raw keys back through edit forms,
+        should NOT call this helper.
+
+        The returned dict is a shallow copy with patched nested structures; the
+        input is not mutated.
+        """
+        if not isinstance(wedding, dict):
+            return wedding
+
+        resolved = dict(wedding)
+
+        featured = resolved.get("featured_image")
+        if featured:
+            resolved["featured_image"] = self.resolve_asset_url(featured)
+
+        our_story = resolved.get("our_story")
+        if isinstance(our_story, dict) and our_story.get("image_url"):
+            patched_story = dict(our_story)
+            patched_story["image_url"] = self.resolve_asset_url(
+                patched_story["image_url"]
+            )
+            resolved["our_story"] = patched_story
+
+        wedding_party = resolved.get("wedding_party")
+        if isinstance(wedding_party, list):
+            patched_party = []
+            for member in wedding_party:
+                if isinstance(member, dict) and member.get("image_url"):
+                    patched_member = dict(member)
+                    patched_member["image_url"] = self.resolve_asset_url(
+                        patched_member["image_url"]
+                    )
+                    patched_party.append(patched_member)
+                else:
+                    patched_party.append(member)
+            resolved["wedding_party"] = patched_party
+
+        return resolved
+
     def _merge_file_entries(self, file_groups: Iterable[list[dict]]) -> list[dict]:
         seen: set[str] = set()
         merged: list[dict] = []
