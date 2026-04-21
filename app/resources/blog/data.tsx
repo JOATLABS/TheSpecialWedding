@@ -16,43 +16,59 @@ export interface BlogPost {
 
 export const blogPosts = {
   'introducing-the-special-wedding': {
-    title: 'Introducing The Special Wedding: One Platform to Replace Your Entire Tool Stack',
-    excerpt: 'Stop jumping between 8+ tools. We built The Special Wedding to give wedding planners everything they need in one purpose-built platform.',
+    title: 'Introducing The Special Wedding: The Complete Workspace for Planners, Couples, and Vendors',
+    excerpt: 'One platform that replaces the planner CRM, the wedding website tool, the couple comms channel, the vendor directory, the ad marketplace, and the contract portal — all at once.',
     category: 'Industry',
     date: '2026-03-19',
-    readTime: 7,
-    ogDescription: 'The Special Wedding is the all-in-one platform for professional wedding planners. Purpose-built for weddings, powered by AI.',
+    readTime: 9,
+    ogDescription: 'The Special Wedding is the complete workspace for wedding planners, couples, and vendors. Purpose-built, AI-powered, and built to replace your entire tool stack.',
     content: (
       <div className="space-y-6 text-slate-300 leading-relaxed">
         <p>
-          If you're a professional wedding planner, you know the pain: HoneyBook for contracts and timelines. Aisle Planner for guest lists. A spreadsheet for seating. Stripe for payments. Calendly for scheduling. Slack for vendor communication. Plus whatever photo gallery, form builder, and CRM tools you've stitched together. You're not alone—most planners we talk to juggle 8+ separate tools just to run a single wedding.
+          A wedding isn't one workflow. It's three, running in parallel, and every tool on the market picks one and pretends the other two don't exist.
         </p>
 
         <p>
-          That's broken. And it's not your fault.
+          The planner is juggling HoneyBook for contracts, Aisle Planner for guest lists, a spreadsheet for seating, Stripe for payments, Calendly for scheduling, and Slack for vendor communication. The couple is paying Squarespace or The Knot for a wedding website, texting the planner five questions a week because the information lives nowhere, and bouncing between Zola for registry and a Google Doc for FAQs. The vendors — photographers, venues, caterers — are discovered through a different directory, signed through a different portal, and paid through a different system entirely.
         </p>
 
         <p>
-          Most wedding management platforms were built as generalist tools—CRMs, project management software, proposal builders—retrofitted for weddings. They're powerful, but they're not built for your specific workflow. They make you conform to their logic instead of conforming to yours.
-        </p>
-
-        <h3 className="text-xl font-semibold text-white mt-8">We started with a question: What if there was a platform built *by* wedding planners, *for* wedding planners?</h3>
-
-        <p>
-          The Special Wedding is purpose-built for your workflow. Not CRM-adjacent. Not "let's tweak project management for events." Built from the ground up for planning weddings—because wedding planning is a fundamentally different workflow than generic project management.
-        </p>
-
-        <h3 className="text-xl font-semibold text-white mt-8">What does "built specifically for weddings" mean?</h3>
-
-        <p>
-          Guest management that understands RSVP tracking, plus-ones, dietary requirements, and table assignments—not generic task lists with custom fields. Seating orchestration that respects table capacity, family groups, and vendor proximity. Day-of timelines that run in parallel, not linear. AI-powered contracts that generate wedding-specific language. Cash flow forecasting that tracks milestone-based payments.
+          That's not a tool stack. That's a data diaspora. And it's why planners lose ten hours a week to tool juggling, why couples feel out of the loop, and why vendor relationships stay transactional instead of strategic.
         </p>
 
         <p>
-          And crucially: it all lives in one interface. You're not switching tabs 8+ times to run a wedding. You're not copying guest lists between systems. You're not managing timelines in a spreadsheet while seating happens in another tool.
+          The Special Wedding is the complete workspace — planner side, couple side, and vendor side — for the whole wedding. Not a CRM with wedding fields. Not a project tool with event templates. A single platform where the planner's operational work, the couple's wedding website and comms hub, and the vendor marketplace all live on the same guest list, the same gallery, the same RSVP data, the same contract record.
         </p>
 
-        <h3 className="text-xl font-semibold text-white mt-8">Here's what you can do in The Special Wedding</h3>
+        <h3 className="text-xl font-semibold text-white mt-8">What "complete workspace" actually means</h3>
+
+        <p>
+          <strong>Planner side:</strong> The things generalist CRMs do (contacts, contracts, invoicing, calendar) plus the things they can't (seating orchestration, guest management, RSVP tracking, real-time couple portal, day-of timelines, inbound email threading into the right couple's record).
+        </p>
+
+        <p>
+          <strong>Couple side:</strong> Every couple gets a branded public wedding microsite with gallery, RSVP, and QR memory uploads — so you stop paying for Squarespace or The Knot. They also get a private portal with the planner inbox, registry, FAQs the couple maintains, a meeting scheduler, payment history, and real-time push notifications. The couple-planner conversation has one home instead of leaking across texts, email, and "did you get my message?"
+        </p>
+
+        <p>
+          <strong>Vendor side:</strong> The public directory helps couples and planners discover vendors. The contract portal gives non-ad vendors token-based workspaces for signatures, deliverables, and payments. The advertising portal lets vendors buy CPL campaigns that surface leads directly in the planner inbox. Discovery, contracting, payment, and advertising are all in one universe instead of three.
+        </p>
+
+        <p>
+          The reason these three surfaces belong in one platform is that the data belongs in one place. When a couple updates their guest count on the microsite, the planner's seating chart rebalances. When a vendor signs a contract in their portal, the planner's payment schedule updates. When the planner logs an inbound email, it threads against the right couple automatically. Tool-stack architectures can't do this — the data is already in three different databases.
+        </p>
+
+        <h3 className="text-xl font-semibold text-white mt-8">Most wedding platforms were built as generalist tools, retrofitted</h3>
+
+        <p>
+          HoneyBook started as a freelancer CRM. Aisle Planner started as a guest-list tool. Planning Pod started as an event manager. They're powerful in what they cover, but none of them own the couple's public website, the couple's comms hub, and the vendor marketplace. They leave 60% of the wedding outside their walls, and the planner pays the integration tax.
+        </p>
+
+        <p>
+          The Special Wedding is purpose-built for the whole wedding. Not CRM-adjacent. Not "let's tweak project management for events." Built from the ground up because wedding planning is a fundamentally different workflow than generic project management — and because the planner, the couple, and the vendors need to share data, not sync it.
+        </p>
+
+        <h3 className="text-xl font-semibold text-white mt-8">Here's what you can do across all three sides</h3>
 
         <p>
           <strong>Guest management:</strong> Upload your guest list from CSV, Google Sheets, or directly. Track RSVPs in real time with automatic reminders. Manage plus-ones, dietary flags, accessibility needs, and table assignments. Filter by group, seating section, or category. Export to print or vendor.
@@ -1421,6 +1437,411 @@ export const blogPosts = {
       </div>
     ),
   },
+  'the-built-in-wedding-website': {
+    title: "The Built-In Wedding Website: Why Your Couples Shouldn't Pay Squarespace or The Knot",
+    excerpt: "Every wedding on The Special Wedding ships with a branded public microsite — gallery, RSVP, registry, QR memory uploads — wired to the same data you already work in. No separate subscription, no copy-paste, no drift.",
+    category: 'Product',
+    date: '2026-05-04',
+    readTime: 7,
+    ogDescription: 'Every wedding gets a public microsite built in — no Squarespace, no The Knot, no copy-paste. See how the couple-facing site and planner workspace share one data model.',
+    content: (
+      <div className="space-y-6 text-slate-300 leading-relaxed">
+        <p>
+          Ask any couple what they paid for in the first month of planning, and wedding website will be on the list. Squarespace. The Knot. Zola. Minted. Some planners even stitch a WordPress site together for clients. It's a small line item, but it's the single most visible piece of digital infrastructure around the wedding — it's where guests go, it's what shows up when someone Googles the couple's names, and it's the front door of the entire event.
+        </p>
+
+        <p>
+          And in almost every platform built for wedding planners, it lives outside the system.
+        </p>
+
+        <p>
+          That's the hidden cost. The wedding website holds guest data (RSVPs, dietary notes, address updates, plus-one responses) that the planner needs in real time. But because it lives in Squarespace or The Knot, that data has to be copy-pasted into whatever planning tool the planner uses. Or the planner becomes a human integration, manually updating two systems whenever a guest changes their RSVP.
+        </p>
+
+        <h3 className="text-xl font-semibold text-white mt-8">What the built-in microsite actually includes</h3>
+
+        <p>
+          Every wedding on The Special Wedding ships with a branded public microsite at a couple-specific slug. It has all the things couples expect from a wedding website, wired to the same data the planner is already using:
+        </p>
+
+        <p>
+          <strong>Branded presentation:</strong> The couple configures colors, fonts, background style, and event-type copy once. The microsite renders with that branding, and so does the couple portal and any guest-facing page. No re-theming three systems.
+        </p>
+
+        <p>
+          <strong>Event schedule and gallery:</strong> Welcome event, ceremony, reception, brunch — whatever the couple's multi-event plan looks like — renders on the public site, threaded with photos from the same gallery the planner manages.
+        </p>
+
+        <p>
+          <strong>RSVP flow:</strong> Guests RSVP directly on the microsite. The response flows into the planner's guest list immediately. Meal choices, plus-ones, dietary notes, accessibility flags — all of it lands in the same record the planner will use for seating.
+        </p>
+
+        <p>
+          <strong>Registry and FAQs:</strong> The couple manages a registry (external URLs or internal) and a FAQ list on their end. Both surface on the public microsite. Guests stop asking the planner the same five questions because the answers live where they're looking.
+        </p>
+
+        <p>
+          <strong>QR memory uploads:</strong> A QR code on every table — or printed on signs around the reception — lets guests upload photos from their phone during or after the event. Everything flows into a private review queue in the couple portal before it appears in the public gallery.
+        </p>
+
+        <h3 className="text-xl font-semibold text-white mt-8">What changes when the microsite shares a database</h3>
+
+        <p>
+          The mechanical difference is obvious: one data model instead of two. But the operational difference is bigger than that.
+        </p>
+
+        <p>
+          When a guest RSVPs on the public microsite at 10pm on a Tuesday, the planner's dashboard shows the updated head count on Wednesday morning. When a meal preference changes two weeks before the event, the caterer rollup updates automatically. When the couple swaps a ceremony time, the guest-facing schedule and the planner's timeline stay in sync — because they're the same record.
+        </p>
+
+        <p>
+          More importantly, the guest experience stays consistent. Guests aren't bouncing between a wedding website, a random RSVP link, and some form the planner sent. Everything lives at one URL, under the couple's brand, on the same system.
+        </p>
+
+        <h3 className="text-xl font-semibold text-white mt-8">What it replaces</h3>
+
+        <p>
+          For most planners, the built-in microsite directly replaces Squarespace or The Knot as the couple's wedding website. For some, it also replaces Zola as the registry hub, Google Forms as the RSVP collector, and a shared Google Doc as the FAQ. For couples with a more elaborate multi-event wedding, it replaces the "one-off landing page my cousin built" that held the travel info.
+        </p>
+
+        <p>
+          It doesn't replace every visual-design tool a couple might want — if they want a custom-built marketing site with a video hero, they can still commission one. But for 90% of weddings, the built-in microsite is what they wanted anyway: a branded public page, an RSVP flow, a gallery, a registry, and a place guests can always go back to.
+        </p>
+
+        <h3 className="text-xl font-semibold text-white mt-8">Why this matters for the planner</h3>
+
+        <p>
+          The planner is the one who pays for the fragmentation. Every off-platform tool means another integration to babysit, another place guest data can drift, another surface to explain to the couple. When the wedding website lives inside the same platform as the planner's workspace, the planner stops being the human glue between systems and starts being what they're actually good at — the strategist running the wedding.
+        </p>
+
+        <p>
+          The built-in microsite is one of the clearest examples of what "complete workspace" actually means in practice. It's not a feature checklist. It's one data model serving the couple's public site, the planner's operations, and the guest experience at the same time.
+        </p>
+      </div>
+    ),
+  },
+  'your-vendor-network-inside-the-platform': {
+    title: 'Your Vendor Network, Inside the Platform: Discovery, Contracts, and Advertising in One Place',
+    excerpt: 'Vendors discover couples through the public directory, sign and deliver through the contract portal, and advertise through the ad marketplace — all on one platform. The planner stops being the integration layer.',
+    category: 'Product',
+    date: '2026-05-11',
+    readTime: 8,
+    ogDescription: 'The Special Wedding is a vendor network: public directory, contract portal, and advertising marketplace. See how the vendor side of the wedding stops being a separate universe.',
+    content: (
+      <div className="space-y-6 text-slate-300 leading-relaxed">
+        <p>
+          The vendor side of a wedding is a tool stack all its own. Couples and planners discover vendors on The Knot, WeddingWire, or Google. They sign contracts through Dotloop or DocuSign. They pay through Stripe or bank transfer. And vendors — the photographers, venues, caterers, florists — buy advertising on whichever directory happened to get them last season.
+        </p>
+
+        <p>
+          None of these systems talk to each other. Not even close. The planner ends up copy-pasting vendor info, re-entering contract terms, chasing paperwork across four inboxes, and explaining to the couple for the third time why the photographer's contract is in DocuSign but the caterer's is on paper.
+        </p>
+
+        <p>
+          The Special Wedding is also a vendor marketplace. All three paths a vendor can take — discovery, contract, advertising — live on the same platform, and they feed into the planner's workspace automatically.
+        </p>
+
+        <h3 className="text-xl font-semibold text-white mt-8">The public directory: discovery</h3>
+
+        <p>
+          Every vendor with a profile on The Special Wedding is discoverable in the public directory. Photographers, venues, caterers, florists, DJs, officiants — browsable by category, location, style, and price range. Couples use it to find vendors without leaving the platform where their wedding lives. Planners use it to source options for their clients without pulling up a separate browser window.
+        </p>
+
+        <p>
+          The directory isn't ad-driven by default. It's a real searchable index of vendors who have profiles. Vendors who want premium placement can pay for it, but the baseline directory ranks by relevance and activity — not by whoever paid the most.
+        </p>
+
+        <h3 className="text-xl font-semibold text-white mt-8">The contract portal: token-based vendor workspaces</h3>
+
+        <p>
+          When a planner decides to work with a vendor, they invite the vendor into a token-based workspace scoped to the specific wedding. The vendor doesn't need an account for every platform the planner uses. They click the link, land in a workspace that shows only their assignments, and work directly with the planner from there.
+        </p>
+
+        <p>
+          Inside the contract portal, vendors can see the scope, sign contracts with e-signature, upload deliverables against a kanban board, post inline notes tied to specific clauses, and receive milestone-based payments. The planner sees everything in one vendor record: the signed contract, the deliverables, the payments, the conversation history.
+        </p>
+
+        <p>
+          This is the piece that most directly replaces Dotloop, DocuSign, and the generic "we'll coordinate over email" workflow. Not because those tools are bad — they're fine at what they do — but because they leave the planner stitching data across three systems for no reason.
+        </p>
+
+        <h3 className="text-xl font-semibold text-white mt-8">The advertising marketplace: leads where you already work</h3>
+
+        <p>
+          Vendors who want to grow their pipeline can buy CPL (cost-per-lead) campaigns through the ad portal. Their listings get boosted placement in the directory, but more importantly, when a planner or couple expresses interest, the lead lands directly in the planner's inbox — not a separate email the vendor has to forward.
+        </p>
+
+        <p>
+          That's the difference between ad spend that creates a paper trail and ad spend that creates a workflow. A lead in the planner inbox is a record the planner can action the same way they'd action any inbound inquiry. No reformatting, no second tool to check.
+        </p>
+
+        <h3 className="text-xl font-semibold text-white mt-8">Why bundling discovery, contracts, and advertising matters</h3>
+
+        <p>
+          If you separate these three motions across three platforms, you get exactly what the industry has today: vendors who advertise in one place, sign in another, deliver in a third, and get paid through a fourth. No vendor wants that. No planner wants that either.
+        </p>
+
+        <p>
+          When all three live on the same platform, two things change. First, the data actually connects — a vendor's directory listing, their contract history with a specific planner, and their lead volume are all tied to the same record. Second, the planner stops being the integration layer. They're not moving vendor info between systems. They're working on one vendor record that spans discovery, contracting, payment, and advertising.
+        </p>
+
+        <h3 className="text-xl font-semibold text-white mt-8">What this replaces, in practice</h3>
+
+        <p>
+          For the planner: no more separate Dotloop subscription for contracts, no more copy-paste between the directory-of-the-month and the vendor CRM, no more forwarding lead emails from a vendor ad platform. Every vendor interaction — discovery, signature, delivery, payment, advertising — is in the same workspace as the wedding.
+        </p>
+
+        <p>
+          For the vendor: no more juggling multiple platforms to get discovered, signed, and paid. One workspace per engagement, one directory to maintain, one ad channel that puts leads where the planner is already working.
+        </p>
+
+        <p>
+          For the couple: vendors the planner recommends are already part of the same system their wedding lives in. Contracts, payments, and updates show up in the couple portal alongside everything else. There's no vendor shadow world running in parallel.
+        </p>
+      </div>
+    ),
+  },
+  'why-your-couples-stop-texting-you': {
+    title: "Why Your Couples Stop Texting You the Same Five Questions",
+    excerpt: 'When registry URLs, FAQs, a meeting scheduler, a memory wall, and push notifications all live in the couple portal, couples stop treating you as the human API for their wedding.',
+    category: 'Product',
+    date: '2026-05-18',
+    readTime: 6,
+    ogDescription: 'How the couple portal kills the "did you get my text?" loop by giving couples self-serve answers, real-time updates, and one inbox with their planner.',
+    content: (
+      <div className="space-y-6 text-slate-300 leading-relaxed">
+        <p>
+          Every planner we talk to has the same story. It's Sunday evening. Two hours of texts from three different couples. One asking for the venue address. One asking what the RSVP deadline is. One wondering if their registry link is live yet. The planner already answered these questions. In some cases, they answered them three weeks ago. But the information lives in different places, and the couple doesn't remember where.
+        </p>
+
+        <p>
+          The planner becomes the human API. Not because the couples are needy — they aren't — but because no single place has the answer, so they ask the one person who definitely does.
+        </p>
+
+        <p>
+          The couple portal is built to stop this loop. Not by making the planner respond faster. By giving couples a surface that answers itself.
+        </p>
+
+        <h3 className="text-xl font-semibold text-white mt-8">Registry and FAQs the couple actually maintains</h3>
+
+        <p>
+          The couple manages their own registry URLs (Amazon, Target, Zola, Crate & Barrel, anywhere they've set one up) inside the portal. They also maintain a FAQ list — venue address, parking instructions, dress code, kid-friendliness, accessibility, whatever they want guests to know. Both surfaces are writable by the couple and render automatically on their public microsite.
+        </p>
+
+        <p>
+          This isn't the planner doing it for them. It's the couple's own content, on their own schedule. When they think of an answer, they add it. When a question comes up from a guest, the couple adds the FAQ once and it lives there for every guest after. The planner isn't in the loop for content updates.
+        </p>
+
+        <h3 className="text-xl font-semibold text-white mt-8">A meeting scheduler for check-ins</h3>
+
+        <p>
+          Instead of the couple texting "are you free Thursday?" and the planner replying "yes but only 2-4," the portal has a scheduler wired to the planner's calendar. The couple picks a slot that's actually free. The meeting goes on the calendar. Both parties see the same time without negotiation.
+        </p>
+
+        <p>
+          This replaces Calendly for the couple-planner relationship specifically, but more importantly, it replaces the text-back-and-forth that every planner recognizes as a time sink.
+        </p>
+
+        <h3 className="text-xl font-semibold text-white mt-8">Push notifications for everything that matters</h3>
+
+        <p>
+          The couple portal has a real notification layer. New message in the inbox? Push. Vendor signed a contract? Push. RSVP count crossed a threshold? Push. Payment was processed? Push. The couple doesn't have to check the portal to know what's happening — the portal tells them.
+        </p>
+
+        <p>
+          This is the feature that most directly kills the "did you get my email?" anxiety. Couples stop feeling out of the loop because they're not out of the loop. The updates come to them.
+        </p>
+
+        <h3 className="text-xl font-semibold text-white mt-8">A memory wall guests can contribute to</h3>
+
+        <p>
+          A QR code at the reception lets guests upload photos and short videos from their phones during the event. Everything flows into a private review queue in the couple portal. The couple can accept, reject, or feature memories before they appear in the public gallery.
+        </p>
+
+        <p>
+          This isn't a feature the planner has to manage. It's a couple-facing workflow that happens in the portal without the planner being in the loop. The result: the couple has a gallery of real guest-captured memories that didn't cost the planner any coordination time.
+        </p>
+
+        <h3 className="text-xl font-semibold text-white mt-8">What the planner gets back</h3>
+
+        <p>
+          The obvious return is the Sunday-night text volume dropping. But the bigger return is the couple relationship changing shape. Planners stop being treated like a search engine the couple types questions into. They start being treated like a strategist the couple brings decisions to. That's the relationship the planner signed up for.
+        </p>
+
+        <p>
+          The couple portal is what makes this shift possible. Not because it replaces communication with the planner — the planner inbox is right there in the portal — but because the routine questions finally have somewhere to live that isn't the planner's phone.
+        </p>
+      </div>
+    ),
+  },
+  'real-time-planning-not-email-tag': {
+    title: 'Real-Time Planning, Not Email Tag: The Operational Layer Most Platforms Skip',
+    excerpt: 'Server-sent events push changes to the couple the second you save them. Inbound emails auto-thread to the right couple. An audit log captures every write. Planning stops being a sync-every-morning operation.',
+    category: 'Product',
+    date: '2026-05-25',
+    readTime: 7,
+    ogDescription: 'Real-time SSE updates, inbound email threading, and a full activity audit log — the operational layer that turns wedding planning from async email tag into shared real-time work.',
+    content: (
+      <div className="space-y-6 text-slate-300 leading-relaxed">
+        <p>
+          Most wedding platforms are built like spreadsheets with a UI. You change a value, you save it, and the next person who opens the page sees the change — whenever that is. If the couple wants to know what happened since their last check-in, they read their email and piece it together from the message thread.
+        </p>
+
+        <p>
+          That's a 2015 architecture running against a 2026 expectation. Couples today expect real-time updates — from their bank, their food delivery, their calendar. The wedding is the single most coordinated project of their adult life, and it's the one place they're still refreshing pages and asking "did you get my message?"
+        </p>
+
+        <p>
+          The Special Wedding's real-time layer is built so the planner and the couple never have to ask that question again.
+        </p>
+
+        <h3 className="text-xl font-semibold text-white mt-8">Server-sent events push changes the moment you save them</h3>
+
+        <p>
+          When a planner saves an update — a new vendor confirmation, a shifted timeline, a payment received — the couple portal updates live. No refresh, no page reload. The couple can literally watch the change appear if they're on the page.
+        </p>
+
+        <p>
+          This isn't a cosmetic thing. It's what makes the couple portal feel like a shared workspace instead of a static dashboard. The couple stops treating the portal like a report they check weekly and starts treating it like a document they're in with the planner.
+        </p>
+
+        <p>
+          For the planner, the benefit is quieter but just as real: fewer "did you see my update?" messages. Fewer "can you confirm this is updated?" loops. The act of saving is the act of communicating.
+        </p>
+
+        <h3 className="text-xl font-semibold text-white mt-8">Inbound emails thread into the planner inbox automatically</h3>
+
+        <p>
+          Every wedding gets a routing address. When a vendor, a couple's family member, or anyone else emails that address, the message is parsed and threaded into the planner inbox against the right couple's record. The planner sees it in the same workspace as every other message tied to that wedding.
+        </p>
+
+        <p>
+          That sounds small, and it isn't. The typical planner inbox has vendor emails from three separate email addresses, couple texts in two different threads, and internal team notes in Slack. The inbound threading is what lets the planner stop context-switching across channels. Everything about a specific wedding lands in one place, regardless of where it originated.
+        </p>
+
+        <h3 className="text-xl font-semibold text-white mt-8">An activity audit log for every write</h3>
+
+        <p>
+          Every change to a wedding — guest added, seating reshuffled, payment logged, contract signed, vendor invited — is captured in an activity audit log tied to that wedding. You can see who did what, when, and what the change was.
+        </p>
+
+        <p>
+          This is operationally useful for teams: if you run an agency and three planners share a wedding, you can trace the work history without asking anyone. It's also useful for couples: the audit log is the canonical answer to "what happened this week?" without anyone having to draft a status update.
+        </p>
+
+        <p>
+          And it matters for accountability. When an RSVP was marked "yes" and then changed to "no" two weeks later, the audit log has the record. When a vendor's contract was modified, the audit log has the record. The platform stops being a black box and starts being a system you can actually audit.
+        </p>
+
+        <h3 className="text-xl font-semibold text-white mt-8">Why this is the ops layer nobody sees</h3>
+
+        <p>
+          The features that show up in a feature comparison — guest management, seating, contracts — are the visible ones. The real-time layer is invisible. It shows up as the absence of friction. Couples who aren't asking "what's happening?" are not going to write a review praising the SSE architecture. They're just going to feel like the planning went smoothly.
+        </p>
+
+        <p>
+          That's the point. The ops layer is what makes the rest of the platform work as a shared workspace instead of a collection of forms. Without it, every feature is a silo. With it, everything is one project that the planner, the couple, and the team are in together in real time.
+        </p>
+
+        <h3 className="text-xl font-semibold text-white mt-8">What it replaces</h3>
+
+        <p>
+          Status-update emails. Daily sync meetings with couples. The Sunday-night "here's what changed this week" rundown. Slack channels dedicated to ping-pong between the planner and the couple. The shared Google Doc that everyone forgets to update.
+        </p>
+
+        <p>
+          It replaces all of that with the simpler thing: you do the work in the platform, and the people who need to know see it instantly. Planning stops being the sum of updates sent and starts being a thing everyone is doing together.
+        </p>
+      </div>
+    ),
+  },
+  'the-ops-layer-nobody-sees': {
+    title: 'The Ops Layer Nobody Sees: Team Permissions, Audit Logs, and the Operational Backbone',
+    excerpt: "Team member permissions across 12+ scopes. Activity audit logs on every write. OTP guest access. The infrastructure nobody markets because it's boring — and the reason agencies scale on The Special Wedding.",
+    category: 'Product',
+    date: '2026-06-01',
+    readTime: 7,
+    ogDescription: 'Granular team permissions, activity audit logs, OTP guest access, CSV guest imports, and the unsexy backbone that agencies need to actually scale.',
+    content: (
+      <div className="space-y-6 text-slate-300 leading-relaxed">
+        <p>
+          Every wedding platform markets the glamorous features. Seating charts. AI contracts. Pricing guidance. Those get the landing-page real estate and the marketing budget, because they're the features couples and solo planners actually get excited about.
+        </p>
+
+        <p>
+          But nobody scales an agency on glamorous features. Agencies scale on the boring ones: team permissions that don't leak data across weddings, audit logs that let you trace a change six months after the event, guest access controls that don't require creating accounts, CSV imports that don't lose data, support infrastructure that exists when you need it at 11pm the night before the wedding.
+        </p>
+
+        <p>
+          This is the ops layer. It's the reason planners who start solo on The Special Wedding can grow into a three- or five-person team without switching platforms. It's the reason an agency coordinator can share a wedding with a junior planner and a day-of assistant and give each of them exactly the access they should have — and nothing more.
+        </p>
+
+        <h3 className="text-xl font-semibold text-white mt-8">Team permissions across 12+ scopes</h3>
+
+        <p>
+          Every wedding has 12+ distinct permission scopes: guests, budget, gallery, vendors, contracts, forms, payments, calendar, couple portal, seating, team management, audit log. A team member gets assigned to specific weddings and specific scopes within each wedding. A junior planner might have read-only on budget and full access on guests. A day-of assistant might have full access on timeline and no access at all on payments.
+        </p>
+
+        <p>
+          This is how agencies actually work. You don't hand every team member the keys to every wedding — that's how data leaks happen. You scope access to the work each person is doing. The granularity matters: a platform that only has "admin" and "user" forces you to over-share or under-staff.
+        </p>
+
+        <h3 className="text-xl font-semibold text-white mt-8">Activity audit log</h3>
+
+        <p>
+          Every write is captured. Who added the guest, who changed the seating, who marked the payment received, who invited the vendor. Six months later, when someone asks "who authorized this?", you have the answer. Three planners sharing a wedding can each see what the others did without needing a status meeting.
+        </p>
+
+        <p>
+          This is the kind of feature you don't appreciate until you need it. But in any multi-person planning operation, "who made this change?" is a question that comes up weekly. Having a canonical answer instead of a Slack archaeology project is what keeps the team functional.
+        </p>
+
+        <h3 className="text-xl font-semibold text-white mt-8">OTP guest access</h3>
+
+        <p>
+          Guests shouldn't have to create accounts to RSVP. They shouldn't have to remember passwords to check the schedule. The Special Wedding uses OTP-based guest access — guests get a one-time code by email or SMS, verify once, and stay in a lightweight session for that device.
+        </p>
+
+        <p>
+          This is the infrastructure piece that makes the public microsite actually usable. A 72-year-old guest of honor is not going to set up an account. They're going to tap a link, enter a code, and RSVP. The OTP flow is built for that reality.
+        </p>
+
+        <h3 className="text-xl font-semibold text-white mt-8">CSV and Google Sheets guest imports</h3>
+
+        <p>
+          Every planner has guest lists in a spreadsheet. Multiple spreadsheets, usually. The Special Wedding imports them cleanly — column mapping, duplicate detection, household grouping preserved. Not because importing CSVs is exciting, but because any platform that makes you manually re-enter 250 guests is a platform you'll never migrate to.
+        </p>
+
+        <p>
+          Similarly, Google Sheets import. Planners who've been collaborating with a couple on a shared sheet can pull that sheet into The Special Wedding without copy-paste. The sheet becomes the starting point of the guest list, not a dead parallel version of it.
+        </p>
+
+        <h3 className="text-xl font-semibold text-white mt-8">In-app support and knowledge base</h3>
+
+        <p>
+          When something breaks at 11pm the night before the wedding, the planner doesn't want to Google documentation. They want answers in the platform. The Special Wedding has an in-app knowledge base with searchable guides, a support desk that actually responds, and a pattern of publishing postmortems when something goes wrong — because planners who trust a platform enough to run their business on it deserve transparency.
+        </p>
+
+        <p>
+          This is also where the platform documents workflows the planner might not know exist. How to split access with a team member. How to set up the inbound email address. How to wire Stripe for milestone-based payments. The knowledge base is the self-serve layer that keeps the support team focused on real incidents, not how-to questions.
+        </p>
+
+        <h3 className="text-xl font-semibold text-white mt-8">Why this is where agencies make the switch</h3>
+
+        <p>
+          A solopreneur planner can run on almost anything. Their ops layer is their laptop, their phone, and their memory. They don't need granular permissions because there's only one of them. They don't need audit logs because they know what they did yesterday.
+        </p>
+
+        <p>
+          The moment a planner hires a second person, the ops layer starts to matter. By the time they're a three-person agency, it dominates everything else. The reason agencies switch from generalist tools to The Special Wedding isn't the glamorous features. It's that the ops layer was built for teams from day one, instead of bolted on later.
+        </p>
+
+        <p>
+          Nobody markets this stuff. Nobody puts "audit log" in a hero headline. But it's the reason a team that starts on The Special Wedding with one planner can grow to ten without re-platforming.
+        </p>
+      </div>
+    ),
+  },
 } as const;
 
 export type BlogPostKey = keyof typeof blogPosts;
@@ -1460,5 +1881,30 @@ export const relatedPosts: Record<BlogPostKey, BlogPostKey[]> = {
     'managing-200-guests',
     'introducing-the-special-wedding',
     'ai-changing-wedding-planning',
+  ],
+  'the-built-in-wedding-website': [
+    'why-your-couples-stop-texting-you',
+    'real-time-planning-not-email-tag',
+    'introducing-the-special-wedding',
+  ],
+  'your-vendor-network-inside-the-platform': [
+    'introducing-the-special-wedding',
+    'the-ops-layer-nobody-sees',
+    'real-time-planning-not-email-tag',
+  ],
+  'why-your-couples-stop-texting-you': [
+    'the-built-in-wedding-website',
+    'real-time-planning-not-email-tag',
+    'introducing-the-special-wedding',
+  ],
+  'real-time-planning-not-email-tag': [
+    'the-ops-layer-nobody-sees',
+    'why-your-couples-stop-texting-you',
+    'introducing-the-special-wedding',
+  ],
+  'the-ops-layer-nobody-sees': [
+    'real-time-planning-not-email-tag',
+    'your-vendor-network-inside-the-platform',
+    'introducing-the-special-wedding',
   ],
 };

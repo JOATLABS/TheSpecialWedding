@@ -13,7 +13,9 @@ import {
   DollarSign,
   HelpCircle,
   Sparkles,
-  CheckCircle
+  CheckCircle,
+  Megaphone,
+  Zap
 } from 'lucide-react';
 
 interface OnboardingModalProps {
@@ -113,6 +115,30 @@ const ONBOARDING_STEPS: OnboardingStep[] = [
       'Use the knowledge base to reduce repeated training and support requests',
       'Spot opportunities and activity from the dashboard without context switching',
       'Keep the whole team working from the same source of truth',
+    ]
+  },
+  {
+    id: 'vendor-network',
+    title: 'Grow Through Your Vendor Network',
+    description: 'The platform is also a vendor marketplace. Source from the public directory, invite vendors into token-based contract workspaces, or let advertising vendors bring leads directly to your inbox — all without a separate subscription.',
+    icon: <Megaphone className="w-12 h-12 text-rose-500" />,
+    features: [
+      'Browse photographers, venues, and caterers in the public vendor directory',
+      'Invite contract vendors into token-based workspaces for signatures, deliverables, and payments',
+      'Compare quotes side by side with AI-assisted summaries',
+      'Receive CPL leads from advertising vendors directly in the planner inbox',
+    ]
+  },
+  {
+    id: 'real-time',
+    title: 'Everyone Stays in Sync, Automatically',
+    description: 'Changes you save push live to the couple portal the second they happen. Inbound emails thread against the right couple. Every write is captured in the activity audit log. Planning stops being email tag.',
+    icon: <Zap className="w-12 h-12 text-amber-500" />,
+    features: [
+      'Server-sent events update the couple portal in real time — no refresh needed',
+      'Forwarded vendor and guest emails auto-thread into the right couple inbox',
+      'See every change to a wedding in the activity audit log, filterable by team member',
+      'Team members share one real-time workspace instead of status-update emails',
     ]
   },
   {
