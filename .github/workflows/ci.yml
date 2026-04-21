@@ -1,14 +1,14 @@
 # =============================================================================
 # CI Pipeline - Lint, Test, Security Audit, Integration Tests, Build & Push
-# Runs on every push and PR to main/develop
+# Runs on every push to main and every PR targeting main.
 # =============================================================================
 name: CI
 
 on:
   push:
-    branches: [main, develop]
+    branches: [main]
   pull_request:
-    branches: [main, develop]
+    branches: [main]
   workflow_dispatch:
 
 concurrency:

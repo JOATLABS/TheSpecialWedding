@@ -17,6 +17,10 @@ import {
     wasAdminSessionRemembered,
 } from '@/utils/adminAuthStorage';
 import { redirectOnBillingBlock } from '@/utils/adminApiAuthGuard';
+import {
+    DEFAULT_TEAM_MEMBER_BLOCK_REASON,
+    isTeamMemberRole,
+} from '@/utils/roles';
 
 export interface UserProfile {
     id?: string;
@@ -676,12 +680,41 @@ export const AdminProvider = ({ children }: { children: React.ReactNode }) => {
                 expireSession();
                 return undefined;
             }
-            // 402 = subscription expired/blocked — centralized redirect to
-            // billing (see app/utils/adminApiAuthGuard.ts). Step 5 of PR1
-            // will extend this branch to logout+redirect team-members to
-            // /admin/login?error=<reason>.
-            if (redirectOnBillingBlock(response)) {
-                return undefined;
+            // 402 = subscription expired/blocked. Two distinct flows:
+            //   - Planners: hard-redirect to /admin/planner/billing (the
+            //     centralized helper handles this — they CAN self-serve resolve).
+            //   - Team members: no self-serve path exists, only the planner
+            //     can fix it. Logout and bounce to /admin/login?error=<reason>
+            //     so Step 4's banner surfaces the reason inline. We must
+            //     consume the JSON body before falling through to the helper
+            //     so the team-member branch can preserve the backend detail.
+            if (response.status === 402) {
+                if (isTeamMemberRole(userProfile)) {
+                    let reason = DEFAULT_TEAM_MEMBER_BLOCK_REASON;
+                    try {
+                        const data = await response.clone().json();
+                        if (
+                            data &&
+                            typeof data.detail === 'string' &&
+                            data.detail.trim()
+                        ) {
+                            reason = data.detail;
+                        }
+                    } catch {
+                        // Body wasn't JSON or had no detail — fall back to
+                        // the default phrasing. Better than swallowing the
+                        // 402 silently.
+                    }
+                    logout({
+                        message: reason,
+                        redirectTo: `/admin/login?error=${encodeURIComponent(reason)}`,
+                        showToast: false,
+                    });
+                    return undefined;
+                }
+                if (redirectOnBillingBlock(response)) {
+                    return undefined;
+                }
             }
             // 403 = permission denied — don't logout, let the caller handle it
             // (user is authenticated but lacks permission for this resource)

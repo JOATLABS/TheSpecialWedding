@@ -287,9 +287,14 @@ export const LandingLayout: React.FC<LandingLayoutProps> = ({ wedding, images, g
     currentAutoOpenToken && dismissedAutoOpenToken !== currentAutoOpenToken,
   );
 
-  // Get featured image from wedding or use first gallery image
+  // Get featured image from wedding or use first gallery image.
+  // Backend resolves `featured_image` to a full public URL (see
+  // GalleryUploadService.resolve_wedding_media_urls) so we use it as-is and
+  // don't concatenate NEXT_PUBLIC_MEDIA_DOMAIN here — that env var is inlined
+  // at build time and has historically been the source of broken-image bugs
+  // when a build ships without it set.
   const featuredImage = wedding.featured_image
-    ? `${process.env.NEXT_PUBLIC_MEDIA_DOMAIN}/${wedding.featured_image}`
+    ? wedding.featured_image
     : images.length > 0 ? images[0].url : undefined;
 
   return (
