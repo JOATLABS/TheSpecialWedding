@@ -14,11 +14,11 @@ surface (tests reference ``auth_extended.compute_owner_subscription_block``).
 from __future__ import annotations
 
 import logging
-from typing import Optional, Tuple
+from typing import Any, Optional, Tuple
 
 from bson import ObjectId
 
-from app.core.database import mongo
+from app.core.database import mongo as default_mongo
 from app.models.subscription import (
     PLANNER_BLOCKED_SUBSCRIPTION_STATUSES,
     normalize_subscription_status,
@@ -44,7 +44,9 @@ def build_team_member_block_reason(
 
 
 async def compute_owner_subscription_block(
-    owner_id: Optional[str], owner_email: Optional[str]
+    owner_id: Optional[str],
+    owner_email: Optional[str],
+    mongo_client: Any = None,
 ) -> Tuple[bool, Optional[str]]:
     """Decide whether a team member should inherit a billing block from their owning planner.
 
@@ -70,9 +72,14 @@ async def compute_owner_subscription_block(
     if not owner_id and not owner_email:
         return False, None
 
+    # Default to the real Mongo handle, but allow callers like
+    # auth_extended/tests to inject the module-local handle they already
+    # patch or scope.
+    mongo_handle = mongo_client or default_mongo
+
     owner_doc = None
     try:
-        users_coll = mongo.get_users_collection()
+        users_coll = mongo_handle.get_users_collection()
         # Prefer lookup by _id (ObjectId) since that's the canonical key
         if owner_id:
             try:
@@ -103,7 +110,7 @@ async def compute_owner_subscription_block(
     owner_id_str = str(owner_doc.get("_id", ""))
     if owner_id_str:
         try:
-            subscription_record = await mongo.db["user_subscriptions"].find_one(
+            subscription_record = await mongo_handle.db["user_subscriptions"].find_one(
                 {"user_id": owner_id_str}, {"status": 1}
             )
             if subscription_record:

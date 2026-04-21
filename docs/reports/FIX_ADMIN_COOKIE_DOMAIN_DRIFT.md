@@ -4,7 +4,7 @@ Title note: this report intentionally drops the environment qualifier per `AGENT
 
 ## TL;DR
 
-On **2026-04-14** commit `1130fbf` introduced cookie-domain logic in `app/utils/auth_utils.py` that was fragile enough to desynchronize the backend's `admin_token` Set-Cookie scope from the frontend host. On **2026-04-16** commits `f44e15e` / `a1a8140` (`feat: enhance cookie domain handling and session verification`) shipped the fix: a shared-label domain derivation with explicit validation against both `FRONTEND_URL` and `NEXT_PUBLIC_API_BASE_URL`, a critical-level log on non-overlap, and matching deploy-script checks that actually exercise cookie-backed frontend navigation. The regression is closed on `main`. Two small follow-ups remain, noted at the end of this doc.
+On **2026-04-14** commit `1130fbf` introduced cookie-domain logic in `app/utils/auth_utils.py` that was fragile enough to desynchronize the backend's `admin_token` Set-Cookie scope from the frontend host. On **2026-04-16** commits `f44e15e` / `a1a8140` (`feat: enhance cookie domain handling and session verification`) shipped the fix: a shared-label domain derivation with explicit validation against both `FRONTEND_URL` and `NEXT_PUBLIC_API_BASE_URL`, a critical-level log on non-overlap, and matching deploy-script checks that actually exercise cookie-backed frontend navigation. The two small follow-ups originally noted at the end of this doc landed by **2026-04-21** (deploy-script both-host assertion, and the unit test for `COOKIE_DOMAIN` mismatch fallthrough). The regression is fully closed on `main`.
 
 ## Observed Symptoms (at the time of the regression)
 
@@ -66,14 +66,14 @@ It was wrong on two load-bearing points:
 
 The title was also wrong. `AGENTS.md` and `CLAUDE.md` both require regression titles to describe behavior, not environments. "Fix Staging Admin Redirect Regression" becomes "Fix Admin Cookie Domain Drift Regression" here.
 
-## Remaining Follow-Ups (genuinely open)
+## Follow-Ups (all closed as of 2026-04-21)
 
-These are small, real gaps — not duplicates of shipped work.
+Both items below have landed on `main`. This section is retained for historical traceability.
 
-1. **Assert the cookie Domain is visible to _both_ hosts in the deploy script.** `verify_auth_cookie_response` and `verify_auth_cookie_scope` currently check only the frontend host. If an operator sets `COOKIE_DOMAIN` to a value that's visible to the frontend but not the API host (or vice versa), the deploy script will pass but the runtime session will fail. Extend both helpers to take `api_base` and assert `host_matches_cookie_domain` for both hosts. Small, no behavior change in the green path.
-2. **Add a unit test for the `COOKIE_DOMAIN` mismatch fallthrough.** `test_cookie_domain_logs_critical_when_staging_domains_do_not_overlap` covers the no-derivable-domain case, but there is no test for "`COOKIE_DOMAIN` is set, does not match the hosts, is logged critical, is ignored, and the function falls through to derivation from `FRONTEND_URL`." That's the exact operator-error path the April 16 fix was designed to catch. One `caplog` test mirroring the existing one.
+1. **Assert the cookie Domain is visible to _both_ hosts in the deploy script.** ✅ Closed. `verify_auth_cookie_response` (`scripts/deploy/verify_environment.py:157-197`) and `verify_auth_cookie_scope` (lines 130-154) now both resolve the `(frontend_host, api_host)` pair via `_resolve_host_pair` (lines 111-127) and fail if `host_matches_cookie_domain` does not hold for each host. Rationale block at lines 177-182 references this retrospective.
+2. **Unit test for the `COOKIE_DOMAIN` mismatch fallthrough.** ✅ Closed. `tests/backend/test_settings.py::test_cookie_domain_ignores_explicit_value_when_not_shared_by_both_hosts` (lines 218-248) asserts all three required behaviors: CRITICAL log naming the mismatched value, explicit value is ignored, and fallthrough derives the correct shared-suffix domain. The test's docstring back-links to this retrospective.
 
-Neither follow-up requires touching `auth_utils.py`.
+With both items landed, this regression is fully closed. No residual work on `auth_utils.py`, `verify_environment.py`, or the related test suite is expected.
 
 ## References
 

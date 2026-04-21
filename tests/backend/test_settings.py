@@ -225,8 +225,7 @@ def test_cookie_domain_ignores_explicit_value_when_not_shared_by_both_hosts(capl
       3. fall through to shared-suffix derivation and return the derived
          domain that actually works for both hosts.
 
-    See docs/reports/FIX_ADMIN_COOKIE_DOMAIN_DRIFT_RETROSPECTIVE.md → "Remaining
-    Follow-Ups" #2.
+    See docs/reports/FIX_ADMIN_COOKIE_DOMAIN_DRIFT.md → "Follow-Ups" #2.
     """
     with caplog.at_level(logging.CRITICAL):
         domain = resolve_cookie_domain(
