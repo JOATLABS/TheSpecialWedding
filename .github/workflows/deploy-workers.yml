@@ -4,10 +4,13 @@ on:
   push:
     branches:
       - main
-      - 'development/**'
     paths:
       - 'cloudflare-workers/**'
   workflow_dispatch:  # Allow manual deployment
+
+concurrency:
+  group: deploy-workers-production
+  cancel-in-progress: false   # wrangler deploy + secret puts shouldn't be killed mid-run
 
 permissions:
   contents: read
@@ -16,8 +19,8 @@ jobs:
   deploy-workers:
     name: Deploy Cloudflare Workers
     runs-on: ubuntu-latest
-    # Run on main, development branches, or the current feature branch
-    if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/heads/development/')
+    # Triggers above restrict to main + manual dispatch.
+    if: github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch'
 
     env:
       WRANGLER_VERSION: 4.81.1

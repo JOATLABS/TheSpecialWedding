@@ -101,18 +101,29 @@ const SYNC_TARGETING_MODE_OPTIONS: Array<{
   },
 ];
 
+const PANEL_CLASS =
+  'rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-700 dark:bg-slate-800';
+const SUBTLE_PANEL_CLASS =
+  'rounded-2xl border border-slate-200 bg-slate-50 dark:border-slate-700 dark:bg-slate-900/60';
+const INPUT_CLASS =
+  'w-full rounded-lg border border-slate-300 bg-white px-2 py-2 text-xs text-slate-900 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100';
+const SECONDARY_BUTTON_CLASS =
+  'rounded-xl border border-slate-300 px-3 py-2 text-xs font-medium text-slate-700 transition hover:bg-white disabled:opacity-60 dark:border-slate-600 dark:text-slate-200 dark:hover:bg-slate-700/60';
+const TOGGLE_CARD_CLASS =
+  'rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200';
+
 function statusTone(status: string) {
   switch (status) {
     case 'active':
-      return 'text-emerald-700 bg-emerald-50 border-emerald-200';
+      return 'text-emerald-700 bg-emerald-50 border-emerald-200 dark:text-emerald-200 dark:bg-emerald-950/40 dark:border-emerald-900';
     case 'expired':
-      return 'text-amber-700 bg-amber-50 border-amber-200';
+      return 'text-amber-700 bg-amber-50 border-amber-200 dark:text-amber-200 dark:bg-amber-950/40 dark:border-amber-900';
     case 'error':
-      return 'text-rose-700 bg-rose-50 border-rose-200';
+      return 'text-rose-700 bg-rose-50 border-rose-200 dark:text-rose-200 dark:bg-rose-950/40 dark:border-rose-900';
     case 'revoked':
-      return 'text-slate-600 bg-slate-100 border-slate-200';
+      return 'text-slate-600 bg-slate-100 border-slate-200 dark:text-slate-300 dark:bg-slate-700/70 dark:border-slate-600';
     default:
-      return 'text-slate-600 bg-slate-100 border-slate-200';
+      return 'text-slate-600 bg-slate-100 border-slate-200 dark:text-slate-300 dark:bg-slate-700/70 dark:border-slate-600';
   }
 }
 
@@ -332,9 +343,9 @@ export default function GoogleCalendarConnect({
 
   if (loading) {
     return (
-      <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-        <div className="flex items-center gap-3 text-sm text-slate-500">
-          <div className="h-5 w-5 animate-spin rounded-full border-2 border-slate-200 border-t-slate-700" />
+      <div className={`${PANEL_CLASS} p-6`}>
+        <div className="flex items-center gap-3 text-sm text-slate-500 dark:text-slate-400">
+          <div className="h-5 w-5 animate-spin rounded-full border-2 border-slate-200 border-t-slate-700 dark:border-slate-700 dark:border-t-slate-200" />
           Loading calendar connections...
         </div>
       </div>
@@ -342,29 +353,29 @@ export default function GoogleCalendarConnect({
   }
 
   return (
-    <section className="rounded-2xl border border-slate-200 bg-white shadow-sm">
-      <div className="flex flex-col gap-4 border-b border-slate-200 px-6 py-5 lg:flex-row lg:items-start lg:justify-between">
+    <section className={PANEL_CLASS}>
+      <div className="flex flex-col gap-4 border-b border-slate-200 px-6 py-5 dark:border-slate-700 lg:flex-row lg:items-start lg:justify-between">
         <div className="space-y-2">
           <div className="flex items-center gap-3">
-            <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-slate-900 text-white">
+            <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900">
               <svg className="h-5 w-5" viewBox="0 0 24 24" fill="currentColor">
                 <path d="M19.5 3h-15A1.5 1.5 0 003 4.5v15A1.5 1.5 0 004.5 21h15a1.5 1.5 0 001.5-1.5v-15A1.5 1.5 0 0019.5 3zM12 17.25a5.25 5.25 0 110-10.5 5.25 5.25 0 010 10.5z" />
                 <circle cx="12" cy="12" r="3" />
               </svg>
             </div>
             <div>
-              <h3 className="text-lg font-semibold text-slate-900">Google Calendar Connections</h3>
-              <p className="text-sm text-slate-500">
+              <h3 className="text-lg font-semibold text-slate-900 dark:text-slate-100">Google Calendar Connections</h3>
+              <p className="text-sm text-slate-500 dark:text-slate-400">
                 Shared view is opt-in per connection. Personal external calendars stay busy/free
                 only unless the owner enables full details.
               </p>
             </div>
           </div>
-          <div className="flex flex-wrap gap-3 text-xs text-slate-600">
-            <span className="rounded-full bg-slate-100 px-3 py-1">
+          <div className="flex flex-wrap gap-3 text-xs text-slate-600 dark:text-slate-300">
+            <span className="rounded-full bg-slate-100 px-3 py-1 dark:bg-slate-700/70">
               {activeConnections.length} active
             </span>
-            <span className="rounded-full bg-slate-100 px-3 py-1">
+            <span className="rounded-full bg-slate-100 px-3 py-1 dark:bg-slate-700/70">
               {sharedConnections.length} shared in team view
             </span>
           </div>
@@ -373,7 +384,7 @@ export default function GoogleCalendarConnect({
         <button
           onClick={handleConnect}
           disabled={activeAction === 'connect'}
-          className="inline-flex items-center justify-center gap-2 rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-medium text-white transition hover:bg-slate-700 disabled:opacity-60"
+          className="inline-flex items-center justify-center gap-2 rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-medium text-white transition hover:bg-slate-700 disabled:opacity-60 dark:bg-slate-100 dark:text-slate-900 dark:hover:bg-slate-200"
         >
           {activeAction === 'connect' ? (
             <>
@@ -387,16 +398,16 @@ export default function GoogleCalendarConnect({
       </div>
 
       {error && (
-        <div className="mx-6 mt-4 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
+        <div className="mx-6 mt-4 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700 dark:border-rose-900 dark:bg-rose-950/40 dark:text-rose-200">
           {error}
         </div>
       )}
 
       <div className="space-y-5 px-6 py-5">
         {groupedConnections.length === 0 ? (
-          <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 px-6 py-10 text-center">
-            <h4 className="text-base font-semibold text-slate-900">No calendars connected yet</h4>
-            <p className="mt-2 text-sm text-slate-500">
+          <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 px-6 py-10 text-center dark:border-slate-600 dark:bg-slate-900/50">
+            <h4 className="text-base font-semibold text-slate-900 dark:text-slate-100">No calendars connected yet</h4>
+            <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">
               Connect the planner owner or a permitted team member account to enable shared
               visibility, assigned-staff sync targets, and availability checks.
             </p>
@@ -406,8 +417,8 @@ export default function GoogleCalendarConnect({
             <div key={group.accountEmail} className="space-y-3">
               <div className="flex items-center justify-between">
                 <div>
-                  <h4 className="text-sm font-semibold text-slate-900">{group.accountEmail}</h4>
-                  <p className="text-xs text-slate-500">
+                  <h4 className="text-sm font-semibold text-slate-900 dark:text-slate-100">{group.accountEmail}</h4>
+                  <p className="text-xs text-slate-500 dark:text-slate-400">
                     {group.rows[0]?.provider_account_name || 'Google account'} •{' '}
                     {group.rows[0]?.user_email || 'Workspace user'}
                   </p>
@@ -424,12 +435,12 @@ export default function GoogleCalendarConnect({
                   return (
                     <div
                       key={connection.id}
-                      className="rounded-2xl border border-slate-200 bg-slate-50 p-4"
+                      className={`${SUBTLE_PANEL_CLASS} p-4`}
                     >
                       <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
                         <div className="space-y-2">
                           <div className="flex flex-wrap items-center gap-2">
-                            <h5 className="text-sm font-semibold text-slate-900">
+                            <h5 className="text-sm font-semibold text-slate-900 dark:text-slate-100">
                               {connection.calendar_name || connection.calendar_id || 'Unnamed calendar'}
                             </h5>
                             <span
@@ -438,23 +449,23 @@ export default function GoogleCalendarConnect({
                               {connection.connection_status}
                             </span>
                             {connection.is_default_write_target && (
-                              <span className="rounded-full bg-slate-900 px-2.5 py-1 text-[11px] font-medium text-white">
+                              <span className="rounded-full bg-slate-900 px-2.5 py-1 text-[11px] font-medium text-white dark:bg-slate-100 dark:text-slate-900">
                                 Default write
                               </span>
                             )}
                             {connection.is_primary && (
-                              <span className="rounded-full bg-white px-2.5 py-1 text-[11px] font-medium text-slate-700">
+                              <span className="rounded-full bg-white px-2.5 py-1 text-[11px] font-medium text-slate-700 dark:bg-slate-800 dark:text-slate-200">
                                 Primary
                               </span>
                             )}
                             {!connection.is_writable && (
-                              <span className="rounded-full bg-white px-2.5 py-1 text-[11px] font-medium text-slate-700">
+                              <span className="rounded-full bg-white px-2.5 py-1 text-[11px] font-medium text-slate-700 dark:bg-slate-800 dark:text-slate-200">
                                 Read only
                               </span>
                             )}
                           </div>
 
-                          <div className="grid gap-2 text-xs text-slate-500 sm:grid-cols-2 xl:grid-cols-4">
+                          <div className="grid gap-2 text-xs text-slate-500 dark:text-slate-400 sm:grid-cols-2 xl:grid-cols-4">
                             <p>Workspace user: {connection.user_email || 'Unknown'}</p>
                             <p>Access role: {connection.access_role || 'Unknown'}</p>
                             <p>Visibility: {visibilityLabel(connection.details_visibility)}</p>
@@ -467,26 +478,26 @@ export default function GoogleCalendarConnect({
                           </div>
 
                           {connection.last_error && (
-                            <p className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700">
+                            <p className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-200">
                               {connection.last_error}
                             </p>
                           )}
 
                           {connection.is_writable && (
-                            <div className="space-y-3 rounded-xl border border-slate-200 bg-white p-3">
+                            <div className="space-y-3 rounded-xl border border-slate-200 bg-white p-3 dark:border-slate-700 dark:bg-slate-800">
                               <div className="flex flex-col gap-1">
-                                <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
+                                <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500 dark:text-slate-400">
                                   Scheduler access
                                 </p>
-                                <p className="text-xs text-slate-500">
+                                <p className="text-xs text-slate-500 dark:text-slate-400">
                                   Precedence is fixed: base scheduling access, then extra user
                                   grants, then restrictive role, item-type, and wedding filters,
                                   then targeting mode, and only then sync policy chooses targets.
                                 </p>
                               </div>
 
-                              <label className="block rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-xs text-slate-700">
-                                <span className="mb-2 block text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-400">
+                              <label className="block rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-xs text-slate-700 dark:border-slate-700 dark:bg-slate-900/60 dark:text-slate-200">
+                                <span className="mb-2 block text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-400 dark:text-slate-500">
                                   Base scheduling access
                                 </span>
                                 <select
@@ -498,7 +509,7 @@ export default function GoogleCalendarConnect({
                                     )
                                   }
                                   disabled={updateLoading}
-                                  className="w-full rounded-lg border border-slate-300 bg-white px-2 py-2 text-xs text-slate-900"
+                                  className={INPUT_CLASS}
                                 >
                                   {SCHEDULER_ACCESS_MODE_OPTIONS.map((option) => (
                                     <option key={option.value} value={option.value}>
@@ -506,7 +517,7 @@ export default function GoogleCalendarConnect({
                                     </option>
                                   ))}
                                 </select>
-                                <p className="mt-2 text-xs text-slate-500">
+                                <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">
                                   {
                                     SCHEDULER_ACCESS_MODE_OPTIONS.find(
                                       (option) => option.value === connection.scheduler_access_mode
@@ -515,8 +526,8 @@ export default function GoogleCalendarConnect({
                                 </p>
                               </label>
 
-                              <label className="block rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-xs text-slate-700">
-                                <span className="mb-2 block text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-400">
+                              <label className="block rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-xs text-slate-700 dark:border-slate-700 dark:bg-slate-900/60 dark:text-slate-200">
+                                <span className="mb-2 block text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-400 dark:text-slate-500">
                                   Targeting mode
                                 </span>
                                 <select
@@ -528,7 +539,7 @@ export default function GoogleCalendarConnect({
                                     )
                                   }
                                   disabled={updateLoading}
-                                  className="w-full rounded-lg border border-slate-300 bg-white px-2 py-2 text-xs text-slate-900"
+                                  className={INPUT_CLASS}
                                 >
                                   {SYNC_TARGETING_MODE_OPTIONS.map((option) => (
                                     <option key={option.value} value={option.value}>
@@ -536,7 +547,7 @@ export default function GoogleCalendarConnect({
                                     </option>
                                   ))}
                                 </select>
-                                <p className="mt-2 text-xs text-slate-500">
+                                <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">
                                   {
                                     SYNC_TARGETING_MODE_OPTIONS.find(
                                       (option) => option.value === connection.sync_targeting_mode
@@ -547,10 +558,10 @@ export default function GoogleCalendarConnect({
 
                               {staffOptions.length > 0 ? (
                                 <div>
-                                  <p className="mb-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-400">
+                                  <p className="mb-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-400 dark:text-slate-500">
                                     Extra user grants
                                   </p>
-                                  <p className="mb-2 text-xs text-slate-500">
+                                  <p className="mb-2 text-xs text-slate-500 dark:text-slate-400">
                                     Use this to allow specific staff onto a calendar even when the
                                     base access mode would normally block them.
                                   </p>
@@ -562,7 +573,7 @@ export default function GoogleCalendarConnect({
                                       return (
                                         <label
                                           key={`${connection.id}-${staff.id}`}
-                                          className="inline-flex items-center gap-2 rounded-full border border-slate-200 px-3 py-1.5 text-xs text-slate-700"
+                                          className="inline-flex items-center gap-2 rounded-full border border-slate-200 px-3 py-1.5 text-xs text-slate-700 dark:border-slate-700 dark:text-slate-200"
                                         >
                                           <input
                                             type="checkbox"
@@ -571,7 +582,7 @@ export default function GoogleCalendarConnect({
                                               void handleSchedulerToggle(connection, staff.id)
                                             }
                                             disabled={updateLoading}
-                                            className="h-3.5 w-3.5 rounded border-slate-300 text-slate-900"
+                                            className="h-3.5 w-3.5 rounded border-slate-300 text-slate-900 dark:border-slate-600 dark:bg-slate-800"
                                           />
                                           {staff.label}
                                         </label>
@@ -582,7 +593,7 @@ export default function GoogleCalendarConnect({
                               ) : null}
 
                               <div>
-                                <p className="mb-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-400">
+                                <p className="mb-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-400 dark:text-slate-500">
                                   Allowed roles
                                 </p>
                                 <div className="flex flex-wrap gap-2">
@@ -593,7 +604,7 @@ export default function GoogleCalendarConnect({
                                     return (
                                       <label
                                         key={`${connection.id}-${role.value}`}
-                                        className="inline-flex items-center gap-2 rounded-full border border-slate-200 px-3 py-1.5 text-xs text-slate-700"
+                                        className="inline-flex items-center gap-2 rounded-full border border-slate-200 px-3 py-1.5 text-xs text-slate-700 dark:border-slate-700 dark:text-slate-200"
                                       >
                                         <input
                                           type="checkbox"
@@ -602,7 +613,7 @@ export default function GoogleCalendarConnect({
                                             void handleSchedulerRoleToggle(connection, role.value)
                                           }
                                           disabled={updateLoading}
-                                          className="h-3.5 w-3.5 rounded border-slate-300 text-slate-900"
+                                          className="h-3.5 w-3.5 rounded border-slate-300 text-slate-900 dark:border-slate-600 dark:bg-slate-800"
                                         />
                                         {role.label}
                                       </label>
@@ -612,7 +623,7 @@ export default function GoogleCalendarConnect({
                               </div>
 
                               <div>
-                                <p className="mb-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-400">
+                                <p className="mb-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-400 dark:text-slate-500">
                                   Allowed item types
                                 </p>
                                 <div className="flex flex-wrap gap-2">
@@ -624,7 +635,7 @@ export default function GoogleCalendarConnect({
                                     return (
                                       <label
                                         key={`${connection.id}-${itemType.value}`}
-                                        className="inline-flex items-center gap-2 rounded-full border border-slate-200 px-3 py-1.5 text-xs text-slate-700"
+                                        className="inline-flex items-center gap-2 rounded-full border border-slate-200 px-3 py-1.5 text-xs text-slate-700 dark:border-slate-700 dark:text-slate-200"
                                       >
                                         <input
                                           type="checkbox"
@@ -636,7 +647,7 @@ export default function GoogleCalendarConnect({
                                             )
                                           }
                                           disabled={updateLoading}
-                                          className="h-3.5 w-3.5 rounded border-slate-300 text-slate-900"
+                                          className="h-3.5 w-3.5 rounded border-slate-300 text-slate-900 dark:border-slate-600 dark:bg-slate-800"
                                         />
                                         {itemType.label}
                                       </label>
@@ -647,10 +658,10 @@ export default function GoogleCalendarConnect({
 
                               {weddings.length > 0 ? (
                                 <div>
-                                  <p className="mb-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-400">
+                                  <p className="mb-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-400 dark:text-slate-500">
                                     Wedding scope
                                   </p>
-                                  <p className="mb-2 text-xs text-slate-500">
+                                  <p className="mb-2 text-xs text-slate-500 dark:text-slate-400">
                                     Leave empty to allow all workspace weddings on this calendar.
                                   </p>
                                   <div className="flex flex-wrap gap-2">
@@ -661,7 +672,7 @@ export default function GoogleCalendarConnect({
                                       return (
                                         <label
                                           key={`${connection.id}-${wedding.id}`}
-                                          className="inline-flex items-center gap-2 rounded-full border border-slate-200 px-3 py-1.5 text-xs text-slate-700"
+                                          className="inline-flex items-center gap-2 rounded-full border border-slate-200 px-3 py-1.5 text-xs text-slate-700 dark:border-slate-700 dark:text-slate-200"
                                         >
                                           <input
                                             type="checkbox"
@@ -670,7 +681,7 @@ export default function GoogleCalendarConnect({
                                               void handleWeddingScopeToggle(connection, wedding.id)
                                             }
                                             disabled={updateLoading}
-                                            className="h-3.5 w-3.5 rounded border-slate-300 text-slate-900"
+                                            className="h-3.5 w-3.5 rounded border-slate-300 text-slate-900 dark:border-slate-600 dark:bg-slate-800"
                                           />
                                           {wedding.couple_names}
                                         </label>
@@ -687,7 +698,7 @@ export default function GoogleCalendarConnect({
                           <button
                             onClick={() => handleHealthcheck(connection)}
                             disabled={updateLoading}
-                            className="rounded-xl border border-slate-300 px-3 py-2 text-xs font-medium text-slate-700 transition hover:bg-white disabled:opacity-60"
+                            className={SECONDARY_BUTTON_CLASS}
                           >
                             Check health
                           </button>
@@ -701,8 +712,8 @@ export default function GoogleCalendarConnect({
                         </div>
                       </div>
 
-                      <div className="mt-4 grid gap-3 border-t border-slate-200 pt-4 md:grid-cols-2 xl:grid-cols-4">
-                        <label className="flex items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs text-slate-700">
+                      <div className="mt-4 grid gap-3 border-t border-slate-200 pt-4 dark:border-slate-700 md:grid-cols-2 xl:grid-cols-4">
+                        <label className={`flex items-center justify-between gap-3 ${TOGGLE_CARD_CLASS}`}>
                           Shared in team view
                           <input
                             type="checkbox"
@@ -717,11 +728,11 @@ export default function GoogleCalendarConnect({
                               )
                             }
                             disabled={updateLoading}
-                            className="h-4 w-4 rounded border-slate-300 text-slate-900"
+                            className="h-4 w-4 rounded border-slate-300 text-slate-900 dark:border-slate-600 dark:bg-slate-800"
                           />
                         </label>
 
-                        <label className="flex items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs text-slate-700">
+                        <label className={`flex items-center justify-between gap-3 ${TOGGLE_CARD_CLASS}`}>
                           Sync enabled
                           <input
                             type="checkbox"
@@ -734,11 +745,11 @@ export default function GoogleCalendarConnect({
                               )
                             }
                             disabled={updateLoading || !connection.is_writable}
-                            className="h-4 w-4 rounded border-slate-300 text-slate-900"
+                            className="h-4 w-4 rounded border-slate-300 text-slate-900 dark:border-slate-600 dark:bg-slate-800"
                           />
                         </label>
 
-                        <label className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs text-slate-700">
+                        <label className={TOGGLE_CARD_CLASS}>
                           <span className="mb-2 block">Visibility mode</span>
                           <select
                             value={connection.details_visibility}
@@ -752,14 +763,14 @@ export default function GoogleCalendarConnect({
                               )
                             }
                             disabled={updateLoading}
-                            className="w-full rounded-lg border border-slate-300 bg-white px-2 py-2 text-xs text-slate-900"
+                            className={INPUT_CLASS}
                           >
                             <option value="busy_only">Busy/free only</option>
                             <option value="details">Full details</option>
                           </select>
                         </label>
 
-                        <div className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs text-slate-700">
+                        <div className={TOGGLE_CARD_CLASS}>
                           <span className="mb-2 block">Default write target</span>
                           <button
                             onClick={() =>
@@ -770,7 +781,7 @@ export default function GoogleCalendarConnect({
                               )
                             }
                             disabled={updateLoading || !connection.is_writable}
-                            className="w-full rounded-lg border border-slate-300 px-3 py-2 font-medium text-slate-700 transition hover:bg-slate-50 disabled:opacity-60"
+                            className="w-full rounded-lg border border-slate-300 px-3 py-2 font-medium text-slate-700 transition hover:bg-slate-50 disabled:opacity-60 dark:border-slate-600 dark:text-slate-200 dark:hover:bg-slate-700/60"
                           >
                             {connection.is_default_write_target ? 'Selected' : 'Set as default'}
                           </button>

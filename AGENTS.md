@@ -189,6 +189,35 @@ When adding a permission such as calendar scheduling, invite sending, or connect
 4. update UI gating
 5. add negative tests proving unauthorized users are blocked
 
+## Centralized Constants And Enums Rule
+
+Domain string literals must live in a single canonical module, never scattered across services as ad-hoc strings.
+
+This applies to:
+
+- user roles (`team_member`, `wedding_planner`, `advertising_vendor`, etc.)
+- registration sources (`public_signup`, `invite`, etc.)
+- subscription statuses (already centralized in `app/models/subscription.py` — follow that pattern)
+- HTTP status codes used as business signals (e.g. 402-as-billing-block)
+
+Rules:
+
+1. New role or status names land in a constants module (`app/constants/roles.py`, `app/models/subscription.py`, etc.) before they are referenced anywhere else.
+2. Predicate helpers (e.g. `is_planner_billing_role`, `is_team_member`) live alongside the constants and are the only thing services should call.
+3. Direct string comparisons against role or status values in service code are a code smell and require justification in review.
+4. Typo drift on a string literal must be impossible — a typo on an enum import is a `NameError` at startup; a typo on `"team_members"` (plural) silently bypasses an authorization gate.
+
+Status as of 2026-04-20: role checks are still partially scattered. `app/services/auth_service.py` references `"team_member"` (line 83), `"public_signup"` (line 54), and `"advertising_vendor"` (line 161) as bare strings. The good pattern lives at `app/utils/planner_billing_scope.is_planner_billing_role`. Migration is open tech debt — do not introduce new role-string callsites; fold existing ones into the constants module as you touch surrounding code.
+
+## Regression And Bug-Title Convention
+
+Regression and bug-fix titles describe the *behavior* being fixed, not the environment that exposed it.
+
+- bad: `Fix Staging Admin Redirect Regression`
+- good: `Fix Admin Session Cookie/Proxy Auth Drift Regression`
+
+Staging-only or prod-only framing in a title misleads reviewers into thinking the fix is environment-scoped, when it almost always lands in shared code paths. Reserve environment qualifiers for *symptoms* documented in the body, not for titles.
+
 ## Testing Gate
 
 Static checks are necessary, not sufficient.
@@ -243,6 +272,24 @@ Claim completion only when:
 5. edit-state persistence has been checked
 6. timezone semantics have been checked
 7. hostile review has been performed
+
+## Known Open Issues — Auth, Session, And 402 Handling Cluster
+
+This cluster is load-bearing context for any work on `app/services/auth_service.py`, `app/dependencies/auth_extended.py`, `app/utils/auth_utils.py`, `proxy.ts`, `app/contexts/AdminContext.tsx`, or anything that throws or catches 402. Update this list when you close items or discover new ones.
+
+As of 2026-04-20, the following are open:
+
+1. **Cookie-domain derivation is non-deterministic.** `app/utils/auth_utils.py` cookie-domain logic does not deterministically derive a frontend/backend-shared domain from `COOKIE_DOMAIN` → `FRONTEND_URL` → `NEXT_PUBLIC_API_BASE_URL`, and silently falls back to a host-only cookie when nothing matches. Symptom: login API returns 200 with a token, but `proxy.ts` then redirects `/admin/*` back to `/admin/login` because the `admin_token` cookie was scoped to the wrong domain. Suspected primary cause of the April 14 staging admin-redirect regression.
+2. **Deploy verification gap.** `scripts/deploy/verify_environment.py` validates bearer-token API auth and bearer-token SSE, but does NOT validate cookie-backed frontend navigation through the proxy. Any cookie-scope regression ships clean through smoke.
+3. **Middleware converts 422 to 500.** The security error handler crashes with `TypeError: Object of type bytes is not JSON serializable` when serializing the raw request body during a FastAPI `RequestValidationError`. Any legitimate validation error is returned to callers as a 500, masking the real feedback.
+4. **`AdminContext.login` throws raw `Error` on 402.** `app/contexts/AdminContext.tsx:382` rethrows the 402 `detail` as a generic `Error`, which is caught by the network-failure branch at `AdminContext.tsx:624` — a branch whose inline comment literally says "Network-level failure (CORS, DNS, backend down, etc.) lands here." Every blocked-team-member login prints a red `Login flow threw: ...` to the console as if the backend crashed.
+5. **Two frontend services bypass `AdminContext.apiRequest` on 402.**
+   - `app/services/behavioralAnalyticsApi.ts:186` — `throw new Error(body?.detail || 'Failed to fetch engagement signals')`
+   - `app/services/campaignAdvertisingApi.ts:477` — `throw new Error(error.detail?.message || error.detail || errorPrefix)`
+   Both paths bypass the centralized 402-as-billing-block branch in `AdminContext.apiRequest`, so a planner whose subscription flips to blocked mid-session will not be logged out through these call sites.
+6. **Session loss after `/admin/token/refresh`.** Observed in network logs: POST `/admin/token/refresh` returns 200 → the next `/admin/profile` returns 401 → user is redirected to `/admin/login`. Not yet root-caused; may be a side effect of (1).
+7. **SSE 503 on `/notifications/stream`.** Repeated red errors during CHECKPOINT 0/A verification. Likely related to either (1) cookie-scope or (4) 402 handling in SSE auth. Needs isolated reproduction.
+8. **Billing-block state is fragmented across four layers.** `AdminRouteGuard.tsx` (preemptive, `router.replace`), `AdminContext.login` post-login branches (`router.replace` + toast + state commit), `checkSubscriptionStatus` polling (silent → triggers Layer 1), and `adminApiAuthGuard.redirectOnBillingBlock` (reactive, `window.location.href`) each independently decide what "billing-blocked" means and how to navigate. The `router.replace` vs `window.location.href` split is currently deliberate (preserve in-memory state when the profile is fresh; force hard nav when it is stale), but the policy lives in four places. **Pre-prod blocker.** Plan: expose a derived `billingBlockTarget` state on `AdminContext`, have all four layers consume it, and centralize the navigation strategy. This is a refactor — must not be bundled with reactive bug fixes (items 4/5). Ticket: task #20.
 
 ## Changelog Discipline
 

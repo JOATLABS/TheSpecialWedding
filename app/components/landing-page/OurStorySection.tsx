@@ -81,13 +81,11 @@ export const OurStorySection: React.FC<OurStorySectionProps> = ({ wedding }) => 
               {wedding.our_story.image_url && (
                 <div className={`relative w-48 h-48 mb-6 overflow-hidden ${getImageShapeClass(wedding.our_story.image_shape)}`}>
                   <Image
-                  src={wedding.our_story.image_url.startsWith('http')
-                    ? wedding.our_story.image_url
-                    : `${process.env.NEXT_PUBLIC_MEDIA_DOMAIN}/${wedding.our_story.image_url}`}
-                  alt="Couple"
-                  fill
-                  className="object-cover"
-                  sizes="192px"
+                    src={wedding.our_story.image_url}
+                    alt="Couple"
+                    fill
+                    className="object-cover"
+                    sizes="192px"
                   />
                 </div>
               )}
@@ -125,7 +123,7 @@ export const OurStorySection: React.FC<OurStorySectionProps> = ({ wedding }) => 
                         <div className="relative w-20 h-20 mx-auto mb-2 rounded-full overflow-hidden bg-gray-200 dark:bg-gray-700">
                           {member.image_url ? (
                             <Image
-                              src={`${process.env.NEXT_PUBLIC_MEDIA_DOMAIN}/${member.image_url}`}
+                              src={member.image_url}
                               alt={member.name}
                               fill
                               className="object-cover"
@@ -159,7 +157,7 @@ export const OurStorySection: React.FC<OurStorySectionProps> = ({ wedding }) => 
                         <div className="relative w-20 h-20 mx-auto mb-2 rounded-full overflow-hidden bg-gray-200 dark:bg-gray-700">
                             {member.image_url ? (
                             <Image
-                              src={`${process.env.NEXT_PUBLIC_MEDIA_DOMAIN}/${member.image_url}`}
+                              src={member.image_url}
                               alt={member.name}
                               fill
                               className="object-cover"

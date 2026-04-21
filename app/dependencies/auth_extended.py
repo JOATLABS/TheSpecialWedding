@@ -24,6 +24,15 @@ from app.utils.planner_ownership import (
     wedding_belongs_to_owner,
 )
 
+# Re-exported from app.utils.team_subscription_gate so that both this module
+# (request-time gate) and app.services.auth_service (login-time gate) share a
+# single implementation. Existing imports / tests of the form
+# ``auth_extended.compute_owner_subscription_block`` continue to work.
+from app.utils.team_subscription_gate import (  # noqa: F401
+    build_team_member_block_reason as _build_team_member_block_reason,
+    compute_owner_subscription_block,
+)
+
 logger = logging.getLogger(__name__)
 
 # ── Subscription block reasons (shared between planner and team-member paths) ──
@@ -40,20 +49,10 @@ _SUB_BLOCK_REASONS = {
 _DEFAULT_SUB_BLOCK_REASON = "Subscription issue. Please contact support."
 
 
-def _build_team_member_block_reason(
-    owner_sub_status: Optional[str], owner_email: Optional[str]
-) -> str:
-    """Build a 402 detail string for a team member whose owning planner is blocked.
-
-    Team members cannot pay on the planner's behalf, so the message directs
-    them to contact the planner instead of taking a billing action themselves.
-    """
-    contact_hint = f" at {owner_email}" if owner_email else ""
-    status_hint = f" (status: {owner_sub_status})" if owner_sub_status else ""
-    return (
-        f"Your team's subscription requires attention{status_hint}. "
-        f"Please contact your planner{contact_hint} to restore access."
-    )
+# Note: ``_build_team_member_block_reason`` is re-exported at module import
+# time from ``app.utils.team_subscription_gate`` (see the ``from ... import``
+# block above). The leading-underscore alias is kept to avoid churn in the
+# callers within this file.
 
 
 # ── Team member data cache (bounded, thread-safe, with invalidation) ──
@@ -106,91 +105,11 @@ def invalidate_team_cache_by_owner(owner_id: str) -> None:
         _team_cache.pop(k, None)
 
 
-async def compute_owner_subscription_block(
-    owner_id: Optional[str], owner_email: Optional[str]
-) -> tuple[bool, Optional[str]]:
-    """Decide whether a team member should inherit a billing block from their owning planner.
-
-    Returns (is_blocked, owner_sub_status).
-
-    A team member is blocked when their owning planner's subscription is in any of
-    PLANNER_BLOCKED_SUBSCRIPTION_STATUSES. This mirrors the planner-side gate so
-    that planners cannot keep managing weddings for free by routing work through
-    their team when their own subscription is past_due/suspended/expired.
-
-    Looks up the owner document by _id first, then falls back to email. Also
-    cross-checks user_subscriptions to catch the webhook race where users
-    collection hasn't been updated yet but user_subscriptions has the newer
-    status (same prong-1 logic as the planner self-check below).
-
-    Returns (False, None) when:
-      - both owner_id and owner_email are missing
-      - the owner document cannot be located (orphaned team member — handled
-        by the team-deactivation lifecycle elsewhere)
-      - the owner's status is active/trial/trial_expiring or otherwise not in
-        PLANNER_BLOCKED_SUBSCRIPTION_STATUSES
-    """
-    if not owner_id and not owner_email:
-        return False, None
-
-    owner_doc = None
-    try:
-        users_coll = mongo.get_users_collection()
-        # Prefer lookup by _id (ObjectId) since that's the canonical key
-        if owner_id:
-            try:
-                owner_doc = await users_coll.find_one({"_id": ObjectId(owner_id)})
-            except Exception:
-                # owner_id may already be a plain string or malformed — fall through
-                owner_doc = await users_coll.find_one({"_id": owner_id})
-        if not owner_doc and owner_email:
-            owner_doc = await users_coll.find_one({"email": owner_email})
-    except Exception as e:
-        # Database errors are non-fatal: fail open (don't block) and let the
-        # request proceed. The planner gate will catch any still-broken
-        # subscriptions on the planner's own next request.
-        logger.warning(
-            f"compute_owner_subscription_block: failed to load owner "
-            f"(id={owner_id}, email={owner_email}): {e}"
-        )
-        return False, None
-
-    if not owner_doc:
-        return False, None
-
-    owner_sub_status = normalize_subscription_status(
-        owner_doc.get("subscription_status")
-    )
-
-    # Cross-check user_subscriptions for webhook race (same pattern as planner self-check)
-    owner_id_str = str(owner_doc.get("_id", ""))
-    if owner_id_str:
-        try:
-            subscription_record = await mongo.db["user_subscriptions"].find_one(
-                {"user_id": owner_id_str}, {"status": 1}
-            )
-            if subscription_record:
-                sub_record_status = normalize_subscription_status(
-                    subscription_record.get("status")
-                )
-                if (
-                    sub_record_status in PLANNER_BLOCKED_SUBSCRIPTION_STATUSES
-                    and owner_sub_status not in PLANNER_BLOCKED_SUBSCRIPTION_STATUSES
-                ):
-                    logger.info(
-                        f"Owner webhook race detected: user_subscriptions has "
-                        f"'{sub_record_status}' but users has '{owner_sub_status}' "
-                        f"for owner {owner_email}. Trusting user_subscriptions."
-                    )
-                    owner_sub_status = sub_record_status
-        except Exception as e:
-            logger.warning(
-                f"compute_owner_subscription_block: user_subscriptions cross-check "
-                f"failed for owner {owner_email}: {e}"
-            )
-
-    is_blocked = owner_sub_status in PLANNER_BLOCKED_SUBSCRIPTION_STATUSES
-    return is_blocked, owner_sub_status
+# Note: ``compute_owner_subscription_block`` is re-exported at module import
+# time from ``app.utils.team_subscription_gate`` (see the ``from ... import``
+# block near the top of this file). Tests and callers that reference
+# ``auth_extended.compute_owner_subscription_block`` continue to work
+# unchanged.
 
 
 # Security scheme

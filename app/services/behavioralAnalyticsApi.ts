@@ -7,6 +7,7 @@
  */
 
 import { getApiBaseUrl } from '@/utils/env';
+import { redirectOnBillingBlock } from '@/utils/adminApiAuthGuard';
 
 const API_BASE = getApiBaseUrl();
 
@@ -165,6 +166,7 @@ export async function fetchBehavioralAnalytics(
     }
   );
   if (!res.ok) {
+    redirectOnBillingBlock(res);
     const body = await res.json().catch(() => ({}));
     throw new Error(body?.detail || 'Failed to fetch behavioral analytics');
   }
@@ -182,6 +184,7 @@ export async function fetchEngagementSignals(
     credentials: 'include',
   });
   if (!res.ok) {
+    redirectOnBillingBlock(res);
     const body = await res.json().catch(() => ({}));
     throw new Error(body?.detail || 'Failed to fetch engagement signals');
   }
@@ -203,6 +206,7 @@ export async function fetchNonResponders(
     }
   );
   if (!res.ok) {
+    redirectOnBillingBlock(res);
     const body = await res.json().catch(() => ({}));
     throw new Error(body?.detail || 'Failed to fetch non-responders');
   }
@@ -224,6 +228,7 @@ export async function fetchBudgetBreakdown(
     }
   );
   if (!res.ok) {
+    redirectOnBillingBlock(res);
     const body = await res.json().catch(() => ({}));
     throw new Error(body?.detail || 'Failed to fetch budget breakdown');
   }
@@ -246,6 +251,7 @@ export async function fetchCoupleNonResponders(): Promise<{
     credentials: 'include',
   });
   if (!res.ok) {
+    redirectOnBillingBlock(res);
     const body = await res.json().catch(() => ({}));
     throw new Error(body?.detail || 'Failed to fetch non-responders');
   }
@@ -260,6 +266,7 @@ export async function fetchCoupleBudgetBreakdown(): Promise<BudgetBreakdown> {
     credentials: 'include',
   });
   if (!res.ok) {
+    redirectOnBillingBlock(res);
     const body = await res.json().catch(() => ({}));
     throw new Error(body?.detail || 'Failed to fetch budget breakdown');
   }
