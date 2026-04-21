@@ -462,10 +462,12 @@ export default function TaskModal({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[92vh] max-w-4xl overflow-y-auto">
+      <DialogContent className="max-h-[92vh] max-w-4xl overflow-y-auto rounded-3xl border border-slate-200 bg-white text-slate-900 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100">
         <DialogHeader>
-          <DialogTitle>{isEditing ? 'Edit Schedule Item' : 'Create Schedule Item'}</DialogTitle>
-          <DialogDescription>
+          <DialogTitle className="text-slate-900 dark:text-slate-100">
+            {isEditing ? 'Edit Schedule Item' : 'Create Schedule Item'}
+          </DialogTitle>
+          <DialogDescription className="text-slate-500 dark:text-slate-400">
             Tasks stay internal by default. Meetings use the planner-business scheduling flow and
             sync to explicit external calendar targets.
           </DialogDescription>

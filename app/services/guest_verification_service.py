@@ -36,7 +36,6 @@ class GuestVerificationService:
         self.wedding_service = WeddingService()
         self.otp_service = OTPService()
         self.gallery_service = GalleryUploadService()
-        self.gallery_service = GalleryUploadService()
         self.weddings_collection = mongo.db["weddings"]
         self.guests_collection = mongo.get_guest_collection()
         self.rsvp_collection = mongo.db["rsvps"]
@@ -831,7 +830,7 @@ class GuestVerificationService:
 
             # Resolve raw R2 keys on asset fields to full public URLs so the
             # frontend doesn't have to concatenate NEXT_PUBLIC_MEDIA_DOMAIN.
-            resolved_wedding = self.gallery_service.resolve_wedding_media_urls(wedding)
+            resolved_wedding = self._normalize_guest_media_fields(wedding)
 
             # Base response with privacy info
             response = {

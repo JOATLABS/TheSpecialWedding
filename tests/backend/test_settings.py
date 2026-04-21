@@ -215,6 +215,39 @@ def test_cookie_domain_logs_critical_when_staging_domains_do_not_overlap(caplog)
     )
 
 
+def test_cookie_domain_ignores_explicit_value_when_not_shared_by_both_hosts(caplog):
+    """Regression guard for the April-14 → April-16 cookie-domain drift.
+
+    If an operator sets COOKIE_DOMAIN to a value that is not visible to both
+    the frontend host and the API host, resolve_cookie_domain must:
+      1. log CRITICAL with the three candidate inputs,
+      2. ignore the mismatched explicit value (do NOT return it),
+      3. fall through to shared-suffix derivation and return the derived
+         domain that actually works for both hosts.
+
+    See docs/reports/FIX_ADMIN_COOKIE_DOMAIN_DRIFT_RETROSPECTIVE.md → "Remaining
+    Follow-Ups" #2.
+    """
+    with caplog.at_level(logging.CRITICAL):
+        domain = resolve_cookie_domain(
+            environment=Environment.STAGING,
+            explicit_cookie_domain=".bogus.example",
+            frontend_url="https://staging.thespecialwedding.io",
+            api_base_url="https://api.staging.thespecialwedding.io",
+        )
+
+    # Explicit value was ignored; derivation from the URL env vars returned
+    # the actual shared-suffix domain.
+    assert domain == ".staging.thespecialwedding.io"
+
+    assert any(
+        record.levelno == logging.CRITICAL
+        and "is not shared by" in record.message
+        and ".bogus.example" in record.message
+        for record in caplog.records
+    ), "expected a CRITICAL log naming the mismatched COOKIE_DOMAIN"
+
+
 def test_cookie_cleanup_domains_include_legacy_host_scopes():
     domains = legacy_cookie_cleanup_domains(
         environment=Environment.STAGING,
