@@ -93,3 +93,5 @@ playwright-report/
 new-prod-bootstrap/
 scripts/deploy/migrate_mongo.sh
 scripts/deploy/prepare_new_prod.sh
+scripts/verify_team_member_gate_via_test_clock 2.py
+docs/plans/SUBSCRIPTION_LIFECYCLE_TEST_PLAN.md

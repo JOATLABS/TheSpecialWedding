@@ -7,6 +7,12 @@ export type MarketingFeature = {
   tagline: string;
   description: string;
   ai: boolean;
+  /**
+   * Optional blog post slug in app/resources/blog/data.tsx. When present, the
+   * landing card and /features showcase render a "Read the story →" link to
+   * /resources/blog/{blogSlug}. Not every feature has a dedicated post.
+   */
+  blogSlug?: string;
 };
 
 export const MARKETING_FEATURES: MarketingFeature[] = [
@@ -22,15 +28,41 @@ export const MARKETING_FEATURES: MarketingFeature[] = [
     ai: true,
   },
   {
+    id: 'wedding-website',
+    icon: '🌐',
+    title: 'The Wedding Website, Built In',
+    category: 'Experience',
+    // TODO: replace with /wedding_microsite.png once captured from staging
+    image: '/couple_portal_dashboard.png',
+    tagline: 'Every wedding gets a branded public site with gallery, RSVP, and QR memory uploads — no Squarespace, no The Knot.',
+    description:
+      "Each wedding slug ships as a public microsite with the couple's branding, event schedule, gallery, RSVP flow, and guest memory uploads via QR. You stop paying for a separate wedding website builder and your couples stop maintaining one. All of it is wired to the same guest list, gallery, and RSVP data you already work in.",
+    ai: false,
+    blogSlug: 'the-built-in-wedding-website',
+  },
+  {
     id: 'couple-portal',
     icon: '💍',
     title: 'Couple Portal',
     category: 'Client Experience',
     image: '/couple_portal_dashboard.png',
-    tagline: 'A dedicated portal where couples manage their timeline, payments, forms, messages, memories, registry, and FAQs.',
+    tagline: 'Give each couple a dedicated login where the whole wedding conversation lives.',
     description:
-      'Give every couple their own login with a curated dashboard, split-panel inbox with their planner, form submissions, payment history, photo memories, gift registry, and FAQ — so they stay in the loop without a single extra email.',
+      'Give every couple their own login with a curated dashboard, split-panel inbox with their planner, form submissions, payment history, and photo memories — so the couple-planner conversation has one home instead of leaking across texts and email.',
     ai: false,
+  },
+  {
+    id: 'couple-answers',
+    icon: '💬',
+    title: 'Everything Couples Ask, Already Answered',
+    category: 'Client Experience',
+    // TODO: replace with /couple_registry_faqs.png once captured; using existing registry screenshot
+    image: '/couple_portal_registry.png',
+    tagline: 'Registry, FAQs, meeting scheduler, memory wall, push notifications — so couples stop texting you the same five questions.',
+    description:
+      'The couple portal answers itself. Registry URLs, FAQ entries the couple maintains, a meeting scheduler for check-ins, a QR memory wall for guest photos, and real-time push notifications when anything changes. You stop being the human API between your couple and their plan, and they stop feeling out of the loop.',
+    ai: false,
+    blogSlug: 'why-your-couples-stop-texting-you',
   },
   {
     id: 'guests',
@@ -66,6 +98,19 @@ export const MARKETING_FEATURES: MarketingFeature[] = [
     ai: true,
   },
   {
+    id: 'real-time',
+    icon: '⚡',
+    title: 'Real-Time Planning, Not Email Tag',
+    category: 'Operations',
+    // TODO: replace with /realtime_updates.png once captured; using planner inbox as proxy
+    image: '/planner_inbox.png',
+    tagline: 'Changes appear instantly, every action is logged, and inbound emails thread straight into the planner inbox.',
+    description:
+      'Server-sent events push updates to the couple portal the moment you save them — no refresh, no "did you get my email." An activity audit log captures every write so your team can trace who changed what. Inbound emails forwarded to your wedding address automatically thread into the planner inbox against the right couple. Planning stops being a sync-every-morning operation.',
+    ai: false,
+    blogSlug: 'real-time-planning-not-email-tag',
+  },
+  {
     id: 'contracts',
     icon: '📝',
     title: 'Contract Canvas',
@@ -88,14 +133,27 @@ export const MARKETING_FEATURES: MarketingFeature[] = [
     ai: true,
   },
   {
+    id: 'vendor-network',
+    icon: '🏛️',
+    title: 'Your Vendor Network, Inside the Platform',
+    category: 'Business',
+    // TODO: replace with /vendor_network.png once captured; reusing vendor management screenshot
+    image: '/vendor_management.png',
+    tagline: 'Source from the public directory, advertise to planners via the ad portal, or collaborate through the contract portal — every vendor path lives here.',
+    description:
+      "The Special Wedding is also a vendor marketplace. Browse photographers, venues, and caterers in the public directory, invite contract vendors into token-based workspaces for signatures and payments, and let advertising vendors buy CPL campaigns that surface leads in your planner inbox. The vendor side of a wedding — discovery, contracting, payment, advertising — is not a separate universe anymore.",
+    ai: false,
+    blogSlug: 'your-vendor-network-inside-the-platform',
+  },
+  {
     id: 'vendors',
     icon: '🤝',
-    title: 'Vendor CRM',
+    title: 'Vendor CRM (Planner Side)',
     category: 'Business',
     image: '/vendor_management.png',
-    tagline: 'Track contracts, owners, payments, and collaboration for every venue and vendor partner.',
+    tagline: 'Your private rolodex — track contracts, owners, payments, and collaboration for every venue and vendor partner.',
     description:
-      'Coordinate photographers, caterers, venues, and other partners with shared records, inline contract notes, payment tracking, file exchange, and a full collaboration history per vendor.',
+      'Separate from the public directory, the Vendor CRM is your private planner-side rolodex: coordinate photographers, caterers, venues, and other partners with shared records, inline contract notes, payment tracking, file exchange, and a full collaboration history per vendor.',
     ai: false,
   },
   {
