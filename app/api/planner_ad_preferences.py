@@ -9,6 +9,14 @@ REST API for planners to manage their ad preferences:
 These preferences are respected by the sponsored cards serving logic.
 
 Routes: /planner/ads/preferences/*
+
+Auth model:
+- GET ``/preferences`` is open to any authenticated planner, root admin,
+  or team member so the rail can render the current hide/suppress state
+  regardless of whether the team member can mutate it.
+- All mutation endpoints require ``manage_vendors`` — planners and root
+  admins always pass; team members need the permission granted on their
+  team_permissions record.
 """
 
 import logging
@@ -17,7 +25,11 @@ from datetime import datetime, timezone
 from fastapi import APIRouter, Body, Depends
 
 from app.core.database import mongo
-from app.dependencies.auth_extended import ExtendedAuthUser, get_current_user_extended
+from app.dependencies.auth_extended import (
+    ExtendedAuthUser,
+    get_current_user_extended,
+    require_team_permission,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -72,7 +84,7 @@ async def get_preferences(
 )
 async def hide_vendor(
     vendor_id: str = Body(..., embed=True),
-    user: ExtendedAuthUser = Depends(get_current_user_extended),
+    user: ExtendedAuthUser = Depends(require_team_permission("manage_vendors")),
 ):
     planner_id = _get_planner_id(user)
     now = datetime.now(timezone.utc)
@@ -117,7 +129,7 @@ async def hide_vendor(
 )
 async def unhide_vendor(
     vendor_id: str = Body(..., embed=True),
-    user: ExtendedAuthUser = Depends(get_current_user_extended),
+    user: ExtendedAuthUser = Depends(require_team_permission("manage_vendors")),
 ):
     planner_id = _get_planner_id(user)
 
@@ -143,7 +155,7 @@ async def unhide_vendor(
 )
 async def suppress_category(
     category: str = Body(..., embed=True),
-    user: ExtendedAuthUser = Depends(get_current_user_extended),
+    user: ExtendedAuthUser = Depends(require_team_permission("manage_vendors")),
 ):
     planner_id = _get_planner_id(user)
     now = datetime.now(timezone.utc)
@@ -187,7 +199,7 @@ async def suppress_category(
 )
 async def unsuppress_category(
     category: str = Body(..., embed=True),
-    user: ExtendedAuthUser = Depends(get_current_user_extended),
+    user: ExtendedAuthUser = Depends(require_team_permission("manage_vendors")),
 ):
     planner_id = _get_planner_id(user)
 
@@ -213,7 +225,7 @@ async def unsuppress_category(
 )
 async def toggle_frequency(
     reduced_frequency: bool = Body(..., embed=True),
-    user: ExtendedAuthUser = Depends(get_current_user_extended),
+    user: ExtendedAuthUser = Depends(require_team_permission("manage_vendors")),
 ):
     planner_id = _get_planner_id(user)
     now = datetime.now(timezone.utc)

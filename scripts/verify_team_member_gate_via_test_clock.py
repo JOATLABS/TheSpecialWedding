@@ -58,7 +58,7 @@ import logging
 import os
 import sys
 import time
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
@@ -478,16 +478,50 @@ def fail_phase(state: dict) -> None:
     subscription_id = state["subscription_id"]
 
     # 1. Swap default payment method to the "succeed-then-fail" card.
+    #    We have to update BOTH the customer's invoice_settings.default_payment_method
+    #    AND the subscription's own default_payment_method. The SEED-phase
+    #    Subscription.create() call passed `save_default_payment_method=on_subscription`,
+    #    which pinned pm_card_visa onto the subscription itself after the first
+    #    successful charge. For renewals, subscription.default_payment_method
+    #    wins over customer.invoice_settings.default_payment_method. If we
+    #    only swap the customer default, the +33-day renewal still bills the
+    #    good card, succeeds, and the subscription stays active — which is
+    #    exactly the false-negative we hit on the first FAIL run.
     logger.info("Swapping default PM to 4000 0000 0000 0341 (renewal will fail)…")
-    attach_payment_method(customer_id, PM_TOKEN_WILL_FAIL_ON_RENEWAL)
-    logger.info("  ✅ Will-fail card is now default PM")
+    pm_id = attach_payment_method(customer_id, PM_TOKEN_WILL_FAIL_ON_RENEWAL)
+    stripe.Subscription.modify(subscription_id, default_payment_method=pm_id)
+    logger.info(f"  ✅ Will-fail card pinned on customer + subscription ({pm_id})")
 
-    # 2. Advance the clock past the next billing period. Signature is monthly,
-    #    so ~33 days forward triggers a renewal attempt.
-    target_ts = int((datetime.now(timezone.utc) + timedelta(days=33)).timestamp())
+    # 2. Advance the clock past the subscription's current_period_end so Stripe
+    #    actually attempts to renew. The target MUST be derived from the
+    #    subscription itself (or the clock's frozen_time), NOT from wall-clock
+    #    now: this test clock is re-used across runs, so its frozen_time can
+    #    drift arbitrarily far from real-time. If the target lands before
+    #    current_period_end, no renewal is triggered and subscription stays
+    #    `active` — the exact false-negative we kept hitting.
+    sub_before = stripe.Subscription.retrieve(subscription_id)
+    # Stripe moved `current_period_end` off the Subscription object in recent
+    # API versions — it's now on each SubscriptionItem. Fall back to the old
+    # top-level field if the SDK/API version still exposes it. Upcoming
+    # invoice's `period_end` is the ultimate source of truth either way.
+    period_end_ts: Optional[int] = None
+    try:
+        period_end_ts = sub_before["items"]["data"][0]["current_period_end"]
+    except (KeyError, IndexError, TypeError):
+        period_end_ts = None
+    if not period_end_ts:
+        period_end_ts = getattr(sub_before, "current_period_end", None)
+    if not period_end_ts:
+        upcoming = stripe.Invoice.upcoming(subscription=subscription_id)
+        period_end_ts = upcoming.period_end
+    target_ts = period_end_ts + 2 * 24 * 60 * 60  # +2 days past renewal
+    logger.info(
+        f"  📋 Subscription current_period_end = "
+        f"{datetime.fromtimestamp(period_end_ts, tz=timezone.utc).isoformat()}"
+    )
     logger.info(
         f"Advancing clock to {datetime.fromtimestamp(target_ts, tz=timezone.utc).isoformat()}"
-        " (+33 days) to trigger renewal…"
+        " (period_end + 2 days) to trigger renewal…"
     )
     stripe.test_helpers.TestClock.advance(TEST_CLOCK_ID, frozen_time=target_ts)
     wait_for_clock_ready(TEST_CLOCK_ID)
@@ -496,6 +530,22 @@ def fail_phase(state: dict) -> None:
     # 3. Confirm Stripe sees the subscription as past_due.
     sub = stripe.Subscription.retrieve(subscription_id)
     logger.info(f"  📋 Stripe subscription status: {sub.status}")
+    logger.info(f"  📋 Latest invoice id        : {sub.latest_invoice}")
+    if sub.latest_invoice:
+        try:
+            inv = stripe.Invoice.retrieve(sub.latest_invoice)
+            # Stripe's newer API dropped `Invoice.paid` (replaced by `status`
+            # == "paid" and amount_paid/amount_remaining). Use .get() so the
+            # diagnostic never aborts the verification run.
+            inv_status = inv.get("status")
+            inv_attempts = inv.get("attempt_count")
+            inv_paid = inv.get("paid", inv_status == "paid")
+            logger.info(
+                f"  📋 Latest invoice status    : {inv_status} "
+                f"(attempt_count={inv_attempts}, paid={inv_paid})"
+            )
+        except stripe.error.StripeError as exc:
+            logger.warning(f"  ⚠️ Could not retrieve latest invoice: {exc}")
     if sub.status not in ("past_due", "unpaid"):
         logger.warning(
             "  ⚠️ Subscription did not transition to past_due/unpaid — check Stripe"
@@ -506,20 +556,29 @@ def fail_phase(state: dict) -> None:
     pause_for_user(
         "CHECKPOINT A — Verify the FAIL state.\n"
         "\n"
+        "  Expected behavior changed: team-member login is now BLOCKED at\n"
+        "  `POST /admin/token` when the owning planner's subscription is in a\n"
+        "  blocked status (past_due / suspended / expired / cancelled).\n"
+        "  No session is minted. No dashboard ever loads.\n"
+        "\n"
         "  1. Gmail (ojaplusdevplatforms@gmail.com): confirm Stripe dunning email\n"
         f"     arrived for {PLANNER_EMAIL}.\n"
         "\n"
-        "  2. Chrome tab (frontend): log in as the TEAM MEMBER —\n"
+        "  2. Chrome tab (frontend): attempt to log in as the TEAM MEMBER —\n"
         f"        email    : {TEAM_MEMBER_EMAIL}\n"
         f"        password : {TEAM_MEMBER_PASSWORD}\n"
-        "     Expect: /admin shell loads but planner areas are GATED.\n"
-        "             GET /admin/profile shows _subscription_blocked = true\n"
-        "             Any billing-gated route returns the subscription banner.\n"
+        "     Expect: 402 from `POST /admin/token`, login form stays on /admin/login,\n"
+        "             inline error message reads roughly:\n"
+        "               \"Your team's subscription requires attention (status: past_due).\n"
+        f'                Please contact your planner at {PLANNER_EMAIL} to restore access."\n'
+        "             No `admin_token` cookie is issued.\n"
+        "             No /admin/profile, /admin/weddings, /notifications/stream calls fire.\n"
         "\n"
         "  3. Chrome tab (frontend): log in as the PLANNER —\n"
         f"        email    : {PLANNER_EMAIL}\n"
         f"        password : {PLANNER_PASSWORD}\n"
-        "     Expect: banner/CTA to update card; planner is past_due."
+        "     Expect: login succeeds, planner is routed to /admin/planner/billing\n"
+        "             with a past_due banner and CTA to update the card."
     )
 
 
@@ -534,16 +593,30 @@ def fix_phase(state: dict) -> None:
     customer_id = state["customer_id"]
     subscription_id = state["subscription_id"]
 
-    # 1. Swap back to the good card.
-    attach_payment_method(customer_id, PM_TOKEN_GOOD)
-    logger.info("  ✅ 4242 card is now default PM")
+    # 1. Swap back to the good card on BOTH customer and subscription.
+    #    See fail_phase for why subscription.default_payment_method has to be
+    #    set explicitly — save_default_payment_method=on_subscription pinned
+    #    the failing card onto the subscription during FAIL, and we need the
+    #    retry to bill the good card now.
+    pm_id = attach_payment_method(customer_id, PM_TOKEN_GOOD)
+    stripe.Subscription.modify(subscription_id, default_payment_method=pm_id)
+    logger.info(f"  ✅ 4242 card pinned on customer + subscription ({pm_id})")
 
     # 2. Nudge the clock forward so Stripe's retry schedule re-attempts the
-    #    open invoice. A few days is enough under default retry settings.
-    target_ts = int((datetime.now(timezone.utc) + timedelta(days=40)).timestamp())
+    #    open invoice. A few days past the current frozen_time is enough.
+    #    Target MUST be derived from the clock itself (not wall-clock now) —
+    #    the test clock is re-used, so its frozen_time has drifted from wall
+    #    time, and using wall-clock now produces a target that may sit BEFORE
+    #    frozen_time (advance no-ops) or far past the retry window.
+    clock = stripe.test_helpers.TestClock.retrieve(TEST_CLOCK_ID)
+    target_ts = clock.frozen_time + 7 * 24 * 60 * 60  # +7 days from current frozen_time
+    logger.info(
+        f"  📋 Clock frozen_time = "
+        f"{datetime.fromtimestamp(clock.frozen_time, tz=timezone.utc).isoformat()}"
+    )
     logger.info(
         f"Advancing clock to {datetime.fromtimestamp(target_ts, tz=timezone.utc).isoformat()}"
-        " (+40 days total) to trigger retry…"
+        " (frozen_time + 7 days) to trigger retry…"
     )
     stripe.test_helpers.TestClock.advance(TEST_CLOCK_ID, frozen_time=target_ts)
     wait_for_clock_ready(TEST_CLOCK_ID)
@@ -574,8 +647,15 @@ def fix_phase(state: dict) -> None:
     pause_for_user(
         "CHECKPOINT B — Verify the FIX state.\n"
         "\n"
-        "  1. Chrome: reload the TEAM MEMBER session.\n"
-        "     Expect: _subscription_blocked = false, planner-area calls succeed.\n"
+        "  There's no team-member session to 'reload' from FAIL — login was\n"
+        "  refused at /admin/token. So we log in FRESH as team member and\n"
+        "  confirm the gate has cleared.\n"
+        "\n"
+        "  1. Chrome: log in FRESH as TEAM MEMBER —\n"
+        f"        email    : {TEAM_MEMBER_EMAIL}\n"
+        f"        password : {TEAM_MEMBER_PASSWORD}\n"
+        "     Expect: login succeeds, /admin/profile returns normally with\n"
+        "             _subscription_blocked = false, planner-area calls succeed.\n"
         "\n"
         "  2. Chrome: reload the PLANNER session.\n"
         "     Expect: no past_due banner, subscription_status = active."

@@ -83,6 +83,14 @@ export default function AdminLoginPage() {
   const [error, setError] = useState<string | null>(null);
   const [querySuccessMessage, setQuerySuccessMessage] = useState<string | null>(null);
   const [dismissedQuerySuccess, setDismissedQuerySuccess] = useState(false);
+  // PR1 Step 4: mid-session cutoff redirects (e.g. blocked team member bounced
+  // back to /admin/login?error=<reason>) surface via this banner. Kept separate
+  // from the form-submit `error` state so a user can still see *why* they were
+  // kicked out while typing a fresh login attempt. No auto-dismiss — the
+  // subscription-block copy needs to stay readable until the user ack's it or
+  // submits again.
+  const [queryErrorMessage, setQueryErrorMessage] = useState<string | null>(null);
+  const [dismissedQueryError, setDismissedQueryError] = useState(false);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -95,6 +103,10 @@ export default function AdminLoginPage() {
 
     setQuerySuccessMessage(derivedMessage);
     setDismissedQuerySuccess(false);
+
+    const errorParam = params.get('error');
+    setQueryErrorMessage(errorParam && errorParam.trim().length > 0 ? errorParam : null);
+    setDismissedQueryError(false);
   }, []);
 
   useEffect(() => {
@@ -111,6 +123,7 @@ export default function AdminLoginPage() {
   }, [email, password.length, submitting]);
 
   const visibleSuccessMessage = !dismissedQuerySuccess ? querySuccessMessage : null;
+  const visibleQueryErrorMessage = !dismissedQueryError ? queryErrorMessage : null;
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -265,6 +278,27 @@ export default function AdminLoginPage() {
                           type="button"
                           onClick={() => setDismissedQuerySuccess(true)}
                           className="text-emerald-600 hover:text-emerald-800"
+                        >
+                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                          </svg>
+                        </button>
+                      </div>
+                    )}
+
+                    {visibleQueryErrorMessage && (
+                      <div role="alert" className="rounded-lg border border-wedding-rose/40 bg-wedding-rose/10 px-4 py-3 flex items-start gap-3">
+                        <svg className="w-5 h-5 text-wedding-rose flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                        </svg>
+                        <div className="flex-1">
+                          <p className="text-sm font-medium text-wedding-rose">{visibleQueryErrorMessage}</p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => setDismissedQueryError(true)}
+                          className="text-wedding-rose/80 hover:text-wedding-rose"
+                          aria-label="Dismiss"
                         >
                           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
