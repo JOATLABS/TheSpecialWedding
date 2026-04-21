@@ -258,6 +258,12 @@ export default function AdminLoginPage() {
                           Forgot password?
                         </Link>
                         <Link
+                          href="/couple/login"
+                          className="text-sm font-medium text-wedding-navy/60 transition hover:text-wedding-navy focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-wedding-rose/60"
+                        >
+                          Couple Portal →
+                        </Link>
+                        <Link
                           href="/"
                           className="text-sm font-medium text-wedding-navy/60 transition hover:text-wedding-navy focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-wedding-rose/60"
                         >

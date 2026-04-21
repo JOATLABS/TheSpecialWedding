@@ -236,6 +236,8 @@ No multi-module feature is done until coverage exists for:
 
 For shared planner calendar work, the E2E runbook is the minimum scenario list, not a nice-to-have.
 
+Live end-to-end subscription lifecycle drivers (Stripe test-clock + real Mongo + real webhooks) live under `testbed/` — not `scripts/`. See `testbed/README.md` for the directory contract and driver list. `scripts/` is reserved for deploy, bootstrap, and seed utilities.
+
 ## Required Adversarial Review Before Completion
 
 Before saying "implemented", review the diff as if you hate it and want to break it.

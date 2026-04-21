@@ -41,7 +41,7 @@ anything can be checked as completed" rule.
 
 Usage
 -----
-    python scripts/verify_team_member_gate_via_test_clock.py
+    python testbed/verify_team_member_gate_via_test_clock.py
 
 Requirements
 ------------
@@ -58,7 +58,6 @@ import logging
 import os
 import sys
 import time
-from datetime import datetime, timezone
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional

@@ -15,7 +15,7 @@ Uses Stripe Test Clocks to simulate the full trial lifecycle:
 8. Clean up test clock
 
 Usage:
-    python scripts/test_trial_with_test_clock.py
+    python testbed/test_trial_with_test_clock.py
 
 Requirements:
     - Backend running at localhost:8000
@@ -27,7 +27,6 @@ Environment Variables:
     BACKEND_URL        – Backend base URL (default: http://localhost:8000)
 """
 
-import asyncio
 import json
 import logging
 import os
@@ -41,35 +40,37 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import requests
 import stripe
+from dotenv import load_dotenv
 
 # ---------------------------------------------------------------------------
 # Configuration
 # ---------------------------------------------------------------------------
+
+load_dotenv(Path(__file__).resolve().parent.parent / ".env")
 
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s"
 )
 logger = logging.getLogger("test_clock_trial")
 
-# Load env
-from dotenv import load_dotenv
-
-load_dotenv(Path(__file__).resolve().parent.parent / ".env")
-
 STRIPE_SECRET_KEY = os.getenv("STRIPE_SECRET_KEY")
 BACKEND_URL = os.getenv("BACKEND_URL", "http://localhost:8000")
 ADMIN_EMAIL = os.getenv("ROOT_ADMIN_EMAIL", "thedeveloper@thespecialwedding.io")
-ADMIN_PASSWORD = os.getenv("ROOT_ADMIN_PASSWORD", "REDACTED")
+ADMIN_PASSWORD = os.getenv("ROOT_ADMIN_PASSWORD")
 
 if not STRIPE_SECRET_KEY:
     logger.error("STRIPE_SECRET_KEY not set in environment")
+    sys.exit(1)
+
+if not ADMIN_PASSWORD:
+    logger.error("ROOT_ADMIN_PASSWORD not set in environment")
     sys.exit(1)
 
 stripe.api_key = STRIPE_SECRET_KEY
 
 # Test configuration
 TEST_EMAIL = f"testclock.{int(time.time())}@example.com"
-TEST_PASSWORD = "TestClock2026!"
+TEST_PASSWORD = "TestClock2026!"  # pragma: allowlist secret
 TEST_PLAN_ID = "plan_signature"
 TRIAL_DAYS = 30
 WEBHOOK_SETTLE_SECONDS = 8  # Wait for webhooks to process
@@ -444,7 +445,6 @@ def step_7_test_internal_trial_expiration(admin_token: str) -> bool:
         logger.error("  ❌ User not found!")
         return False
 
-    user_id = user["_id"]
     current_status = user.get("subscription_status")
 
     logger.info(f"  📋 Current user status: {current_status}")
