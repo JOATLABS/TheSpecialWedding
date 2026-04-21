@@ -177,7 +177,7 @@ def verify_auth_cookie_response(
     # Require at least one active Set-Cookie with a Domain attribute visible to
     # BOTH hosts. Checking only the frontend host masks the exact regression
     # mechanism documented in
-    # docs/reports/FIX_ADMIN_COOKIE_DOMAIN_DRIFT_RETROSPECTIVE.md — a cookie
+    # docs/reports/FIX_ADMIN_COOKIE_DOMAIN_DRIFT.md — a cookie
     # domain that resolves for the browser but not the API (or vice versa)
     # still breaks admin navigation through proxy.ts.
     for header in active_cookie_headers:

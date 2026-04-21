@@ -518,3 +518,54 @@ jobs:
           cache-from: type=gha,scope=frontend
           build-args: |
             FRONTEND_URL=${{ env.FRONTEND_BUILD_URL }}
+
+  # ── CI Passed: Branch-protection aggregator ────────────────────────────────
+  # Single required status check for branch protection rulesets. This is the
+  # *only* check name that should be listed under "Status checks that are
+  # required" — everything else is either always-on (lint), path-filtered
+  # (integration-test, docker-build-test), or push-only (build-*, smoke-test),
+  # and listing them directly would make protection settings drift whenever
+  # the workflow evolves.
+  #
+  # Semantics: passes iff every upstream job in `needs` resolved to `success`
+  # or `skipped`. `failure` / `cancelled` / `timed_out` all fail the gate.
+  #
+  # Cascade-skip safety: if, e.g., `backend-lint` fails, `integration-test`
+  # cascade-skips (its `if:` gates on backend-lint.result == 'success'), but
+  # `backend-lint` itself is in `needs:` here — its `failure` result surfaces
+  # directly, so the cascade-skipped child passing through as `skipped` is
+  # fine.
+  #
+  # When adding a new job that should gate merges, append it to `needs:`.
+  ci-passed:
+    name: CI Passed
+    runs-on: ubuntu-latest
+    needs:
+      - changes
+      - frontend-lint
+      - frontend-test
+      - backend-lint
+      - integration-test
+      - build-backend
+      - build-frontend
+      - smoke-test
+      - docker-build-test
+    if: always()
+    steps:
+      - name: Verify no upstream job failed
+        env:
+          NEEDS_JSON: ${{ toJSON(needs) }}
+        run: |
+          set -euo pipefail
+          echo "Upstream job results:"
+          echo "$NEEDS_JSON" | jq .
+          FAILED=$(echo "$NEEDS_JSON" | jq -r '
+            to_entries
+            | map(select(.value.result != "success" and .value.result != "skipped") | .key)
+            | join(", ")
+          ')
+          if [ -n "$FAILED" ]; then
+            echo "::error::Upstream job(s) failed or were cancelled: $FAILED"
+            exit 1
+          fi
+          echo "All upstream jobs passed or were legitimately skipped."
