@@ -738,12 +738,12 @@ class Harness:
             },
         }
         if trial_days is not None:
-            from datetime import timedelta
-
-            trial_end_ts = int(
-                (datetime.now(timezone.utc) + timedelta(days=trial_days)).timestamp()
-            )
-            kwargs["trial_end"] = trial_end_ts
+            # Use trial_period_days (not trial_end): Stripe anchors this
+            # to the subscription's start timestamp on the test clock, so
+            # the trial end lands in the clock's future regardless of how
+            # far the clock has drifted from wall-now. trial_end with a
+            # wall-now timestamp breaks for drifted/reused clocks.
+            kwargs["trial_period_days"] = trial_days
             kwargs["metadata"]["trial_days"] = str(trial_days)
 
         subscription = stripe.Subscription.create(**kwargs)
