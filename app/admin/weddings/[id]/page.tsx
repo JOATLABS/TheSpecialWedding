@@ -10,6 +10,7 @@ import { extractGuestList } from '@/admin/utils/guestListResponse';
 import { Wedding, WeddingEvent, RegistryItem, FAQItem, WeddingPartyMember } from '@/types/wedding';
 import { formatAdminTimestamp, DEFAULT_TIMEZONE } from '@/utils/dateFormat';
 import { EVENT_TIME_FORMAT_HINT, getEventTimeValidationMessage, normalizeEventTimeInput } from '@/utils/eventTime';
+import { resolveMediaUrl } from '@/utils/mediaUrl';
 import {
   createCustomWeddingEventTypeKey,
   getWeddingEventLabel,
@@ -59,6 +60,48 @@ interface Guest {
   group_id?: string;
 }
 
+interface WeddingMediaItem {
+  key: string;
+  url?: string;
+  size?: number;
+}
+
+interface WeddingMediaOption {
+  value: string;
+  label: string;
+}
+
+const STORY_MEDIA_FOLDERS = ['our-story', 'wedding-party'] as const;
+
+const buildMediaLabel = (value: string) => {
+  const parts = value.split('/').filter(Boolean);
+  const filename = parts[parts.length - 1] || value;
+  return parts.length >= 2 ? `${filename} (${parts[0]})` : filename;
+};
+
+const buildMediaOptions = (
+  items: WeddingMediaItem[],
+  currentValue?: string,
+): WeddingMediaOption[] => {
+  const options = items.map((item) => ({
+    value: item.key,
+    label: buildMediaLabel(item.key),
+  }));
+
+  const normalizedCurrentValue = currentValue?.trim();
+  if (
+    normalizedCurrentValue &&
+    !options.some((option) => option.value === normalizedCurrentValue)
+  ) {
+    options.unshift({
+      value: normalizedCurrentValue,
+      label: `Current selection: ${buildMediaLabel(normalizedCurrentValue)}`,
+    });
+  }
+
+  return options;
+};
+
 export default function WeddingDetailsPage() {
  const { token, userProfile, isLoading: authLoading } = useAdmin();
  const params = useParams();
@@ -73,6 +116,8 @@ export default function WeddingDetailsPage() {
 	 const [activeTab, setActiveTab] = useState<'events' | 'rsvp' | 'privacy' | 'registry' | 'faq' | 'theme' | 'story' | 'couple'>('events');
  const [syncing, setSyncing] = useState(false);
  const [guests, setGuests] = useState<Guest[]>([]);
+ const [uploadedMedia, setUploadedMedia] = useState<WeddingMediaItem[]>([]);
+ const [loadingUploadedMedia, setLoadingUploadedMedia] = useState(false);
  const [showAdRail, setShowAdRail] = useState(false);
  const canViewCoupleTab = canManageCouplePortal(userProfile);
 
@@ -210,12 +255,62 @@ export default function WeddingDetailsPage() {
    }
  }, [token, weddingId]);
 
+ const fetchUploadedMedia = useCallback(async (weddingSlug: string) => {
+   if (!token) return;
+
+   setLoadingUploadedMedia(true);
+   try {
+     const baseUrl = getApiBaseUrl();
+     const nextMedia: WeddingMediaItem[] = [];
+     const seenKeys = new Set<string>();
+
+     for (const folder of STORY_MEDIA_FOLDERS) {
+       const response = await fetch(
+         `${baseUrl}/admin/gallery/list?prefix=${folder}/${weddingSlug}/`,
+         {
+           headers: {
+             'Authorization': `Bearer ${token}`,
+             'Content-Type': 'application/json',
+           },
+         }
+       );
+
+       if (!response.ok) {
+         throw new Error(`Failed to load ${folder} media`);
+       }
+
+       const data = await response.json();
+       for (const item of Array.isArray(data) ? data : []) {
+         if (!item?.key || seenKeys.has(item.key)) {
+           continue;
+         }
+         seenKeys.add(item.key);
+         nextMedia.push(item);
+       }
+     }
+
+     setUploadedMedia(nextMedia);
+   } catch (err) {
+     console.error('Failed to fetch wedding media:', err);
+     setUploadedMedia([]);
+     toast.error('Failed to load uploaded story and wedding-party images');
+   } finally {
+     setLoadingUploadedMedia(false);
+   }
+ }, [token]);
+
  // Fetch guests when story tab is active (for sync feature)
  useEffect(() => {
    if (activeTab === 'story') {
      fetchGuests();
    }
  }, [activeTab, fetchGuests]);
+
+ useEffect(() => {
+   if (activeTab === 'story' && wedding?.slug) {
+     fetchUploadedMedia(wedding.slug);
+   }
+ }, [activeTab, fetchUploadedMedia, wedding?.slug]);
 
  // Sync wedding party from guests
  const syncWeddingPartyFromGuests = async () => {
@@ -286,7 +381,7 @@ export default function WeddingDetailsPage() {
    }
  };
 
-	 const saveWedding = async () => {
+ const saveWedding = async () => {
 	 if (!wedding) return;
 
 	 const hasUnnamedCustomEvent = wedding.events.some(
@@ -358,6 +453,9 @@ export default function WeddingDetailsPage() {
  setSaving(false);
  }
  };
+
+ const ourStoryImages = uploadedMedia.filter((image) => image.key.startsWith('our-story/'));
+ const weddingPartyImages = uploadedMedia.filter((image) => image.key.startsWith('wedding-party/'));
 
  // Event management functions
 	 const updateEvent = (index: number, event: WeddingEvent) => {
@@ -1275,12 +1373,12 @@ const addEvent = () => {
  <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4 mb-6">
  <h4 className="font-semibold text-blue-900 dark:text-blue-200 mb-2">Image Organization</h4>
  <p className="text-sm text-blue-800 dark:text-blue-300 mb-2">
- Gallery Manager now writes planner-scoped storage paths automatically. Legacy <code className="bg-blue-100 dark:bg-blue-800/50 px-1 rounded">folder/{wedding.slug}/...</code> keys still resolve, but new uploads should use the keys returned by Gallery Manager for this wedding.
+ Gallery Manager now writes planner-scoped storage paths automatically. Legacy <code className="bg-blue-100 dark:bg-blue-800/50 px-1 rounded">folder/{wedding.slug}/...</code> keys still resolve, but story and wedding-party photos should now be assigned from the uploaded media selectors below.
  </p>
  <ul className="text-sm text-blue-700 dark:text-blue-300 space-y-1">
  <li>• Gallery Manager keeps public gallery, story, and wedding-party assets separated automatically.</li>
  <li>• Existing legacy keys remain valid during the migration window.</li>
- <li>• For manual edits, paste the exact key from Gallery Manager instead of guessing the storage path.</li>
+ <li>• The selectors below only show images already uploaded for this wedding’s story and wedding-party folders.</li>
  </ul>
  </div>
 
@@ -1326,19 +1424,48 @@ const addEvent = () => {
  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
  Couple Photo
  </label>
- <p className="text-sm text-gray-500 dark:text-gray-400 mb-2">
- Upload in Gallery Manager, then paste the exact returned key for the story image. Legacy keys still work, but new uploads are planner-scoped.
- </p>
- <input
- type="text"
+ <select
  value={wedding.our_story?.image_url || ''}
  onChange={(e) => setWedding({
  ...wedding,
  our_story: { ...wedding.our_story!, image_url: e.target.value }
  })}
  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100"
- placeholder="Paste the Gallery Manager image key"
+ >
+ <option value="">No story image</option>
+ {buildMediaOptions(ourStoryImages, wedding.our_story?.image_url).map((option) => (
+ <option key={option.value} value={option.value}>
+ {option.label}
+ </option>
+ ))}
+ </select>
+ <div className="mt-2 flex items-center justify-between gap-3 text-sm text-gray-500 dark:text-gray-400">
+ <span>
+ {loadingUploadedMedia
+   ? 'Loading uploaded story images...'
+   : `${ourStoryImages.length} uploaded story image${ourStoryImages.length === 1 ? '' : 's'} available`}
+ </span>
+ {wedding.our_story?.image_url && (
+ <code className="truncate rounded bg-gray-100 px-2 py-1 text-xs dark:bg-slate-800">
+ {wedding.our_story.image_url}
+ </code>
+ )}
+ </div>
+{resolveMediaUrl(wedding.our_story?.image_url) && (
+<div className="mt-3 flex items-center gap-3 rounded-lg border border-gray-200 bg-gray-50 p-3 dark:border-gray-700 dark:bg-slate-800/70">
+ <img
+ src={resolveMediaUrl(wedding.our_story?.image_url)}
+ alt="Selected story"
+ className="h-16 w-16 rounded-lg object-cover border border-gray-200 dark:border-gray-700"
  />
+ <div className="min-w-0">
+ <p className="text-sm font-medium text-gray-800 dark:text-gray-100">Selected story image</p>
+ <p className="truncate text-xs text-gray-500 dark:text-gray-400">
+ {wedding.our_story?.image_url}
+ </p>
+ </div>
+ </div>
+ )}
  </div>
  </div>
  </div>
@@ -1483,10 +1610,9 @@ const addEvent = () => {
  </div>
  <div className="md:col-span-2">
  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
- Photo (optional) - Paste the exact Gallery Manager key for this member's image
+ Photo (optional)
  </label>
- <input
- type="text"
+ <select
  value={member.image_url || ''}
  onChange={(e) => {
  const updated = [...wedding.wedding_party!];
@@ -1494,8 +1620,41 @@ const addEvent = () => {
  setWedding({ ...wedding, wedding_party: updated });
  }}
  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100"
- placeholder="Paste the Gallery Manager member image key"
+ >
+ <option value="">No member photo</option>
+ {buildMediaOptions(weddingPartyImages, member.image_url).map((option) => (
+ <option key={option.value} value={option.value}>
+ {option.label}
+ </option>
+ ))}
+ </select>
+ <div className="mt-2 flex items-center justify-between gap-3 text-sm text-gray-500 dark:text-gray-400">
+ <span>
+ {loadingUploadedMedia
+   ? 'Loading uploaded wedding-party images...'
+   : `${weddingPartyImages.length} uploaded wedding-party image${weddingPartyImages.length === 1 ? '' : 's'} available`}
+ </span>
+ {member.image_url && (
+ <code className="truncate rounded bg-gray-100 px-2 py-1 text-xs dark:bg-slate-800">
+ {member.image_url}
+ </code>
+ )}
+ </div>
+{resolveMediaUrl(member.image_url) && (
+<div className="mt-3 flex items-center gap-3 rounded-lg border border-gray-200 bg-gray-50 p-3 dark:border-gray-700 dark:bg-slate-800/70">
+ <img
+ src={resolveMediaUrl(member.image_url)}
+ alt={member.name || 'Wedding party member'}
+ className="h-16 w-16 rounded-full object-cover border border-gray-200 dark:border-gray-700"
  />
+ <div className="min-w-0">
+ <p className="text-sm font-medium text-gray-800 dark:text-gray-100">Selected member photo</p>
+ <p className="truncate text-xs text-gray-500 dark:text-gray-400">
+ {member.image_url}
+ </p>
+ </div>
+ </div>
+ )}
  </div>
  <div className="flex items-end">
  <button

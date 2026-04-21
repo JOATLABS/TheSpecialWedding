@@ -9,8 +9,8 @@ from typing import Any, Dict, Optional
 from bson.objectid import ObjectId
 from fastapi import HTTPException
 
-from app.core.cache import CacheKeys, cache
 from app.core.database import mongo
+from app.core.cache import CacheKeys, cache
 from app.services.gallery_media_service import GalleryUploadService
 from app.services.guest_service import GuestService
 from app.services.otp_service import OTPService
@@ -36,20 +36,72 @@ class GuestVerificationService:
         self.wedding_service = WeddingService()
         self.otp_service = OTPService()
         self.gallery_service = GalleryUploadService()
+        self.gallery_service = GalleryUploadService()
         self.weddings_collection = mongo.db["weddings"]
         self.guests_collection = mongo.get_guest_collection()
         self.rsvp_collection = mongo.db["rsvps"]
         self.plus_ones_collection = mongo.db["plus_ones"]
 
+    def _get_gallery_service(self) -> GalleryUploadService:
+        gallery_service = getattr(self, "gallery_service", None)
+        if gallery_service is None:
+            gallery_service = GalleryUploadService()
+            self.gallery_service = gallery_service
+        return gallery_service
+
+    def _resolve_guest_media_url(self, value: Any) -> Any:
+        if not isinstance(value, str):
+            return value
+
+        normalized = value.strip()
+        if not normalized:
+            return normalized
+
+        if re.match(r"^[a-z][a-z0-9+\-.]*://", normalized, re.IGNORECASE):
+            return normalized
+        if (
+            normalized.startswith("//")
+            or normalized.startswith("data:")
+            or normalized.startswith("blob:")
+        ):
+            return normalized
+
+        return self._get_gallery_service().build_public_url(normalized.lstrip("/"))
+
+    def _normalize_guest_media_fields(self, payload: Dict[str, Any]) -> Dict[str, Any]:
+        normalized_payload = {**payload}
+        normalized_payload["featured_image"] = self._resolve_guest_media_url(
+            normalized_payload.get("featured_image")
+        )
+
+        our_story = normalized_payload.get("our_story")
+        if isinstance(our_story, dict):
+            normalized_payload["our_story"] = {
+                **our_story,
+                "image_url": self._resolve_guest_media_url(our_story.get("image_url")),
+            }
+
+        wedding_party = normalized_payload.get("wedding_party")
+        if isinstance(wedding_party, list):
+            normalized_payload["wedding_party"] = [
+                {
+                    **member,
+                    "image_url": self._resolve_guest_media_url(member.get("image_url")),
+                }
+                if isinstance(member, dict)
+                else member
+                for member in wedding_party
+            ]
+
+        return normalized_payload
+
     def _serialize_wedding_response(self, wedding: Dict[str, Any]) -> Dict[str, Any]:
-        # Resolve raw R2 keys on featured_image / our_story / wedding_party to
-        # full public URLs so the frontend never has to concatenate
-        # NEXT_PUBLIC_MEDIA_DOMAIN (which is build-time inlined and fragile).
-        resolved = self.gallery_service.resolve_wedding_media_urls(wedding)
-        return {
-            **resolved,
-            "id": str(resolved.get("_id")),
-        }
+        return self._normalize_guest_media_fields(
+            {
+                **wedding,
+                "id": str(wedding.get("_id")),
+            }
+        )
 
     @staticmethod
     def _serialize_guest_response(
@@ -812,6 +864,7 @@ class GuestVerificationService:
                     }
                 )
 
+            response = self._normalize_guest_media_fields(response)
             await cache.set(cache_key, response, expire=self._privacy_info_cache_ttl)
             return response
 

@@ -4,6 +4,7 @@ import React from 'react';
 import { Wedding } from '@/types/wedding';
 import { GlassCard } from '@/components/ui/GlassCard';
 import Image from 'next/image';
+import { resolveMediaUrl } from '@/utils/mediaUrl';
 
 interface OurStorySectionProps {
   wedding: Wedding;
@@ -11,8 +12,11 @@ interface OurStorySectionProps {
 
 export const OurStorySection: React.FC<OurStorySectionProps> = ({ wedding }) => {
   const theme = wedding.theme_config;
+  const storyImageUrl = resolveMediaUrl(wedding.our_story?.image_url);
+  const hasStoryContent = Boolean(wedding.our_story?.text?.trim());
+  const hasWeddingParty = Boolean(wedding.wedding_party?.length);
 
-  if (!wedding.our_story && (!wedding.wedding_party || wedding.wedding_party.length === 0)) {
+  if (!hasStoryContent && !hasWeddingParty) {
     return null;
   }
 
@@ -71,17 +75,17 @@ export const OurStorySection: React.FC<OurStorySectionProps> = ({ wedding }) => 
     <div className="max-w-6xl mx-auto px-4">
       <GlassCard className="p-8" depth="mid" theme={theme}>
         {/* Our Story */}
-        {wedding.our_story && wedding.our_story.text && (
+        {hasStoryContent && wedding.our_story && (
           <GlassCard className="p-6 sm:p-8 mb-6" depth="near" theme={theme}>
             <h2 className="text-3xl font-bold text-center mb-6 theme-primary">
               Our Story
             </h2>
 
             <div className="flex flex-col items-center">
-              {wedding.our_story.image_url && (
+              {storyImageUrl && (
                 <div className={`relative w-48 h-48 mb-6 overflow-hidden ${getImageShapeClass(wedding.our_story.image_shape)}`}>
                   <Image
-                    src={wedding.our_story.image_url}
+                    src={storyImageUrl}
                     alt="Couple"
                     fill
                     className="object-cover"
@@ -104,7 +108,7 @@ export const OurStorySection: React.FC<OurStorySectionProps> = ({ wedding }) => 
         )}
 
         {/* Wedding Party */}
-        {wedding.wedding_party && wedding.wedding_party.length > 0 && (
+        {hasWeddingParty && wedding.wedding_party && (
           <GlassCard className="p-6 sm:p-8" depth="near" theme={theme}>
             <h2 className="text-3xl font-bold text-center mb-8 theme-primary">
               Wedding Party
@@ -118,29 +122,33 @@ export const OurStorySection: React.FC<OurStorySectionProps> = ({ wedding }) => 
                     Bride's Side
                   </h3>
                   <div className="flex flex-wrap justify-center gap-4">
-                    {bridesSide.map((member) => (
-                      <div key={member.id} className="text-center w-24">
-                        <div className="relative w-20 h-20 mx-auto mb-2 rounded-full overflow-hidden bg-gray-200 dark:bg-gray-700">
-                          {member.image_url ? (
-                            <Image
-                              src={member.image_url}
-                              alt={member.name}
-                              fill
-                              className="object-cover"
-                              sizes="80px"
-                            />
-                          ) : (
-                            <div className="w-full h-full flex items-center justify-center bg-wedding-rose bg-opacity-20 dark:bg-opacity-30">
-                              <span className="text-xl font-bold theme-accent">
-                                {member.name.charAt(0)}
-                              </span>
-                            </div>
-                          )}
+                    {bridesSide.map((member) => {
+                      const memberImageUrl = resolveMediaUrl(member.image_url);
+
+                      return (
+                        <div key={member.id} className="text-center w-24">
+                          <div className="relative w-20 h-20 mx-auto mb-2 rounded-full overflow-hidden bg-gray-200 dark:bg-gray-700">
+                            {memberImageUrl ? (
+                              <Image
+                                src={memberImageUrl}
+                                alt={member.name}
+                                fill
+                                className="object-cover"
+                                sizes="80px"
+                              />
+                            ) : (
+                              <div className="w-full h-full flex items-center justify-center bg-wedding-rose bg-opacity-20 dark:bg-opacity-30">
+                                <span className="text-xl font-bold theme-accent">
+                                  {member.name.charAt(0)}
+                                </span>
+                              </div>
+                            )}
+                          </div>
+                          <h4 className="font-semibold text-sm text-gray-800 dark:text-gray-100">{member.name}</h4>
+                          <p className="text-xs text-gray-600 dark:text-gray-300">{formatRole(member.role)}</p>
                         </div>
-                        <h4 className="font-semibold text-sm text-gray-800 dark:text-gray-100">{member.name}</h4>
-                        <p className="text-xs text-gray-600 dark:text-gray-300">{formatRole(member.role)}</p>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 </div>
               )}
@@ -152,29 +160,33 @@ export const OurStorySection: React.FC<OurStorySectionProps> = ({ wedding }) => 
                     Groom's Side
                   </h3>
                   <div className="flex flex-wrap justify-center gap-4">
-                    {groomsSide.map((member) => (
-                      <div key={member.id} className="text-center w-24">
-                        <div className="relative w-20 h-20 mx-auto mb-2 rounded-full overflow-hidden bg-gray-200 dark:bg-gray-700">
-                            {member.image_url ? (
-                            <Image
-                              src={member.image_url}
-                              alt={member.name}
-                              fill
-                              className="object-cover"
-                              sizes="80px"
-                            />
+                    {groomsSide.map((member) => {
+                      const memberImageUrl = resolveMediaUrl(member.image_url);
+
+                      return (
+                        <div key={member.id} className="text-center w-24">
+                          <div className="relative w-20 h-20 mx-auto mb-2 rounded-full overflow-hidden bg-gray-200 dark:bg-gray-700">
+                            {memberImageUrl ? (
+                              <Image
+                                src={memberImageUrl}
+                                alt={member.name}
+                                fill
+                                className="object-cover"
+                                sizes="80px"
+                              />
                             ) : (
-                            <div className="w-full h-full flex items-center justify-center bg-wedding-navy bg-opacity-20">
-                              <span className="text-xl font-bold theme-primary">
-                              {member.name.charAt(0)}
-                              </span>
-                            </div>
+                              <div className="w-full h-full flex items-center justify-center bg-wedding-navy bg-opacity-20">
+                                <span className="text-xl font-bold theme-primary">
+                                  {member.name.charAt(0)}
+                                </span>
+                              </div>
                             )}
+                          </div>
+                          <h4 className="font-semibold text-sm text-gray-800 dark:text-gray-100">{member.name}</h4>
+                          <p className="text-xs text-gray-600 dark:text-gray-300">{formatRole(member.role)}</p>
                         </div>
-                        <h4 className="font-semibold text-sm text-gray-800 dark:text-gray-100">{member.name}</h4>
-                        <p className="text-xs text-gray-600 dark:text-gray-300">{formatRole(member.role)}</p>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 </div>
               )}
