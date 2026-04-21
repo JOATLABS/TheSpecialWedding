@@ -32,6 +32,7 @@ jobs:
       ROOT_ADMIN_EMAIL: ${{ secrets.ROOT_ADMIN_EMAIL }}
       PLATFORM_METRICS_TOKEN: ${{ secrets.PLATFORM_METRICS_TOKEN }}
       BACKUP_SECRET: ${{ secrets.BACKUP_SECRET }}
+      SCHEDULER_HMAC_SECRET: ${{ secrets.SCHEDULER_HMAC_SECRET }}
       UPTIME_KV_NAMESPACE_ID: ${{ vars.CLOUDFLARE_UPTIME_KV_NAMESPACE_ID || secrets.CLOUDFLARE_UPTIME_KV_NAMESPACE_ID }}
 
     steps:
@@ -58,6 +59,7 @@ jobs:
             PLATFORM_METRICS_TOKEN
             BACKUP_SECRET
             UPTIME_KV_NAMESPACE_ID
+            SCHEDULER_HMAC_SECRET
           )
 
           for var_name in "${required_vars[@]}"; do
@@ -127,6 +129,18 @@ jobs:
           printf '%s' "$RESEND_API_KEY" | npx --yes "wrangler@${WRANGLER_VERSION}" secret put RESEND_API_KEY --config cloudflare-workers/trial.wrangler.toml
           printf '%s' "$ALERT_EMAIL" | npx --yes "wrangler@${WRANGLER_VERSION}" secret put ALERT_EMAIL --config cloudflare-workers/trial.wrangler.toml
           printf '%s' "$ROOT_ADMIN_EMAIL" | npx --yes "wrangler@${WRANGLER_VERSION}" secret put ROOT_ADMIN_EMAIL --config cloudflare-workers/trial.wrangler.toml
+
+      - name: Deploy Scheduler Cron Worker
+        shell: bash
+        run: |
+          set -euo pipefail
+          npx --yes "wrangler@${WRANGLER_VERSION}" deploy --config cloudflare-workers/scheduler.wrangler.toml
+          printf '%s' "$NEXT_PUBLIC_API_BASE_URL" | npx --yes "wrangler@${WRANGLER_VERSION}" secret put NEXT_PUBLIC_API_BASE_URL --config cloudflare-workers/scheduler.wrangler.toml
+          printf '%s' "$SCHEDULER_HMAC_SECRET" | npx --yes "wrangler@${WRANGLER_VERSION}" secret put SCHEDULER_HMAC_SECRET --config cloudflare-workers/scheduler.wrangler.toml
+          printf '%s' "$CRON_SECRET" | npx --yes "wrangler@${WRANGLER_VERSION}" secret put CRON_SECRET --config cloudflare-workers/scheduler.wrangler.toml
+          printf '%s' "$RESEND_API_KEY" | npx --yes "wrangler@${WRANGLER_VERSION}" secret put RESEND_API_KEY --config cloudflare-workers/scheduler.wrangler.toml
+          printf '%s' "$ALERT_EMAIL" | npx --yes "wrangler@${WRANGLER_VERSION}" secret put ALERT_EMAIL --config cloudflare-workers/scheduler.wrangler.toml
+          printf '%s' "$ROOT_ADMIN_EMAIL" | npx --yes "wrangler@${WRANGLER_VERSION}" secret put ROOT_ADMIN_EMAIL --config cloudflare-workers/scheduler.wrangler.toml
 
       - name: Notify on Success
         if: success()

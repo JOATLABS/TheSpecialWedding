@@ -18,6 +18,7 @@ import TermsModal from '@/components/TermsModal';
 import PrivacyModal from '@/components/PrivacyModal';
 import RequestRSVPLinkModal from '@/components/RequestRSVPLinkModal';
 import RSVPModal from '@/components/RSVPModal';
+import { resolveMediaUrl } from '@/utils/mediaUrl';
 
 /* ═══════════════════════════════════════════════════════════
    Wedding page content — rendered as primary + lightweight clone
@@ -287,15 +288,8 @@ export const LandingLayout: React.FC<LandingLayoutProps> = ({ wedding, images, g
     currentAutoOpenToken && dismissedAutoOpenToken !== currentAutoOpenToken,
   );
 
-  // Get featured image from wedding or use first gallery image.
-  // Backend resolves `featured_image` to a full public URL (see
-  // GalleryUploadService.resolve_wedding_media_urls) so we use it as-is and
-  // don't concatenate NEXT_PUBLIC_MEDIA_DOMAIN here — that env var is inlined
-  // at build time and has historically been the source of broken-image bugs
-  // when a build ships without it set.
-  const featuredImage = wedding.featured_image
-    ? wedding.featured_image
-    : images.length > 0 ? images[0].url : undefined;
+  // Get featured image from wedding or use first gallery image
+  const featuredImage = resolveMediaUrl(wedding.featured_image) ?? images[0]?.url;
 
   return (
     <>

@@ -1868,3 +1868,159 @@ async def cleanup_old_security_logs(
         "cutoff_date": cutoff_date.isoformat() + "Z",
         "collection": "security_audit_logs",
     }
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+#  Scheduler job status (ROOT_ADMIN Scheduler tab on /admin/platform)
+# ═══════════════════════════════════════════════════════════════════════════
+#
+#  Powers the "Scheduler" tab. The tracker in app/utils/scheduler_job_tracker.py
+#  writes one row to mongo.db["scheduler_job_runs"] per job invocation; these
+#  endpoints read those rows and compute stale-flags based on each job's
+#  expected interval (see KNOWN_JOBS in the tracker module).
+#
+#  Runtime-agnostic by design: works identically whether the job was fired by
+#  Cloudflare Workers cron, legacy calendar-scheduler.yml, or manual curl.
+
+
+def _serialize_run(run: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+    """Normalize a scheduler_job_runs document for JSON output."""
+    if run is None:
+        return None
+
+    serialized: Dict[str, Any] = {
+        "run_id": str(run.get("_id")),
+        "job_name": run.get("job_name"),
+        "status": run.get("status"),
+        "started_at": _normalize_timestamp(run.get("started_at")),
+        "finished_at": _normalize_timestamp(run.get("finished_at")),
+        "params": run.get("params", {}),
+        "result": run.get("result"),
+        "error": run.get("error"),
+    }
+
+    # Duration in ms is convenient for the UI.
+    started = _coerce_datetime(run.get("started_at"))
+    finished = _coerce_datetime(run.get("finished_at"))
+    if started and finished:
+        serialized["duration_ms"] = int((finished - started).total_seconds() * 1000)
+    else:
+        serialized["duration_ms"] = None
+
+    return serialized
+
+
+@router.get("/scheduler/jobs")
+async def get_scheduler_jobs_summary(
+    current_user: ExtendedAuthUser = Depends(require_root_admin),
+) -> Dict[str, Any]:
+    """
+    One row per known scheduler job. Each row includes:
+      - static config (label, description, expected cadence)
+      - last run (any status)
+      - last successful run timestamp
+      - stale flag (red if no success in > expected_interval * multiplier)
+      - quick stats: success_count_24h, failure_count_24h
+
+    The UI uses this to render the Scheduler tab table. Refreshes on the same
+    30s auto-refresh cadence as the rest of the platform page.
+    """
+    from app.utils.scheduler_job_tracker import (
+        KNOWN_JOBS,
+        compute_stale_flag,
+        get_last_run_per_job,
+        get_last_success_per_job,
+    )
+
+    last_runs = await get_last_run_per_job()
+    last_successes = await get_last_success_per_job()
+
+    # 24h aggregate counts for the tab header / per-job stats.
+    since_24h = datetime.now(timezone.utc) - timedelta(hours=24)
+    stats_pipeline = [
+        {"$match": {"started_at": {"$gte": since_24h}}},
+        {
+            "$group": {
+                "_id": {"job_name": "$job_name", "status": "$status"},
+                "count": {"$sum": 1},
+            }
+        },
+    ]
+    stats_by_job: Dict[str, Dict[str, int]] = {name: {} for name in KNOWN_JOBS}
+    async for row in mongo.db["scheduler_job_runs"].aggregate(stats_pipeline):
+        job_name = row["_id"]["job_name"]
+        status_name = row["_id"]["status"]
+        if job_name not in stats_by_job:
+            stats_by_job[job_name] = {}
+        stats_by_job[job_name][status_name] = row["count"]
+
+    jobs_out = []
+    total_failed_24h = 0
+    total_stale = 0
+    for job_name, config in KNOWN_JOBS.items():
+        last_run = _serialize_run(last_runs.get(job_name))
+        stale_info = compute_stale_flag(job_name, last_successes.get(job_name))
+        stats = stats_by_job.get(job_name, {})
+        success_24h = stats.get("success", 0)
+        failure_24h = stats.get("failed", 0)
+        running_now = stats.get("running", 0)
+        total_failed_24h += failure_24h
+        if stale_info["is_stale"]:
+            total_stale += 1
+
+        jobs_out.append(
+            {
+                "job_name": job_name,
+                "label": config["label"],
+                "description": config["description"],
+                "expected_interval_minutes": config["expected_interval_minutes"],
+                "last_run": last_run,
+                "last_success_at": _normalize_timestamp(last_successes.get(job_name)),
+                "stale": stale_info,
+                "stats_24h": {
+                    "success": success_24h,
+                    "failed": failure_24h,
+                    "running": running_now,
+                },
+            }
+        )
+
+    return {
+        "generated_at": datetime.now(timezone.utc).isoformat() + "Z",
+        "jobs": jobs_out,
+        "summary": {
+            "total_jobs": len(jobs_out),
+            "stale_jobs": total_stale,
+            "failed_runs_24h": total_failed_24h,
+        },
+    }
+
+
+@router.get("/scheduler/jobs/{job_name}/runs")
+async def get_scheduler_job_runs(
+    job_name: str,
+    limit: int = Query(50, ge=1, le=500),
+    current_user: ExtendedAuthUser = Depends(require_root_admin),
+) -> Dict[str, Any]:
+    """Recent runs for a single job, newest first. Drill-in view."""
+    from app.utils.scheduler_job_tracker import (
+        KNOWN_JOBS,
+        get_recent_runs_for_job,
+    )
+
+    if job_name not in KNOWN_JOBS:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Unknown scheduler job: {job_name}",
+        )
+
+    runs = await get_recent_runs_for_job(job_name, limit=limit)
+    serialized = [_serialize_run(r) for r in runs]
+
+    return {
+        "job_name": job_name,
+        "label": KNOWN_JOBS[job_name]["label"],
+        "runs": serialized,
+        "count": len(serialized),
+        "limit": limit,
+    }
