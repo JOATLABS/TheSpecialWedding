@@ -625,8 +625,52 @@ class SubscriptionService:
                 status_code=500, detail=f"Error initializing usage tracking: {str(e)}"
             )
 
+    async def _live_wedding_count(self, user_id: str) -> int:
+        """Authoritative wedding count for cap enforcement.
+
+        Reads the `weddings` collection directly instead of trusting the
+        `usage_tracking.weddings_count` counter, which can drift from
+        reality in at least three ways:
+
+        1. ``reset_monthly_usage`` unconditionally sets ``weddings_count=0``
+           on every new-month document (the inline note at line 798 already
+           flagged this but the code still resets) — so the cap silently
+           lifts on each month rollover for a cumulative resource.
+        2. If a user record is re-provisioned under the same email (driver
+           reseeding, support tools, data migration), weddings keyed by
+           ``assigned_planner_email`` persist but the new user's
+           ``usage_tracking`` counter starts at 0. This is how the planner
+           trial driver was false-passing A1/A2 while the tenancy had 6
+           live weddings against a 3-wedding cap.
+        3. Any write ordering issue between wedding create and counter
+           increment leaves the counter out of sync indefinitely.
+
+        Live-counting via ``build_wedding_owner_query`` (the canonical
+        owner filter used everywhere else in the codebase) removes all
+        three modes at the cost of one ``count_documents`` call per cap
+        check.
+        """
+        user = await self.users_collection.find_one(
+            {"_id": normalize_query_id(user_id)},
+            {"email": 1},
+        )
+        user_email = user.get("email") if user else None
+        owner_query = build_wedding_owner_query(
+            planner_id=user_id, planner_email=user_email
+        )
+        if not owner_query:
+            return 0
+        return await self.weddings_collection.count_documents(owner_query)
+
     async def get_usage_stats(self, user_id: str) -> dict:
-        """Get current usage statistics for user"""
+        """Get current usage statistics for user.
+
+        ``weddings_count`` in the returned dict is reconciled against the
+        live weddings collection before return, so the billing dashboard
+        and any other consumer sees the authoritative count regardless of
+        counter drift. Drift is logged at INFO so it's visible but doesn't
+        alarm. See ``_live_wedding_count`` for why the counter is unreliable.
+        """
         try:
             current_month = datetime.now(timezone.utc).strftime("%Y-%m")
             usage = await self.usage_collection.find_one(
@@ -641,6 +685,19 @@ class SubscriptionService:
                     )
                 else:
                     return {"error": "No active subscription found"}
+
+            # Reconcile wedding count with live reality. We don't write back
+            # to the counter — the counter stays as an observability
+            # breadcrumb; the returned dict carries the truth.
+            live_wedding_count = await self._live_wedding_count(user_id)
+            stored = usage.get("weddings_count", 0)
+            if stored != live_wedding_count:
+                logger.info(
+                    f"Reconciling weddings_count for user_id={user_id}: "
+                    f"usage_tracking.weddings_count={stored} -> "
+                    f"live weddings collection count={live_wedding_count}"
+                )
+                usage["weddings_count"] = live_wedding_count
 
             return usage
 
@@ -677,7 +734,13 @@ class SubscriptionService:
 
             # Check limits based on resource type
             if resource_type == "weddings":
-                current = usage.get("weddings_count", 0)
+                # SOURCE OF TRUTH is the weddings collection, not the
+                # counter. ``get_usage_stats`` already reconciles the
+                # returned dict, but we re-query here to keep this method
+                # independently correct — if someone ever stubs or bypasses
+                # ``get_usage_stats``, the cap must still hold. The extra
+                # round-trip is negligible versus a false-positive cap.
+                current = await self._live_wedding_count(user_id)
                 limit = limits_source.get("max_weddings", 1)
                 if limit != -1 and current + requested_amount > limit:
                     return {
