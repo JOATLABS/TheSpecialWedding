@@ -134,6 +134,11 @@ export default function AdminWeddingsPage() {
   const [eventTimeErrors, setEventTimeErrors] = useState<Record<number, string>>({});
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
+  // Wedding cap state — mirrors backend check_usage_limits so the UI doesn't
+  // open a create form the planner can't submit. See app/services/subscription_service.py
+  // (weddings gate reads live _live_wedding_count, not usage_tracking counter).
+  const [atWeddingCap, setAtWeddingCap] = useState(false);
+  const [weddingLimit, setWeddingLimit] = useState<number | null>(null);
   const [filter, setFilter] = useState<'all' | 'assigned' | 'unassigned'>('all');
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
@@ -264,16 +269,53 @@ export default function AdminWeddingsPage() {
     }
   }, [token]);
 
+  // Ask the backend whether the current planner can add one more wedding.
+  // Same contract as the form submit — so UI and submit agree. Root admins
+  // bypass; they don't have a personal plan cap. Fail-open on error: the
+  // backend still enforces on POST, we just don't want to block the UI on
+  // a transient network blip. See app/api/subscription_management.py::check_usage_limits.
+  const checkWeddingCap = useCallback(async () => {
+    if (!userProfile || userProfile.is_root_admin || !userProfile.id || !token) {
+      setAtWeddingCap(false);
+      setWeddingLimit(null);
+      return;
+    }
+    try {
+      const baseUrl = getApiBaseUrl();
+      const response = await fetch(
+        `${baseUrl}/users/${encodeURIComponent(userProfile.id)}/usage/check?resource_type=weddings&amount=1`,
+        {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json',
+          },
+        }
+      );
+      if (!response.ok) {
+        setAtWeddingCap(false);
+        return;
+      }
+      const data = await response.json();
+      setAtWeddingCap(data.allowed === false);
+      setWeddingLimit(typeof data.limit === 'number' ? data.limit : null);
+    } catch (err) {
+      console.error('Error checking wedding cap:', err);
+      setAtWeddingCap(false);
+    }
+  }, [token, userProfile]);
+
   useEffect(() => {
     if (!userProfile) {
       fetchUserProfile();
     } else {
       fetchWeddings();
+      checkWeddingCap();
       if (userProfile.is_root_admin) {
         fetchPlanners();
       }
     }
-  }, [fetchPlanners, fetchUserProfile, fetchWeddings, userProfile]);
+  }, [checkWeddingCap, fetchPlanners, fetchUserProfile, fetchWeddings, userProfile]);
 
   // Reset to page 1 only when user changes filter inputs (not when data changes)
   useEffect(() => {
@@ -468,6 +510,7 @@ export default function AdminWeddingsPage() {
       setShowEventDetails(false);
       setEventTimeErrors({});
       fetchWeddings();
+      checkWeddingCap();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to save wedding');
     } finally {
@@ -491,6 +534,7 @@ export default function AdminWeddingsPage() {
 
       if (response.ok) {
         fetchWeddings();
+        checkWeddingCap();
       } else {
         setError('Failed to delete wedding');
       }
@@ -624,10 +668,19 @@ export default function AdminWeddingsPage() {
       >
         <button
           onClick={() => {
+            if (atWeddingCap) return;
             setEventTimeErrors({});
             setShowForm(true);
           }}
-          className="px-4 py-2 bg-wedding-rose text-white font-semibold rounded-lg hover:bg-wedding-gold transition"
+          disabled={atWeddingCap}
+          title={atWeddingCap
+            ? (weddingLimit !== null
+                ? `Plan limit reached — ${weddingLimit} of ${weddingLimit} weddings in use. Upgrade or delete a wedding to add another.`
+                : 'Plan wedding limit reached. Upgrade or delete a wedding to add another.')
+            : undefined}
+          className={atWeddingCap
+            ? 'px-4 py-2 bg-gray-300 dark:bg-slate-700 text-gray-500 dark:text-gray-400 font-semibold rounded-lg cursor-not-allowed opacity-70'
+            : 'px-4 py-2 bg-wedding-rose text-white font-semibold rounded-lg hover:bg-wedding-gold transition'}
         >
           + Add Wedding
         </button>
