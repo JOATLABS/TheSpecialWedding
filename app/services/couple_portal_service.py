@@ -8,11 +8,12 @@ Sprint 3: Adds email digest generation for unread updates, messages, payments.
 import asyncio
 import logging
 from datetime import datetime, timedelta, timezone
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, cast
 
 from app.core.cache import CacheKeys, cache
 from app.core.database import mongo
 from app.services.guest_media_service import guest_media_service
+from app.utils.messaging_roles import SENDER_ROLE_PLANNER
 from app.utils.planner_ownership import resolve_wedding_owner_identity
 
 logger = logging.getLogger(__name__)
@@ -35,7 +36,7 @@ class CouplePortalService:
 
     async def get_portal_dashboard(
         self, wedding_id: str, couple_email: str
-    ) -> Dict[str, Any]:
+    ) -> Optional[Dict[str, Any]]:
         """
         Get complete portal dashboard data for a couple.
         Aggregates wedding info, guest stats, budget summary, events, and planner info.
@@ -100,6 +101,7 @@ class CouplePortalService:
             self._get_updates(wedding_id),
             guest_media_service.get_dashboard_summary(wedding_id),
         )
+        planner = cast(Optional[Dict[str, Any]], planner)
 
         dashboard = {
             "wedding": {
@@ -714,7 +716,7 @@ class CouplePortalService:
             unread_messages = await mongo.db["couple_messages"].count_documents(
                 {
                     "wedding_id": wedding_id,
-                    "sender_role": "planner",
+                    "sender_role": SENDER_ROLE_PLANNER,
                     "read_by_couple": False,
                 }
             )

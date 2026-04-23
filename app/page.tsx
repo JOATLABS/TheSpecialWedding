@@ -263,9 +263,21 @@ function FeatureShowcase({ isClone }: { isClone: boolean }) {
                 {feature.title}
               </h3>
               {idx === activeIdx && (
-                <p className="mt-1 text-xs text-slate-300 leading-relaxed animate-fade-in">
-                  {feature.tagline}
-                </p>
+                <>
+                  <p className="mt-1 text-xs text-slate-300 leading-relaxed animate-fade-in">
+                    {feature.tagline}
+                  </p>
+                  {feature.blogSlug && (
+                    <Link
+                      href={`/resources/blog/${feature.blogSlug}`}
+                      className="mt-1.5 inline-flex items-center gap-1 text-[11px] font-semibold text-wedding-rose transition hover:text-wedding-blush animate-fade-in"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      Read the story
+                      <span aria-hidden="true">→</span>
+                    </Link>
+                  )}
+                </>
               )}
             </button>
           ))}
@@ -278,6 +290,15 @@ function FeatureShowcase({ isClone }: { isClone: boolean }) {
           </span>
           <h3 className="mt-2 text-lg font-semibold text-white">{active.title}</h3>
           <p className="mt-1 text-sm text-slate-300">{active.tagline}</p>
+          {active.blogSlug && (
+            <Link
+              href={`/resources/blog/${active.blogSlug}`}
+              className="mt-2 inline-flex items-center gap-1 text-xs font-semibold text-wedding-rose transition hover:text-wedding-blush"
+            >
+              Read the story
+              <span aria-hidden="true">→</span>
+            </Link>
+          )}
         </div>
 
         {/* Dashboard image — right column */}

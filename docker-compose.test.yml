@@ -39,6 +39,15 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.backend
+      # GHA Buildx cache — only effective when CI has run docker/setup-buildx-action
+      # first (which exports ACTIONS_CACHE_URL + ACTIONS_RUNTIME_TOKEN into the
+      # build environment). Harmless no-op for local `docker compose` users who
+      # don't have GHA credentials loaded. Scoped to `backend` to share the same
+      # cache layers as the build-backend job in ci.yml.
+      cache_from:
+        - type=gha,scope=backend
+      cache_to:
+        - type=gha,scope=backend,mode=max
     ports:
       - "8000:8000"
     environment:

@@ -27,7 +27,9 @@ import {
   ChevronRight,
   Loader2,
   Bell,
-  MessageSquare
+  MessageSquare,
+  Calendar,
+  PlayCircle
 } from 'lucide-react';
 
 // Types
@@ -167,7 +169,55 @@ interface PlatformMetrics {
   backups?: BackupStatus;
 }
 
-type TabType = 'health' | 'errors' | 'performance' | 'backups';
+interface SchedulerRunSummary {
+  run_id: string;
+  status: string;
+  started_at: string | null;
+  finished_at: string | null;
+  duration_ms: number | null;
+  error: string | null;
+  params?: Record<string, unknown> | null;
+  result?: unknown;
+}
+
+interface SchedulerJobStaleInfo {
+  is_stale: boolean;
+  threshold_minutes: number | null;
+  minutes_since_success: number | null;
+  reason?: string;
+}
+
+interface SchedulerJobStats24h {
+  total: number;
+  success: number;
+  failed: number;
+  running: number;
+}
+
+interface SchedulerJobSummary {
+  job_name: string;
+  label: string;
+  description: string;
+  expected_interval_minutes: number;
+  last_run: SchedulerRunSummary | null;
+  last_success_at: string | null;
+  stale: SchedulerJobStaleInfo;
+  stats_24h: SchedulerJobStats24h;
+}
+
+interface SchedulerSummaryTotals {
+  total_jobs: number;
+  stale_jobs: number;
+  failed_runs_24h: number;
+}
+
+interface SchedulerOverview {
+  generated_at: string;
+  jobs: SchedulerJobSummary[];
+  summary: SchedulerSummaryTotals;
+}
+
+type TabType = 'health' | 'errors' | 'performance' | 'backups' | 'scheduler';
 type SeverityFilter = 'all' | 'critical' | 'warning' | 'other';
 type AcknowledgedFilter = 'all' | 'true' | 'false';
 
@@ -202,6 +252,14 @@ export default function PlatformInfrastructurePage() {
   const [loadingErrors, setLoadingErrors] = useState(false);
   const [acknowledgingIds, setAcknowledgingIds] = useState<Set<string>>(new Set());
   const [acknowledgingAll, setAcknowledgingAll] = useState(false);
+
+  // Scheduler state
+  const [schedulerOverview, setSchedulerOverview] = useState<SchedulerOverview | null>(null);
+  const [loadingScheduler, setLoadingScheduler] = useState(false);
+  const [schedulerError, setSchedulerError] = useState<string | null>(null);
+  const [expandedJob, setExpandedJob] = useState<string | null>(null);
+  const [jobRuns, setJobRuns] = useState<Record<string, SchedulerRunSummary[]>>({});
+  const [loadingJobRuns, setLoadingJobRuns] = useState<Record<string, boolean>>({});
 
   // Page-based pagination
   const errorPagination = usePagination({ initialItemsPerPage: 50 });
@@ -326,6 +384,80 @@ export default function PlatformInfrastructurePage() {
     }
   }, [authLoading, errorCurrentPage, errorItemsPerPage, errorWindowDays, severityFilter, acknowledgedFilter, router, setErrorTotalItems, token, userProfile]);
 
+  const fetchSchedulerJobs = useCallback(async () => {
+    try {
+      if (authLoading || !userProfile) {
+        return;
+      }
+
+      if (!userProfile.is_root_admin) {
+        return;
+      }
+
+      if (!token) {
+        return;
+      }
+
+      setLoadingScheduler(true);
+
+      const baseUrl = getApiBaseUrl();
+      const response = await fetch(`${baseUrl}/admin/platform/scheduler/jobs`, {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        credentials: 'include',
+      });
+
+      if (response.status === 403) {
+        router.replace('/admin/planner');
+        return;
+      }
+
+      if (!response.ok) {
+        throw new Error(`Failed to fetch scheduler overview: ${response.statusText}`);
+      }
+
+      const data = (await response.json()) as SchedulerOverview;
+      setSchedulerOverview(data);
+      setSchedulerError(null);
+    } catch (err) {
+      console.error('Error fetching scheduler overview:', err);
+      setSchedulerError(err instanceof Error ? err.message : 'Failed to load scheduler overview');
+    } finally {
+      setLoadingScheduler(false);
+    }
+  }, [authLoading, router, token, userProfile]);
+
+  const fetchJobRuns = useCallback(async (jobName: string) => {
+    try {
+      if (!token) return;
+
+      setLoadingJobRuns((prev) => ({ ...prev, [jobName]: true }));
+
+      const baseUrl = getApiBaseUrl();
+      const response = await fetch(`${baseUrl}/admin/platform/scheduler/jobs/${jobName}/runs?limit=25`, {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        credentials: 'include',
+      });
+
+      if (!response.ok) {
+        throw new Error(`Failed to fetch runs: ${response.statusText}`);
+      }
+
+      const data = await response.json();
+      setJobRuns((prev) => ({ ...prev, [jobName]: (data.runs || []) as SchedulerRunSummary[] }));
+    } catch (err) {
+      console.error(`Error fetching runs for ${jobName}:`, err);
+      toast.error(`Could not load runs for ${jobName}`);
+    } finally {
+      setLoadingJobRuns((prev) => ({ ...prev, [jobName]: false }));
+    }
+  }, [token]);
+
   useEffect(() => {
     if (authLoading) {
       return;
@@ -356,6 +488,27 @@ export default function PlatformInfrastructurePage() {
       fetchAllErrors();
     }
   }, [activeTab, authLoading, fetchAllErrors, userProfile]);
+
+  useEffect(() => {
+    if (authLoading) {
+      return;
+    }
+
+    if (!userProfile || !userProfile.is_root_admin) {
+      return;
+    }
+
+    if (activeTab !== 'scheduler') {
+      return;
+    }
+
+    fetchSchedulerJobs();
+
+    if (autoRefresh) {
+      const interval = setInterval(fetchSchedulerJobs, 30000);
+      return () => clearInterval(interval);
+    }
+  }, [activeTab, authLoading, autoRefresh, fetchSchedulerJobs, userProfile]);
 
   // Reset to page 1 when filters change
   useEffect(() => {
@@ -452,6 +605,56 @@ export default function PlatformInfrastructurePage() {
     }
   };
 
+  const handleToggleJobExpand = (jobName: string) => {
+    setExpandedJob((prev) => {
+      const next = prev === jobName ? null : jobName;
+      if (next && !jobRuns[jobName]) {
+        void fetchJobRuns(jobName);
+      }
+      return next;
+    });
+  };
+
+  const formatIntervalMinutes = (minutes: number): string => {
+    if (minutes >= 1440) {
+      const days = minutes / 1440;
+      return `${days % 1 === 0 ? days : days.toFixed(1)}d`;
+    }
+    if (minutes >= 60) {
+      const hours = minutes / 60;
+      return `${hours % 1 === 0 ? hours : hours.toFixed(1)}h`;
+    }
+    return `${minutes}m`;
+  };
+
+  const formatMinutesSince = (minutes: number | null): string => {
+    if (minutes === null || minutes === undefined) return '—';
+    if (minutes < 1) return '<1m ago';
+    if (minutes < 60) return `${Math.round(minutes)}m ago`;
+    if (minutes < 1440) return `${(minutes / 60).toFixed(1)}h ago`;
+    return `${(minutes / 1440).toFixed(1)}d ago`;
+  };
+
+  const formatDuration = (ms: number | null): string => {
+    if (ms === null || ms === undefined) return '—';
+    if (ms < 1000) return `${ms}ms`;
+    if (ms < 60000) return `${(ms / 1000).toFixed(1)}s`;
+    return `${(ms / 60000).toFixed(1)}m`;
+  };
+
+  const getRunStatusChip = (status: string) => {
+    switch (status) {
+      case 'success':
+        return 'text-green-700 bg-green-100 dark:bg-green-900/30 dark:text-green-300';
+      case 'failed':
+        return 'text-red-700 bg-red-100 dark:bg-red-900/30 dark:text-red-300';
+      case 'running':
+        return 'text-blue-700 bg-blue-100 dark:bg-blue-900/30 dark:text-blue-300';
+      default:
+        return 'text-gray-700 bg-gray-100 dark:bg-gray-700 dark:text-gray-300';
+    }
+  };
+
   const getHealthStatusColor = (status: string) => {
     switch (status.toLowerCase()) {
       case 'healthy':
@@ -529,6 +732,7 @@ export default function PlatformInfrastructurePage() {
     { id: 'health' as TabType, label: 'System Health', icon: Activity },
     { id: 'errors' as TabType, label: 'Errors', icon: AlertTriangle },
     { id: 'performance' as TabType, label: 'Performance', icon: Zap },
+    { id: 'scheduler' as TabType, label: 'Scheduler', icon: Calendar },
     { id: 'backups' as TabType, label: 'Backups', icon: Shield },
   ];
 
@@ -562,7 +766,11 @@ export default function PlatformInfrastructurePage() {
           Auto-refresh (30s)
         </label>
         <button
-          onClick={() => { fetchMetrics(); if (activeTab === 'errors') fetchAllErrors(); }}
+          onClick={() => {
+            fetchMetrics();
+            if (activeTab === 'errors') fetchAllErrors();
+            if (activeTab === 'scheduler') fetchSchedulerJobs();
+          }}
           className="flex items-center gap-2 px-4 py-2 bg-primary-500 text-white rounded-lg hover:bg-primary-600 transition-colors text-sm font-medium"
         >
           <RefreshCw className="w-4 h-4" />
@@ -1254,6 +1462,235 @@ export default function PlatformInfrastructurePage() {
               <Zap className="w-16 h-16 text-gray-400 mx-auto mb-4" />
               <h3 className="text-xl font-semibold text-gray-900 dark:text-gray-100 mb-2">No Performance Data Available</h3>
               <p className="text-gray-600 dark:text-gray-400">Performance metrics will appear once requests are logged to the audit system.</p>
+            </Card>
+          )}
+        </div>
+      )}
+
+      {activeTab === 'scheduler' && (
+        <div className="space-y-6">
+          {loadingScheduler && !schedulerOverview ? (
+            <Card className="p-12 text-center">
+              <Loader2 className="w-12 h-12 text-primary-500 mx-auto mb-4 animate-spin" />
+              <p className="text-gray-600 dark:text-gray-400">Loading scheduled job status…</p>
+            </Card>
+          ) : schedulerError ? (
+            <Card className="p-6 border-red-200 dark:border-red-800 bg-red-50 dark:bg-red-900/20">
+              <div className="flex items-center gap-3 mb-3">
+                <AlertTriangle className="w-5 h-5 text-red-600 dark:text-red-400" />
+                <h3 className="text-base font-semibold text-red-800 dark:text-red-300">Could not load scheduler data</h3>
+              </div>
+              <p className="text-sm text-red-600 dark:text-red-300 mb-4">{schedulerError}</p>
+              <button
+                onClick={fetchSchedulerJobs}
+                className="bg-red-600 text-white px-4 py-2 rounded-lg hover:bg-red-700 transition-colors text-sm"
+              >
+                Retry
+              </button>
+            </Card>
+          ) : schedulerOverview ? (
+            <>
+              {/* Summary tiles */}
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                <Card className="p-6">
+                  <div className="flex items-center gap-3 mb-2">
+                    <Calendar className="w-5 h-5 text-primary-500" />
+                    <p className="text-sm font-medium text-gray-500 dark:text-gray-400">Total Jobs</p>
+                  </div>
+                  <p className="text-3xl font-bold text-gray-900 dark:text-gray-100">
+                    {schedulerOverview.summary.total_jobs}
+                  </p>
+                </Card>
+                <Card className="p-6">
+                  <div className="flex items-center gap-3 mb-2">
+                    <AlertTriangle className={`w-5 h-5 ${schedulerOverview.summary.stale_jobs > 0 ? 'text-red-500' : 'text-gray-400'}`} />
+                    <p className="text-sm font-medium text-gray-500 dark:text-gray-400">Stale Jobs</p>
+                  </div>
+                  <p className={`text-3xl font-bold ${schedulerOverview.summary.stale_jobs > 0 ? 'text-red-600 dark:text-red-400' : 'text-gray-900 dark:text-gray-100'}`}>
+                    {schedulerOverview.summary.stale_jobs}
+                  </p>
+                  <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">No successful run within expected window</p>
+                </Card>
+                <Card className="p-6">
+                  <div className="flex items-center gap-3 mb-2">
+                    <XCircle className={`w-5 h-5 ${schedulerOverview.summary.failed_runs_24h > 0 ? 'text-red-500' : 'text-gray-400'}`} />
+                    <p className="text-sm font-medium text-gray-500 dark:text-gray-400">Failed Runs (24h)</p>
+                  </div>
+                  <p className={`text-3xl font-bold ${schedulerOverview.summary.failed_runs_24h > 0 ? 'text-red-600 dark:text-red-400' : 'text-gray-900 dark:text-gray-100'}`}>
+                    {schedulerOverview.summary.failed_runs_24h}
+                  </p>
+                </Card>
+              </div>
+
+              {/* Jobs table */}
+              <Card className="p-0 overflow-hidden">
+                <div className="flex items-center justify-between p-6 border-b border-gray-200 dark:border-gray-700">
+                  <div>
+                    <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100">Scheduled Jobs</h3>
+                    <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
+                      Click a row to view recent runs. Stale jobs haven&apos;t completed a successful run inside the expected window.
+                    </p>
+                  </div>
+                  <div className="text-xs text-gray-500 dark:text-gray-400">
+                    Last updated: {formatAdminTimestamp(schedulerOverview.generated_at, adminTimezone)}
+                  </div>
+                </div>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead className="bg-gray-50 dark:bg-slate-800/60">
+                      <tr className="text-left text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                        <th className="px-6 py-3">Job</th>
+                        <th className="px-4 py-3">Interval</th>
+                        <th className="px-4 py-3">Last Run</th>
+                        <th className="px-4 py-3">Status</th>
+                        <th className="px-4 py-3">Last Success</th>
+                        <th className="px-4 py-3 text-right">24h (ok / fail)</th>
+                        <th className="px-4 py-3"></th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
+                      {schedulerOverview.jobs.map((job) => {
+                        const isExpanded = expandedJob === job.job_name;
+                        const runs = jobRuns[job.job_name] || [];
+                        const runsLoading = !!loadingJobRuns[job.job_name];
+                        const lastRunStatus = job.last_run?.status ?? 'never';
+                        const successCount24h = job.stats_24h?.success ?? 0;
+                        const failedCount24h = job.stats_24h?.failed ?? 0;
+                        return (
+                          <React.Fragment key={job.job_name}>
+                            <tr
+                              onClick={() => handleToggleJobExpand(job.job_name)}
+                              className={`cursor-pointer hover:bg-gray-50 dark:hover:bg-slate-800/60 transition-colors ${job.stale.is_stale ? 'bg-red-50/40 dark:bg-red-900/10' : ''}`}
+                            >
+                              <td className="px-6 py-4">
+                                <div className="flex items-start gap-2">
+                                  {job.stale.is_stale ? (
+                                    <AlertTriangle className="w-4 h-4 text-red-500 mt-0.5 flex-shrink-0" />
+                                  ) : (
+                                    <CheckCircle className="w-4 h-4 text-green-500 mt-0.5 flex-shrink-0" />
+                                  )}
+                                  <div>
+                                    <p className="font-medium text-gray-900 dark:text-gray-100">{job.label}</p>
+                                    <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">{job.description}</p>
+                                    <p className="text-[10px] uppercase tracking-wider text-gray-400 dark:text-gray-500 mt-0.5 font-mono">{job.job_name}</p>
+                                  </div>
+                                </div>
+                              </td>
+                              <td className="px-4 py-4 text-gray-700 dark:text-gray-300">
+                                every {formatIntervalMinutes(job.expected_interval_minutes)}
+                              </td>
+                              <td className="px-4 py-4 text-gray-700 dark:text-gray-300">
+                                {job.last_run?.started_at
+                                  ? formatAdminTimestamp(job.last_run.started_at, adminTimezone)
+                                  : <span className="text-gray-400">never</span>}
+                                {job.last_run?.duration_ms !== null && job.last_run?.duration_ms !== undefined && (
+                                  <span className="ml-2 text-xs text-gray-500 dark:text-gray-400">
+                                    ({formatDuration(job.last_run.duration_ms)})
+                                  </span>
+                                )}
+                              </td>
+                              <td className="px-4 py-4">
+                                <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold ${getRunStatusChip(lastRunStatus)}`}>
+                                  {lastRunStatus}
+                                </span>
+                                {job.stale.is_stale && (
+                                  <div className="mt-1 text-[11px] text-red-600 dark:text-red-400">
+                                    stale · threshold {job.stale.threshold_minutes}m
+                                  </div>
+                                )}
+                              </td>
+                              <td className="px-4 py-4 text-gray-700 dark:text-gray-300">
+                                {job.last_success_at
+                                  ? formatMinutesSince(job.stale.minutes_since_success)
+                                  : <span className="text-red-500">never</span>}
+                              </td>
+                              <td className="px-4 py-4 text-right font-mono text-xs text-gray-700 dark:text-gray-300">
+                                <span className={successCount24h > 0 ? 'text-green-600 dark:text-green-400' : ''}>{successCount24h}</span>
+                                <span className="mx-1 text-gray-400">/</span>
+                                <span className={failedCount24h > 0 ? 'text-red-600 dark:text-red-400 font-semibold' : ''}>{failedCount24h}</span>
+                              </td>
+                              <td className="px-4 py-4 text-right">
+                                <ChevronRight className={`w-4 h-4 text-gray-400 transition-transform ${isExpanded ? 'rotate-90' : ''}`} />
+                              </td>
+                            </tr>
+                            {isExpanded && (
+                              <tr>
+                                <td colSpan={7} className="bg-gray-50 dark:bg-slate-800/40 px-6 py-4">
+                                  <div className="flex items-center justify-between mb-3">
+                                    <h4 className="text-sm font-semibold text-gray-700 dark:text-gray-200 flex items-center gap-2">
+                                      <PlayCircle className="w-4 h-4" />
+                                      Recent runs
+                                    </h4>
+                                    <button
+                                      onClick={(e) => { e.stopPropagation(); void fetchJobRuns(job.job_name); }}
+                                      className="text-xs text-primary-600 dark:text-primary-400 hover:underline flex items-center gap-1"
+                                    >
+                                      <RefreshCw className={`w-3 h-3 ${runsLoading ? 'animate-spin' : ''}`} />
+                                      Refresh
+                                    </button>
+                                  </div>
+                                  {runsLoading && runs.length === 0 ? (
+                                    <div className="text-sm text-gray-500 dark:text-gray-400 py-4">Loading runs…</div>
+                                  ) : runs.length === 0 ? (
+                                    <div className="text-sm text-gray-500 dark:text-gray-400 py-4">No runs recorded yet. Once the cron fires it&apos;ll show up here.</div>
+                                  ) : (
+                                    <div className="overflow-x-auto border border-gray-200 dark:border-gray-700 rounded-lg bg-white dark:bg-slate-900">
+                                      <table className="w-full text-xs">
+                                        <thead>
+                                          <tr className="text-left text-gray-500 dark:text-gray-400 border-b border-gray-200 dark:border-gray-700">
+                                            <th className="px-3 py-2">Started</th>
+                                            <th className="px-3 py-2">Duration</th>
+                                            <th className="px-3 py-2">Status</th>
+                                            <th className="px-3 py-2">Error / Result</th>
+                                          </tr>
+                                        </thead>
+                                        <tbody className="divide-y divide-gray-100 dark:divide-gray-700">
+                                          {runs.map((run) => (
+                                            <tr key={run.run_id}>
+                                              <td className="px-3 py-2 text-gray-700 dark:text-gray-300 whitespace-nowrap">
+                                                {run.started_at ? formatAdminTimestamp(run.started_at, adminTimezone) : '—'}
+                                              </td>
+                                              <td className="px-3 py-2 text-gray-700 dark:text-gray-300 whitespace-nowrap">
+                                                {formatDuration(run.duration_ms)}
+                                              </td>
+                                              <td className="px-3 py-2">
+                                                <span className={`inline-flex items-center px-2 py-0.5 rounded-full font-semibold ${getRunStatusChip(run.status)}`}>
+                                                  {run.status}
+                                                </span>
+                                              </td>
+                                              <td className="px-3 py-2 text-gray-600 dark:text-gray-400 max-w-xl">
+                                                {run.error ? (
+                                                  <span className="text-red-600 dark:text-red-400 font-mono text-[11px] break-words">{run.error}</span>
+                                                ) : run.result ? (
+                                                  <code className="text-[11px] text-gray-500 dark:text-gray-400 break-words">
+                                                    {typeof run.result === 'string' ? run.result : JSON.stringify(run.result)}
+                                                  </code>
+                                                ) : (
+                                                  <span className="text-gray-400">—</span>
+                                                )}
+                                              </td>
+                                            </tr>
+                                          ))}
+                                        </tbody>
+                                      </table>
+                                    </div>
+                                  )}
+                                </td>
+                              </tr>
+                            )}
+                          </React.Fragment>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </Card>
+            </>
+          ) : (
+            <Card className="p-12 text-center">
+              <Calendar className="w-16 h-16 text-gray-400 mx-auto mb-4" />
+              <h3 className="text-xl font-semibold text-gray-900 dark:text-gray-100 mb-2">No Scheduler Data</h3>
+              <p className="text-gray-600 dark:text-gray-400">Scheduled jobs haven&apos;t reported any runs yet.</p>
             </Card>
           )}
         </div>

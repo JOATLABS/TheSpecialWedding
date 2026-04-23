@@ -1,0 +1,62 @@
+# =============================================================================
+# Security Audit (npm audit + pip-audit)
+#
+# Split out of ci.yml (2026-04-21) — dependency vulnerability scans don't need
+# to run on every PR since most PRs don't change dependency manifests. We
+# schedule a daily run for baseline drift detection, and re-run on PRs only
+# when package-lock.json / requirements*.txt actually change.
+#
+# Workflow dispatch stays available for ad-hoc audits.
+# =============================================================================
+name: Security Audit
+
+on:
+  schedule:
+    # Daily at 06:00 UTC (before team business hours in most US timezones).
+    - cron: "0 6 * * *"
+  pull_request:
+    branches: [main]
+    paths:
+      - "package.json"
+      - "package-lock.json"
+      - "requirements.txt"
+      - "requirements-*.txt"
+      - "pyproject.toml"
+      - ".github/workflows/security-audit.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: security-audit-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  NODE_VERSION: "20"
+  PYTHON_VERSION: "3.11"
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    name: Security Audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: "npm"
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: "pip"
+
+      - name: npm audit (high + critical)
+        run: npm audit --audit-level=high || true
+
+      - name: pip audit
+        run: |
+          pip install pip-audit
+          pip-audit -r requirements.txt || true

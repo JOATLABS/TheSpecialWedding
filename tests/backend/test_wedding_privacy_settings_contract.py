@@ -73,6 +73,102 @@ def test_get_wedding_privacy_info_returns_fresh_mode_after_invalidation(monkeypa
     assert second["privacy_mode"] == "public"
 
 
+def test_get_wedding_privacy_info_normalizes_guest_media_urls(monkeypatch):
+    cache_store = {}
+
+    async def fake_get(key):
+        return cache_store.get(key)
+
+    async def fake_set(key, value, expire=None):
+        cache_store[key] = value
+
+    wedding_doc = {
+        "_id": "wed_media",
+        "couple_names": "James and Mel",
+        "privacy_settings": {"privacy_mode": "public"},
+        "featured_image": "gallery/james-and-mel/hero.jpg",
+        "our_story": {
+            "text": "It all started with a coffee date.",
+            "image_url": "our-story/james-and-mel/story.jpg",
+        },
+        "wedding_party": [
+            {
+                "id": "party_1",
+                "name": "Alex",
+                "image_url": "wedding-party/james-and-mel/alex.jpg",
+            },
+            {"id": "party_2", "name": "Chris", "image_url": ""},
+            {
+                "id": "party_3",
+                "name": "Sam",
+                "image_url": "https://cdn.example.com/custom.jpg",
+            },
+        ],
+    }
+
+    monkeypatch.setattr(guest_verification_module.cache, "get", fake_get)
+    monkeypatch.setattr(guest_verification_module.cache, "set", fake_set)
+
+    service = GuestVerificationService.__new__(GuestVerificationService)
+    service.weddings_collection = SimpleNamespace(  # type: ignore[assignment]
+        find_one=AsyncMock(return_value=wedding_doc)
+    )
+    service.gallery_service = SimpleNamespace(  # type: ignore[assignment]
+        build_public_url=lambda key: f"https://media.example.com/{key}"
+    )
+
+    result = asyncio.run(service.get_wedding_privacy_info("james-and-mel"))
+
+    assert (
+        result["featured_image"]
+        == "https://media.example.com/gallery/james-and-mel/hero.jpg"
+    )
+    assert (
+        result["our_story"]["image_url"]
+        == "https://media.example.com/our-story/james-and-mel/story.jpg"
+    )
+    assert (
+        result["wedding_party"][0]["image_url"]
+        == "https://media.example.com/wedding-party/james-and-mel/alex.jpg"
+    )
+    assert result["wedding_party"][1]["image_url"] == ""
+    assert (
+        result["wedding_party"][2]["image_url"] == "https://cdn.example.com/custom.jpg"
+    )
+
+
+def test_serialize_wedding_response_normalizes_guest_media_urls():
+    service = GuestVerificationService.__new__(GuestVerificationService)
+    service.gallery_service = SimpleNamespace(  # type: ignore[assignment]
+        build_public_url=lambda key: f"https://media.example.com/{key}"
+    )
+
+    result = service._serialize_wedding_response(
+        {
+            "_id": "wed_serialized",
+            "featured_image": "gallery/james-and-mel/hero.jpg",
+            "our_story": {"image_url": "our-story/james-and-mel/story.jpg"},
+            "wedding_party": [
+                {"id": "party_1", "image_url": "wedding-party/james-and-mel/alex.jpg"}
+            ],
+        }
+    )
+
+    assert result["id"] == "wed_serialized"
+    assert (
+        result["featured_image"]
+        == "https://media.example.com/gallery/james-and-mel/hero.jpg"
+    )
+    assert (
+        result["our_story"]["image_url"]
+        == "https://media.example.com/our-story/james-and-mel/story.jpg"
+    )
+    assert (
+        result["wedding_party"][0]["image_url"]
+        == "https://media.example.com/wedding-party/james-and-mel/alex.jpg"
+    )
+
+
 def test_verify_wedding_page_access_honors_public_password_and_private_modes():
     public_service = _build_privacy_service(
         {

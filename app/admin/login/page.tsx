@@ -322,6 +322,18 @@ export default function AdminLoginPage() {
                       {submitting ? 'Signing you in…' : 'Sign in'}
                     </Button>
                   </form>
+
+                  <div className="mt-5 border-t border-white/30 pt-4 text-center">
+                    <p className="text-sm text-wedding-navy/70">
+                      Not a planner?{' '}
+                      <Link
+                        href="/couple/login"
+                        className="font-medium text-wedding-navy transition hover:text-wedding-rose"
+                      >
+                        Sign in to the Couple Portal →
+                      </Link>
+                    </p>
+                  </div>
                 </div>
 
                 <div className="mt-6 rounded-2xl border border-white/30 bg-white/40 px-5 py-4 text-sm text-wedding-navy/70 shadow-inner">

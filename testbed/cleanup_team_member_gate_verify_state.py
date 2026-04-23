@@ -6,7 +6,7 @@ attached to the verification test clock so the SEED phase can run cleanly
 from scratch. Does NOT delete the test clock itself.
 
 Usage:
-    python scripts/cleanup_team_member_gate_verify_state.py
+    python testbed/cleanup_team_member_gate_verify_state.py
 
 Safe to re-run. Only touches records matching the plus-variant emails used
 by the verification script.

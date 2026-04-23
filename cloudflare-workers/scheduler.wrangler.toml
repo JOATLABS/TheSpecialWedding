@@ -1,0 +1,42 @@
+# Wrangler configuration for the backend Scheduler Cron Worker.
+#
+# Replaces `.github/workflows/calendar-scheduler.yml` and additionally covers
+# three backend scheduler endpoints that currently have no caller
+# (task-reminders, cleanup-reminders, planner-onboarding-emails).
+#
+# Deploy with:
+#   wrangler deploy --config cloudflare-workers/scheduler.wrangler.toml
+#
+# Required secrets (set via deploy-workers.yml on push to main):
+#   NEXT_PUBLIC_API_BASE_URL   — backend base URL, no trailing slash
+#   SCHEDULER_HMAC_SECRET      — shared HMAC secret, must match backend env
+#   CRON_SECRET                — bearer for manual HTTP triggers only
+#   RESEND_API_KEY, ALERT_EMAIL, ROOT_ADMIN_EMAIL — failure alert email
+
+name = "scheduler-cron"
+main = "scheduler-cron.js"
+compatibility_date = "2026-04-10"
+compatibility_flags = ["nodejs_compat"]
+
+# Workers Logs — lets ROOT_ADMIN see console.log/console.error output from the
+# scheduler worker in the Cloudflare dashboard and via the Workers Logs API,
+# alongside the Mongo-side scheduler_job_runs tracked by the backend.
+# Best practice per https://developers.cloudflare.com/workers/best-practices/workers-best-practices/#observability
+# head_sampling_rate = 1 is fine here — the worker fires at most every 5 minutes.
+[observability]
+enabled = true
+head_sampling_rate = 1
+
+[triggers]
+# Keep the schedule list in sync with the dispatcher in scheduler-cron.js.
+#
+#   */5  — fans out calendar-invite-jobs + task-reminders
+#   */15 — calendar-maintenance (sync retries + drift checks)
+#   0 4  — cleanup-reminders (DB hygiene, off-peak UTC)
+#   0 9  — planner-onboarding-emails (drip sequence)
+crons = [
+  "*/5 * * * *",
+  "*/15 * * * *",
+  "0 4 * * *",
+  "0 9 * * *",
+]
