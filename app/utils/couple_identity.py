@@ -46,6 +46,26 @@ def build_couple_principal_key(couple_id: Any) -> str:
     return f"couple::{normalized}"
 
 
+def get_couple_display_name(couple: dict) -> str:
+    """Return a displayable name for a couple, falling back to email.
+
+    Produces "Partner1 & Partner2" when both partner names exist, "Partner1"
+    or "Partner2" when only one is present, and the couple's email address
+    when neither partner name is set. The email fallback matches the
+    behavior previously inlined at couple-messaging call sites.
+    """
+    partner1 = (couple.get("partner1_name") or "").strip()
+    partner2 = (couple.get("partner2_name") or "").strip()
+
+    if partner1 and partner2:
+        return f"{partner1} & {partner2}"
+    if partner1:
+        return partner1
+    if partner2:
+        return partner2
+    return str(couple.get("email") or "").strip()
+
+
 def list_couple_identity_keys(couple: dict) -> list[str]:
     """
     Return current and legacy identity keys for compatibility lookups.

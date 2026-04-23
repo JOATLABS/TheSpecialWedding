@@ -53,12 +53,13 @@ not be deleted by cleanup — that's what lets the seed phase stay cheap.
 | Driver | Purpose | Cleanup |
 | --- | --- | --- |
 | `verify_team_member_gate_via_test_clock.py` | PR1 — team-member login is blocked when the planner's subscription is `past_due` / `unpaid` and cleared when the planner recovers. Template for phase-gated runners. | `cleanup_team_member_gate_verify_state.py` |
-| `test_trial_with_test_clock.py` | 30-day planner trial: trial-end webhook fires on clock advance, usage limits flip at the right instant, `subscription_status` transitions correctly. | _(inline reset section at end of file)_ |
+| `verify_planner_trial_lifecycle.py` | Scenario A — 30-day planner trial: trial-end webhook, usage-limit flip, `subscription_status` transitions, with fresh clock per run. | `cleanup_planner_trial_verify_state.py` |
+| `verify_planner_active_lifecycle.py` | Scenarios B/C/D — active subscription UX, wedding + AI-credit caps, plan upgrade/downgrade (incl. plan_snapshot grandfather), cancel/resubscribe, and past-due recovery. Reusable clock. | `cleanup_planner_active_verify_state.py` |
+| `verify_planner_metered_lifecycle.py` | Scenario E — wedding create/delete reports Stripe meter events, `/metering/retry-pending` clears pending rows. Exits 0 with a skip banner when no plan is `is_metered=True`. Reusable clock. | `cleanup_planner_metered_verify_state.py` |
+| `test_trial_with_test_clock.py` | Early trial repro snippet predating the Scenario A driver. Kept for ad-hoc debugging; prefer `verify_planner_trial_lifecycle.py`. | _(inline reset section at end of file)_ |
 
-Additional drivers planned in
-`docs/plans/SUBSCRIPTION_LIFECYCLE_TEST_PLAN.md` (Scenarios A–E):
-`verify_planner_trial_lifecycle.py`, `verify_planner_active_lifecycle.py`,
-`verify_planner_metered_lifecycle.py`, plus their cleanups.
+All scenarios from `docs/plans/SUBSCRIPTION_LIFECYCLE_TEST_PLAN.md` (A–E)
+now have a driver + cleanup pair in this directory.
 
 ## Running a driver
 

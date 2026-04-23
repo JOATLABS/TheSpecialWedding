@@ -31,6 +31,10 @@ import {
 } from '@/couple/lib/auth';
 import { useCoupleAuth } from '@/contexts/CoupleAuthContext';
 import { getWeddingEventLabel } from '@/utils/weddingEvents';
+import {
+  type CoupleThreadMessage,
+  isSelfAuthored,
+} from '@/types/messaging';
 
 // ============================================================================
 // TYPES
@@ -1927,15 +1931,9 @@ function FormsSection({ forms, archived }: { forms: FormItem[]; archived: boolea
 // SECTION: INBOX (shared components, split-panel layout)
 // ============================================================================
 
-interface MessageItem {
-  id: string;
-  sender_role: 'couple' | 'planner';
-  sender_name: string;
-  content: string;
-  read_by_couple: boolean;
-  read_by_planner: boolean;
-  created_at?: string;
-}
+// `MessageItem` was previously defined inline here. Shared shape now lives in
+// `app/types/messaging.ts` so couple and planner inboxes agree on the wire.
+type MessageItem = CoupleThreadMessage;
 
 function InboxSection({ updates, onMessageSent, onMessagesRead, messageRefreshSignal, archived = false }: {
   updates: UpdateItem[];
@@ -1944,6 +1942,8 @@ function InboxSection({ updates, onMessageSent, onMessagesRead, messageRefreshSi
   messageRefreshSignal: number;
   archived?: boolean;
 }) {
+  const { coupleProfile } = useCoupleAuth();
+  const viewerEmail = coupleProfile?.email ?? null;
   const [messages, setMessages] = useState<MessageItem[]>([]);
   const [msgLoading, setMsgLoading] = useState(true);
   const [newMessage, setNewMessage] = useState('');
@@ -1966,9 +1966,9 @@ function InboxSection({ updates, onMessageSent, onMessagesRead, messageRefreshSi
       if (res.ok) {
         setMessages((prev) =>
           prev.map((message) =>
-            message.sender_role === 'planner'
-              ? { ...message, read_by_couple: true }
-              : message
+            isSelfAuthored(message, { email: viewerEmail, role: 'couple' })
+              ? message
+              : { ...message, read_by_couple: true }
           )
         );
         onMessagesRead();
@@ -1976,7 +1976,7 @@ function InboxSection({ updates, onMessageSent, onMessagesRead, messageRefreshSi
     } catch {
       // Non-critical: the thread will still render and unread counts can be recovered on refresh.
     }
-  }, [handleSessionFailure, onMessagesRead]);
+  }, [handleSessionFailure, onMessagesRead, viewerEmail]);
 
   const fetchMessages = useCallback(async (options?: { markRead?: boolean }) => {
     try {
@@ -1993,7 +1993,11 @@ function InboxSection({ updates, onMessageSent, onMessagesRead, messageRefreshSi
 
         if (
           options?.markRead &&
-          nextMessages.some((message) => message.sender_role === 'planner' && !message.read_by_couple)
+          nextMessages.some(
+            (message) =>
+              !isSelfAuthored(message, { email: viewerEmail, role: 'couple' }) &&
+              !message.read_by_couple,
+          )
         ) {
           await markMessagesRead();
         } else if (options?.markRead) {
@@ -2008,7 +2012,7 @@ function InboxSection({ updates, onMessageSent, onMessagesRead, messageRefreshSi
     } finally {
       setMsgLoading(false);
     }
-  }, [handleSessionFailure, markMessagesRead, onMessagesRead]);
+  }, [handleSessionFailure, markMessagesRead, onMessagesRead, viewerEmail]);
 
   useEffect(() => { fetchMessages(); }, [fetchMessages]);
 
@@ -2057,9 +2061,17 @@ function InboxSection({ updates, onMessageSent, onMessagesRead, messageRefreshSi
   };
 
   const lastMessage = messages.length > 0 ? messages[messages.length - 1] : null;
-  const unreadCount = messages.filter((message) => message.sender_role === 'planner' && !message.read_by_couple).length;
+  const unreadCount = messages.filter(
+    (message) =>
+      !isSelfAuthored(message, { email: viewerEmail, role: 'couple' }) &&
+      !message.read_by_couple,
+  ).length;
   const conversationPreview = lastMessage
-    ? `${lastMessage.sender_role === 'couple' ? 'You' : lastMessage.sender_name}: ${lastMessage.content}`
+    ? `${
+        isSelfAuthored(lastMessage, { email: viewerEmail, role: 'couple' })
+          ? 'You'
+          : lastMessage.sender_name
+      }: ${lastMessage.content}`
     : 'Start a conversation with your planner';
 
   return (
@@ -2139,18 +2151,21 @@ function InboxSection({ updates, onMessageSent, onMessagesRead, messageRefreshSi
                   <p className="text-xs mt-1">Send a message to start a conversation with your planner.</p>
                 </div>
               ) : (
-                messages.map((msg) => (
-                  <MessageBubble
-                    key={msg.id}
-                    content={msg.content}
-                    senderName={msg.sender_role !== 'couple' ? msg.sender_name : undefined}
-                    isSelf={msg.sender_role === 'couple'}
-                    timestamp={msg.created_at ? new Date(msg.created_at).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true }) : undefined}
-                    isRead={msg.read_by_planner}
-                    showReadIndicator={true}
-                    accentColor="indigo"
-                  />
-                ))
+                messages.map((msg) => {
+                  const self = isSelfAuthored(msg, { email: viewerEmail, role: 'couple' });
+                  return (
+                    <MessageBubble
+                      key={msg.id}
+                      content={msg.content}
+                      senderName={self ? undefined : msg.sender_name}
+                      isSelf={self}
+                      timestamp={msg.created_at ? new Date(msg.created_at).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true }) : undefined}
+                      isRead={msg.read_by_planner}
+                      showReadIndicator={true}
+                      accentColor="indigo"
+                    />
+                  );
+                })
               )}
               <div ref={messagesEndRef} />
             </div>

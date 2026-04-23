@@ -423,19 +423,56 @@ class Harness:
         """Delete a user and every document that references them.
 
         Removes: `users`, `user_subscriptions`, `stripe_customers`,
-        `team_members` (both by `user_id` and by invitee `email`).
+        `team_members` (both by `user_id` and by invitee `email`),
+        `usage_tracking` (by `user_id`), and `weddings` (by
+        `assigned_planner_email` — the stable key that survives user_id
+        regeneration).
+
+        **Why weddings by email and not just user_id:** when a driver
+        re-seeds, the new `users` record gets a brand-new ObjectId. Weddings
+        created under the PREVIOUS user_id were orphaned but still carried
+        `assigned_planner_email`, which the /admin/money dashboard counts —
+        so the planner's "Weddings X/3" counter silently drifted above the
+        cap while `usage_tracking.weddings_count` (the counter the cap check
+        reads) stayed at 0 for the freshly-seeded user. That's how
+        trial-driver A1/A2 can "pass" (402 still fires because the *per-run*
+        counter reaches 3) while the tenancy's true wedding count exceeds
+        the plan limit. Email-keyed cleanup closes that drift.
 
         Returns the count of collections that had at least one document
         removed — useful for cleanup scripts that want to report progress.
         """
         user = self.mongo["users"].find_one({"email": email})
-        if not user:
-            return 0
 
-        user_id = str(user["_id"])
         collections_affected = 0
 
-        for coll_name in ("user_subscriptions", "stripe_customers", "team_members"):
+        # Weddings are keyed by email (assigned_planner_email / created_by),
+        # which persists across user_id regeneration — delete BEFORE we lose
+        # the user record, but use email (stable) rather than user_id (per-run).
+        wedding_filter = {
+            "$or": [
+                {"assigned_planner_email": email},
+                {"created_by": email},
+            ]
+        }
+        result = self.mongo["weddings"].delete_many(wedding_filter)
+        if result.deleted_count:
+            collections_affected += 1
+            self.log.info(
+                f"  ✅ weddings (by email): removed {result.deleted_count} doc(s)"
+            )
+
+        if not user:
+            return collections_affected
+
+        user_id = str(user["_id"])
+
+        for coll_name in (
+            "user_subscriptions",
+            "stripe_customers",
+            "team_members",
+            "usage_tracking",
+        ):
             result = self.mongo[coll_name].delete_many({"user_id": user_id})
             if result.deleted_count:
                 collections_affected += 1
@@ -449,6 +486,16 @@ class Harness:
             collections_affected += 1
             self.log.info(
                 f"  ✅ team_members (by invitee email): removed {result.deleted_count} doc(s)"
+            )
+
+        # Also sweep any weddings that had assigned_planner_id pointing at the
+        # user we're about to delete — covers the edge case where a wedding
+        # was created without assigned_planner_email set.
+        result = self.mongo["weddings"].delete_many({"assigned_planner_id": user_id})
+        if result.deleted_count:
+            collections_affected += 1
+            self.log.info(
+                f"  ✅ weddings (by planner_id): removed {result.deleted_count} doc(s)"
             )
 
         result = self.mongo["users"].delete_one({"_id": user["_id"]})

@@ -53,7 +53,16 @@ INDEXES = [
         [("form_type", 1), ("wedding_id", 1)],
         {
             "name": "idx_form_type_wedding",
-            "partialFilterExpression": {"wedding_id": {"$exists": True, "$ne": None}},
+            # MongoDB partialFilterExpression only permits $eq / $exists /
+            # $gt[e] / $lt[e] / $type / top-level $and (see docs on "Create
+            # a Partial Index"). `$ne: null` expands to `$not { $eq: null }`
+            # and is rejected with `Expression not supported in partial
+            # index: $not`. wedding_id is typed Optional[str] in
+            # app/models/form.py, so `$type: "string"` both proves the
+            # field is present and excludes the null/absent cases — same
+            # semantics as the original `$exists: true, $ne: null` intent,
+            # but legal inside a partial index spec.
+            "partialFilterExpression": {"wedding_id": {"$type": "string"}},
         },
     ),
     # ── Subscription optimistic locking [8] ──────────────────────────
@@ -68,7 +77,11 @@ INDEXES = [
 async def create_indexes(dry_run: bool = False):
     from app.core.database import mongo
 
-    await mongo.connect()
+    # MongoConnector opens the Motor client in __init__ (Motor is lazy, so the
+    # first real round-trip happens here). test_connection() forces that
+    # round-trip so we fail loud before attempting any create_index calls.
+    if not await mongo.test_connection():
+        raise RuntimeError("MongoDB connection test failed — aborting migration")
 
     try:
         for collection_name, index_spec, kwargs in INDEXES:
@@ -94,7 +107,9 @@ async def create_indexes(dry_run: bool = False):
         logger.info("✅ Index migration complete.")
 
     finally:
-        await mongo.close()
+        # MongoConnector.close is synchronous — the underlying motor client's
+        # .close() doesn't return a coroutine. Do not `await` it.
+        mongo.close()
 
 
 def main():

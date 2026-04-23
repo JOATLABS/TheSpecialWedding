@@ -39,7 +39,7 @@ Phases
                       exact `Wedding limit exceeded...` message.
   TRIAL_CREDIT_CAP  — A3: seed `ai_credits_used_month = 100` directly in the
                       usage_tracking collection (Boutique ai_credits_monthly
-                      = 100), assert `GET /admin/credits?feature=chat` reports
+                      = 100), assert `GET /admin/ai/credits?feature=chat` reports
                       allowed=False with the exact `AI credits limit...`
                       message. Uses the usage-gate path because GEMINI_API_KEY
                       may not be configured in the local env; Chrome layer
@@ -176,6 +176,7 @@ def phase_seed(h: Harness, admin_token: str):
     h.checkpoint(
         "A0",
         [
+            f"Chrome login creds — email: {PLANNER_EMAIL}  password: {PLANNER_PASSWORD}",
             "Chrome: log in as the trial planner at /admin/login — no banner",
             "  / toast errors, session established.",
             "Chrome: /admin/planner renders the dashboard normally (no billing",
@@ -192,13 +193,36 @@ def phase_seed(h: Harness, admin_token: str):
 def phase_trial_create_one(h: Harness, planner_token: str):
     """A1 — Create wedding #1 successfully (under Boutique cap of 3)."""
     h.phase("TRIAL_CREATE", "A1 — wedding #1 within cap")
+
+    # Pre-A1 guard — fail loud if prior-run weddings leaked past cleanup.
+    # The cap check reads usage_tracking.weddings_count (a counter that resets
+    # when user_id is regenerated), so a stale wedding keyed by
+    # assigned_planner_email can make A1/A2 silently "pass" while the
+    # tenancy's real wedding count already exceeds the plan cap. If we see
+    # any leakage, abort — re-run cleanup_planner_trial_verify_state.py
+    # before trying again. See harness.delete_user_chain docstring.
+    existing_weddings = h.mongo["weddings"].count_documents(
+        {
+            "$or": [
+                {"assigned_planner_email": PLANNER_EMAIL},
+                {"created_by": PLANNER_EMAIL},
+            ]
+        }
+    )
+    assert existing_weddings == 0, (
+        f"Pre-A1 guard FAILED: found {existing_weddings} stale wedding(s) "
+        f"for {PLANNER_EMAIL} before TRIAL_CREATE. This usually means a "
+        f"prior run's cleanup missed weddings keyed by email. "
+        f"Run: python3 testbed/cleanup_planner_trial_verify_state.py "
+        f"(optionally with TRIAL_CLOCK_ID=<id>) and re-run this driver."
+    )
+
     resp = h.api_post(
         "/admin/weddings",
         token=planner_token,
         json={
-            "bride_name": "Avery Trial",
-            "groom_name": "Blake Trial",
-            "wedding_date": "2027-06-12",
+            "couple_names": "Avery Trial & Blake Trial",
+            "date": "2027-06-12",
         },
     )
     h.log.info(f"  POST /admin/weddings -> {resp.status_code}")
@@ -232,9 +256,8 @@ def phase_trial_cap(h: Harness, planner_token: str):
             "/admin/weddings",
             token=planner_token,
             json={
-                "bride_name": f"Trial Bride {idx}",
-                "groom_name": f"Trial Groom {idx}",
-                "wedding_date": "2027-07-04",
+                "couple_names": f"Trial Bride {idx} & Trial Groom {idx}",
+                "date": "2027-07-04",
             },
         )
         h.log.info(f"  POST /admin/weddings ({idx}) -> {resp.status_code}")
@@ -248,9 +271,8 @@ def phase_trial_cap(h: Harness, planner_token: str):
         "/admin/weddings",
         token=planner_token,
         json={
-            "bride_name": "Overflow Bride",
-            "groom_name": "Overflow Groom",
-            "wedding_date": "2027-09-01",
+            "couple_names": "Overflow Bride & Overflow Groom",
+            "date": "2027-09-01",
         },
     )
     body = None
@@ -287,7 +309,7 @@ def phase_trial_cap(h: Harness, planner_token: str):
 
 def phase_trial_credit_cap(h: Harness, planner_token: str, user_id: str):
     """A3 — Exhaust AI credits by seeding `ai_credits_used_month = 100`
-    directly, then assert `GET /admin/credits?feature=chat` returns the exact
+    directly, then assert `GET /admin/ai/credits?feature=chat` returns the exact
     gate message.
 
     We seed Mongo rather than calling /admin/chat in a loop because
@@ -319,10 +341,10 @@ def phase_trial_credit_cap(h: Harness, planner_token: str, user_id: str):
         f"ai_credits_used_month={BOUTIQUE_AI_CREDITS_MONTHLY}"
     )
 
-    resp = h.api_get("/admin/credits?feature=chat", token=planner_token)
-    h.log.info(f"  GET /admin/credits?feature=chat -> {resp.status_code}")
+    resp = h.api_get("/admin/ai/credits?feature=chat", token=planner_token)
+    h.log.info(f"  GET /admin/ai/credits?feature=chat -> {resp.status_code}")
     assert resp.status_code == 200, (
-        f"Expected 200 from /admin/credits, got {resp.status_code}: {resp.text[:400]}"
+        f"Expected 200 from /admin/ai/credits, got {resp.status_code}: {resp.text[:400]}"
     )
     body = resp.json()
     h.log.info(f"  body = {body}")
@@ -341,10 +363,10 @@ def phase_trial_credit_cap(h: Harness, planner_token: str, user_id: str):
         [
             "Chrome: /admin/ai-assistant (or whichever planner chat surface is",
             "  relevant) shows a 'credits exhausted' message, not a raw 402 dump.",
-            "Chrome devtools: /admin/credits?feature=chat response body has",
+            "Chrome devtools: /admin/ai/credits?feature=chat response body has",
             f"  allowed==false and message == '{EXPECTED_AI_CREDITS_MSG}'.",
             "Backend: usage_tracking seeded to 100/100 credits used ✅",
-            "Backend: /admin/credits reports allowed=False with canonical",
+            "Backend: /admin/ai/credits reports allowed=False with canonical",
             "  message ✅",
         ],
     )
@@ -557,9 +579,8 @@ def phase_trial_post_expire(h: Harness, planner_token: str):
         "/admin/weddings",
         token=planner_token,
         json={
-            "bride_name": "Post-Expire Bride",
-            "groom_name": "Post-Expire Groom",
-            "wedding_date": "2027-12-01",
+            "couple_names": "Post-Expire Bride & Post-Expire Groom",
+            "date": "2027-12-01",
         },
     )
     try:
@@ -706,8 +727,10 @@ def main() -> int:
 
     h.banner("SCENARIO A COMPLETE")
     h.log.info(
-        "  When Chrome checkpoints have also been signed off, mark Scenario "
-        "A verified in CLAUDE.md → Current Initiatives."
+        "  When Chrome checkpoints have also been signed off, record the "
+        "verification in the PR body and (if behavior was pinned for an open "
+        "question) a dated file under docs/reports/. Do not write status into "
+        "CLAUDE.md — that file is conventions only."
     )
     h.log.info(
         f"  Clock id for this run: {seed.clock_id}  "
