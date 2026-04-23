@@ -28,6 +28,14 @@ from app.services.planner_onboarding_email_service import (
     planner_onboarding_email_service,
 )
 from app.services.task_reminder_service import task_reminder_service
+from app.utils.scheduler_job_tracker import (
+    JOB_CALENDAR_INVITE_JOBS,
+    JOB_CALENDAR_MAINTENANCE,
+    JOB_CLEANUP_REMINDERS,
+    JOB_PLANNER_ONBOARDING_EMAILS,
+    JOB_TASK_REMINDERS,
+    track_scheduler_job,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -156,20 +164,30 @@ async def process_task_reminders(
         request, x_scheduler_key, x_scheduler_signature, x_scheduler_timestamp
     )
 
+    params = {"dry_run": dry_run}
+
     if sync:
-        # Run synchronously and return results
-        results = await task_reminder_service.process_due_reminders(dry_run=dry_run)
+        # Run synchronously and return results — tracker wraps the service call
+        # so we persist start/finish/status for the Scheduler tab.
+        async with track_scheduler_job(JOB_TASK_REMINDERS, params) as _ctx:
+            results = await task_reminder_service.process_due_reminders(dry_run=dry_run)
+            _ctx["result"] = results
         return results
-    else:
-        # Run in background
-        background_tasks.add_task(
-            task_reminder_service.process_due_reminders, dry_run=dry_run
-        )
-        return {
-            "status": "accepted",
-            "message": "Task reminder processing started in background",
-            "timestamp": datetime.now(timezone.utc).isoformat(),
-        }
+
+    async def _tracked_task_reminders() -> None:
+        # BackgroundTasks runs this after the response is sent; the tracker
+        # persists the outcome even though the HTTP caller never sees it.
+        async with track_scheduler_job(JOB_TASK_REMINDERS, params) as _ctx:
+            _ctx["result"] = await task_reminder_service.process_due_reminders(
+                dry_run=dry_run
+            )
+
+    background_tasks.add_task(_tracked_task_reminders)
+    return {
+        "status": "accepted",
+        "message": "Task reminder processing started in background",
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+    }
 
 
 @router.post("/cleanup-reminders", tags=["Scheduler"])
@@ -189,7 +207,13 @@ async def cleanup_old_reminders(
         request, x_scheduler_key, x_scheduler_signature, x_scheduler_timestamp
     )
 
-    deleted_count = await task_reminder_service.cleanup_old_records(days_old=days_old)
+    async with track_scheduler_job(
+        JOB_CLEANUP_REMINDERS, {"days_old": days_old}
+    ) as _ctx:
+        deleted_count = await task_reminder_service.cleanup_old_records(
+            days_old=days_old
+        )
+        _ctx["result"] = {"deleted_count": deleted_count}
 
     return {
         "status": "success",
@@ -246,15 +270,23 @@ async def process_planner_onboarding_emails(
         request, x_scheduler_key, x_scheduler_signature, x_scheduler_timestamp
     )
 
-    if sync:
-        return await planner_onboarding_email_service.process_due_emails(
-            dry_run=dry_run
-        )
+    params = {"dry_run": dry_run}
 
-    background_tasks.add_task(
-        planner_onboarding_email_service.process_due_emails,
-        dry_run=dry_run,
-    )
+    if sync:
+        async with track_scheduler_job(JOB_PLANNER_ONBOARDING_EMAILS, params) as _ctx:
+            result = await planner_onboarding_email_service.process_due_emails(
+                dry_run=dry_run
+            )
+            _ctx["result"] = result
+        return result
+
+    async def _tracked_planner_onboarding() -> None:
+        async with track_scheduler_job(JOB_PLANNER_ONBOARDING_EMAILS, params) as _ctx:
+            _ctx["result"] = await planner_onboarding_email_service.process_due_emails(
+                dry_run=dry_run
+            )
+
+    background_tasks.add_task(_tracked_planner_onboarding)
     return {
         "status": "accepted",
         "message": "Planner onboarding email processing started in background",
@@ -279,15 +311,23 @@ async def process_calendar_invite_jobs(
         request, x_scheduler_key, x_scheduler_signature, x_scheduler_timestamp
     )
 
+    params = {"limit": limit}
+
     if sync:
-        results = await calendar_job_service.process_due_jobs(limit=limit)
+        async with track_scheduler_job(JOB_CALENDAR_INVITE_JOBS, params) as _ctx:
+            results = await calendar_job_service.process_due_jobs(limit=limit)
+            _ctx["result"] = results
         return {
             "status": "success",
             "results": results,
             "timestamp": datetime.now(timezone.utc).isoformat(),
         }
 
-    background_tasks.add_task(calendar_job_service.process_due_jobs, limit=limit)
+    async def _tracked_calendar_invite_jobs() -> None:
+        async with track_scheduler_job(JOB_CALENDAR_INVITE_JOBS, params) as _ctx:
+            _ctx["result"] = await calendar_job_service.process_due_jobs(limit=limit)
+
+    background_tasks.add_task(_tracked_calendar_invite_jobs)
     return {
         "status": "accepted",
         "message": "Calendar invite job processing started in background",
@@ -313,6 +353,8 @@ async def process_calendar_maintenance(
         request, x_scheduler_key, x_scheduler_signature, x_scheduler_timestamp
     )
 
+    params = {"retry_limit": retry_limit, "drift_limit": drift_limit}
+
     async def _run_maintenance() -> dict[str, object]:
         retry_results = await calendar_maintenance_service.process_due_sync_retries(
             limit=retry_limit
@@ -326,19 +368,23 @@ async def process_calendar_maintenance(
         }
 
     if sync:
-        results = await _run_maintenance()
+        async with track_scheduler_job(JOB_CALENDAR_MAINTENANCE, params) as _ctx:
+            results = await _run_maintenance()
+            _ctx["result"] = results
         return {
             "status": "success",
             "results": results,
             "timestamp": datetime.now(timezone.utc).isoformat(),
         }
 
-    background_tasks.add_task(
-        calendar_maintenance_service.process_due_sync_retries, limit=retry_limit
-    )
-    background_tasks.add_task(
-        calendar_maintenance_service.run_drift_checks, limit=drift_limit
-    )
+    async def _tracked_maintenance() -> None:
+        # Combined into a single tracked run (one row per tick, not two) —
+        # drift + retry are two halves of the same logical job from the
+        # monitoring UI's perspective.
+        async with track_scheduler_job(JOB_CALENDAR_MAINTENANCE, params) as _ctx:
+            _ctx["result"] = await _run_maintenance()
+
+    background_tasks.add_task(_tracked_maintenance)
     return {
         "status": "accepted",
         "message": "Calendar maintenance started in background",

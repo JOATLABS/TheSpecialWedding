@@ -41,7 +41,7 @@ anything can be checked as completed" rule.
 
 Usage
 -----
-    python scripts/verify_team_member_gate_via_test_clock.py
+    python testbed/verify_team_member_gate_via_test_clock.py
 
 Requirements
 ------------
@@ -492,36 +492,24 @@ def fail_phase(state: dict) -> None:
     stripe.Subscription.modify(subscription_id, default_payment_method=pm_id)
     logger.info(f"  ✅ Will-fail card pinned on customer + subscription ({pm_id})")
 
-    # 2. Advance the clock past the subscription's current_period_end so Stripe
-    #    actually attempts to renew. The target MUST be derived from the
-    #    subscription itself (or the clock's frozen_time), NOT from wall-clock
-    #    now: this test clock is re-used across runs, so its frozen_time can
-    #    drift arbitrarily far from real-time. If the target lands before
-    #    current_period_end, no renewal is triggered and subscription stays
-    #    `active` — the exact false-negative we kept hitting.
-    sub_before = stripe.Subscription.retrieve(subscription_id)
-    # Stripe moved `current_period_end` off the Subscription object in recent
-    # API versions — it's now on each SubscriptionItem. Fall back to the old
-    # top-level field if the SDK/API version still exposes it. Upcoming
-    # invoice's `period_end` is the ultimate source of truth either way.
-    period_end_ts: Optional[int] = None
-    try:
-        period_end_ts = sub_before["items"]["data"][0]["current_period_end"]
-    except (KeyError, IndexError, TypeError):
-        period_end_ts = None
-    if not period_end_ts:
-        period_end_ts = getattr(sub_before, "current_period_end", None)
-    if not period_end_ts:
-        upcoming = stripe.Invoice.upcoming(subscription=subscription_id)
-        period_end_ts = upcoming.period_end
-    target_ts = period_end_ts + 2 * 24 * 60 * 60  # +2 days past renewal
+    # 2. Advance the clock past the next billing period. Signature is monthly,
+    #    so ~33 days forward triggers a renewal attempt.
+    #
+    # NB: the test clock is *reused across runs* (see module docstring), so its
+    # frozen_time drifts forward past wall-clock on every successful run. We
+    # anchor the advance to the clock's current frozen_time, never to
+    # `datetime.now()` — otherwise the second run on the same clock explodes
+    # with "Test clocks can only be advanced forward in time."
+    current_frozen = stripe.test_helpers.TestClock.retrieve(TEST_CLOCK_ID).frozen_time
+    if not current_frozen:
+        raise RuntimeError(
+            f"Test clock {TEST_CLOCK_ID} has no frozen_time; cannot compute advance target."
+        )
+    target_ts = int(current_frozen) + 33 * 86400
     logger.info(
-        f"  📋 Subscription current_period_end = "
-        f"{datetime.fromtimestamp(period_end_ts, tz=timezone.utc).isoformat()}"
-    )
-    logger.info(
-        f"Advancing clock to {datetime.fromtimestamp(target_ts, tz=timezone.utc).isoformat()}"
-        " (period_end + 2 days) to trigger renewal…"
+        f"Advancing clock from {datetime.fromtimestamp(int(current_frozen), tz=timezone.utc).isoformat()}"
+        f" to {datetime.fromtimestamp(target_ts, tz=timezone.utc).isoformat()}"
+        " (+33 days) to trigger renewal…"
     )
     stripe.test_helpers.TestClock.advance(TEST_CLOCK_ID, frozen_time=target_ts)
     wait_for_clock_ready(TEST_CLOCK_ID)
@@ -603,20 +591,22 @@ def fix_phase(state: dict) -> None:
     logger.info(f"  ✅ 4242 card pinned on customer + subscription ({pm_id})")
 
     # 2. Nudge the clock forward so Stripe's retry schedule re-attempts the
-    #    open invoice. A few days past the current frozen_time is enough.
-    #    Target MUST be derived from the clock itself (not wall-clock now) —
-    #    the test clock is re-used, so its frozen_time has drifted from wall
-    #    time, and using wall-clock now produces a target that may sit BEFORE
-    #    frozen_time (advance no-ops) or far past the retry window.
-    clock = stripe.test_helpers.TestClock.retrieve(TEST_CLOCK_ID)
-    target_ts = clock.frozen_time + 7 * 24 * 60 * 60  # +7 days from current frozen_time
+    #    open invoice. A few days is enough under default retry settings.
+    #
+    # Same clock-drift rule as the FAIL phase: anchor to the current frozen
+    # time of the reused test clock, not wall-clock. Original intent was
+    # "+40 days from wall-now" which was effectively "+7 days past where FAIL
+    # left the clock" — keep that same ~7-day nudge here.
+    current_frozen = stripe.test_helpers.TestClock.retrieve(TEST_CLOCK_ID).frozen_time
+    if not current_frozen:
+        raise RuntimeError(
+            f"Test clock {TEST_CLOCK_ID} has no frozen_time; cannot compute advance target."
+        )
+    target_ts = int(current_frozen) + 7 * 86400
     logger.info(
-        f"  📋 Clock frozen_time = "
-        f"{datetime.fromtimestamp(clock.frozen_time, tz=timezone.utc).isoformat()}"
-    )
-    logger.info(
-        f"Advancing clock to {datetime.fromtimestamp(target_ts, tz=timezone.utc).isoformat()}"
-        " (frozen_time + 7 days) to trigger retry…"
+        f"Advancing clock from {datetime.fromtimestamp(int(current_frozen), tz=timezone.utc).isoformat()}"
+        f" to {datetime.fromtimestamp(target_ts, tz=timezone.utc).isoformat()}"
+        " (+7 days past FAIL) to trigger retry…"
     )
     stripe.test_helpers.TestClock.advance(TEST_CLOCK_ID, frozen_time=target_ts)
     wait_for_clock_ready(TEST_CLOCK_ID)

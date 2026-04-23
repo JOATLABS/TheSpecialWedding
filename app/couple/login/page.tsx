@@ -246,12 +246,18 @@ export default function CoupleLoginPage() {
                     </Button>
                   </form>
 
-                  <div className="text-center">
+                  <div className="flex flex-wrap items-center justify-center gap-x-4 gap-y-2 text-center">
                     <Link
                       href="/couple/forgot-password"
                       className="text-sm text-wedding-navy/70 hover:text-wedding-navy transition-colors"
                     >
                       Forgot your password?
+                    </Link>
+                    <Link
+                      href="/admin/login"
+                      className="text-sm text-wedding-navy/60 hover:text-wedding-navy transition-colors"
+                    >
+                      Planner Portal →
                     </Link>
                   </div>
 

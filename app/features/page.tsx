@@ -32,7 +32,10 @@ type ComparisonRow = {
 const comparison: ComparisonRow[] = [
   { feature: 'Guest Management & RSVPs', you: true, honeybook: 'adjacent', aislePlanner: true, planningPod: true },
   { feature: 'Client Portal / Couple Portal', you: true, honeybook: 'adjacent', aislePlanner: 'adjacent', planningPod: false },
+  { feature: 'Built-In Wedding Microsite', you: true, honeybook: false, aislePlanner: false, planningPod: false },
   { feature: 'SMS & Email Reminders', you: true, honeybook: 'adjacent', aislePlanner: 'adjacent', planningPod: true },
+  { feature: 'Real-Time Push Notifications', you: true, honeybook: 'adjacent', aislePlanner: false, planningPod: false },
+  { feature: 'Inbound Email Threading', you: true, honeybook: true, aislePlanner: false, planningPod: false },
   { feature: 'Seating Charts', you: true, honeybook: false, aislePlanner: true, planningPod: true },
   { feature: 'AI Contract Generation & E-Sign', you: true, honeybook: 'adjacent', aislePlanner: 'adjacent', planningPod: false },
   { feature: 'Service Packages', you: true, honeybook: 'adjacent', aislePlanner: false, planningPod: false },
@@ -40,12 +43,20 @@ const comparison: ComparisonRow[] = [
   { feature: 'Budget Management', you: true, honeybook: 'adjacent', aislePlanner: true, planningPod: true },
   { feature: 'Photo Gallery & Guest QR Uploads', you: true, honeybook: false, aislePlanner: 'adjacent', planningPod: false },
   { feature: 'Vendor / Contact CRM', you: true, honeybook: 'adjacent', aislePlanner: 'adjacent', planningPod: true },
+  { feature: 'Public Vendor Directory', you: true, honeybook: false, aislePlanner: false, planningPod: false },
+  { feature: 'Contract Vendor Portal (Token-Based)', you: true, honeybook: 'adjacent', aislePlanner: false, planningPod: false },
+  { feature: 'Vendor Advertising Portal', you: true, honeybook: false, aislePlanner: false, planningPod: false },
+  { feature: 'AI Quote Comparison', you: true, honeybook: false, aislePlanner: false, planningPod: false },
+  { feature: 'Couple-Maintained FAQs', you: true, honeybook: false, aislePlanner: false, planningPod: false },
+  { feature: 'Meeting Scheduler', you: true, honeybook: true, aislePlanner: 'adjacent', planningPod: 'adjacent' },
   { feature: 'Custom Forms & Intake', you: true, honeybook: 'adjacent', aislePlanner: 'adjacent', planningPod: true },
   { feature: 'Calendar Sync', you: true, honeybook: 'adjacent', aislePlanner: true, planningPod: false },
+  { feature: 'CSV / Google Sheets Guest Import', you: true, honeybook: false, aislePlanner: true, planningPod: true },
+  { feature: 'OTP Guest Access', you: true, honeybook: false, aislePlanner: false, planningPod: false },
   { feature: 'Team Management & Permissions', you: true, honeybook: 'adjacent', aislePlanner: 'adjacent', planningPod: false },
   { feature: 'Invoicing & Online Payments', you: true, honeybook: 'adjacent', aislePlanner: 'adjacent', planningPod: true },
   { feature: 'Multi-Tenant Agency Tier', you: true, honeybook: 'adjacent', aislePlanner: false, planningPod: false },
-  { feature: 'Vendor Advertising Portal', you: true, honeybook: false, aislePlanner: false, planningPod: false },
+  { feature: 'In-App Support & Knowledge Base', you: true, honeybook: 'adjacent', aislePlanner: 'adjacent', planningPod: 'adjacent' },
   { feature: 'Day-of / Onsite Check-In', you: true, honeybook: false, aislePlanner: false, planningPod: true },
 ];
 
@@ -140,6 +151,15 @@ export default function FeaturesPage() {
               </div>
               <p className="mt-4 text-sm font-medium text-slate-300">{f.tagline}</p>
               <p className="mt-2 text-sm leading-relaxed text-slate-400">{f.description}</p>
+              {f.blogSlug && (
+                <Link
+                  href={`/resources/blog/${f.blogSlug}`}
+                  className="mt-4 inline-flex items-center gap-1 text-xs font-semibold text-wedding-rose transition hover:text-wedding-blush"
+                >
+                  Read the story
+                  <span aria-hidden="true">→</span>
+                </Link>
+              )}
             </article>
           ))}
         </div>

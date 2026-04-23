@@ -34,6 +34,10 @@ import InboxListItem from '@/components/ui/InboxListItem';
 import MessageBubble from '@/components/ui/MessageBubble';
 import ChatInput from '@/components/ui/ChatInput';
 import { getApiBaseUrl } from '@/utils/env';
+import {
+  type CoupleThreadMessage,
+  isSelfAuthored,
+} from '@/types/messaging';
 
 type InboxConversationType =
   | 'email'
@@ -88,17 +92,16 @@ interface CoupleConversationSummary {
   last_message_at?: string;
   last_message_preview?: string;
   last_sender_role?: string;
+  // `last_sender_email` is what lets the "You:" preview go identity-first
+  // instead of comparing session role. Optional because legacy rows written
+  // before the server stamped sender_email still surface as null here.
+  last_sender_email?: string | null;
   unread_count: number;
 }
 
-interface CoupleMessage {
-  id: string;
-  sender_role: string;
-  sender_name: string;
-  content: string;
-  read_by_couple: boolean;
-  created_at: string;
-}
+// `CoupleMessage` shape now lives in `app/types/messaging.ts` so both the
+// couple dashboard and this planner inbox agree on the wire format.
+type CoupleMessage = CoupleThreadMessage;
 
 interface SMSResponse {
   message: string;
@@ -688,8 +691,23 @@ export default function CommunicationsInboxView() {
         .filter(Boolean)
         .join(' & ') || conversation.email;
       const unread = conversation.unread_count || 0;
+      // Identity-first "You:" prefix — mirrors the bubble-rendering fix at
+      // line ~1283. `isSelfAuthored` compares sender_email to the viewer's
+      // email and falls back to role only for legacy rows. This defends
+      // against the team-member ambiguity that pure role comparison carries
+      // (role='planner' means "some planner-side user" not "this viewer").
+      const isSelfLastSender =
+        conversation.last_sender_role
+          ? isSelfAuthored(
+              {
+                sender_role: conversation.last_sender_role as 'couple' | 'planner',
+                sender_email: conversation.last_sender_email ?? null,
+              },
+              { email: currentUserEmail, role: 'planner' },
+            )
+          : false;
       const preview = conversation.last_message_preview
-        ? `${conversation.last_sender_role === 'planner' ? 'You: ' : ''}${conversation.last_message_preview}`
+        ? `${isSelfLastSender ? 'You: ' : ''}${conversation.last_message_preview}`
         : 'Couple conversation';
 
       items.push({
@@ -1280,16 +1298,19 @@ export default function CommunicationsInboxView() {
               <p className="text-sm mt-1">Start the conversation with {coupleName}</p>
             </div>
           ) : (
-            coupleMessages.map((msg) => (
-              <MessageBubble
-                key={msg.id}
-                content={msg.content}
-                senderName={msg.sender_role !== 'planner' ? msg.sender_name : undefined}
-                isSelf={msg.sender_role === 'planner'}
-                timestamp={msg.created_at ? formatDate(msg.created_at) : undefined}
-                accentColor="rose"
-              />
-            ))
+            coupleMessages.map((msg) => {
+              const self = isSelfAuthored(msg, { email: currentUserEmail, role: 'planner' });
+              return (
+                <MessageBubble
+                  key={msg.id}
+                  content={msg.content}
+                  senderName={self ? undefined : msg.sender_name}
+                  isSelf={self}
+                  timestamp={msg.created_at ? formatDate(msg.created_at) : undefined}
+                  accentColor="rose"
+                />
+              );
+            })
           )}
           <div ref={messagesEndRef} />
         </div>

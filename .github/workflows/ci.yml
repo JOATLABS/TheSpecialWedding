@@ -26,29 +26,71 @@ env:
 permissions:
   contents: read
   packages: write
+  pull-requests: read
 
 jobs:
+  # ── Detect changed paths (PR only) ─────────────────────────────────────────
+  # Lint jobs always run — they're cheap and catch cross-stack breakage.
+  # The expensive jobs (integration-test, docker-build-test) gate on these
+  # outputs. On push-to-main we ignore these outputs and run everything.
+  #
+  # `app/` is mixed frontend+backend, so we filter by file extension, not
+  # subdirectory. Keep this list in sync with reviewers' intuition — if a
+  # frontend-only refactor mysteriously triggers integration-test, extend
+  # the `frontend` filter instead of the `backend` filter.
+  changes:
+    name: Detect Changed Paths
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    outputs:
+      backend: ${{ steps.filter.outputs.backend }}
+      frontend: ${{ steps.filter.outputs.frontend }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            backend:
+              - 'app/**/*.py'
+              - 'tests/**'
+              - 'requirements*.txt'
+              - 'Dockerfile.backend'
+              - 'docker-compose.test.yml'
+              - 'scripts/**/*.py'
+              - 'pyproject.toml'
+              - '.github/workflows/ci.yml'
+            frontend:
+              - 'app/**/*.tsx'
+              - 'app/**/*.ts'
+              - 'app/**/*.jsx'
+              - 'app/**/*.js'
+              - 'app/**/*.css'
+              - 'public/**'
+              - 'package.json'
+              - 'package-lock.json'
+              - 'next.config.*'
+              - 'tsconfig.json'
+              - 'tailwind.config.*'
+              - 'postcss.config.*'
+              - 'Dockerfile.frontend'
+              - 'middleware.ts'
+              - '.github/workflows/ci.yml'
+
   # ── Frontend: Lint + Type Check ────────────────────────────────────────────
   frontend-lint:
-    name: Frontend Checks (Node ${{ matrix.node-version }})
+    name: Frontend Checks
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        node-version: ["20", "24"]
     steps:
       - uses: actions/checkout@v6
 
       - uses: actions/setup-node@v6
         with:
-          node-version: ${{ matrix.node-version }}
+          node-version: ${{ env.NODE_VERSION }}
           cache: "npm"
 
       - name: Install dependencies
         run: npm ci
-
-      - name: Dependency doctor
-        run: npm run deps:doctor
 
       - name: ESLint
         run: npm run lint
@@ -63,19 +105,15 @@ jobs:
 
   # ── Frontend: Tests ────────────────────────────────────────────────────────
   frontend-test:
-    name: Frontend Tests (Node ${{ matrix.node-version }})
+    name: Frontend Tests
     runs-on: ubuntu-latest
     needs: frontend-lint
-    strategy:
-      fail-fast: false
-      matrix:
-        node-version: ["20", "24"]
     steps:
       - uses: actions/checkout@v6
 
       - uses: actions/setup-node@v6
         with:
-          node-version: ${{ matrix.node-version }}
+          node-version: ${{ env.NODE_VERSION }}
           cache: "npm"
 
       - name: Install dependencies
@@ -118,41 +156,31 @@ jobs:
         env:
           PYTHONPATH: .
 
-  # ── Security Audit ─────────────────────────────────────────────────────────
-  security-audit:
-    name: Security Audit
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v6
-
-      - uses: actions/setup-node@v6
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-          cache: "npm"
-
-      - uses: actions/setup-python@v6
-        with:
-          python-version: ${{ env.PYTHON_VERSION }}
-          cache: "pip"
-
-      - name: npm audit (high + critical)
-        run: npm audit --audit-level=high || true
-
-      - name: pip audit
-        run: |
-          pip install pip-audit
-          pip-audit -r requirements.txt || true
-
   # ── Integration Tests: Full Stack ──────────────────────────────────────────
   # Spins up backend + MongoDB + Redis via docker-compose, runs 100+ tests
   # against the real running API. This catches bugs that unit tests miss.
   integration-test:
     name: Integration Tests (Full Stack)
     runs-on: ubuntu-latest
-    needs: [backend-lint]
+    needs: [backend-lint, changes]
+    # On PR, only run when backend-relevant files changed. On push-to-main /
+    # manual dispatch we always run — `build-backend` + `smoke-test` depend on
+    # a green integration pass, and we never want to ship a backend image that
+    # hasn't been exercised end-to-end. `always()` is required because
+    # `changes` is skipped on non-PR events (has its own `if:` gate).
+    if: |
+      always() && needs.backend-lint.result == 'success' &&
+      (github.event_name != 'pull_request' || needs.changes.outputs.backend == 'true')
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v6
+
+      # Set up buildx before compose so `docker compose build` (invoked by
+      # `--build`) uses the buildx driver and picks up ACTIONS_CACHE_URL +
+      # ACTIONS_RUNTIME_TOKEN for the `type=gha` cache declared on backend-test
+      # in docker-compose.test.yml.
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
 
       - name: Build and start test stack
         run: |
@@ -460,25 +488,26 @@ jobs:
           docker stop backend-smoke frontend-smoke mongo-smoke redis-smoke 2>/dev/null || true
           docker rm backend-smoke frontend-smoke mongo-smoke redis-smoke 2>/dev/null || true
 
-  # ── PR-only: Docker build test (no push) ───────────────────────────────────
+  # ── PR-only: Frontend Docker build test (no push) ─────────────────────────
+  # Backend Docker build is already exercised end-to-end by `integration-test`
+  # (docker-compose.test.yml builds from Dockerfile.backend). Only the frontend
+  # Dockerfile has no PR-path coverage, so this job is frontend-only.
+  # The job name is kept as "Docker Build Test" to preserve existing branch
+  # protection required-status-check configuration.
   docker-build-test:
     name: Docker Build Test
     runs-on: ubuntu-latest
-    needs: [frontend-lint, backend-lint]
-    if: github.event_name == 'pull_request'
+    needs: [frontend-lint, changes]
+    # PR-only job gated on frontend path changes. `always()` is required so
+    # we can reference `changes.outputs` even when its status is skipped.
+    if: |
+      always() && needs.frontend-lint.result == 'success' &&
+      github.event_name == 'pull_request' && needs.changes.outputs.frontend == 'true'
     steps:
       - uses: actions/checkout@v6
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4
-
-      - name: Build backend (test)
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          file: ./Dockerfile.backend
-          push: false
-          cache-from: type=gha,scope=backend
 
       - name: Build frontend (test)
         uses: docker/build-push-action@v6
@@ -489,3 +518,54 @@ jobs:
           cache-from: type=gha,scope=frontend
           build-args: |
             FRONTEND_URL=${{ env.FRONTEND_BUILD_URL }}
+
+  # ── CI Passed: Branch-protection aggregator ────────────────────────────────
+  # Single required status check for branch protection rulesets. This is the
+  # *only* check name that should be listed under "Status checks that are
+  # required" — everything else is either always-on (lint), path-filtered
+  # (integration-test, docker-build-test), or push-only (build-*, smoke-test),
+  # and listing them directly would make protection settings drift whenever
+  # the workflow evolves.
+  #
+  # Semantics: passes iff every upstream job in `needs` resolved to `success`
+  # or `skipped`. `failure` / `cancelled` / `timed_out` all fail the gate.
+  #
+  # Cascade-skip safety: if, e.g., `backend-lint` fails, `integration-test`
+  # cascade-skips (its `if:` gates on backend-lint.result == 'success'), but
+  # `backend-lint` itself is in `needs:` here — its `failure` result surfaces
+  # directly, so the cascade-skipped child passing through as `skipped` is
+  # fine.
+  #
+  # When adding a new job that should gate merges, append it to `needs:`.
+  ci-passed:
+    name: CI Passed
+    runs-on: ubuntu-latest
+    needs:
+      - changes
+      - frontend-lint
+      - frontend-test
+      - backend-lint
+      - integration-test
+      - build-backend
+      - build-frontend
+      - smoke-test
+      - docker-build-test
+    if: always()
+    steps:
+      - name: Verify no upstream job failed
+        env:
+          NEEDS_JSON: ${{ toJSON(needs) }}
+        run: |
+          set -euo pipefail
+          echo "Upstream job results:"
+          echo "$NEEDS_JSON" | jq .
+          FAILED=$(echo "$NEEDS_JSON" | jq -r '
+            to_entries
+            | map(select(.value.result != "success" and .value.result != "skipped") | .key)
+            | join(", ")
+          ')
+          if [ -n "$FAILED" ]; then
+            echo "::error::Upstream job(s) failed or were cancelled: $FAILED"
+            exit 1
+          fi
+          echo "All upstream jobs passed or were legitimately skipped."

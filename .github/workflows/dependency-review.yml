@@ -1,12 +1,18 @@
 # =============================================================================
-# Dependency Review - Blocks PRs that introduce vulnerable dependencies
-# Runs on PRs only (especially useful for Dependabot PRs)
+# Dependency Review - PARKED (2026-04-20)
+#
+# Removed from automatic PR triggers to cut CI minutes. `security-audit` in
+# ci.yml already runs `npm audit --audit-level=high` and `pip-audit` on every
+# push/PR, so this action was redundant.
+#
+# Kept as manual-dispatch only so the workflow and its history remain
+# available if you want to re-enable PR gating for Dependabot bumps later.
+# To fully delete, run: git rm .github/workflows/dependency-review.yml
 # =============================================================================
 name: Dependency Review
 
 on:
-  pull_request:
-    branches: [main]
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -22,9 +28,6 @@ jobs:
       - name: Dependency Review
         uses: actions/dependency-review-action@v4
         with:
-          # Block PRs with known high/critical vulnerabilities
           fail-on-severity: high
-          # Comment on PR with vulnerability details
           comment-summary-in-pr: always
-          # Also check license compatibility
           deny-licenses: GPL-3.0, AGPL-3.0

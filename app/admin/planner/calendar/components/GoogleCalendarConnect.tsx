@@ -108,7 +108,7 @@ const SUBTLE_PANEL_CLASS =
 const INPUT_CLASS =
   'w-full rounded-lg border border-slate-300 bg-white px-2 py-2 text-xs text-slate-900 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100';
 const SECONDARY_BUTTON_CLASS =
-  'rounded-xl border border-slate-300 px-3 py-2 text-xs font-medium text-slate-700 transition hover:bg-white disabled:opacity-60 dark:border-slate-600 dark:text-slate-200 dark:hover:bg-slate-700/60';
+  'rounded-xl border border-slate-300 px-3 py-2 text-xs font-medium text-slate-700 transition hover:bg-slate-50 disabled:opacity-60 dark:border-slate-600 dark:text-slate-200 dark:hover:bg-slate-700/60';
 const TOGGLE_CARD_CLASS =
   'rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200';
 
@@ -705,7 +705,7 @@ export default function GoogleCalendarConnect({
                           <button
                             onClick={() => handleDisconnect(connection)}
                             disabled={updateLoading}
-                            className="rounded-xl border border-rose-300 px-3 py-2 text-xs font-medium text-rose-700 transition hover:bg-rose-50 disabled:opacity-60"
+                            className="rounded-xl border border-rose-300 px-3 py-2 text-xs font-medium text-rose-700 transition hover:bg-rose-50 disabled:opacity-60 dark:border-rose-900 dark:text-rose-200 dark:hover:bg-rose-950/40"
                           >
                             Disconnect
                           </button>

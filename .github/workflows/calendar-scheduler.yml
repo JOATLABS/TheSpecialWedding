@@ -1,15 +1,18 @@
 # =============================================================================
 # Calendar scheduler workflow
 # Uses the environment-scoped SCHEDULER_BASE_URL variable for the target API.
-# Staging can be triggered manually for validation, but is not scheduled by
-# default.
+#
+# DEPRECATED SCHEDULE (2026-04-21): The `schedule:` cron triggers have been
+# retired — calendar-invite-jobs and calendar-maintenance are now fanned out
+# by the `scheduler-cron` Cloudflare Worker (see
+# cloudflare-workers/scheduler-cron.js). This workflow is retained for a
+# one-week dual-run safety window so operators can manually trigger the legacy
+# GHA path via `workflow_dispatch` if the Worker has an incident. Once the
+# Worker has been stable for ≥1 week, this file can be removed entirely.
 # =============================================================================
 name: Calendar Scheduler
 
 on:
-  schedule:
-    - cron: "*/5 * * * *"
-    - cron: "*/15 * * * *"
   workflow_dispatch:
     inputs:
       environment_name:
@@ -48,14 +51,16 @@ permissions:
 jobs:
   production:
     name: Run production calendar scheduler
-    if: ${{ github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && github.event.inputs.environment_name == 'production') }}
+    # Schedule triggers have been retired in favor of the scheduler-cron Cloudflare
+    # Worker. This job now only runs when an operator manually dispatches it.
+    if: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.environment_name == 'production' }}
     runs-on: ubuntu-latest
     environment: production
     env:
       SCHEDULER_BASE_URL: ${{ vars.SCHEDULER_BASE_URL }}
     steps:
       - name: Check out repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Resolve production job plan
         id: plan
@@ -207,7 +212,7 @@ jobs:
       SCHEDULER_BASE_URL: ${{ vars.SCHEDULER_BASE_URL }}
     steps:
       - name: Check out repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Resolve staging job plan
         id: plan

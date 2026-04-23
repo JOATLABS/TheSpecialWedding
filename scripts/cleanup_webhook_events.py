@@ -38,8 +38,10 @@ async def cleanup_webhook_events(retention_days: int = 30, dry_run: bool = False
     """Delete processed webhook events older than retention_days."""
     from app.core.database import mongo
 
-    # Connect to MongoDB
-    await mongo.connect()
+    # MongoConnector opens the Motor client in __init__. Force a real round-trip
+    # via test_connection() so we fail loud before any delete batches run.
+    if not await mongo.test_connection():
+        raise RuntimeError("MongoDB connection test failed — aborting cleanup")
 
     try:
         cutoff = datetime.now(timezone.utc) - timedelta(days=retention_days)
@@ -126,7 +128,9 @@ async def cleanup_webhook_events(retention_days: int = 30, dry_run: bool = False
         return total_deleted
 
     finally:
-        await mongo.close()
+        # MongoConnector.close is synchronous — motor's client .close() isn't
+        # a coroutine. Do not `await` it.
+        mongo.close()
 
 
 def main():

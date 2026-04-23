@@ -23,15 +23,7 @@ from app.utils.planner_ownership import (
     normalize_wedding_query_id,
     wedding_belongs_to_owner,
 )
-
-# Re-exported from app.utils.team_subscription_gate so that both this module
-# (request-time gate) and app.services.auth_service (login-time gate) share a
-# single implementation. Existing imports / tests of the form
-# ``auth_extended.compute_owner_subscription_block`` continue to work.
-from app.utils.team_subscription_gate import (  # noqa: F401
-    build_team_member_block_reason as _build_team_member_block_reason,
-    compute_owner_subscription_block,
-)
+import app.utils.team_subscription_gate as team_subscription_gate
 
 logger = logging.getLogger(__name__)
 
@@ -49,10 +41,18 @@ _SUB_BLOCK_REASONS = {
 _DEFAULT_SUB_BLOCK_REASON = "Subscription issue. Please contact support."
 
 
-# Note: ``_build_team_member_block_reason`` is re-exported at module import
-# time from ``app.utils.team_subscription_gate`` (see the ``from ... import``
-# block above). The leading-underscore alias is kept to avoid churn in the
-# callers within this file.
+def _build_team_member_block_reason(
+    owner_sub_status: Optional[str], owner_email: Optional[str]
+) -> str:
+    """Compatibility wrapper around the shared team-member billing helper.
+
+    Keep the leading-underscore local name so existing call sites and tests in
+    this module do not churn, while delegating the actual phrasing to the
+    shared helper module.
+    """
+    return team_subscription_gate.build_team_member_block_reason(
+        owner_sub_status, owner_email
+    )
 
 
 # ── Team member data cache (bounded, thread-safe, with invalidation) ──
@@ -105,11 +105,21 @@ def invalidate_team_cache_by_owner(owner_id: str) -> None:
         _team_cache.pop(k, None)
 
 
-# Note: ``compute_owner_subscription_block`` is re-exported at module import
-# time from ``app.utils.team_subscription_gate`` (see the ``from ... import``
-# block near the top of this file). Tests and callers that reference
-# ``auth_extended.compute_owner_subscription_block`` continue to work
-# unchanged.
+async def compute_owner_subscription_block(
+    owner_id: Optional[str], owner_email: Optional[str]
+) -> tuple[bool, Optional[str]]:
+    """Compatibility wrapper around the shared helper.
+
+    auth_extended tests patch this module's ``mongo`` handle directly. Route
+    the shared helper through that same handle so the refactor to
+    ``app.utils.team_subscription_gate`` does not bypass the patched
+    dependency during tests or future scoped-call sites.
+    """
+    return await team_subscription_gate.compute_owner_subscription_block(
+        owner_id=owner_id,
+        owner_email=owner_email,
+        mongo_client=mongo,
+    )
 
 
 # Security scheme
