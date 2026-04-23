@@ -59,7 +59,7 @@ os.environ.setdefault("STRIPE_SECRET_KEY", "sk_test_unit")
 
 
 def _find_plan_snapshot_keys(path: Path) -> list[set[str]]:
-    """Return the set of keys for every ``plan_snapshot = {...}`` dict
+    """Return the set of keys for every ``plan_snapshot`` dict literal
     literal found in the given source file.
 
     Some files assemble the snapshot more than once (e.g. stripe_service
@@ -71,14 +71,37 @@ def _find_plan_snapshot_keys(path: Path) -> list[set[str]]:
     found: list[set[str]] = []
 
     for node in ast.walk(tree):
-        # Match `plan_snapshot = {...}` OR `"plan_snapshot": {...}` inside
-        # an enclosing dict (extra_updates pattern).
+        # Match:
+        # - `plan_snapshot = {...}`
+        # - `subscription_updates["plan_snapshot"] = {...}`
         if isinstance(node, ast.Assign):
             for target in node.targets:
                 if isinstance(target, ast.Name) and target.id == "plan_snapshot":
                     if isinstance(node.value, ast.Dict):
                         found.append(_literal_keys(node.value))
+                elif _is_plan_snapshot_subscript(target):
+                    if isinstance(node.value, ast.Dict):
+                        found.append(_literal_keys(node.value))
+        # Match `"plan_snapshot": {...}` inside an enclosing dict literal.
+        if isinstance(node, ast.Dict):
+            for key, value in zip(node.keys, node.values):
+                if _is_plan_snapshot_key(key) and isinstance(value, ast.Dict):
+                    found.append(_literal_keys(value))
     return found
+
+
+def _is_plan_snapshot_subscript(node: ast.AST) -> bool:
+    if not isinstance(node, ast.Subscript):
+        return False
+    return _is_plan_snapshot_key(node.slice)
+
+
+def _is_plan_snapshot_key(node: ast.AST | None) -> bool:
+    return (
+        isinstance(node, ast.Constant)
+        and isinstance(node.value, str)
+        and node.value == "plan_snapshot"
+    )
 
 
 def _literal_keys(dict_node: ast.Dict) -> set[str]:
@@ -207,9 +230,18 @@ def _build_service(*, plan_snapshot: dict | None, plan: dict | None, usage: dict
     async def fake_get_usage_stats(user_id: str):
         return usage
 
+    # check_usage_limits["weddings"] now reads from _live_wedding_count
+    # (the authoritative live collection count — see
+    # subscription_service._live_wedding_count docstring). For these
+    # snapshot tests the intent was always "current usage = weddings_count",
+    # so echo that through the live-count stub to keep the contract.
+    async def fake_live_wedding_count(user_id: str):
+        return usage.get("weddings_count", 0)
+
     service.get_user_subscription = fake_get_user_subscription  # type: ignore
     service.get_plan = fake_get_plan  # type: ignore
     service.get_usage_stats = fake_get_usage_stats  # type: ignore
+    service._live_wedding_count = fake_live_wedding_count  # type: ignore
     return service
 
 

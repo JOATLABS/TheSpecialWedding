@@ -420,10 +420,18 @@ def _seed_messages(
 
 
 @pytest.mark.asyncio
-async def test_couple_get_includes_sender_email_on_every_message(
+async def test_couple_get_strips_sender_email_on_every_message(
     couple_doc: dict,
     patched_mongo: _FakeMessagesCollection,
 ) -> None:
+    """SECURITY: Planner/team login emails must never be exposed on the
+    couple-facing GET response. Identity-first authorship on the couple
+    dashboard falls back to `sender_role` comparison
+    (see app/types/messaging.ts → `isSelfAuthored`).
+
+    The planner-facing GET still projects `sender_email` — that surface is
+    covered by `test_planner_get_exposes_sender_email_and_next_cursor`.
+    """
     _seed_messages(patched_mongo, n=3)
 
     response = await couple_portal_api.couple_get_messages(
@@ -432,11 +440,10 @@ async def test_couple_get_includes_sender_email_on_every_message(
 
     assert len(response["messages"]) == 3
     for msg in response["messages"]:
-        assert "sender_email" in msg
-        assert msg["sender_email"] in {
-            "emmanuel@example.com",
-            "planner@example.com",
-        }
+        assert "sender_email" not in msg, (
+            "sender_email leak on couple-facing GET — planner/team login "
+            "emails must not be exposed to the couple portal"
+        )
 
 
 @pytest.mark.asyncio
