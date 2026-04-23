@@ -46,13 +46,19 @@ from app.utils.couple_archived_read_model import (
     get_archived_registries,
     get_archived_wedding_record,
 )
+from app.utils.best_effort_task import best_effort
 from app.utils.couple_identity import (
     build_couple_principal_key,
+    get_couple_display_name,
     get_couple_record_id,
     list_couple_identity_keys,
 )
 from app.utils.couple_realtime import couple_sse_channel
 from app.utils.id_utils import to_str_id
+from app.utils.messaging_roles import (
+    SENDER_ROLE_COUPLE,
+    SENDER_ROLE_PLANNER,
+)
 from app.utils.planner_ownership import (
     build_team_owner_query,
     list_wedding_ids_for_owner,
@@ -1339,17 +1345,13 @@ async def couple_send_message(
     if not wedding:
         raise HTTPException(status_code=404, detail="Wedding not found")
 
-    couple_name = (
-        f"{couple.get('partner1_name', '')} & {couple.get('partner2_name', '')}".strip(
-            " &"
-        )
-    )
+    couple_display_name = get_couple_display_name(couple)
 
     message_doc = {
         "wedding_id": wedding_id,
-        "sender_role": "couple",
+        "sender_role": SENDER_ROLE_COUPLE,
         "sender_email": couple["email"],
-        "sender_name": couple_name or couple["email"],
+        "sender_name": couple_display_name or couple["email"],
         "content": data.content,
         "read_by_couple": True,
         "read_by_planner": False,
@@ -1358,25 +1360,36 @@ async def couple_send_message(
 
     result = await mongo.db["couple_messages"].insert_one(message_doc)
 
-    # Notify planner via planner_notification_service (SSE + push included)
-    try:
+    # Notify planner via planner_notification_service (SSE + push included).
+    # This is a best-effort side-effect: the message has already persisted, so
+    # the entire block — including the planner-email lookup — runs under
+    # best_effort. Any failure retries with backoff and is then swallowed so
+    # the caller's send always returns 200 once the message is stored. See
+    # app/utils/best_effort_task.py.
+    async def _notify_planner_of_couple_message() -> None:
         planner_email = await _resolve_couple_planner_email(couple)
-        if planner_email:
-            from app.services.planner_notification_service import (
-                planner_notification_service,
-            )
+        if not planner_email:
+            return
+        from app.services.planner_notification_service import (
+            planner_notification_service,
+        )
 
-            preview = data.content[:100] + ("..." if len(data.content) > 100 else "")
-            await planner_notification_service.create_notification(
-                planner_id=planner_email,
-                notification_type="couple_message",
-                title=f"New message from {couple_name or couple['email']}",
-                message=preview,
-                wedding_id=wedding_id,
-                action_url=f"/admin/communications/inbox?wedding_id={wedding_id}&conversation=couple",
-            )
-    except Exception as e:
-        logger.error(f"Failed to notify planner of couple message: {e}")
+        preview = data.content[:100] + ("..." if len(data.content) > 100 else "")
+        await planner_notification_service.create_notification(
+            planner_id=planner_email,
+            notification_type="couple_message",
+            title=f"New message from {couple_display_name or couple['email']}",
+            message=preview,
+            wedding_id=wedding_id,
+            action_url=f"/admin/communications/inbox?wedding_id={wedding_id}&conversation=couple",
+        )
+
+    await best_effort(
+        max_retries=3,
+        initial_delay=0.5,
+        backoff=2.0,
+        op_name="planner_notification_couple_message",
+    ).run(_notify_planner_of_couple_message)
 
     try:
         planner_targets = _collect_email_targets(
@@ -1426,6 +1439,7 @@ async def couple_get_messages(
             {
                 "id": str(msg["_id"]),
                 "sender_role": msg.get("sender_role"),
+                "sender_email": msg.get("sender_email"),
                 "sender_name": msg.get("sender_name"),
                 "content": msg.get("content"),
                 "read_by_couple": msg.get("read_by_couple", False),
@@ -1436,10 +1450,19 @@ async def couple_get_messages(
             }
         )
 
+    # `messages` is newest-first here, so the last element is the oldest one
+    # in the page — that's the cursor clients should pass as `before` to load
+    # the next (older) page. `null` signals no more history.
+    next_cursor = messages[-1]["id"] if len(messages) == limit else None
+
     # Return in chronological order (oldest first)
     messages.reverse()
 
-    return {"messages": messages, "count": len(messages)}
+    return {
+        "messages": messages,
+        "count": len(messages),
+        "next_cursor": next_cursor,
+    }
 
 
 @router.post("/couple/portal/messages/read", tags=["Couple Portal - Messages"])
@@ -1450,7 +1473,11 @@ async def couple_mark_messages_read(couple: dict = Depends(require_couple_auth))
         raise HTTPException(status_code=404, detail="No wedding linked to this account")
 
     result = await mongo.db["couple_messages"].update_many(
-        {"wedding_id": wedding_id, "sender_role": "planner", "read_by_couple": False},
+        {
+            "wedding_id": wedding_id,
+            "sender_role": SENDER_ROLE_PLANNER,
+            "read_by_couple": False,
+        },
         {"$set": {"read_by_couple": True}},
     )
 
@@ -1477,7 +1504,7 @@ async def couple_unread_count(couple: dict = Depends(require_couple_auth)):
     count = await mongo.db["couple_messages"].count_documents(
         {
             "wedding_id": wedding_id,
-            "sender_role": "planner",
+            "sender_role": SENDER_ROLE_PLANNER,
             "read_by_couple": False,
         }
     )
@@ -1517,7 +1544,7 @@ async def planner_send_message(
 
     message_doc = {
         "wedding_id": data.wedding_id,
-        "sender_role": "planner",
+        "sender_role": SENDER_ROLE_PLANNER,
         "sender_email": current_user.email,
         "sender_name": planner_name,
         "content": data.content,
@@ -1592,6 +1619,7 @@ async def planner_get_messages(
             {
                 "id": str(msg["_id"]),
                 "sender_role": msg.get("sender_role"),
+                "sender_email": msg.get("sender_email"),
                 "sender_name": msg.get("sender_name"),
                 "content": msg.get("content"),
                 "read_by_couple": msg.get("read_by_couple", False),
@@ -1601,9 +1629,18 @@ async def planner_get_messages(
             }
         )
 
+    # `messages` is newest-first here; the last element is the oldest in the
+    # page and becomes the cursor for the next (older) page. `null` means
+    # no more history.
+    next_cursor = messages[-1]["id"] if len(messages) == limit else None
+
     messages.reverse()
 
-    return {"messages": messages, "count": len(messages)}
+    return {
+        "messages": messages,
+        "count": len(messages),
+        "next_cursor": next_cursor,
+    }
 
 
 @router.post("/couple-portal/messages/read", tags=["Couple Portal - Messages"])
@@ -1622,7 +1659,7 @@ async def planner_mark_messages_read(
     result = await mongo.db["couple_messages"].update_many(
         {
             "wedding_id": data.wedding_id,
-            "sender_role": "couple",
+            "sender_role": SENDER_ROLE_COUPLE,
             "read_by_planner": False,
         },
         {"$set": {"read_by_planner": True}},
@@ -1662,7 +1699,7 @@ async def planner_unread_count(
     count = await mongo.db["couple_messages"].count_documents(
         {
             "wedding_id": wedding_id,
-            "sender_role": "couple",
+            "sender_role": SENDER_ROLE_COUPLE,
             "read_by_planner": False,
         }
     )
@@ -1719,12 +1756,24 @@ async def planner_list_conversations(
                         "last_message_at": {"$first": "$created_at"},
                         "last_message_preview": {"$first": "$content"},
                         "last_sender_role": {"$first": "$sender_role"},
+                        # `last_sender_email` is what makes the planner
+                        # conversation-list "You:" preview identity-first —
+                        # see `isSelfAuthored` in `app/types/messaging.ts`.
+                        # Legacy rows written before identity stamping do not
+                        # carry sender_email; the aggregation will surface
+                        # null for those and the frontend falls back to role.
+                        "last_sender_email": {"$first": "$sender_email"},
                         "unread_count": {
                             "$sum": {
                                 "$cond": [
                                     {
                                         "$and": [
-                                            {"$eq": ["$sender_role", "couple"]},
+                                            {
+                                                "$eq": [
+                                                    "$sender_role",
+                                                    SENDER_ROLE_COUPLE,
+                                                ]
+                                            },
                                             {"$eq": ["$read_by_planner", False]},
                                         ]
                                     },
@@ -1773,6 +1822,7 @@ async def planner_list_conversations(
                 ),
                 "last_message_preview": summary.get("last_message_preview"),
                 "last_sender_role": summary.get("last_sender_role"),
+                "last_sender_email": summary.get("last_sender_email"),
                 "unread_count": summary.get("unread_count", 0),
             }
         )

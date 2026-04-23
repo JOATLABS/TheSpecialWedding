@@ -130,19 +130,21 @@ Only run when at least one plan is provisioned with `is_metered=True` + `meter_e
 
 ## 4. Script layout
 
-Mirror the team-member gate verifier. One driver per scenario, each pairable with its own cleanup:
+Mirror the team-member gate verifier. One driver per scenario, each pairable with its own cleanup. All live-lifecycle drivers live under `testbed/` (see `testbed/README.md` and `CLAUDE.md` → E2E verification); `scripts/` stays reserved for deploy, bootstrap, and seed utilities.
 
 ```
-scripts/
+testbed/
   verify_team_member_gate_via_test_clock.py   (existing, reference)
   cleanup_team_member_gate_verify_state.py    (existing, reference)
-  verify_planner_trial_lifecycle.py           (NEW — Scenario A)
-  cleanup_planner_trial_verify_state.py       (NEW)
+  verify_planner_trial_lifecycle.py           (existing — Scenario A)
+  cleanup_planner_trial_verify_state.py       (existing)
   verify_planner_active_lifecycle.py          (NEW — Scenarios B, C, D)
   cleanup_planner_active_verify_state.py      (NEW)
   verify_planner_metered_lifecycle.py         (NEW — Scenario E, skipped by default)
   cleanup_planner_metered_verify_state.py     (NEW)
 ```
+
+Drivers assume a local backend + Stripe webhook forwarder are up. Use the `testbed/testbed.py` CLI (`up` / `seed` / `preflight`) to bring those services up instead of hand-starting uvicorn and `stripe listen` per run.
 
 Each driver inherits the template's conventions verbatim:
 
@@ -179,7 +181,7 @@ These are code-level gaps that the scripted drivers will exercise but that deser
 
 ## 6. Explicit open questions the tests will resolve
 
-The matrix is written to **pin behavior**, not assume it. These questions should be answered by the first run, then written up in `CLAUDE.md` → "Current Initiatives":
+The matrix is written to **pin behavior**, not assume it. These questions should be answered by the first run, with the answer captured in the driver's commit message, the paired cleanup-PR body, or a dated entry under `docs/reports/` — not back-filled into `CLAUDE.md` (which is conventions and durable pointers only, per the scope note at the top of that file).
 
 - **Q1** What happens to `plan_snapshot` on downgrade? Does mid-period downgrade apply new limits immediately or at period end?
 - **Q2** On downgrade-over-cap (D2), is the downgrade blocked, allowed-and-locked, or silently accepted?
@@ -207,11 +209,11 @@ Each scenario follows the CLAUDE.md two-layer rule: script green **and** Chrome 
 
 For each scenario, the final artifacts are:
 
-- A runnable `scripts/verify_planner_<scenario>_lifecycle.py` with pinned test-clock id in the header.
-- A matching `cleanup_*` script.
+- A runnable `testbed/verify_planner_<scenario>_lifecycle.py` with pinned test-clock id in the header.
+- A matching `testbed/cleanup_*` script (idempotent, deletes the plus-variant Mongo chain and every Stripe customer attached to the clock — see `testbed/README.md` house rules).
 - A one-paragraph entry in `CHANGELOG.md` describing what the script verifies and what behavior it pins.
 - A one-line pointer in `AGENTS.md` → "E2E verification" so the script is discoverable without grep.
-- Answers to the Section 6 open questions, written back into `CLAUDE.md`.
+- Answers to the Section 6 open questions recorded in the PR body and (when load-bearing) a dated file under `docs/reports/`. Do not write per-run answers into `CLAUDE.md` — that file is for conventions, not time-bound findings.
 
 ---
 

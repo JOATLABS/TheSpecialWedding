@@ -1,0 +1,451 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Audit System Code Review — The Special Wedding</title>
+<style>
+  :root {
+    --bg: #0f1117; --surface: #1a1d27; --surface2: #22262f; --border: #2d3140;
+    --text: #e4e6eb; --text-dim: #8b8fa3;
+    --accent: #7c6df0; --accent-soft: rgba(124,109,240,.12);
+    --green: #34d399; --green-soft: rgba(52,211,153,.12);
+    --yellow: #fbbf24; --yellow-soft: rgba(251,191,36,.12);
+    --red: #f87171; --red-soft: rgba(248,113,113,.12);
+    --blue: #60a5fa; --blue-soft: rgba(96,165,250,.12);
+    --orange: #fb923c; --orange-soft: rgba(251,146,60,.12);
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: 'Inter', -apple-system, sans-serif; background: var(--bg); color: var(--text); line-height: 1.6; padding: 2rem; }
+  .container { max-width: 1200px; margin: 0 auto; }
+  h1 { font-size: 1.8rem; margin-bottom: .25rem; }
+  h2 { font-size: 1.3rem; margin: 2.5rem 0 1rem; color: var(--accent); border-bottom: 1px solid var(--border); padding-bottom: .5rem; }
+  h3 { font-size: 1.05rem; margin: 1.5rem 0 .75rem; }
+  p, li { color: var(--text-dim); font-size: .88rem; margin-bottom: .5rem; }
+  .subtitle { color: var(--text-dim); font-size: .95rem; margin-bottom: 2rem; }
+  code { background: var(--surface2); padding: 1px 5px; border-radius: 3px; font-size: .82rem; color: var(--accent); }
+
+  /* Dimension ratings */
+  .dimension-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin: 1.5rem 0; }
+  .dimension { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 1.25rem; }
+  .dimension h4 { font-size: .95rem; margin-bottom: .5rem; display: flex; align-items: center; gap: .5rem; }
+  .rating { font-size: .7rem; padding: 2px 8px; border-radius: 4px; font-weight: 600; }
+  .rating-good { background: var(--green-soft); color: var(--green); }
+  .rating-fair { background: var(--yellow-soft); color: var(--yellow); }
+  .rating-concern { background: var(--red-soft); color: var(--red); }
+  .rating-info { background: var(--blue-soft); color: var(--blue); }
+
+  /* Finding cards */
+  .finding { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 1.25rem; margin: .75rem 0; }
+  .finding.critical { border-left: 3px solid var(--red); }
+  .finding.warning { border-left: 3px solid var(--yellow); }
+  .finding.info { border-left: 3px solid var(--blue); }
+  .finding.positive { border-left: 3px solid var(--green); }
+  .finding-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: .5rem; }
+  .finding-header h4 { font-size: .9rem; margin: 0; }
+  .finding p { font-size: .82rem; }
+  .finding .file-ref { font-family: monospace; font-size: .78rem; color: var(--accent); }
+
+  /* Summary table */
+  table { width: 100%; border-collapse: collapse; margin: 1rem 0; font-size: .82rem; }
+  th, td { padding: .6rem .75rem; border: 1px solid var(--border); text-align: left; }
+  th { background: var(--surface2); font-weight: 600; color: var(--text); }
+  td { color: var(--text-dim); }
+  td.yes { color: var(--green); } td.no { color: var(--text-dim); } td.partial { color: var(--yellow); }
+
+  .tag { display: inline-block; font-size: .65rem; padding: 1px 6px; border-radius: 3px; margin-right: 4px; font-weight: 500; }
+  .tag-p3 { background: var(--red-soft); color: var(--red); }
+  .tag-p2 { background: var(--yellow-soft); color: var(--yellow); }
+  .tag-ok { background: var(--green-soft); color: var(--green); }
+
+  /* Stats */
+  .stats { display: flex; gap: 1rem; flex-wrap: wrap; margin: 1.5rem 0; }
+  .stat { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 1rem 1.5rem; text-align: center; flex: 1; min-width: 120px; }
+  .stat-num { font-size: 1.6rem; font-weight: 700; }
+  .stat-label { font-size: .72rem; color: var(--text-dim); margin-top: .25rem; }
+
+  @media (max-width: 768px) { .dimension-grid { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+<div class="container">
+
+<h1>Code Review — Audit System Integration</h1>
+<p class="subtitle">The Special Wedding · Reviewed against GDPR, PCI DSS, SOC 2, and self-audit requirements</p>
+
+<!-- ===== SUMMARY STATS ===== -->
+<div class="stats">
+  <div class="stat"><div class="stat-num" style="color:var(--red)">5</div><div class="stat-label">Critical Findings</div></div>
+  <div class="stat"><div class="stat-num" style="color:var(--yellow)">7</div><div class="stat-label">Warnings</div></div>
+  <div class="stat"><div class="stat-num" style="color:var(--blue)">4</div><div class="stat-label">Informational</div></div>
+  <div class="stat"><div class="stat-num" style="color:var(--green)">6</div><div class="stat-label">Positive Observations</div></div>
+  <div class="stat"><div class="stat-num" style="color:var(--accent)">13</div><div class="stat-label">Services Need Phase 3</div></div>
+</div>
+
+<!-- ===== REVIEW DIMENSIONS ===== -->
+<h2>1. Review Dimensions</h2>
+
+<div class="dimension-grid">
+  <div class="dimension">
+    <h4>Security <span class="rating rating-fair">FAIR</span></h4>
+    <p>Auth flows have constant-time password comparison and timing-attack resistance. However, several services perform hard deletes without pre-delete audit snapshots. Cascade delete touches 20+ collections with no immutable record of what was destroyed. The <code>guest_export_service</code> has unescaped HTML rendering of guest PII in PDF generation.</p>
+  </div>
+  <div class="dimension">
+    <h4>Performance <span class="rating rating-good">GOOD</span></h4>
+    <p>Existing audit middleware uses async background tasks for DB writes — smart design. The new compliance layer can follow the same fire-and-forget pattern. Middleware stack order is correct. No N+1 queries detected in audit paths. Team data cache with TTL and bounded eviction is well-designed.</p>
+  </div>
+  <div class="dimension">
+    <h4>Correctness <span class="rating rating-fair">FAIR</span></h4>
+    <p>Stripe webhook handling has proper idempotency with status lifecycle tracking. But <code>cancel_subscription</code> does best-effort Stripe cancel then continues locally regardless — possible split-brain. Several services silently swallow audit logging failures, which is appropriate for non-blocking but means compliance events can be silently lost.</p>
+  </div>
+  <div class="dimension">
+    <h4>Maintainability <span class="rating rating-concern">NEEDS WORK</span></h4>
+    <p>Four separate audit systems exist (audit_logs, security_audit_logs, activity_logs, admin_activity_log) with different schemas, retention periods, and query patterns. No unified event vocabulary. The compliance layer will be the fifth — critical to design it as the canonical source and bridge the others into it, not create yet another silo.</p>
+  </div>
+</div>
+
+<!-- ===== CRITICAL FINDINGS ===== -->
+<h2>2. Critical Findings</h2>
+
+<div class="finding critical">
+  <div class="finding-header">
+    <h4>C1: Cascade Delete Has No Pre-Delete Audit Snapshot</h4>
+    <span class="rating rating-concern">CRITICAL · GDPR + SOC 2</span>
+  </div>
+  <p class="file-ref">app/services/cascade_delete_service.py · soft_delete_wedding() / hard_delete_wedding()</p>
+  <p><code>hard_delete_wedding</code> permanently removes records from 20+ collections including guests (PII), contracts (financial), and payment records. There is no snapshot of what was deleted written to an immutable store before the operation executes. The activity_log entry is written inside the same try/except that swallows errors — if it fails, the deletion proceeds silently.</p>
+  <p><strong>Impact:</strong> Under GDPR, you must be able to demonstrate what data existed and why it was deleted. Under SOC 2, mass data destruction without audit evidence is a material finding.</p>
+  <p><strong>Fix:</strong> The compliance emitter must capture a pre-delete manifest (collection, count, sample IDs) and write it to D1 <em>before</em> the delete begins. The delete should be gated on successful audit write.</p>
+</div>
+
+<div class="finding critical">
+  <div class="finding-header">
+    <h4>C2: Stripe Webhook Events Not Audit-Logged for PCI Traceability</h4>
+    <span class="rating rating-concern">CRITICAL · PCI DSS</span>
+  </div>
+  <p class="file-ref">app/services/stripe_service.py · handle_webhook_event() (line 1370)</p>
+  <p>Stripe webhook events (payment_intent.succeeded, charge.refunded, invoice.paid, subscription changes) are processed and stored in <code>stripe_webhook_events</code> collection with idempotency tracking, but no audit event is emitted to a compliance-grade store. The webhook event collection itself has no tamper evidence and lives alongside app data.</p>
+  <p><strong>Impact:</strong> PCI DSS 4.0 requires a traceable audit trail for all payment-related actions. An auditor cannot independently verify that payment events were processed correctly without a separate immutable log.</p>
+  <p><strong>Fix:</strong> Each webhook handler should emit a compliance event with <code>stripe_event_id</code>, event type, affected user, and the before/after subscription/payment state.</p>
+</div>
+
+<div class="finding critical">
+  <div class="finding-header">
+    <h4>C3: No Before/After Snapshots on Data Mutations</h4>
+    <span class="rating rating-concern">CRITICAL · GDPR</span>
+  </div>
+  <p class="file-ref">All services performing update operations</p>
+  <p>GDPR's right of access requires you to demonstrate what data changed and when. Currently, no service captures the prior state of a record before updating it. The <code>contract_service.update_contract()</code>, <code>vendor_service.update_vendor_profile()</code>, <code>wedding_service.update_wedding()</code>, <code>user_management_service.update_user()</code>, and <code>budget_service.update_budget_category()</code> all overwrite data without snapshotting the old state.</p>
+  <p><strong>Fix:</strong> The compliance emitter should fetch the current document before the update, diff it against the new state, and store both in the audit event's <code>before_snapshot</code> and <code>after_snapshot</code> fields.</p>
+</div>
+
+<div class="finding critical">
+  <div class="finding-header">
+    <h4>C4: Guest Hard Delete Cascades Without Audit Trail</h4>
+    <span class="rating rating-concern">CRITICAL · GDPR</span>
+  </div>
+  <p class="file-ref">app/services/guest_service.py · delete_guest()</p>
+  <p>Guest deletion cascades to RSVPs and plus-ones with <em>hard deletes</em> — no soft-delete path exists. Guest data includes phone numbers, emails, dietary restrictions (potentially health-related PII under GDPR Article 9 "special category" data). Once deleted, there is no record that the data ever existed, making it impossible to respond to a GDPR subject access request about historical data processing.</p>
+  <p><strong>Fix:</strong> Before deleting, emit a compliance event containing the guest's PII fields (redacted in the audit record per data minimization) and the deletion reason. Consider converting to soft-delete to support GDPR right-to-erasure requests that require confirmation.</p>
+</div>
+
+<div class="finding critical">
+  <div class="finding-header">
+    <h4>C5: MongoDB Audit TTLs Destroy Compliance Evidence</h4>
+    <span class="rating rating-concern">CRITICAL · PCI + SOC 2</span>
+  </div>
+  <p class="file-ref">app/core/database_indexes.py · lines 651, 695</p>
+  <p>Current TTL indexes auto-delete audit data: <code>audit_logs</code> at 30 days, <code>security_audit_logs</code> at 180 days, <code>activity_logs</code> at 90 days, <code>admin_activity_log</code> at 90 days. PCI DSS requires 12 months of audit history. SOC 2 requires 12 months of continuous monitoring evidence. These TTLs destroy evidence before any compliance window closes.</p>
+  <p><strong>Fix:</strong> This is exactly why the D1 compliance layer exists — it provides the long-term retention that MongoDB TTLs don't. The existing TTLs are fine for operational use; the compliance layer runs in parallel with 2-year retention.</p>
+</div>
+
+<!-- ===== WARNINGS ===== -->
+<h2>3. Warnings</h2>
+
+<div class="finding warning">
+  <div class="finding-header">
+    <h4>W1: Four Fragmented Audit Systems</h4>
+    <span class="rating rating-fair">WARNING · MAINTAINABILITY</span>
+  </div>
+  <p class="file-ref">audit_logs (middleware) · security_audit_logs (SecurityAuditService) · activity_logs (ActivityLogService) · admin_activity_log (AdminActivityService)</p>
+  <p>Each system has its own schema, event vocabulary, and retention policy. An auditor asking "who accessed contract #X on Tuesday?" would need to query four collections with four different query shapes. The new compliance D1 layer must be the canonical audit source that all four bridge into — otherwise you'll have five silos.</p>
+</div>
+
+<div class="finding warning">
+  <div class="finding-header">
+    <h4>W2: Subscription Cancellation Split-Brain Risk</h4>
+    <span class="rating rating-fair">WARNING · CORRECTNESS</span>
+  </div>
+  <p class="file-ref">app/services/subscription_service.py · cancel_subscription()</p>
+  <p>Stripe cancellation is done best-effort: if the Stripe API call fails, the local subscription status is still updated to "cancelled." This can leave the Stripe subscription active while the app thinks it's cancelled. The compliance audit should capture both the Stripe response and the local state change to make this diagnosable.</p>
+</div>
+
+<div class="finding warning">
+  <div class="finding-header">
+    <h4>W3: Form Response IP Addresses Stored Indefinitely</h4>
+    <span class="rating rating-fair">WARNING · GDPR</span>
+  </div>
+  <p class="file-ref">app/services/form_service.py · submit_form_response()</p>
+  <p>IP addresses are stored in form response documents with no TTL or anonymization. Under GDPR, IP addresses are personal data. The archival cron Worker should hash IPs in D1 after 90 days, but this local MongoDB storage also needs a separate cleanup migration or anonymization pass.</p>
+</div>
+
+<div class="finding warning">
+  <div class="finding-header">
+    <h4>W4: Guest Export CSV Has No Persistent Audit Record</h4>
+    <span class="rating rating-fair">WARNING · GDPR</span>
+  </div>
+  <p class="file-ref">app/services/guest_export_service.py · export_form_responses_csv()</p>
+  <p>Bulk export of guest PII (names, phones, emails, dietary info) to CSV is logged only to the app logger (ephemeral). Under GDPR, bulk data exports are a significant processing event that must be recorded in an audit trail. The middleware will catch the HTTP request, but won't know it was a PII bulk export — service-level enrichment is needed to tag the event correctly.</p>
+</div>
+
+<div class="finding warning">
+  <div class="finding-header">
+    <h4>W5: Budget Category Delete Cascades Quotes and Payments</h4>
+    <span class="rating rating-fair">WARNING · FINANCIAL</span>
+  </div>
+  <p class="file-ref">app/services/budget_service.py · delete_budget_category()</p>
+  <p>Deleting a budget category cascades to delete associated quotes and payment records — financial data that should be preserved for audit. No soft-delete path exists. The compliance emitter should snapshot all affected financial records before deletion.</p>
+</div>
+
+<div class="finding warning">
+  <div class="finding-header">
+    <h4>W6: Auth Service Doesn't Log Failed Login Details</h4>
+    <span class="rating rating-fair">WARNING · SOC 2</span>
+  </div>
+  <p class="file-ref">app/services/auth_service.py · authenticate_user() (line 20)</p>
+  <p>Login failures raise HTTPException but don't emit a structured event with the failed email, IP, and failure reason (invalid password vs. inactive account vs. unverified email). The middleware catches the 401 response, but can't distinguish between these failure modes. SOC 2 auditors specifically want to see categorized login failure reports.</p>
+</div>
+
+<div class="finding warning">
+  <div class="finding-header">
+    <h4>W7: XSS Risk in Guest PDF Export</h4>
+    <span class="rating rating-fair">WARNING · SECURITY</span>
+  </div>
+  <p class="file-ref">app/services/guest_export_service.py · generate_guest_list_pdf()</p>
+  <p>Guest fields (names, phone, email, dietary info) are inserted directly into HTML templates without escaping before WeasyPrint renders them to PDF. A guest with a name containing <code>&lt;script&gt;</code> or malicious HTML could exploit this in the PDF rendering context. While WeasyPrint doesn't execute JavaScript, HTML injection could corrupt PDF layout or inject misleading content.</p>
+</div>
+
+<!-- ===== INFORMATIONAL ===== -->
+<h2>4. Informational Notes</h2>
+
+<div class="finding info">
+  <div class="finding-header">
+    <h4>I1: Middleware Stack Order Is Correct</h4>
+    <span class="rating rating-info">INFO</span>
+  </div>
+  <p class="file-ref">app/main.py · lines 597–683</p>
+  <p>The middleware is registered outer-to-inner: ErrorHandler → SecurityHeaders → AuditLogging → Performance → RateLimit → CORS → GZip. The new ComplianceAuditMiddleware should register at position 3b (right after AuditLogging, slot #4) so it can capture the same request/response data. It should NOT replace AuditLogging — both run in parallel.</p>
+</div>
+
+<div class="finding info">
+  <div class="finding-header">
+    <h4>I2: TeamManagementService Already Uses ActivityLogService</h4>
+    <span class="rating rating-info">INFO</span>
+  </div>
+  <p class="file-ref">app/services/team_management_service.py</p>
+  <p>This service already emits activity events for invite, accept, update, deactivate, reactivate, and remove actions. The compliance emitter should be <em>additive</em> — don't remove the existing activity log calls, as they feed the planner dashboard. Add compliance emission alongside them.</p>
+</div>
+
+<div class="finding info">
+  <div class="finding-header">
+    <h4>I3: Couple Portal Auth Uses Separate Cookie Path</h4>
+    <span class="rating rating-info">INFO</span>
+  </div>
+  <p class="file-ref">app/api/couple_auth.py · app/dependencies/couple_auth.py</p>
+  <p>Couple authentication uses a separate cookie (<code>couple_token</code>) with its own token creation and verification. The compliance middleware needs to extract actor identity from both <code>admin_token</code> and <code>couple_token</code> cookies, not just the Bearer header. Also check for vendor portal token-based auth (<code>/portal/[token]</code>).</p>
+</div>
+
+<div class="finding info">
+  <div class="finding-header">
+    <h4>I4: Vendor Portal Uses Token-Based Access (No Cookie)</h4>
+    <span class="rating rating-info">INFO</span>
+  </div>
+  <p class="file-ref">app/portal/[token]/ · app/contracts/[token]/</p>
+  <p>External vendors access the portal via URL tokens, not authenticated sessions. The compliance middleware must recognize these access patterns and log the actor as "vendor:{vendor_id}" with actor_type "vendor". The token itself should NOT be logged (security risk) — only the token-resolved identity.</p>
+</div>
+
+<!-- ===== POSITIVE OBSERVATIONS ===== -->
+<h2>5. Positive Observations</h2>
+
+<div class="finding positive">
+  <div class="finding-header"><h4>P1: Constant-Time Password Verification</h4><span class="rating rating-good">GOOD</span></div>
+  <p class="file-ref">app/services/auth_service.py · line 30</p>
+  <p>Uses DUMMY_PASSWORD_HASH when user doesn't exist to prevent timing-based user enumeration. Well-implemented.</p>
+</div>
+
+<div class="finding positive">
+  <div class="finding-header"><h4>P2: Stripe Webhook Idempotency With Status Lifecycle</h4><span class="rating rating-good">GOOD</span></div>
+  <p class="file-ref">app/services/stripe_service.py · lines 1400-1550</p>
+  <p>Full lifecycle tracking (processing → processed/failed) with DuplicateKeyError handling for race conditions. This is production-grade webhook handling.</p>
+</div>
+
+<div class="finding positive">
+  <div class="finding-header"><h4>P3: Existing Audit Middleware Is Non-Blocking</h4><span class="rating rating-good">GOOD</span></div>
+  <p class="file-ref">app/middleware/audit_logging.py · line 236</p>
+  <p>Audit DB writes use <code>asyncio.create_task()</code> with a done callback for error surfacing. The new compliance emitter should follow this same pattern — never block the HTTP response for audit writes.</p>
+</div>
+
+<div class="finding positive">
+  <div class="finding-header"><h4>P4: Sensitive Data Sanitization Already Exists</h4><span class="rating rating-good">GOOD</span></div>
+  <p class="file-ref">app/middleware/audit_logging.py · lines 142-163</p>
+  <p>The existing middleware already redacts passwords, tokens, API keys, credit cards, SSNs from logged data. The compliance emitter should reuse this sanitization logic.</p>
+</div>
+
+<div class="finding positive">
+  <div class="finding-header"><h4>P5: Cascade Delete Has Soft-Delete Option</h4><span class="rating rating-good">GOOD</span></div>
+  <p class="file-ref">app/services/cascade_delete_service.py · line 64</p>
+  <p>The service supports both soft-delete (archive with deleted_at/deleted_by) and hard-delete. The compliance system should strongly prefer soft-delete and emit a pre-delete snapshot even for soft-delete operations.</p>
+</div>
+
+<div class="finding positive">
+  <div class="finding-header"><h4>P6: Existing Cloudflare Worker Patterns Are Reusable</h4><span class="rating rating-good">GOOD</span></div>
+  <p class="file-ref">cloudflare-workers/autopilot-cron.js</p>
+  <p>The existing workers follow a consistent pattern: fetchWithTimeout(), CRON_SECRET auth, Resend email alerts on failure. The audit workers should follow the same conventions for consistency.</p>
+</div>
+
+<!-- ===== UPDATED FILE MANIFEST ===== -->
+<h2>6. Updated File Manifest (Post-Review)</h2>
+<p>The review identified <strong>8 additional services</strong> that need Phase 3 audit enrichment beyond the 5 in the original mockup.</p>
+
+<table>
+  <tr>
+    <th>Service</th>
+    <th>PII</th>
+    <th>Financial</th>
+    <th>Phase</th>
+    <th>Key Audit Events</th>
+  </tr>
+  <tr>
+    <td><code>auth_service.py</code></td>
+    <td class="yes">Yes</td>
+    <td class="no">No</td>
+    <td><span class="tag tag-p3">Phase 3</span></td>
+    <td>Login success/failure (categorized), token refresh, logout</td>
+  </tr>
+  <tr>
+    <td><code>stripe_service.py</code></td>
+    <td class="partial">Partial</td>
+    <td class="yes">Yes</td>
+    <td><span class="tag tag-p3">Phase 3</span></td>
+    <td>Webhook events, checkout, portal sessions, refunds, subscription changes</td>
+  </tr>
+  <tr>
+    <td><code>contract_service.py</code></td>
+    <td class="yes">Yes</td>
+    <td class="yes">Yes</td>
+    <td><span class="tag tag-p3">Phase 3</span></td>
+    <td>Create, update, sign, send, cancel — with before/after snapshots</td>
+  </tr>
+  <tr>
+    <td><code>couple_portal_service.py</code></td>
+    <td class="yes">Yes</td>
+    <td class="no">No</td>
+    <td><span class="tag tag-p3">Phase 3</span></td>
+    <td>Data access, form submissions, registry/FAQ CRUD</td>
+  </tr>
+  <tr>
+    <td><code>vendor_service.py</code></td>
+    <td class="yes">Yes</td>
+    <td class="yes">Yes</td>
+    <td><span class="tag tag-p3">Phase 3</span></td>
+    <td>Profile CRUD, contract management, payment links, portal token generation</td>
+  </tr>
+  <tr style="background: var(--surface);">
+    <td colspan="5" style="color: var(--yellow); font-weight: 600; font-size: .78rem;">▼ Added from review (not in original mockup)</td>
+  </tr>
+  <tr>
+    <td><code>wedding_service.py</code></td>
+    <td class="yes">Yes</td>
+    <td class="no">No</td>
+    <td><span class="tag tag-p3">Phase 3</span></td>
+    <td>Create, update, delete wedding — couple PII (names, venue, dates)</td>
+  </tr>
+  <tr>
+    <td><code>budget_service.py</code></td>
+    <td class="partial">Partial</td>
+    <td class="yes">Yes</td>
+    <td><span class="tag tag-p3">Phase 3</span></td>
+    <td>Payment records, quotes, budget categories — financial data mutations</td>
+  </tr>
+  <tr>
+    <td><code>subscription_service.py</code></td>
+    <td class="yes">Yes</td>
+    <td class="yes">Yes</td>
+    <td><span class="tag tag-p3">Phase 3</span></td>
+    <td>Plan CRUD, subscription assign/cancel, Stripe sync — billing-critical</td>
+  </tr>
+  <tr>
+    <td><code>team_management_service.py</code></td>
+    <td class="yes">Yes</td>
+    <td class="no">No</td>
+    <td><span class="tag tag-p3">Phase 3</span></td>
+    <td>Invite, accept, deactivate, remove — access control changes (SOC 2)</td>
+  </tr>
+  <tr>
+    <td><code>user_management_service.py</code></td>
+    <td class="yes">Yes</td>
+    <td class="partial">Partial</td>
+    <td><span class="tag tag-p3">Phase 3</span></td>
+    <td>Register, update, delete, suspend, change_password, reset_password</td>
+  </tr>
+  <tr>
+    <td><code>guest_service.py</code></td>
+    <td class="yes">Yes</td>
+    <td class="no">No</td>
+    <td><span class="tag tag-p3">Phase 3</span></td>
+    <td>Guest CRUD — phone, email, dietary (GDPR special category potential)</td>
+  </tr>
+  <tr>
+    <td><code>form_service.py</code></td>
+    <td class="yes">Yes</td>
+    <td class="no">No</td>
+    <td><span class="tag tag-p3">Phase 3</span></td>
+    <td>Form responses (arbitrary PII), CSV exports, IP address storage</td>
+  </tr>
+  <tr>
+    <td><code>cascade_delete_service.py</code></td>
+    <td class="yes">Yes</td>
+    <td class="yes">Yes</td>
+    <td><span class="tag tag-p3">Phase 3</span></td>
+    <td>Mass PII/financial deletion — highest risk; needs pre-delete manifest</td>
+  </tr>
+  <tr style="background: var(--surface);">
+    <td colspan="5" style="color: var(--green); font-weight: 600; font-size: .78rem;">▼ Phase 2 sufficient (middleware captures HTTP-level events)</td>
+  </tr>
+  <tr>
+    <td><code>guest_export_service.py</code></td>
+    <td class="yes">Yes (read)</td>
+    <td class="no">No</td>
+    <td><span class="tag tag-p2">Phase 2</span></td>
+    <td>Bulk PII export — middleware tags it, but W4 above needs addressing</td>
+  </tr>
+</table>
+
+<!-- ===== REVISED TOTALS ===== -->
+<h2>7. Revised Implementation Scope</h2>
+
+<div class="stats">
+  <div class="stat"><div class="stat-num" style="color:var(--green)">6</div><div class="stat-label">New Files</div></div>
+  <div class="stat"><div class="stat-num" style="color:var(--yellow)">17</div><div class="stat-label">Modified Files (was 9)</div></div>
+  <div class="stat"><div class="stat-num" style="color:var(--blue)">4</div><div class="stat-label">CF Workers</div></div>
+  <div class="stat"><div class="stat-num" style="color:var(--red)">13</div><div class="stat-label">Phase 3 Services</div></div>
+</div>
+
+<p>The original mockup identified 5 services for Phase 3 enrichment. This review adds 8 more, bringing the total to <strong>13 services</strong> that need direct audit emission calls. The additional services all handle PII, financial data, or access-control changes that middleware alone cannot properly classify.</p>
+
+<p>Phase 3 is now larger but can be split into sub-phases:</p>
+<table>
+  <tr><th>Sub-phase</th><th>Services</th><th>Risk Level</th></tr>
+  <tr><td><strong>3a — Highest Risk</strong></td><td>cascade_delete, stripe_service, auth_service, user_management</td><td style="color:var(--red)">Critical: Mass deletion, payments, identity</td></tr>
+  <tr><td><strong>3b — High Risk</strong></td><td>contract_service, vendor_service, subscription_service, budget_service</td><td style="color:var(--orange)">Financial: Contracts, payments, billing</td></tr>
+  <tr><td><strong>3c — Medium Risk</strong></td><td>guest_service, couple_portal, wedding_service, team_management, form_service</td><td style="color:var(--yellow)">PII: Guest data, couples, access control</td></tr>
+</table>
+
+<div style="margin-top: 3rem; padding: 1.5rem; background: var(--surface); border: 1px solid var(--border); border-radius: 10px;">
+  <h3 style="margin-top: 0; color: var(--yellow);">This is a review — no code has been changed</h3>
+  <p style="margin-bottom: 0;">This review identifies findings and updates the implementation scope. The original architecture mockup (audit-system-mockup.html) should be updated with the expanded service list before implementation begins.</p>
+</div>
+
+</div>
+</body>
+</html>

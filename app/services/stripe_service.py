@@ -818,6 +818,73 @@ class StripeService:
         if extra_updates:
             subscription_updates.update(extra_updates)
 
+        # Plan-snapshot grandfather rule — write once on first sync of a
+        # subscription that has no snapshot yet, never re-write on later
+        # webhook events. Closes the gap where `_handle_subscription_created`
+        # (webhook path), Portal-initiated creates, and admin-assigned subs
+        # created via the Stripe API never go through
+        # `handle_checkout_session_completed` (which does write a snapshot at
+        # stripe_service.py:1627-1644), so the row lands with
+        # `plan_snapshot=None`.  Every feature gate that reads
+        # `plan_snapshot` (feature_gates.py:182, subscription_service.py:669,
+        # team_management_service.py:225) silently degrades to plan-catalog-
+        # live values when the snapshot is missing, which breaks
+        # grandfathering the first time a platform admin edits the plan's
+        # limits.  Pins Q1 from docs/plans/SUBSCRIPTION_LIFECYCLE_TEST_PLAN.md
+        # §6.
+        if plan_id and "plan_snapshot" not in subscription_updates:
+            snapshot_lookup_query: Dict[str, Any] = {}
+            if stripe_subscription_id:
+                snapshot_lookup_query["stripe_subscription_id"] = stripe_subscription_id
+            elif user_id:
+                snapshot_lookup_query["user_id"] = user_id
+
+            existing_snapshot_doc = None
+            if snapshot_lookup_query:
+                existing_snapshot_doc = await self.subscriptions_collection.find_one(
+                    snapshot_lookup_query, {"plan_snapshot": 1}
+                )
+
+            if not existing_snapshot_doc or not existing_snapshot_doc.get(
+                "plan_snapshot"
+            ):
+                try:
+                    plan = await self.plans_collection.find_one({"_id": plan_id})
+                    if plan:
+                        subscription_updates["plan_snapshot"] = {
+                            "plan_name": plan.get("name"),
+                            "max_weddings": plan.get("max_weddings", 1),
+                            "max_guests_per_wedding": plan.get(
+                                "max_guests_per_wedding", 100
+                            ),
+                            "ai_credits_monthly": plan.get("ai_credits_monthly", 10),
+                            "storage_gb": plan.get("storage_gb", 1),
+                            "staff_seats": plan.get("staff_seats", 0),
+                            "features": plan.get("features", {}),
+                            "price_monthly": plan.get("price_monthly", 0),
+                            "price_yearly": plan.get("price_yearly"),
+                            "stripe_price_id_monthly": plan.get(
+                                "stripe_price_id_monthly"
+                            ),
+                            "stripe_price_id_yearly": plan.get(
+                                "stripe_price_id_yearly"
+                            ),
+                            "snapshot_date": now,
+                        }
+                        logger.info(
+                            f"Built plan_snapshot for subscription "
+                            f"{stripe_subscription_id or user_id} from plan "
+                            f"{plan_id} (no existing snapshot found)"
+                        )
+                except Exception as e:
+                    # Do not fail the webhook sync if plan lookup errors —
+                    # the subscription row still needs to be written.  The
+                    # row will be missing plan_snapshot until a later event
+                    # resyncs successfully.  Logged so this surfaces in ops.
+                    logger.error(
+                        f"Failed to build plan snapshot for plan {plan_id}: {e}"
+                    )
+
         # Build query to find the existing subscription record.
         # Priority: match by stripe_subscription_id first (authoritative).
         # If no stripe_subscription_id, or no matching record exists yet,

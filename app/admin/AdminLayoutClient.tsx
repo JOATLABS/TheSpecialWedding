@@ -1,6 +1,4 @@
 'use client';
-
-export { default } from './layout';
 import { AdminProvider, useAdmin } from '@/contexts/AdminContext';
 import { ThemeProvider } from '@/contexts/ThemeContext';
 import { SSEProvider } from '@/contexts/SSEContext';
