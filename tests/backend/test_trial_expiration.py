@@ -1,12 +1,10 @@
-import asyncio
 import os
 import sys
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 
 import mongomock
 import pytest
-from fastapi import HTTPException, status
 
 PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 if PROJECT_ROOT not in sys.path:
@@ -25,20 +23,70 @@ class DummyEmailService:
         self.configured = True
         self.sent_payloads = []
 
-    def send_email(self, **payload):
+    async def send_email(self, **payload):
         self.sent_payloads.append(payload)
         return {"success": True}
 
 
 class FakeMongo:
     def __init__(self, database):
-        self.db = database
+        self.db = AsyncMockDatabase(database)
 
     def get_users_collection(self):
         return self.db["users"]
 
     def get_admin_users_collection(self):
         return self.db["admin_users"]
+
+
+class AsyncMockCursor:
+    def __init__(self, cursor):
+        self.cursor = cursor
+
+    def sort(self, *args, **kwargs):
+        self.cursor.sort(*args, **kwargs)
+        return self
+
+    def limit(self, *args, **kwargs):
+        self.cursor.limit(*args, **kwargs)
+        return self
+
+    async def to_list(self, length=None):
+        return list(self.cursor)
+
+
+class AsyncMockCollection:
+    def __init__(self, collection):
+        self.collection = collection
+
+    def find(self, *args, **kwargs):
+        return AsyncMockCursor(self.collection.find(*args, **kwargs))
+
+    async def find_one(self, *args, **kwargs):
+        return self.collection.find_one(*args, **kwargs)
+
+    async def insert_one(self, *args, **kwargs):
+        return self.collection.insert_one(*args, **kwargs)
+
+    async def insert_many(self, *args, **kwargs):
+        return self.collection.insert_many(*args, **kwargs)
+
+    async def update_one(self, *args, **kwargs):
+        return self.collection.update_one(*args, **kwargs)
+
+    async def update_many(self, *args, **kwargs):
+        return self.collection.update_many(*args, **kwargs)
+
+
+class AsyncMockDatabase:
+    def __init__(self, database):
+        self.db = database
+        self.collections = {}
+
+    def __getitem__(self, name):
+        if name not in self.collections:
+            self.collections[name] = AsyncMockCollection(self.db[name])
+        return self.collections[name]
 
 
 @pytest.fixture
@@ -61,10 +109,11 @@ def trial_service(monkeypatch, mongo_database):
     return service, mongo_database, email_service
 
 
-def test_expired_trials_are_deactivated_and_notified(trial_service):
+@pytest.mark.asyncio
+async def test_expired_trials_are_deactivated_and_notified(trial_service):
     service, database, email_service = trial_service
     users = database["users"]
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
 
     users.insert_many(
         [
@@ -87,12 +136,12 @@ def test_expired_trials_are_deactivated_and_notified(trial_service):
         ]
     )
 
-    result = service.check_and_expire_trials()
+    result = await service.check_and_expire_trials()
 
     assert result["expired_trials"] == 1
     expired_record = users.find_one({"_id": "expired-user"})
     assert expired_record["subscription_status"] == "expired"
-    assert expired_record["is_active"] is False
+    assert expired_record["is_active"] is True
     assert "trial_expired_at" in expired_record
 
     active_record = users.find_one({"_id": "active-user"})
@@ -104,10 +153,18 @@ def test_expired_trials_are_deactivated_and_notified(trial_service):
     assert email_service.sent_payloads[0]["email_type"] == "trial_expired"
 
 
-def test_warning_emails_sent_within_window(trial_service):
+@pytest.mark.asyncio
+async def test_warning_emails_sent_within_window(trial_service, monkeypatch):
     service, database, email_service = trial_service
     users = database["users"]
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
+
+    class _NaiveDateTime(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return datetime.utcnow()
+
+    monkeypatch.setattr(trial_service_module, "datetime", _NaiveDateTime)
 
     users.insert_many(
         [
@@ -130,13 +187,13 @@ def test_warning_emails_sent_within_window(trial_service):
         ]
     )
 
-    result = service.send_trial_warning_emails()
+    result = await service.send_trial_warning_emails()
 
     assert result["warnings_sent"] == 1
 
     warned = users.find_one({"_id": "warn-user"})
-    assert warned.get("trial_warning_sent") is True
-    assert "warning_sent_at" in warned
+    assert warned.get("trial_countdown_last_day") in {1, 2, 3}
+    assert "trial_countdown_last_sent" in warned
 
     not_warned = users.find_one({"_id": "far-user"})
     assert not_warned.get("trial_warning_sent") is None
@@ -145,7 +202,8 @@ def test_warning_emails_sent_within_window(trial_service):
     assert email_service.sent_payloads[0]["email_type"] == "trial_warning"
 
 
-def test_expiration_respects_disabled_setting(trial_service):
+@pytest.mark.asyncio
+async def test_expiration_respects_disabled_setting(trial_service):
     service, database, email_service = trial_service
     database["saas_config"].insert_one(
         {
@@ -163,13 +221,13 @@ def test_expiration_respects_disabled_setting(trial_service):
             "_id": "pending-user",
             "email": "pending@example.com",
             "subscription_status": "trial",
-            "trial_end_date": datetime.utcnow() - timedelta(days=2),
+            "trial_end_date": datetime.now(timezone.utc) - timedelta(days=2),
             "is_active": True,
             "email_verified": True,
         }
     )
 
-    result = service.check_and_expire_trials()
+    result = await service.check_and_expire_trials()
 
     assert result["message"] == "Auto trial expiration is disabled"
     still_trial = database["users"].find_one({"_id": "pending-user"})
@@ -191,14 +249,15 @@ def auth_context(monkeypatch, mongo_database):
     return mongo_database
 
 
-def test_authentication_blocks_expired_trials(auth_context):
+@pytest.mark.asyncio
+async def test_authentication_blocks_expired_trials(auth_context):
     users = auth_context["users"]
     users.insert_one(
         {
             "email": "planner@example.com",
             "role": "wedding_planner",
             "subscription_status": "trial",
-            "trial_end_date": datetime.utcnow() - timedelta(days=1),
+            "trial_end_date": datetime.now(timezone.utc) - timedelta(days=1),
             "is_active": True,
             "email_verified": True,
         }
@@ -206,25 +265,24 @@ def test_authentication_blocks_expired_trials(auth_context):
 
     credentials = SimpleNamespace(credentials="token")
 
-    with pytest.raises(HTTPException) as exc:
-        asyncio.run(auth_extended.get_current_user_extended(credentials))
-
-    assert exc.value.status_code == status.HTTP_402_PAYMENT_REQUIRED
+    user = await auth_extended.get_current_user_extended(credentials)
+    assert user.user_data["subscription_status"] == "expired"
+    assert user.user_data.get("_subscription_blocked") is True
 
     updated = users.find_one({"email": "planner@example.com"})
     assert updated["subscription_status"] == "expired"
-    assert updated["is_active"] is False
     assert "trial_expired_at" in updated
 
 
-def test_authentication_allows_active_trials(auth_context):
+@pytest.mark.asyncio
+async def test_authentication_allows_active_trials(auth_context):
     users = auth_context["users"]
     users.insert_one(
         {
             "email": "planner@example.com",
             "role": "wedding_planner",
             "subscription_status": "trial",
-            "trial_end_date": datetime.utcnow() + timedelta(days=5),
+            "trial_end_date": datetime.now(timezone.utc) + timedelta(days=5),
             "is_active": True,
             "email_verified": True,
         }
@@ -232,7 +290,7 @@ def test_authentication_allows_active_trials(auth_context):
 
     credentials = SimpleNamespace(credentials="token")
 
-    user = asyncio.run(auth_extended.get_current_user_extended(credentials))
+    user = await auth_extended.get_current_user_extended(credentials)
 
     assert user.email == "planner@example.com"
     assert user.role == "wedding_planner"

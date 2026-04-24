@@ -877,7 +877,16 @@ class TestVendorAccounts:
         assert len(data["vendors"]) == 1
 
         mock_service.list_vendor_accounts.assert_called_once_with(
-            status_filter=None, limit=50, skip=0
+            status_filter=None,
+            category_filter=None,
+            location_filter=None,
+            date_from=None,
+            date_to=None,
+            search=None,
+            sort_by="created_at",
+            sort_order=-1,
+            limit=50,
+            skip=0,
         )
 
     def test_list_vendor_accounts_with_status_filter(self, admin_client, mock_service):
@@ -890,7 +899,16 @@ class TestVendorAccounts:
         assert response.status_code == 200
 
         mock_service.list_vendor_accounts.assert_called_once_with(
-            status_filter="active", limit=30, skip=15
+            status_filter="active",
+            category_filter=None,
+            location_filter=None,
+            date_from=None,
+            date_to=None,
+            search=None,
+            sort_by="created_at",
+            sort_order=-1,
+            limit=30,
+            skip=15,
         )
 
 

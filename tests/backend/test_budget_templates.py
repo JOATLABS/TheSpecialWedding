@@ -18,10 +18,61 @@ import app.services.budget_service as budget_module
 
 class FakeMongo:
     def __init__(self, database):
-        self.db = database
+        self.db = AsyncMockDatabase(database)
 
     def get_weddings_collection(self):
         return self.db["weddings"]
+
+
+class AsyncMockCursor:
+    def __init__(self, cursor):
+        self.cursor = cursor
+
+    def sort(self, *args, **kwargs):
+        self.cursor.sort(*args, **kwargs)
+        return self
+
+    def limit(self, *args, **kwargs):
+        self.cursor.limit(*args, **kwargs)
+        return self
+
+    def skip(self, *args, **kwargs):
+        self.cursor.skip(*args, **kwargs)
+        return self
+
+    async def to_list(self, length=None):
+        return list(self.cursor)
+
+
+class AsyncMockCollection:
+    def __init__(self, collection):
+        self.collection = collection
+
+    def find(self, *args, **kwargs):
+        return AsyncMockCursor(self.collection.find(*args, **kwargs))
+
+    async def find_one(self, *args, **kwargs):
+        return self.collection.find_one(*args, **kwargs)
+
+    async def insert_one(self, *args, **kwargs):
+        return self.collection.insert_one(*args, **kwargs)
+
+    async def update_one(self, *args, **kwargs):
+        return self.collection.update_one(*args, **kwargs)
+
+    async def delete_one(self, *args, **kwargs):
+        return self.collection.delete_one(*args, **kwargs)
+
+
+class AsyncMockDatabase:
+    def __init__(self, database):
+        self.db = database
+        self.collections = {}
+
+    def __getitem__(self, name):
+        if name not in self.collections:
+            self.collections[name] = AsyncMockCollection(self.db[name])
+        return self.collections[name]
 
 
 def _build_service(monkeypatch):
@@ -38,7 +89,8 @@ def budget_service(monkeypatch):
     return _build_service(monkeypatch)
 
 
-def test_create_budget_template_persists_document(budget_service):
+@pytest.mark.asyncio
+async def test_create_budget_template_persists_document(budget_service):
     service, database = budget_service
 
     payload = {
@@ -59,7 +111,9 @@ def test_create_budget_template_persists_document(budget_service):
         "is_public": False,
     }
 
-    result = service.create_budget_template(payload, created_by="planner@example.com")
+    result = await service.create_budget_template(
+        payload, created_by="planner@example.com"
+    )
 
     assert result["name"] == payload["name"]
     assert result["created_by"] == "planner@example.com"
@@ -75,7 +129,8 @@ def test_create_budget_template_persists_document(budget_service):
     assert len(stored["categories"]) == len(payload["categories"])
 
 
-def test_create_budget_template_validates_percentages(budget_service):
+@pytest.mark.asyncio
+async def test_create_budget_template_validates_percentages(budget_service):
     service, _ = budget_service
 
     payload = {
@@ -92,10 +147,11 @@ def test_create_budget_template_validates_percentages(budget_service):
     }
 
     with pytest.raises(ValueError, match="total 100%"):
-        service.create_budget_template(payload, created_by="planner@example.com")
+        await service.create_budget_template(payload, created_by="planner@example.com")
 
 
-def test_create_budget_template_requires_unique_names(budget_service):
+@pytest.mark.asyncio
+async def test_create_budget_template_requires_unique_names(budget_service):
     service, _ = budget_service
 
     payload = {
@@ -111,4 +167,4 @@ def test_create_budget_template_requires_unique_names(budget_service):
     }
 
     with pytest.raises(ValueError, match="unique"):
-        service.create_budget_template(payload, created_by="planner@example.com")
+        await service.create_budget_template(payload, created_by="planner@example.com")
