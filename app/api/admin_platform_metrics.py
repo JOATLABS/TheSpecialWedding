@@ -1986,7 +1986,12 @@ async def get_scheduler_jobs_summary(
         )
 
     return {
-        "generated_at": datetime.now(timezone.utc).isoformat() + "Z",
+        # Use _normalize_timestamp so the value is a clean "...Z" string.
+        # datetime.now(timezone.utc).isoformat() emits "+00:00", and naively
+        # appending "Z" yields "+00:00Z", which is not valid ISO 8601 and is
+        # rejected by JavaScript's Date parser — that broke the scheduler
+        # dashboard's "Last updated" label.
+        "generated_at": _normalize_timestamp(datetime.now(timezone.utc)),
         "jobs": jobs_out,
         "summary": {
             "total_jobs": len(jobs_out),

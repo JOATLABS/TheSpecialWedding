@@ -761,7 +761,7 @@ export default function CommunicationsInboxView() {
     });
 
     return items;
-  }, [coupleConversations, emails, getWeddingLabel, smsTickets, supportTickets]);
+  }, [coupleConversations, currentUserEmail, emails, getWeddingLabel, smsTickets, supportTickets]);
 
   const allItems = buildUnifiedList();
   const inboxItems = selectedWeddingId === 'all'

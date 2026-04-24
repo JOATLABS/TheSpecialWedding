@@ -30,7 +30,8 @@ class TestSecurityBoundaries:
         ("GET", "/admin/platform/metrics"),
         ("GET", "/admin/activity-log"),
         ("GET", "/subscription-plans"),
-        ("GET", "/contracts"),
+        ("GET", "/admin/client-contracts"),
+        ("GET", "/admin/contracts"),
     ]
 
     @pytest.mark.parametrize("method,path", PROTECTED_ENDPOINTS)
@@ -41,7 +42,9 @@ class TestSecurityBoundaries:
             401,
             403,
             405,
-        ), f"{method} {path} returned {resp.status_code} without auth (expected 401/403)"
+        ), (
+            f"{method} {path} returned {resp.status_code} without auth (expected 401/403)"
+        )
 
     def test_invalid_jwt_rejected(self):
         """Forged JWT tokens are rejected."""
@@ -103,6 +106,6 @@ class TestPublicEndpoints:
     def test_public_endpoint_accessible(self, method, path):
         """Public endpoints return 200 without auth."""
         resp = requests.request(method, f"{BASE_URL}{path}", timeout=10)
-        assert (
-            resp.status_code == 200
-        ), f"{method} {path} returned {resp.status_code} (expected 200)"
+        assert resp.status_code == 200, (
+            f"{method} {path} returned {resp.status_code} (expected 200)"
+        )
