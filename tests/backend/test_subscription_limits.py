@@ -42,12 +42,19 @@ def _build_service(
     plan: dict | None,
     usage: dict,
     subscription_extra: dict | None = None,
+    live_wedding_count: int | None = None,
 ):
-    """Construct a SubscriptionService with its three Mongo-hitting methods
+    """Construct a SubscriptionService with its Mongo-hitting methods
     stubbed so every test stays synchronous and hermetic.
 
     We deliberately mutate the instance, not the class — keeps tests
     independent and avoids fixture ordering bugs.
+
+    ``live_wedding_count``: authoritative wedding count returned by the
+    new ``_live_wedding_count`` helper. When ``None`` (the default), the
+    stub echoes ``usage["weddings_count"]`` so older tests that expressed
+    "current usage" through the counter keep asserting the same thing.
+    Pass a different integer to simulate counter/reality drift.
     """
     # Import here so the module-level mongo connection attempt doesn't run
     # at collection time (the real subscription_service instantiates at
@@ -82,9 +89,19 @@ def _build_service(
     async def fake_get_usage_stats(user_id: str):
         return usage
 
+    resolved_live_count = (
+        live_wedding_count
+        if live_wedding_count is not None
+        else usage.get("weddings_count", 0)
+    )
+
+    async def fake_live_wedding_count(user_id: str):
+        return resolved_live_count
+
     service.get_user_subscription = fake_get_user_subscription  # type: ignore
     service.get_plan = fake_get_plan  # type: ignore
     service.get_usage_stats = fake_get_usage_stats  # type: ignore
+    service._live_wedding_count = fake_live_wedding_count  # type: ignore
     return service
 
 
@@ -170,6 +187,41 @@ def test_weddings_fallback_when_snapshot_missing():
     )
     result = _run(service.check_usage_limits("user_test", "weddings"))
     assert result["allowed"] is False
+    assert result["limit"] == 3
+
+
+def test_weddings_cap_uses_live_count_not_drifted_counter():
+    """Regression guard — the cap reads the live weddings collection, not
+    the ``usage_tracking.weddings_count`` counter.
+
+    Scenario encoded here is the exact false-positive that A1/A2 of the
+    trial lifecycle driver hit: the per-user-id counter is 0 (user was
+    re-provisioned, counter initialized fresh) while the tenancy's real
+    wedding count is already 6 against a cap of 3. Pre-fix, the counter
+    was load-bearing and the cap silently lifted. Post-fix, live count
+    wins and the next create is blocked.
+
+    If this test ever fails, revert to counter-based enforcement is the
+    most likely culprit. Do not "fix" the test by flipping the expected
+    value — read ``_live_wedding_count`` docstring first.
+    """
+    plan = {"_id": "plan_boutique", "max_weddings": 3}
+    service = _build_service(
+        plan_snapshot=None,
+        plan=plan,
+        usage={"weddings_count": 0},  # stale counter (the drift)
+        live_wedding_count=6,  # authoritative reality
+    )
+    result = _run(service.check_usage_limits("user_test", "weddings"))
+    assert result["allowed"] is False, (
+        "Cap bypass: check_usage_limits honored the stale counter "
+        "(weddings_count=0) instead of the live collection count (6). "
+        "This is the regression the planner trial driver caught."
+    )
+    assert result["current_usage"] == 6, (
+        "current_usage in the 402 payload must reflect live reality, "
+        "otherwise the UI shows a lower number than the actual tenancy."
+    )
     assert result["limit"] == 3
 
 

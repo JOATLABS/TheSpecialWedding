@@ -1439,7 +1439,15 @@ async def couple_get_messages(
             {
                 "id": str(msg["_id"]),
                 "sender_role": msg.get("sender_role"),
-                "sender_email": msg.get("sender_email"),
+                # SECURITY: do NOT return sender_email on the couple-facing GET.
+                # Planner/team login emails are internal contact info and the
+                # couple dashboard does not need identity-first authorship —
+                # `isSelfAuthored` in app/types/messaging.ts falls back to
+                # sender_role comparison, which is a complete disambiguator
+                # for the couple viewer (role is either 'couple' or 'planner').
+                # The planner-facing GET at /couple-portal/messages still
+                # projects sender_email — planners need it to distinguish
+                # between multiple team members on a shared thread.
                 "sender_name": msg.get("sender_name"),
                 "content": msg.get("content"),
                 "read_by_couple": msg.get("read_by_couple", False),

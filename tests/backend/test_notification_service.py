@@ -22,7 +22,7 @@ os.environ.setdefault("SECRET_KEY", "test-secret")
 os.environ.setdefault("ALGORITHM", "HS256")
 os.environ.setdefault("API_KEY", "test-api-key")
 
-import app.services.notification_service as notification_module
+import app.services.notification_service as notification_module  # noqa: E402
 
 
 class DummyEmailService:
@@ -35,7 +35,7 @@ class DummyEmailService:
         self.fail_recipients = set(fail_recipients or [])
         self.calls: List[Dict[str, str]] = []
 
-    def send_email(
+    async def send_email(
         self, *, to_email: str, subject: str, html_content: str, email_type: str
     ):
         payload = {
@@ -52,11 +52,82 @@ class DummyEmailService:
         return {"success": True, "id": "mock-email-id"}
 
 
+class AsyncMockCursor:
+    """Wrap a synchronous mongomock cursor for Motor-style async iteration."""
+
+    def __init__(self, cursor):
+        self._cursor = cursor
+
+    def sort(self, *args, **kwargs):
+        self._cursor = self._cursor.sort(*args, **kwargs)
+        return self
+
+    def skip(self, *args, **kwargs):
+        self._cursor = self._cursor.skip(*args, **kwargs)
+        return self
+
+    def limit(self, *args, **kwargs):
+        self._cursor = self._cursor.limit(*args, **kwargs)
+        return self
+
+    async def to_list(self, length=None):
+        items = list(self._cursor)
+        return items if length is None else items[:length]
+
+    def __aiter__(self):
+        self._iter = iter(self._cursor)
+        return self
+
+    async def __anext__(self):
+        try:
+            return next(self._iter)
+        except StopIteration:
+            raise StopAsyncIteration
+
+
+class AsyncMockCollection:
+    """Wrap a synchronous mongomock collection with awaited methods."""
+
+    def __init__(self, collection):
+        self._collection = collection
+
+    def find(self, *args, **kwargs):
+        return AsyncMockCursor(self._collection.find(*args, **kwargs))
+
+    async def find_one(self, *args, **kwargs):
+        return self._collection.find_one(*args, **kwargs)
+
+    async def insert_one(self, *args, **kwargs):
+        return self._collection.insert_one(*args, **kwargs)
+
+    async def update_one(self, *args, **kwargs):
+        return self._collection.update_one(*args, **kwargs)
+
+    async def count_documents(self, *args, **kwargs):
+        return self._collection.count_documents(*args, **kwargs)
+
+
+class AsyncMockDatabase:
+    """Return stable async wrappers for mongomock collections."""
+
+    def __init__(self, database):
+        self._database = database
+        self._collections = {}
+
+    def __getitem__(self, name):
+        if name not in self._collections:
+            self._collections[name] = AsyncMockCollection(self._database[name])
+        return self._collections[name]
+
+
 class FakeMongo:
     """In-memory Mongo replacement for unit tests."""
 
     def __init__(self, database):
-        self.db = database
+        self.db = AsyncMockDatabase(database)
+
+    def get_users_collection(self):
+        return self.db["users"]
 
 
 @pytest.fixture
