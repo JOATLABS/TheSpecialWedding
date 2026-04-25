@@ -23,6 +23,7 @@ import {
   updateContract,
   sendContract,
   createContractRevision,
+  duplicateContract,
   getContractFormData,
   applyFormDataToContract,
   type VendorContract,
@@ -44,6 +45,7 @@ interface ContractDetailPageServices {
   updateContract: typeof updateContract;
   sendContract: typeof sendContract;
   createContractRevision: typeof createContractRevision;
+  duplicateContract: typeof duplicateContract;
   getContractFormData: typeof getContractFormData;
   applyFormDataToContract: typeof applyFormDataToContract;
 }
@@ -56,6 +58,7 @@ const defaultContractDetailPageServices: ContractDetailPageServices = {
   updateContract,
   sendContract,
   createContractRevision,
+  duplicateContract,
   getContractFormData,
   applyFormDataToContract,
 };
@@ -97,6 +100,7 @@ function ContractDetailPageContent({
   const [revisionKind, setRevisionKind] = useState<'revision' | 'amendment'>('revision');
   const [revisionReason, setRevisionReason] = useState('');
   const [creatingRevision, setCreatingRevision] = useState(false);
+  const [duplicating, setDuplicating] = useState(false);
   const [activityLoading, setActivityLoading] = useState(false);
   const [activity, setActivity] = useState<VendorContractActivityResponse | null>(null);
   const [activityError, setActivityError] = useState<string | null>(null);
@@ -211,6 +215,24 @@ function ContractDetailPageContent({
     }
   };
 
+  const handleDuplicate = async () => {
+    if (!token || !contractId) return;
+
+    setDuplicating(true);
+    try {
+      const duplicated = await services.duplicateContract(token, contractId, {});
+      notifier.success('Contract duplicated as a new draft');
+      router.push(`/admin/vendors/contracts/${duplicated._id}`);
+    } catch (error) {
+      console.error('Error duplicating contract:', error);
+      notifier.error(
+        error instanceof Error ? error.message : 'Failed to duplicate contract'
+      );
+    } finally {
+      setDuplicating(false);
+    }
+  };
+
   const handleCreateRevision = async () => {
     if (!token || !contractId) return;
 
@@ -308,6 +330,7 @@ function ContractDetailPageContent({
         return 'bg-blue-500';
       case 'revision_created':
       case 'contract_superseded':
+      case 'contract_duplicated':
         return 'bg-amber-500';
       case 'form_data_applied':
         return 'bg-violet-500';
@@ -405,6 +428,18 @@ function ContractDetailPageContent({
                   {defaultRevisionLabel}
                 </button>
               )}
+
+              <button
+                onClick={handleDuplicate}
+                disabled={duplicating}
+                className="px-4 py-2 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-200 rounded-lg hover:bg-gray-50 dark:hover:bg-slate-700 disabled:opacity-50 flex items-center gap-2"
+                title="Create an independent copy of this contract as a new draft"
+              >
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                </svg>
+                {duplicating ? 'Duplicating...' : 'Duplicate'}
+              </button>
 
               {canEdit && (
                 <>

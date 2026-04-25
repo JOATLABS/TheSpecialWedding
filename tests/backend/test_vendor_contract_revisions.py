@@ -612,3 +612,222 @@ async def test_historical_versions_remain_readable_but_not_editable(
 
     assert exc_info.value.status_code == 400
     assert "newer contract version is already live" in exc_info.value.detail
+
+
+# =============================================================================
+# DUPLICATE CONTRACT TESTS
+# =============================================================================
+
+
+@pytest.mark.asyncio
+async def test_duplicate_contract_creates_independent_root_draft(
+    configured_vendor_service,
+) -> None:
+    service, contracts, _, _ = configured_vendor_service
+    original = make_contract_doc(status=ContractStatus.SIGNED.value)
+    contracts.documents.append(deepcopy(original))
+
+    duplicate = await service.duplicate_contract(
+        contract_id=str(original["_id"]),
+        created_by="planner@example.com",
+    )
+
+    assert duplicate["status"] == ContractStatus.DRAFT.value
+    assert duplicate["contract_kind"] == ContractKind.ORIGINAL.value
+    assert duplicate["version_number"] == 1
+    assert duplicate["root_contract_id"] == duplicate["_id"]
+    assert duplicate["parent_contract_id"] is None
+    assert duplicate["supersedes_contract_id"] is None
+    assert duplicate["is_current_version"] is True
+    assert duplicate["contract_number"] != original["contract_number"]
+
+
+@pytest.mark.asyncio
+async def test_duplicate_contract_clears_signing_and_token_state(
+    configured_vendor_service,
+) -> None:
+    service, contracts, _, _ = configured_vendor_service
+    original = make_contract_doc(status=ContractStatus.SIGNED.value)
+    original["signed_at"] = datetime(2026, 3, 1, tzinfo=timezone.utc)
+    original["signed_by_name"] = "Vendor Co"
+    original["signed_by_email"] = "vendor@example.com"
+    original["signature_ip"] = "203.0.113.5"
+    original["signed_document_url"] = "https://example.com/signed.pdf"
+    original["draft_document_url"] = "https://example.com/draft.pdf"
+    original["sent_at"] = datetime(2026, 2, 1, tzinfo=timezone.utc)
+    original["viewed_at"] = datetime(2026, 2, 2, tzinfo=timezone.utc)
+    contracts.documents.append(deepcopy(original))
+
+    duplicate = await service.duplicate_contract(
+        contract_id=str(original["_id"]),
+        created_by="planner@example.com",
+    )
+
+    assert duplicate["signed_at"] is None
+    assert duplicate["signed_by_name"] is None
+    assert duplicate["signed_by_email"] is None
+    assert duplicate["signature_ip"] is None
+    assert duplicate["signed_document_url"] is None
+    assert duplicate["draft_document_url"] is None
+    assert duplicate["sent_at"] is None
+    assert duplicate["viewed_at"] is None
+    assert duplicate["access_token_hash"] is None
+    assert duplicate["token_expires_at"] is None
+
+
+@pytest.mark.asyncio
+async def test_duplicate_contract_copies_content_by_default(
+    configured_vendor_service,
+) -> None:
+    service, contracts, _, _ = configured_vendor_service
+    original = make_contract_doc(status=ContractStatus.SENT.value)
+    contracts.documents.append(deepcopy(original))
+
+    duplicate = await service.duplicate_contract(
+        contract_id=str(original["_id"]),
+        created_by="planner@example.com",
+    )
+
+    assert duplicate["sections"] == original["sections"]
+    assert duplicate["terms_and_conditions"] == original["terms_and_conditions"]
+    assert duplicate["cancellation_policy"] == original["cancellation_policy"]
+    assert duplicate["custom_clauses"] == original["custom_clauses"]
+
+
+@pytest.mark.asyncio
+async def test_duplicate_contract_respects_copy_flags(
+    configured_vendor_service,
+) -> None:
+    service, contracts, _, _ = configured_vendor_service
+    original = make_contract_doc(status=ContractStatus.SENT.value)
+    contracts.documents.append(deepcopy(original))
+
+    duplicate = await service.duplicate_contract(
+        contract_id=str(original["_id"]),
+        created_by="planner@example.com",
+        copy_sections=False,
+        copy_terms_and_conditions=False,
+        copy_cancellation_policy=False,
+        copy_custom_clauses=False,
+        copy_attachments=False,
+    )
+
+    assert duplicate["sections"] == []
+    assert duplicate["terms_and_conditions"] is None
+    assert duplicate["cancellation_policy"] is None
+    assert duplicate["custom_clauses"] is None
+    assert duplicate["attachments"] == []
+
+
+@pytest.mark.asyncio
+async def test_duplicate_contract_uses_default_title_when_not_provided(
+    configured_vendor_service,
+) -> None:
+    service, contracts, _, _ = configured_vendor_service
+    original = make_contract_doc(status=ContractStatus.SENT.value)
+    contracts.documents.append(deepcopy(original))
+
+    duplicate = await service.duplicate_contract(
+        contract_id=str(original["_id"]),
+        created_by="planner@example.com",
+    )
+
+    assert duplicate["contract_title"] == f"{original['contract_title']} (Copy)"
+
+
+@pytest.mark.asyncio
+async def test_duplicate_contract_uses_provided_title(
+    configured_vendor_service,
+) -> None:
+    service, contracts, _, _ = configured_vendor_service
+    original = make_contract_doc(status=ContractStatus.SENT.value)
+    contracts.documents.append(deepcopy(original))
+
+    duplicate = await service.duplicate_contract(
+        contract_id=str(original["_id"]),
+        created_by="planner@example.com",
+        new_contract_title="Photographer Contract — Wedding 2",
+    )
+
+    assert duplicate["contract_title"] == "Photographer Contract — Wedding 2"
+
+
+@pytest.mark.asyncio
+async def test_duplicate_contract_swaps_vendor_when_target_provided(
+    configured_vendor_service, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    service, contracts, _, _ = configured_vendor_service
+    original = make_contract_doc(status=ContractStatus.SIGNED.value)
+    original["form_submission_ids"] = ["sub-1"]
+    original["form_data_applied"] = True
+    contracts.documents.append(deepcopy(original))
+
+    new_vendor_id = ObjectId()
+    new_vendor_doc = {
+        "_id": new_vendor_id,
+        "business_name": "MC Hosts Co",
+        "email": "host@mchosts.example.com",
+        "phone": "555-9999",
+        "address": "55 Stage Ave",
+        "service_category": "mc",
+        "custom_service_category": None,
+    }
+    service.vendor_profiles.documents.append(new_vendor_doc)
+
+    duplicate = await service.duplicate_contract(
+        contract_id=str(original["_id"]),
+        created_by="planner@example.com",
+        target_vendor_profile_id=str(new_vendor_id),
+    )
+
+    assert duplicate["vendor_profile_id"] == str(new_vendor_id)
+    assert duplicate["vendor_name"] == "MC Hosts Co"
+    assert duplicate["vendor_email"] == "host@mchosts.example.com"
+    assert duplicate["service_category"] == "mc"
+    # Form linkage dropped when vendor changes
+    assert duplicate["form_submission_ids"] == []
+    assert duplicate["form_data_applied"] is False
+
+
+@pytest.mark.asyncio
+async def test_duplicate_contract_preserves_original_unchanged(
+    configured_vendor_service,
+) -> None:
+    service, contracts, _, _ = configured_vendor_service
+    original = make_contract_doc(status=ContractStatus.SIGNED.value)
+    contracts.documents.append(deepcopy(original))
+
+    await service.duplicate_contract(
+        contract_id=str(original["_id"]),
+        created_by="planner@example.com",
+    )
+
+    stored_original = next(
+        doc for doc in contracts.documents if doc["_id"] == original["_id"]
+    )
+    assert stored_original["status"] == ContractStatus.SIGNED.value
+    assert stored_original["is_current_version"] is True
+    assert stored_original["superseded_at"] is None
+    assert stored_original["superseded_by_contract_id"] is None
+
+
+@pytest.mark.asyncio
+async def test_duplicate_contract_can_be_invoked_on_draft_or_historical(
+    configured_vendor_service,
+) -> None:
+    """Unlike revisions, duplicates are allowed from any source state."""
+    service, contracts, _, _ = configured_vendor_service
+    historical = make_contract_doc(
+        status=ContractStatus.SIGNED.value,
+        is_current_version=False,
+        superseded_by_contract_id=str(ObjectId()),
+    )
+    contracts.documents.append(deepcopy(historical))
+
+    duplicate = await service.duplicate_contract(
+        contract_id=str(historical["_id"]),
+        created_by="planner@example.com",
+    )
+
+    assert duplicate["status"] == ContractStatus.DRAFT.value
+    assert duplicate["is_current_version"] is True

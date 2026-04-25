@@ -1983,6 +1983,225 @@ class VendorService:
                 status_code=500, detail="Failed to create contract revision"
             )
 
+    async def duplicate_contract(
+        self,
+        contract_id: str,
+        created_by: str,
+        new_contract_title: Optional[str] = None,
+        target_wedding_id: Optional[str] = None,
+        target_vendor_profile_id: Optional[str] = None,
+        copy_sections: bool = True,
+        copy_terms_and_conditions: bool = True,
+        copy_cancellation_policy: bool = True,
+        copy_custom_clauses: bool = True,
+        copy_attachments: bool = True,
+    ) -> dict:
+        """Clone an existing contract into a new draft root contract.
+
+        The new contract is an independent root (no parent, version 1, fresh
+        contract number, DRAFT status) so the planner can evolve it without
+        touching the original. Optionally retargets to a different wedding
+        or vendor; when the vendor changes the denormalized vendor fields
+        are refreshed and any form-submission linkage is dropped.
+        """
+        try:
+            source_contract = await self.get_contract(
+                contract_id, created_by=created_by
+            )
+
+            effective_wedding_id = target_wedding_id or source_contract["wedding_id"]
+            wedding = await self._get_wedding(effective_wedding_id)
+            if not wedding:
+                raise HTTPException(status_code=404, detail="Wedding not found")
+
+            vendor_changed = (
+                target_vendor_profile_id is not None
+                and target_vendor_profile_id
+                != source_contract.get("vendor_profile_id")
+            )
+            wedding_changed = (
+                target_wedding_id is not None
+                and target_wedding_id != source_contract["wedding_id"]
+            )
+
+            if vendor_changed:
+                new_vendor = await self.vendor_profiles.find_one(
+                    {"_id": ObjectId(target_vendor_profile_id)}
+                )
+                if not new_vendor:
+                    raise HTTPException(status_code=404, detail="Vendor not found")
+                vendor_profile_id = target_vendor_profile_id
+                vendor_name = new_vendor["business_name"]
+                vendor_email = new_vendor["email"]
+                vendor_phone = new_vendor.get("phone")
+                vendor_address = new_vendor.get("address")
+                service_category = new_vendor["service_category"]
+                custom_service_category = new_vendor.get("custom_service_category")
+            else:
+                vendor_profile_id = source_contract.get("vendor_profile_id")
+                vendor_name = source_contract["vendor_name"]
+                vendor_email = source_contract["vendor_email"]
+                vendor_phone = source_contract.get("vendor_phone")
+                vendor_address = source_contract.get("vendor_address")
+                service_category = source_contract["service_category"]
+                custom_service_category = source_contract.get(
+                    "custom_service_category"
+                )
+
+            new_contract_id = ObjectId()
+            now = datetime.now(timezone.utc)
+            source_contract_id = self._stringify_id(
+                source_contract.get("_id") or source_contract.get("id")
+            )
+            resolved_title = (
+                new_contract_title.strip()
+                if new_contract_title and new_contract_title.strip()
+                else f"{source_contract.get('contract_title', 'Contract')} (Copy)"
+            )
+            should_drop_form_linkage = vendor_changed or wedding_changed
+
+            duplicate_contract = {
+                "_id": new_contract_id,
+                "wedding_id": effective_wedding_id,
+                "vendor_profile_id": vendor_profile_id,
+                "vendor_quote_id": None,
+                "budget_category_id": (
+                    None if wedding_changed else source_contract.get("budget_category_id")
+                ),
+                "template_id": source_contract.get("template_id"),
+                "vendor_name": vendor_name,
+                "vendor_email": vendor_email,
+                "vendor_phone": vendor_phone,
+                "vendor_address": vendor_address,
+                "service_category": service_category,
+                "custom_service_category": custom_service_category,
+                "contract_title": resolved_title,
+                "contract_number": self._generate_contract_number(),
+                "contract_type": source_contract.get(
+                    "contract_type", ContractType.TEMPLATE.value
+                ),
+                "uploaded_pdf_url": source_contract.get("uploaded_pdf_url"),
+                "uploaded_pdf_name": source_contract.get("uploaded_pdf_name"),
+                "form_submission_id": (
+                    None
+                    if should_drop_form_linkage
+                    else source_contract.get("form_submission_id")
+                ),
+                "form_submission_ids": (
+                    []
+                    if should_drop_form_linkage
+                    else deepcopy(source_contract.get("form_submission_ids") or [])
+                ),
+                "form_data_applied": (
+                    False
+                    if should_drop_form_linkage
+                    else source_contract.get("form_data_applied", False)
+                ),
+                "form_data_mappings": (
+                    {}
+                    if should_drop_form_linkage
+                    else deepcopy(source_contract.get("form_data_mappings") or {})
+                ),
+                "sections": (
+                    deepcopy(source_contract.get("sections") or [])
+                    if copy_sections
+                    else []
+                ),
+                "terms_and_conditions": (
+                    deepcopy(source_contract.get("terms_and_conditions"))
+                    if copy_terms_and_conditions
+                    else None
+                ),
+                "cancellation_policy": (
+                    deepcopy(source_contract.get("cancellation_policy"))
+                    if copy_cancellation_policy
+                    else None
+                ),
+                "custom_clauses": (
+                    deepcopy(source_contract.get("custom_clauses"))
+                    if copy_custom_clauses
+                    else None
+                ),
+                "total_amount": source_contract["total_amount"],
+                "currency": source_contract.get("currency", "USD"),
+                "deposit_amount": source_contract.get("deposit_amount"),
+                "deposit_due_date": None,
+                "status": ContractStatus.DRAFT.value,
+                "service_date": None if wedding_changed else source_contract.get("service_date"),
+                "service_start_time": source_contract.get("service_start_time"),
+                "service_end_time": source_contract.get("service_end_time"),
+                "service_location": (
+                    None if wedding_changed else source_contract.get("service_location")
+                ),
+                "created_by": created_by,
+                "internal_notes": source_contract.get("internal_notes"),
+                "vendor_notes": source_contract.get("vendor_notes"),
+                "draft_document_url": None,
+                "signed_document_url": None,
+                "attachments": (
+                    deepcopy(source_contract.get("attachments") or [])
+                    if copy_attachments
+                    else []
+                ),
+                "sent_at": None,
+                "viewed_at": None,
+                "signed_at": None,
+                "signed_by_name": None,
+                "signed_by_email": None,
+                "signature_ip": None,
+                "completed_at": None,
+                "cancelled_at": None,
+                "cancellation_reason": None,
+                "version_number": 1,
+                "root_contract_id": str(new_contract_id),
+                "parent_contract_id": None,
+                "supersedes_contract_id": None,
+                "superseded_by_contract_id": None,
+                "is_current_version": True,
+                "contract_kind": ContractKind.ORIGINAL.value,
+                "amendment_reason": None,
+                "superseded_at": None,
+                "created_at": now,
+                "updated_at": now,
+                **self._build_inactive_contract_token_fields(),
+            }
+
+            await self.vendor_contracts.insert_one(duplicate_contract)
+            self._serialize_doc(duplicate_contract)
+            self._attach_contract_version_metadata(duplicate_contract)
+            await self._log_contract_activity(
+                contract_id=duplicate_contract["id"],
+                root_contract_id=duplicate_contract["root_contract_id"],
+                activity_type=VendorContractActivityType.CONTRACT_DUPLICATED,
+                title="Contract duplicated",
+                description=(
+                    f"Duplicated from {source_contract.get('contract_number') or source_contract_id}."
+                ),
+                actor_type="planner",
+                actor_identifier=created_by,
+                actor_display_name=created_by,
+                metadata={
+                    "source_contract_id": source_contract_id,
+                    "source_contract_number": source_contract.get("contract_number"),
+                    "wedding_changed": wedding_changed,
+                    "vendor_changed": vendor_changed,
+                },
+                created_at=duplicate_contract["created_at"],
+            )
+            logger.info(
+                f"Duplicated contract {source_contract_id} -> {duplicate_contract['id']} "
+                f"(wedding_changed={wedding_changed}, vendor_changed={vendor_changed})"
+            )
+            return duplicate_contract
+
+        except HTTPException:
+            raise
+        except Exception as e:
+            logger.error(f"Error duplicating contract: {str(e)}")
+            raise HTTPException(
+                status_code=500, detail="Failed to duplicate contract"
+            )
+
     async def get_contract_revision_history(
         self, contract_id: str, created_by: str
     ) -> dict:
