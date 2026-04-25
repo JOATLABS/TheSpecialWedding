@@ -110,17 +110,16 @@ BOUTIQUE_AI_CREDITS_MONTHLY = 100
 TRIAL_DAYS = 30
 TRIAL_WARN_DAYS_OUT = 7  # A4: advance to trial_end - 7d
 
-# Verbatim gate messages from app/services/subscription_service.py:687 and :699.
-# If these drift, frontend regex matching breaks and PR1-style redirect gates
-# silently stop firing. Fail loud.
+# Verbatim gate message from app/services/subscription_service.py (weddings
+# branch). If this drifts, frontend regex matching breaks and PR1-style redirect
+# gates silently stop firing. Fail loud.
 EXPECTED_WEDDING_CAP_MSG = (
     f"Wedding limit exceeded. Plan allows {BOUTIQUE_MAX_WEDDINGS} weddings, "
     f"you have {BOUTIQUE_MAX_WEDDINGS}"
 )
-EXPECTED_AI_CREDITS_MSG = (
-    f"AI credits limit exceeded. Plan allows {BOUTIQUE_AI_CREDITS_MONTHLY} "
-    f"credits per month, you have used {BOUTIQUE_AI_CREDITS_MONTHLY}"
-)
+# AI credits are now soft-capped with metered overage — going over plan returns
+# allowed=True with `overage`, `overage_credits`, and `overage_cost_cents`. The
+# A3 phase pins the new soft-cap contract instead of a hard-stop message.
 
 
 # ---------------------------------------------------------------------------
@@ -308,66 +307,77 @@ def phase_trial_cap(h: Harness, planner_token: str):
 
 
 def phase_trial_credit_cap(h: Harness, planner_token: str, user_id: str):
-    """A3 — Exhaust AI credits by seeding `ai_credits_used_month = 100`
-    directly, then assert `GET /admin/ai/credits?feature=chat` returns the exact
-    gate message.
+    """A3 — Push AI credit usage past the monthly cap and assert the
+    soft-cap contract: `GET /admin/ai/credits` returns allowed=True with
+    `overage=True` and a nonzero `overage_cost_cents`.
 
-    We seed Mongo rather than calling /admin/chat in a loop because
-    GEMINI_API_KEY may not be provisioned in the local dev env — we want to
-    pin the *gate* behavior, not the AI service itself. The Chrome layer
-    independently verifies the 402 UX on /admin/chat if a live key is
-    available.
+    AI credits are soft-capped with metered overage (planners in crunch
+    moments shouldn't get blocked mid-workflow). The live-query reads
+    from ``ai_usage_log`` so we seed a row there rather than touching
+    the legacy ``usage_tracking`` counter.
     """
-    h.phase("TRIAL_CREDIT_CAP", "A3 — AI credits exhausted")
+    h.phase("TRIAL_CREDIT_CAP", "A3 — AI credits past cap (soft-cap + overage)")
 
     current_month = datetime.now(timezone.utc).strftime("%Y-%m")
-    usage_id = f"usage_{user_id}_{current_month}"
-    # Upsert so the assertion works whether or not a usage row has been
-    # initialized (it's initialized lazily on first check_usage_limits).
-    h.mongo["usage_tracking"].update_one(
-        {"_id": usage_id},
+    year, month_str = current_month.split("-")
+    period_start = datetime(int(year), int(month_str), 1, tzinfo=timezone.utc)
+
+    # Clear any prior rows for this month, then seed a single aggregate row
+    # that puts the planner five credits past cap.
+    h.mongo["ai_usage_log"].delete_many(
         {
-            "$set": {
-                "user_id": user_id,
-                "current_month": current_month,
-                "ai_credits_used_month": BOUTIQUE_AI_CREDITS_MONTHLY,
-                "last_updated": datetime.now(timezone.utc),
-            }
-        },
-        upsert=True,
+            "user_id": user_id,
+            "created_at": {
+                "$gte": period_start,
+                "$lt": period_start + timedelta(days=31),
+            },
+        }
+    )
+    h.mongo["ai_usage_log"].insert_one(
+        {
+            "user_id": user_id,
+            "credits_used": BOUTIQUE_AI_CREDITS_MONTHLY + 5,
+            "created_at": period_start + timedelta(hours=1),
+            "feature": "testbed_seed",
+        }
     )
     h.log.info(
-        f"  Seeded usage_tracking._id={usage_id} "
-        f"ai_credits_used_month={BOUTIQUE_AI_CREDITS_MONTHLY}"
+        f"  Seeded ai_usage_log for user_id={user_id} "
+        f"credits_used={BOUTIQUE_AI_CREDITS_MONTHLY + 5} "
+        f"(cap={BOUTIQUE_AI_CREDITS_MONTHLY})"
     )
 
-    resp = h.api_get("/admin/ai/credits?feature=chat", token=planner_token)
-    h.log.info(f"  GET /admin/ai/credits?feature=chat -> {resp.status_code}")
+    resp = h.api_get("/admin/ai/credits", token=planner_token)
+    h.log.info(f"  GET /admin/ai/credits -> {resp.status_code}")
     assert resp.status_code == 200, (
         f"Expected 200 from /admin/ai/credits, got {resp.status_code}: {resp.text[:400]}"
     )
     body = resp.json()
     h.log.info(f"  body = {body}")
 
-    assert body.get("allowed") is False, (
-        f"Expected allowed=False with credits exhausted, got {body!r}"
+    assert body.get("overage") is True, (
+        f"A3: past-cap /admin/ai/credits should report overage=True, got {body!r}"
     )
-    assert body.get("message") == EXPECTED_AI_CREDITS_MSG, (
-        f"AI credits message drift: expected\n  {EXPECTED_AI_CREDITS_MSG!r}\n"
-        f"got\n  {body.get('message')!r}\n"
-        "(see subscription_service.py:699 — keep the frontend gate copy in sync.)"
+    assert (body.get("overage_credits") or 0) >= 5, (
+        f"A3: overage_credits should be >= 5 when 5 credits past cap, "
+        f"got {body.get('overage_credits')!r}"
+    )
+    assert (body.get("overage_cost_cents") or 0) > 0, (
+        f"A3: overage_cost_cents should be > 0 when in overage, "
+        f"got {body.get('overage_cost_cents')!r}"
     )
 
     h.checkpoint(
         "A3",
         [
-            "Chrome: /admin/ai-assistant (or whichever planner chat surface is",
-            "  relevant) shows a 'credits exhausted' message, not a raw 402 dump.",
-            "Chrome devtools: /admin/ai/credits?feature=chat response body has",
-            f"  allowed==false and message == '{EXPECTED_AI_CREDITS_MSG}'.",
-            "Backend: usage_tracking seeded to 100/100 credits used ✅",
-            "Backend: /admin/ai/credits reports allowed=False with canonical",
-            "  message ✅",
+            "Chrome: /admin/planner/billing shows the orange overage callout",
+            "  under the AI credits card with the cycle-to-date cost.",
+            "Chrome: planner AI surfaces (chat, budget, seating) still work —",
+            "  the soft cap lets the workflow continue through overage.",
+            "Chrome devtools: /admin/ai/credits response has overage=true and a",
+            "  nonzero overage_cost_cents.",
+            "Backend: ai_usage_log seeded five credits past cap ✅",
+            "Backend: /admin/ai/credits reports overage=True with nonzero cost ✅",
         ],
     )
 
@@ -689,9 +699,9 @@ def main() -> int:
     h.log.info(f"  Plan id       : {PLAN_ID}")
     h.log.info(f"  Trial days    : {TRIAL_DAYS}")
     h.log.info(
-        f"  Expected cap msgs:\n"
-        f"    weddings   → {EXPECTED_WEDDING_CAP_MSG}\n"
-        f"    ai_credits → {EXPECTED_AI_CREDITS_MSG}"
+        f"  Expected cap behavior:\n"
+        f"    weddings   → 402 with detail='{EXPECTED_WEDDING_CAP_MSG}'\n"
+        f"    ai_credits → (soft-cap, metered overage; no hard-stop message)"
     )
 
     h.preflight()

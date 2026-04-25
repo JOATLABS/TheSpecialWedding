@@ -236,7 +236,22 @@ No multi-module feature is done until coverage exists for:
 
 For shared planner calendar work, the E2E runbook is the minimum scenario list, not a nice-to-have.
 
-Live end-to-end subscription lifecycle drivers (Stripe test-clock + real Mongo + real webhooks) live under `testbed/` — not `scripts/`. See `testbed/README.md` for the directory contract and driver list. `scripts/` is reserved for deploy, bootstrap, and seed utilities.
+Live end-to-end lifecycle and contract drivers (real Mongo plus Stripe test clocks / webhooks when applicable) live under `testbed/` — not `scripts/`. See `testbed/README.md` for the directory contract and driver list. `scripts/` is reserved for deploy, bootstrap, and seed utilities.
+
+## Repo Command Canon
+
+Prefer the repo's documented commands over ad-hoc equivalents.
+
+- Frontend dependency workflow is `npm`-only. `package-lock.json` is the canonical lockfile.
+- Fresh or repaired frontend installs use `npm ci` and then `npm run deps:doctor`.
+- If `scripts/ensure-deps.mjs` reports dependency drift or missing local binaries, recover with `rm -rf node_modules`, `npm ci`, then `npm run deps:doctor`.
+- If you intentionally change frontend dependencies, use `npm install` and commit the updated `package-lock.json`.
+- CI-aligned frontend verification is `npm run lint`, `npm run type-check`, `npm test`, and `npm run build`.
+- CI-aligned backend verification is `ruff check app/`, `ruff format --check app/`, `pytest tests/backend/test_app_boot_smoke.py -v --tb=short`, and `pytest tests/backend/ tests/test_id_utils.py -v --tb=short`.
+- Full-stack integration verification uses `docker compose -f docker-compose.test.yml up -d --build --wait`, then `pytest tests/integration/ -v --tb=short -x`, then `docker compose -f docker-compose.test.yml down -v`.
+- For manual browser runbooks without the harness, local start commands are `uvicorn app.main:app --reload --port 8000` and `npm run dev`.
+- For live lifecycle or contract verification, prefer the tmux-backed harness: `python testbed/testbed.py up`, `python testbed/testbed.py up --with-frontend`, `python testbed/testbed.py seed`, `python testbed/testbed.py status`, `python testbed/testbed.py attach`, `python testbed/testbed.py doctor`, and `python testbed/testbed.py down`.
+- Drivers in `testbed/` stay paired with cleanup scripts, and unattended runs use `TESTBED_NON_INTERACTIVE=1` when the driver supports it.
 
 ## Required Adversarial Review Before Completion
 

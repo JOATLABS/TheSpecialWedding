@@ -78,6 +78,15 @@ interface UsageStats {
   storage_used_gb: number;
   ai_credits_used: number;
   ai_credits_remaining: number;
+  // AI credits are soft-capped with metered overage billing. When `overage`
+  // is true, `overage_credits` is the count past the included allotment and
+  // `overage_cost_cents` is the running charge for the current cycle at
+  // `overage_price_per_credit_usd`. The backend computes all three via
+  // SubscriptionService.check_usage_limits("ai_credits"); see /admin/ai/credits.
+  ai_overage?: boolean;
+  ai_overage_credits?: number;
+  ai_overage_cost_cents?: number;
+  ai_overage_price_per_credit_usd?: number;
 }
 
 interface Invoice {
@@ -128,7 +137,11 @@ export default function PlannerBillingPage() {
     total_guests: 0,
     storage_used_gb: 0,
     ai_credits_used: 0,
-    ai_credits_remaining: 100
+    ai_credits_remaining: 100,
+    ai_overage: false,
+    ai_overage_credits: 0,
+    ai_overage_cost_cents: 0,
+    ai_overage_price_per_credit_usd: 0,
   });
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [allInvoices, setAllInvoices] = useState<Invoice[]>([]);
@@ -321,7 +334,7 @@ export default function PlannerBillingPage() {
       // S6: Load AI credit usage from dedicated endpoint
       try {
         const creditsResponse = await fetch(
-          `${baseUrl}/ai/credits`,
+          `${baseUrl}/admin/ai/credits`,
           {
             headers: {
               'Authorization': `Bearer ${token}`,
@@ -333,10 +346,24 @@ export default function PlannerBillingPage() {
 
         if (creditsResponse.ok) {
           const creditsData = await creditsResponse.json();
+          // The `/admin/ai/credits` endpoint now passes through the soft-cap
+          // overage shape from SubscriptionService.check_usage_limits().
+          // `credits_used` is preferred over the computed diff because the
+          // backend resolves it via live aggregation on `ai_usage_log`,
+          // which is the canonical source; the counter can drift.
+          const used =
+            typeof creditsData.credits_used === 'number'
+              ? creditsData.credits_used
+              : (creditsData.credits_limit || 0) - (creditsData.credits_remaining || 0);
           setUsageStats(prev => ({
             ...prev,
-            ai_credits_used: (creditsData.credits_limit || 0) - (creditsData.credits_remaining || 0),
-            ai_credits_remaining: creditsData.credits_remaining || 0
+            ai_credits_used: used,
+            ai_credits_remaining: creditsData.credits_remaining || 0,
+            ai_overage: Boolean(creditsData.overage),
+            ai_overage_credits: creditsData.overage_credits || 0,
+            ai_overage_cost_cents: creditsData.overage_cost_cents || 0,
+            ai_overage_price_per_credit_usd:
+              creditsData.overage_price_per_credit_usd || 0,
           }));
         }
       } catch (error) {
@@ -1404,7 +1431,11 @@ export default function PlannerBillingPage() {
                 </div>
               </div>
 
-              {/* AI Credits */}
+              {/* AI Credits — soft-capped with metered overage.
+                  When usage exceeds the monthly allotment, `ai_overage` is
+                  true and the running overage cost is surfaced inline. The
+                  bar shows 100% filled in that case, with a distinct color
+                  so the planner can tell they're billing past plan. */}
               <div>
                 <div className="flex items-center justify-between mb-2">
                   <div className="flex items-center gap-2">
@@ -1412,15 +1443,47 @@ export default function PlannerBillingPage() {
                     <span className="text-sm font-medium text-gray-700 dark:text-gray-300">AI Credits</span>
                   </div>
                   <span className="text-sm text-gray-600 dark:text-gray-400">
-                    {usageStats.ai_credits_remaining} / {currentPlan.ai_credits_monthly}
+                    {/* Display "used / limit". In overage we cap the
+                        numerator at the included allotment so the
+                        included-credits ratio reads cleanly; the extra
+                        credits are surfaced in the orange callout below. */}
+                    {usageStats.ai_overage
+                      ? `${currentPlan.ai_credits_monthly} / ${currentPlan.ai_credits_monthly}`
+                      : `${usageStats.ai_credits_used} / ${currentPlan.ai_credits_monthly}`}
                   </span>
                 </div>
                 <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2">
                   <div
-                    className="h-2 rounded-full transition-all bg-blue-500"
-                    style={{ width: `${(usageStats.ai_credits_remaining / currentPlan.ai_credits_monthly) * 100}%` }}
+                    className={`h-2 rounded-full transition-all ${
+                      usageStats.ai_overage ? 'bg-orange-500' : 'bg-blue-500'
+                    }`}
+                    style={{
+                      width: usageStats.ai_overage
+                        ? '100%'
+                        : `${Math.min(
+                            100,
+                            (usageStats.ai_credits_used /
+                              (currentPlan.ai_credits_monthly || 1)) *
+                              100,
+                          )}%`,
+                    }}
                   />
                 </div>
+                {usageStats.ai_overage && (
+                  <div className="mt-2 rounded-lg border border-orange-300 bg-orange-50 px-3 py-2 text-xs text-orange-800 dark:border-orange-900/40 dark:bg-orange-950/30 dark:text-orange-200">
+                    <p className="font-semibold">Overage billing active</p>
+                    <p className="mt-0.5">
+                      {(usageStats.ai_overage_credits ?? 0).toLocaleString()} extra credit
+                      {(usageStats.ai_overage_credits ?? 0) === 1 ? '' : 's'} this cycle ·{' '}
+                      <span className="font-semibold">
+                        ${((usageStats.ai_overage_cost_cents ?? 0) / 100).toFixed(2)}
+                      </span>{' '}
+                      at $
+                      {(usageStats.ai_overage_price_per_credit_usd ?? 0).toFixed(3)} per
+                      credit. Charged on next invoice.
+                    </p>
+                  </div>
+                )}
               </div>
             </CardContent>
           </Card>

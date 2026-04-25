@@ -7,6 +7,7 @@ import { getApiBaseUrl } from '@/utils/env';
 import { formatDate } from '@/utils/dateFormat';
 import { getWeddingEventLabel } from '@/utils/weddingEvents';
 import PageHeader from '../components/PageHeader';
+import SubscriptionUsageBanner from '../components/SubscriptionUsageBanner';
 import GuestMemoriesSummaryCard from '@/components/guest-memories/GuestMemoriesSummaryCard';
 import {
   CalendarDays,
@@ -343,6 +344,16 @@ export default function AdminGuestMemoriesPage() {
         </div>
       ) : settings ? (
         <>
+          {/*
+           * Storage cap banner — surfaces at 80%+ and at the hard cap. Guest
+           * uploads are charged against the planner's subscription, so cap
+           * state must be visible here (not just in planner/billing). The
+           * backend also blocks new upload plans with 402 when at cap; this
+           * banner is the proactive signal so the planner knows before a
+           * guest bounces off the limit.
+           */}
+          <SubscriptionUsageBanner resourceType="storage" />
+
           {!settings.storage_ready && (
             <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-900/30 dark:bg-red-950/30 dark:text-red-200">
               {settings.storage_issue ||

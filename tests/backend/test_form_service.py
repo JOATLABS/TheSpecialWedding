@@ -15,16 +15,70 @@ os.environ.setdefault("SECRET_KEY", "test-secret")
 os.environ.setdefault("ALGORITHM", "HS256")
 os.environ.setdefault("API_KEY", "test-api-key")
 
-import app.services.form_service as form_service_module
-from app.models.form import DuplicateFormRequest
+import app.services.form_service as form_service_module  # noqa: E402
+from app.models.form import DuplicateFormRequest  # noqa: E402
 
 
 class FakeMongo:
     def __init__(self, database):
-        self.db = database
+        self.db = AsyncMockDatabase(database)
 
     def get_forms_collection(self):
         return self.db["forms"]
+
+
+class AsyncMockCursor:
+    def __init__(self, cursor):
+        self.cursor = cursor
+
+    def sort(self, *args, **kwargs):
+        self.cursor.sort(*args, **kwargs)
+        return self
+
+    def limit(self, *args, **kwargs):
+        self.cursor.limit(*args, **kwargs)
+        return self
+
+    def skip(self, *args, **kwargs):
+        self.cursor.skip(*args, **kwargs)
+        return self
+
+    async def to_list(self, length=None):
+        return list(self.cursor)
+
+
+class AsyncMockCollection:
+    def __init__(self, collection):
+        self.collection = collection
+
+    def find(self, *args, **kwargs):
+        return AsyncMockCursor(self.collection.find(*args, **kwargs))
+
+    async def find_one(self, *args, **kwargs):
+        return self.collection.find_one(*args, **kwargs)
+
+    async def insert_one(self, *args, **kwargs):
+        return self.collection.insert_one(*args, **kwargs)
+
+    async def update_one(self, *args, **kwargs):
+        return self.collection.update_one(*args, **kwargs)
+
+    async def delete_one(self, *args, **kwargs):
+        return self.collection.delete_one(*args, **kwargs)
+
+    async def count_documents(self, *args, **kwargs):
+        return self.collection.count_documents(*args, **kwargs)
+
+
+class AsyncMockDatabase:
+    def __init__(self, database):
+        self.db = database
+        self.collections = {}
+
+    def __getitem__(self, name):
+        if name not in self.collections:
+            self.collections[name] = AsyncMockCollection(self.db[name])
+        return self.collections[name]
 
 
 def _utc_now() -> datetime:
@@ -104,14 +158,17 @@ def _sample_form_doc(created_by: str, **overrides):
     }
 
 
-def test_duplicate_form_copies_structure_and_resets_submission_state(form_service):
+@pytest.mark.asyncio
+async def test_duplicate_form_copies_structure_and_resets_submission_state(
+    form_service,
+):
     service, database = form_service
     planner_email = "planner@example.com"
 
     database["forms"].insert_one(_sample_form_doc(planner_email))
 
     request = DuplicateFormRequest(new_name="Vendor Intake Copy")
-    result = service.duplicate_form("form_original", request, planner_email)
+    result = await service.duplicate_form("form_original", request, planner_email)
 
     assert "id" in result
     duplicated = database["forms"].find_one({"_id": result["id"]})
@@ -124,7 +181,8 @@ def test_duplicate_form_copies_structure_and_resets_submission_state(form_servic
     assert duplicated["created_by"] == planner_email
 
 
-def test_mark_form_viewed_updates_planner_state_and_unread_counter(form_service):
+@pytest.mark.asyncio
+async def test_mark_form_viewed_updates_planner_state_and_unread_counter(form_service):
     service, database = form_service
     planner_email = "planner@example.com"
 
@@ -142,10 +200,10 @@ def test_mark_form_viewed_updates_planner_state_and_unread_counter(form_service)
         )
     )
 
-    forms_before = service.get_forms(planner_email)
+    forms_before = await service.get_forms(planner_email)
     assert forms_before[0]["unread_responses"] == 3
 
-    result = service.mark_form_viewed(
+    result = await service.mark_form_viewed(
         "form_original", planner_email, "responses", submission_count=5
     )
     assert result["unread_responses"] == 0
@@ -155,17 +213,18 @@ def test_mark_form_viewed_updates_planner_state_and_unread_counter(form_service)
     assert stored["planner_state"][planner_key]["last_viewed_submission_count"] == 5
     assert stored["planner_state"][planner_key]["last_viewed_responses_at"] is not None
 
-    forms_after = service.get_forms(planner_email)
+    forms_after = await service.get_forms(planner_email)
     assert forms_after[0]["unread_responses"] == 0
 
 
-def test_mark_form_viewed_rejects_invalid_scope(form_service):
+@pytest.mark.asyncio
+async def test_mark_form_viewed_rejects_invalid_scope(form_service):
     service, database = form_service
     planner_email = "planner@example.com"
 
     database["forms"].insert_one(_sample_form_doc(planner_email))
 
     with pytest.raises(HTTPException) as exc_info:
-        service.mark_form_viewed("form_original", planner_email, "unknown")
+        await service.mark_form_viewed("form_original", planner_email, "unknown")
 
     assert exc_info.value.status_code == 400

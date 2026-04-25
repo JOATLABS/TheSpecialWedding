@@ -46,6 +46,22 @@ interface ErrorDetails {
   troubleshooting_hints?: string[];
 }
 
+function isErrorDetailsPayload(value: unknown): value is ErrorDetails {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return false;
+  }
+
+  const payload = value as Record<string, unknown>;
+  return (
+    typeof payload.error_id === 'string' &&
+    typeof payload.error_type === 'string' &&
+    typeof payload.message === 'string' &&
+    typeof payload.severity === 'string' &&
+    typeof payload.timestamp === 'string' &&
+    typeof payload.acknowledged === 'boolean'
+  );
+}
+
 export default function ErrorDetailsPage() {
   const params = useParams();
   const router = useRouter();
@@ -81,7 +97,10 @@ export default function ErrorDetailsPage() {
           throw new Error(errorMessage);
         }
 
-        const data = await response.json();
+        const data: unknown = await response.json();
+        if (!isErrorDetailsPayload(data)) {
+          throw new Error('Invalid error payload received from server');
+        }
         setError(data);
         setFetchError(null);
       } catch (err) {

@@ -12,16 +12,16 @@ Tests cover:
 - Response structure validation
 
 Auth strategy:
-- Use app.dependency_overrides to mock require_planner_or_admin
+- Use app.dependency_overrides to mock require_team_or_planner and
+  require_manage_vendors
 - Create mock ExtendedAuthUser objects for planner, admin, and vendor roles
 - Test that vendors (non-wedding_planner, non-root_admin) get 403
 """
 
 import os
 import sys
-from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock
 
 import pytest
 from bson import ObjectId
@@ -41,12 +41,13 @@ os.environ.setdefault("ALGORITHM", "HS256")
 os.environ.setdefault("API_KEY", "test-api-key")
 os.environ.setdefault("ROOT_ADMIN_EMAIL", "thedeveloper@thespecialwedding.io")
 
-from app.api.planner_ad_interactions import (
+from app.api.planner_ad_interactions import (  # noqa: E402
     get_planner_ad_interaction_service,
-    require_planner_or_admin,
+    require_manage_vendors,
+    require_team_or_planner,
 )
-from app.api.planner_ad_interactions import router as planner_ad_router
-from app.dependencies.auth_extended import ExtendedAuthUser
+from app.api.planner_ad_interactions import router as planner_ad_router  # noqa: E402
+from app.dependencies.auth_extended import ExtendedAuthUser  # noqa: E402
 
 # Create a minimal test app with just the planner ad interactions router
 # (avoids importing app.main which triggers the full import chain)
@@ -116,7 +117,8 @@ def mock_service():
 def planner_client(mock_service):
     """TestClient with planner user authenticated."""
     planner_user = make_mock_planner_user()
-    app.dependency_overrides[require_planner_or_admin] = lambda: planner_user
+    app.dependency_overrides[require_team_or_planner] = lambda: planner_user
+    app.dependency_overrides[require_manage_vendors] = lambda: planner_user
     app.dependency_overrides[get_planner_ad_interaction_service] = lambda: mock_service
     client = TestClient(app)
     yield client
@@ -127,7 +129,8 @@ def planner_client(mock_service):
 def admin_client(mock_service):
     """TestClient with admin user authenticated."""
     admin_user = make_mock_admin_user()
-    app.dependency_overrides[require_planner_or_admin] = lambda: admin_user
+    app.dependency_overrides[require_team_or_planner] = lambda: admin_user
+    app.dependency_overrides[require_manage_vendors] = lambda: admin_user
     app.dependency_overrides[get_planner_ad_interaction_service] = lambda: mock_service
     client = TestClient(app)
     yield client
@@ -138,14 +141,15 @@ def admin_client(mock_service):
 def vendor_client(mock_service):
     """TestClient with vendor user (should fail auth).
 
-    Override require_planner_or_admin to raise 403, simulating
+    Override require_team_or_planner to raise 403, simulating
     what the real dependency does for non-planner/non-admin users.
     """
 
     def raise_403():
         raise HTTPException(status_code=403, detail="Wedding planner access required")
 
-    app.dependency_overrides[require_planner_or_admin] = raise_403
+    app.dependency_overrides[require_team_or_planner] = raise_403
+    app.dependency_overrides[require_manage_vendors] = raise_403
     app.dependency_overrides[get_planner_ad_interaction_service] = lambda: mock_service
     client = TestClient(app)
     yield client
@@ -370,7 +374,6 @@ class TestAddToDirectory:
         )
 
         assert response.status_code == 201
-        call_kwargs = mock_service.add_to_directory.call_args.kwargs
         # planner_id removed per senior dev review — planner_email is the attribution field
 
     def test_add_to_directory_returns_service_result(
@@ -602,7 +605,7 @@ class TestRequestQuote:
             role="wedding_planner",
             user_data={"_id": ObjectId()},
         )
-        planner_client.app.dependency_overrides[require_planner_or_admin] = lambda: (
+        planner_client.app.dependency_overrides[require_manage_vendors] = lambda: (
             user_without_name
         )
         mock_service.request_quote.return_value = {"status": "sent"}
@@ -860,7 +863,7 @@ class TestErrorHandling:
     def test_service_exception_propagates(self, mock_service):
         """Service exceptions are propagated as 500."""
         planner_user = make_mock_planner_user()
-        app.dependency_overrides[require_planner_or_admin] = lambda: planner_user
+        app.dependency_overrides[require_team_or_planner] = lambda: planner_user
         app.dependency_overrides[get_planner_ad_interaction_service] = lambda: (
             mock_service
         )
