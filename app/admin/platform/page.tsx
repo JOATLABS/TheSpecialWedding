@@ -1265,6 +1265,76 @@ export default function PlatformInfrastructurePage() {
                 itemLabel="errors"
               />
               <Card className="overflow-hidden">
+                <div className="md:hidden divide-y divide-gray-200 dark:divide-gray-700">
+                  {allErrors.map((err) => (
+                    <div key={err.error_id} className="p-4 space-y-3">
+                      <div className="flex items-start justify-between gap-3">
+                        <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${
+                          err.severity === 'critical'
+                            ? 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400'
+                            : err.severity === 'warning'
+                              ? 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-400'
+                              : 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300'
+                        }`}>
+                          {err.severity}
+                        </span>
+                        {err.acknowledged ? (
+                          <span className="px-1.5 py-0.5 bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400 rounded text-xs font-medium">
+                            Ack'd
+                          </span>
+                        ) : (
+                          <span className="px-1.5 py-0.5 bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-200 rounded text-xs font-medium">
+                            New
+                          </span>
+                        )}
+                      </div>
+
+                      <div>
+                        <p className="text-xs text-gray-500 dark:text-gray-400 uppercase tracking-wide">Error type</p>
+                        <p className="text-sm font-medium text-gray-900 dark:text-gray-100 break-words">{err.error_type}</p>
+                      </div>
+
+                      <div>
+                        <p className="text-xs text-gray-500 dark:text-gray-400 uppercase tracking-wide">Message</p>
+                        <p className="text-sm text-gray-700 dark:text-gray-300 break-words">{err.message}</p>
+                      </div>
+
+                      <div className="grid grid-cols-1 gap-2">
+                        <div>
+                          <p className="text-xs text-gray-500 dark:text-gray-400 uppercase tracking-wide">Endpoint</p>
+                          <p className="text-sm text-gray-500 dark:text-gray-400 font-mono break-all">{err.endpoint || 'N/A'}</p>
+                        </div>
+                        <div>
+                          <p className="text-xs text-gray-500 dark:text-gray-400 uppercase tracking-wide">Timestamp</p>
+                          <p className="text-xs text-gray-500 dark:text-gray-400">
+                            {formatAdminTimestamp(err.timestamp, adminTimezone)}
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center justify-end gap-3 pt-1">
+                        {!err.acknowledged && (
+                          <button
+                            onClick={() => handleAcknowledgeError(err.error_id)}
+                            disabled={acknowledgingIds.has(err.error_id)}
+                            className="inline-flex items-center gap-1 text-green-600 hover:text-green-800 dark:text-green-400 dark:hover:text-green-300 disabled:opacity-50 text-xs font-medium"
+                          >
+                            {acknowledgingIds.has(err.error_id) && <Loader2 className="w-3 h-3 animate-spin" />}
+                            {acknowledgingIds.has(err.error_id) ? '...' : 'Ack'}
+                          </button>
+                        )}
+                        <button
+                          onClick={() => router.push(`/admin/platform/errors/${err.error_id}`)}
+                          className="text-primary-600 hover:text-primary-800 dark:text-primary-400 text-xs font-medium"
+                        >
+                          Details
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                <div className="hidden md:block overflow-x-auto">
                 <table className="w-full table-fixed divide-y divide-gray-200 dark:divide-gray-700">
                   <thead className="bg-gray-50 dark:bg-slate-800">
                     <tr>
@@ -1348,6 +1418,7 @@ export default function PlatformInfrastructurePage() {
                     ))}
                   </tbody>
                 </table>
+                </div>
             </Card>
             </div>
           )}

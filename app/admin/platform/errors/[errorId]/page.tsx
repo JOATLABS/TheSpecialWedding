@@ -82,6 +82,9 @@ export default function ErrorDetailsPage() {
         }
 
         const data = await response.json();
+        if (!data || typeof data !== 'object') {
+          throw new Error('Invalid error payload received from server');
+        }
         setError(data);
         setFetchError(null);
       } catch (err) {
