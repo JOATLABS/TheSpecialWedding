@@ -367,8 +367,13 @@ class ContractTemplate(BaseModel):
     description: Optional[str] = Field(
         None, max_length=1000, description="Template description"
     )
-    service_category: VendorCategory = Field(
-        ..., description="Which vendor type this is for"
+    service_category: Optional[VendorCategory] = Field(
+        None,
+        description=(
+            "Vendor type this template targets. Leave None to mark the "
+            "template as universal (applies to any vendor category, "
+            "including 'other' / custom service types like Drone Operator)."
+        ),
     )
 
     # Content

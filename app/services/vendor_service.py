@@ -1409,12 +1409,17 @@ class VendorService:
     # =========================================================================
 
     async def create_contract_template(self, data: dict, created_by: str) -> dict:
-        """Create a contract template"""
+        """Create a contract template.
+
+        `service_category` is optional — omitting it produces a universal
+        template that surfaces for any vendor category, including custom
+        'other' service types.
+        """
         try:
             template = {
                 "name": data["name"],
                 "description": data.get("description"),
-                "service_category": data["service_category"],
+                "service_category": data.get("service_category"),
                 "sections": data.get("sections", []),
                 "terms_and_conditions": data.get("terms_and_conditions"),
                 "cancellation_policy": data.get("cancellation_policy"),
@@ -1444,16 +1449,23 @@ class VendorService:
         category: Optional[str] = None,
         include_system: bool = True,
     ) -> List[dict]:
-        """Get contract templates available to planner"""
+        """Get contract templates available to planner.
+
+        When ``category`` is provided, returns templates that target that
+        category plus any universal templates (``service_category=None``),
+        so planners working with custom 'other' vendor types still see
+        applicable starter templates.
+        """
         try:
             or_conditions: List[Dict[str, Any]] = [{"created_by": created_by}]
             if include_system:
                 or_conditions.append({"is_system_template": True})
 
-            query = {"$or": or_conditions, "is_active": True}
+            query: Dict[str, Any] = {"$or": or_conditions, "is_active": True}
 
             if category:
-                query["service_category"] = category
+                # Match exact category OR universal templates (None / missing).
+                query["service_category"] = {"$in": [category, None]}
 
             cursor = self.contract_templates.find(query).sort("name", 1)
             templates = await cursor.to_list(length=100)

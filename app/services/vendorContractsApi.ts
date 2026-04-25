@@ -45,7 +45,8 @@ export interface ContractTemplate {
   _id: string;
   name: string;
   description?: string;
-  service_category: VendorCategory;
+  /** Omitted/null = universal template that applies to any vendor category. */
+  service_category?: VendorCategory | null;
   sections: ContractSection[];
   terms_and_conditions?: string;
   cancellation_policy?: string;
@@ -192,7 +193,8 @@ export interface PublicContract {
 export interface CreateVendorContractTemplateRequest {
   name: string;
   description?: string;
-  service_category: VendorCategory;
+  /** Omit to create a universal template (applies to all vendor categories). */
+  service_category?: VendorCategory | null;
   sections: ContractSection[];
   terms_and_conditions?: string;
   cancellation_policy?: string;

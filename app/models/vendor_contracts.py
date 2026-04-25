@@ -24,11 +24,15 @@ class VendorContractSectionInput(BaseModel):
 
 
 class CreateVendorContractTemplateRequest(BaseModel):
-    """Create a planner-owned vendor contract template."""
+    """Create a planner-owned vendor contract template.
+
+    `service_category` may be omitted to create a universal template that
+    is offered for any vendor type, including custom 'other' categories.
+    """
 
     name: str
     description: Optional[str] = None
-    service_category: VendorCategory
+    service_category: Optional[VendorCategory] = None
     sections: List[VendorContractSectionInput] = Field(default_factory=list)
     terms_and_conditions: Optional[str] = None
     cancellation_policy: Optional[str] = None
