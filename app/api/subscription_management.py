@@ -171,12 +171,30 @@ async def get_user_usage_stats(
 async def check_usage_limits(
     user_id: str,
     resource_type: str = Query(
-        ..., description="Resource type: weddings, ai_credits, staff_seats"
+        ...,
+        description="Resource type: weddings, ai_credits, staff_seats, storage",
     ),
-    amount: int = Query(1, description="Amount to check"),
+    amount: int = Query(
+        1,
+        description=(
+            "Amount to check. For storage this is bytes, not GB. For "
+            "weddings/staff_seats this is count. For ai_credits this "
+            "is credits."
+        ),
+    ),
     current_user: ExtendedAuthUser = Depends(require_admin_or_planner),
 ):
-    """Check if user can use more of a resource without exceeding limits"""
+    """Check if user can use more of a resource without exceeding limits.
+
+    Behavior per resource type:
+
+    * ``weddings``, ``staff_seats``, ``storage`` — **hard cap**.
+      Response includes ``allowed=false`` when the projected total
+      would exceed the plan limit. Callers must refuse the action.
+    * ``ai_credits`` — **soft cap**. ``allowed`` is always true; the
+      response carries ``overage``, ``overage_credits``, and
+      ``overage_cost_cents`` for the UI and billing to pick up.
+    """
     # Users can only check their own limits unless they're ROOT_ADMIN
     if (
         not current_user.is_root_admin
@@ -190,7 +208,8 @@ async def check_usage_limits(
 async def increment_user_usage(
     user_id: str,
     resource_type: str = Query(
-        ..., description="Resource type: weddings, ai_credits, staff_seats"
+        ...,
+        description="Resource type: weddings, ai_credits, staff_seats, storage",
     ),
     amount: int = Query(1, description="Amount to increment"),
     current_user: ExtendedAuthUser = Depends(require_root_admin),

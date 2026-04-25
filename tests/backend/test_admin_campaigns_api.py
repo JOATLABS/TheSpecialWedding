@@ -11,9 +11,8 @@ Tests /admin/ads/campaigns/* endpoints covering:
 
 import os
 import sys
-from datetime import datetime, timezone
 from pathlib import Path
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock
 
 import pytest
 from bson import ObjectId
@@ -30,11 +29,11 @@ os.environ.setdefault("ALGORITHM", "HS256")
 os.environ.setdefault("API_KEY", "test-api-key")
 os.environ.setdefault("ROOT_ADMIN_EMAIL", "thedeveloper@thespecialwedding.io")
 
-from fastapi import FastAPI
+from fastapi import FastAPI  # noqa: E402
 
-from app.api.admin_campaigns import get_admin_campaign_service
-from app.api.admin_campaigns import router as admin_campaigns_router
-from app.dependencies.auth_extended import ExtendedAuthUser, require_root_admin
+from app.api.admin_campaigns import get_admin_campaign_service  # noqa: E402
+from app.api.admin_campaigns import router as admin_campaigns_router  # noqa: E402
+from app.dependencies.auth_extended import ExtendedAuthUser, require_root_admin  # noqa: E402
 
 # Create a minimal test app with just the admin campaigns router
 # (avoids importing app.main which triggers the full import chain)
@@ -877,7 +876,16 @@ class TestVendorAccounts:
         assert len(data["vendors"]) == 1
 
         mock_service.list_vendor_accounts.assert_called_once_with(
-            status_filter=None, limit=50, skip=0
+            status_filter=None,
+            category_filter=None,
+            location_filter=None,
+            date_from=None,
+            date_to=None,
+            search=None,
+            sort_by="created_at",
+            sort_order=-1,
+            limit=50,
+            skip=0,
         )
 
     def test_list_vendor_accounts_with_status_filter(self, admin_client, mock_service):
@@ -890,7 +898,16 @@ class TestVendorAccounts:
         assert response.status_code == 200
 
         mock_service.list_vendor_accounts.assert_called_once_with(
-            status_filter="active", limit=30, skip=15
+            status_filter="active",
+            category_filter=None,
+            location_filter=None,
+            date_from=None,
+            date_to=None,
+            search=None,
+            sort_by="created_at",
+            sort_order=-1,
+            limit=30,
+            skip=15,
         )
 
 

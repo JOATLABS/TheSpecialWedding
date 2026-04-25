@@ -8,6 +8,7 @@ import ErrorBoundary from '@/components/ErrorBoundary';
 import Sidebar from './components/Sidebar';
 import TopHeader from './components/TopHeader';
 import TrialBanner from './components/TrialBanner';
+import SubscriptionUsageBanner from './components/SubscriptionUsageBanner';
 import { AIChatWidget } from '@/components/ai/AIChatWidget';
 import { Toaster } from 'sonner';
 import { useState, useEffect } from 'react';
@@ -84,6 +85,19 @@ function AdminLayoutContent({ children }: { children: React.ReactNode }) {
         }}
       >
         <TrialBanner />
+
+        {/*
+         * Global soft-cap banner for AI credits. Renders only when the planner
+         * is above the warn threshold or actively in overage — the component
+         * returns null otherwise, so this is free on normal pages. Shown to
+         * planners and their team members; root admins are bypassed inside
+         * the component.
+         */}
+        {(userProfile?.is_wedding_planner || userProfile?.is_team_member) && (
+          <div className="px-4 pt-4 sm:px-6 lg:px-8">
+            <SubscriptionUsageBanner resourceType="ai_credits" quietUntilWarn />
+          </div>
+        )}
 
         <TopHeader
           onMenuClick={() => setSidebarOpen(!sidebarOpen)}

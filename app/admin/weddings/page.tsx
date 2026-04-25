@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback, useMemo } from 'react';
 import { getApiBaseUrl } from '@/utils/env';
 import Link from 'next/link';
 import { useAdmin } from '@/contexts/AdminContext';
-import { canManageCouplePortal } from '@/admin/utils/teamAccess';
+import { canManageCouplePortal, getPlannerScopedUserId } from '@/admin/utils/teamAccess';
 import { formatDate, formatAdminTimestamp, DEFAULT_TIMEZONE } from '@/utils/dateFormat';
 import { EVENT_TIME_FORMAT_HINT, getEventTimeValidationMessage, normalizeEventTimeInput } from '@/utils/eventTime';
 import {
@@ -275,7 +275,8 @@ export default function AdminWeddingsPage() {
   // backend still enforces on POST, we just don't want to block the UI on
   // a transient network blip. See app/api/subscription_management.py::check_usage_limits.
   const checkWeddingCap = useCallback(async () => {
-    if (!userProfile || userProfile.is_root_admin || !userProfile.id || !token) {
+    const plannerScopedUserId = getPlannerScopedUserId(userProfile);
+    if (!userProfile || userProfile.is_root_admin || !plannerScopedUserId || !token) {
       setAtWeddingCap(false);
       setWeddingLimit(null);
       return;
@@ -283,7 +284,7 @@ export default function AdminWeddingsPage() {
     try {
       const baseUrl = getApiBaseUrl();
       const response = await fetch(
-        `${baseUrl}/users/${encodeURIComponent(userProfile.id)}/usage/check?resource_type=weddings&amount=1`,
+        `${baseUrl}/users/${encodeURIComponent(plannerScopedUserId)}/usage/check?resource_type=weddings&amount=1`,
         {
           method: 'POST',
           headers: {

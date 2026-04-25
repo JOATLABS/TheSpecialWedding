@@ -44,6 +44,20 @@ export function canManageCouplePortal(userProfile?: UserProfile | null): boolean
   );
 }
 
+export function getPlannerScopedUserId(
+  userProfile?: UserProfile | null,
+): string | null {
+  if (!userProfile) return null;
+
+  // Planner-owned resources such as wedding caps bill against the owner
+  // subscription even when the current session belongs to a team member.
+  if (userProfile.is_team_member) {
+    return userProfile.parent_planner_id || userProfile.id || null;
+  }
+
+  return userProfile.id || null;
+}
+
 export function canAccessWeddings(userProfile?: UserProfile | null): boolean {
   if (!userProfile) return false;
   return Boolean(

@@ -76,6 +76,27 @@ jobs:
           sed "s|<UPTIME_KV_NAMESPACE_ID>|${UPTIME_KV_NAMESPACE_ID}|g" \
             cloudflare-workers/uptime.wrangler.toml > "${RUNNER_TEMP}/uptime.wrangler.toml"
 
+      - name: Validate uptime KV namespace exists in Cloudflare account
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if ! [[ "${UPTIME_KV_NAMESPACE_ID}" =~ ^[a-fA-F0-9]{32}$ ]]; then
+            echo "UPTIME_KV_NAMESPACE_ID must be a 32-character hex namespace id."
+            exit 1
+          fi
+
+          namespaces_json="$(npx --yes "wrangler@${WRANGLER_VERSION}" kv namespace list --json)"
+          if ! echo "${namespaces_json}" | jq -e --arg id "${UPTIME_KV_NAMESPACE_ID}" '.[] | select(.id == $id)' >/dev/null; then
+            echo "UPTIME_KV_NAMESPACE_ID=${UPTIME_KV_NAMESPACE_ID} was not found in this Cloudflare account."
+            exit 1
+          fi
+
+          if grep -q "<UPTIME_KV_NAMESPACE_ID>" "${RUNNER_TEMP}/uptime.wrangler.toml"; then
+            echo "Uptime worker config template substitution failed."
+            exit 1
+          fi
+
       - name: Deploy Autopilot Cron Worker
         shell: bash
         run: |

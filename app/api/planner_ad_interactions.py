@@ -40,6 +40,7 @@ from app.services.planner_ad_interaction_service import PlannerAdInteractionServ
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/planner/ads", tags=["Planner Ad Interactions"])
+require_manage_vendors = require_team_permission("manage_vendors")
 
 
 # ═════════════════════════════════════════════════════════════════════════
@@ -271,7 +272,7 @@ async def get_sponsored_cards(
 @router.post("/add-to-directory", status_code=201)
 async def add_to_directory(
     body: AddToDirectoryRequest,
-    current_user: ExtendedAuthUser = Depends(require_team_permission("manage_vendors")),
+    current_user: ExtendedAuthUser = Depends(require_manage_vendors),
     service: PlannerAdInteractionService = Depends(get_planner_ad_interaction_service),
     _ads_on: bool = Depends(require_ads_enabled),
 ):
@@ -297,7 +298,7 @@ async def add_to_directory(
 @router.post("/request-quote", status_code=201)
 async def request_quote(
     body: RequestQuoteRequest,
-    current_user: ExtendedAuthUser = Depends(require_team_permission("manage_vendors")),
+    current_user: ExtendedAuthUser = Depends(require_manage_vendors),
     service: PlannerAdInteractionService = Depends(get_planner_ad_interaction_service),
     _ads_on: bool = Depends(require_ads_enabled),
 ):
@@ -348,7 +349,7 @@ async def check_directory_status(
 @router.post("/draft-quote")
 async def draft_quote(
     body: DraftQuoteRequest,
-    current_user: ExtendedAuthUser = Depends(require_team_permission("manage_vendors")),
+    current_user: ExtendedAuthUser = Depends(require_manage_vendors),
     service: PlannerAdInteractionService = Depends(get_planner_ad_interaction_service),
     _ads_on: bool = Depends(require_ads_enabled),
 ):
