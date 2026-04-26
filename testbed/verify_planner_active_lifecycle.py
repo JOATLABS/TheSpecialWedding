@@ -85,7 +85,6 @@ from typing import Any, Optional
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import stripe
-from bson import ObjectId
 
 from testbed.harness import (
     PM_TOKEN_GOOD,
@@ -164,9 +163,20 @@ def _create_wedding(
 
 def _wedding_ids_for(h: Harness, user_id: str) -> list[str]:
     """Mongo-side list of wedding ids owned by this planner — used for targeted
-    delete assertions so we don't nuke test fixtures from another driver."""
+    delete assertions so we don't nuke test fixtures from another driver.
+
+    The wedding doc stores ownership under ``assigned_planner_id`` (set by
+    ``app/api/wedding.py:create_wedding``), not ``user_id`` / ``owner_id``.
+    Keep the legacy fields in the OR so this also works against older fixtures
+    that might still have those keys."""
     cur = h.mongo["weddings"].find(
-        {"$or": [{"user_id": user_id}, {"owner_id": user_id}]},
+        {
+            "$or": [
+                {"assigned_planner_id": user_id},
+                {"user_id": user_id},
+                {"owner_id": user_id},
+            ]
+        },
         {"_id": 1},
     )
     return [str(doc["_id"]) for doc in cur]
@@ -358,7 +368,11 @@ def phase_active_zero_weddings(h: Harness, seed: PlannerSeed, clock_id: str) -> 
 
 
 def phase_active_one_wedding(
-    h: Harness, seed: PlannerSeed, planner_token: str, clock_id: str
+    h: Harness,
+    seed: PlannerSeed,
+    planner_token: str,
+    admin_token: str,
+    clock_id: str,
 ) -> None:
     """B1.1 / B1.2 / B1.3 — Create wedding #1, renewal preserves it, delete
     decrements the counter."""
@@ -382,7 +396,9 @@ def phase_active_one_wedding(
     # METERING_AUDIT.md §2). Absence of the flag is the sentinel.
     wed_ids = _wedding_ids_for(h, seed.user_id)
     assert wed_ids, "B1.1: wedding document missing after successful create"
-    wedding_doc = h.mongo["weddings"].find_one({"_id": ObjectId(wed_ids[0])}) or {}
+    # This codebase uses prefixed string ids (e.g. ``wedding_94ffd917733a``),
+    # not Mongo ObjectIds — query by the raw string id.
+    wedding_doc = h.mongo["weddings"].find_one({"_id": wed_ids[0]}) or {}
     assert not wedding_doc.get("meter_pending"), (
         f"B1.1: meter_pending should NOT be set on a flat Boutique plan — "
         f"got {wedding_doc.get('meter_pending')!r}. Metering is leaking into "
@@ -402,22 +418,19 @@ def phase_active_one_wedding(
         f"'preserve lifetime count' invariant, see subscription_service.py:798"
     )
 
-    # B1.3 — delete the wedding, counter decrements (or stays at 0 floor).
+    # B1.3 — delete the wedding via the root-admin endpoint
+    # (DELETE /admin/weddings/{id}). Planners cannot self-service delete by
+    # design — see app/api/wedding.py:306. We use admin_token here so the
+    # phase still exercises counter-decrement on delete.
     target_id = wed_ids[0]
-    del_resp = h.api_post(
-        f"/admin/weddings/{target_id}/delete",
-        token=planner_token,
-    )
-    # Not every codebase uses POST /delete; fall back to DELETE if the first shape 404s.
-    if del_resp.status_code == 404:
-        import requests  # lazy — only needed for the fallback shape
+    import requests  # lazy import — only needed for the DELETE shape
 
-        url = f"{h.cfg.backend_url}/admin/weddings/{target_id}"
-        del_resp = requests.delete(
-            url,
-            headers={"Authorization": f"Bearer {planner_token}"},
-            timeout=15,
-        )
+    url = f"{h.config.backend_url}/admin/weddings/{target_id}"
+    del_resp = requests.delete(
+        url,
+        headers={"Authorization": f"Bearer {admin_token}"},
+        timeout=15,
+    )
     h.log.info(f"  DELETE wedding {target_id} -> {del_resp.status_code}")
     assert del_resp.status_code in (200, 202, 204), (
         f"B1.3: wedding delete expected 2xx, got {del_resp.status_code}: "
@@ -1106,7 +1119,7 @@ def main() -> int:
     planner_token = h.login(PLANNER_EMAIL, PLANNER_PASSWORD)
 
     phase_active_zero_weddings(h, seed, clock_id)
-    phase_active_one_wedding(h, seed, planner_token, clock_id)
+    phase_active_one_wedding(h, seed, planner_token, admin_token, clock_id)
     phase_active_wedding_cap(h, seed, planner_token)
 
     # Scenario C — AI credits.
