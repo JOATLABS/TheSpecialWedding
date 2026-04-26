@@ -95,11 +95,14 @@ export default function StripeConnectCard() {
     // Without it the title and bullets butt against the rounded edge.
     <Card className="bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700 p-6">
       <CardHeader className="pb-4">
-        {/* Override CardTitle's default text-2xl font-elegant — that scale is
-            for page-level cards. Inner card titles on the planner billing
-            page render at text-base font-semibold (see Usage This Period /
-            Plan Features cards). Keeps the visual hierarchy intact. */}
-        <CardTitle className="text-base font-semibold text-gray-900 dark:text-gray-100 flex items-center gap-2">
+        {/* Use the platform's default CardTitle styling — text-2xl
+            font-elegant text-wedding-navy from app/components/ui/Card.tsx.
+            Matches "Your Subscription", "Payment Method", "Billing History"
+            on the My Subscription tab so this card sits in the same
+            visual rhythm. Sidebar cards downsize to text-base
+            (Usage This Period / Plan Features) — that's a sidebar pattern,
+            NOT a main-column pattern. */}
+        <CardTitle className="flex items-center gap-2">
           Get paid through Stripe
           {isConnected && <CheckCircle2 className="w-5 h-5 text-green-500" />}
         </CardTitle>

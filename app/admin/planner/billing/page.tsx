@@ -1331,11 +1331,14 @@ export default function PlannerBillingPage() {
 
               <Card className="bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700 p-6">
                 <CardHeader className="pb-4 flex flex-row items-center justify-between">
-                  {/* Inner-card titles render at text-base font-semibold to
-                      match the planner pattern (Usage / Plan Features). The
-                      default text-2xl font-elegant from CardTitle was making
-                      this look like a second page header. */}
-                  <CardTitle className="text-base font-semibold text-gray-900 dark:text-gray-100">Payment requests</CardTitle>
+                  {/* Use the platform's default CardTitle styling — text-2xl
+                      font-elegant text-wedding-navy from app/components/ui/Card.tsx.
+                      Matches "Your Subscription", "Payment Method",
+                      "Billing History" on the My Subscription tab so this
+                      card sits in the same visual rhythm. (Earlier override
+                      to text-base font-semibold was wrong — that's the
+                      sidebar pattern, not the main-column pattern.) */}
+                  <CardTitle>Payment Requests</CardTitle>
                   {/* CTA gated on Stripe Connect being live. Sending a
                       couple to Checkout while charges_enabled=false just
                       produces a backend rejection and a stranded request
