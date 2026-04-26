@@ -294,10 +294,10 @@ Claim completion only when:
 
 This cluster is load-bearing context for any work on `app/services/auth_service.py`, `app/dependencies/auth_extended.py`, `app/utils/auth_utils.py`, `proxy.ts`, `app/contexts/AdminContext.tsx`, or anything that throws or catches 402. Update this list when you close items or discover new ones.
 
-As of 2026-04-21, the following are open:
+As of 2026-04-26, the following are open:
 
 1. **Middleware converts 422 to 500.** The security error handler crashes with `TypeError: Object of type bytes is not JSON serializable` when serializing the raw request body during a FastAPI `RequestValidationError`. Any legitimate validation error is returned to callers as a 500, masking the real feedback.
-2. **`AdminContext.login` throws raw `Error` on 402.** `app/contexts/AdminContext.tsx:382` rethrows the 402 `detail` as a generic `Error`, which is caught by the network-failure branch at `AdminContext.tsx:624` — a branch whose inline comment literally says "Network-level failure (CORS, DNS, backend down, etc.) lands here." Every blocked-team-member login prints a red `Login flow threw: ...` to the console as if the backend crashed.
+2. ~~**`AdminContext.login` throws raw `Error` on 402.**~~ **CLOSED 2026-04-26.** Fix expanded the original 402-only special case to cover all non-2xx login responses. Any HTTP-level failure (401, 402, 403, 429, etc.) now sets `isExpectedHttpError=true`; the catch block keys off either `isExpectedHttpError` or the legacy `isAuthBlock` flag and skips the `console.error("Login flow threw: ...")` + duplicate toast. Only true `fetch` rejections (CORS, DNS, backend down) still land in the diagnostic branch. Live-verified — 3× 401 returned, 0× console noise.
 3. **Two frontend services bypass `AdminContext.apiRequest` on 402.**
    - `app/services/behavioralAnalyticsApi.ts:186` — `throw new Error(body?.detail || 'Failed to fetch engagement signals')`
    - `app/services/campaignAdvertisingApi.ts:477` — `throw new Error(error.detail?.message || error.detail || errorPrefix)`

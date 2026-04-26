@@ -24,10 +24,15 @@ type ResourceType = 'storage' | 'ai_credits' | 'weddings' | 'staff_seats';
 interface UsageCheckResponse {
   allowed?: boolean;
   limit?: number;
+  // The backend's canonical "used" key is ``current_usage`` across all
+  // resource branches in SubscriptionService.check_usage_limits. ``used``
+  // is kept as a back-compat alias only — never assume it's populated.
+  current_usage?: number;
   used?: number;
   remaining?: number;
   message?: string;
   // storage hard-cap fields
+  current_usage_bytes?: number;
   current_usage_gb?: number;
   limit_gb?: number;
   // ai_credits soft-cap fields
@@ -132,7 +137,12 @@ export default function SubscriptionUsageBanner({
   // AND we're above the warn threshold.
   if (!copy.softCap) {
     const limit = state.limit_gb ?? state.limit ?? 0;
-    const used = state.current_usage_gb ?? state.used ?? 0;
+    // For storage, the backend reports ``current_usage_gb`` (the GB-rounded
+    // form the bar should plot). For weddings/staff_seats, the backend
+    // returns ``current_usage``. ``used`` is the legacy alias retained for
+    // forward-compat only. See SubscriptionService.check_usage_limits.
+    const used =
+      state.current_usage_gb ?? state.current_usage ?? state.used ?? 0;
     const isUnlimited = limit === -1;
     const pct = !isUnlimited && limit > 0 ? (used / limit) * 100 : 0;
     const hitCap = state.allowed === false;
@@ -186,7 +196,9 @@ export default function SubscriptionUsageBanner({
 
   // Soft-cap surface (ai_credits): show warn at threshold, overage callout at limit.
   const limit = state.limit ?? 0;
-  const used = state.used ?? 0;
+  // ai_credits returns ``current_usage`` from check_usage_limits. ``used`` is
+  // the legacy alias and is never populated by the current backend.
+  const used = state.current_usage ?? state.used ?? 0;
   const isUnlimited = limit === -1;
   const pct = !isUnlimited && limit > 0 ? (used / limit) * 100 : 0;
   const inOverage = Boolean(state.overage);

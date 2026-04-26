@@ -67,6 +67,25 @@ async def delete_subscription_plan(
 # ==================== USER SUBSCRIPTION MANAGEMENT ====================
 
 
+def _can_read_usage_for_user(current_user: ExtendedAuthUser, user_id: str) -> bool:
+    """Allow self-service usage reads plus team-member owner-scope reads.
+
+    Frontend planner-cap surfaces intentionally use the planner owner's id for
+    team-member sessions because subscription caps bill against the owner plan,
+    not the acting team member. Keep that owner-scope allowance tightly limited
+    to read-only usage endpoints; unrelated user ids still fail closed.
+    """
+    if current_user.is_root_admin:
+        return True
+
+    session_user_id = str(current_user.user_data.get("_id") or "")
+    if session_user_id and session_user_id == user_id:
+        return True
+
+    owner_id = str(current_user.parent_planner_id or "")
+    return bool(current_user.is_team_member and owner_id and owner_id == user_id)
+
+
 @router.post("/users/{user_id}/subscription", tags=["ROOT_ADMIN"])
 async def assign_subscription_to_user(
     user_id: str,
@@ -158,11 +177,7 @@ async def get_user_usage_stats(
     user_id: str, current_user: ExtendedAuthUser = Depends(require_admin_or_planner)
 ):
     """Get user's current usage statistics"""
-    # Users can only see their own usage unless they're ROOT_ADMIN
-    if (
-        not current_user.is_root_admin
-        and str(current_user.user_data.get("_id")) != user_id
-    ):
+    if not _can_read_usage_for_user(current_user, user_id):
         raise HTTPException(status_code=403, detail="Can only view your own usage")
     return await subscription_service.get_usage_stats(user_id)
 
@@ -195,11 +210,7 @@ async def check_usage_limits(
       response carries ``overage``, ``overage_credits``, and
       ``overage_cost_cents`` for the UI and billing to pick up.
     """
-    # Users can only check their own limits unless they're ROOT_ADMIN
-    if (
-        not current_user.is_root_admin
-        and str(current_user.user_data.get("_id")) != user_id
-    ):
+    if not _can_read_usage_for_user(current_user, user_id):
         raise HTTPException(status_code=403, detail="Can only check your own limits")
     return await subscription_service.check_usage_limits(user_id, resource_type, amount)
 

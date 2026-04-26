@@ -414,17 +414,25 @@ export const AdminProvider = ({ children }: { children: React.ReactNode }) => {
             if (!res.ok) {
                 const err = await res.json().catch(() => ({}));
                 const detail = err?.detail || 'Login failed';
-                // 402 at /admin/token = blocked-team-member (or blocked planner)
-                // login-time gate. This is an expected response with a real
-                // detail string, NOT a network failure. Tag the thrown error so
-                // the catch block below skips the `console.error("Login flow
-                // threw: ...")` + redundant toast (the login page already
-                // surfaces the detail inline via setError). See AGENTS.md
-                // → "Known Open Issues" item 4.
-                const loginError: Error & { status?: number; isAuthBlock?: boolean } =
-                    new Error(detail);
+                // Any non-2xx /admin/token response is an EXPECTED HTTP
+                // failure — the server reached us and returned a structured
+                // detail (401 "Invalid credentials", 402 subscription-block,
+                // 403 disabled, 429 rate-limit, etc.). The login page renders
+                // the detail inline via setError, so the catch block below
+                // skips the `console.error("Login flow threw: ...")` +
+                // redundant toast for these. Only true network failures
+                // (fetch rejection, no `res` at all) should land in the noisy
+                // branch. ``isAuthBlock`` retained as the legacy 402-only
+                // tag for callers that key off it. See AGENTS.md → "Known
+                // Open Issues" item 4.
+                const loginError: Error & {
+                    status?: number;
+                    isAuthBlock?: boolean;
+                    isExpectedHttpError?: boolean;
+                } = new Error(detail);
+                loginError.status = res.status;
+                loginError.isExpectedHttpError = true;
                 if (res.status === 402) {
-                    loginError.status = 402;
                     loginError.isAuthBlock = true;
                 }
                 throw loginError;
@@ -638,17 +646,18 @@ export const AdminProvider = ({ children }: { children: React.ReactNode }) => {
                 return;
             }
         } catch (err: any) {
-            // Expected auth-block responses (402 from the team-member or
-            // planner subscription gate) are NOT network failures. The login
-            // page already renders the detail inline via setError, so we
-            // skip the console.error noise + the duplicate "network error"
-            // toast and just rethrow for the page handler. See AGENTS.md
-            // → "Known Open Issues" item 4.
-            if (err?.isAuthBlock) {
+            // Expected HTTP responses (401 invalid creds, 402 subscription
+            // block, 403 disabled, 429 rate-limit, etc.) are NOT network
+            // failures. The login page already renders the detail inline
+            // via setError, so we skip the console.error noise + duplicate
+            // "network error" toast and just rethrow for the page handler.
+            // See AGENTS.md → "Known Open Issues" item 4.
+            if (err?.isExpectedHttpError || err?.isAuthBlock) {
                 throw err;
             }
-            // Network-level failure (CORS, DNS, backend down, etc.) lands here.
-            // Without this log, the only signal is a toast, which leaves us blind.
+            // Network-level failure (fetch rejection — CORS, DNS, backend
+            // down, etc.) lands here. Without this log, the only signal is
+            // a toast, which leaves us blind.
             console.error(
                 `Login flow threw: name="${err?.name}" message="${err?.message}" stack=${err?.stack}`,
             );
