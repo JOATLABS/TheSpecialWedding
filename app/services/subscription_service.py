@@ -774,10 +774,15 @@ class SubscriptionService:
         3. Any write ordering issue between wedding create and counter
            increment leaves the counter out of sync indefinitely.
 
+        Soft-deleted weddings (``deleted_at`` set by
+        ``cascade_delete_service.soft_delete_wedding``) are EXCLUDED — the
+        plan cap is on *active* weddings; an archived wedding shouldn't
+        consume the same slot a live one would.
+
         Live-counting via ``build_wedding_owner_query`` (the canonical
         owner filter used everywhere else in the codebase) removes all
-        three modes at the cost of one ``count_documents`` call per cap
-        check.
+        three counter-drift modes at the cost of one ``count_documents``
+        call per cap check.
         """
         user = await self.users_collection.find_one(
             {"_id": normalize_query_id(user_id)},
@@ -789,7 +794,22 @@ class SubscriptionService:
         )
         if not owner_query:
             return 0
-        return await self.weddings_collection.count_documents(owner_query)
+        # Filter out soft-deleted weddings — the cap is on active weddings
+        # only. ``$exists: False`` matches docs without the field; ``$eq:
+        # None`` matches docs where the field is explicitly null. Either
+        # form means "not soft-deleted".
+        active_query = {
+            "$and": [
+                owner_query,
+                {
+                    "$or": [
+                        {"deleted_at": {"$exists": False}},
+                        {"deleted_at": None},
+                    ]
+                },
+            ]
+        }
+        return await self.weddings_collection.count_documents(active_query)
 
     async def get_usage_stats(self, user_id: str) -> dict:
         """Get current usage statistics for user.

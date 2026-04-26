@@ -970,6 +970,10 @@ def phase_subscription_resubscribe(
     """D5 — Resubscribe from canceled state. New sub row, new plan_snapshot."""
     h.phase("SUBSCRIPTION_RESUBSCRIBE", "D5 — new subscription on canceled customer")
 
+    # Long-running interactive runs blow past the admin JWT TTL between
+    # checkpoints — refresh before any API call that requires admin auth.
+    admin_token = h.get_admin_token()
+
     new_sub = h.subscribe_planner(
         admin_token=admin_token,
         customer_id=seed.customer_id,
@@ -1010,6 +1014,10 @@ def phase_subscription_past_due(h: Harness, admin_token: str, clock_id: str) -> 
     driver but exercises the planner's own login path.
     """
     h.phase("SUBSCRIPTION_PAST_DUE", "D6 — planner past-due → recovery")
+
+    # Long-running interactive runs blow past the admin JWT TTL between
+    # checkpoints — refresh before any API call that requires admin auth.
+    admin_token = h.get_admin_token()
 
     email = "test_planner+pastdue@thespecialwedding.io"
     password = "PastDuePlanner2026!"  # pragma: allowlist secret
