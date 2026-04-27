@@ -1,63 +1,79 @@
 #!/usr/bin/env python3
 """
-Planner ↔ Couple Contract Flow — Live Verification
-====================================================
+Planner ↔ Couple Package + Contract Flow — Live Verification
+==============================================================
 
 Purpose
 -------
-Verify the canonical planner→couple billing flow end-to-end:
+Verify the canonical planner→couple billing flow end-to-end through the
+real production code paths:
 
-  1. Planner builds (we seed) a contract with a payment schedule
-     (deposit on signing + one milestone).
-  2. Couple opens the public contract URL, sets up a payment method via
-     Stripe SetupIntent, and signs the contract.
-  3. Backend automatically charges the deposit through Stripe with
+  1. Planner creates a wedding (POST /admin/weddings).
+  2. Planner builds a package with a payment schedule (POST /packages).
+  3. Planner sends the package to the couple (POST /admin/packages/{id}/send),
+     which invokes `package_service.send_package_to_couple` and produces
+     a contract row via the production code path — no synthetic Mongo
+     seeds.
+  4. Couple opens the public contract URL, captures a payment method via
+     Stripe SetupIntent, and signs (POST /public/contracts/{token}/sign).
+  5. Backend auto-charges the deposit through Stripe with
      `transfer_data.destination` = the planner's connected account.
-  4. The /admin/money "Incoming" view (planner side) and the
-     /couple/dashboard "Payments" view (couple side) reflect the new
-     state.
+  6. /admin/money "Incoming" reflects the new state on the planner side;
+     /couple/dashboard "Payments" reflects on the couple side.
 
-This is the flow the platform actually uses for couple billing — NOT the
-removed ad-hoc "Couple Payments" tab. The earlier
-`verify_couple_payments_gate.py` driver tested a feature that no longer
-exists; this driver replaces it.
+This replaces the earlier synthetic-seed approach. A previous version of
+this driver inserted a contract row directly into Mongo, bypassing
+`send_package_to_couple`. That version "worked" for testing the deposit
+charge logic but did not exercise the production flow — no package
+existed, no wedding existed, the package counter was never incremented,
+the contract email was never sent. Per the explicit feedback:
+
+  "How is the couple going to pay for a package that doesn't exist
+   for a wedding that doesn't exist?"
 
 Two-layer verification per CLAUDE.md:
 
 - Backend asserts: scheduled_payments rows created, deposit row flips to
   `succeeded`, Stripe PaymentIntent has the right destination account.
-- UI checkpoints: planner Money → Incoming, couple dashboard → Payments.
+- UI checkpoints: planner Money → Incoming, couple-portal Payments view.
 
 Accounts (plus-variant; base accounts never touched)
 ----------------------------------------------------
   Planner : test_planner+contractflow@thespecialwedding.io
   Couple  : test_couple+contractflow@thespecialwedding.io
-  Wedding : seeded against the planner
 
 Phases
 ------
-  SEED          — register/login planner, bypass subscription, ensure
-                  Stripe Connect is live, create a wedding, insert a
-                  contract row with a payment schedule (deposit + one
-                  milestone) plus a fresh public token.
-  CHECKPOINT_UI1— planner inspects /admin/money → Incoming. Two rows
-                  (deposit + milestone) appear with status='scheduled',
-                  the right couple/wedding label, and the right amounts.
-  SIGN          — driver POSTs /public/contracts/{token}/setup-intent,
-                  uses the Stripe API to confirm a SetupIntent with a
-                  test PM (pm_card_visa), then POSTs the sign endpoint.
-                  Backend auto-charges the deposit.
-  ASSERT_DEPOSIT— driver queries Mongo for the deposit row and asserts
-                  status='succeeded' + a stripe_payment_intent_id is set.
-                  Then queries Stripe for that PaymentIntent and asserts
-                  transfer_data.destination matches the planner's
-                  stripe_connect_id.
-  CHECKPOINT_UI2— couple opens /couple/dashboard → Payments. Total /
-                  Paid / Remaining reflect the deposit; the deposit row
-                  shows as Paid; the milestone row shows as Pending.
-  CHECKPOINT_UI3— planner reloads /admin/money → Incoming. Deposit row
-                  is now Succeeded; milestone row remains scheduled.
-  DONE          — print summary and exit 0.
+  SEED        — register/login planner, bypass subscription, ensure
+                Stripe Connect is live, create a real wedding via
+                POST /admin/weddings, create a real package via
+                POST /packages (status='active'), call
+                POST /admin/packages/{id}/send to produce a real
+                contract row.
+  CHECKPOINT_UI1
+              — planner inspects /admin/money. Schedule rows do not
+                exist YET (sign hasn't fired) — we surface that
+                explicitly. Optional: planner can also visit
+                /admin/packages/{id} to see contracts_count incremented.
+  SIGN        — driver POSTs /public/contracts/{token}/setup-intent,
+                confirms the SetupIntent server-side via Stripe with a
+                test PM (pm_card_visa), POSTs the sign endpoint.
+                Backend auto-charges the deposit.
+  ASSERT_DEPOSIT
+              — driver queries scheduled_payments for the contract,
+                asserts the deposit row is `succeeded` with a
+                stripe_payment_intent_id, then queries Stripe for the
+                PaymentIntent and asserts transfer_data.destination
+                matches the planner's stripe_connect_id.
+  CHECKPOINT_UI2
+              — couple-side Payments view shows Total / Paid /
+                Remaining reflecting the deposit; deposit row reads
+                Paid; milestone row reads Pending.
+  CHECKPOINT_UI3
+              — planner reloads /admin/money → Incoming. Deposit row
+                Succeeded; milestone row Scheduled with the right
+                couple/wedding labels.
+  DONE        — print summary and exit 0.
 
 Cleanup pair: cleanup_planner_couple_contract_flow_state.py
 
@@ -70,7 +86,6 @@ from __future__ import annotations
 
 import logging
 import os
-import secrets
 import sys
 import time
 from datetime import datetime, timezone, timedelta
@@ -111,17 +126,21 @@ PLANNER_FIRST = "Contract"
 PLANNER_LAST = "FlowPlanner"
 
 COUPLE_EMAIL = "test_couple+contractflow@thespecialwedding.io"
-COUPLE_NAME = "Contract Flow Couple"
+COUPLE_PARTNER1 = "Alex Davis"
+COUPLE_PARTNER2 = "Jamie Rivera"
+COUPLE_DISPLAY = f"{COUPLE_PARTNER1} & {COUPLE_PARTNER2}"
 
 PLAN_ID = os.getenv("CONTRACTFLOW_PLAN_ID", "plan_signature")
 
-# Contract financials. Deposit is the on-signing line; milestone fires on
+# Package financials. Deposit is the on-signing line; milestone fires on
 # autopilot when its due date arrives. Keep numbers small so test runs
 # don't pile up against any Stripe sandbox limits.
-DEPOSIT_AMOUNT = 100.0  # USD
-MILESTONE_AMOUNT = 250.0  # USD
+DEPOSIT_AMOUNT = 100.0
+MILESTONE_AMOUNT = 250.0
 TOTAL_AMOUNT = DEPOSIT_AMOUNT + MILESTONE_AMOUNT
 CURRENCY = "usd"
+
+WEDDING_DATE_OFFSET_DAYS = 180  # ~6 months out
 
 if not STRIPE_SECRET_KEY:
     raise SystemExit("STRIPE_SECRET_KEY not set in .env")
@@ -129,6 +148,22 @@ if not MONGO_URI:
     raise SystemExit("MONGO_URI not set in .env")
 if not ADMIN_PASSWORD:
     raise SystemExit("ROOT_ADMIN_PASSWORD not set in .env")
+
+# package_service.send_to_couple unconditionally calls the contract email
+# service AFTER inserting the contract row, and DELETES the contract
+# (then raises RuntimeError) if the email send returns falsy. See
+# package_service.py:425-431. So if RESEND_API_KEY isn't configured,
+# the SEND step fails in a confusing way: the API returns 500 and the
+# contract row gets garbage-collected. Pre-flight here so we fail fast
+# with a clear message instead.
+if not os.getenv("RESEND_API_KEY"):
+    raise SystemExit(
+        "RESEND_API_KEY not set in .env.\n\n"
+        "package_service.send_to_couple sends a contract email after\n"
+        "creating the contract row, and rolls back the row if the email\n"
+        "send fails. Set RESEND_API_KEY (any test/dev key works — Resend\n"
+        "test mode is fine) and re-run."
+    )
 
 stripe.api_key = STRIPE_SECRET_KEY
 
@@ -185,6 +220,10 @@ def login(email: str, password: str) -> str:
     if not token:
         raise RuntimeError(f"login: no token in response {payload!r}")
     return token
+
+
+def auth_headers(token: str) -> Dict[str, str]:
+    return {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
 
 
 def find_user_id_by_email(admin_token: str, email: str) -> str:
@@ -247,11 +286,8 @@ def ensure_planner_registered(mongo_db) -> str:
 
 
 def bypass_subscription_gate(mongo_db, planner_user_id: str) -> None:
-    """Flip subscription_status=active so the planner can reach /admin/money.
-
-    This is a TEST-ONLY shortcut for verification — the canonical
-    contract+autopilot path doesn't depend on the planner's SaaS
-    subscription state, but the planner UI gates everything behind it.
+    """Flip subscription_status=active so the planner can reach
+    /admin/weddings, /admin/packages, /admin/money. Test-only shortcut.
     """
     now = datetime.now(timezone.utc)
     mongo_db["users"].update_one(
@@ -286,11 +322,8 @@ def bypass_subscription_gate(mongo_db, planner_user_id: str) -> None:
 
 def ensure_planner_connect_account(mongo_db, planner_user_id: str) -> str:
     """Ensure the planner has a Stripe Connect Express account that is
-    `charges_enabled`. If not, generate an Account Link and pause for
-    the user to complete hosted onboarding (Use test data buttons).
-
-    Returns the connect account id.
-    """
+    `charges_enabled`. Falls back to hosted onboarding if charges_enabled
+    is false (Express accounts can't be auto-onboarded via the API)."""
     user = mongo_db["users"].find_one({"_id": ObjectId(planner_user_id)})
     connect_id = user.get("stripe_connect_id") if user else None
 
@@ -327,7 +360,6 @@ def ensure_planner_connect_account(mongo_db, planner_user_id: str) -> str:
         )
         logger.info("  ✅ Created Stripe account: %s", connect_id)
 
-    # Check charges_enabled. If not, walk the user through hosted onboarding.
     account = stripe.Account.retrieve(connect_id)
     if not account.charges_enabled:
         logger.info("  Account exists but charges_enabled=False — onboarding needed.")
@@ -362,121 +394,134 @@ def ensure_planner_connect_account(mongo_db, planner_user_id: str) -> str:
     return connect_id
 
 
-def ensure_test_wedding(mongo_db, planner_user_id: str) -> str:
-    """Insert a wedding row owned by the planner if one doesn't exist."""
-    existing = mongo_db["weddings"].find_one(
-        {"planner_id": planner_user_id, "couple.email": COUPLE_EMAIL}
-    )
-    if existing:
-        wedding_id = str(existing["_id"])
-        logger.info("  Wedding already exists: %s", wedding_id)
-        return wedding_id
-
-    wedding_doc = {
-        "planner_id": planner_user_id,
-        "title": f"{COUPLE_NAME} Wedding",
-        "couple": {"name": COUPLE_NAME, "email": COUPLE_EMAIL},
-        "wedding_date": datetime.now(timezone.utc) + timedelta(days=180),
-        "status": "active",
-        "guest_count": 50,
-        "created_at": datetime.now(timezone.utc),
-        "updated_at": datetime.now(timezone.utc),
-        "source": "verify_planner_couple_contract_flow test seed",
-    }
-    result = mongo_db["weddings"].insert_one(wedding_doc)
-    wedding_id = str(result.inserted_id)
-    logger.info("  ✅ Created wedding: %s", wedding_id)
-    return wedding_id
-
-
-def insert_contract(mongo_db, planner_user_id: str, wedding_id: str) -> str:
-    """Insert a contract row in 'sent' state with a known public token.
-
-    Mirrors the shape contract_service expects:
-      - status='sent' (signable)
-      - public token (used by /public/contracts/{token}/sign and setup-intent)
-      - planner_id, wedding_id, couple
-      - package_snapshot.payment_schedule (deposit on_signing + milestone in 7 days)
-      - package_snapshot.total_amount, currency
-
-    Returns the contract token.
+def create_wedding(planner_token: str) -> str:
+    """POST /admin/weddings — creates a real wedding row through the
+    production code path. Required: couple_names + date.
     """
-    # Re-use the contract if a previous run left one in place — keeps the test
-    # idempotent the way the existing testbed drivers are.
-    existing = mongo_db["contracts"].find_one(
-        {
-            "planner_id": planner_user_id,
-            "wedding_id": wedding_id,
-            "couple.email": COUPLE_EMAIL,
-        }
+    wedding_date = (
+        datetime.now(timezone.utc) + timedelta(days=WEDDING_DATE_OFFSET_DAYS)
+    ).date()
+    payload = {
+        "couple_names": COUPLE_DISPLAY,
+        "date": wedding_date.isoformat(),
+        "guest_count": 50,
+        "venue": "Test Venue (verifier seed)",
+        "status": "active",
+    }
+    r = requests.post(
+        f"{BACKEND_URL}/admin/weddings",
+        headers=auth_headers(planner_token),
+        json=payload,
+        timeout=20,
     )
-    if existing and existing.get("status") == "sent":
-        token = existing["token"]
-        logger.info("  Reusing existing contract: token=%s", token)
-        return token
+    if r.status_code not in (200, 201):
+        raise RuntimeError(f"wedding create failed: {r.status_code} {r.text}")
+    body = r.json()
+    # Wedding response shape varies — look for id or _id, possibly nested.
+    wedding_id = (
+        body.get("id")
+        or body.get("_id")
+        or (body.get("wedding") or {}).get("id")
+        or (body.get("wedding") or {}).get("_id")
+    )
+    if not wedding_id:
+        raise RuntimeError(f"could not find wedding_id in response: {body!r}")
+    logger.info("  ✅ Created wedding: %s (date=%s)", wedding_id, wedding_date)
+    return str(wedding_id)
 
-    if existing:
-        # Old contract from a prior run, but in a non-signable status.
-        # Drop it so the seed creates a fresh signable one.
-        mongo_db["contracts"].delete_one({"_id": existing["_id"]})
-        mongo_db["scheduled_payments"].delete_many(
-            {"contract_id": str(existing["_id"])}
-        )
-        logger.info("  Removed stale contract from prior run.")
 
-    token = secrets.token_urlsafe(24)
-    now = datetime.now(timezone.utc)
-    wedding_date = now + timedelta(days=180)
-
-    contract_doc = {
-        "token": token,
-        "status": "sent",
-        "planner_id": planner_user_id,
-        "wedding_id": wedding_id,
-        "wedding_date": wedding_date,
-        "couple": {"name": COUPLE_NAME, "email": COUPLE_EMAIL},
-        "package_name": "Test Wedding Package",
-        "package_snapshot": {
-            "name": "Test Wedding Package",
-            "total_amount": TOTAL_AMOUNT,
-            "currency": CURRENCY,
-            "payment_schedule": [
-                {
-                    "name": "Deposit",
-                    "trigger": "on_signing",
-                    "amount": DEPOSIT_AMOUNT,
-                },
-                {
-                    "name": "Milestone payment",
-                    "trigger": "days_after_signing",
-                    "days_after": 7,
-                    "amount": MILESTONE_AMOUNT,
-                },
-            ],
-        },
-        "custom_sections": [
+def create_package(planner_token: str) -> str:
+    """POST /packages — creates a real package row through the production
+    code path. Status='active' so it can be sent to a couple immediately.
+    Includes a payment schedule with a deposit on signing + a milestone
+    7 days after signing.
+    """
+    payload = {
+        "name": "Test Wedding Package — Contract Flow Verifier",
+        "description": "Full planning + day-of coordination (test seed).",
+        "services": [
             {
-                "title": "Scope of services",
-                "content": "Wedding planning + day-of coordination.",
+                "name": "Wedding planning",
+                "description": "Full planning support",
+                "included": True,
             },
             {
-                "title": "Cancellation",
-                "content": "Standard 50% deposit non-refundable after sign.",
+                "name": "Day-of coordination",
+                "description": "On-site coordination on the wedding day",
+                "included": True,
             },
         ],
-        "created_at": now,
-        "updated_at": now,
-        "sent_at": now,
-        "source": "verify_planner_couple_contract_flow test seed",
+        "total_amount": TOTAL_AMOUNT,
+        "currency": CURRENCY,
+        "payment_schedule": [
+            {
+                "name": "Deposit",
+                "trigger": "on_signing",
+                "amount": DEPOSIT_AMOUNT,
+            },
+            {
+                "name": "Milestone payment",
+                "trigger": "days_after_signing",
+                "days_after": 7,
+                "amount": MILESTONE_AMOUNT,
+            },
+        ],
+        "cancellation_policy": "Standard 50% deposit non-refundable after sign.",
+        "status": "active",
     }
-    result = mongo_db["contracts"].insert_one(contract_doc)
+    # The packages_router is mounted with prefix="/admin" in main.py, so
+    # the declared @router.post("/packages") resolves to /admin/packages.
+    r = requests.post(
+        f"{BACKEND_URL}/admin/packages",
+        headers=auth_headers(planner_token),
+        json=payload,
+        timeout=20,
+    )
+    if r.status_code not in (200, 201):
+        raise RuntimeError(f"package create failed: {r.status_code} {r.text}")
+    body = r.json()
+    package = body.get("package") or body
+    package_id = package.get("id") or package.get("_id")
+    if not package_id:
+        raise RuntimeError(f"could not find package_id in response: {body!r}")
     logger.info(
-        "  ✅ Inserted contract: id=%s token=%s schedule=$%.2f deposit + $%.2f milestone",
-        result.inserted_id,
-        token,
+        "  ✅ Created package: %s ($%.2f total, deposit $%.2f + milestone $%.2f)",
+        package_id,
+        TOTAL_AMOUNT,
         DEPOSIT_AMOUNT,
         MILESTONE_AMOUNT,
     )
+    return str(package_id)
+
+
+def send_package_to_couple(planner_token: str, package_id: str, wedding_id: str) -> str:
+    """POST /packages/{package_id}/send — routes through the canonical
+    `package_service.send_package_to_couple`. Returns the public contract
+    token from the response.
+    """
+    payload = {
+        "couple": {
+            "partner1_name": COUPLE_PARTNER1,
+            "partner2_name": COUPLE_PARTNER2,
+            "email": COUPLE_EMAIL,
+        },
+        "wedding_id": wedding_id,
+    }
+    # /admin prefix per main.py — same as create.
+    r = requests.post(
+        f"{BACKEND_URL}/admin/packages/{package_id}/send",
+        headers=auth_headers(planner_token),
+        json=payload,
+        timeout=30,
+    )
+    if r.status_code not in (200, 201):
+        raise RuntimeError(f"send failed: {r.status_code} {r.text}")
+    body = r.json()
+    contract = body.get("contract") or body
+    token = contract.get("token") or contract.get("public_token")
+    if not token:
+        raise RuntimeError(f"could not find contract token in response: {body!r}")
+    logger.info("  ✅ Sent package — contract token: %s", token)
     return token
 
 
@@ -486,14 +531,10 @@ def insert_contract(mongo_db, planner_user_id: str, wedding_id: str) -> str:
 
 
 def setup_payment_method_and_sign(token: str) -> Dict[str, Any]:
-    """Run the realistic sign flow:
-      1) POST /public/contracts/{token}/setup-intent → client_secret + customer_id
-      2) Confirm SetupIntent via Stripe API with pm_card_visa
-      3) POST /public/contracts/{token}/sign with setup_intent_id + pm_id
-
+    """Realistic sign flow: SetupIntent → confirm with pm_card_visa → sign.
     Returns the sign response payload.
     """
-    # 1. Initialize SetupIntent
+    # 1. Init SetupIntent
     r = requests.post(
         f"{BACKEND_URL}/public/contracts/{token}/setup-intent",
         timeout=15,
@@ -509,8 +550,7 @@ def setup_payment_method_and_sign(token: str) -> Dict[str, Any]:
         setup_intent_id,
     )
 
-    # 2. Confirm the SetupIntent with a test PM. In test mode you can confirm
-    # server-side using a pm_card_* token without a 3DS step.
+    # 2. Confirm SetupIntent server-side with a test PM token
     setup_intent = stripe.SetupIntent.confirm(
         setup_intent_id,
         payment_method="pm_card_visa",
@@ -522,7 +562,6 @@ def setup_payment_method_and_sign(token: str) -> Dict[str, Any]:
     payment_method_id = setup_intent.payment_method
     logger.info("  ✅ SetupIntent confirmed: pm=%s", payment_method_id)
 
-    # Retrieve PM for last4/brand metadata
     pm = stripe.PaymentMethod.retrieve(payment_method_id)
     last4 = pm.card.last4 if pm.card else None
     brand = pm.card.brand if pm.card else None
@@ -531,7 +570,7 @@ def setup_payment_method_and_sign(token: str) -> Dict[str, Any]:
     r = requests.post(
         f"{BACKEND_URL}/public/contracts/{token}/sign",
         json={
-            "signature_name": COUPLE_NAME,
+            "signature_name": COUPLE_PARTNER1,
             "accept_terms": True,
             "stripe_customer_id": customer_id,
             "stripe_payment_method_id": payment_method_id,
@@ -589,7 +628,6 @@ def assert_deposit_charged(
     assert_eq("milestone.status", milestone.get("status"), "scheduled")
     assert_eq("milestone.amount", float(milestone.get("amount", 0)), MILESTONE_AMOUNT)
 
-    # Verify the PaymentIntent on Stripe routed to the planner's account.
     pi = stripe.PaymentIntent.retrieve(deposit["stripe_payment_intent_id"])
     transfer_dest = (pi.get("transfer_data") or {}).get("destination")
     assert_eq("deposit.transfer_data.destination", transfer_dest, planner_connect_id)
@@ -610,33 +648,41 @@ def phase_seed(mongo_db) -> Dict[str, Any]:
     planner_user_id = ensure_planner_registered(mongo_db)
     bypass_subscription_gate(mongo_db, planner_user_id)
     connect_id = ensure_planner_connect_account(mongo_db, planner_user_id)
-    wedding_id = ensure_test_wedding(mongo_db, planner_user_id)
-    token = insert_contract(mongo_db, planner_user_id, wedding_id)
+
+    planner_token = login(PLANNER_EMAIL, PLANNER_PASSWORD)
+    wedding_id = create_wedding(planner_token)
+    package_id = create_package(planner_token)
+    contract_token = send_package_to_couple(planner_token, package_id, wedding_id)
+
     return {
         "planner_user_id": planner_user_id,
+        "planner_token": planner_token,
         "connect_id": connect_id,
         "wedding_id": wedding_id,
-        "contract_token": token,
+        "package_id": package_id,
+        "contract_token": contract_token,
     }
 
 
-def phase_checkpoint_ui1_money_scheduled(state: Dict[str, Any]) -> None:
-    """Note: the Money page reads scheduled_payments. Before sign, those rows
-    don't exist yet (they're created by `_create_scheduled_payments` at sign
-    time). So at this checkpoint, there's nothing to see in Incoming for this
-    contract. We surface that explicitly so the user knows what to look at."""
+def phase_checkpoint_ui1(state: Dict[str, Any]) -> None:
+    """Pre-sign. The contract exists and the package shows
+    contracts_count=1, but `scheduled_payments` rows aren't created
+    until sign-time. So Money → Incoming should NOT yet have rows for
+    this contract. The package list should show the package as 'active'
+    with one contract sent."""
     checkpoint(
-        "UI-1 (pre-sign — Incoming should NOT yet show this contract)",
+        "UI-1 (pre-sign — package + contract exist, no schedule rows yet)",
         [
-            f"1. Open {FRONTEND_URL}/admin/planner/billing as planner:",
-            f"   {PLANNER_EMAIL} / {PLANNER_PASSWORD}",
-            "2. Go to Money in the sidebar → Incoming tab.",
-            "3. The new contract is in 'sent' status with no scheduled_payments",
-            "   yet, so it does NOT appear in Incoming. (Schedule rows are",
-            "   inserted by the sign endpoint.)",
-            "4. Confirm no surprise rows for our test couple (Contract Flow Couple).",
-            "5. Open the public contract URL to confirm it's signable:",
-            f"   {FRONTEND_URL}/contracts/{state['contract_token']}",
+            f"1. Open {FRONTEND_URL}/admin/login as planner:",
+            f"     {PLANNER_EMAIL} / {PLANNER_PASSWORD}",
+            f"2. /admin/weddings should list one wedding for {COUPLE_DISPLAY}",
+            f"   (date about {WEDDING_DATE_OFFSET_DAYS} days out).",
+            "3. /admin/packages should list 'Test Wedding Package — Contract",
+            "   Flow Verifier' as Active with 1 contract sent.",
+            "4. /admin/money → Incoming should NOT yet show payment rows for",
+            "   this contract. Schedule rows are inserted by the sign endpoint.",
+            "5. Public contract URL should be signable:",
+            f"     {FRONTEND_URL}/contracts/{state['contract_token']}",
         ],
     )
 
@@ -657,19 +703,18 @@ def phase_assert_deposit(mongo_db, state: Dict[str, Any]) -> None:
 
 def phase_checkpoint_ui2_couple(state: Dict[str, Any]) -> None:
     checkpoint(
-        "UI-2 (couple dashboard reflects the deposit)",
+        "UI-2 (couple-side Payments view reflects the deposit)",
         [
-            "1. Open the couple-side portal in a private window. Ideally",
-            "   sign in as the couple if you have credentials wired; if not,",
-            "   visit the public portal route via the contract token:",
-            f"   {FRONTEND_URL}/contracts/{state['contract_token']}",
-            "   (Or load /couple/dashboard if the test couple is provisioned.)",
-            "2. The Payments view should show:",
+            "1. The couple was sent a contract email with the public link",
+            f"     {FRONTEND_URL}/contracts/{state['contract_token']}",
+            "   Open it (private window if you want to confirm couple-side",
+            "   visibility independent of planner auth).",
+            "2. The Payments / Schedule view should show:",
             f"      Total = ${TOTAL_AMOUNT:.2f}",
             f"      Paid  = ${DEPOSIT_AMOUNT:.2f}",
             f"      Remaining = ${MILESTONE_AMOUNT:.2f}",
-            "3. The deposit row reads as 'Paid'.",
-            "4. The milestone row reads as 'Scheduled' (or 'Pending') with",
+            "3. The Deposit row reads as 'Paid'.",
+            "4. The Milestone row reads as 'Scheduled' (or 'Pending') with",
             "   a due date about 7 days from today.",
         ],
     )
@@ -680,9 +725,9 @@ def phase_checkpoint_ui3_money_after(state: Dict[str, Any]) -> None:
         "UI-3 (planner Money → Incoming reflects the deposit)",
         [
             f"1. Reload {FRONTEND_URL}/admin/money → Incoming tab.",
-            f"2. A row for {COUPLE_NAME} 'Deposit' appears with",
+            f"2. A row for {COUPLE_DISPLAY} 'Deposit' appears with",
             f"   status=Succeeded and amount ${DEPOSIT_AMOUNT:.2f}.",
-            f"3. A row for {COUPLE_NAME} 'Milestone payment' appears with",
+            f"3. A row for {COUPLE_DISPLAY} 'Milestone payment' appears with",
             f"   status=Scheduled and amount ${MILESTONE_AMOUNT:.2f}.",
             "4. The 'Card' column shows a Visa ending in 4242.",
             "5. Summary cards at the top reflect the new pending/incoming totals.",
@@ -695,7 +740,7 @@ def main() -> int:
     mongo_db = client[MONGO_DB]
 
     state = phase_seed(mongo_db)
-    phase_checkpoint_ui1_money_scheduled(state)
+    phase_checkpoint_ui1(state)
     phase_sign(state)
     phase_assert_deposit(mongo_db, state)
     phase_checkpoint_ui2_couple(state)

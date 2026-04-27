@@ -1,9 +1,17 @@
 #!/usr/bin/env python3
 """Clean up state from verify_planner_couple_contract_flow.py.
 
-Removes the test planner's contract row, scheduled_payments rows,
-test wedding, the planner user itself, and the Stripe Express test
-account that the verifier created. Safe to re-run.
+Removes:
+  - the planner user (test_planner+contractflow@…)
+  - the planner's Stripe Express test account
+  - the wedding rows the verifier seeded
+  - the package rows the verifier seeded
+  - the contract rows produced by send_package_to_couple
+  - all scheduled_payments rows for those contracts
+  - the Stripe Customer rows the contracts captured
+  - subscription / customer-link / team_member rows for the planner
+
+Safe to re-run.
 
 Usage:
     python testbed/cleanup_planner_couple_contract_flow_state.py
@@ -66,13 +74,14 @@ def cleanup() -> None:
     if user.get("stripe_connect_id"):
         delete_stripe_account(user["stripe_connect_id"])
 
-    # Find contracts owned by this planner with the test couple
+    # Contracts (any planner+couple match — covers send_package_to_couple
+    # output and any older direct-seed rows from prior versions of the
+    # driver).
     contracts = list(
         mongo["contracts"].find({"planner_id": user_id, "couple.email": COUPLE_EMAIL})
     )
     for contract in contracts:
         contract_id_str = str(contract["_id"])
-        # scheduled_payments rows
         sp_result = mongo["scheduled_payments"].delete_many(
             {"contract_id": contract_id_str}
         )
@@ -100,9 +109,31 @@ def cleanup() -> None:
         if result.deleted_count:
             logger.info("  ✅ contracts: removed %d", result.deleted_count)
 
-    # Test wedding
+    # Packages seeded by the verifier (matched by planner_id + name prefix
+    # so we don't accidentally drop unrelated packages the planner might
+    # have).
+    pkg_result = mongo["packages"].delete_many(
+        {
+            "planner_id": user_id,
+            "name": {"$regex": "^Test Wedding Package — Contract Flow Verifier"},
+        }
+    )
+    if pkg_result.deleted_count:
+        logger.info("  ✅ packages: removed %d", pkg_result.deleted_count)
+
+    # Wedding(s) seeded by the verifier. Match on planner + the seeded
+    # couple_names string so we don't drop unrelated weddings.
     w_result = mongo["weddings"].delete_many(
-        {"planner_id": user_id, "couple.email": COUPLE_EMAIL}
+        {
+            "$or": [
+                {"planner_id": user_id, "couple.email": COUPLE_EMAIL},
+                {"planner_id": user_id, "couple_names": {"$regex": "Alex Davis"}},
+                {
+                    "assigned_planner_id": user_id,
+                    "couple_names": {"$regex": "Alex Davis"},
+                },
+            ]
+        }
     )
     if w_result.deleted_count:
         logger.info("  ✅ weddings: removed %d", w_result.deleted_count)
