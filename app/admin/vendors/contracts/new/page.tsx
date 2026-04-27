@@ -182,6 +182,18 @@ export default function ContractCanvasPage() {
 
   // Handle vendor selection
   const handleSelectVendor = (vendor: VendorProfile) => {
+    // Validate wedding is selected BEFORE advancing — the wedding selector
+    // lives on this step but is visually disconnected from the vendor
+    // grid. Without this check, planners could pick a vendor without a
+    // wedding, sail through Template / Customize / Review, and only
+    // discover the missing wedding when the final create button rejects
+    // with "Please select a vendor and wedding" (handleCreateContract:506).
+    // By that point the wedding selector is no longer visible and the
+    // error reads as a vendor problem.
+    if (!draft.weddingId) {
+      toast.error('Pick a wedding first — the dropdown is at the top of this step.');
+      return;
+    }
     setDraft((prev) => ({
       ...prev,
       vendorId: vendor._id,
@@ -1139,10 +1151,14 @@ Contract Reference: {{contract_number}}`,
         {currentStep === 'review' && (
           <div className="space-y-6">
             <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-xl overflow-hidden">
-              {/* Header */}
-              <div className="bg-gradient-to-r from-wedding-navy via-purple-900 to-wedding-gold p-6 text-white">
+              {/* Header — brand palette only. Previously used a
+                  wedding-navy → purple-900 → wedding-gold gradient that
+                  wasn't a platform token combination. Switched to the
+                  wedding-rose → wedding-gold gradient used elsewhere in
+                  planner CTAs. */}
+              <div className="bg-gradient-to-r from-wedding-rose to-wedding-gold p-6 text-white">
                 <h2 className="text-2xl font-bold mb-1">Review Your Contract</h2>
-                <p className="text-blue-100">
+                <p className="text-white/80">
                   Please review all details before creating the contract
                 </p>
               </div>
@@ -1215,7 +1231,7 @@ Contract Reference: {{contract_number}}`,
                 <button
                   onClick={handleCreateContract}
                   disabled={loading || draft.totalAmount <= 0}
-                  className="px-8 py-2 bg-gradient-to-r from-purple-600 to-wedding-rose text-white rounded-lg font-semibold hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                  className="px-8 py-2 bg-wedding-rose hover:bg-wedding-gold text-white rounded-lg font-semibold disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-2"
                 >
                   {loading ? (
                     <>
