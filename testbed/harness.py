@@ -120,19 +120,20 @@ class TestbedConfig:
 
 @dataclass
 class PlannerSeed:
-    """Return value of `Harness.seed_planner_on_clock`.
+    """Return value of `Harness.seed_planner` and `Harness.seed_planner_on_clock`.
 
     Carries everything a driver needs to drive subsequent phases — the
     Stripe customer + subscription ids, the Mongo user_id, and the clock id
-    the customer is pinned to (for future advances).
+    the customer is pinned to (or None when the customer was created
+    clockless via `seed_planner`).
     """
 
-    clock_id: str
     customer_id: str
     subscription_id: str
     user_id: str
     email: str
     plan_id: str
+    clock_id: Optional[str] = None
     has_trial: bool = False
 
 
@@ -805,11 +806,10 @@ class Harness:
         )
         return subscription
 
-    def seed_planner_on_clock(
+    def seed_planner(
         self,
         *,
         admin_token: str,
-        clock_id: str,
         email: str,
         password: str,
         plan_id: str,
@@ -819,34 +819,63 @@ class Harness:
         pm_token: Optional[str] = PM_TOKEN_GOOD,
         trial_days: Optional[int] = None,
         customer_metadata: Optional[dict] = None,
+        clock_id: Optional[str] = None,
     ) -> PlannerSeed:
-        """End-to-end planner bootstrap on a test clock.
+        """End-to-end planner bootstrap. **No clock by default.**
 
-        The 6-step arc that every planner-lifecycle driver shares:
+        Use this for tests that don't need to advance Stripe time —
+        contract / package / vendor flows, anything verified at the moment
+        of the action. For tests that need to drive subscription state
+        through time (renewals, trial expiry, past_due transitions, the
+        autopilot installment cron), use `seed_planner_on_clock` which
+        delegates here with `clock_id` set.
 
-          1. Create Stripe customer on clock
-          2. /public/register
-          3. Activate (is_active + email_verified)
-          4. Link Stripe customer ↔ user_id
+        The 6-step arc every planner-lifecycle driver shares:
+
+          1. Create Stripe customer (clock-pinned if `clock_id`, else plain)
+          2. POST /public/register
+          3. Activate (is_active + email_verified harness bypass)
+          4. Link Stripe customer ↔ user_id (so webhooks resolve)
           5. Attach payment method (unless pm_token=None, e.g. trial-only)
-          6. Create subscription (with or without trial)
+          6. Create real Stripe subscription → webhook flips
+             users.subscription_status=active
 
         Returns a PlannerSeed with every id the driver needs.
 
         pm_token=None is allowed for scenarios that want to exercise the
         "no PM on file" path — e.g. test that a trial without PM expires to
         `expired` rather than trying to charge. Default is PM_TOKEN_GOOD.
-        """
-        self.log.info(f"Seeding planner {email} on clock {clock_id}…")
 
-        # 1. Stripe customer on clock.
-        customer = self.create_customer_on_clock(
-            clock_id,
-            email=email,
-            name=f"{first_name} {last_name}",
-            plan_id=plan_id,
-            **(customer_metadata or {}),
+        Adding a clock just for the customer when no time advancement is
+        required is overhead with no benefit — use the clockless default.
+        """
+        self.log.info(
+            f"Seeding planner {email}"
+            + (f" on clock {clock_id}" if clock_id else " (clockless)")
+            + "…"
         )
+
+        # 1. Stripe customer.
+        if clock_id:
+            customer = self.create_customer_on_clock(
+                clock_id,
+                email=email,
+                name=f"{first_name} {last_name}",
+                plan_id=plan_id,
+                **(customer_metadata or {}),
+            )
+        else:
+            meta = {
+                "driver": self.driver_name,
+                "plan_id": plan_id,
+                **(customer_metadata or {}),
+            }
+            customer = stripe.Customer.create(
+                email=email,
+                name=f"{first_name} {last_name}",
+                metadata=meta,
+            )
+            self.log.info(f"  ✅ Stripe customer: {customer.id}")
 
         # 2. Register.
         self.register_planner(
@@ -871,7 +900,7 @@ class Harness:
             self.attach_payment_method(customer.id, pm_token)
             self.log.info(f"  ✅ Payment method attached ({pm_token})")
 
-        # 6. Subscribe.
+        # 6. Subscribe (real Stripe Subscription; webhook flips Mongo state).
         subscription = self.subscribe_planner(
             admin_token=admin_token,
             customer_id=customer.id,
@@ -882,13 +911,52 @@ class Harness:
         self.wait_for_webhooks()
 
         return PlannerSeed(
-            clock_id=clock_id,
             customer_id=customer.id,
             subscription_id=subscription.id,
             user_id=user_id,
             email=email,
             plan_id=plan_id,
+            clock_id=clock_id,
             has_trial=trial_days is not None,
+        )
+
+    def seed_planner_on_clock(
+        self,
+        *,
+        admin_token: str,
+        clock_id: str,
+        email: str,
+        password: str,
+        plan_id: str,
+        first_name: str = "Testbed",
+        last_name: str = "Planner",
+        company_name: str = "Testbed QA Co",
+        pm_token: Optional[str] = PM_TOKEN_GOOD,
+        trial_days: Optional[int] = None,
+        customer_metadata: Optional[dict] = None,
+    ) -> PlannerSeed:
+        """Same as `seed_planner` but pins the Stripe customer to a test clock.
+
+        Use when the test needs to advance time (subscription renewals,
+        trial expiry, past_due transitions, autopilot installment cron).
+        For one-shot tests that don't drive subscription state through
+        time, use `seed_planner` directly — adding a clock costs you a
+        cleanup obligation for no gain.
+
+        Thin delegating wrapper — all logic lives in `seed_planner`.
+        """
+        return self.seed_planner(
+            admin_token=admin_token,
+            email=email,
+            password=password,
+            plan_id=plan_id,
+            first_name=first_name,
+            last_name=last_name,
+            company_name=company_name,
+            pm_token=pm_token,
+            trial_days=trial_days,
+            customer_metadata=customer_metadata,
+            clock_id=clock_id,
         )
 
     # ------------------------------------------------------------------
@@ -946,3 +1014,414 @@ class Harness:
         secs = seconds if seconds is not None else self.config.webhook_settle_seconds
         self.log.info(f"  ⏳ Waiting {secs}s for Stripe webhooks to settle…")
         time.sleep(secs)
+
+    # ------------------------------------------------------------------
+    # Stripe Connect (Express) helpers
+    # ------------------------------------------------------------------
+
+    def ensure_connect_account(
+        self,
+        *,
+        user_id: str,
+        email: str,
+        country: str = "US",
+    ) -> str:
+        """Ensure the planner has a Stripe Connect Express account, idempotent.
+
+        Returns the connect account id. If the user already has
+        `stripe_connect_id` on their Mongo doc, returns it as-is. Otherwise
+        creates a fresh Express account via Stripe and persists the id on
+        the user document. Does NOT complete onboarding —
+        `charges_enabled=False` is the expected post-create state until the
+        planner walks the hosted onboarding flow.
+
+        Use `wait_for_connect_charges_enabled` after onboarding to poll the
+        ready state.
+
+        Raises SystemExit with a clear message if the platform Stripe
+        account hasn't signed up for Connect at all (one-time setup at
+        https://dashboard.stripe.com/test/connect).
+        """
+        user = self.get_user_doc(user_id)
+        if user and user.get("stripe_connect_id"):
+            self.log.info(
+                f"  ✅ Stripe Connect account already attached: {user['stripe_connect_id']}"
+            )
+            return user["stripe_connect_id"]
+
+        try:
+            account = stripe.Account.create(
+                type="express",
+                country=country,
+                email=email,
+                capabilities={
+                    "card_payments": {"requested": True},
+                    "transfers": {"requested": True},
+                },
+                business_type="individual",
+                business_profile={
+                    "url": "https://thespecialwedding.io",
+                    "mcc": "7299",
+                    "product_description": "Wedding planning services (test)",
+                },
+            )
+        except stripe.error.InvalidRequestError as exc:
+            if "signed up for Connect" in str(exc):
+                raise SystemExit(
+                    "Stripe Connect is not enabled for this test account.\n"
+                    "Visit https://dashboard.stripe.com/test/connect and click "
+                    "'Get started' (one-time, free)."
+                )
+            raise
+
+        self.mongo["users"].update_one(
+            {"_id": ObjectId(user_id)},
+            {"$set": {"stripe_connect_id": account.id}},
+        )
+        self.log.info(
+            f"  ✅ Stripe Connect account: {account.id} (charges_enabled=False until onboarding)"
+        )
+        return account.id
+
+    def create_account_link(self, account_id: str, return_url: str) -> str:
+        """Generate a Stripe AccountLink URL for hosted onboarding.
+
+        Use the returned URL with checkpoint() — the planner clicks through
+        Stripe's hosted form (using "Use test data" buttons) and gets
+        redirected back to return_url.
+        """
+        link = stripe.AccountLink.create(
+            account=account_id,
+            refresh_url=return_url,
+            return_url=return_url,
+            type="account_onboarding",
+        )
+        return link.url
+
+    def wait_for_connect_charges_enabled(
+        self,
+        account_id: str,
+        max_polls: int = 24,
+        poll_interval: int = 5,
+    ) -> None:
+        """Poll Stripe until the connected account flips charges_enabled=True.
+
+        Raises RuntimeError if it never flips (typically means onboarding
+        wasn't completed or capability requirements remain).
+        """
+        for attempt in range(1, max_polls + 1):
+            account = stripe.Account.retrieve(account_id)
+            if account.charges_enabled:
+                self.log.info(f"  ✅ charges_enabled=True (poll {attempt}/{max_polls})")
+                return
+            self.log.info(f"  ⏳ charges_enabled=False (poll {attempt}/{max_polls})")
+            time.sleep(poll_interval)
+        raise RuntimeError(
+            f"Stripe Connect account {account_id} never flipped charges_enabled=True"
+        )
+
+    def delete_connect_account(self, account_id: str) -> None:
+        """Delete a Stripe Express account. Cleanup helper — swallows
+        already-deleted errors with a warning so cleanup scripts stay
+        idempotent."""
+        try:
+            stripe.Account.delete(account_id)
+            self.log.info(f"  ✅ Deleted Stripe Express account {account_id}")
+        except stripe.error.StripeError as exc:
+            self.log.warning(f"  ⚠️ Could not delete Stripe account {account_id}: {exc}")
+
+    # ------------------------------------------------------------------
+    # Wedding + Couple helpers (planner-side)
+    # ------------------------------------------------------------------
+
+    def create_wedding(
+        self,
+        *,
+        planner_token: str,
+        couple_names: str,
+        date_iso: str,
+        guest_count: Optional[int] = None,
+        venue: Optional[str] = None,
+        status: str = "active",
+    ) -> str:
+        """POST /admin/weddings — create a real wedding row through the
+        production code path.
+
+        `couple_names` is a string only (e.g. "Alex & Jamie"). It is NOT a
+        link to a couple user — that link is established later via
+        `invite_couple_to_wedding`. Until invited, the couple has no portal
+        account.
+
+        Returns the wedding id (typically `wedding_<hex>`).
+        """
+        payload: dict = {
+            "couple_names": couple_names,
+            "date": date_iso,
+            "status": status,
+        }
+        if guest_count is not None:
+            payload["guest_count"] = guest_count
+        if venue is not None:
+            payload["venue"] = venue
+
+        resp = self.api_post("/admin/weddings", token=planner_token, json=payload)
+        if resp.status_code not in (200, 201):
+            raise RuntimeError(f"wedding create failed: {resp.status_code} {resp.text}")
+        body = resp.json()
+        wedding_id = (
+            body.get("id")
+            or body.get("_id")
+            or (body.get("wedding") or {}).get("id")
+            or (body.get("wedding") or {}).get("_id")
+        )
+        if not wedding_id:
+            raise RuntimeError(f"wedding create: no id in response {body!r}")
+        self.log.info(
+            f"  ✅ Created wedding: {wedding_id} ({couple_names}, {date_iso})"
+        )
+        return str(wedding_id)
+
+    def invite_couple_to_wedding(
+        self,
+        *,
+        planner_token: str,
+        wedding_id: str,
+        email: str,
+        partner1_name: str,
+        partner2_name: Optional[str] = None,
+    ) -> dict:
+        """POST /admin/couple-portal/invite — invite a couple to the wedding's
+        couple portal.
+
+        Returns the response payload, which includes `setup_link` — the
+        couple-side URL where the couple sets up their own credentials.
+        Production planners share this link via email; tests can either
+        complete the setup programmatically (TODO: add helper) or pause
+        for manual setup at a checkpoint.
+
+        Without this step, the couple is just a `couple_names` string on
+        the wedding — they have no portal account, no login, no
+        `/couple/dashboard` access.
+        """
+        payload: dict = {
+            "email": email,
+            "partner1_name": partner1_name,
+            "wedding_id": wedding_id,
+        }
+        if partner2_name:
+            payload["partner2_name"] = partner2_name
+        resp = self.api_post(
+            "/admin/couple-portal/invite", token=planner_token, json=payload
+        )
+        if resp.status_code not in (200, 201):
+            raise RuntimeError(f"couple invite failed: {resp.status_code} {resp.text}")
+        body = resp.json()
+        self.log.info(
+            f"  ✅ Couple invited: {email} → setup_link={body.get('setup_link', '(not in response)')[:60]}…"
+        )
+        return body
+
+    # ------------------------------------------------------------------
+    # Package helpers (planner-side)
+    # ------------------------------------------------------------------
+
+    def create_package(
+        self,
+        *,
+        planner_token: str,
+        name: str,
+        total_amount: float,
+        services: Optional[list[dict]] = None,
+        payment_schedule: Optional[list[dict]] = None,
+        description: str = "",
+        currency: str = "usd",
+        cancellation_policy: str = "",
+        status: str = "active",
+    ) -> str:
+        """POST /admin/packages — create a real package through the
+        production code path.
+
+        `payment_schedule` items shape (validated by ScheduleItemRequest):
+          - name: str (required)
+          - trigger: "on_signing" | "days_after_signing" | "days_before_wedding" | "fixed_date"
+          - days_after / days_before / fixed_date as appropriate
+          - amount XOR percentage (production UI uses percentage; backend
+            accepts either)
+
+        Status defaults to "active" so the package is immediately
+        sendable. "draft" status blocks send_to_couple.
+
+        Returns the package id (24-char hex ObjectId stringified).
+        """
+        payload: dict = {
+            "name": name,
+            "description": description,
+            "services": services or [],
+            "total_amount": total_amount,
+            "currency": currency,
+            "payment_schedule": payment_schedule or [],
+            "cancellation_policy": cancellation_policy,
+            "status": status,
+        }
+        resp = self.api_post("/admin/packages", token=planner_token, json=payload)
+        if resp.status_code not in (200, 201):
+            raise RuntimeError(f"package create failed: {resp.status_code} {resp.text}")
+        body = resp.json()
+        package = body.get("package") or body
+        package_id = package.get("id") or package.get("_id")
+        if not package_id:
+            raise RuntimeError(f"package create: no id in response {body!r}")
+        self.log.info(
+            f"  ✅ Created package: {package_id} "
+            f"(${total_amount:.2f} {currency.upper()}, status={status})"
+        )
+        return str(package_id)
+
+    def send_package_to_couple(
+        self,
+        *,
+        planner_token: str,
+        package_id: str,
+        wedding_id: str,
+        couple_email: str,
+        partner1_name: str,
+        partner2_name: Optional[str] = None,
+    ) -> str:
+        """POST /admin/packages/{id}/send — send a package to a couple,
+        producing a public-token contract row through `package_service.send_to_couple`.
+
+        IMPORTANT: This requires `RESEND_API_KEY` in .env. The send_to_couple
+        service unconditionally emails the couple after creating the
+        contract row, and ROLLS BACK the row if the email fails. So drivers
+        must validate RESEND_API_KEY at startup.
+
+        Returns the public contract token. The couple uses the token to
+        open `/contracts/{token}` (no auth required) and sign +
+        capture-card via SetupIntent.
+        """
+        payload: dict = {
+            "couple": {
+                "partner1_name": partner1_name,
+                "email": couple_email,
+            },
+            "wedding_id": wedding_id,
+        }
+        if partner2_name:
+            payload["couple"]["partner2_name"] = partner2_name
+        resp = self.api_post(
+            f"/admin/packages/{package_id}/send",
+            token=planner_token,
+            json=payload,
+        )
+        if resp.status_code not in (200, 201):
+            raise RuntimeError(f"package send failed: {resp.status_code} {resp.text}")
+        body = resp.json()
+        contract = body.get("contract") or body
+        token = contract.get("token") or contract.get("public_token")
+        if not token:
+            raise RuntimeError(f"package send: no token in response {body!r}")
+        self.log.info(f"  ✅ Sent package — contract token: {token}")
+        return token
+
+    # ------------------------------------------------------------------
+    # Contract sign helpers (couple-side, public-token)
+    # ------------------------------------------------------------------
+
+    def init_contract_setup_intent(self, contract_token: str) -> dict:
+        """POST /public/contracts/{token}/setup-intent — initialize the
+        SetupIntent for capturing the couple's payment method.
+
+        No auth required; the contract token is the gate. Returns
+        {customer_id, client_secret, setup_intent_id} — `setup_intent_id`
+        is parsed from the client_secret since Stripe's secret format is
+        always `<si_id>_secret_<random>`.
+        """
+        resp = requests.post(
+            f"{self.config.backend_url}/public/contracts/{contract_token}/setup-intent",
+            timeout=15,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+        client_secret = data["client_secret"]
+        setup_intent_id = client_secret.split("_secret_")[0]
+        self.log.info(
+            f"  ✅ SetupIntent initialized: customer={data['customer_id']} "
+            f"setup_intent={setup_intent_id}"
+        )
+        return {
+            "customer_id": data["customer_id"],
+            "client_secret": client_secret,
+            "setup_intent_id": setup_intent_id,
+        }
+
+    def confirm_setup_intent_with_test_pm(
+        self, setup_intent_id: str, pm_token: str = PM_TOKEN_GOOD
+    ) -> dict:
+        """Confirm a Stripe SetupIntent server-side using a pre-built test
+        PaymentMethod token (default: pm_card_visa).
+
+        In test mode this completes without 3DS step-up. Returns
+        {payment_method_id, last4, brand} for use with sign_contract.
+        Raises if the SetupIntent doesn't reach `succeeded`.
+        """
+        intent = stripe.SetupIntent.confirm(setup_intent_id, payment_method=pm_token)
+        if intent.status != "succeeded":
+            raise RuntimeError(
+                f"SetupIntent confirm did not succeed: status={intent.status}"
+            )
+        pm = stripe.PaymentMethod.retrieve(intent.payment_method)
+        last4 = pm.card.last4 if pm.card else None
+        brand = pm.card.brand if pm.card else None
+        self.log.info(
+            f"  ✅ SetupIntent confirmed: pm={intent.payment_method} ({brand} •••• {last4})"
+        )
+        return {
+            "payment_method_id": intent.payment_method,
+            "last4": last4,
+            "brand": brand,
+        }
+
+    def sign_contract(
+        self,
+        *,
+        contract_token: str,
+        signature_name: str,
+        customer_id: str,
+        payment_method_id: str,
+        setup_intent_id: str,
+        last4: Optional[str] = None,
+        brand: Optional[str] = None,
+    ) -> dict:
+        """POST /public/contracts/{token}/sign — sign the contract.
+
+        Triggers `contract_service.sign_contract` server-side which:
+          1. Marks the contract `signed`
+          2. Creates `scheduled_payments` rows from the package schedule
+          3. Auto-charges the on_signing deposit through Stripe with
+             transfer_data.destination = the planner's stripe_connect_id
+
+        Returns the response body (includes `contract` with
+        `scheduled_payments`, `deposit_processed`, etc.).
+        """
+        resp = requests.post(
+            f"{self.config.backend_url}/public/contracts/{contract_token}/sign",
+            json={
+                "signature_name": signature_name,
+                "accept_terms": True,
+                "stripe_customer_id": customer_id,
+                "stripe_payment_method_id": payment_method_id,
+                "setup_intent_id": setup_intent_id,
+                "payment_method_last4": last4,
+                "payment_method_brand": brand,
+            },
+            timeout=30,
+        )
+        if resp.status_code != 200:
+            raise RuntimeError(f"sign failed: {resp.status_code} {resp.text}")
+        body = resp.json()
+        contract = body.get("contract") or {}
+        self.log.info(
+            f"  ✅ Contract signed. deposit_processed={contract.get('deposit_processed')} "
+            f"scheduled_payments={len(contract.get('scheduled_payments') or [])}"
+        )
+        return body
