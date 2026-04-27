@@ -401,10 +401,10 @@ async def _compute_error_scope_summary(
 def _generate_troubleshooting_hints(error_detail: Dict[str, Any]) -> List[str]:
     """Generate contextual troubleshooting hints based on error details."""
     hints: List[str] = []
-    error_type = error_detail.get("exception_type", "")
+    error_type = str(error_detail.get("exception_type") or "")
     status_code = error_detail.get("status_code")
-    endpoint = error_detail.get("endpoint", "")
-    stack_trace = error_detail.get("stack_trace", "")
+    endpoint = str(error_detail.get("endpoint") or "")
+    stack_trace = str(error_detail.get("stack_trace") or "")
 
     # Status code based hints
     if status_code == 401:
@@ -1454,6 +1454,8 @@ async def get_error_details(
 
         return _extract_error_detail(error)
 
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Failed to get error details: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))

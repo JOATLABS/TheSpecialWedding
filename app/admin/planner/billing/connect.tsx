@@ -1,9 +1,10 @@
 "use client";
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState } from 'react';
 import { Button } from '@/components/ui/Button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/Card';
 import { useAdmin } from '@/contexts/AdminContext';
+import { useStripeConnect } from '@/hooks/useStripeConnect';
 import { Loader2, CheckCircle2, AlertCircle, ExternalLink } from 'lucide-react';
 import { toast } from 'sonner';
 import { getApiBaseUrl } from '@/utils/env';
@@ -38,44 +39,17 @@ const SUPPORTED_COUNTRIES = [
 export default function StripeConnectCard() {
   const { token } = useAdmin();
   const apiBaseUrl = getApiBaseUrl();
-  const [loading, setLoading] = useState(true);
-  const [connectStatus, setConnectStatus] = useState<{
-    status: string;
-    charges_enabled: boolean;
-    payouts_enabled: boolean;
-    details_submitted: boolean;
-  } | null>(null);
+  // Connect status now lives in a shared hook so the parent page can read
+  // the same state to gate the "Request payment" CTA. `onboarding` is the
+  // local "starting Stripe onboarding" loading flag — kept separate from
+  // the hook's `loading` so we don't unmount the card mid-redirect.
+  const { status: connectStatus, loading: statusLoading } = useStripeConnect();
+  const [onboarding, setOnboarding] = useState(false);
   const [selectedCountry, setSelectedCountry] = useState('US');
-
-  const checkStatus = useCallback(async () => {
-    try {
-      if (!token) return;
-
-      const response = await fetch(`${apiBaseUrl}/stripe/connect/status`, {
-        headers: {
-          'Authorization': `Bearer ${token}`
-        },
-        credentials: 'include',
-      });
-
-      if (response.ok) {
-        const data = await response.json();
-        setConnectStatus(data);
-      }
-    } catch (error) {
-      console.error('Failed to check connect status', error);
-    } finally {
-      setLoading(false);
-    }
-  }, [apiBaseUrl, token]);
-
-  useEffect(() => {
-    checkStatus();
-  }, [checkStatus]);
 
   const handleConnect = async () => {
     try {
-      setLoading(true);
+      setOnboarding(true);
       const response = await fetch(`${apiBaseUrl}/stripe/connect/onboard`, {
         method: 'POST',
         headers: {
@@ -99,11 +73,11 @@ export default function StripeConnectCard() {
     } catch (error) {
       console.error('Connect error:', error);
       toast.error('Failed to connect with Stripe');
-      setLoading(false);
+      setOnboarding(false);
     }
   };
 
-  if (loading) {
+  if (statusLoading || onboarding) {
     return (
       <Card>
         <CardContent className="py-6 flex justify-center">
@@ -116,14 +90,25 @@ export default function StripeConnectCard() {
   const isConnected = connectStatus?.details_submitted && connectStatus?.charges_enabled;
 
   return (
-    <Card className="bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700">
-      <CardHeader>
-        <CardTitle className="text-gray-900 dark:text-gray-100 flex items-center gap-2">
-          Stripe Connect
+    // p-6 added — every other Card on this page wraps its CardHeader/Content
+    // with that padding (see Subscription / Payment Method / Billing History).
+    // Without it the title and bullets butt against the rounded edge.
+    <Card className="bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700 p-6">
+      <CardHeader className="pb-4">
+        {/* Use the platform's default CardTitle styling — text-2xl
+            font-elegant text-wedding-navy from app/components/ui/Card.tsx.
+            Matches "Your Subscription", "Payment Method", "Billing History"
+            on the My Subscription tab so this card sits in the same
+            visual rhythm. Sidebar cards downsize to text-base
+            (Usage This Period / Plan Features) — that's a sidebar pattern,
+            NOT a main-column pattern. */}
+        <CardTitle className="flex items-center gap-2">
+          Get paid through Stripe
           {isConnected && <CheckCircle2 className="w-5 h-5 text-green-500" />}
         </CardTitle>
         <CardDescription>
-          Connect your account to receive payments from clients and pay vendors.
+          Connect a Stripe account to invoice couples and receive payments
+          directly to your bank.
         </CardDescription>
       </CardHeader>
       <CardContent>
@@ -131,7 +116,7 @@ export default function StripeConnectCard() {
           <div className="space-y-4">
             <div className="flex items-center gap-2 text-green-600 dark:text-green-400 bg-green-50 dark:bg-green-900/20 p-3 rounded-lg">
               <CheckCircle2 className="w-5 h-5" />
-              <span className="font-medium">Your account is connected and ready to process payments.</span>
+              <span className="font-medium">Stripe is connected. You can request payments from any couple.</span>
             </div>
             <div className="grid grid-cols-2 gap-4 text-sm">
               <div className="flex justify-between p-2 bg-gray-50 dark:bg-gray-700 rounded">
@@ -161,12 +146,26 @@ export default function StripeConnectCard() {
           </div>
         ) : (
           <div className="space-y-4">
-             <div className="bg-blue-50 dark:bg-blue-900/20 p-4 rounded-lg">
-               <h4 className="font-medium text-blue-900 dark:text-blue-100 mb-1">Why connect?</h4>
-               <ul className="text-sm text-blue-700 dark:text-blue-300 space-y-1 list-disc list-inside">
-                 <li>Receive direct payments from couples</li>
-                 <li>Pay vendors directly from the platform</li>
-                 <li>Automated invoicing and receipts</li>
+             {/* Rebuilt the "Why connect?" callout: dropped blue-on-blue text
+                 (read as hyperlinks per the platform visual audit doc), used
+                 neutral slate text with check icons matching the Plan Features
+                 list. Also removed "Pay vendors directly" — vendor payouts are
+                 in the separate vendor-portal scope, not this surface. */}
+             <div className="rounded-lg border border-slate-200 bg-slate-50 p-4 dark:border-slate-700 dark:bg-slate-800/50">
+               <h4 className="text-sm font-semibold text-slate-900 dark:text-slate-100 mb-2">What you get</h4>
+               <ul className="space-y-2 text-sm text-slate-700 dark:text-slate-300">
+                 <li className="flex items-start gap-2">
+                   <CheckCircle2 className="w-4 h-4 text-green-500 flex-shrink-0 mt-0.5" />
+                   <span>Send branded payment links to couples</span>
+                 </li>
+                 <li className="flex items-start gap-2">
+                   <CheckCircle2 className="w-4 h-4 text-green-500 flex-shrink-0 mt-0.5" />
+                   <span>Collect deposits, milestones, and final balances directly</span>
+                 </li>
+                 <li className="flex items-start gap-2">
+                   <CheckCircle2 className="w-4 h-4 text-green-500 flex-shrink-0 mt-0.5" />
+                   <span>Automatic email receipts after every payment</span>
+                 </li>
                </ul>
              </div>
 
@@ -179,7 +178,7 @@ export default function StripeConnectCard() {
                  value={selectedCountry}
                  onChange={(e) => setSelectedCountry(e.target.value)}
                  aria-describedby="country-help"
-                 className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-[#635BFF]"
+                 className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-wedding-rose"
                >
                  {SUPPORTED_COUNTRIES.map((country) => (
                    <option key={country.code} value={country.code}>
@@ -188,15 +187,18 @@ export default function StripeConnectCard() {
                  ))}
                </select>
                <p id="country-help" className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                 Select the country where your business is registered
+                 Where your business is registered.
                </p>
              </div>
 
+             {/* Replaced raw Stripe purple #635BFF with the planner brand
+                 token used everywhere else (wedding-rose / wedding-gold
+                 hover, same as profile page CTAs). */}
              <Button
                onClick={handleConnect}
-               className="w-full bg-[#635BFF] hover:bg-[#534be0] text-white font-medium"
+               className="w-full bg-wedding-rose hover:bg-wedding-gold text-white font-medium"
              >
-               Connect with Stripe
+               Connect Stripe account
              </Button>
           </div>
         )}

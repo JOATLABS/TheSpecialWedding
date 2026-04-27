@@ -681,6 +681,69 @@ class GuestMediaService:
                 status_code=400, detail="Batch uploads must be 500 MB or smaller"
             )
 
+        # Storage hard-cap pre-flight. Guest memories are the
+        # dominant per-wedding cost driver and the only uploader
+        # path that is unauthenticated (guests hit it via a token
+        # link), so if a planner's tenancy is at cap we must
+        # reject *here* before the presigned URLs are handed out.
+        # The planner user_id/email is resolved from the wedding
+        # document; we then ask ``subscription_service`` for the
+        # authoritative live usage number.
+        planner_id = wedding.get("assigned_planner_id")
+        planner_email = wedding.get("assigned_planner_email")
+        planner_user = None
+        if planner_id:
+            from app.utils.planner_ownership import normalize_query_id
+
+            planner_user = await mongo.get_users_collection().find_one(
+                {"_id": normalize_query_id(planner_id)},
+                {"_id": 1, "is_root_admin": 1},
+            )
+        if planner_user is None and planner_email:
+            planner_user = await mongo.get_users_collection().find_one(
+                {"email": planner_email},
+                {"_id": 1, "is_root_admin": 1},
+            )
+
+        # Root-admin-owned weddings bypass the cap (same pattern
+        # as the weddings cap). Otherwise, call into
+        # ``SubscriptionService.check_usage_limits`` with the
+        # *bytes* we're about to reserve. No subscription =>
+        # nothing to enforce against (handled gracefully below).
+        if planner_user and not planner_user.get("is_root_admin"):
+            from app.services.subscription_service import SubscriptionService
+
+            subscription_service = SubscriptionService()
+            try:
+                storage_check = await subscription_service.check_usage_limits(
+                    user_id=str(planner_user["_id"]),
+                    resource_type="storage",
+                    requested_amount=total_size_bytes,
+                )
+            except HTTPException as exc:
+                # 403 "No active subscription" — let the upload
+                # proceed rather than blocking guests. The planner
+                # has bigger problems than a storage cap if they
+                # have no subscription; surfacing a 402 to guests
+                # here would be confusing.
+                if exc.status_code == 403:
+                    storage_check = {"allowed": True}
+                else:
+                    raise
+            if storage_check.get("allowed") is False:
+                raise HTTPException(
+                    status_code=402,
+                    detail={
+                        "error": "storage_limit_reached",
+                        "message": storage_check.get(
+                            "message",
+                            "Planner storage limit reached — uploads are paused until space is freed.",
+                        ),
+                        "current_usage_gb": storage_check.get("current_usage_gb"),
+                        "limit_gb": storage_check.get("limit_gb"),
+                    },
+                )
+
         upload_batch_id = hashlib.sha1(
             f"{slug}:{cleaned_name}:{datetime.now(timezone.utc).isoformat()}".encode(
                 "utf-8"

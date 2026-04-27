@@ -15,8 +15,8 @@ os.environ.setdefault("SECRET_KEY", "test-secret")
 os.environ.setdefault("ALGORITHM", "HS256")
 os.environ.setdefault("API_KEY", "test-api-key")
 
-import app.services.form_service as form_service_module
-from app.models.form import DuplicateFormRequest
+import app.services.form_service as form_service_module  # noqa: E402
+from app.models.form import DuplicateFormRequest  # noqa: E402
 
 
 class FakeMongo:
@@ -159,7 +159,9 @@ def _sample_form_doc(created_by: str, **overrides):
 
 
 @pytest.mark.asyncio
-async def test_duplicate_form_copies_structure_and_resets_submission_state(form_service):
+async def test_duplicate_form_copies_structure_and_resets_submission_state(
+    form_service,
+):
     service, database = form_service
     planner_email = "planner@example.com"
 

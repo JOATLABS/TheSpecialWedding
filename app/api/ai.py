@@ -2200,7 +2200,10 @@ async def check_ai_credits(
         except ValueError as e:
             raise HTTPException(status_code=400, detail=str(e))
     else:
-        # Return general credit info
+        # Return general credit info. AI credits are now soft-capped with
+        # metered overage billing — pass the overage fields through so the
+        # planner billing UI can render the overage banner and running cost.
+        # See SubscriptionService.check_usage_limits() ai_credits branch.
         from app.services.subscription_service import SubscriptionService
 
         sub_service = SubscriptionService()
@@ -2210,6 +2213,17 @@ async def check_ai_credits(
         return {
             "credits_remaining": result.get("remaining", 0),
             "credits_limit": result.get("limit", 0),
+            # The ai_credits branch in check_usage_limits returns
+            # ``current_usage``; ``used`` is a legacy alias other branches
+            # don't emit. Fall back to ``used`` only if ``current_usage`` is
+            # missing so we stay forward-compatible.
+            "credits_used": result.get("current_usage", result.get("used", 0)),
+            "overage": result.get("overage", False),
+            "overage_credits": result.get("overage_credits", 0),
+            "overage_price_per_credit_usd": result.get(
+                "overage_price_per_credit_usd", 0.0
+            ),
+            "overage_cost_cents": result.get("overage_cost_cents", 0),
         }
 
 

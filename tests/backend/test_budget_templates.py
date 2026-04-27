@@ -13,7 +13,7 @@ os.environ.setdefault("SECRET_KEY", "test-secret")
 os.environ.setdefault("ALGORITHM", "HS256")
 os.environ.setdefault("API_KEY", "test-api-key")
 
-import app.services.budget_service as budget_module
+import app.services.budget_service as budget_module  # noqa: E402
 
 
 class FakeMongo:

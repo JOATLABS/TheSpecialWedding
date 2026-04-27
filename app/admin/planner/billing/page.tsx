@@ -38,6 +38,7 @@ import StripeConnectCard from './connect';
 import { CollectPaymentModal } from '@/components/payments/CollectPaymentModal';
 import { usePagination } from '@/admin/hooks/usePagination';
 import { GlassPagination } from '@/admin/components/ui/glass/GlassPagination';
+import { useStripeConnect } from '@/hooks/useStripeConnect';
 
 interface SubscriptionPlan {
   _id: string;
@@ -78,6 +79,15 @@ interface UsageStats {
   storage_used_gb: number;
   ai_credits_used: number;
   ai_credits_remaining: number;
+  // AI credits are soft-capped with metered overage billing. When `overage`
+  // is true, `overage_credits` is the count past the included allotment and
+  // `overage_cost_cents` is the running charge for the current cycle at
+  // `overage_price_per_credit_usd`. The backend computes all three via
+  // SubscriptionService.check_usage_limits("ai_credits"); see /admin/ai/credits.
+  ai_overage?: boolean;
+  ai_overage_credits?: number;
+  ai_overage_cost_cents?: number;
+  ai_overage_price_per_credit_usd?: number;
 }
 
 interface Invoice {
@@ -119,7 +129,7 @@ export default function PlannerBillingPage() {
   const portalRetryCountRef = useRef(0);
   const { userProfile, token, fetchUserProfile } = useAdmin();
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<'subscription' | 'client_payments'>('subscription');
+  const [activeTab, setActiveTab] = useState<'subscription' | 'couple_payments'>('subscription');
   const [plans, setPlans] = useState<SubscriptionPlan[]>([]);
   const [currentSubscription, setCurrentSubscription] = useState<UserSubscription | null>(null);
   const [currentPlan, setCurrentPlan] = useState<SubscriptionPlan | null>(null);
@@ -128,13 +138,21 @@ export default function PlannerBillingPage() {
     total_guests: 0,
     storage_used_gb: 0,
     ai_credits_used: 0,
-    ai_credits_remaining: 100
+    ai_credits_remaining: 100,
+    ai_overage: false,
+    ai_overage_credits: 0,
+    ai_overage_cost_cents: 0,
+    ai_overage_price_per_credit_usd: 0,
   });
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [allInvoices, setAllInvoices] = useState<Invoice[]>([]);
   const [paymentRequests, setPaymentRequests] = useState<PaymentRequest[]>([]);
   const [billingAlerts, setBillingAlerts] = useState<BillingAlert[]>([]);
   const [showCreatePaymentModal, setShowCreatePaymentModal] = useState(false);
+  // Shared Stripe Connect status — read here so the Couple Payments CTAs
+  // can gate on charges_enabled. Refetched on portal return so the gate
+  // releases as soon as onboarding completes.
+  const stripeConnect = useStripeConnect();
   const paginationInvoices = usePagination({ initialItemsPerPage: 50 });
   const requestedPlanId = searchParams.get('plan');
   const requestedInterval = searchParams.get('interval') === 'yearly' ? 'yearly' : 'monthly';
@@ -321,7 +339,7 @@ export default function PlannerBillingPage() {
       // S6: Load AI credit usage from dedicated endpoint
       try {
         const creditsResponse = await fetch(
-          `${baseUrl}/ai/credits`,
+          `${baseUrl}/admin/ai/credits`,
           {
             headers: {
               'Authorization': `Bearer ${token}`,
@@ -333,10 +351,24 @@ export default function PlannerBillingPage() {
 
         if (creditsResponse.ok) {
           const creditsData = await creditsResponse.json();
+          // The `/admin/ai/credits` endpoint now passes through the soft-cap
+          // overage shape from SubscriptionService.check_usage_limits().
+          // `credits_used` is preferred over the computed diff because the
+          // backend resolves it via live aggregation on `ai_usage_log`,
+          // which is the canonical source; the counter can drift.
+          const used =
+            typeof creditsData.credits_used === 'number'
+              ? creditsData.credits_used
+              : (creditsData.credits_limit || 0) - (creditsData.credits_remaining || 0);
           setUsageStats(prev => ({
             ...prev,
-            ai_credits_used: (creditsData.credits_limit || 0) - (creditsData.credits_remaining || 0),
-            ai_credits_remaining: creditsData.credits_remaining || 0
+            ai_credits_used: used,
+            ai_credits_remaining: creditsData.credits_remaining || 0,
+            ai_overage: Boolean(creditsData.overage),
+            ai_overage_credits: creditsData.overage_credits || 0,
+            ai_overage_cost_cents: creditsData.overage_cost_cents || 0,
+            ai_overage_price_per_credit_usd:
+              creditsData.overage_price_per_credit_usd || 0,
           }));
         }
       } catch (error) {
@@ -554,6 +586,10 @@ export default function PlannerBillingPage() {
 
         // Load updated billing data
         await loadData();
+        // Refresh Connect status — Stripe Connect onboarding can also
+        // route through this same return URL, so charges_enabled may
+        // have flipped while the user was away.
+        await stripeConnect.refetch();
 
         // Check if subscription status was updated by webhook
         // If still stale, retry once more after 2s
@@ -578,6 +614,10 @@ export default function PlannerBillingPage() {
     };
 
     void handlePortalReturn();
+    // stripeConnect intentionally omitted from deps to avoid re-running on
+    // every refetch; we only want the portal-return effect to fire when
+    // the URL flag flips.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [portalReturned, token, loadData, router, currentSubscription]);
 
   const openBillingPortal = async (flowType?: 'payment_method_update' | 'subscription_update' | 'subscription_cancel', loadingMessage?: string) => {
@@ -990,7 +1030,7 @@ export default function PlannerBillingPage() {
     <div className="space-y-6">
       <PageHeader
         title="Billing"
-        description="Manage your subscription, payment methods, and billing history"
+        description="Manage your subscription, payment methods, and request payments from couples."
       />
 
       {/* Tabs */}
@@ -1007,13 +1047,13 @@ export default function PlannerBillingPage() {
         </button>
         <button
           className={`px-4 py-2 font-medium text-sm transition-colors ${
-            activeTab === 'client_payments'
+            activeTab === 'couple_payments'
               ? 'border-b-2 border-blue-500 text-blue-600 dark:text-blue-400'
               : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'
           }`}
-          onClick={() => setActiveTab('client_payments')}
+          onClick={() => setActiveTab('couple_payments')}
         >
-          Client Payments
+          Couple Payments
         </button>
       </div>
 
@@ -1284,23 +1324,64 @@ export default function PlannerBillingPage() {
           </Card>
           </>
           ) : (
-            // Client Payments Tab Content
+            // Couple Payments Tab Content
             <>
               {/* Hide Connect card for root admin - they don't collect client payments */}
               {!userProfile?.is_root_admin && <StripeConnectCard />}
 
               <Card className="bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700 p-6">
                 <CardHeader className="pb-4 flex flex-row items-center justify-between">
-                  <CardTitle className="text-gray-900 dark:text-gray-100">Payment Requests</CardTitle>
-                  <Button onClick={() => setShowCreatePaymentModal(true)}>
+                  {/* Use the platform's default CardTitle styling — text-2xl
+                      font-elegant text-wedding-navy from app/components/ui/Card.tsx.
+                      Matches "Your Subscription", "Payment Method",
+                      "Billing History" on the My Subscription tab so this
+                      card sits in the same visual rhythm. (Earlier override
+                      to text-base font-semibold was wrong — that's the
+                      sidebar pattern, not the main-column pattern.) */}
+                  <CardTitle>Payment Requests</CardTitle>
+                  {/* CTA gated on Stripe Connect being live. Sending a
+                      couple to Checkout while charges_enabled=false just
+                      produces a backend rejection and a stranded request
+                      row. The disabled-with-tooltip affordance prevents
+                      that and points the planner at the fix. */}
+                  <Button
+                    onClick={() => setShowCreatePaymentModal(true)}
+                    disabled={!stripeConnect.isReady}
+                    title={
+                      stripeConnect.isReady
+                        ? undefined
+                        : 'Connect Stripe before requesting payments from couples.'
+                    }
+                    className="bg-wedding-rose hover:bg-wedding-gold text-white disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
                     <CreditCard className="w-4 h-4 mr-2" />
-                    New Request
+                    Request payment
                   </Button>
                 </CardHeader>
                 <CardContent>
                   {paymentRequests.length === 0 ? (
+                    // Empty state mirrors Billing History's pattern: a 50%-
+                    // opacity icon, a hint that explains what these are, and
+                    // an inline secondary CTA to bridge to the action. The
+                    // previous "No payment requests created yet." had no
+                    // icon, no explanation, and no CTA.
                     <div className="text-center py-8 text-gray-500 dark:text-gray-400">
-                      <p>No payment requests created yet.</p>
+                      <CreditCard className="w-10 h-10 mx-auto mb-3 opacity-50" />
+                      <p className="text-sm">
+                        {stripeConnect.isReady
+                          ? 'No requests yet. Send one to collect a deposit, milestone, or final balance from a couple.'
+                          : 'Connect Stripe above to start requesting payments from couples.'}
+                      </p>
+                      {stripeConnect.isReady && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="mt-4"
+                          onClick={() => setShowCreatePaymentModal(true)}
+                        >
+                          Request your first payment
+                        </Button>
+                      )}
                     </div>
                   ) : (
                     <div className="divide-y divide-gray-200 dark:divide-gray-700">
@@ -1404,7 +1485,11 @@ export default function PlannerBillingPage() {
                 </div>
               </div>
 
-              {/* AI Credits */}
+              {/* AI Credits — soft-capped with metered overage.
+                  When usage exceeds the monthly allotment, `ai_overage` is
+                  true and the running overage cost is surfaced inline. The
+                  bar shows 100% filled in that case, with a distinct color
+                  so the planner can tell they're billing past plan. */}
               <div>
                 <div className="flex items-center justify-between mb-2">
                   <div className="flex items-center gap-2">
@@ -1412,15 +1497,47 @@ export default function PlannerBillingPage() {
                     <span className="text-sm font-medium text-gray-700 dark:text-gray-300">AI Credits</span>
                   </div>
                   <span className="text-sm text-gray-600 dark:text-gray-400">
-                    {usageStats.ai_credits_remaining} / {currentPlan.ai_credits_monthly}
+                    {/* Display "used / limit". In overage we cap the
+                        numerator at the included allotment so the
+                        included-credits ratio reads cleanly; the extra
+                        credits are surfaced in the orange callout below. */}
+                    {usageStats.ai_overage
+                      ? `${currentPlan.ai_credits_monthly} / ${currentPlan.ai_credits_monthly}`
+                      : `${usageStats.ai_credits_used} / ${currentPlan.ai_credits_monthly}`}
                   </span>
                 </div>
                 <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2">
                   <div
-                    className="h-2 rounded-full transition-all bg-blue-500"
-                    style={{ width: `${(usageStats.ai_credits_remaining / currentPlan.ai_credits_monthly) * 100}%` }}
+                    className={`h-2 rounded-full transition-all ${
+                      usageStats.ai_overage ? 'bg-orange-500' : 'bg-blue-500'
+                    }`}
+                    style={{
+                      width: usageStats.ai_overage
+                        ? '100%'
+                        : `${Math.min(
+                            100,
+                            (usageStats.ai_credits_used /
+                              (currentPlan.ai_credits_monthly || 1)) *
+                              100,
+                          )}%`,
+                    }}
                   />
                 </div>
+                {usageStats.ai_overage && (
+                  <div className="mt-2 rounded-lg border border-orange-300 bg-orange-50 px-3 py-2 text-xs text-orange-800 dark:border-orange-900/40 dark:bg-orange-950/30 dark:text-orange-200">
+                    <p className="font-semibold">Overage billing active</p>
+                    <p className="mt-0.5">
+                      {(usageStats.ai_overage_credits ?? 0).toLocaleString()} extra credit
+                      {(usageStats.ai_overage_credits ?? 0) === 1 ? '' : 's'} this cycle ·{' '}
+                      <span className="font-semibold">
+                        ${((usageStats.ai_overage_cost_cents ?? 0) / 100).toFixed(2)}
+                      </span>{' '}
+                      at $
+                      {(usageStats.ai_overage_price_per_credit_usd ?? 0).toFixed(3)} per
+                      credit. Charged on next invoice.
+                    </p>
+                  </div>
+                )}
               </div>
             </CardContent>
           </Card>
@@ -1470,6 +1587,72 @@ export default function PlannerBillingPage() {
             </CardContent>
           </Card>
           </>
+          )}
+
+          {/* Couple Payments right column. Previously this column rendered
+              nothing on the Couple Payments tab, leaving a 1/3-wide void
+              next to the Stripe Connect / Payment Requests cards (which
+              live in the lg:col-span-2 block on the left). The page felt
+              broken because the subscription tab's grid balance was lost.
+              Mirroring the subscription pattern (reference card + help
+              card) restores the layout. */}
+          {activeTab === 'couple_payments' && (
+            <>
+              <Card className="bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700 p-6">
+                <CardHeader className="pb-4">
+                  <CardTitle className="text-gray-900 dark:text-gray-100 text-base">How payment requests work</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <ol className="space-y-3 text-sm text-gray-700 dark:text-gray-300">
+                    <li className="flex gap-3">
+                      <span className="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full bg-wedding-rose/10 text-xs font-semibold text-wedding-rose">1</span>
+                      <span>Create a request tied to one of your weddings.</span>
+                    </li>
+                    <li className="flex gap-3">
+                      <span className="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full bg-wedding-rose/10 text-xs font-semibold text-wedding-rose">2</span>
+                      <span>Share the link with the couple by email or text.</span>
+                    </li>
+                    <li className="flex gap-3">
+                      <span className="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full bg-wedding-rose/10 text-xs font-semibold text-wedding-rose">3</span>
+                      <span>Funds land in your bank within a few business days.</span>
+                    </li>
+                  </ol>
+                </CardContent>
+              </Card>
+
+              <Card className="bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700 p-6">
+                <CardHeader className="pb-4">
+                  <CardTitle className="text-gray-900 dark:text-gray-100 text-base">Fees</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <p className="text-sm text-gray-700 dark:text-gray-300">
+                    Stripe charges <span className="font-semibold">2.9% + $0.30</span> per successful card payment. The Special Wedding doesn&apos;t add a platform fee on couple payments.
+                  </p>
+                </CardContent>
+              </Card>
+
+              <Card className="bg-gray-50 dark:bg-gray-900/50 border-gray-200 dark:border-gray-700 p-6">
+                <CardContent>
+                  <div className="flex items-start gap-3">
+                    <Shield className="w-5 h-5 text-gray-500 flex-shrink-0 mt-0.5" />
+                    <div>
+                      <p className="font-medium text-gray-900 dark:text-gray-100 text-sm">Need help?</p>
+                      <p className="text-xs text-gray-600 dark:text-gray-400 mt-1">
+                        Reach out if a payment doesn&apos;t reach you or a couple has trouble paying.
+                      </p>
+                      <Button
+                        variant="ghost"
+                        className="text-blue-600 dark:text-blue-400 p-0 h-auto mt-2 text-sm hover:bg-transparent hover:underline"
+                        onClick={() => router.push('/admin/support')}
+                      >
+                        Contact Support
+                        <ChevronRight className="w-4 h-4 ml-1" />
+                      </Button>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            </>
           )}
         </div>
       </div>
