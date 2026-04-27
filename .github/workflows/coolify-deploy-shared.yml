@@ -29,6 +29,17 @@ on:
         required: false
         default: false
         type: boolean
+      # When true, validate-images falls back to the `:latest` tag if the
+      # requested SHA tag is missing in GHCR. Used by the auto-deploy
+      # path (workflow_run after CI-on-main) where a missing SHA usually
+      # means a CI build job silently cascade-skipped — we'd rather ship
+      # the most recent good image to staging than block. Manual
+      # production promotion (promote-coolify-production.yml) keeps this
+      # OFF so explicit SHA promotions never silently use `latest`.
+      allow_image_fallback:
+        required: false
+        default: false
+        type: boolean
     secrets:
       COOLIFY_BASE_URL:
         required: true
@@ -145,6 +156,12 @@ jobs:
     name: Validate target images (${{ inputs.environment_name }})
     runs-on: ubuntu-latest
     needs: prepare
+    outputs:
+      # The tag actually used for deploy. Equals the requested SHA when the
+      # manifest exists; falls back to `latest` if the requested SHA is
+      # missing AND `allow_image_fallback` is true. Otherwise the job fails.
+      effective-tag: ${{ steps.verify.outputs.effective_tag }}
+      fallback-used: ${{ steps.verify.outputs.fallback_used }}
     steps:
       - name: Log in to GHCR
         uses: docker/login-action@v3
@@ -154,22 +171,72 @@ jobs:
           password: ${{ github.token }}
 
       - name: Verify requested image tags exist in GHCR
+        id: verify
         env:
           TAG: ${{ needs.prepare.outputs.image-tag }}
           DEPLOY_BACKEND: ${{ needs.prepare.outputs.deploy-backend }}
           DEPLOY_FRONTEND: ${{ needs.prepare.outputs.deploy-frontend }}
+          ALLOW_FALLBACK: ${{ inputs.allow_image_fallback }}
+          BACKEND_IMAGE: ${{ env.BACKEND_IMAGE }}
+          FRONTEND_IMAGE: ${{ env.FRONTEND_IMAGE }}
         run: |
           set -euo pipefail
 
+          # Validate one image and emit the tag actually usable. If the
+          # requested SHA tag is missing and fallback is allowed, try
+          # `latest`. If both are missing, fail loudly (a manual
+          # promotion shouldn't silently invent a target).
+          resolve_tag () {
+            local kind="$1"     # backend | frontend
+            local image="$2"    # registry path
+
+            if docker manifest inspect "${image}:${TAG}" >/dev/null 2>&1; then
+              echo "Validated ${kind} target image: ${image}:${TAG}" >> "$GITHUB_STEP_SUMMARY"
+              echo "$TAG"
+              return 0
+            fi
+
+            if [ "$ALLOW_FALLBACK" != "true" ]; then
+              echo "::error::${kind} image ${image}:${TAG} not found in GHCR and allow_image_fallback=false. CI build likely cascade-skipped — re-run CI or pass an explicit existing tag."
+              return 1
+            fi
+
+            if docker manifest inspect "${image}:latest" >/dev/null 2>&1; then
+              echo "::warning::${kind} image ${image}:${TAG} not found; falling back to ${image}:latest because allow_image_fallback=true. This usually means CI's build job cascade-skipped — investigate before the next deploy."
+              echo "Fell back to ${kind} ${image}:latest (requested ${TAG} missing)" >> "$GITHUB_STEP_SUMMARY"
+              echo "latest"
+              return 0
+            fi
+
+            echo "::error::${kind} image not found at either ${image}:${TAG} or ${image}:latest — nothing to deploy."
+            return 1
+          }
+
+          BACKEND_TAG=""
+          FRONTEND_TAG=""
+          FALLBACK_USED="false"
+
           if [ "$DEPLOY_BACKEND" = "true" ]; then
-            docker manifest inspect "${{ env.BACKEND_IMAGE }}:${TAG}" >/dev/null
-            echo "Validated backend target image: ${{ env.BACKEND_IMAGE }}:${TAG}" >> "$GITHUB_STEP_SUMMARY"
+            BACKEND_TAG="$(resolve_tag backend "$BACKEND_IMAGE")"
+            if [ "$BACKEND_TAG" != "$TAG" ]; then FALLBACK_USED="true"; fi
           fi
 
           if [ "$DEPLOY_FRONTEND" = "true" ]; then
-            docker manifest inspect "${{ env.FRONTEND_IMAGE }}:${TAG}" >/dev/null
-            echo "Validated frontend target image: ${{ env.FRONTEND_IMAGE }}:${TAG}" >> "$GITHUB_STEP_SUMMARY"
+            FRONTEND_TAG="$(resolve_tag frontend "$FRONTEND_IMAGE")"
+            if [ "$FRONTEND_TAG" != "$TAG" ]; then FALLBACK_USED="true"; fi
           fi
+
+          # Single deploy uses one tag for both services. If both are being
+          # deployed, they MUST resolve to the same tag — otherwise the
+          # frontend and backend would ship from different commits.
+          if [ "$DEPLOY_BACKEND" = "true" ] && [ "$DEPLOY_FRONTEND" = "true" ] && [ "$BACKEND_TAG" != "$FRONTEND_TAG" ]; then
+            echo "::error::Backend resolved to ${BACKEND_TAG} but frontend resolved to ${FRONTEND_TAG}. Refusing to deploy mismatched tags."
+            exit 1
+          fi
+
+          EFFECTIVE_TAG="${BACKEND_TAG:-$FRONTEND_TAG}"
+          echo "effective_tag=${EFFECTIVE_TAG}" >> "$GITHUB_OUTPUT"
+          echo "fallback_used=${FALLBACK_USED}" >> "$GITHUB_OUTPUT"
 
   deploy-backend:
     name: Deploy backend (${{ inputs.environment_name }})
@@ -229,7 +296,10 @@ jobs:
           COOLIFY_BASE_URL: ${{ secrets.COOLIFY_BASE_URL }}
           COOLIFY_API_TOKEN: ${{ secrets.COOLIFY_API_TOKEN }}
         run: |
-          TAG="${{ needs.prepare.outputs.image-tag }}"
+          # Use the tag validate-images actually verified — falls back to
+          # `latest` when allowed and the requested SHA is missing. See
+          # the validate-images job for the resolution rules.
+          TAG="${{ needs.validate-images.outputs.effective-tag }}"
           python3 scripts/deploy/coolify_api.py set-image \
             --uuid "${{ secrets.COOLIFY_BACKEND_UUID }}" \
             --image-name "${{ env.BACKEND_IMAGE }}" \
@@ -303,7 +373,8 @@ jobs:
           COOLIFY_BASE_URL: ${{ secrets.COOLIFY_BASE_URL }}
           COOLIFY_API_TOKEN: ${{ secrets.COOLIFY_API_TOKEN }}
         run: |
-          TAG="${{ needs.prepare.outputs.image-tag }}"
+          # See backend deploy comment — same effective-tag fallback rule.
+          TAG="${{ needs.validate-images.outputs.effective-tag }}"
           python3 scripts/deploy/coolify_api.py set-image \
             --uuid "${{ secrets.COOLIFY_FRONTEND_UUID }}" \
             --image-name "${{ env.FRONTEND_IMAGE }}" \
