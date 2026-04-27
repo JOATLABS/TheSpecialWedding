@@ -43,6 +43,8 @@ def _build_service(
     usage: dict,
     subscription_extra: dict | None = None,
     live_wedding_count: int | None = None,
+    live_ai_credits_used: int | None = None,
+    live_staff_seats_count: int | None = None,
 ):
     """Construct a SubscriptionService with its Mongo-hitting methods
     stubbed so every test stays synchronous and hermetic.
@@ -50,11 +52,17 @@ def _build_service(
     We deliberately mutate the instance, not the class — keeps tests
     independent and avoids fixture ordering bugs.
 
-    ``live_wedding_count``: authoritative wedding count returned by the
-    new ``_live_wedding_count`` helper. When ``None`` (the default), the
-    stub echoes ``usage["weddings_count"]`` so older tests that expressed
-    "current usage" through the counter keep asserting the same thing.
-    Pass a different integer to simulate counter/reality drift.
+    ``live_wedding_count`` / ``live_ai_credits_used`` /
+    ``live_staff_seats_count``: authoritative live values returned by the
+    matching ``_live_*`` helper. When ``None`` (the default), the stub
+    echoes the equivalent counter from ``usage`` so tests expressed
+    against the old counter contract keep asserting the same thing. Pass
+    a different integer to simulate counter/reality drift.
+
+    These stubs MUST be installed even when a test doesn't care about
+    drift — without them, ``check_usage_limits`` falls through to a real
+    Motor ``aggregate``+``to_list`` that crashes on the per-test event
+    loop pattern in ``_run`` with ``RuntimeError: Event loop is closed``.
     """
     # Import here so the module-level mongo connection attempt doesn't run
     # at collection time (the real subscription_service instantiates at
@@ -98,10 +106,30 @@ def _build_service(
     async def fake_live_wedding_count(user_id: str):
         return resolved_live_count
 
+    resolved_live_ai = (
+        live_ai_credits_used
+        if live_ai_credits_used is not None
+        else usage.get("ai_credits_used_month", 0)
+    )
+
+    async def fake_live_ai_credits_used(user_id: str, current_month: str):
+        return resolved_live_ai
+
+    resolved_live_seats = (
+        live_staff_seats_count
+        if live_staff_seats_count is not None
+        else usage.get("staff_seats_used", 0)
+    )
+
+    async def fake_live_staff_seats_count(user_id: str):
+        return resolved_live_seats
+
     service.get_user_subscription = fake_get_user_subscription  # type: ignore
     service.get_plan = fake_get_plan  # type: ignore
     service.get_usage_stats = fake_get_usage_stats  # type: ignore
     service._live_wedding_count = fake_live_wedding_count  # type: ignore
+    service._live_ai_credits_used = fake_live_ai_credits_used  # type: ignore
+    service._live_staff_seats_count = fake_live_staff_seats_count  # type: ignore
     return service
 
 
@@ -231,15 +259,27 @@ def test_weddings_cap_uses_live_count_not_drifted_counter():
 
 
 @pytest.mark.parametrize(
-    "current, requested, cap, allowed",
+    "current, requested, cap, in_overage",
     [
-        (0, 1, 100, True),
-        (99, 1, 100, True),  # final credit just fits
-        (100, 1, 100, False),  # one over
-        (50, 100, 100, False),  # bulk request over cap
+        (0, 1, 100, False),  # well under cap
+        (99, 1, 100, False),  # final credit just fits
+        (100, 1, 100, False),  # at cap, no overage yet — request is the
+        # crossing event but cumulative_overage_credits reads cumulative
+        # past usage, not projected. Projected overage surfaces via
+        # overage_credits_projected.
+        (101, 0, 100, True),  # one credit past cap → soft-cap fires
+        (150, 0, 100, True),  # well past cap → soft-cap fires
     ],
 )
-def test_ai_credits_cap_allow_vs_block(current, requested, cap, allowed):
+def test_ai_credits_soft_cap_overage_shape(current, requested, cap, in_overage):
+    """Soft-cap contract: ai_credits ALWAYS reports allowed=True; overage
+    metadata kicks in once cumulative usage exceeds the included allotment.
+
+    Replaces the prior hard-cap assertion (``allowed=False`` + canonical
+    error message) which no longer matches the production contract — see
+    docs/plans/SUBSCRIPTION_LIFECYCLE_TEST_PLAN.md §6 and
+    subscription_service.py:901-934.
+    """
     plan = {"_id": "plan_boutique", "ai_credits_monthly": cap}
     service = _build_service(
         plan_snapshot=None,
@@ -251,26 +291,43 @@ def test_ai_credits_cap_allow_vs_block(current, requested, cap, allowed):
             "user_test", "ai_credits", requested_amount=requested
         )
     )
-    assert result["allowed"] is allowed
-    if not allowed:
-        assert "AI credits limit exceeded" in result["message"], (
-            "Frontend error banner matches on this exact prefix — see "
-            "subscription_service.py:699"
+    # Soft-cap NEVER blocks the workflow.
+    assert result["allowed"] is True, (
+        f"ai_credits gate must never return allowed=False — got {result}"
+    )
+    # Remaining must not leak negative even when usage is past cap.
+    assert result["remaining"] >= 0, (
+        f"remaining leaked negative: {result}. Floor at 0 — UI renders "
+        f"this directly as the bar denominator."
+    )
+    assert result["limit"] == cap
+    assert result["current_usage"] == current
+    if in_overage:
+        assert result["overage"] is True, (
+            f"overage flag missed past-cap usage: {result}"
         )
-        # remaining must not go negative even when the request was huge.
-        assert result["remaining"] >= 0, (
-            f"remaining leaked negative: {result}. Q4 in the test plan "
-            f"checks this invariant explicitly."
+        assert result["overage_credits"] >= 1, (
+            f"overage_credits should reflect cumulative past-cap usage, got {result}"
+        )
+        assert result["overage_cost_cents"] > 0, (
+            f"overage_cost_cents must be > 0 once in overage, got {result}"
         )
     else:
-        # Allowed path returns remaining for UI rendering.
-        assert "remaining" in result
-        assert result["remaining"] == cap - current
+        assert result["overage"] is False, (
+            f"overage flag must stay false at/under cap, got {result}"
+        )
+        assert result["overage_credits"] == 0
+        assert result["overage_cost_cents"] == 0
 
 
 def test_ai_credits_downgrade_snapshot_pin():
     """Pin C5 behavior: snapshot-from-Signature (300) is honored after
     Mongo plan reference is flipped to Boutique (100) mid-period.
+
+    Under the soft-cap contract this still matters — the snapshot's
+    larger limit means 150 credits is comfortably under cap (no overage
+    flag), whereas if the live Boutique plan won, 150 would be 50 past
+    cap and ``overage`` would fire.
 
     If the downgrade updates plan_snapshot immediately, this test needs
     flipping. That IS Q1 from the test plan — the point here is that the
@@ -287,16 +344,20 @@ def test_ai_credits_downgrade_snapshot_pin():
     )
     result = _run(service.check_usage_limits("user_test", "ai_credits"))
 
-    # If snapshot wins → 150/300 still allowed. If current plan wins →
-    # 150/100 blocks. Current code uses snapshot first (line 669-671), so
-    # the pinned answer is "allowed".
-    assert result["allowed"] is True, (
+    # Soft-cap always returns allowed=True, but the discriminator now is
+    # the overage flag. Snapshot honored → no overage. Snapshot dropped →
+    # overage=True at 50 past Boutique's 100 cap.
+    assert result["allowed"] is True
+    assert result["limit"] == 300, (
         "Q1 pin drifted. check_usage_limits was expected to honor "
         "plan_snapshot's 300-credit Signature limit even after the "
         "subscription's current plan_id moved to Boutique."
     )
-    assert result["limit"] == 300
     assert result["remaining"] == 150
+    assert result["overage"] is False, (
+        "Snapshot must keep usage under cap — overage flag firing here "
+        "means the live (Boutique) plan was used, snapshot was ignored."
+    )
 
 
 # ---------------------------------------------------------------------------

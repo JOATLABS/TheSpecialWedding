@@ -919,12 +919,19 @@ class SubscriptionService:
                 overage_cost_cents = int(
                     round(cumulative_overage_credits * overage_price * 100)
                 )
+                # ``overage`` flips ONLY when cumulative usage has actually
+                # crossed the cap — i.e. real billable usage exists past
+                # the included allotment. A request that *would* push the
+                # planner over is surfaced separately via
+                # ``overage_credits_projected`` so callers can show a
+                # "you're about to go into overage" affordance without the
+                # billing surface lighting up prematurely.
                 return {
                     "allowed": True,
                     "current_usage": current,
                     "limit": limit,
                     "remaining": remaining,
-                    "overage": overage_credits > 0 or cumulative_overage_credits > 0,
+                    "overage": cumulative_overage_credits > 0,
                     "overage_credits": cumulative_overage_credits,
                     "overage_credits_projected": overage_credits,
                     "overage_price_per_credit_usd": overage_price,
