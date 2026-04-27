@@ -3006,13 +3006,80 @@ class VendorService:
                 milestone_id=milestone_id,
                 created_by=created_by,
             )
+
+            # Guard 1: Stripe intent idempotency.
+            # Stripe retries webhooks and the planner UI can double-submit a
+            # record. Without this check, the same PaymentIntent could be
+            # recorded twice and the rollups inflated. This guard runs first
+            # so a same-milestone retry returns an idempotent ack rather than
+            # falling through to the status / clamp guards (which would 409
+            # / 400 a legitimate retry).
+            #   - Same milestone + same intent => idempotent ack (200).
+            #   - Different milestone + same intent => 409 (Stripe intents are
+            #     globally unique per charge; a re-use is a routing bug).
+            # Note: this guard only catches manual+manual races. The webhook
+            # path at handle_payment_link_webhook does not currently set
+            # stripe_payment_intent_id on the milestone, so manual+webhook
+            # races are still open. Tracked as a follow-up fix.
+            if stripe_payment_intent_id:
+                if (
+                    milestone.get("stripe_payment_intent_id")
+                    == stripe_payment_intent_id
+                ):
+                    logger.info(
+                        "Idempotent record_payment: intent %s already on milestone %s",
+                        stripe_payment_intent_id,
+                        milestone_id,
+                    )
+                    return {**milestone, "_id": str(milestone["_id"])}
+                duplicate = await self.payment_milestones.find_one(
+                    {"stripe_payment_intent_id": stripe_payment_intent_id}
+                )
+                if duplicate is not None:
+                    raise HTTPException(
+                        status_code=409,
+                        detail=(
+                            "This Stripe payment is already recorded against "
+                            "another milestone"
+                        ),
+                    )
+
+            # Guard 2: status lock.
+            # Once a milestone reaches PAID (and we have NOT already returned
+            # the idempotent ack above), additional record_payment calls would
+            # silently inflate paid_amount past the milestone amount and
+            # double-credit the assignment / vendor / budget rollups. Reject
+            # explicitly with 409 so the caller can surface the conflict.
+            if milestone.get("status") == PaymentMilestoneStatus.PAID.value:
+                raise HTTPException(
+                    status_code=409,
+                    detail="Milestone is already fully paid",
+                )
+
+            # Guard 3: amount clamp.
+            # Without this, amount > remaining over-credits paid_amount and
+            # the rollup $inc on vendor_assignments / vendor_profiles. The
+            # 0.005 tolerance absorbs float-rounding on cent boundaries
+            # (e.g. 33.33 + 33.33 + 33.34 vs. 100.00).
+            current_paid = float(milestone.get("paid_amount", 0) or 0)
+            milestone_amount = float(milestone["amount"])
+            remaining = milestone_amount - current_paid
+            if amount > remaining + 0.005:
+                raise HTTPException(
+                    status_code=400,
+                    detail=(
+                        f"Payment amount ${amount:.2f} exceeds remaining "
+                        f"balance ${remaining:.2f} on this milestone"
+                    ),
+                )
+
             contract = None
             if milestone.get("contract_id"):
                 contract = await self.get_contract(
                     milestone["contract_id"], created_by=created_by
                 )
 
-            new_paid_amount = milestone.get("paid_amount", 0) + amount
+            new_paid_amount = current_paid + amount
 
             # Determine new status
             if new_paid_amount >= milestone["amount"]:

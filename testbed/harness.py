@@ -1130,6 +1130,44 @@ class Harness:
         except stripe.error.StripeError as exc:
             self.log.warning(f"  ⚠️ Could not delete Stripe account {account_id}: {exc}")
 
+    def ensure_connect_ready(
+        self,
+        *,
+        user_id: str,
+        email: str,
+        return_url: str,
+        checkpoint_name: str = "CONNECT_ONBOARDING",
+    ) -> str:
+        """Ensure the planner has a Stripe Connect Express account that is
+        `charges_enabled=True`. End-to-end: create-if-missing, check
+        charges_enabled, run the hosted-onboarding flow with a checkpoint
+        if not, poll until ready.
+
+        Returns the connect account id. Use this in any driver that needs
+        a Connect-ready planner — saves the 5-line ritual.
+
+        The checkpoint copy is intentionally generic ("Stripe Connect
+        onboarding required …"). Drivers can override `checkpoint_name`
+        to differentiate in the run log if they want.
+        """
+        connect_id = self.ensure_connect_account(user_id=user_id, email=email)
+        account = stripe.Account.retrieve(connect_id)
+        if account.charges_enabled:
+            return connect_id
+
+        link = self.create_account_link(connect_id, return_url=return_url)
+        self.checkpoint(
+            checkpoint_name,
+            [
+                "Stripe Connect onboarding required (one-time per planner).",
+                "Open the URL below in Chrome and click 'Use test data' on each step:",
+                link,
+                f"When Stripe redirects you back to {return_url}, return here.",
+            ],
+        )
+        self.wait_for_connect_charges_enabled(connect_id)
+        return connect_id
+
     # ------------------------------------------------------------------
     # Wedding + Couple helpers (planner-side)
     # ------------------------------------------------------------------
@@ -1290,15 +1328,27 @@ class Harness:
         """POST /admin/packages/{id}/send — send a package to a couple,
         producing a public-token contract row through `package_service.send_to_couple`.
 
-        IMPORTANT: This requires `RESEND_API_KEY` in .env. The send_to_couple
-        service unconditionally emails the couple after creating the
-        contract row, and ROLLS BACK the row if the email fails. So drivers
-        must validate RESEND_API_KEY at startup.
-
         Returns the public contract token. The couple uses the token to
         open `/contracts/{token}` (no auth required) and sign +
         capture-card via SetupIntent.
+
+        Hard requirement: `RESEND_API_KEY` must be set. The
+        `send_to_couple` service unconditionally emails the couple after
+        creating the contract row, and ROLLS BACK the row (then raises
+        RuntimeError) if the email service returns falsy. Without the key,
+        the API would 500 and this method would fail with a confusing
+        "no token in response" because the row would be gone. The harness
+        already loaded .env at construction time, so we just check the
+        var here and fail fast with a clear message if it's missing.
         """
+        if not os.getenv("RESEND_API_KEY"):
+            raise RuntimeError(
+                "RESEND_API_KEY is not set. send_package_to_couple emails the "
+                "couple after creating the contract row, and rolls back the "
+                "row if the email send fails. Set RESEND_API_KEY in .env "
+                "(any valid Resend test key works) and re-run."
+            )
+
         payload: dict = {
             "couple": {
                 "partner1_name": partner1_name,

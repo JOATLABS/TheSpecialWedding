@@ -1,15 +1,19 @@
 #!/usr/bin/env python3
 """Clean up state from verify_planner_couple_contract_flow.py.
 
-Removes:
-  - the planner user (test_planner+contractflow@…)
-  - the planner's Stripe Express test account
-  - the wedding rows the verifier seeded
-  - the package rows the verifier seeded
-  - the contract rows produced by send_package_to_couple
-  - all scheduled_payments rows for those contracts
-  - the Stripe Customer rows the contracts captured
-  - subscription / customer-link / team_member rows for the planner
+Removes — using harness primitives where they exist so the cleanup
+arc is consistent with the other testbed cleanups:
+
+  - the planner's contract rows + scheduled_payments rows
+  - the planner's package(s) seeded by the verifier
+  - couple-portal invite rows tied to the planner's wedding
+  - the couple's Stripe Customer object(s) (one per signed contract)
+  - the planner's Stripe Connect Express account (via harness)
+  - the planner's user / user_subscriptions / stripe_customers /
+    team_members / usage_tracking / weddings rows
+    (via harness.delete_user_chain — also handles
+    `assigned_planner_email` orphans)
+  - the planner user itself
 
 Safe to re-run.
 
@@ -19,146 +23,120 @@ Usage:
 
 from __future__ import annotations
 
-import logging
-import os
 import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import stripe
-from bson import ObjectId
-from dotenv import load_dotenv
-from pymongo import MongoClient
 
-load_dotenv()
+from testbed.harness import Harness
 
-logging.basicConfig(
-    level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s"
-)
-logger = logging.getLogger("cleanup_contract_flow")
-
-STRIPE_SECRET_KEY = os.getenv("STRIPE_SECRET_KEY") or os.getenv("STRIPE_API_KEY")
-MONGO_URI = os.getenv("MONGO_URI") or os.getenv("MONGODB_URI")
-MONGO_DB = os.getenv("MONGO_DB") or os.getenv("MONGO_NAME", "wedding")
+# ---------------------------------------------------------------------------
+# Driver constants — mirror the verifier so cleanup matches what was seeded
+# ---------------------------------------------------------------------------
 
 PLANNER_EMAIL = "test_planner+contractflow@thespecialwedding.io"
 COUPLE_EMAIL = "test_couple+contractflow@thespecialwedding.io"
-
-if not STRIPE_SECRET_KEY:
-    logger.error("STRIPE_SECRET_KEY is not set in .env")
-    sys.exit(1)
-if not MONGO_URI:
-    logger.error("MONGO_URI / MONGODB_URI is not set in .env")
-    sys.exit(1)
-
-stripe.api_key = STRIPE_SECRET_KEY
-mongo = MongoClient(MONGO_URI)[MONGO_DB]
+PACKAGE_NAME_PREFIX = "Test Wedding Package — Contract Flow Verifier"
 
 
-def delete_stripe_account(account_id: str) -> None:
-    try:
-        stripe.Account.delete(account_id)
-        logger.info("  ✅ Deleted Stripe Express account %s", account_id)
-    except stripe.error.StripeError as exc:
-        logger.warning("  ⚠️ Could not delete Stripe account %s: %s", account_id, exc)
-
-
-def cleanup() -> None:
-    user = mongo["users"].find_one({"email": PLANNER_EMAIL})
+def cleanup(h: Harness) -> None:
+    user = h.mongo["users"].find_one({"email": PLANNER_EMAIL})
     if not user:
-        logger.info("  (no planner user — nothing to clean)")
+        h.log.info("  (no planner user — nothing to clean)")
         return
 
     user_id = str(user["_id"])
-    logger.info("Cleaning state for planner %s (user_id=%s)…", PLANNER_EMAIL, user_id)
+    h.log.info(f"Cleaning state for planner {PLANNER_EMAIL} (user_id={user_id})…")
 
-    # Stripe Connect account
+    # 1. Stripe Connect Express account (via harness — swallows
+    #    already-deleted errors).
     if user.get("stripe_connect_id"):
-        delete_stripe_account(user["stripe_connect_id"])
+        h.delete_connect_account(user["stripe_connect_id"])
 
-    # Contracts (any planner+couple match — covers send_package_to_couple
-    # output and any older direct-seed rows from prior versions of the
-    # driver).
+    # 2. Contracts produced by send_to_couple, plus their scheduled_payments
+    #    rows and the couple's Stripe Customer objects.
     contracts = list(
-        mongo["contracts"].find({"planner_id": user_id, "couple.email": COUPLE_EMAIL})
+        h.mongo["contracts"].find({"planner_id": user_id, "couple.email": COUPLE_EMAIL})
     )
     for contract in contracts:
         contract_id_str = str(contract["_id"])
-        sp_result = mongo["scheduled_payments"].delete_many(
-            {"contract_id": contract_id_str}
-        )
-        if sp_result.deleted_count:
-            logger.info(
-                "  ✅ scheduled_payments: removed %d for contract %s",
-                sp_result.deleted_count,
-                contract_id_str,
+        sp = h.mongo["scheduled_payments"].delete_many({"contract_id": contract_id_str})
+        if sp.deleted_count:
+            h.log.info(
+                f"  ✅ scheduled_payments: removed {sp.deleted_count} for "
+                f"contract {contract_id_str}"
             )
-        # Stripe customer cleanup (couple's Customer object)
-        customer_id = contract.get("stripe_customer_id")
-        if customer_id:
+        couple_customer_id = contract.get("stripe_customer_id")
+        if couple_customer_id:
             try:
-                stripe.Customer.delete(customer_id)
-                logger.info("  ✅ Deleted Stripe customer %s", customer_id)
+                stripe.Customer.delete(couple_customer_id)
+                h.log.info(f"  ✅ Deleted couple Stripe customer {couple_customer_id}")
             except stripe.error.StripeError as exc:
-                logger.warning(
-                    "  ⚠️ Could not delete Stripe customer %s: %s", customer_id, exc
+                h.log.warning(
+                    f"  ⚠️ Could not delete couple Stripe customer "
+                    f"{couple_customer_id}: {exc}"
                 )
-
     if contracts:
-        result = mongo["contracts"].delete_many(
+        result = h.mongo["contracts"].delete_many(
             {"planner_id": user_id, "couple.email": COUPLE_EMAIL}
         )
         if result.deleted_count:
-            logger.info("  ✅ contracts: removed %d", result.deleted_count)
+            h.log.info(f"  ✅ contracts: removed {result.deleted_count}")
 
-    # Packages seeded by the verifier (matched by planner_id + name prefix
-    # so we don't accidentally drop unrelated packages the planner might
-    # have).
-    pkg_result = mongo["packages"].delete_many(
+    # 3. Packages seeded by the verifier — match by planner_id + name prefix
+    #    so we don't drop unrelated packages the planner may have.
+    pkg_result = h.mongo["packages"].delete_many(
         {
             "planner_id": user_id,
-            "name": {"$regex": "^Test Wedding Package — Contract Flow Verifier"},
+            "name": {"$regex": f"^{PACKAGE_NAME_PREFIX}"},
         }
     )
     if pkg_result.deleted_count:
-        logger.info("  ✅ packages: removed %d", pkg_result.deleted_count)
+        h.log.info(f"  ✅ packages: removed {pkg_result.deleted_count}")
 
-    # Wedding(s) seeded by the verifier. Match on planner + the seeded
-    # couple_names string so we don't drop unrelated weddings.
-    w_result = mongo["weddings"].delete_many(
-        {
-            "$or": [
-                {"planner_id": user_id, "couple.email": COUPLE_EMAIL},
-                {"planner_id": user_id, "couple_names": {"$regex": "Alex Davis"}},
+    # 4. Couple-portal invite rows tied to the planner — both via the
+    #    `couples` (or equivalent) collection and team_members-style rows.
+    #    The harness's delete_user_chain handles team_members (incoming +
+    #    outgoing) further down. Here we just clear the couple-portal
+    #    invite by email so a re-run can re-invite.
+    for coll in ("couples", "couple_portal_invites"):
+        try:
+            r = h.mongo[coll].delete_many(
                 {
-                    "assigned_planner_id": user_id,
-                    "couple_names": {"$regex": "Alex Davis"},
-                },
-            ]
-        }
-    )
-    if w_result.deleted_count:
-        logger.info("  ✅ weddings: removed %d", w_result.deleted_count)
+                    "$or": [
+                        {"email": COUPLE_EMAIL.lower()},
+                        {"email": COUPLE_EMAIL},
+                        {"planner_id": user_id, "couple_email": COUPLE_EMAIL},
+                    ]
+                }
+            )
+            if r.deleted_count:
+                h.log.info(f"  ✅ {coll}: removed {r.deleted_count}")
+        except Exception:
+            # Collection may not exist in this env — that's fine; the
+            # invite mechanism varies by deploy.
+            pass
 
-    # Subscriptions / customer-link rows for the planner
-    for coll_name in ("user_subscriptions", "stripe_customers", "team_members"):
-        result = mongo[coll_name].delete_many({"user_id": user_id})
-        if result.deleted_count:
-            logger.info("  ✅ %s: removed %d", coll_name, result.deleted_count)
-
-    # The planner user itself
-    result = mongo["users"].delete_one({"_id": ObjectId(user_id)})
-    if result.deleted_count:
-        logger.info("  ✅ users: removed %s", PLANNER_EMAIL)
+    # 5. Hand the rest off to the harness's standard cleanup arc:
+    #    user_subscriptions / stripe_customers / team_members /
+    #    usage_tracking / weddings (by assigned_planner_email + by
+    #    planner_id) / users itself. delete_user_chain logs each
+    #    affected collection so the operator sees what was removed.
+    h.delete_user_chain(PLANNER_EMAIL)
 
 
 def main() -> int:
-    logger.info("Starting cleanup of planner-couple contract flow verification state…")
-    logger.info("  Mongo DB: %s", MONGO_DB)
-    logger.info("  Planner:  %s", PLANNER_EMAIL)
-    logger.info("  Couple:   %s", COUPLE_EMAIL)
-    logger.info("")
-    cleanup()
-    logger.info("")
-    logger.info("Cleanup complete. SEED phase can run from a blank slate.")
+    h = Harness(driver_name="cleanup_planner_couple_contract_flow")
+    h.log.info("Starting cleanup of planner-couple contract flow verification state…")
+    h.log.info(f"  Mongo DB: {h.config.mongo_db}")
+    h.log.info(f"  Planner:  {PLANNER_EMAIL}")
+    h.log.info(f"  Couple:   {COUPLE_EMAIL}")
+    h.log.info("")
+    cleanup(h)
+    h.log.info("")
+    h.log.info("Cleanup complete. SEED phase can run from a blank slate.")
     return 0
 
 
@@ -166,5 +144,10 @@ if __name__ == "__main__":
     try:
         raise SystemExit(main())
     except Exception as exc:
-        logger.error("Cleanup aborted: %s", exc, exc_info=True)
+        # Reuse module-level logger; harness has logging configured by now.
+        import logging
+
+        logging.getLogger("cleanup_contract_flow").error(
+            f"Cleanup aborted: {exc}", exc_info=True
+        )
         raise SystemExit(1)
