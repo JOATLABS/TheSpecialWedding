@@ -99,36 +99,14 @@ PACKAGE_NAME = "Test Wedding Package — Contract Flow Verifier"
 
 
 # ---------------------------------------------------------------------------
-# Pre-flight env checks specific to this driver
-# ---------------------------------------------------------------------------
-
-
-def _preflight_resend() -> None:
-    """`package_service.send_to_couple` unconditionally calls the contract
-    email service after creating the contract row, and ROLLS BACK the row
-    (then raises RuntimeError) if the email send returns falsy. Without
-    RESEND_API_KEY, the SEND step would fail with a confusing
-    "no token in response" error after the row is gone. Fail fast here
-    instead.
-    """
-    if not os.getenv("RESEND_API_KEY"):
-        raise SystemExit(
-            "RESEND_API_KEY not set in .env.\n\n"
-            "package_service.send_to_couple sends a contract email after\n"
-            "creating the contract row, and rolls back the row if the email\n"
-            "send fails. Set RESEND_API_KEY (any test/dev key works — Resend\n"
-            "test mode is fine) and re-run."
-        )
-
-
-# ---------------------------------------------------------------------------
 # Phases
 # ---------------------------------------------------------------------------
 
 
 def main() -> int:
-    _preflight_resend()
-
+    # The harness loads .env at Harness() construction. RESEND_API_KEY is
+    # validated by harness.send_package_to_couple at the moment it's needed
+    # — no driver-side precheck required.
     h = Harness(driver_name="verify_planner_couple_contract_flow")
     h.preflight()
     admin_token = h.get_admin_token()
@@ -149,23 +127,14 @@ def main() -> int:
         pm_token=PM_TOKEN_GOOD,
     )
 
-    # 2. Stripe Connect Express. If the planner doesn't yet have an account
-    #    (or charges aren't enabled), drop into hosted onboarding.
-    connect_id = h.ensure_connect_account(user_id=seed.user_id, email=PLANNER_EMAIL)
-    account = stripe.Account.retrieve(connect_id)
-    if not account.charges_enabled:
-        return_url = f"{h.config.frontend_url}/admin/planner/billing"
-        link = h.create_account_link(connect_id, return_url=return_url)
-        h.checkpoint(
-            "CONNECT_ONBOARDING",
-            [
-                "Stripe Connect onboarding required (one-time per planner).",
-                "Open the URL below in Chrome and click 'Use test data' on each step:",
-                link,
-                "When Stripe redirects you back to /admin/planner/billing, return here.",
-            ],
-        )
-        h.wait_for_connect_charges_enabled(connect_id)
+    # 2. Stripe Connect Express. Single harness call: create-if-missing,
+    #    drop into hosted onboarding if charges aren't enabled, poll
+    #    until ready.
+    connect_id = h.ensure_connect_ready(
+        user_id=seed.user_id,
+        email=PLANNER_EMAIL,
+        return_url=f"{h.config.frontend_url}/admin/planner/billing",
+    )
 
     # 3. Wedding via API.
     planner_token = h.login(PLANNER_EMAIL, PLANNER_PASSWORD)
