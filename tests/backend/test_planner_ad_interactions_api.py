@@ -20,9 +20,8 @@ Auth strategy:
 
 import os
 import sys
-from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock
 
 import pytest
 from bson import ObjectId
@@ -42,13 +41,13 @@ os.environ.setdefault("ALGORITHM", "HS256")
 os.environ.setdefault("API_KEY", "test-api-key")
 os.environ.setdefault("ROOT_ADMIN_EMAIL", "thedeveloper@thespecialwedding.io")
 
-from app.api.planner_ad_interactions import (
+from app.api.planner_ad_interactions import (  # noqa: E402
     get_planner_ad_interaction_service,
     require_manage_vendors,
     require_team_or_planner,
 )
-from app.api.planner_ad_interactions import router as planner_ad_router
-from app.dependencies.auth_extended import ExtendedAuthUser
+from app.api.planner_ad_interactions import router as planner_ad_router  # noqa: E402
+from app.dependencies.auth_extended import ExtendedAuthUser  # noqa: E402
 
 # Create a minimal test app with just the planner ad interactions router
 # (avoids importing app.main which triggers the full import chain)
@@ -375,7 +374,6 @@ class TestAddToDirectory:
         )
 
         assert response.status_code == 201
-        call_kwargs = mock_service.add_to_directory.call_args.kwargs
         # planner_id removed per senior dev review — planner_email is the attribution field
 
     def test_add_to_directory_returns_service_result(

@@ -1265,90 +1265,161 @@ export default function PlatformInfrastructurePage() {
                 itemLabel="errors"
               />
               <Card className="overflow-hidden">
-                <table className="w-full table-fixed divide-y divide-gray-200 dark:divide-gray-700">
-                  <thead className="bg-gray-50 dark:bg-slate-800">
-                    <tr>
-                      <th className="w-[72px] px-3 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Severity</th>
-                      <th className="w-[14%] px-3 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Error Type</th>
-                      <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Message</th>
-                      <th className="w-[18%] px-3 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Endpoint</th>
-                      <th className="w-[110px] px-3 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Timestamp</th>
-                      <th className="w-[80px] px-3 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Status</th>
-                      <th className="w-[120px] px-3 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody className="bg-white dark:bg-slate-900 divide-y divide-gray-200 dark:divide-gray-700">
-                    {allErrors.map((err) => (
-                      <tr key={err.error_id} className="hover:bg-gray-50 dark:hover:bg-slate-800">
-                        <td className="px-3 py-3">
-                          <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${
-                            err.severity === 'critical'
-                              ? 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400'
-                              : err.severity === 'warning'
-                                ? 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-400'
-                                : 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300'
-                          }`}>
-                            {err.severity}
+                <div className="md:hidden divide-y divide-gray-200 dark:divide-gray-700">
+                  {allErrors.map((err) => (
+                    <div key={err.error_id} className="p-4 space-y-3">
+                      <div className="flex items-start justify-between gap-3">
+                        <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${
+                          err.severity === 'critical'
+                            ? 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400'
+                            : err.severity === 'warning'
+                              ? 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-400'
+                              : 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300'
+                        }`}>
+                          {err.severity}
+                        </span>
+                        {err.acknowledged ? (
+                          <span className="px-1.5 py-0.5 bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400 rounded text-xs font-medium">
+                            Ack'd
                           </span>
-                        </td>
-                        <td className="px-3 py-3">
-                          <p className="text-sm font-medium text-gray-900 dark:text-gray-100 truncate" title={err.error_type}>{err.error_type}</p>
-                        </td>
-                        <td className="px-3 py-3">
-                          <p
-                            className="text-sm text-gray-700 dark:text-gray-300 truncate cursor-help hover:text-gray-900 dark:hover:text-gray-100 transition-colors"
-                            title={err.message}
-                          >
-                            {err.message}
-                          </p>
-                        </td>
-                        <td className="px-3 py-3">
-                          <p
-                            className="text-sm text-gray-500 dark:text-gray-400 font-mono truncate cursor-help"
-                            title={err.endpoint || 'N/A'}
-                          >
-                            {err.endpoint || 'N/A'}
-                          </p>
-                        </td>
-                        <td className="px-3 py-3">
-                          <p className="text-xs text-gray-500 dark:text-gray-400 whitespace-nowrap">
+                        ) : (
+                          <span className="px-1.5 py-0.5 bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-200 rounded text-xs font-medium">
+                            New
+                          </span>
+                        )}
+                      </div>
+
+                      <div>
+                        <p className="text-xs text-gray-500 dark:text-gray-400 uppercase tracking-wide">Error type</p>
+                        <p className="text-sm font-medium text-gray-900 dark:text-gray-100 break-words">{err.error_type}</p>
+                      </div>
+
+                      <div>
+                        <p className="text-xs text-gray-500 dark:text-gray-400 uppercase tracking-wide">Message</p>
+                        <p className="text-sm text-gray-700 dark:text-gray-300 break-words">{err.message}</p>
+                      </div>
+
+                      <div className="grid grid-cols-1 gap-2">
+                        <div>
+                          <p className="text-xs text-gray-500 dark:text-gray-400 uppercase tracking-wide">Endpoint</p>
+                          <p className="text-sm text-gray-500 dark:text-gray-400 font-mono break-all">{err.endpoint || 'N/A'}</p>
+                        </div>
+                        <div>
+                          <p className="text-xs text-gray-500 dark:text-gray-400 uppercase tracking-wide">Timestamp</p>
+                          <p className="text-xs text-gray-500 dark:text-gray-400">
                             {formatAdminTimestamp(err.timestamp, adminTimezone)}
                           </p>
-                        </td>
-                        <td className="px-3 py-3">
-                          {err.acknowledged ? (
-                            <span className="px-1.5 py-0.5 bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400 rounded text-xs font-medium">
-                              Ack'd
-                            </span>
-                          ) : (
-                            <span className="px-1.5 py-0.5 bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-200 rounded text-xs font-medium">
-                              New
-                            </span>
-                          )}
-                        </td>
-                        <td className="px-3 py-3 text-right whitespace-nowrap">
-                          {!err.acknowledged && (
-                            <button
-                              onClick={() => handleAcknowledgeError(err.error_id)}
-                              disabled={acknowledgingIds.has(err.error_id)}
-                              className="inline-flex items-center gap-1 text-green-600 hover:text-green-800 dark:text-green-400 dark:hover:text-green-300 disabled:opacity-50 text-xs font-medium mr-2"
-                            >
-                              {acknowledgingIds.has(err.error_id) && <Loader2 className="w-3 h-3 animate-spin" />}
-                              {acknowledgingIds.has(err.error_id) ? '...' : 'Ack'}
-                            </button>
-                          )}
+                        </div>
+                      </div>
+
+                      <div className="flex items-center justify-end gap-3 pt-1">
+                        {!err.acknowledged && (
                           <button
-                            onClick={() => router.push(`/admin/platform/errors/${err.error_id}`)}
-                            className="text-primary-600 hover:text-primary-800 dark:text-primary-400 text-xs font-medium"
+                            onClick={() => handleAcknowledgeError(err.error_id)}
+                            disabled={acknowledgingIds.has(err.error_id)}
+                            className="inline-flex items-center gap-1 text-green-600 hover:text-green-800 dark:text-green-400 dark:hover:text-green-300 disabled:opacity-50 text-xs font-medium"
                           >
-                            Details
+                            {acknowledgingIds.has(err.error_id) && <Loader2 className="w-3 h-3 animate-spin" />}
+                            {acknowledgingIds.has(err.error_id) ? '...' : 'Ack'}
                           </button>
-                        </td>
+                        )}
+                        <button
+                          onClick={() => router.push(`/admin/platform/errors/${err.error_id}`)}
+                          className="text-primary-600 hover:text-primary-800 dark:text-primary-400 text-xs font-medium"
+                        >
+                          Details
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                <div className="hidden md:block overflow-x-auto">
+                  <table className="w-full min-w-[980px] table-fixed divide-y divide-gray-200 dark:divide-gray-700">
+                    <thead className="bg-gray-50 dark:bg-slate-800">
+                      <tr>
+                        <th className="w-[72px] px-3 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Severity</th>
+                        <th className="w-[14%] px-3 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Error Type</th>
+                        <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Message</th>
+                        <th className="w-[18%] px-3 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Endpoint</th>
+                        <th className="w-[140px] px-3 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Timestamp</th>
+                        <th className="w-[80px] px-3 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Status</th>
+                        <th className="w-[120px] px-3 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Actions</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
-            </Card>
+                    </thead>
+                    <tbody className="bg-white dark:bg-slate-900 divide-y divide-gray-200 dark:divide-gray-700">
+                      {allErrors.map((err) => (
+                        <tr key={err.error_id} className="hover:bg-gray-50 dark:hover:bg-slate-800">
+                          <td className="px-3 py-3">
+                            <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${
+                              err.severity === 'critical'
+                                ? 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400'
+                                : err.severity === 'warning'
+                                  ? 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-400'
+                                  : 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300'
+                            }`}>
+                              {err.severity}
+                            </span>
+                          </td>
+                          <td className="px-3 py-3">
+                            <p className="text-sm font-medium text-gray-900 dark:text-gray-100 truncate" title={err.error_type}>{err.error_type}</p>
+                          </td>
+                          <td className="px-3 py-3">
+                            <p
+                              className="text-sm text-gray-700 dark:text-gray-300 truncate cursor-help hover:text-gray-900 dark:hover:text-gray-100 transition-colors"
+                              title={err.message}
+                            >
+                              {err.message}
+                            </p>
+                          </td>
+                          <td className="px-3 py-3">
+                            <p
+                              className="text-sm text-gray-500 dark:text-gray-400 font-mono truncate cursor-help"
+                              title={err.endpoint || 'N/A'}
+                            >
+                              {err.endpoint || 'N/A'}
+                            </p>
+                          </td>
+                          <td className="px-3 py-3">
+                            <p className="text-xs text-gray-500 dark:text-gray-400 whitespace-nowrap">
+                              {formatAdminTimestamp(err.timestamp, adminTimezone)}
+                            </p>
+                          </td>
+                          <td className="px-3 py-3">
+                            {err.acknowledged ? (
+                              <span className="px-1.5 py-0.5 bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400 rounded text-xs font-medium">
+                                Ack'd
+                              </span>
+                            ) : (
+                              <span className="px-1.5 py-0.5 bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-200 rounded text-xs font-medium">
+                                New
+                              </span>
+                            )}
+                          </td>
+                          <td className="px-3 py-3 text-right whitespace-nowrap">
+                            {!err.acknowledged && (
+                              <button
+                                onClick={() => handleAcknowledgeError(err.error_id)}
+                                disabled={acknowledgingIds.has(err.error_id)}
+                                className="inline-flex items-center gap-1 text-green-600 hover:text-green-800 dark:text-green-400 dark:hover:text-green-300 disabled:opacity-50 text-xs font-medium mr-2"
+                              >
+                                {acknowledgingIds.has(err.error_id) && <Loader2 className="w-3 h-3 animate-spin" />}
+                                {acknowledgingIds.has(err.error_id) ? '...' : 'Ack'}
+                              </button>
+                            )}
+                            <button
+                              onClick={() => router.push(`/admin/platform/errors/${err.error_id}`)}
+                              className="text-primary-600 hover:text-primary-800 dark:text-primary-400 text-xs font-medium"
+                            >
+                              Details
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </Card>
             </div>
           )}
 

@@ -241,6 +241,10 @@ class SubscriptionService:
                 "max_weddings": plan.get("max_weddings", 1),
                 "max_guests_per_wedding": plan.get("max_guests_per_wedding", 100),
                 "ai_credits_monthly": plan.get("ai_credits_monthly", 10),
+                "ai_credit_overage_price": plan.get(
+                    "ai_credit_overage_price",
+                    self.DEFAULT_AI_CREDIT_OVERAGE_PRICE_USD,
+                ),
                 "storage_gb": plan.get("storage_gb", 1),
                 "staff_seats": plan.get("staff_seats", 0),
                 "features": plan.get("features", {}),
@@ -625,6 +629,131 @@ class SubscriptionService:
                 status_code=500, detail=f"Error initializing usage tracking: {str(e)}"
             )
 
+    # ------------------------------------------------------------------ #
+    # Unit-economics defaults
+    # ------------------------------------------------------------------ #
+    # Soft-cap overage price applied when a planner consumes AI credits
+    # beyond their plan_snapshot allowance. Priced per credit. A planner
+    # can still call the AI; we track the overage and bill it at period
+    # close. This value is used as the default when a plan_snapshot does
+    # not carry ``ai_credit_overage_price`` (e.g. subscriptions issued
+    # before soft-cap overage was introduced).
+    DEFAULT_AI_CREDIT_OVERAGE_PRICE_USD = 0.02
+
+    def _resolve_overage_price(self, limits_source: dict) -> float:
+        price = limits_source.get("ai_credit_overage_price")
+        try:
+            price_f = float(price) if price is not None else 0.0
+        except (TypeError, ValueError):
+            price_f = 0.0
+        if price_f <= 0:
+            return self.DEFAULT_AI_CREDIT_OVERAGE_PRICE_USD
+        return price_f
+
+    async def _live_storage_bytes(self, user_id: str) -> int:
+        """Authoritative storage-used count in bytes for cap enforcement.
+
+        Sums ``size_bytes`` across every uploaded guest_media asset whose
+        ``wedding_id`` belongs to a wedding owned by this planner. Same
+        philosophy as ``_live_wedding_count``: the
+        ``usage_tracking.storage_used_gb`` counter is unreliable (drifts
+        on month rollover, drifts on re-provisioning, drifts under write
+        ordering races). The aggregation pipeline here is the source of
+        truth. Counter remains a read-cache only.
+        """
+        user = await self.users_collection.find_one(
+            {"_id": normalize_query_id(user_id)},
+            {"email": 1},
+        )
+        user_email = user.get("email") if user else None
+        owner_query = build_wedding_owner_query(
+            planner_id=user_id, planner_email=user_email
+        )
+        if not owner_query:
+            return 0
+        weddings_cursor = self.weddings_collection.find(owner_query, {"_id": 1})
+        wedding_docs = await weddings_cursor.to_list(length=10000)
+        if not wedding_docs:
+            return 0
+        wedding_ids = [str(w["_id"]) for w in wedding_docs]
+        pipeline = [
+            {
+                "$match": {
+                    "wedding_id": {"$in": wedding_ids},
+                    "upload_status": "uploaded",
+                }
+            },
+            {"$group": {"_id": None, "total": {"$sum": "$size_bytes"}}},
+        ]
+        cursor = mongo.db["guest_media_assets"].aggregate(pipeline)
+        result = await cursor.to_list(length=1)
+        return int(result[0]["total"]) if result else 0
+
+    async def _live_staff_seats_count(self, user_id: str) -> int:
+        """Authoritative staff-seats-used count for cap enforcement.
+
+        Counts team_members docs in pending or active status for this
+        planner. Same bug class as the weddings counter: the
+        ``usage_tracking.staff_seats_used`` counter can drift when
+        invites are deactivated without a compensating decrement, when
+        a planner is re-provisioned, or on month rollover. The
+        team_members collection is already the source of truth
+        everywhere else in the codebase (see
+        ``team_management_service.check_seat_limit``); this method aligns
+        the subscription_service cap path with that same truth.
+        """
+        cursor = mongo.db["team_members"].aggregate(
+            [
+                {
+                    "$match": {
+                        "owner_id": user_id,
+                        "status": {"$in": ["pending", "active"]},
+                    }
+                },
+                {"$count": "total"},
+            ]
+        )
+        result = await cursor.to_list(length=1)
+        return int(result[0]["total"]) if result else 0
+
+    async def _live_ai_credits_used(self, user_id: str, current_month: str) -> int:
+        """Authoritative AI credit spend for the current monthly window.
+
+        Aggregates ``credits_used`` from ``ai_usage_log`` entries for the
+        given ``YYYY-MM`` window. Same pattern as the other live-count
+        helpers — the ``usage_tracking.ai_credits_used_month`` counter is
+        a read-cache; the logs are the source of truth. Prevents the
+        counter-drift bug class that forced the weddings fix.
+        """
+        try:
+            year, month = current_month.split("-")
+            period_start = datetime(int(year), int(month), 1, tzinfo=timezone.utc)
+            if int(month) == 12:
+                period_end = datetime(int(year) + 1, 1, 1, tzinfo=timezone.utc)
+            else:
+                period_end = datetime(int(year), int(month) + 1, 1, tzinfo=timezone.utc)
+        except Exception:
+            return 0
+
+        cursor = mongo.db["ai_usage_log"].aggregate(
+            [
+                {
+                    "$match": {
+                        "user_id": user_id,
+                        "created_at": {"$gte": period_start, "$lt": period_end},
+                    }
+                },
+                {
+                    "$group": {
+                        "_id": None,
+                        "total": {"$sum": "$credits_used"},
+                    }
+                },
+            ]
+        )
+        result = await cursor.to_list(length=1)
+        return int(result[0]["total"]) if result else 0
+
     async def _live_wedding_count(self, user_id: str) -> int:
         """Authoritative wedding count for cap enforcement.
 
@@ -645,10 +774,15 @@ class SubscriptionService:
         3. Any write ordering issue between wedding create and counter
            increment leaves the counter out of sync indefinitely.
 
+        Soft-deleted weddings (``deleted_at`` set by
+        ``cascade_delete_service.soft_delete_wedding``) are EXCLUDED — the
+        plan cap is on *active* weddings; an archived wedding shouldn't
+        consume the same slot a live one would.
+
         Live-counting via ``build_wedding_owner_query`` (the canonical
         owner filter used everywhere else in the codebase) removes all
-        three modes at the cost of one ``count_documents`` call per cap
-        check.
+        three counter-drift modes at the cost of one ``count_documents``
+        call per cap check.
         """
         user = await self.users_collection.find_one(
             {"_id": normalize_query_id(user_id)},
@@ -660,7 +794,22 @@ class SubscriptionService:
         )
         if not owner_query:
             return 0
-        return await self.weddings_collection.count_documents(owner_query)
+        # Filter out soft-deleted weddings — the cap is on active weddings
+        # only. ``$exists: False`` matches docs without the field; ``$eq:
+        # None`` matches docs where the field is explicitly null. Either
+        # form means "not soft-deleted".
+        active_query = {
+            "$and": [
+                owner_query,
+                {
+                    "$or": [
+                        {"deleted_at": {"$exists": False}},
+                        {"deleted_at": None},
+                    ]
+                },
+            ]
+        }
+        return await self.weddings_collection.count_documents(active_query)
 
     async def get_usage_stats(self, user_id: str) -> dict:
         """Get current usage statistics for user.
@@ -750,35 +899,95 @@ class SubscriptionService:
                         "message": f"Wedding limit exceeded. Plan allows {limit} weddings, you have {current}",
                     }
             elif resource_type == "ai_credits":
-                current = usage.get("ai_credits_used_month", 0)
+                # Soft cap with overage. Live-query the usage log so we
+                # can't false-pass on counter drift. A planner in
+                # overage still gets ``allowed=true`` so the workflow
+                # doesn't break in crunch moments; we annotate the
+                # response with overage metadata that callers and the
+                # UI can surface and that billing can pick up at
+                # period close.
+                current_month = datetime.now(timezone.utc).strftime("%Y-%m")
+                current = await self._live_ai_credits_used(user_id, current_month)
                 limit = limits_source.get("ai_credits_monthly", 10)
                 remaining = max(0, limit - current)
-                if current + requested_amount > limit:
-                    return {
-                        "allowed": False,
-                        "current_usage": current,
-                        "limit": limit,
-                        "remaining": remaining,
-                        "message": f"AI credits limit exceeded. Plan allows {limit} credits per month, you have used {current}",
-                    }
-                # Return early with remaining and limit for ai_credits
+                projected = current + requested_amount
+                overage_credits = max(0, projected - limit) if limit != -1 else 0
+                overage_price = self._resolve_overage_price(limits_source)
+                cumulative_overage_credits = (
+                    max(0, current - limit) if limit != -1 else 0
+                )
+                overage_cost_cents = int(
+                    round(cumulative_overage_credits * overage_price * 100)
+                )
                 return {
                     "allowed": True,
                     "current_usage": current,
                     "limit": limit,
                     "remaining": remaining,
+                    "overage": overage_credits > 0 or cumulative_overage_credits > 0,
+                    "overage_credits": cumulative_overage_credits,
+                    "overage_credits_projected": overage_credits,
+                    "overage_price_per_credit_usd": overage_price,
+                    "overage_cost_cents": overage_cost_cents,
                 }
 
             elif resource_type == "staff_seats":
-                current = usage.get("staff_seats_used", 0)
+                # Source of truth is the team_members collection, not
+                # the counter — same reasoning as weddings. See
+                # ``_live_staff_seats_count`` for the drift modes the
+                # counter has historically exhibited.
+                current = await self._live_staff_seats_count(user_id)
                 limit = limits_source.get("staff_seats", 0)
-                if current + requested_amount > limit:
+                if limit != -1 and current + requested_amount > limit:
                     return {
                         "allowed": False,
                         "current_usage": current,
                         "limit": limit,
                         "message": f"Staff seats limit exceeded. Plan allows {limit} staff accounts",
                     }
+                return {
+                    "allowed": True,
+                    "current_usage": current,
+                    "limit": limit,
+                }
+
+            elif resource_type == "storage":
+                # Hard cap. Persistent resource — if a planner can keep
+                # writing past cap they compound the infrastructure
+                # bill every month the asset lives. Live-query via
+                # ``_live_storage_bytes`` so the cap can't drift on
+                # counter resets. ``requested_amount`` is interpreted
+                # as bytes; the plan_snapshot stores the allowance as
+                # GB. -1 = unlimited (Agency).
+                current_bytes = await self._live_storage_bytes(user_id)
+                limit_gb = limits_source.get("storage_gb", 1)
+                if limit_gb == -1:
+                    return {
+                        "allowed": True,
+                        "current_usage_bytes": current_bytes,
+                        "current_usage_gb": round(current_bytes / (1024**3), 3),
+                        "limit_gb": -1,
+                    }
+                limit_bytes = int(limit_gb) * (1024**3)
+                projected = current_bytes + int(requested_amount)
+                if projected > limit_bytes:
+                    return {
+                        "allowed": False,
+                        "current_usage_bytes": current_bytes,
+                        "current_usage_gb": round(current_bytes / (1024**3), 3),
+                        "limit_gb": limit_gb,
+                        "message": (
+                            f"Storage limit reached — "
+                            f"{round(current_bytes / (1024**3), 2)} of {limit_gb} GB in use. "
+                            "Upgrade your plan or delete uploads to free space."
+                        ),
+                    }
+                return {
+                    "allowed": True,
+                    "current_usage_bytes": current_bytes,
+                    "current_usage_gb": round(current_bytes / (1024**3), 3),
+                    "limit_gb": limit_gb,
+                }
 
             return {
                 "allowed": True,
@@ -798,11 +1007,18 @@ class SubscriptionService:
         """Increment usage for a specific resource"""
         try:
             current_month = datetime.now(timezone.utc).strftime("%Y-%m")
-            # Map resource types to database fields
+            # Map resource types to database fields. These counters are
+            # read-caches: authoritative values come from the live-query
+            # helpers (_live_wedding_count, _live_storage_bytes,
+            # _live_staff_seats_count, _live_ai_credits_used). Keeping
+            # the counters in sync preserves the existing observability
+            # breadcrumb and lets `get_usage_stats` short-circuit when
+            # the cache matches reality.
             field_mapping = {
                 "weddings": "weddings_count",
                 "ai_credits": "ai_credits_used_month",
                 "staff_seats": "staff_seats_used",
+                "storage": "storage_used_bytes",
             }
 
             if resource_type not in field_mapping:

@@ -800,6 +800,16 @@ class StripeService:
         if not current_period_end:
             current_period_end = now
 
+        # Cancel-at-period-end is a top-level Stripe sub field set by the
+        # planner via the billing portal or our cancel endpoint. Without
+        # syncing it, Mongo never learns the sub is scheduled to cancel —
+        # the cancellation banner stays hidden, the renewal cron has no way
+        # to skip the about-to-die sub, and the planner experience drifts
+        # from Stripe's source of truth.
+        cancel_at_period_end = bool(subscription.get("cancel_at_period_end"))
+        canceled_at = self._parse_timestamp(subscription.get("canceled_at"))
+        cancel_at = self._parse_timestamp(subscription.get("cancel_at"))
+
         subscription_updates: Dict[str, Any] = {
             "stripe_subscription_id": stripe_subscription_id,
             "stripe_customer_id": customer_id,
@@ -809,6 +819,9 @@ class StripeService:
             "trial_start_date": trial_start,
             "current_period_start": current_period_start,
             "current_period_end": current_period_end,
+            "cancel_at_period_end": cancel_at_period_end,
+            "canceled_at": canceled_at,
+            "cancel_at": cancel_at,
             "updated_at": now,
         }
 
@@ -842,11 +855,29 @@ class StripeService:
             existing_snapshot_doc = None
             if snapshot_lookup_query:
                 existing_snapshot_doc = await self.subscriptions_collection.find_one(
-                    snapshot_lookup_query, {"plan_snapshot": 1}
+                    snapshot_lookup_query, {"plan_snapshot": 1, "plan_id": 1}
                 )
 
-            if not existing_snapshot_doc or not existing_snapshot_doc.get(
-                "plan_snapshot"
+            # User-initiated plan change refresh: if the incoming plan_id
+            # differs from what the subscription doc currently records, the
+            # planner upgraded or downgraded their plan in Stripe — the
+            # snapshot MUST refresh to the new plan's limits, otherwise the
+            # cap-enforcement code would keep reading old values forever
+            # (e.g., upgrade Boutique→Signature would still cap weddings at 3).
+            #
+            # The grandfather rule only protects against admin-initiated plan
+            # *limit* changes (admin edits Boutique's max_weddings in the
+            # plans collection): the plan_id stays the same, so the snapshot
+            # is preserved. A plan_id change is a different event entirely.
+            existing_plan_id = (
+                existing_snapshot_doc.get("plan_id") if existing_snapshot_doc else None
+            )
+            plan_changed = existing_plan_id is not None and existing_plan_id != plan_id
+
+            if (
+                not existing_snapshot_doc
+                or not existing_snapshot_doc.get("plan_snapshot")
+                or plan_changed
             ):
                 try:
                     plan = await self.plans_collection.find_one({"_id": plan_id})
@@ -871,10 +902,15 @@ class StripeService:
                             ),
                             "snapshot_date": now,
                         }
+                        reason = (
+                            f"plan changed from {existing_plan_id} → {plan_id}"
+                            if plan_changed
+                            else "no existing snapshot found"
+                        )
                         logger.info(
                             f"Built plan_snapshot for subscription "
                             f"{stripe_subscription_id or user_id} from plan "
-                            f"{plan_id} (no existing snapshot found)"
+                            f"{plan_id} ({reason})"
                         )
                 except Exception as e:
                     # Do not fail the webhook sync if plan lookup errors —
