@@ -95,3 +95,6 @@ new-prod-bootstrap/
 AGENTS.md
 loadtests/
 docs/OLD/
+
+# Rendered worker configs (generated at deploy time, never committed)
+cloudflare-workers/*.wrangler.rendered.toml

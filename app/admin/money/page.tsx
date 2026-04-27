@@ -489,10 +489,21 @@ export default function MoneyDashboard() {
   }
 
   return (
-    <div className="space-y-6">
+    // Flex column at the page level so the active tab's main card can
+    // flex-1 to the bottom of the viewport (Incoming / Outgoing / Timeline
+    // tabs were previously fixed-height and left a gap below the empty
+    // state). PageHeader, summary cards, quick actions, tabs nav, and
+    // optional Subscription stay at their natural heights; only the
+    // active-tab card grows to fill what's left.
+    //
+    // gap-4 (was gap-6) keeps the Overview tab inside the viewport without
+    // scrolling — the original 24px stacked separations across 5 sections
+    // pushed the bottom past the fold.
+    <div className="flex min-h-[calc(100vh-8rem)] flex-col gap-4">
       <PageHeader
         title="Money"
         description="Unified view of all your financial transactions"
+        className=""
       >
         <select
           value={dateFilter}
@@ -510,90 +521,92 @@ export default function MoneyDashboard() {
         </Button>
       </PageHeader>
 
-      {/* Summary Cards */}
+      {/* Summary Cards — single-row compact layout. The earlier "icon row +
+          margin + label + value + subtext" stack was vertically tall and
+          forced Quick Actions below the fold. Per planner feedback, the
+          icon chip and trend icon were taking space without adding signal,
+          so they're dropped. Color is preserved on the value to keep
+          incoming/outgoing/net distinguishable at a glance. */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
         {/* Total Incoming */}
-        <Card className="p-6">
-          <div className="flex items-center justify-between">
-            <div className="p-2 bg-green-100 dark:bg-green-900/30 rounded-lg">
-              <ArrowDownRight className="w-5 h-5 text-green-600" />
-            </div>
-            <TrendingUp className="w-5 h-5 text-green-500" />
-          </div>
-          <div className="mt-4">
-            <p className="text-sm text-slate-600 dark:text-slate-400">Total Incoming</p>
-            <p className="text-2xl font-bold text-slate-900 dark:text-white mt-1">
-              {formatCurrency(summary?.total_incoming || 0)}
-            </p>
-            <p className="text-xs text-green-600 mt-1">
-              From couples (autopilot)
-            </p>
-          </div>
+        <Card className="p-4">
+          <p className="text-sm text-slate-600 dark:text-slate-400">Total Incoming</p>
+          <p className="text-2xl font-bold text-green-600 dark:text-green-400 mt-1">
+            {formatCurrency(summary?.total_incoming || 0)}
+          </p>
+          <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+            From couples (autopilot)
+          </p>
         </Card>
 
         {/* Pending Incoming */}
-        <Card className="p-6">
-          <div className="flex items-center justify-between">
-            <div className="p-2 bg-blue-100 dark:bg-blue-900/30 rounded-lg">
-              <Clock className="w-5 h-5 text-blue-600" />
-            </div>
-            <Calendar className="w-5 h-5 text-blue-500" />
-          </div>
-          <div className="mt-4">
-            <p className="text-sm text-slate-600 dark:text-slate-400">Pending Incoming</p>
-            <p className="text-2xl font-bold text-slate-900 dark:text-white mt-1">
-              {formatCurrency(summary?.pending_incoming || 0)}
-            </p>
-            <p className="text-xs text-blue-600 mt-1">
-              Scheduled payments
-            </p>
-          </div>
+        <Card className="p-4">
+          <p className="text-sm text-slate-600 dark:text-slate-400">Pending Incoming</p>
+          <p className="text-2xl font-bold text-blue-600 dark:text-blue-400 mt-1">
+            {formatCurrency(summary?.pending_incoming || 0)}
+          </p>
+          <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+            Scheduled payments
+          </p>
         </Card>
 
         {/* Total Outgoing */}
-        <Card className="p-6">
-          <div className="flex items-center justify-between">
-            <div className="p-2 bg-orange-100 dark:bg-orange-900/30 rounded-lg">
-              <ArrowUpRight className="w-5 h-5 text-orange-600" />
-            </div>
-            <Building2 className="w-5 h-5 text-orange-500" />
-          </div>
-          <div className="mt-4">
-            <p className="text-sm text-slate-600 dark:text-slate-400">Total Outgoing</p>
-            <p className="text-2xl font-bold text-slate-900 dark:text-white mt-1">
-              {formatCurrency(summary?.total_outgoing || 0)}
-            </p>
-            <p className="text-xs text-orange-600 mt-1">
-              To vendors
-            </p>
-          </div>
+        <Card className="p-4">
+          <p className="text-sm text-slate-600 dark:text-slate-400">Total Outgoing</p>
+          <p className="text-2xl font-bold text-orange-600 dark:text-orange-400 mt-1">
+            {formatCurrency(summary?.total_outgoing || 0)}
+          </p>
+          <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+            To vendors
+          </p>
         </Card>
 
         {/* Net Cash Flow */}
-        <Card className="p-6">
-          <div className="flex items-center justify-between">
-            <div className="p-2 bg-primary-100 dark:bg-primary-900/30 rounded-lg">
-              <DollarSign className="w-5 h-5 text-primary-600" />
-            </div>
-            {(summary?.net_cash_flow || 0) >= 0 ? (
-              <TrendingUp className="w-5 h-5 text-green-500" />
-            ) : (
-              <TrendingDown className="w-5 h-5 text-red-500" />
-            )}
-          </div>
-          <div className="mt-4">
-            <p className="text-sm text-slate-600 dark:text-slate-400">Net Cash Flow</p>
-            <p className={`text-2xl font-bold mt-1 ${
-              (summary?.net_cash_flow || 0) >= 0 ? 'text-green-600' : 'text-red-600'
-            }`}>
-              {formatCurrency(summary?.net_cash_flow || 0)}
-            </p>
-            <p className="text-xs text-slate-500 mt-1">
-              Incoming - Outgoing
-            </p>
-          </div>
+        <Card className="p-4">
+          <p className="text-sm text-slate-600 dark:text-slate-400">Net Cash Flow</p>
+          <p className={`text-2xl font-bold mt-1 ${
+            (summary?.net_cash_flow || 0) >= 0
+              ? 'text-green-600 dark:text-green-400'
+              : 'text-red-600 dark:text-red-400'
+          }`}>
+            {formatCurrency(summary?.net_cash_flow || 0)}
+          </p>
+          <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+            Incoming − Outgoing
+          </p>
         </Card>
       </div>
+
+      {/* Quick Actions — single-line section. Heading sits inline with
+          the action buttons (no wrap), so the entire row consumes one
+          line of vertical space at the top of the page. flex-nowrap on
+          the button group keeps the buttons on one horizontal row even
+          if the heading takes a chunk of the width. */}
+      <Card className="p-4">
+        <div className="flex items-center gap-4">
+          <h2 className="font-semibold text-slate-900 dark:text-white whitespace-nowrap">
+            Quick Actions
+          </h2>
+          <div className="flex flex-nowrap items-center gap-3 overflow-x-auto">
+            <Button variant="outline" onClick={() => router.push('/admin/packages')}>
+              <CreditCard size={18} className="mr-2" />
+              Create Package
+            </Button>
+            <Button variant="outline" onClick={() => router.push('/admin/vendors')}>
+              <Building2 size={18} className="mr-2" />
+              Manage Vendors
+            </Button>
+            <Button variant="outline" onClick={() => router.push('/admin/budget')}>
+              <DollarSign size={18} className="mr-2" />
+              Go to Budget
+            </Button>
+            <Button variant="outline" onClick={() => router.push('/admin/planner/billing')}>
+              <Receipt size={18} className="mr-2" />
+              Subscription Billing
+            </Button>
+          </div>
+        </div>
+      </Card>
 
       {/* Tabs */}
       <div className="border-b border-slate-200 dark:border-slate-700">
@@ -950,7 +963,10 @@ export default function MoneyDashboard() {
       )}
 
       {activeTab === 'incoming' && (
-        <Card>
+        // flex-1 so the card stretches to the bottom of the viewport
+        // when there are zero/few rows; previously it was fixed-height
+        // and left a gap below the empty state.
+        <Card className="flex-1 flex flex-col">
           <div className="p-4 border-b border-slate-200 dark:border-slate-700">
             <div className="flex items-center justify-between mb-4">
               <h2 className="font-semibold text-slate-900 dark:text-white">
@@ -1235,7 +1251,7 @@ export default function MoneyDashboard() {
       )}
 
       {activeTab === 'outgoing' && (
-        <Card>
+        <Card className="flex-1 flex flex-col">
           <div className="p-4 border-b border-slate-200 dark:border-slate-700">
             <div className="flex items-center justify-between mb-2">
               <h2 className="font-semibold text-slate-900 dark:text-white">
@@ -1313,20 +1329,14 @@ export default function MoneyDashboard() {
               <Building2 className="w-12 h-12 mx-auto mb-3 text-slate-300 dark:text-slate-500" />
               <p>No vendor payments tracked yet</p>
               <p className="text-sm mt-1">Add vendors to your wedding budgets to track payments here</p>
-              <Button
-                variant="outline"
-                className="mt-4"
-                onClick={() => router.push('/admin/budget')}
-              >
-                Go to Budget
-              </Button>
+              {/* "Go to Budget" CTA moved to the page-level Quick Actions row */}
             </div>
           )}
         </Card>
       )}
 
       {activeTab === 'timeline' && (
-        <Card>
+        <Card className="flex-1 flex flex-col">
           <div className="p-4 border-b border-slate-200 dark:border-slate-700">
             <h2 className="font-semibold text-slate-900 dark:text-white">
               Cash Flow Timeline
@@ -1383,8 +1393,11 @@ export default function MoneyDashboard() {
         </Card>
       )}
 
-      {/* Subscription Summary */}
-      {subscription && (
+      {/* Subscription Summary — Overview-only. Previously rendered on every
+          tab, which made Incoming / Outgoing / Timeline scroll past it
+          before reaching their own content. Subscription is reference
+          metadata for the dashboard, not a per-flow concern. */}
+      {activeTab === 'overview' && subscription && (
         <Card className="p-6">
           <div className="flex items-center justify-between mb-4">
             <h2 className="font-semibold text-slate-900 dark:text-white flex items-center gap-2">
@@ -1472,24 +1485,6 @@ export default function MoneyDashboard() {
         </Card>
       )}
 
-      {/* Quick Actions */}
-      <Card className="p-6">
-        <h2 className="font-semibold text-slate-900 dark:text-white mb-4">Quick Actions</h2>
-        <div className="flex flex-wrap gap-3">
-          <Button variant="outline" onClick={() => router.push('/admin/packages')}>
-            <CreditCard size={18} className="mr-2" />
-            Create Package
-          </Button>
-          <Button variant="outline" onClick={() => router.push('/admin/vendors')}>
-            <Building2 size={18} className="mr-2" />
-            Manage Vendors
-          </Button>
-          <Button variant="outline" onClick={() => router.push('/admin/planner/billing')}>
-            <Receipt size={18} className="mr-2" />
-            Subscription Billing
-          </Button>
-        </div>
-      </Card>
     </div>
   );
 }

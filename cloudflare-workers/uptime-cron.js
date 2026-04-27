@@ -126,7 +126,11 @@ async function checkHealth(env) {
   const startTime = Date.now();
 
   try {
-    const response = await fetchWithTimeout(`${env.NEXT_PUBLIC_API_BASE_URL}/health`, {
+    // Hit `/health/` with trailing slash explicitly. The bare `/health`
+    // path responds 307 → `/health/`, and the redirect chain on prod
+    // currently bounces through an http hop. Hitting the canonical URL
+    // directly skips the redirect dance entirely.
+    const response = await fetchWithTimeout(`${env.NEXT_PUBLIC_API_BASE_URL}/health/`, {
       method: 'GET',
       headers: { 'Content-Type': 'application/json' }
     }, 15000); // 15 second timeout

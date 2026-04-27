@@ -73,8 +73,17 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          # Render the substituted config next to the JS source — wrangler
+          # resolves `main = "uptime-cron.js"` RELATIVE to the config file's
+          # directory, so writing the rendered toml to ${RUNNER_TEMP} (as the
+          # earlier version did) makes wrangler look for
+          # ${RUNNER_TEMP}/uptime-cron.js, which doesn't exist, and the
+          # deploy step bails with `entry-point file ... was not found`.
+          # Keeping the rendered toml in cloudflare-workers/ keeps the
+          # relative `main` path correct. The .rendered.toml suffix is
+          # gitignored so it never accidentally gets committed.
           sed "s|<UPTIME_KV_NAMESPACE_ID>|${UPTIME_KV_NAMESPACE_ID}|g" \
-            cloudflare-workers/uptime.wrangler.toml > "${RUNNER_TEMP}/uptime.wrangler.toml"
+            cloudflare-workers/uptime.wrangler.toml > cloudflare-workers/uptime.wrangler.rendered.toml
 
       - name: Validate uptime KV namespace exists in Cloudflare account
         shell: bash
@@ -92,7 +101,7 @@ jobs:
             exit 1
           fi
 
-          if grep -q "<UPTIME_KV_NAMESPACE_ID>" "${RUNNER_TEMP}/uptime.wrangler.toml"; then
+          if grep -q "<UPTIME_KV_NAMESPACE_ID>" cloudflare-workers/uptime.wrangler.rendered.toml; then
             echo "Uptime worker config template substitution failed."
             exit 1
           fi
@@ -134,11 +143,11 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          npx --yes "wrangler@${WRANGLER_VERSION}" deploy --config "${RUNNER_TEMP}/uptime.wrangler.toml"
-          printf '%s' "$NEXT_PUBLIC_API_BASE_URL" | npx --yes "wrangler@${WRANGLER_VERSION}" secret put NEXT_PUBLIC_API_BASE_URL --config "${RUNNER_TEMP}/uptime.wrangler.toml"
-          printf '%s' "$RESEND_API_KEY" | npx --yes "wrangler@${WRANGLER_VERSION}" secret put RESEND_API_KEY --config "${RUNNER_TEMP}/uptime.wrangler.toml"
-          printf '%s' "$ALERT_EMAIL" | npx --yes "wrangler@${WRANGLER_VERSION}" secret put ALERT_EMAIL --config "${RUNNER_TEMP}/uptime.wrangler.toml"
-          printf '%s' "$ROOT_ADMIN_EMAIL" | npx --yes "wrangler@${WRANGLER_VERSION}" secret put ROOT_ADMIN_EMAIL --config "${RUNNER_TEMP}/uptime.wrangler.toml"
+          npx --yes "wrangler@${WRANGLER_VERSION}" deploy --config cloudflare-workers/uptime.wrangler.rendered.toml
+          printf '%s' "$NEXT_PUBLIC_API_BASE_URL" | npx --yes "wrangler@${WRANGLER_VERSION}" secret put NEXT_PUBLIC_API_BASE_URL --config cloudflare-workers/uptime.wrangler.rendered.toml
+          printf '%s' "$RESEND_API_KEY" | npx --yes "wrangler@${WRANGLER_VERSION}" secret put RESEND_API_KEY --config cloudflare-workers/uptime.wrangler.rendered.toml
+          printf '%s' "$ALERT_EMAIL" | npx --yes "wrangler@${WRANGLER_VERSION}" secret put ALERT_EMAIL --config cloudflare-workers/uptime.wrangler.rendered.toml
+          printf '%s' "$ROOT_ADMIN_EMAIL" | npx --yes "wrangler@${WRANGLER_VERSION}" secret put ROOT_ADMIN_EMAIL --config cloudflare-workers/uptime.wrangler.rendered.toml
 
       - name: Deploy Trial Cron Worker
         shell: bash
