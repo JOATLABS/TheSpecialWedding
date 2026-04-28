@@ -1073,6 +1073,16 @@ async def get_public_contract(token: str, request: Request):
         if contract is None:
             raise HTTPException(status_code=404, detail="Contract not found")
 
+        # TODO(payment-status-rendering): The public contract page renders
+        # its Payment Schedule from `package_snapshot.payment_schedule`,
+        # which is frozen at send-time and has no per-row state. Post-sign
+        # the couple sees the same "Due on signing" / "7 days after signing"
+        # copy with no Paid/Scheduled badge and no Total/Paid/Remaining
+        # summary, even though the backend has correct `scheduled_payments`
+        # rows. Fix: also fetch and merge `scheduled_payments` rows by
+        # contract_id into the response so the renderer can show live
+        # status + actual due dates. Tracked in task #26 (verified via the
+        # planner-couple package-flow verifier UI-2 checkpoint, 2026-04-27).
         # Remove sensitive planner data for public view
         public_contract = {
             "id": contract.get("id"),
