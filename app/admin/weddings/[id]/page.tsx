@@ -19,6 +19,9 @@ import {
 } from '@/utils/weddingEvents';
 import { PaymentCollectionButton } from '@/components/payments/PaymentCollectionButton';
 import { CampaignSponsoredRail } from '../../vendors/components/CampaignSponsoredRail';
+import { getWeddingVendors, type VendorAssignment } from '@/services/vendorManagementApi';
+import { budgetApi } from '@/services/budgetApi';
+import type { BudgetCategory } from '@/types/budget';
 import { PrivacyModeSelector } from './PrivacyModeSelector';
 import {
   DEFAULT_PRIVACY_SETTINGS,
@@ -113,13 +116,19 @@ export default function WeddingDetailsPage() {
 	 const [saving, setSaving] = useState(false);
 	 const [error, setError] = useState<string>('');
 	 const [eventTimeErrors, setEventTimeErrors] = useState<Record<number, string>>({});
-	 const [activeTab, setActiveTab] = useState<'events' | 'rsvp' | 'privacy' | 'registry' | 'faq' | 'theme' | 'story' | 'couple'>('events');
+	 const [activeTab, setActiveTab] = useState<'events' | 'vendors' | 'rsvp' | 'privacy' | 'registry' | 'faq' | 'theme' | 'story' | 'couple'>('events');
  const [syncing, setSyncing] = useState(false);
  const [guests, setGuests] = useState<Guest[]>([]);
  const [uploadedMedia, setUploadedMedia] = useState<WeddingMediaItem[]>([]);
  const [loadingUploadedMedia, setLoadingUploadedMedia] = useState(false);
  const [showAdRail, setShowAdRail] = useState(false);
  const canViewCoupleTab = canManageCouplePortal(userProfile);
+
+ // Vendors tab state — fetched lazily when the tab is activated.
+ const [vendorAssignments, setVendorAssignments] = useState<VendorAssignment[]>([]);
+ const [vendorAssignmentsLoading, setVendorAssignmentsLoading] = useState(false);
+ const [vendorAssignmentsError, setVendorAssignmentsError] = useState<string | null>(null);
+ const [vendorBudgetCategories, setVendorBudgetCategories] = useState<BudgetCategory[]>([]);
 
  const fetchWedding = useCallback(async () => {
  try {
@@ -311,6 +320,36 @@ export default function WeddingDetailsPage() {
      fetchUploadedMedia(wedding.slug);
    }
  }, [activeTab, fetchUploadedMedia, wedding?.slug]);
+
+ // Fetch vendor assignments + budget categories when the vendors tab opens.
+ // Both calls happen in parallel; budget-categories is a best-effort
+ // lookup used to render category names (failure renders "—").
+ const fetchVendorAssignments = useCallback(async () => {
+   if (!token || !weddingId) return;
+   setVendorAssignmentsLoading(true);
+   setVendorAssignmentsError(null);
+   try {
+     const [assignments, categories] = await Promise.all([
+       getWeddingVendors(token, weddingId),
+       budgetApi.getBudgetCategories(token, weddingId).catch(() => []),
+     ]);
+     setVendorAssignments(Array.isArray(assignments) ? assignments : []);
+     setVendorBudgetCategories(Array.isArray(categories) ? categories : []);
+   } catch (err) {
+     setVendorAssignmentsError(
+       err instanceof Error ? err.message : 'Failed to load vendors'
+     );
+     setVendorAssignments([]);
+   } finally {
+     setVendorAssignmentsLoading(false);
+   }
+ }, [token, weddingId]);
+
+ useEffect(() => {
+   if (activeTab === 'vendors') {
+     fetchVendorAssignments();
+   }
+ }, [activeTab, fetchVendorAssignments]);
 
  // Sync wedding party from guests
  const syncWeddingPartyFromGuests = async () => {
@@ -664,6 +703,7 @@ const addEvent = () => {
  <nav className="flex overflow-x-auto scrollbar-hide">
  {([
  'events',
+ 'vendors',
  'rsvp',
  'privacy',
  'registry',
@@ -847,6 +887,158 @@ const addEvent = () => {
  </div>
  </div>
  ))}
+ </div>
+ )}
+
+ {/* Vendors Tab */}
+ {activeTab === 'vendors' && (
+ <div className="space-y-6">
+ <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3 mb-4">
+ <div>
+ <h2 className="text-2xl font-bold text-wedding-navy dark:text-gray-100">Vendors</h2>
+ <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
+ Vendors assigned to this wedding, with their contracts and payment status.
+ </p>
+ </div>
+ <Link
+ href="/admin/vendors"
+ className="bg-wedding-sage text-white px-4 py-2 rounded-lg hover:bg-opacity-90 text-center whitespace-nowrap"
+ >
+ Manage directory
+ </Link>
+ </div>
+
+ {vendorAssignmentsLoading && (
+ <div className="flex items-center justify-center py-12 text-gray-500 dark:text-gray-400">
+ <Loader2 className="w-5 h-5 animate-spin mr-2" />
+ Loading vendors...
+ </div>
+ )}
+
+ {!vendorAssignmentsLoading && vendorAssignmentsError && (
+ <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-900/60 dark:bg-red-900/20 dark:text-red-200">
+ {vendorAssignmentsError}
+ </div>
+ )}
+
+ {!vendorAssignmentsLoading && !vendorAssignmentsError && vendorAssignments.length === 0 && (
+ <div className="rounded-xl border border-dashed border-gray-300 dark:border-gray-700 px-6 py-10 text-center">
+ <h3 className="text-lg font-medium text-gray-900 dark:text-gray-100 mb-2">
+ No vendors assigned to this wedding yet
+ </h3>
+ <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">
+ Add a vendor from the directory to start tracking quotes, contracts, and payments for this wedding.
+ </p>
+ <Link
+ href="/admin/vendors"
+ className="inline-flex items-center bg-wedding-rose text-white px-4 py-2 rounded-lg hover:bg-opacity-90"
+ >
+ Add vendor
+ </Link>
+ </div>
+ )}
+
+ {!vendorAssignmentsLoading && !vendorAssignmentsError && vendorAssignments.length > 0 && (
+ <div className="space-y-3">
+ {[...vendorAssignments]
+ .sort((a, b) => {
+ // Action-required statuses float to the top.
+ const order: Record<string, number> = {
+ inquiry: 0, quoted: 1, contracted: 2, confirmed: 3, completed: 4, cancelled: 5,
+ };
+ const ai = order[a.status] ?? 99;
+ const bi = order[b.status] ?? 99;
+ if (ai !== bi) return ai - bi;
+ return (a.vendor_name || '').localeCompare(b.vendor_name || '');
+ })
+ .map((assignment) => {
+ const assignmentId = assignment._id || assignment.id;
+ const categoryName = assignment.budget_category_id
+ ? vendorBudgetCategories.find(
+ (c) => (c._id || c.id) === assignment.budget_category_id
+ )?.name
+ : null;
+ const statusClass = (() => {
+ switch (assignment.status) {
+ case 'completed':
+ return 'bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-200';
+ case 'cancelled':
+ return 'bg-gray-200 text-gray-700 dark:bg-gray-700 dark:text-gray-300';
+ case 'confirmed':
+ case 'contracted':
+ return 'bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-200';
+ case 'quoted':
+ return 'bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-200';
+ case 'inquiry':
+ default:
+ return 'bg-purple-100 text-purple-800 dark:bg-purple-900/40 dark:text-purple-200';
+ }
+ })();
+ const fmt = (n: number) =>
+ new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(n);
+
+ return (
+ <div
+ key={assignmentId}
+ className="border border-gray-200 dark:border-gray-700 rounded-xl p-4 hover:shadow-lg transition-shadow"
+ >
+ <div className="flex items-start justify-between gap-3">
+ <div className="flex items-center gap-3 min-w-0 flex-1">
+ <div className="w-12 h-12 bg-gradient-to-br from-wedding-rose to-wedding-gold rounded-lg flex items-center justify-center text-white font-bold shrink-0">
+ {(assignment.vendor_name || '?').charAt(0)}
+ </div>
+ <div className="min-w-0 flex-1">
+ <div className="font-semibold text-gray-900 dark:text-gray-100 truncate" title={assignment.vendor_name}>
+ {assignment.vendor_name}
+ </div>
+ <div className="text-sm text-gray-500 dark:text-gray-400 truncate capitalize">
+ {assignment.service_category}
+ </div>
+ </div>
+ </div>
+ <span className={`px-3 py-1 text-xs font-medium rounded-full whitespace-nowrap shrink-0 capitalize ${statusClass}`}>
+ {assignment.status}
+ </span>
+ </div>
+
+ <div className="mt-4 grid grid-cols-1 sm:grid-cols-3 gap-3 text-sm">
+ <div>
+ <div className="text-gray-500 dark:text-gray-400 text-xs uppercase tracking-wide mb-0.5">Budget category</div>
+ <div className="text-gray-900 dark:text-gray-100 truncate" title={categoryName || ''}>
+ {categoryName || <span className="text-gray-400">—</span>}
+ </div>
+ </div>
+ <div>
+ <div className="text-gray-500 dark:text-gray-400 text-xs uppercase tracking-wide mb-0.5">Contracted</div>
+ <div className="text-gray-900 dark:text-gray-100">
+ {assignment.contracted_amount != null
+ ? fmt(assignment.contracted_amount)
+ : <span className="text-gray-400">—</span>}
+ </div>
+ </div>
+ <div>
+ <div className="text-gray-500 dark:text-gray-400 text-xs uppercase tracking-wide mb-0.5">Paid</div>
+ <div className="text-green-600 dark:text-green-400">
+ {fmt(assignment.paid_amount || 0)}
+ </div>
+ </div>
+ </div>
+
+ {assignment.contract_id && (
+ <div className="mt-4 pt-3 border-t border-gray-200 dark:border-gray-700">
+ <Link
+ href={`/admin/vendors/contracts/${assignment.contract_id}`}
+ className="text-sm text-wedding-rose hover:opacity-80 font-medium"
+ >
+ View contract →
+ </Link>
+ </div>
+ )}
+ </div>
+ );
+ })}
+ </div>
+ )}
  </div>
  )}
 

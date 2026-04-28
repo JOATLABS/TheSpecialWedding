@@ -2,10 +2,10 @@
 
 import { useState } from 'react';
 import { Card } from '../ui/Card';
-import { Button } from '../ui/Button';
 import BudgetProgressBar from './BudgetProgressBar';
 import type { BudgetCategory } from '../../types/budget';
 import { formatDate } from '@/utils/dateFormat';
+import { Pencil, Plus, Trash2, Clock } from 'lucide-react';
 
 interface AssignedVendor {
   vendor_name: string;
@@ -113,37 +113,15 @@ export default function BudgetCategoryCard({
         </span>
       </div>
 
-      {/* Budget progress */}
+      {/* Budget progress — single source of truth for budget/spent/remaining.
+          The bar's built-in labels (Spent, Budget, % used, Remaining) cover
+          everything; no separate stat tiles needed below. */}
       <div className="mb-4">
         <BudgetProgressBar
           budgeted={category.budgeted_amount}
           spent={category.actual_spent}
           size="md"
         />
-      </div>
-
-      {/* Key metrics */}
-      <div className="grid grid-cols-3 gap-2 mb-4 text-center text-sm">
-        <div>
-          <div className="font-semibold text-wedding-navy dark:text-blue-400">
-            {formatCurrency(category.budgeted_amount)}
-          </div>
-          <div className="text-gray-600 dark:text-gray-400">Budget</div>
-        </div>
-        <div>
-          <div className="font-semibold text-wedding-rose dark:text-rose-400">
-            {formatCurrency(category.actual_spent)}
-          </div>
-          <div className="text-gray-600 dark:text-gray-400">Spent</div>
-        </div>
-        <div>
-          <div className={`font-semibold ${
-            category.budgeted_amount - category.actual_spent >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'
-          }`}>
-            {formatCurrency(category.budgeted_amount - category.actual_spent)}
-          </div>
-          <div className="text-gray-600 dark:text-gray-400">Remaining</div>
-        </div>
       </div>
 
       {/* Subcategories toggle */}
@@ -214,36 +192,46 @@ export default function BudgetCategoryCard({
         </div>
       )}
 
-      {/* Action buttons */}
-      <div className="flex gap-2 pt-2 border-t border-gray-200 dark:border-gray-600">
-        <Button
-          onClick={() => onEdit(category)}
-          className="flex-1 text-sm"
-        >
-          Edit
-        </Button>
-        <Button
-          onClick={() => onAddPayment(category)}
-          className="flex-1 text-sm"
-        >
-          Add Payment
-        </Button>
+      {/* Action buttons — icon-only with tooltips, footer line on the right */}
+      <div className="flex items-center justify-between gap-2 pt-2 border-t border-gray-200 dark:border-gray-600">
+        <div className="flex items-center gap-1">
+          <button
+            type="button"
+            onClick={() => onEdit(category)}
+            className="p-1.5 rounded-md text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-slate-700 hover:text-wedding-rose transition-colors"
+            title="Edit category"
+            aria-label="Edit category"
+          >
+            <Pencil className="w-4 h-4" />
+          </button>
+          <button
+            type="button"
+            onClick={() => onAddPayment(category)}
+            className="p-1.5 rounded-md text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-slate-700 hover:text-wedding-rose transition-colors"
+            title="Add payment"
+            aria-label="Add payment"
+          >
+            <Plus className="w-4 h-4" />
+          </button>
+          <button
+            type="button"
+            onClick={() => onDelete(category.id)}
+            className="p-1.5 rounded-md text-gray-600 dark:text-gray-300 hover:bg-red-50 dark:hover:bg-red-900/20 hover:text-red-600 dark:hover:text-red-400 transition-colors"
+            title="Delete category"
+            aria-label="Delete category"
+          >
+            <Trash2 className="w-4 h-4" />
+          </button>
+        </div>
 
-        <Button
-          variant="danger"
-          onClick={() => onDelete(category.id)}
-          className="text-sm px-3"
-        >
-          Delete
-        </Button>
-      </div>
-
-      {/* Additional info */}
-      <div className="mt-2 text-xs text-gray-500 dark:text-gray-400 text-center">
-        Last updated: {formatDate(category.updated_at)}
-        {!!category.percentage_of_total && (
-          <span className="ml-2">• {category.percentage_of_total.toFixed(1)}% of total budget</span>
-        )}
+        {/* Compact footer: clock icon + last updated; optional percent suffix. */}
+        <div className="flex items-center gap-1 text-xs text-gray-500 dark:text-gray-400">
+          <Clock className="w-3 h-3" aria-hidden />
+          <span>{formatDate(category.updated_at)}</span>
+          {!!category.percentage_of_total && (
+            <span className="ml-1">· {category.percentage_of_total.toFixed(1)}%</span>
+          )}
+        </div>
       </div>
     </Card>
   );

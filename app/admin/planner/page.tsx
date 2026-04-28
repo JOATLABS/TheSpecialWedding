@@ -10,6 +10,7 @@ import PageHeader from '../components/PageHeader';
 import OnboardingModal from '../components/OnboardingModal';
 import { CampaignSponsoredRail } from '../vendors/components/CampaignSponsoredRail';
 import { fetchEngagementSignals, type WeddingEngagementSignal } from '@/services/behavioralAnalyticsApi';
+import { Users, Mail, ImagePlus } from 'lucide-react';
 
 interface Wedding {
  id: string;
@@ -312,90 +313,51 @@ export default function WeddingPlannerDashboard() {
  </div>
  )}
 
- {/* Stats Cards */}
- <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+ {/* Stats Cards — compact: label + number on a single row, optional
+     +plus-ones inline. No icon chips; the labels carry the meaning. */}
+ <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
    {/* Active Weddings */}
-   <div className="bg-white dark:bg-slate-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 p-6">
-     <div className="flex flex-col items-center text-center">
-       <div className="w-10 h-10 bg-blue-500 rounded-lg flex items-center justify-center mb-3">
-         <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-         </svg>
-       </div>
-       <p className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-1">Active Weddings</p>
-       <p className="text-3xl font-bold text-gray-900 dark:text-gray-100">{weddings.length}</p>
-     </div>
+   <div className="bg-white dark:bg-slate-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 px-4 py-3">
+     <p className="text-xs font-medium text-gray-500 dark:text-gray-400">Active Weddings</p>
+     <p className="text-xl font-bold text-gray-900 dark:text-gray-100 mt-0.5">{weddings.length}</p>
    </div>
 
    {/* RSVPs Confirmed — with plus-ones */}
-   <div className="bg-white dark:bg-slate-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 p-6">
-     <div className="flex flex-col items-center text-center">
-       <div className="w-10 h-10 bg-green-500 rounded-lg flex items-center justify-center mb-3">
-         <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-         </svg>
-       </div>
-       <p className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-1">RSVPs Confirmed</p>
-       <div className="flex items-baseline gap-3 justify-center">
-         <div>
-           <p className="text-3xl font-bold text-gray-900 dark:text-gray-100">{stats.confirmed}</p>
-           <p className="text-xs text-gray-400 dark:text-gray-500">guests</p>
-         </div>
-         {stats.confirmed_plus_ones_submitted > 0 && (
-           <div className="border-l border-gray-200 dark:border-gray-600 pl-3">
-             <p className="text-xl font-semibold text-green-600 dark:text-green-400">+{stats.confirmed_plus_ones_submitted}</p>
-             <p className="text-xs text-gray-400 dark:text-gray-500">plus-ones</p>
-           </div>
-         )}
-       </div>
+   <div className="bg-white dark:bg-slate-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 px-4 py-3">
+     <p className="text-xs font-medium text-gray-500 dark:text-gray-400">RSVPs Confirmed</p>
+     <div className="flex items-baseline gap-2 mt-0.5">
+       <span className="text-xl font-bold text-gray-900 dark:text-gray-100">{stats.confirmed}</span>
+       {stats.confirmed_plus_ones_submitted > 0 && (
+         <span className="text-sm font-semibold text-green-600 dark:text-green-400">
+           +{stats.confirmed_plus_ones_submitted}
+         </span>
+       )}
      </div>
    </div>
 
    {/* Pending RSVPs — with plus-ones */}
-   <div className="bg-white dark:bg-slate-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 p-6">
-     <div className="flex flex-col items-center text-center">
-       <div className="w-10 h-10 bg-yellow-500 rounded-lg flex items-center justify-center mb-3">
-         <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-         </svg>
-       </div>
-       <p className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-1">Pending RSVPs</p>
-       <div className="flex items-baseline gap-3 justify-center">
-         <div>
-           <p className="text-3xl font-bold text-gray-900 dark:text-gray-100">{stats.pending}</p>
-           <p className="text-xs text-gray-400 dark:text-gray-500">guests</p>
-         </div>
-         {stats.pending_plus_ones_allowed > 0 && (
-           <div className="border-l border-gray-200 dark:border-gray-600 pl-3">
-             <p className="text-xl font-semibold text-yellow-600 dark:text-yellow-400">+{stats.pending_plus_ones_allowed}</p>
-             <p className="text-xs text-gray-400 dark:text-gray-500">plus-ones</p>
-           </div>
-         )}
-       </div>
+   <div className="bg-white dark:bg-slate-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 px-4 py-3">
+     <p className="text-xs font-medium text-gray-500 dark:text-gray-400">Pending RSVPs</p>
+     <div className="flex items-baseline gap-2 mt-0.5">
+       <span className="text-xl font-bold text-gray-900 dark:text-gray-100">{stats.pending}</span>
+       {stats.pending_plus_ones_allowed > 0 && (
+         <span className="text-sm font-semibold text-yellow-600 dark:text-yellow-400">
+           +{stats.pending_plus_ones_allowed}
+         </span>
+       )}
      </div>
    </div>
 
    {/* Total Guests — with plus-ones */}
-   <div className="bg-white dark:bg-slate-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 p-6">
-     <div className="flex flex-col items-center text-center">
-       <div className="w-10 h-10 bg-purple-500 rounded-lg flex items-center justify-center mb-3">
-         <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
-         </svg>
-       </div>
-       <p className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-1">Total Guests</p>
-       <div className="flex items-baseline gap-3 justify-center">
-         <div>
-           <p className="text-3xl font-bold text-gray-900 dark:text-gray-100">{stats.total_guests}</p>
-           <p className="text-xs text-gray-400 dark:text-gray-500">guests</p>
-         </div>
-         {stats.total_plus_ones_allowed > 0 && (
-           <div className="border-l border-gray-200 dark:border-gray-600 pl-3">
-             <p className="text-xl font-semibold text-purple-600 dark:text-purple-400">+{stats.total_plus_ones_allowed}</p>
-             <p className="text-xs text-gray-400 dark:text-gray-500">plus-ones</p>
-           </div>
-         )}
-       </div>
+   <div className="bg-white dark:bg-slate-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 px-4 py-3">
+     <p className="text-xs font-medium text-gray-500 dark:text-gray-400">Total Guests</p>
+     <div className="flex items-baseline gap-2 mt-0.5">
+       <span className="text-xl font-bold text-gray-900 dark:text-gray-100">{stats.total_guests}</span>
+       {stats.total_plus_ones_allowed > 0 && (
+         <span className="text-sm font-semibold text-purple-600 dark:text-purple-400">
+           +{stats.total_plus_ones_allowed}
+         </span>
+       )}
      </div>
    </div>
  </div>
@@ -510,54 +472,34 @@ export default function WeddingPlannerDashboard() {
  </div>
  </div>
 
- {/* Quick Actions */}
- <div className="bg-white dark:bg-slate-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 p-6">
- <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-4">Quick Actions</h2>
- <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
- <button
- onClick={() => router.push('/admin/guests')}
- className="flex items-center p-4 border border-gray-200 dark:border-gray-700 rounded-lg hover:bg-gray-50 dark:hover:bg-slate-700 transition-colors"
- >
- <div className="w-8 h-8 bg-green-100 rounded-lg flex items-center justify-center mr-3">
- <svg className="w-5 h-5 text-green-600 dark:text-green-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
- <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
- </svg>
- </div>
- <div className="text-left">
- <p className="font-medium text-gray-900 dark:text-gray-100">Manage Guests</p>
- <p className="text-sm text-gray-500 dark:text-gray-400">View and edit guest lists</p>
- </div>
- </button>
-
- <button
- onClick={() => router.push('/admin/communications/reminders')}
- className="flex items-center p-4 border border-gray-200 dark:border-gray-700 rounded-lg hover:bg-gray-50 dark:hover:bg-slate-700 transition-colors"
- >
- <div className="w-8 h-8 bg-blue-100 rounded-lg flex items-center justify-center mr-3">
- <svg className="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
- <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 7.89a2 2 0 002.82 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
- </svg>
- </div>
- <div className="text-left">
- <p className="font-medium text-gray-900 dark:text-gray-100">Send Reminders</p>
- <p className="text-sm text-gray-500 dark:text-gray-400">Email and SMS notifications</p>
- </div>
- </button>
-
- <button
- onClick={() => router.push('/admin/gallery/upload')}
- className="flex items-center p-4 border border-gray-200 dark:border-gray-700 rounded-lg hover:bg-gray-50 dark:hover:bg-slate-700 transition-colors"
- >
- <div className="w-8 h-8 bg-purple-100 rounded-lg flex items-center justify-center mr-3">
- <svg className="w-5 h-5 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
- <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
- </svg>
- </div>
- <div className="text-left">
- <p className="font-medium text-gray-900 dark:text-gray-100">Upload Photos</p>
- <p className="text-sm text-gray-500 dark:text-gray-400">Add to wedding galleries</p>
- </div>
- </button>
+ {/* Quick Actions — compact: small inline icon next to a single label,
+     descriptions removed (the action label says enough). */}
+ <div className="bg-white dark:bg-slate-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 px-4 py-3">
+ <div className="flex items-center justify-between gap-4 flex-wrap">
+   <h2 className="text-sm font-semibold text-gray-900 dark:text-gray-100">Quick Actions</h2>
+   <div className="flex items-center gap-2 flex-wrap">
+     <button
+       onClick={() => router.push('/admin/guests')}
+       className="inline-flex items-center gap-2 px-3 py-1.5 text-sm border border-gray-200 dark:border-gray-700 rounded-lg hover:bg-gray-50 dark:hover:bg-slate-700 transition-colors"
+     >
+       <Users className="w-4 h-4 text-green-600 dark:text-green-400" />
+       <span className="font-medium text-gray-900 dark:text-gray-100">Manage Guests</span>
+     </button>
+     <button
+       onClick={() => router.push('/admin/communications/reminders')}
+       className="inline-flex items-center gap-2 px-3 py-1.5 text-sm border border-gray-200 dark:border-gray-700 rounded-lg hover:bg-gray-50 dark:hover:bg-slate-700 transition-colors"
+     >
+       <Mail className="w-4 h-4 text-blue-600 dark:text-blue-400" />
+       <span className="font-medium text-gray-900 dark:text-gray-100">Send Reminders</span>
+     </button>
+     <button
+       onClick={() => router.push('/admin/gallery/upload')}
+       className="inline-flex items-center gap-2 px-3 py-1.5 text-sm border border-gray-200 dark:border-gray-700 rounded-lg hover:bg-gray-50 dark:hover:bg-slate-700 transition-colors"
+     >
+       <ImagePlus className="w-4 h-4 text-purple-600 dark:text-purple-400" />
+       <span className="font-medium text-gray-900 dark:text-gray-100">Upload Photos</span>
+     </button>
+   </div>
  </div>
  </div>
 

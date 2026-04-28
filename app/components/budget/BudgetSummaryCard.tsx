@@ -5,7 +5,7 @@ import { Card } from '../ui/Card';
 import BudgetProgressBar from './BudgetProgressBar';
 import type { BudgetSummary } from '../../types/budget';
 import { formatDate } from '@/utils/dateFormat';
-import { Pencil, Check, X } from 'lucide-react';
+import { Pencil, Check, X, TrendingUp, TrendingDown } from 'lucide-react';
 
 interface BudgetSummaryCardProps {
   summary: BudgetSummary;
@@ -77,157 +77,123 @@ export default function BudgetSummaryCard({ summary, className = '', onSetTotalB
   };
 
   return (
-    <Card className={`p-6 ${className}`}>
-      <div className="flex justify-between items-start mb-6">
-        <h2 className="text-2xl font-heading font-bold text-wedding-navy dark:text-white">
-          Budget Overview
-        </h2>
-        <div className="text-right">
-          <div className="text-sm text-gray-600 dark:text-gray-400">Last Updated</div>
-          <div className="text-sm font-medium dark:text-gray-200">
-            {formatDate(summary.last_updated)}
-          </div>
-        </div>
-      </div>
-
-      {/* Main budget progress */}
-      <div className="mb-6">
-        <BudgetProgressBar
-          budgeted={summary.total_budget}
-          spent={summary.total_spent}
-          size="lg"
-        />
-      </div>
-
-      {/* Key metrics grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-        {/* Total Budget — editable */}
-        <div className="text-center p-4 bg-gray-50 dark:bg-slate-700/50 rounded-lg border border-transparent dark:border-slate-600 relative group">
-          {isEditingBudget ? (
-            <div className="flex flex-col items-center gap-2">
-              <div className="flex items-center gap-1">
-                <span className="text-lg font-bold text-wedding-navy dark:text-blue-400">$</span>
-                <input
-                  ref={inputRef}
-                  type="number"
-                  min="0"
-                  step="100"
-                  value={budgetInput}
-                  onChange={(e) => setBudgetInput(e.target.value)}
-                  onKeyDown={handleKeyDown}
-                  disabled={isSaving}
-                  className="w-28 text-center text-lg font-bold text-wedding-navy dark:text-blue-400 bg-white dark:bg-slate-600 border border-wedding-rose rounded-md px-2 py-1 focus:outline-none focus:ring-2 focus:ring-wedding-rose"
-                />
-              </div>
-              <div className="flex items-center gap-1">
-                <button
-                  onClick={handleSaveBudget}
-                  disabled={isSaving}
-                  className="p-1 rounded bg-green-100 dark:bg-green-900/40 text-green-700 dark:text-green-400 hover:bg-green-200 dark:hover:bg-green-900/60 transition-colors"
-                  title="Save"
-                >
-                  <Check className="w-4 h-4" />
-                </button>
-                <button
-                  onClick={handleCancelEdit}
-                  disabled={isSaving}
-                  className="p-1 rounded bg-gray-100 dark:bg-slate-600 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-slate-500 transition-colors"
-                  title="Cancel"
-                >
-                  <X className="w-4 h-4" />
-                </button>
-              </div>
-            </div>
-          ) : (
-            <>
-              <div className="text-2xl font-bold text-wedding-navy dark:text-blue-400">
-                {formatCurrency(summary.total_budget)}
-              </div>
-              <div className="text-sm text-gray-600 dark:text-gray-400 flex items-center justify-center gap-1">
-                Total Budget
-                {onSetTotalBudget && (
-                  <button
-                    onClick={handleEditBudget}
-                    className="opacity-0 group-hover:opacity-100 transition-opacity p-0.5 rounded hover:bg-gray-200 dark:hover:bg-slate-600"
-                    title="Edit total budget"
-                  >
-                    <Pencil className="w-3.5 h-3.5 text-wedding-rose" />
-                  </button>
-                )}
-              </div>
-            </>
+    <Card className={`p-4 ${className}`}>
+      {/* Header — title, optional edit pencil, last-updated all on one line */}
+      <div className="flex justify-between items-center gap-3 mb-3 flex-wrap">
+        <div className="flex items-center gap-2">
+          <h2 className="text-base font-heading font-semibold text-wedding-navy dark:text-white">
+            Budget Overview
+          </h2>
+          {onSetTotalBudget && !isEditingBudget && (
+            <button
+              onClick={handleEditBudget}
+              className="p-1 rounded hover:bg-gray-100 dark:hover:bg-slate-700 transition-colors"
+              title="Edit total budget"
+              aria-label="Edit total budget"
+            >
+              <Pencil className="w-3.5 h-3.5 text-wedding-rose" />
+            </button>
           )}
         </div>
-        <div className="text-center p-4 bg-gray-50 dark:bg-slate-700/50 rounded-lg border border-transparent dark:border-slate-600">
-          <div className="text-2xl font-bold text-wedding-rose dark:text-rose-400">
-            {formatCurrency(summary.total_spent)}
-          </div>
-          <div className="text-sm text-gray-600 dark:text-gray-400">Total Spent</div>
-        </div>
-        <div className="text-center p-4 bg-gray-50 dark:bg-slate-700/50 rounded-lg border border-transparent dark:border-slate-600">
-          <div className="text-2xl font-bold text-wedding-gold dark:text-yellow-400">
-            {formatCurrency(summary.total_committed)}
-          </div>
-          <div className="text-sm text-gray-600 dark:text-gray-400">Committed</div>
-        </div>
-        <div className="text-center p-4 bg-gray-50 dark:bg-slate-700/50 rounded-lg border border-transparent dark:border-slate-600">
-          <div className={`text-2xl font-bold ${
-            summary.remaining_budget >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'
-          }`}>
-            {formatCurrency(summary.remaining_budget)}
-          </div>
-          <div className="text-sm text-gray-600 dark:text-gray-400">Remaining</div>
+        <div className="text-right text-xs">
+          <span className="text-gray-600 dark:text-gray-400">Last Updated </span>
+          <span className="font-medium dark:text-gray-200">
+            {formatDate(summary.last_updated)}
+          </span>
         </div>
       </div>
 
-      {/* Budget variance indicator */}
-      {summary.budget_variance !== 0 && (
-        <div className="mb-6 p-4 bg-gray-50 dark:bg-slate-700/50 rounded-lg border border-transparent dark:border-slate-600">
-          <div className="flex items-center justify-between">
-            <span className="font-medium text-wedding-navy dark:text-gray-200">Budget Variance:</span>
-            <div className="text-right">
-              <div className={`text-lg font-bold ${getVarianceColor(summary.variance_percentage)}`}>
-                {formatCurrency(Math.abs(summary.budget_variance))}
-                <span className="text-sm ml-1">
-                  ({formatPercentage(summary.variance_percentage)})
-                </span>
-              </div>
-              <div className="text-xs text-gray-600 dark:text-gray-400">
-                {summary.budget_variance > 0 ? 'Over Budget' : 'Under Budget'}
-              </div>
-            </div>
-          </div>
+      {/* Inline budget editor — replaces the bar while editing */}
+      {isEditingBudget ? (
+        <div className="mb-4 flex items-center gap-2">
+          <span className="text-sm text-gray-600 dark:text-gray-400">Total budget:</span>
+          <span className="text-sm font-semibold text-wedding-navy dark:text-blue-400">$</span>
+          <input
+            ref={inputRef}
+            type="number"
+            min="0"
+            step="100"
+            value={budgetInput}
+            onChange={(e) => setBudgetInput(e.target.value)}
+            onKeyDown={handleKeyDown}
+            disabled={isSaving}
+            className="w-32 text-sm font-semibold text-wedding-navy dark:text-blue-400 bg-white dark:bg-slate-600 border border-wedding-rose rounded-md px-2 py-1 focus:outline-none focus:ring-2 focus:ring-wedding-rose"
+          />
+          <button
+            onClick={handleSaveBudget}
+            disabled={isSaving}
+            className="p-1 rounded bg-green-100 dark:bg-green-900/40 text-green-700 dark:text-green-400 hover:bg-green-200 dark:hover:bg-green-900/60 transition-colors"
+            title="Save"
+            aria-label="Save total budget"
+          >
+            <Check className="w-4 h-4" />
+          </button>
+          <button
+            onClick={handleCancelEdit}
+            disabled={isSaving}
+            className="p-1 rounded bg-gray-100 dark:bg-slate-600 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-slate-500 transition-colors"
+            title="Cancel"
+            aria-label="Cancel editing"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+      ) : (
+        /* Main budget progress — single source of truth for Spent / Budget /
+           % used / Remaining. The progress bar's built-in labels cover all
+           four numbers; no separate stat tiles needed. */
+        <div className="mb-4">
+          <BudgetProgressBar
+            budgeted={summary.total_budget}
+            spent={summary.total_spent}
+            size="lg"
+          />
         </div>
       )}
 
-      {/* Category and payment status */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-center">
-        <div className="p-3 bg-blue-50 dark:bg-blue-900/30 rounded-lg border border-transparent dark:border-blue-800">
-          <div className="text-xl font-bold text-blue-600 dark:text-blue-400">
+      {/* Category, payment status, and variance — compact pills, single row */}
+      <div className="grid grid-cols-2 md:grid-cols-3 gap-3 text-center">
+        <div className="px-3 py-2 bg-blue-50 dark:bg-blue-900/30 rounded-lg border border-transparent dark:border-blue-800 flex items-center justify-center gap-2">
+          <span className="text-lg font-bold text-blue-600 dark:text-blue-400">
             {summary.categories_count}
-          </div>
-          <div className="text-sm text-gray-600 dark:text-gray-400">Categories</div>
+          </span>
+          <span className="text-sm text-gray-600 dark:text-gray-400">Categories</span>
         </div>
-        <div className="p-3 bg-green-50 dark:bg-green-900/30 rounded-lg border border-transparent dark:border-green-800">
-          <div className="text-xl font-bold text-green-600 dark:text-green-400">
+        <div className="px-3 py-2 bg-green-50 dark:bg-green-900/30 rounded-lg border border-transparent dark:border-green-800 flex items-center justify-center gap-2">
+          <span className="text-lg font-bold text-green-600 dark:text-green-400">
             {summary.paid_categories}
-          </div>
-          <div className="text-sm text-gray-600 dark:text-gray-400">Paid Categories</div>
+          </span>
+          <span className="text-sm text-gray-600 dark:text-gray-400">Paid</span>
         </div>
+        {summary.budget_variance !== 0 && (
+          <div className="px-3 py-2 bg-gray-50 dark:bg-slate-700/50 rounded-lg border border-transparent dark:border-slate-600 flex items-center justify-center gap-2">
+            {summary.budget_variance > 0 ? (
+              <TrendingUp className={`w-4 h-4 ${getVarianceColor(summary.variance_percentage)}`} aria-hidden />
+            ) : (
+              <TrendingDown className={`w-4 h-4 ${getVarianceColor(summary.variance_percentage)}`} aria-hidden />
+            )}
+            <span className={`text-sm font-bold ${getVarianceColor(summary.variance_percentage)}`}>
+              {formatCurrency(Math.abs(summary.budget_variance))}
+            </span>
+            <span className="text-xs text-gray-600 dark:text-gray-400">
+              {summary.budget_variance > 0 ? 'Over' : 'Under'} ({formatPercentage(summary.variance_percentage)})
+            </span>
+          </div>
+        )}
         {summary.overdue_categories > 0 && (
-          <div className="p-3 bg-red-50 dark:bg-red-900/30 rounded-lg border border-transparent dark:border-red-800">
-            <div className="text-xl font-bold text-red-600 dark:text-red-400">
+          <div className="px-3 py-2 bg-red-50 dark:bg-red-900/30 rounded-lg border border-transparent dark:border-red-800 flex items-center justify-center gap-2">
+            <span className="text-lg font-bold text-red-600 dark:text-red-400">
               {summary.overdue_categories}
-            </div>
-            <div className="text-sm text-gray-600 dark:text-gray-400">Overdue</div>
+            </span>
+            <span className="text-sm text-gray-600 dark:text-gray-400">Overdue</span>
           </div>
         )}
         {summary.vendor_quotes_count > 0 && (
-          <div className="p-3 bg-purple-50 dark:bg-purple-900/30 rounded-lg border border-transparent dark:border-purple-800">
-            <div className="text-xl font-bold text-purple-600 dark:text-purple-400">
+          <div className="px-3 py-2 bg-purple-50 dark:bg-purple-900/30 rounded-lg border border-transparent dark:border-purple-800 flex items-center justify-center gap-2">
+            <span className="text-lg font-bold text-purple-600 dark:text-purple-400">
               {summary.vendor_quotes_count}
-            </div>
-            <div className="text-sm text-gray-600 dark:text-gray-400">Vendor Quotes</div>
+            </span>
+            <span className="text-sm text-gray-600 dark:text-gray-400">Vendor Quotes</span>
           </div>
         )}
       </div>

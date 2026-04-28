@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useSearchParams } from 'next/navigation';
 import { getApiBaseUrl } from '@/utils/env';
 import { useAdmin } from '@/contexts/AdminContext';
 import { toast } from 'sonner';
@@ -55,6 +56,7 @@ interface AIInsightsResponse {
 
 export default function BudgetDashboard() {
   const { token } = useAdmin();
+  const searchParams = useSearchParams();
   const [weddings, setWeddings] = useState<Wedding[]>([]);
   const [selectedWedding, setSelectedWedding] = useState<string>('');
   const [budgetSummary, setBudgetSummary] = useState<BudgetSummary | null>(null);
@@ -190,6 +192,22 @@ export default function BudgetDashboard() {
   useEffect(() => {
     fetchWeddings();
   }, [fetchWeddings]);
+
+  // Honor `?wedding_id=…` deep-links: once the wedding list has loaded
+  // and the user hasn't already picked something, pre-select the wedding
+  // named in the URL if it's one we own. Only seeds — never overrides
+  // a manual selection — so subsequent dropdown changes win.
+  useEffect(() => {
+    if (selectedWedding) return;
+    const urlWeddingId = searchParams.get('wedding_id');
+    if (!urlWeddingId || weddings.length === 0) return;
+    const match = weddings.find(
+      (w) => (w._id || w.id) === urlWeddingId
+    );
+    if (match) {
+      setSelectedWedding(urlWeddingId);
+    }
+  }, [searchParams, weddings, selectedWedding]);
 
   const fetchPaymentHistory = useCallback(
     async (weddingId: string) => {
@@ -524,15 +542,15 @@ export default function BudgetDashboard() {
       <div className={`${showAdRail ? 'lg:col-span-3' : ''} space-y-6`}>
 
       {/* Wedding Selection */}
-      <div className="bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-4">
-        <div className="flex flex-col sm:flex-row gap-4 items-center">
-          <label className="font-medium text-slate-700 dark:text-gray-200 whitespace-nowrap">
+      <div className="bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 px-3 py-2">
+        <div className="flex flex-col sm:flex-row gap-3 items-center">
+          <label className="text-sm font-medium text-slate-700 dark:text-gray-200 whitespace-nowrap">
             Select Wedding:
           </label>
           <select
             value={selectedWedding}
             onChange={(e) => setSelectedWedding(e.target.value)}
-            className="flex-1 px-4 py-2.5 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-wedding-rose focus:border-transparent"
+            className="flex-1 px-3 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-wedding-rose focus:border-transparent"
           >
             <option value="">Choose a wedding...</option>
             {weddings.map((wedding) => (
