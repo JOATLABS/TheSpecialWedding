@@ -25,7 +25,15 @@
 }
 
 @layer base {
-  html { font-family: var(--theme-font-body); }
+  /* Root font-size reduction (16px → 14px = 87.5%) shrinks every rem-based
+     Tailwind utility platform-wide: text sizes, paddings, margins, gaps.
+     Inputs/buttons inherit from this. Closer to what the user kept getting
+     by manually zooming to 80%. Per-px utilities (border widths, breakpoints)
+     are unaffected. Tweak this single value to retune density globally. */
+  html {
+    font-family: var(--theme-font-body);
+    font-size: 14px;
+  }
   h1, h2, h3, h4, h5, h6 { font-family: var(--theme-font-heading); }
 
   /* Light mode: use original theme colors */

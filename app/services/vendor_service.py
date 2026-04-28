@@ -133,8 +133,14 @@ class VendorService:
 
     @staticmethod
     def _build_inactive_contract_token_fields() -> Dict[str, Any]:
+        # Deliberately OMITS `access_token_hash` rather than setting it to
+        # None, because the unique-sparse index on access_token_hash treats
+        # an explicit null as a value (sparse only excludes documents
+        # MISSING the field). Two contracts inserted with
+        # access_token_hash=None would therefore collide on the index.
+        # send_contract sets the field to a real hash at issuance time;
+        # until then the field is genuinely absent.
         return {
-            "access_token_hash": None,
             "token_expires_at": None,
             "token_revoked_at": None,
             "token_last_sent_at": None,
@@ -1643,7 +1649,7 @@ class VendorService:
                     "vendor_profile_id": vendor_profile_id,
                     "wedding_id": wedding_id,
                 },
-                {"budget_category_id": 1},
+                {"budget_category_id": 1, "contract_id": 1},
             )
             assigned_category_id = (existing_assignment or {}).get("budget_category_id")
             if assigned_category_id is None:
@@ -1699,6 +1705,26 @@ class VendorService:
             await self.vendor_contracts.insert_one(contract)
             self._serialize_doc(contract)
             self._attach_contract_version_metadata(contract)
+
+            # Link the new contract back to the assignment so the wedding-detail
+            # Vendors tab (and any other surface that reads from the assignment)
+            # can show the contract immediately, not only after sign. We only
+            # set contract_id when it's currently null — first-contract-wins
+            # semantics, matching the prior behavior that sign_contract did at
+            # sign time. Status is intentionally NOT changed: the documented
+            # state machine reserves "contracted" for SIGNED, and a draft
+            # contract isn't signed.
+            if existing_assignment and not existing_assignment.get("contract_id"):
+                await self.vendor_assignments.update_one(
+                    {"_id": existing_assignment["_id"]},
+                    {
+                        "$set": {
+                            "contract_id": str(contract_id),
+                            "contracted_amount": total_amount,
+                            "updated_at": datetime.now(timezone.utc),
+                        }
+                    },
+                )
 
             # Update quote if converting from quote
             if quote_id:
