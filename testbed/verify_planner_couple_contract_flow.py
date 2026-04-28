@@ -23,7 +23,14 @@ The flow:
      → backend auto-charges the deposit through Stripe with
      `transfer_data.destination = planner.stripe_connect_id`.
   9. Backend assertions on `scheduled_payments` + Stripe PaymentIntent.
-  10. UI checkpoints on `/admin/money` (planner) and the couple portal.
+  10. Milestone advance: backdate the milestone's `due_date` in Mongo and
+      trigger the autopilot cron (`POST /admin/process-due-payments`).
+      Verifier-only time travel — production payment paths (PaymentIntent,
+      webhook, Connect destination routing) all run identically to a real
+      cron tick. Asserts the milestone PaymentIntent destination + amount
+      and that the row flips to `succeeded`.
+  11. UI checkpoints on `/admin/money` (planner) and the couple portal,
+      including a final UI-4 after both deposit and milestone are paid.
 
 All subscription / customer / package / contract state is created by
 hitting the real product endpoints. No `subscription_status` flip in
@@ -87,8 +94,9 @@ COUPLE_DISPLAY = f"{COUPLE_PARTNER1} & {COUPLE_PARTNER2}"
 
 PLAN_ID = os.getenv("CONTRACTFLOW_PLAN_ID", "plan_signature")
 
-# Package financials. Deposit is on-signing; milestone is days_after_signing
-# (not driven in this test — would need a clock).
+# Package financials. Deposit fires on-signing; milestone is
+# `days_after_signing=7` and is driven via Mongo backdating + an explicit
+# call to the autopilot cron — see ADVANCE_AND_TRIGGER_MILESTONE below.
 DEPOSIT_AMOUNT = 100.0
 MILESTONE_AMOUNT = 250.0
 TOTAL_AMOUNT = DEPOSIT_AMOUNT + MILESTONE_AMOUNT
@@ -328,6 +336,91 @@ def main() -> int:
             f"  status=Scheduled and amount ${MILESTONE_AMOUNT:.2f}.",
             "The 'Card' column shows a Visa ending in 4242.",
             "Summary cards at the top reflect the new pending/incoming totals.",
+        ],
+    )
+
+    # ---- ADVANCE_AND_TRIGGER_MILESTONE -------------------------------------
+    # The package's milestone is `days_after_signing=7`, which means in
+    # production it sits in `scheduled` status until the autopilot cron
+    # picks it up on its due date. To exercise the full payment lifecycle
+    # in a single verifier run, backdate the milestone's due_date in Mongo
+    # and trigger the cron endpoint directly. Production payment paths
+    # (PaymentIntent, webhook, Connect destination) all run identically.
+    h.phase(
+        "ADVANCE_AND_TRIGGER_MILESTONE",
+        "verifier-only time travel: backdate milestone, trigger autopilot",
+    )
+    milestone_id = str(milestone["_id"])
+    h.backdate_scheduled_payment(payment_id=milestone_id, days_back=8)
+    cron_summary = h.process_due_payments_now()
+    cron_results = cron_summary.get("results", {})
+    if cron_results.get("processed", 0) < 1:
+        raise AssertionError(
+            f"Autopilot processed 0 payments — expected at least the "
+            f"backdated milestone. Summary: {cron_summary}"
+        )
+    if cron_results.get("succeeded", 0) < 1:
+        raise AssertionError(
+            f"Autopilot succeeded count is 0 — milestone charge failed. "
+            f"Summary: {cron_summary}"
+        )
+
+    h.wait_for_webhooks()
+
+    # ---- ASSERT_MILESTONE --------------------------------------------------
+    h.phase("ASSERT_MILESTONE")
+    milestone_after = h.wait_for_scheduled_payment_status(
+        payment_id=milestone_id,
+        expected_status="succeeded",
+        timeout_seconds=30,
+    )
+    if not milestone_after.get("stripe_payment_intent_id"):
+        raise AssertionError(
+            "milestone.stripe_payment_intent_id missing after autopilot run"
+        )
+    if float(milestone_after.get("amount", 0)) != MILESTONE_AMOUNT:
+        raise AssertionError(
+            f"milestone.amount changed unexpectedly: "
+            f"expected {MILESTONE_AMOUNT}, got {milestone_after.get('amount')}"
+        )
+
+    milestone_pi = stripe.PaymentIntent.retrieve(
+        milestone_after["stripe_payment_intent_id"]
+    )
+    milestone_transfer_dest = (milestone_pi.get("transfer_data") or {}).get(
+        "destination"
+    )
+    if milestone_transfer_dest != connect_id:
+        raise AssertionError(
+            f"milestone.transfer_data.destination expected {connect_id!r}, "
+            f"got {milestone_transfer_dest!r}"
+        )
+    if milestone_pi.get("amount_received") != int(MILESTONE_AMOUNT * 100):
+        raise AssertionError(
+            f"milestone Stripe amount_received expected "
+            f"{int(MILESTONE_AMOUNT * 100)}, "
+            f"got {milestone_pi.get('amount_received')}"
+        )
+    h.log.info("  ✅ milestone Stripe PaymentIntent destination + amount asserts pass")
+
+    # Sanity: deposit row hasn't regressed.
+    deposit_after = h.mongo["scheduled_payments"].find_one({"_id": deposit["_id"]})
+    if deposit_after.get("status") != "succeeded":
+        raise AssertionError(
+            f"deposit.status regressed from 'succeeded' to "
+            f"{deposit_after.get('status')!r} during milestone processing"
+        )
+
+    # ---- UI-4: planner Money → Incoming after both payments succeed --------
+    h.checkpoint(
+        "UI-4 (planner Money → Incoming after both payments succeed)",
+        [
+            f"Reload {h.config.frontend_url}/admin/money → Incoming tab.",
+            f"Both rows for {COUPLE_DISPLAY} now show status=Succeeded:",
+            f"     Deposit: ${DEPOSIT_AMOUNT:.2f}",
+            f"     Milestone payment: ${MILESTONE_AMOUNT:.2f}",
+            f"Total Incoming card reads ${TOTAL_AMOUNT:.2f}.",
+            "Pending Incoming card reads $0.00 — nothing scheduled remains.",
         ],
     )
 

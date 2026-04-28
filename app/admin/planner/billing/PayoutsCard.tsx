@@ -38,6 +38,32 @@ import { useAdmin } from '@/contexts/AdminContext';
 import { getApiBaseUrl } from '@/utils/env';
 import { useStripeConnect } from '@/hooks/useStripeConnect';
 
+const SUPPORTED_COUNTRIES = [
+  { code: 'US', name: 'United States' },
+  { code: 'GB', name: 'United Kingdom' },
+  { code: 'CA', name: 'Canada' },
+  { code: 'AU', name: 'Australia' },
+  { code: 'DE', name: 'Germany' },
+  { code: 'FR', name: 'France' },
+  { code: 'IT', name: 'Italy' },
+  { code: 'ES', name: 'Spain' },
+  { code: 'NL', name: 'Netherlands' },
+  { code: 'IE', name: 'Ireland' },
+  { code: 'AT', name: 'Austria' },
+  { code: 'BE', name: 'Belgium' },
+  { code: 'DK', name: 'Denmark' },
+  { code: 'FI', name: 'Finland' },
+  { code: 'NO', name: 'Norway' },
+  { code: 'SE', name: 'Sweden' },
+  { code: 'CH', name: 'Switzerland' },
+  { code: 'PT', name: 'Portugal' },
+  { code: 'LU', name: 'Luxembourg' },
+  { code: 'NZ', name: 'New Zealand' },
+  { code: 'SG', name: 'Singapore' },
+  { code: 'HK', name: 'Hong Kong' },
+  { code: 'JP', name: 'Japan' },
+] as const;
+
 const POLL_INTERVAL_MS = 2_000;
 const POLL_TIMEOUT_MS = 30_000;
 const STRIPE_RETURN_PARAM = 'stripe_return';
@@ -49,6 +75,7 @@ export default function PayoutsCard() {
   const searchParams = useSearchParams();
   const [isStartingOnboarding, setIsStartingOnboarding] = useState(false);
   const [isPolling, setIsPolling] = useState(false);
+  const [selectedCountry, setSelectedCountry] = useState('US');
   const pollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pollDeadlineRef = useRef<number>(0);
 
@@ -113,7 +140,7 @@ export default function PayoutsCard() {
         },
         credentials: 'include',
         body: JSON.stringify({
-          country: 'US',
+          country: selectedCountry,
           return_url: returnUrl,
           refresh_url: refreshUrl,
         }),
@@ -232,6 +259,37 @@ export default function PayoutsCard() {
           couples. Until this is complete, you can&apos;t send packages — and
           any payments would route to the platform instead of you.
         </p>
+        {!hasStartedSetup ? (
+          <div className="space-y-2">
+            <label
+              htmlFor="stripe-connect-country"
+              className="block text-sm font-medium text-gray-700 dark:text-gray-300"
+            >
+              Business country
+            </label>
+            <select
+              id="stripe-connect-country"
+              value={selectedCountry}
+              onChange={(event) => setSelectedCountry(event.target.value)}
+              className="w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-gray-900 focus:outline-none focus:ring-2 focus:ring-wedding-rose dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100"
+            >
+              {SUPPORTED_COUNTRIES.map((country) => (
+                <option key={country.code} value={country.code}>
+                  {country.name}
+                </option>
+              ))}
+            </select>
+            <p className="text-xs text-gray-500 dark:text-gray-400">
+              Choose where your business is registered. Stripe locks this on
+              first account creation.
+            </p>
+          </div>
+        ) : (
+          <p className="text-xs text-gray-500 dark:text-gray-400">
+            Your Stripe account already exists, so its business country stays
+            fixed while you finish setup.
+          </p>
+        )}
         <Button
           onClick={handleStartOnboarding}
           disabled={isStartingOnboarding}

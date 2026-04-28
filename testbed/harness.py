@@ -50,7 +50,7 @@ import os
 import sys
 import time
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Optional
 
@@ -1025,6 +1025,125 @@ class Harness:
         secs = seconds if seconds is not None else self.config.webhook_settle_seconds
         self.log.info(f"  ⏳ Waiting {secs}s for Stripe webhooks to settle…")
         time.sleep(secs)
+
+    # ------------------------------------------------------------------
+    # Scheduled-payment / autopilot helpers
+    # ------------------------------------------------------------------
+    #
+    # The contract-sign flow charges the deposit immediately at sign time
+    # (`auto_charge_first_payment`), but milestones with
+    # `trigger=days_after_signing` aren't charged until the daily
+    # `POST /admin/process-due-payments` cron picks them up. To exercise
+    # the full lifecycle in a single verifier run — without waiting 7
+    # actual days — drivers backdate the milestone's `due_date` in Mongo
+    # and then call the cron endpoint directly. This is verifier-only
+    # time travel; production code paths (PaymentIntent creation, webhook
+    # reconciliation, Connect destination routing) all run identically to
+    # how they would on the real cron tick.
+
+    def backdate_scheduled_payment(
+        self,
+        *,
+        payment_id: str,
+        days_back: int = 8,
+    ) -> None:
+        """Move a scheduled_payment's due_date into the past for testing.
+
+        Verifier-only shim. Used to simulate the passage of time so the
+        autopilot cron picks up a milestone that would otherwise sit
+        scheduled for days. Logs explicitly that this is a test mutation
+        of state.
+        """
+        new_due = datetime.now(timezone.utc) - timedelta(days=days_back)
+        result = self.mongo["scheduled_payments"].update_one(
+            {"_id": ObjectId(payment_id)},
+            {"$set": {"due_date": new_due}},
+        )
+        if result.modified_count != 1:
+            raise AssertionError(
+                f"Expected to backdate exactly 1 scheduled_payment row "
+                f"(id={payment_id}); modified={result.modified_count}"
+            )
+        self.log.info(
+            f"  🕒 Backdated scheduled_payment {payment_id} by {days_back} "
+            f"days (due_date={new_due.isoformat()}) — verifier time-travel"
+        )
+
+    def process_due_payments_now(self) -> dict:
+        """Trigger the autopilot cron synchronously and return the summary.
+
+        Calls `POST /admin/process-due-payments` with the configured
+        CRON_SECRET. The cron runs `autopilot_service.process_due_payments`,
+        which finds every scheduled_payment with `due_date <= today` and
+        creates a PaymentIntent (off_session, transfer_data.destination =
+        planner.stripe_connect_id) for each. Returns the cron summary
+        body — `{"status": "success", "results": {processed, succeeded,
+        failed, ...}}`.
+
+        Raises if CRON_SECRET isn't configured or the call fails.
+        """
+        cron_secret = os.getenv("CRON_SECRET", "").strip()
+        if not cron_secret:
+            raise RuntimeError(
+                "CRON_SECRET is not set in the environment — required to "
+                "trigger /admin/process-due-payments. Add it to .env or "
+                "export it before running the verifier."
+            )
+        url = f"{self.config.backend_url}/admin/process-due-payments"
+        self.log.info(f"  🔁 Triggering autopilot: POST {url}")
+        resp = requests.post(
+            url,
+            headers={"Authorization": f"Bearer {cron_secret}"},
+            timeout=30,
+        )
+        resp.raise_for_status()
+        body = resp.json()
+        results = body.get("results", {})
+        self.log.info(
+            f"  ✅ Autopilot summary: processed={results.get('processed', 0)}, "
+            f"succeeded={results.get('succeeded', 0)}, "
+            f"failed={results.get('failed', 0)}"
+        )
+        return body
+
+    def wait_for_scheduled_payment_status(
+        self,
+        *,
+        payment_id: str,
+        expected_status: str,
+        timeout_seconds: int = 30,
+        poll_interval_seconds: float = 1.0,
+    ) -> dict:
+        """Poll Mongo until a scheduled_payment row reaches the expected status.
+
+        Use this after triggering the cron endpoint to wait for the
+        payment_intent.succeeded webhook to land and flip the row from
+        `processing → succeeded`. Returns the final row dict; raises if
+        the timeout elapses without the status flipping.
+        """
+        deadline = time.time() + timeout_seconds
+        last_status = None
+        while time.time() < deadline:
+            row = self.mongo["scheduled_payments"].find_one(
+                {"_id": ObjectId(payment_id)}
+            )
+            if not row:
+                raise AssertionError(
+                    f"scheduled_payment {payment_id} disappeared while polling"
+                )
+            last_status = row.get("status")
+            if last_status == expected_status:
+                self.log.info(
+                    f"  ✅ scheduled_payment {payment_id} reached status="
+                    f"{expected_status!r}"
+                )
+                return row
+            time.sleep(poll_interval_seconds)
+        raise AssertionError(
+            f"Timed out after {timeout_seconds}s waiting for scheduled_payment "
+            f"{payment_id} to reach status={expected_status!r}; "
+            f"last seen status={last_status!r}"
+        )
 
     # ------------------------------------------------------------------
     # Stripe Connect (Express) helpers
