@@ -2,6 +2,7 @@ import logging
 from datetime import datetime, timedelta, timezone
 from typing import List, Optional
 
+import stripe
 from fastapi import HTTPException
 
 from app.core.database import mongo
@@ -292,8 +293,6 @@ class SubscriptionService:
                     )
 
                     if stripe_customer_id:
-                        import stripe as stripe_lib
-
                         sub_params = {
                             "customer": stripe_customer_id,
                             "items": [{"price": stripe_price_id}],
@@ -302,7 +301,7 @@ class SubscriptionService:
                         if trial_days > 0:
                             sub_params["trial_end"] = int(trial_end.timestamp())
 
-                        stripe_sub = stripe_lib.Subscription.create(**sub_params)
+                        stripe_sub = stripe.Subscription.create(**sub_params)
                         stripe_subscription_id = stripe_sub.id
                         logger.info(
                             f"Created Stripe subscription {stripe_subscription_id} "
@@ -419,8 +418,6 @@ class SubscriptionService:
             stripe_sub_id = subscription.get("stripe_subscription_id")
             if stripe_sub_id:
                 try:
-                    import stripe
-
                     stripe.Subscription.cancel(stripe_sub_id)
                     logger.info(
                         f"Cancelled Stripe subscription {stripe_sub_id} for user {user_id}"
@@ -1074,16 +1071,33 @@ class SubscriptionService:
                     status_code=404, detail="No active subscription found"
                 )
 
-            # Create new usage tracking record for the new month
+            # Create new usage tracking record for the new month.
+            #
+            # NOTE on the counter values below: this writes a *new
+            # document* keyed by `(user_id, current_month)`, not a reset
+            # of the previous month's row. The previous comments here
+            # claimed `weddings_count` and `storage_used_gb` "don't reset
+            # monthly" — that was misleading: each month gets its own
+            # document, and these fields effectively start at 0 in the
+            # new doc. The cap-enforcement code does NOT trust these
+            # counters anyway — see `_live_wedding_count`,
+            # `_live_storage_bytes`, and `_live_staff_seats_count` for
+            # the source-of-truth queries that read the underlying
+            # collections directly. The counters here are a read cache
+            # used by the planner billing dashboard.
             new_usage_id = f"usage_{user_id}_{current_month}"
 
             usage_data = {
                 "_id": new_usage_id,
                 "user_id": user_id,
                 "subscription_id": subscription["_id"],
-                "weddings_count": 0,  # Keep wedding count (doesn't reset monthly)
-                "ai_credits_used_month": 0,  # Reset monthly credits
-                "storage_used_gb": 0.0,  # Keep storage count
+                # All four counters start at 0 in the new month's document.
+                # If a UI surface needs cumulative-since-signup numbers, it
+                # should query the live collections, not aggregate this
+                # cache.
+                "weddings_count": 0,
+                "ai_credits_used_month": 0,
+                "storage_used_gb": 0.0,
                 "staff_seats_used": 0,
                 "current_month": current_month,
                 "credits_reset_date": next_reset,

@@ -17,6 +17,10 @@ from app.dependencies.auth_extended import (
     require_team_or_planner,
 )
 from app.services.package_service import package_service
+from app.utils.planner_connect_scope import (
+    connect_not_ready_detail,
+    planner_can_collect_payments,
+)
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -315,6 +319,17 @@ async def send_package_to_couple(
             (current_user.user_data or {}).get("_id") or current_user.email
         )
 
+        # Gate: planner must have Stripe Connect onboarded with charges
+        # enabled before sending a package. Without this, the deposit
+        # auto-charge at sign time runs without `transfer_data.destination`
+        # and the money silently lands in the platform Stripe account.
+        # See app/utils/planner_connect_scope.py for the predicate.
+        if not planner_can_collect_payments(current_user.user_data):
+            raise HTTPException(
+                status_code=400,
+                detail=connect_not_ready_detail(),
+            )
+
         contract = await package_service.send_to_couple(
             package_id=package_id,
             planner_id=planner_id,
@@ -325,6 +340,10 @@ async def send_package_to_couple(
 
         return {"message": "Contract created and sent to couple", "contract": contract}
 
+    except HTTPException:
+        # Pass through HTTPExceptions (e.g., the Connect-readiness gate)
+        # without remapping them to 500.
+        raise
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:

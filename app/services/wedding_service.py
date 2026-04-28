@@ -116,7 +116,7 @@ class WeddingService:
                     str(wedding_dict.get("couple_names") or "")
                 )
             if not wedding_dict.get("created_at"):
-                wedding_dict["created_at"] = datetime.utcnow()
+                wedding_dict["created_at"] = datetime.now(timezone.utc)
             # Track billing period marker
             if "billed_period" not in wedding_dict:
                 current_month = datetime.now(timezone.utc).strftime("%Y-%m")

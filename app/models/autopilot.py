@@ -5,7 +5,7 @@ Data models for Package, Contract, and ScheduledPayment entities.
 These models power the Package → Contract → Autopilot payment flow.
 """
 
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 from typing import List, Literal, Optional
 
 from pydantic import BaseModel, Field, field_serializer
@@ -117,7 +117,7 @@ class ContractSignature(BaseModel):
     """Digital signature record."""
 
     signed_by: str = Field(..., min_length=1, max_length=200)
-    signed_at: datetime = Field(default_factory=datetime.utcnow)
+    signed_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     ip_address: str = Field(..., max_length=45)
     user_agent: str = Field(..., max_length=500)
 

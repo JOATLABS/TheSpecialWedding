@@ -116,7 +116,12 @@ class BudgetService:
             logger.info(
                 f"Created budget category {category.name} for wedding {wedding_id}"
             )
-            return category.model_dump()
+            # mode="json" activates PyObjectId.to_string_ser_schema and the
+            # field_serializer on `id`. Without it, the response payload
+            # ships the raw ObjectId — which FastAPI's default encoder
+            # serializes as `{}` (vars(ObjectId) is empty) — and any caller
+            # that needs the new category id is broken.
+            return category.model_dump(mode="json")
 
         except Exception as e:
             logger.error(f"Failed to create budget category: {str(e)}")
@@ -298,7 +303,8 @@ class BudgetService:
             logger.info(
                 f"Created vendor quote from {quote.vendor_name} for wedding {wedding_id}"
             )
-            return quote.model_dump()
+            # mode="json" — see note in create_budget_category.
+            return quote.model_dump(mode="json")
 
         except Exception as e:
             logger.error(f"Failed to create vendor quote: {str(e)}")
@@ -1486,7 +1492,10 @@ class BudgetService:
             )
 
             logger.info(f"Recorded contract payment ${amount} for wedding {wedding_id}")
-            return payment.model_dump()
+            # mode="json" — see note in create_budget_category. This method is
+            # currently unreachable (no callers as of 2026-04-27) but kept
+            # consistent so a future caller doesn't reintroduce the bug.
+            return payment.model_dump(mode="json")
 
         except Exception as e:
             logger.error(f"Failed to record contract payment in budget: {str(e)}")

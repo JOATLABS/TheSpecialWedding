@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Dict, List, Optional
 
 from pydantic import BaseModel, ConfigDict, Field, field_serializer
@@ -55,8 +55,8 @@ class BudgetCategory(BaseModel):
     payments: List[Dict] = Field(
         default_factory=list, description="List of payments made for this category"
     )
-    created_at: datetime = Field(default_factory=datetime.utcnow)
-    updated_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
     model_config = ConfigDict(
         populate_by_name=True, arbitrary_types_allowed=True, str_strip_whitespace=True
@@ -128,8 +128,8 @@ class VendorQuote(BaseModel):
     rating: Optional[int] = Field(
         None, ge=1, le=5, description="Quality/value rating (1-5)"
     )
-    created_at: datetime = Field(default_factory=datetime.utcnow)
-    updated_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
     model_config = ConfigDict(
         populate_by_name=True, arbitrary_types_allowed=True, str_strip_whitespace=True
@@ -192,8 +192,8 @@ class BudgetTemplate(BaseModel):
     is_public: bool = Field(
         default=True, description="Whether template is available to all planners"
     )
-    created_at: datetime = Field(default_factory=datetime.utcnow)
-    updated_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
     model_config = ConfigDict(
         populate_by_name=True, arbitrary_types_allowed=True, str_strip_whitespace=True
@@ -253,7 +253,7 @@ class BudgetSummary(BaseModel):
     vendor_quotes_count: int = Field(
         default=0, ge=0, description="Total vendor quotes collected"
     )
-    last_updated: datetime = Field(default_factory=datetime.utcnow)
+    last_updated: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
 class PaymentRecord(BaseModel):
@@ -273,7 +273,7 @@ class PaymentRecord(BaseModel):
         default="completed", description="Payment status: pending, completed, failed"
     )
     notes: Optional[str] = Field(None, description="Additional notes")
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
 class BudgetAlert(BaseModel):
@@ -300,7 +300,7 @@ class BudgetAlert(BaseModel):
     is_resolved: bool = Field(
         default=False, description="Whether alert has been resolved"
     )
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     resolved_at: Optional[datetime] = Field(
         default=None, description="When alert was resolved"
     )

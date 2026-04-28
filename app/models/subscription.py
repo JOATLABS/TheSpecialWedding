@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timezone
 from enum import Enum
 from typing import Any, Dict, List, Optional
 
@@ -148,8 +148,8 @@ class SubscriptionPlanModel(BaseModel):
     display_order: Optional[int] = Field(
         None, description="Display order for frontend (falls back to sort_order)"
     )
-    created_at: datetime = Field(default_factory=datetime.utcnow)
-    updated_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     created_by: str = Field(..., description="ROOT_ADMIN email who created this plan")
 
     class Config:
@@ -209,7 +209,8 @@ class UserSubscriptionModel(BaseModel):
 
     # Dates
     start_date: datetime = Field(
-        default_factory=datetime.utcnow, description="Subscription start date"
+        default_factory=lambda: datetime.now(timezone.utc),
+        description="Subscription start date",
     )
     trial_start_date: Optional[datetime] = Field(
         None, description="Trial start date from Stripe"
@@ -218,7 +219,8 @@ class UserSubscriptionModel(BaseModel):
         None, description="Trial expiration date"
     )
     current_period_start: datetime = Field(
-        default_factory=datetime.utcnow, description="Current billing period start"
+        default_factory=lambda: datetime.now(timezone.utc),
+        description="Current billing period start",
     )
     current_period_end: datetime = Field(..., description="Current billing period end")
     cancelled_at: Optional[datetime] = Field(None, description="Cancellation date")
@@ -284,8 +286,8 @@ class UserSubscriptionModel(BaseModel):
     )
 
     # System fields
-    created_at: datetime = Field(default_factory=datetime.utcnow)
-    updated_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     created_by: str = Field(
         ..., description="ROOT_ADMIN email who created this subscription"
     )
@@ -336,7 +338,7 @@ class UsageTrackingModel(BaseModel):
     credits_reset_date: datetime = Field(..., description="When AI credits reset")
 
     # System fields
-    last_updated: datetime = Field(default_factory=datetime.utcnow)
+    last_updated: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
     class Config:
         json_schema_extra = {
