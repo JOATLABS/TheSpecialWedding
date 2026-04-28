@@ -110,7 +110,7 @@ export default worker;
 async function runTrialMaintenance(env) {
   console.log('Running trial maintenance...');
 
-  const response = await fetch(`${env.NEXT_PUBLIC_API_BASE_URL}/cron/trials/run-maintenance`, {
+  const response = await fetch(`${env.NEXT_PUBLIC_API_BASE_URL}/admin/cron/trials/run-maintenance`, {
     method: 'POST',
     headers: {
       'Authorization': `Bearer ${env.CRON_SECRET}`,
@@ -138,7 +138,7 @@ async function runTrialMaintenance(env) {
 async function sendTrialWarnings(env) {
   console.log('Sending trial warnings...');
 
-  const response = await fetch(`${env.NEXT_PUBLIC_API_BASE_URL}/cron/trials/send-warnings`, {
+  const response = await fetch(`${env.NEXT_PUBLIC_API_BASE_URL}/admin/cron/trials/send-warnings`, {
     method: 'POST',
     headers: {
       'Authorization': `Bearer ${env.CRON_SECRET}`,
@@ -166,7 +166,7 @@ async function sendTrialWarnings(env) {
 async function checkExpiredTrials(env) {
   console.log('Checking expired trials...');
 
-  const response = await fetch(`${env.NEXT_PUBLIC_API_BASE_URL}/cron/trials/check-expired`, {
+  const response = await fetch(`${env.NEXT_PUBLIC_API_BASE_URL}/admin/cron/trials/check-expired`, {
     method: 'POST',
     headers: {
       'Authorization': `Bearer ${env.CRON_SECRET}`,

@@ -6,26 +6,61 @@ on:
       - main
     paths:
       - 'cloudflare-workers/**'
-  workflow_dispatch:  # Allow manual deployment
+  workflow_dispatch:
+    inputs:
+      target_env:
+        description: "Which environment the workers should target"
+        required: true
+        default: "staging"
+        type: choice
+        options:
+          - staging
+          - production
 
 concurrency:
-  group: deploy-workers-production
-  cancel-in-progress: false   # wrangler deploy + secret puts shouldn't be killed mid-run
+  # One concurrent deploy per environment — staging deploys mustn't cancel
+  # an in-flight prod deploy and vice versa. The group key folds in the
+  # event-driven default (push → staging) so the values match what the job
+  # actually targets below.
+  group: deploy-workers-${{ github.event_name == 'workflow_dispatch' && inputs.target_env || 'staging' }}
+  cancel-in-progress: false
 
 permissions:
   contents: read
 
 jobs:
   deploy-workers:
-    name: Deploy Cloudflare Workers
+    name: Deploy Cloudflare Workers (${{ github.event_name == 'workflow_dispatch' && inputs.target_env || 'staging' }})
     runs-on: ubuntu-latest
-    # Triggers above restrict to main + manual dispatch.
     if: github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch'
+
+    # GitHub Environment selection drives env-scoped variables/secrets
+    # below. Push to main → staging (safe default; flips us into the
+    # newer staging-first deploy posture). Manual dispatch → whatever the
+    # operator picked. Production deploys are gated by the `production`
+    # env's branch restriction in repo Settings → Environments.
+    environment:
+      name: ${{ github.event_name == 'workflow_dispatch' && inputs.target_env || 'staging' }}
 
     env:
       WRANGLER_VERSION: 4.81.1
+      # Computed env name — sourced from the same expression as the
+      # `environment:` block so the rest of the job can reference it as a
+      # plain shell variable.
+      TARGET_ENV: ${{ github.event_name == 'workflow_dispatch' && inputs.target_env || 'staging' }}
+
+      # ── Env-scoped vars (resolve via the `environment:` block above) ──
+      # These come from Settings → Environments → <env> → Environment
+      # variables, NOT from repo-level secrets. Different value per env.
+      NEXT_PUBLIC_API_BASE_URL: ${{ vars.NEXT_PUBLIC_API_BASE_URL }}
+
+      # ── Repo-level secrets (currently same value across envs) ──
+      # If/when staging vs prod need different values for any of these,
+      # move the relevant key into Settings → Environments → <env> →
+      # Environment secrets and switch `secrets.X` → keep `secrets.X`
+      # below (env-scoped secrets shadow repo-level secrets of the same
+      # name when an `environment:` is selected).
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-      NEXT_PUBLIC_API_BASE_URL: ${{ secrets.NEXT_PUBLIC_API_BASE_URL }}
       CRON_SECRET: ${{ secrets.CRON_SECRET }}
       RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
       ALERT_EMAIL: ${{ secrets.ALERT_EMAIL }}
@@ -69,12 +104,50 @@ jobs:
             fi
           done
 
+      - name: Announce deploy target
+        shell: bash
+        run: |
+          set -euo pipefail
+          {
+            echo "## Cloudflare Workers Deploy Plan"
+            echo ""
+            echo "- **Environment**: \`${TARGET_ENV}\`"
+            echo "- **Backend URL**: \`${NEXT_PUBLIC_API_BASE_URL}\`"
+            echo "- **Trigger**: \`${{ github.event_name }}\`"
+            echo "- **Ref**: \`${{ github.ref }}\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+          echo "Deploying workers to: ${TARGET_ENV} (${NEXT_PUBLIC_API_BASE_URL})"
+
       - name: Prepare uptime worker config
         shell: bash
         run: |
           set -euo pipefail
+          # Render the substituted config next to the JS source — wrangler
+          # resolves `main = "uptime-cron.js"` RELATIVE to the config file's
+          # directory, so writing the rendered toml to ${RUNNER_TEMP} (as the
+          # earlier version did) makes wrangler look for
+          # ${RUNNER_TEMP}/uptime-cron.js, which doesn't exist, and the
+          # deploy step bails with `entry-point file ... was not found`.
+          # Keeping the rendered toml in cloudflare-workers/ keeps the
+          # relative `main` path correct. The .rendered.toml suffix is
+          # gitignored so it never accidentally gets committed.
           sed "s|<UPTIME_KV_NAMESPACE_ID>|${UPTIME_KV_NAMESPACE_ID}|g" \
-            cloudflare-workers/uptime.wrangler.toml > "${RUNNER_TEMP}/uptime.wrangler.toml"
+            cloudflare-workers/uptime.wrangler.toml > cloudflare-workers/uptime.wrangler.rendered.toml
+
+      - name: Prepare metrics-snapshot worker config (env-aware)
+        shell: bash
+        run: |
+          set -euo pipefail
+          # The committed metrics-snapshot.wrangler.toml hardcodes
+          # `DEPLOYMENT_ENV = "production"` in its [vars] block. That value
+          # is baked into the deployed worker and used as the Analytics
+          # Engine partition label. Without env-aware rendering, staging
+          # metrics would land mislabeled as "production" in the dataset.
+          # Substitute it with the target env at deploy time, same
+          # rendered-toml pattern as the uptime worker.
+          sed -E "s|^DEPLOYMENT_ENV = \"production\"|DEPLOYMENT_ENV = \"${TARGET_ENV}\"|" \
+            cloudflare-workers/metrics-snapshot.wrangler.toml \
+            > cloudflare-workers/metrics-snapshot.wrangler.rendered.toml
 
       - name: Validate uptime KV namespace exists in Cloudflare account
         shell: bash
@@ -86,13 +159,17 @@ jobs:
             exit 1
           fi
 
-          namespaces_json="$(npx --yes "wrangler@${WRANGLER_VERSION}" kv namespace list --json)"
+          # wrangler v4 outputs JSON by default on `kv namespace list` — the
+          # `--json` flag was removed because it was redundant. v3 required
+          # the explicit flag, so this used to be `--json`. Trying that
+          # against v4 fails with `Unknown argument: json`.
+          namespaces_json="$(npx --yes "wrangler@${WRANGLER_VERSION}" kv namespace list)"
           if ! echo "${namespaces_json}" | jq -e --arg id "${UPTIME_KV_NAMESPACE_ID}" '.[] | select(.id == $id)' >/dev/null; then
             echo "UPTIME_KV_NAMESPACE_ID=${UPTIME_KV_NAMESPACE_ID} was not found in this Cloudflare account."
             exit 1
           fi
 
-          if grep -q "<UPTIME_KV_NAMESPACE_ID>" "${RUNNER_TEMP}/uptime.wrangler.toml"; then
+          if grep -q "<UPTIME_KV_NAMESPACE_ID>" cloudflare-workers/uptime.wrangler.rendered.toml; then
             echo "Uptime worker config template substitution failed."
             exit 1
           fi
@@ -112,12 +189,16 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          npx --yes "wrangler@${WRANGLER_VERSION}" deploy --config cloudflare-workers/metrics-snapshot.wrangler.toml
-          printf '%s' "$NEXT_PUBLIC_API_BASE_URL" | npx --yes "wrangler@${WRANGLER_VERSION}" secret put NEXT_PUBLIC_API_BASE_URL --config cloudflare-workers/metrics-snapshot.wrangler.toml
-          printf '%s' "$PLATFORM_METRICS_TOKEN" | npx --yes "wrangler@${WRANGLER_VERSION}" secret put PLATFORM_METRICS_TOKEN --config cloudflare-workers/metrics-snapshot.wrangler.toml
-          printf '%s' "$RESEND_API_KEY" | npx --yes "wrangler@${WRANGLER_VERSION}" secret put RESEND_API_KEY --config cloudflare-workers/metrics-snapshot.wrangler.toml
-          printf '%s' "$ALERT_EMAIL" | npx --yes "wrangler@${WRANGLER_VERSION}" secret put ALERT_EMAIL --config cloudflare-workers/metrics-snapshot.wrangler.toml
-          printf '%s' "$ROOT_ADMIN_EMAIL" | npx --yes "wrangler@${WRANGLER_VERSION}" secret put ROOT_ADMIN_EMAIL --config cloudflare-workers/metrics-snapshot.wrangler.toml
+          # Use the rendered config — the source toml hardcodes
+          # DEPLOYMENT_ENV = "production". See "Prepare metrics-snapshot
+          # worker config (env-aware)" earlier in this workflow.
+          CFG="cloudflare-workers/metrics-snapshot.wrangler.rendered.toml"
+          npx --yes "wrangler@${WRANGLER_VERSION}" deploy --config "$CFG"
+          printf '%s' "$NEXT_PUBLIC_API_BASE_URL" | npx --yes "wrangler@${WRANGLER_VERSION}" secret put NEXT_PUBLIC_API_BASE_URL --config "$CFG"
+          printf '%s' "$PLATFORM_METRICS_TOKEN" | npx --yes "wrangler@${WRANGLER_VERSION}" secret put PLATFORM_METRICS_TOKEN --config "$CFG"
+          printf '%s' "$RESEND_API_KEY" | npx --yes "wrangler@${WRANGLER_VERSION}" secret put RESEND_API_KEY --config "$CFG"
+          printf '%s' "$ALERT_EMAIL" | npx --yes "wrangler@${WRANGLER_VERSION}" secret put ALERT_EMAIL --config "$CFG"
+          printf '%s' "$ROOT_ADMIN_EMAIL" | npx --yes "wrangler@${WRANGLER_VERSION}" secret put ROOT_ADMIN_EMAIL --config "$CFG"
 
       - name: Deploy Backup Cron Worker
         shell: bash
@@ -134,11 +215,11 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          npx --yes "wrangler@${WRANGLER_VERSION}" deploy --config "${RUNNER_TEMP}/uptime.wrangler.toml"
-          printf '%s' "$NEXT_PUBLIC_API_BASE_URL" | npx --yes "wrangler@${WRANGLER_VERSION}" secret put NEXT_PUBLIC_API_BASE_URL --config "${RUNNER_TEMP}/uptime.wrangler.toml"
-          printf '%s' "$RESEND_API_KEY" | npx --yes "wrangler@${WRANGLER_VERSION}" secret put RESEND_API_KEY --config "${RUNNER_TEMP}/uptime.wrangler.toml"
-          printf '%s' "$ALERT_EMAIL" | npx --yes "wrangler@${WRANGLER_VERSION}" secret put ALERT_EMAIL --config "${RUNNER_TEMP}/uptime.wrangler.toml"
-          printf '%s' "$ROOT_ADMIN_EMAIL" | npx --yes "wrangler@${WRANGLER_VERSION}" secret put ROOT_ADMIN_EMAIL --config "${RUNNER_TEMP}/uptime.wrangler.toml"
+          npx --yes "wrangler@${WRANGLER_VERSION}" deploy --config cloudflare-workers/uptime.wrangler.rendered.toml
+          printf '%s' "$NEXT_PUBLIC_API_BASE_URL" | npx --yes "wrangler@${WRANGLER_VERSION}" secret put NEXT_PUBLIC_API_BASE_URL --config cloudflare-workers/uptime.wrangler.rendered.toml
+          printf '%s' "$RESEND_API_KEY" | npx --yes "wrangler@${WRANGLER_VERSION}" secret put RESEND_API_KEY --config cloudflare-workers/uptime.wrangler.rendered.toml
+          printf '%s' "$ALERT_EMAIL" | npx --yes "wrangler@${WRANGLER_VERSION}" secret put ALERT_EMAIL --config cloudflare-workers/uptime.wrangler.rendered.toml
+          printf '%s' "$ROOT_ADMIN_EMAIL" | npx --yes "wrangler@${WRANGLER_VERSION}" secret put ROOT_ADMIN_EMAIL --config cloudflare-workers/uptime.wrangler.rendered.toml
 
       - name: Deploy Trial Cron Worker
         shell: bash
