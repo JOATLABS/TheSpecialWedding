@@ -481,6 +481,17 @@ class Harness:
                     f"  ✅ {coll_name}: removed {result.deleted_count} doc(s)"
                 )
 
+        # Packages are per-planner data — cascade them with the user so test
+        # artifacts created outside the verifier's name prefix (e.g. ad-hoc
+        # packages from manual gate tests in the live UI) don't pile up
+        # across re-runs.
+        result = self.mongo["packages"].delete_many({"planner_id": user_id})
+        if result.deleted_count:
+            collections_affected += 1
+            self.log.info(
+                f"  ✅ packages (by planner_id): removed {result.deleted_count} doc(s)"
+            )
+
         # team_members also keys by invitee email for incoming invites.
         result = self.mongo["team_members"].delete_many({"email": email})
         if result.deleted_count:
@@ -1473,5 +1484,320 @@ class Harness:
         self.log.info(
             f"  ✅ Contract signed. deposit_processed={contract.get('deposit_processed')} "
             f"scheduled_payments={len(contract.get('scheduled_payments') or [])}"
+        )
+        return body
+
+    # ------------------------------------------------------------------
+    # Budget helpers (planner-side)
+    # ------------------------------------------------------------------
+    #
+    # All budget helpers below go through the real planner endpoints so
+    # the verification mirrors what a planner would actually trigger
+    # from the admin UI. No direct Mongo writes for product state.
+
+    def create_budget_category(
+        self,
+        *,
+        planner_token: str,
+        wedding_id: str,
+        name: str,
+        budgeted_amount: float,
+        description: str = "",
+        priority: int = 3,
+    ) -> str:
+        """POST /admin/weddings/{wedding_id}/budget/category — create a
+        budget category through the production code path.
+
+        Returns the category id (24-char hex ObjectId stringified).
+        """
+        payload = {
+            "name": name,
+            "description": description,
+            "budgeted_amount": budgeted_amount,
+            "priority": priority,
+        }
+        resp = self.api_post(
+            f"/admin/weddings/{wedding_id}/budget/category",
+            token=planner_token,
+            json=payload,
+        )
+        if resp.status_code not in (200, 201):
+            raise RuntimeError(
+                f"budget category create failed: {resp.status_code} {resp.text}"
+            )
+        body = resp.json()
+        # Response is wrapped via dict_response: {"data": {"category": {...}}, "message": ...}
+        category = (
+            (body.get("data") or {}).get("category") or body.get("category") or body
+        )
+        category_id = category.get("id") or category.get("_id")
+        if not category_id:
+            raise RuntimeError(f"budget category create: no id in response {body!r}")
+        self.log.info(
+            f"  ✅ Created budget category: {category_id} "
+            f"({name}, ${budgeted_amount:.2f})"
+        )
+        return str(category_id)
+
+    def get_wedding_budget(
+        self,
+        *,
+        planner_token: str,
+        wedding_id: str,
+    ) -> dict:
+        """GET /admin/weddings/{wedding_id}/budget — fetch the wedding's
+        complete budget snapshot (categories with actual_spent, summary,
+        recent alerts).
+
+        Returns the response body. Use to assert that
+        actual_spent has incremented after a milestone payment.
+        """
+        resp = self.api_get(f"/admin/weddings/{wedding_id}/budget", token=planner_token)
+        if resp.status_code != 200:
+            raise RuntimeError(f"budget read failed: {resp.status_code} {resp.text}")
+        return resp.json()
+
+    # ------------------------------------------------------------------
+    # Vendor directory + assignment helpers (planner-side)
+    # ------------------------------------------------------------------
+
+    def create_vendor_profile(
+        self,
+        *,
+        planner_token: str,
+        business_name: str,
+        email: str,
+        service_category: str,
+        phone: Optional[str] = None,
+        address: Optional[str] = None,
+    ) -> str:
+        """POST /admin/directory — add a vendor to the planner's
+        directory through the production code path.
+
+        Returns the vendor profile id.
+        """
+        payload: dict = {
+            "business_name": business_name,
+            "email": email,
+            "service_category": service_category,
+        }
+        if phone is not None:
+            payload["phone"] = phone
+        if address is not None:
+            payload["address"] = address
+
+        resp = self.api_post("/admin/directory", token=planner_token, json=payload)
+        if resp.status_code not in (200, 201):
+            raise RuntimeError(
+                f"vendor profile create failed: {resp.status_code} {resp.text}"
+            )
+        body = resp.json()
+        vendor = body.get("vendor") or body
+        vendor_id = vendor.get("id") or vendor.get("_id")
+        if not vendor_id:
+            raise RuntimeError(f"vendor profile create: no id in response {body!r}")
+        self.log.info(
+            f"  ✅ Created vendor profile: {vendor_id} "
+            f"({business_name}, {service_category})"
+        )
+        return str(vendor_id)
+
+    def assign_vendor_to_wedding(
+        self,
+        *,
+        planner_token: str,
+        vendor_profile_id: str,
+        wedding_id: str,
+        budget_category_id: Optional[str] = None,
+        service_notes: Optional[str] = None,
+    ) -> str:
+        """POST /admin/assign — link a vendor to a wedding (and,
+        optionally, to a budget category) through the production code
+        path.
+
+        Returns the assignment id. The budget_category_id parameter is
+        what the budget-propagation fix relies on — every contract
+        created from this assignment should now inherit it.
+        """
+        payload: dict = {
+            "vendor_profile_id": vendor_profile_id,
+            "wedding_id": wedding_id,
+        }
+        if budget_category_id is not None:
+            payload["budget_category_id"] = budget_category_id
+        if service_notes is not None:
+            payload["service_notes"] = service_notes
+
+        resp = self.api_post("/admin/assign", token=planner_token, json=payload)
+        if resp.status_code not in (200, 201):
+            raise RuntimeError(f"vendor assign failed: {resp.status_code} {resp.text}")
+        body = resp.json()
+        assignment = body.get("assignment") or body
+        assignment_id = assignment.get("id") or assignment.get("_id")
+        if not assignment_id:
+            raise RuntimeError(f"vendor assign: no id in response {body!r}")
+        self.log.info(
+            f"  ✅ Assigned vendor {vendor_profile_id} to wedding "
+            f"{wedding_id} (category={budget_category_id or 'none'})"
+        )
+        return str(assignment_id)
+
+    # ------------------------------------------------------------------
+    # Vendor contract + milestone helpers (planner-side)
+    # ------------------------------------------------------------------
+
+    def create_vendor_contract(
+        self,
+        *,
+        planner_token: str,
+        wedding_id: str,
+        vendor_profile_id: str,
+        total_amount: float,
+        deposit_percentage: Optional[float] = None,
+        service_date: Optional[str] = None,
+        service_location: Optional[str] = None,
+    ) -> str:
+        """POST /admin/contracts — create a vendor contract through the
+        production code path.
+
+        Notes:
+          - The route requires a prior `assign_vendor_to_wedding` if
+            you want budget_category_id to propagate (fix shipped at
+            vendor_service.create_contract).
+          - service_date is an ISO date string; the backend parses it.
+
+        Returns the contract id.
+        """
+        payload: dict = {
+            "wedding_id": wedding_id,
+            "vendor_profile_id": vendor_profile_id,
+            "total_amount": total_amount,
+        }
+        if deposit_percentage is not None:
+            payload["deposit_percentage"] = deposit_percentage
+        if service_date is not None:
+            payload["service_date"] = service_date
+        if service_location is not None:
+            payload["service_location"] = service_location
+
+        resp = self.api_post("/admin/contracts", token=planner_token, json=payload)
+        if resp.status_code not in (200, 201):
+            raise RuntimeError(
+                f"vendor contract create failed: {resp.status_code} {resp.text}"
+            )
+        body = resp.json()
+        contract = body.get("contract") or body
+        contract_id = contract.get("id") or contract.get("_id")
+        if not contract_id:
+            raise RuntimeError(f"vendor contract create: no id in response {body!r}")
+        self.log.info(
+            f"  ✅ Created vendor contract: {contract_id} (${total_amount:.2f})"
+        )
+        return str(contract_id)
+
+    def get_vendor_contract(
+        self,
+        *,
+        planner_token: str,
+        contract_id: str,
+    ) -> dict:
+        """GET /admin/contracts/{contract_id} — fetch the contract.
+
+        Used to assert that budget_category_id was propagated from the
+        prior assignment (the central assertion of the fix).
+        """
+        resp = self.api_get(f"/admin/contracts/{contract_id}", token=planner_token)
+        if resp.status_code != 200:
+            raise RuntimeError(
+                f"vendor contract read failed: {resp.status_code} {resp.text}"
+            )
+        body = resp.json()
+        return body.get("contract") or body
+
+    def create_payment_milestones(
+        self,
+        *,
+        planner_token: str,
+        contract_id: str,
+        milestones: list[dict],
+    ) -> list[dict]:
+        """POST /admin/contracts/{contract_id}/milestones — create one
+        or more payment milestones for a contract.
+
+        Each milestone item shape (per CreateVendorPaymentMilestonesRequest):
+          - description: str (required)
+          - amount: float (required, > 0)
+          - due_date: ISO datetime string (required)
+          - percentage_of_total: float (optional, 0-100)
+          - days_before_event: int (optional)
+
+        Returns the list of created milestone documents.
+        """
+        payload = {"milestones": milestones}
+        resp = self.api_post(
+            f"/admin/contracts/{contract_id}/milestones",
+            token=planner_token,
+            json=payload,
+        )
+        if resp.status_code not in (200, 201):
+            raise RuntimeError(
+                f"milestone create failed: {resp.status_code} {resp.text}"
+            )
+        body = resp.json()
+        created = body if isinstance(body, list) else body.get("milestones") or []
+        self.log.info(
+            f"  ✅ Created {len(created)} milestone(s) for contract {contract_id}"
+        )
+        return created
+
+    def record_milestone_payment(
+        self,
+        *,
+        planner_token: str,
+        milestone_id: str,
+        amount: float,
+        payment_method: str = "bank_transfer",
+        payment_date: Optional[str] = None,
+        notes: Optional[str] = None,
+        receipt_url: Optional[str] = None,
+    ) -> dict:
+        """POST /admin/milestones/{milestone_id}/pay — record a payment
+        against a milestone (manual / offline path).
+
+        Per the fix shipped at vendor_service.record_payment, this path
+        runs three guards (idempotency / status lock / clamp) before
+        the transactional write. The transactional write rolls up into
+        budget_categories.actual_spent IF the milestone has a
+        budget_category_id — which it now does post-fix.
+
+        payment_method valid values per the model docstring:
+        cash, check, card, bank_transfer, stripe.
+
+        Returns the updated milestone document.
+        """
+        payload: dict = {
+            "amount": amount,
+            "payment_method": payment_method,
+        }
+        if payment_date is not None:
+            payload["payment_date"] = payment_date
+        if notes is not None:
+            payload["notes"] = notes
+        if receipt_url is not None:
+            payload["receipt_url"] = receipt_url
+
+        resp = self.api_post(
+            f"/admin/milestones/{milestone_id}/pay",
+            token=planner_token,
+            json=payload,
+        )
+        if resp.status_code not in (200, 201):
+            raise RuntimeError(
+                f"record milestone payment failed: {resp.status_code} {resp.text}"
+            )
+        body = resp.json()
+        self.log.info(
+            f"  ✅ Recorded payment of ${amount:.2f} via {payment_method} "
+            f"on milestone {milestone_id}"
         )
         return body

@@ -193,8 +193,30 @@ export default function SendPackagePage() {
       });
 
       if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.detail || 'Failed to send package');
+        const errorData = await response.json().catch(() => ({}));
+        const detail = errorData?.detail;
+        // The Connect-readiness gate returns a structured detail —
+        // {code: "CONNECT_NOT_READY", message, setup_url} — instead of a
+        // plain string. Surface it with a CTA back to the billing page so
+        // the planner can complete payout setup before retrying.
+        if (
+          detail &&
+          typeof detail === 'object' &&
+          detail.code === 'CONNECT_NOT_READY'
+        ) {
+          toast.error(detail.message || 'Set up payouts before sending packages.', {
+            action: {
+              label: 'Set up payouts',
+              onClick: () => {
+                router.push(detail.setup_url || '/admin/planner/billing');
+              },
+            },
+            duration: 10_000,
+          });
+          return;
+        }
+        const message = typeof detail === 'string' ? detail : 'Failed to send package';
+        throw new Error(message);
       }
 
       const result = await response.json();

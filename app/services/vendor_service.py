@@ -1633,12 +1633,35 @@ class VendorService:
                     days=planner_settings["deposit_due_days"]
                 )
 
+            # Inherit budget_category_id from the vendor's assignment for this
+            # wedding so milestone payments can roll up into the budget
+            # tracker. Without this lookup the field stayed None forever and
+            # the $inc against budget_categories.actual_spent in record_payment
+            # was unreachable in practice.
+            existing_assignment = await self.vendor_assignments.find_one(
+                {
+                    "vendor_profile_id": vendor_profile_id,
+                    "wedding_id": wedding_id,
+                },
+                {"budget_category_id": 1},
+            )
+            assigned_category_id = (existing_assignment or {}).get("budget_category_id")
+            if assigned_category_id is None:
+                logger.warning(
+                    "Creating contract with no budget_category_id: "
+                    "no assignment-with-category found for vendor %s on wedding %s. "
+                    "Milestone payments will not roll up into budget tracking until "
+                    "the contract is linked to a category.",
+                    vendor_profile_id,
+                    wedding_id,
+                )
+
             contract = {
                 "_id": contract_id,
                 "wedding_id": wedding_id,
                 "vendor_profile_id": vendor_profile_id,
                 "vendor_quote_id": quote_id,
-                "budget_category_id": None,
+                "budget_category_id": assigned_category_id,
                 "template_id": template_id,
                 "vendor_name": vendor["business_name"],
                 "vendor_email": vendor["email"],

@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import List, Optional
 
 from pydantic import BaseModel, Field, field_serializer, field_validator
@@ -295,7 +295,7 @@ class WeddingModel(BaseModel):
     meter_reversed_period: Optional[str] = Field(
         None, description="YYYY-MM period of last meter reversal"
     )
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
     @field_serializer("last_billed_at", "created_at", when_used="json")
     def serialize_datetimes(self, value: datetime) -> Optional[str]:

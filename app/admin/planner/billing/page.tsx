@@ -36,6 +36,7 @@ import {
 import { toast } from 'sonner';
 import { usePagination } from '@/admin/hooks/usePagination';
 import { GlassPagination } from '@/admin/components/ui/glass/GlassPagination';
+import PayoutsCard from './PayoutsCard';
 
 interface SubscriptionPlan {
   _id: string;
@@ -1042,6 +1043,11 @@ export default function PlannerBillingPage() {
       <div className="grid lg:grid-cols-3 gap-6 overflow-hidden">
         {/* Left Column - Subscription & Payment */}
         <div className="lg:col-span-2 space-y-6 min-w-0">
+
+          {/* Payouts (Stripe Connect) — gates the planner's ability to
+              collect from couples; sits above subscription because without
+              payouts set up, there's no point in the rest. */}
+          <PayoutsCard />
 
           {/* Current Subscription */}
           <Card className="bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700 p-6">
