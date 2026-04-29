@@ -6,6 +6,7 @@ import { toast, Toaster } from 'sonner';
 import { Loader2, Eye, EyeOff, Shield, CheckCircle2, AlertCircle } from 'lucide-react';
 
 import { getApiBaseUrl } from '@/utils/env';
+import { BrandLockup } from '@/components/brand/BrandLockup';
 
 interface InviteInfo {
   email: string;
@@ -235,14 +236,13 @@ export default function AcceptInvitePageClient({ initialToken }: { initialToken:
     <div className={`${pageBackgroundClass} flex items-center justify-center p-6`}>
       <Toaster position="top-right" richColors />
       <div className="w-full max-w-[480px]">
-        <div className="text-center mb-8">
-          <img
-            src="/logo.svg"
-            alt="The Special Wedding"
-            width={160}
-            height={40}
-            className="mx-auto mb-3 block"
-          />
+        <div className="text-center mb-8 flex flex-col items-center gap-3">
+          <span className="block dark:hidden">
+            <BrandLockup variant="mark" surface="light" size="md" />
+          </span>
+          <span className="hidden dark:block">
+            <BrandLockup variant="mark" surface="dark" size="md" />
+          </span>
           <p className="text-sm text-slate-500 dark:text-slate-400">You&apos;ve been invited to join a team</p>
         </div>
 

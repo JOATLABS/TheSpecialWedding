@@ -10,9 +10,9 @@ PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..
 if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
 
-import app.api.contracts as contracts_module
-import app.core.database as database_module
-import app.core.settings as settings_module
+import app.api.contracts as contracts_module  # noqa: E402
+import app.core.database as database_module  # noqa: E402
+import app.core.settings as settings_module  # noqa: E402
 
 
 class AsyncCollection:
@@ -242,3 +242,59 @@ def test_sign_contract_uses_contract_customer_when_request_omits_it(monkeypatch)
     assert captured["stripe_customer_id"] == "cus_456"
     assert captured["payment_method_last4"] == "4242"
     assert captured["payment_method_brand"] == "visa"
+
+
+def test_get_public_contract_includes_scheduled_payments(monkeypatch):
+    base_contract = {
+        "id": "contract-1",
+        "status": "signed",
+        "couple": {"partner1_name": "Alex"},
+        "package_snapshot": {"name": "Signature Package"},
+    }
+    scheduled_payments = [
+        {
+            "id": "payment-1",
+            "name": "Deposit",
+            "amount": 1000.0,
+            "currency": "USD",
+            "due_date": "2026-04-29T12:00:00+00:00",
+            "status": "succeeded",
+            "paid_at": "2026-04-29T12:05:00+00:00",
+            "payment_method_last4": "4242",
+        }
+    ]
+
+    monkeypatch.setattr(
+        contracts_module.contract_service,
+        "get_contract_by_token",
+        AsyncMock(return_value=base_contract),
+    )
+    monkeypatch.setattr(
+        contracts_module.contract_service, "mark_viewed", AsyncMock(return_value=None)
+    )
+    monkeypatch.setattr(
+        contracts_module.contract_service.contracts,
+        "find_one",
+        AsyncMock(return_value=None),
+    )
+    monkeypatch.setattr(
+        contracts_module.contract_service,
+        "get_contract_payments",
+        AsyncMock(return_value=scheduled_payments),
+    )
+
+    request = SimpleNamespace(client=SimpleNamespace(host="127.0.0.1"))
+
+    result = asyncio.run(contracts_module.get_public_contract("public-token", request))
+
+    assert result["contract"]["scheduled_payments"] == [
+        {
+            "id": "payment-1",
+            "name": "Deposit",
+            "amount": 1000.0,
+            "currency": "USD",
+            "due_date": "2026-04-29T12:00:00+00:00",
+            "status": "succeeded",
+            "paid_at": "2026-04-29T12:05:00+00:00",
+        }
+    ]

@@ -13,10 +13,12 @@ import {
 import {
   COMPARE_AUDIT_QUALIFIER,
   COMPARE_AUDIT_STAMP,
+  COMPARISON_ROW_KEY_BY_SLUG,
   comparisonRows,
   getCompareBreadcrumbs,
   getComparePageData,
   getCompareSupportedSlugs,
+  type ComparisonRow,
 } from '../data';
 import { getCompareEvidence } from '../evidence';
 
@@ -81,7 +83,7 @@ function SupportedPage({
   description: string;
 }) {
   const rows = comparisonRows;
-  const competitorColumn = competitor.slug === 'honeybook' ? 'honeybook' : 'aislePlanner';
+  const competitorColumn = COMPARISON_ROW_KEY_BY_SLUG[competitor.slug] as keyof ComparisonRow;
   const evidence = getCompareEvidence(competitor.slug);
   const evidenceLookup = new Map(evidence.rows.map((row) => [row.feature, row]));
   const confidenceClasses: Record<import('../evidence').EvidenceConfidence, string> = {

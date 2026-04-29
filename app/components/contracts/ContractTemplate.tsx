@@ -29,6 +29,16 @@ interface PackageSnapshot {
   custom_terms?: string;
 }
 
+interface ScheduledPayment {
+  id?: string;
+  name?: string;
+  amount?: number;
+  currency?: string;
+  due_date?: string;
+  status?: string;
+  paid_at?: string;
+}
+
 interface CoupleInfo {
   partner1_name: string;
   email: string;
@@ -52,6 +62,7 @@ interface ContractTemplateProps {
   status: string;
   signedAt?: string;
   signatureName?: string;
+  scheduledPayments?: ScheduledPayment[];
 }
 
 export default function ContractTemplate({
@@ -65,12 +76,13 @@ export default function ContractTemplate({
   plannerLogo,
   status,
   signedAt,
-  signatureName
+  signatureName,
+  scheduledPayments = [],
 }: ContractTemplateProps) {
-  const formatCurrency = (amount: number) => {
+  const formatCurrency = (amount: number, currency = packageSnapshot.currency || 'usd') => {
     return new Intl.NumberFormat('en-US', {
       style: 'currency',
-      currency: (packageSnapshot.currency || 'usd').toUpperCase(),
+      currency: currency.toUpperCase(),
     }).format(amount);
   };
 
@@ -104,8 +116,60 @@ export default function ContractTemplate({
       case 'fixed_date':
         return 'Fixed date';
       default:
-        return '';
+      return '';
     }
+  };
+
+  const getLivePaymentStatusLabel = (statusValue?: string) => {
+    switch (statusValue) {
+      case 'succeeded':
+      case 'paid':
+        return 'Paid';
+      case 'processing':
+        return 'Processing';
+      case 'failed':
+        return 'Failed';
+      case 'cancelled':
+        return 'Cancelled';
+      case 'overdue':
+        return 'Overdue';
+      case 'due':
+        return 'Due';
+      case 'scheduled':
+      default:
+        return 'Scheduled';
+    }
+  };
+
+  const getLivePaymentStatusClasses = (statusValue?: string) => {
+    switch (statusValue) {
+      case 'succeeded':
+      case 'paid':
+        return 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300';
+      case 'processing':
+        return 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300';
+      case 'failed':
+        return 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300';
+      case 'cancelled':
+        return 'bg-slate-200 text-slate-700 dark:bg-slate-700 dark:text-slate-300';
+      case 'overdue':
+        return 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300';
+      case 'due':
+        return 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300';
+      case 'scheduled':
+      default:
+        return 'bg-slate-100 text-slate-700 dark:bg-slate-700 dark:text-slate-300';
+    }
+  };
+
+  const getLivePaymentDateLabel = (payment: ScheduledPayment) => {
+    if ((payment.status === 'succeeded' || payment.status === 'paid') && payment.paid_at) {
+      return `Paid on ${formatDate(payment.paid_at)}`;
+    }
+    if (payment.due_date) {
+      return `Due ${formatDate(payment.due_date)}`;
+    }
+    return 'Due date TBD';
   };
 
   const includedServices = packageSnapshot.services?.filter(s => s.included) || [];
@@ -113,11 +177,31 @@ export default function ContractTemplate({
   const primaryName = couple.partner1_name || couple.name || '';
   const secondaryName = couple.partner2_name || couple.partner_name;
   const coupleDisplayName = couple.display_name || (secondaryName ? `${primaryName} & ${secondaryName}` : primaryName);
+  const liveScheduledPayments = scheduledPayments.filter(
+    (payment) => payment && (payment.id || payment.name || payment.amount !== undefined)
+  );
+  const useLiveScheduledPayments = liveScheduledPayments.length > 0;
   const effectivePaymentSchedule = packageSnapshot.payment_schedule?.length
     ? packageSnapshot.payment_schedule
     : (packageSnapshot.total_amount || 0) > 0
       ? [{ name: 'Full Payment', trigger: 'on_signing', amount: packageSnapshot.total_amount }]
       : [];
+  const livePaymentTotals = useLiveScheduledPayments
+    ? liveScheduledPayments.reduce(
+        (totals, payment) => {
+          const amount = Number(payment.amount || 0);
+          totals.total += amount;
+          if (payment.status === 'succeeded' || payment.status === 'paid') {
+            totals.paid += amount;
+          }
+          return totals;
+        },
+        { total: 0, paid: 0 }
+      )
+    : null;
+  const liveRemainingAmount = livePaymentTotals
+    ? Math.max(livePaymentTotals.total - livePaymentTotals.paid, 0)
+    : 0;
 
   return (
     <div className="bg-white dark:bg-slate-900 rounded-xl shadow-xl overflow-hidden print:shadow-none">
@@ -253,17 +337,74 @@ export default function ContractTemplate({
         )}
 
         {/* Payment Schedule */}
-        {effectivePaymentSchedule.length > 0 && (
+        {(useLiveScheduledPayments || effectivePaymentSchedule.length > 0) && (
           <div>
             <h2 className="flex items-center gap-2 text-xl font-semibold text-slate-900 dark:text-white mb-6">
               <DollarSign size={24} className="text-primary-500" />
               Payment Schedule
             </h2>
+            {useLiveScheduledPayments && livePaymentTotals && (
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-4">
+                <div className="rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 px-4 py-3">
+                  <p className="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">Total</p>
+                  <p className="mt-1 font-semibold text-slate-900 dark:text-white">
+                    {formatCurrency(livePaymentTotals.total)}
+                  </p>
+                </div>
+                <div className="rounded-lg border border-green-200 dark:border-green-900/60 bg-green-50 dark:bg-green-900/20 px-4 py-3">
+                  <p className="text-xs uppercase tracking-wide text-green-700 dark:text-green-300">Paid</p>
+                  <p className="mt-1 font-semibold text-green-700 dark:text-green-300">
+                    {formatCurrency(livePaymentTotals.paid)}
+                  </p>
+                </div>
+                <div className="rounded-lg border border-amber-200 dark:border-amber-900/60 bg-amber-50 dark:bg-amber-900/20 px-4 py-3">
+                  <p className="text-xs uppercase tracking-wide text-amber-700 dark:text-amber-300">Remaining</p>
+                  <p className="mt-1 font-semibold text-amber-700 dark:text-amber-300">
+                    {formatCurrency(liveRemainingAmount)}
+                  </p>
+                </div>
+              </div>
+            )}
             <div className="space-y-3">
-              {effectivePaymentSchedule.map((payment, index) => {
-                const amount = payment.percentage
-                  ? (packageSnapshot.total_amount * payment.percentage) / 100
-                  : (payment.amount || 0);
+              {(useLiveScheduledPayments ? liveScheduledPayments : effectivePaymentSchedule).map((payment, index) => {
+                if (useLiveScheduledPayments) {
+                  const livePayment = payment as ScheduledPayment;
+                  const amount = Number(livePayment.amount || 0);
+
+                  return (
+                    <div
+                      key={livePayment.id || `${livePayment.name || 'payment'}-${index}`}
+                      className="flex items-center justify-between p-4 bg-slate-50 dark:bg-slate-800 rounded-lg border border-slate-100 dark:border-slate-700"
+                    >
+                      <div className="flex items-center gap-4">
+                        <div className="w-8 h-8 rounded-full bg-primary-100 dark:bg-primary-900/30 flex items-center justify-center text-primary-600 dark:text-primary-400 font-semibold text-sm">
+                          {index + 1}
+                        </div>
+                        <div>
+                          <p className="font-medium text-slate-900 dark:text-white">
+                            {livePayment.name || `Payment ${index + 1}`}
+                          </p>
+                          <p className="text-sm text-slate-500 dark:text-slate-400">
+                            {getLivePaymentDateLabel(livePayment)}
+                          </p>
+                        </div>
+                      </div>
+                      <div className="text-right">
+                        <p className="font-semibold text-slate-900 dark:text-white">
+                          {formatCurrency(amount, livePayment.currency)}
+                        </p>
+                        <p className={`mt-1 inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${getLivePaymentStatusClasses(livePayment.status)}`}>
+                          {getLivePaymentStatusLabel(livePayment.status)}
+                        </p>
+                      </div>
+                    </div>
+                  );
+                }
+
+                const staticPayment = payment as ScheduleItem;
+                const amount = staticPayment.percentage
+                  ? (packageSnapshot.total_amount * staticPayment.percentage) / 100
+                  : (staticPayment.amount || 0);
 
                 return (
                   <div
@@ -279,7 +420,7 @@ export default function ContractTemplate({
                           {payment.name || `Payment ${index + 1}`}
                         </p>
                         <p className="text-sm text-slate-500 dark:text-slate-400">
-                          {getTriggerLabel(payment)}
+                          {getTriggerLabel(staticPayment)}
                         </p>
                       </div>
                     </div>
@@ -287,9 +428,9 @@ export default function ContractTemplate({
                       <p className="font-semibold text-slate-900 dark:text-white">
                         {formatCurrency(amount)}
                       </p>
-                      {payment.percentage && (
+                      {staticPayment.percentage && (
                         <p className="text-xs text-slate-500 dark:text-slate-400">
-                          {payment.percentage}%
+                          {staticPayment.percentage}%
                         </p>
                       )}
                     </div>

@@ -952,10 +952,10 @@ const addEvent = () => {
  return (a.vendor_name || '').localeCompare(b.vendor_name || '');
  })
  .map((assignment) => {
- const assignmentId = assignment._id || assignment.id;
+ const assignmentId = assignment._id;
  const categoryName = assignment.budget_category_id
  ? vendorBudgetCategories.find(
- (c) => (c._id || c.id) === assignment.budget_category_id
+ (c) => c.id === assignment.budget_category_id
  )?.name
  : null;
  const statusClass = (() => {

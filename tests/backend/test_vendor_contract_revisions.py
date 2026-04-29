@@ -252,6 +252,46 @@ async def test_create_contract_initializes_version_metadata(
 
 
 @pytest.mark.asyncio
+async def test_create_contract_links_assignment_and_returns_serialized_ids(
+    configured_vendor_service,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    service, _, assignments, vendor_profile_id = configured_vendor_service
+    assignment_id = ObjectId()
+    assignments.documents.append(
+        {
+            "_id": assignment_id,
+            "vendor_profile_id": vendor_profile_id,
+            "wedding_id": "wedding-1",
+            "budget_category_id": "budget-1",
+            "contract_id": None,
+        }
+    )
+    monkeypatch.setattr(
+        service,
+        "_resolve_couple_contact",
+        AsyncMock(return_value={"couple_email": None, "couple_names": None}),
+    )
+
+    created = await service.create_contract(
+        wedding_id="wedding-1",
+        vendor_profile_id=vendor_profile_id,
+        created_by="planner@example.com",
+        total_amount=5000,
+        deposit_percentage=50,
+    )
+    fetched = await service.get_contract(
+        created["_id"], created_by="planner@example.com"
+    )
+
+    assert created["id"] == created["_id"]
+    assert fetched["id"] == created["_id"]
+    assert fetched["_id"] == created["_id"]
+    assert assignments.documents[0]["contract_id"] == created["_id"]
+    assert assignments.documents[0]["contracted_amount"] == 5000
+
+
+@pytest.mark.asyncio
 async def test_create_revision_from_sent_contract_creates_new_draft_child_version(
     configured_vendor_service,
 ) -> None:

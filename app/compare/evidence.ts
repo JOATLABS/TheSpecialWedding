@@ -48,6 +48,31 @@ const AISLE_PLANNER_SOURCES: CompareEvidenceSource[] = [
   { code: 'AP9', label: 'Aisle Planner platform fees / online payments', url: 'https://help.aisleplanner.com/en/articles/3706461-platform-fees-offsetting-service-related-costs' },
 ];
 
+const DUBSADO_SOURCES: CompareEvidenceSource[] = [
+  { code: 'DS1', label: 'Dubsado pricing', url: 'https://www.dubsado.com/pricing' },
+  { code: 'DS2', label: 'Dubsado workflow + automation', url: 'https://help.dubsado.com/hc/en-us/categories/360002073634-Workflows' },
+  { code: 'DS3', label: 'Dubsado client portal', url: 'https://help.dubsado.com/hc/en-us/sections/360010036793-Client-Portal' },
+  { code: 'DS4', label: 'Dubsado proposals + packages', url: 'https://help.dubsado.com/hc/en-us/sections/360011199314-Proposals' },
+];
+
+const ZOLA_SOURCES: CompareEvidenceSource[] = [
+  { code: 'ZL1', label: 'Zola wedding planning tools (couple-side)', url: 'https://www.zola.com/wedding-planning' },
+  { code: 'ZL2', label: 'Zola vendor marketplace', url: 'https://www.zola.com/wedding-vendors' },
+  { code: 'ZL3', label: 'Zola wedding website builder', url: 'https://www.zola.com/wedding-planning/wedding-websites' },
+];
+
+const THE_KNOT_SOURCES: CompareEvidenceSource[] = [
+  { code: 'TK1', label: 'The Knot wedding planning hub', url: 'https://www.theknot.com/content/wedding-planning' },
+  { code: 'TK2', label: 'The Knot wedding website builder', url: 'https://www.theknot.com/wedding-websites' },
+  { code: 'TK3', label: 'The Knot vendor advertising / marketplace', url: 'https://www.theknot.com/wedding-vendors' },
+];
+
+const PLANNING_POD_SOURCES: CompareEvidenceSource[] = [
+  { code: 'PP1', label: 'Planning Pod pricing', url: 'https://www.planningpod.com/pricing' },
+  { code: 'PP2', label: 'Planning Pod features', url: 'https://www.planningpod.com/features' },
+  { code: 'PP3', label: 'Planning Pod seating + floor plans', url: 'https://www.planningpod.com/seating-arrangement-chart-software.cfm' },
+];
+
 const EVIDENCE_BY_COMPETITOR: Record<CompetitorSlug, CompareEvidenceSet> = {
   honeybook: {
     sources: HONEYBOOK_SOURCES,
@@ -91,6 +116,94 @@ const EVIDENCE_BY_COMPETITOR: Record<CompetitorSlug, CompareEvidenceSet> = {
       { feature: 'Multi-Tenant Agency Tier', confidence: 'Medium', note: 'Not found in the reviewed Aisle Planner source set.', sourceCodes: ['AP1'] },
       { feature: 'Vendor Advertising Portal', confidence: 'High', note: 'Not found in the reviewed Aisle Planner source set.', sourceCodes: ['AP1'] },
       { feature: 'Day-of / Onsite Check-In', confidence: 'Medium', note: 'Not found: QR RSVP access exists, but not a dedicated check-in workflow.', sourceCodes: ['AP4'] },
+    ],
+  },
+  'dubsado': {
+    sources: DUBSADO_SOURCES,
+    rows: [
+      { feature: 'Guest Management & RSVPs', confidence: 'Medium', note: 'Not found: client management is documented but no wedding-specific guest list / RSVP workflow.', sourceCodes: ['DS1', 'DS3'] },
+      { feature: 'Client Portal / Couple Portal', confidence: 'High', note: 'Confirmed: client portal is a documented strength, branded and customizable.', sourceCodes: ['DS3'] },
+      { feature: 'SMS & Email Reminders', confidence: 'Medium', note: 'Adjacent: email automation is deep, but native SMS reminders were not documented.', sourceCodes: ['DS2'] },
+      { feature: 'Seating Charts', confidence: 'Medium', note: 'Not found in the reviewed Dubsado source set.', sourceCodes: ['DS1', 'DS2'] },
+      { feature: 'AI Contract Generation & E-Sign', confidence: 'Medium', note: 'Adjacent: contracts and e-sign are highly customizable, but AI generation was not documented.', sourceCodes: ['DS4'] },
+      { feature: 'Service Packages', confidence: 'High', note: 'Confirmed: package and proposal builders are documented with strong customization.', sourceCodes: ['DS4'] },
+      { feature: 'AI Cash Flow Predictions', confidence: 'Medium', note: 'Not found: invoicing exists, but predictive cash-flow tooling was not documented.', sourceCodes: ['DS1'] },
+      { feature: 'Budget Management', confidence: 'Medium', note: 'Adjacent: project totals exist; a wedding-style budget tracker was not documented.', sourceCodes: ['DS1'] },
+      { feature: 'Photo Gallery & Guest QR Uploads', confidence: 'Medium', note: 'Not found in the reviewed Dubsado source set.', sourceCodes: ['DS1'] },
+      { feature: 'Vendor / Contact CRM', confidence: 'Medium', note: 'Adjacent: deep contact CRM exists; wedding-vendor-specific subset was not documented.', sourceCodes: ['DS2', 'DS3'] },
+      { feature: 'Custom Forms & Intake', confidence: 'High', note: 'Confirmed: forms with logic and conditional fields are documented as a strength.', sourceCodes: ['DS2', 'DS4'] },
+      { feature: 'Calendar Sync', confidence: 'Medium', note: 'Confirmed: calendar with Google sync is documented in vendor-public materials.', sourceCodes: ['DS1', 'DS2'] },
+      { feature: 'Team Management & Permissions', confidence: 'Medium', note: 'Adjacent: team members supported, but a granular 12+ permission model was not documented.', sourceCodes: ['DS1'] },
+      { feature: 'Invoicing & Online Payments', confidence: 'High', note: 'Confirmed: Stripe + Square + PayPal documented; ACH carries an extra fee.', sourceCodes: ['DS1', 'DS4'] },
+      { feature: 'Multi-Tenant Agency Tier', confidence: 'Medium', note: 'Adjacent: brand-board branding exists; a clearly branded agency tier was not documented.', sourceCodes: ['DS1'] },
+      { feature: 'Vendor Advertising Portal', confidence: 'High', note: 'Not found in the reviewed Dubsado source set.', sourceCodes: ['DS1'] },
+      { feature: 'Day-of / Onsite Check-In', confidence: 'Medium', note: 'Not found in the reviewed Dubsado source set.', sourceCodes: ['DS1'] },
+    ],
+  },
+  'zola': {
+    sources: ZOLA_SOURCES,
+    rows: [
+      { feature: 'Guest Management & RSVPs', confidence: 'High', note: 'Confirmed for couples: guest list and RSVP tools, but not a planner-side multi-wedding system.', sourceCodes: ['ZL1', 'ZL3'] },
+      { feature: 'Client Portal / Couple Portal', confidence: 'High', note: 'Not applicable: Zola is the couple\'s tool; there is no separate planner portal.', sourceCodes: ['ZL1'] },
+      { feature: 'SMS & Email Reminders', confidence: 'Medium', note: 'Adjacent: couple-side reminders exist; planner orchestration is not applicable.', sourceCodes: ['ZL3'] },
+      { feature: 'Seating Charts', confidence: 'High', note: 'Confirmed for couples: seating chart tool exists, single-event scope.', sourceCodes: ['ZL1'] },
+      { feature: 'AI Contract Generation & E-Sign', confidence: 'High', note: 'Not applicable: Zola does not produce planner contracts.', sourceCodes: ['ZL1'] },
+      { feature: 'Service Packages', confidence: 'High', note: 'Not applicable: Zola does not host planner service packages.', sourceCodes: ['ZL1'] },
+      { feature: 'AI Cash Flow Predictions', confidence: 'High', note: 'Not applicable.', sourceCodes: ['ZL1'] },
+      { feature: 'Budget Management', confidence: 'High', note: 'Confirmed for couples: budget tracker exists; single-event, no portfolio rollup.', sourceCodes: ['ZL1'] },
+      { feature: 'Photo Gallery & Guest QR Uploads', confidence: 'Medium', note: 'Adjacent: wedding website includes a photo section; QR-driven uploads not documented.', sourceCodes: ['ZL3'] },
+      { feature: 'Vendor / Contact CRM', confidence: 'High', note: 'Adjacent: vendor marketplace for the couple, not a planner-side CRM.', sourceCodes: ['ZL2'] },
+      { feature: 'Custom Forms & Intake', confidence: 'High', note: 'Not applicable: Zola does not provide planner intake forms.', sourceCodes: ['ZL1'] },
+      { feature: 'Calendar Sync', confidence: 'Medium', note: 'Adjacent: couple-side countdown and timeline; planner calendar sync not applicable.', sourceCodes: ['ZL1'] },
+      { feature: 'Team Management & Permissions', confidence: 'High', note: 'Not applicable: single-couple tool, no team or agency model.', sourceCodes: ['ZL1'] },
+      { feature: 'Invoicing & Online Payments', confidence: 'High', note: 'Not applicable: Zola does not provide planner invoicing.', sourceCodes: ['ZL1'] },
+      { feature: 'Multi-Tenant Agency Tier', confidence: 'High', note: 'Not applicable.', sourceCodes: ['ZL1'] },
+      { feature: 'Vendor Advertising Portal', confidence: 'High', note: 'Confirmed for vendors: paid ad placement in vendor marketplace is documented.', sourceCodes: ['ZL2'] },
+      { feature: 'Day-of / Onsite Check-In', confidence: 'High', note: 'Not applicable.', sourceCodes: ['ZL1'] },
+    ],
+  },
+  'the-knot': {
+    sources: THE_KNOT_SOURCES,
+    rows: [
+      { feature: 'Guest Management & RSVPs', confidence: 'High', note: 'Confirmed for couples: guest list and RSVP tracker on TheKnot.com, but couple-side, not planner-CRM.', sourceCodes: ['TK1', 'TK2'] },
+      { feature: 'Client Portal / Couple Portal', confidence: 'High', note: 'Not applicable: The Knot is consumer-facing; planners use it for vendor-side placement, not client management.', sourceCodes: ['TK1'] },
+      { feature: 'SMS & Email Reminders', confidence: 'Medium', note: 'Adjacent: couple-side reminders to guests; planner orchestration not applicable.', sourceCodes: ['TK2'] },
+      { feature: 'Seating Charts', confidence: 'High', note: 'Confirmed for couples: seating chart tool exists, single-event scope.', sourceCodes: ['TK1'] },
+      { feature: 'AI Contract Generation & E-Sign', confidence: 'High', note: 'Not applicable: The Knot does not produce planner contracts.', sourceCodes: ['TK1'] },
+      { feature: 'Service Packages', confidence: 'High', note: 'Not applicable: The Knot does not host planner service packages.', sourceCodes: ['TK1'] },
+      { feature: 'AI Cash Flow Predictions', confidence: 'High', note: 'Not applicable.', sourceCodes: ['TK1'] },
+      { feature: 'Budget Management', confidence: 'High', note: 'Confirmed for couples: budget tracker exists; single-event, no portfolio rollup.', sourceCodes: ['TK1'] },
+      { feature: 'Photo Gallery & Guest QR Uploads', confidence: 'Medium', note: 'Adjacent: wedding website includes photo section; QR-driven uploads not documented.', sourceCodes: ['TK2'] },
+      { feature: 'Vendor / Contact CRM', confidence: 'High', note: 'Adjacent: massive vendor directory for couples; no planner-side vendor CRM.', sourceCodes: ['TK3'] },
+      { feature: 'Custom Forms & Intake', confidence: 'High', note: 'Not applicable: The Knot does not provide planner intake forms.', sourceCodes: ['TK1'] },
+      { feature: 'Calendar Sync', confidence: 'Medium', note: 'Adjacent: couple-side countdown; planner calendar sync not applicable.', sourceCodes: ['TK1'] },
+      { feature: 'Team Management & Permissions', confidence: 'High', note: 'Not applicable: consumer-facing, no team or agency model.', sourceCodes: ['TK1'] },
+      { feature: 'Invoicing & Online Payments', confidence: 'High', note: 'Not applicable: The Knot does not provide planner invoicing.', sourceCodes: ['TK1'] },
+      { feature: 'Multi-Tenant Agency Tier', confidence: 'High', note: 'Not applicable.', sourceCodes: ['TK1'] },
+      { feature: 'Vendor Advertising Portal', confidence: 'High', note: 'Confirmed for vendors: paid vendor directory is the core monetization model.', sourceCodes: ['TK3'] },
+      { feature: 'Day-of / Onsite Check-In', confidence: 'High', note: 'Not applicable.', sourceCodes: ['TK1'] },
+    ],
+  },
+  'planning-pod': {
+    sources: PLANNING_POD_SOURCES,
+    rows: [
+      { feature: 'Guest Management & RSVPs', confidence: 'High', note: 'Confirmed for events generally: guest manager + RSVP tracking documented.', sourceCodes: ['PP2'] },
+      { feature: 'Client Portal / Couple Portal', confidence: 'Medium', note: 'Adjacent: client-facing project access exists; positioning is event-generic, not wedding-couple-specific.', sourceCodes: ['PP2'] },
+      { feature: 'SMS & Email Reminders', confidence: 'Medium', note: 'Adjacent: communication tooling exists, but SMS-as-a-product not documented.', sourceCodes: ['PP2'] },
+      { feature: 'Seating Charts', confidence: 'High', note: 'Confirmed: seating diagrams and event floor plans are documented as a core feature.', sourceCodes: ['PP3'] },
+      { feature: 'AI Contract Generation & E-Sign', confidence: 'Medium', note: 'Adjacent: contracts and proposals are documented; AI generation not shown.', sourceCodes: ['PP2'] },
+      { feature: 'Service Packages', confidence: 'High', note: 'Confirmed: proposal builder with package templates is documented.', sourceCodes: ['PP2'] },
+      { feature: 'AI Cash Flow Predictions', confidence: 'Medium', note: 'Not found in the reviewed Planning Pod source set.', sourceCodes: ['PP2'] },
+      { feature: 'Budget Management', confidence: 'High', note: 'Confirmed: event budget tracking documented, generic across event types.', sourceCodes: ['PP2'] },
+      { feature: 'Photo Gallery & Guest QR Uploads', confidence: 'Medium', note: 'Not found in the reviewed Planning Pod source set.', sourceCodes: ['PP2'] },
+      { feature: 'Vendor / Contact CRM', confidence: 'High', note: 'Confirmed: vendor management documented, generic across event types.', sourceCodes: ['PP2'] },
+      { feature: 'Custom Forms & Intake', confidence: 'High', note: 'Confirmed: form builder with proposals and questionnaires is documented.', sourceCodes: ['PP2'] },
+      { feature: 'Calendar Sync', confidence: 'High', note: 'Confirmed: calendar with sync to Google, Outlook, Apple is documented.', sourceCodes: ['PP2'] },
+      { feature: 'Team Management & Permissions', confidence: 'High', note: 'Confirmed: user roles with permissions, seat-based pricing tiers documented.', sourceCodes: ['PP1', 'PP2'] },
+      { feature: 'Invoicing & Online Payments', confidence: 'High', note: 'Confirmed: invoicing and online payments documented as core features.', sourceCodes: ['PP2'] },
+      { feature: 'Multi-Tenant Agency Tier', confidence: 'High', note: 'Confirmed: agency-style tiers exist with multi-event and multi-user support.', sourceCodes: ['PP1'] },
+      { feature: 'Vendor Advertising Portal', confidence: 'High', note: 'Not found in the reviewed Planning Pod source set.', sourceCodes: ['PP2'] },
+      { feature: 'Day-of / Onsite Check-In', confidence: 'Medium', note: 'Adjacent: event check-in tooling exists for events generally; not wedding-specific.', sourceCodes: ['PP2'] },
     ],
   },
 };

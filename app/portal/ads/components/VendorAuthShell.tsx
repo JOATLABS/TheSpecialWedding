@@ -1,10 +1,10 @@
 'use client';
 
-import NextImage from 'next/image';
 import type { ReactNode } from 'react';
 import { Sparkles } from 'lucide-react';
 
 import { vendorSurfaceClass } from './styles';
+import { BrandLockup } from '@/components/brand/BrandLockup';
 
 export interface VendorAuthShowcaseHighlight {
   label: string;
@@ -45,8 +45,8 @@ export function VendorAuthShowcase({
               <Sparkles className="h-4 w-4" />
             </div>
           </div>
-          <div className="space-y-2">
-            <NextImage src="/logo.svg" alt="The Special Wedding" width={164} height={40} className="h-9 w-auto" priority />
+          <div className="space-y-3">
+            <BrandLockup variant="full" surface="light" size="md" />
             <h1 className="text-[1.95rem] font-semibold leading-tight sm:text-[2.25rem]">{title}</h1>
             <p className="max-w-lg text-[0.95rem] leading-relaxed text-wedding-navy/75 sm:text-base">
               {description}

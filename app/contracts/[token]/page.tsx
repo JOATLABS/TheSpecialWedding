@@ -68,6 +68,15 @@ interface ContractData {
   };
   payment_method_last4?: string;
   payment_method_brand?: string;
+  scheduled_payments?: Array<{
+    id: string;
+    name?: string;
+    amount?: number;
+    currency?: string;
+    due_date?: string;
+    status?: string;
+    paid_at?: string;
+  }>;
 }
 
 type SigningStep = 'review' | 'payment' | 'signature' | 'complete';
@@ -306,6 +315,7 @@ export default function PublicContractPage() {
             status={contract.status}
             signedAt={contract.signed_at}
             signatureName={contract.signature?.signed_by}
+            scheduledPayments={contract.scheduled_payments}
           />
 
           {/* Next Steps */}
@@ -418,6 +428,7 @@ export default function PublicContractPage() {
               plannerPhone={contract.planner_phone}
               plannerLogo={contract.planner_logo}
               status={contract.status}
+              scheduledPayments={contract.scheduled_payments}
             />
 
             <div className="mt-8 text-center">

@@ -24,6 +24,10 @@ from fastapi import HTTPException, UploadFile
 
 from app.core.database import mongo
 from app.core.settings import settings
+from app.utils.planner_ownership import (
+    normalize_planner_email,
+    wedding_belongs_to_owner,
+)
 from app.models.vendor import (
     ContractKind,
     ContractStatus,
@@ -92,6 +96,7 @@ class VendorService:
         self.vendor_quotes = mongo.db["vendor_quotes"]
         self.budget_categories = mongo.db["budget_categories"]
         self.weddings = mongo.db["weddings"]
+        self.couple_users = mongo.db["couple_users"]
         self.users = mongo.get_users_collection()
         self.payment_links = mongo.db["payment_links"]
         self.vendor_forms = mongo.db["vendor_forms"]
@@ -641,6 +646,109 @@ class VendorService:
                 logger.warning(f"Error finding wedding by ObjectId '{wedding_id}': {e}")
 
         return wedding
+
+    async def _resolve_couple_contact(
+        self,
+        wedding_id: Optional[str],
+        actor_email: Optional[str],
+    ) -> Dict[str, Optional[str]]:
+        """
+        Resolve the couple's email + display name for a given wedding_id.
+
+        Tries the authoritative `couple_users` collection first; falls back to
+        the embedded fields on the `weddings` doc. Both reads are scoped to
+        the actor planner's ownership (per AGENTS.md "Authorization And Tenant
+        Boundary Rule") to defend against ownership drift surfaced by
+        `app/scripts/report_planner_ownership_drift.py`. When `actor_email` is
+        None we treat the call as root-admin and skip scoping. Always returns a
+        dict with `couple_email` and `couple_names` keys — both may be None.
+        Never raises.
+        """
+        result: Dict[str, Optional[str]] = {
+            "couple_email": None,
+            "couple_names": None,
+        }
+
+        if not wedding_id:
+            return result
+
+        normalized_actor_email = normalize_planner_email(actor_email)
+
+        # Defense-in-depth: confirm the wedding belongs to the actor planner
+        # before trusting any couple lookups keyed by wedding_id. Skip the
+        # check entirely for the root-admin case (actor_email is None).
+        wedding: Optional[dict] = None
+        if normalized_actor_email is not None:
+            try:
+                wedding = await self._get_wedding(wedding_id)
+            except Exception as e:
+                logger.warning(
+                    f"Failed to look up wedding for couple contact '{wedding_id}': {e}"
+                )
+                wedding = None
+
+            if not wedding_belongs_to_owner(
+                wedding, planner_email=normalized_actor_email
+            ):
+                # Wedding is missing or owned by a different planner — refuse
+                # to leak couple contact info. Return the empty result.
+                return result
+
+        # Authoritative source: couple_users collection (keyed by wedding_id).
+        # Scope by planner_email when we have an actor identity.
+        couple_query: Dict[str, Any] = {"wedding_id": wedding_id}
+        if normalized_actor_email is not None:
+            couple_query["planner_email"] = normalized_actor_email
+
+        try:
+            couple_doc = await self.couple_users.find_one(
+                couple_query,
+                {"email": 1, "partner1_name": 1, "partner2_name": 1},
+            )
+        except Exception as e:
+            logger.warning(
+                f"Failed to look up couple_users for wedding_id '{wedding_id}': {e}"
+            )
+            couple_doc = None
+
+        if couple_doc:
+            email = (couple_doc.get("email") or "").strip() or None
+            result["couple_email"] = email
+            partner1 = (couple_doc.get("partner1_name") or "").strip()
+            partner2 = (couple_doc.get("partner2_name") or "").strip()
+            if partner1 and partner2:
+                result["couple_names"] = f"{partner1} & {partner2}"
+            elif partner1:
+                result["couple_names"] = partner1
+            elif partner2:
+                result["couple_names"] = partner2
+
+        # Fallback to wedding doc for any field still missing. The wedding doc
+        # was already loaded + ownership-checked above when actor_email is set;
+        # for the root-admin case we load it now without scoping.
+        if not result["couple_email"] or not result["couple_names"]:
+            if wedding is None and normalized_actor_email is None:
+                try:
+                    wedding = await self._get_wedding(wedding_id)
+                except Exception as e:
+                    logger.warning(
+                        f"Failed to look up wedding for couple contact '{wedding_id}': {e}"
+                    )
+                    wedding = None
+
+            if wedding:
+                if not result["couple_email"]:
+                    embedded_couple = wedding.get("couple") or {}
+                    if isinstance(embedded_couple, dict):
+                        embedded_email = (
+                            embedded_couple.get("email") or ""
+                        ).strip() or None
+                        result["couple_email"] = embedded_email
+                if not result["couple_names"]:
+                    fallback_names = (wedding.get("couple_names") or "").strip() or None
+                    result["couple_names"] = fallback_names
+
+        return result
 
     async def _log_communication(
         self,
@@ -1818,7 +1926,10 @@ class VendorService:
             raise HTTPException(status_code=500, detail="Failed to fetch contracts")
 
     async def get_contract(
-        self, contract_id: str, created_by: Optional[str] = None
+        self,
+        contract_id: str,
+        created_by: Optional[str] = None,
+        include_couple_contact: bool = False,
     ) -> dict:
         """
         Get a specific contract.
@@ -1826,6 +1937,11 @@ class VendorService:
         Args:
             contract_id: The contract ID to fetch
             created_by: If provided, verifies the contract belongs to this planner (authorization check)
+            include_couple_contact: If True, enrich the response with the
+                couple's email and display name (1-2 extra Mongo reads). Only
+                the admin contract-detail endpoint needs this; internal
+                callers (revisions, signing, payment recording, lineage, etc.)
+                leave it False to avoid the per-call lookup cost.
         """
         try:
             obj_id = validate_object_id(contract_id, "contract ID")
@@ -1847,6 +1963,25 @@ class VendorService:
 
             self._serialize_doc(contract)
             self._attach_contract_version_metadata(contract)
+
+            if include_couple_contact:
+                # Defensive enrichment: surface couple contact info for the
+                # detail view (used by the "Send Payment Link to Couple" UI).
+                # Never let a missing/failed lookup 500 the contract response.
+                try:
+                    couple_contact = await self._resolve_couple_contact(
+                        contract.get("wedding_id"),
+                        contract.get("created_by"),
+                    )
+                except Exception as e:
+                    logger.warning(
+                        f"Failed to resolve couple contact for contract {contract_id}: {e}"
+                    )
+                    couple_contact = {"couple_email": None, "couple_names": None}
+
+                contract["couple_email"] = couple_contact.get("couple_email")
+                contract["couple_names"] = couple_contact.get("couple_names")
+
             return contract
 
         except HTTPException:
@@ -3762,11 +3897,54 @@ class VendorService:
     async def handle_payment_link_webhook(self, stripe_event: dict) -> dict:
         """
         Handle Stripe webhook for payment link completion.
-        Updates payment link status and records payment.
+
+        On `checkout.session.completed`:
+          1. Route the milestone credit through `record_payment` — the canonical
+             primitive — so the three guards (intent idempotency, status lock,
+             amount clamp) and the transactional rollup to vendor_assignments,
+             vendor_profiles, and budget_categories all run.
+          2. ONLY on record_payment success (or its translated idempotent acks)
+             do we mark the payment_link row PAID. If record_payment raises
+             non-idempotently, the link stays in its prior status and Stripe
+             will retry — on retry record_payment can complete cleanly.
+
+        The legacy inline milestone update bypassed `record_payment`, so:
+          - Stripe webhook retries → milestone double-credited (paid_amount inflated).
+          - A milestone already PAID via another path silently re-credited.
+          - vendor_assignments.paid_amount, vendor_profiles.total_revenue, and
+            budget_categories.actual_spent never moved on payment-link-paid milestones.
+
+        Guard rejections are translated into idempotent 200-style returns so
+        Stripe stops retrying — re-driving the same intent through this path
+        is benign now.
+
+        Stale-state protection on the payment_link doc update:
+          - CANCELLED links: do NOT credit, do NOT overwrite status; log WARNING
+            and return processed=True so Stripe stops retrying.
+          - Already-PAID links (replay): do NOT clobber paid_at; only fill in
+            stripe_checkout_session_id / stripe_payment_intent_id if missing.
+          - Missing milestone (deleted between link creation and webhook fire):
+            translate the inner 404 into an ERROR log + processed=True so
+            Stripe stops retrying. Ops finds the orphan via the log.
         """
+        # Pull these out early so the outer except can reference them.
+        payment_link_id: Optional[str] = None
+        event_id = stripe_event.get("id") if isinstance(stripe_event, dict) else None
         try:
             event_type = stripe_event.get("type")
             data = stripe_event.get("data", {}).get("object", {})
+
+            # Authoritative settlement time from Stripe — falls back to None
+            # (record_payment defaults to now) if absent.
+            event_created = stripe_event.get("created")
+            event_payment_date: Optional[datetime] = None
+            if event_created is not None:
+                try:
+                    event_payment_date = datetime.fromtimestamp(
+                        int(event_created), tz=timezone.utc
+                    )
+                except (TypeError, ValueError, OSError):
+                    event_payment_date = None
 
             if event_type == "checkout.session.completed":
                 # Find payment link by checkout session
@@ -3782,43 +3960,291 @@ class VendorService:
                             payment_link_id = str(payment_link["_id"])
 
                 if payment_link_id:
-                    await self.payment_links.update_one(
-                        {"_id": ObjectId(payment_link_id)},
-                        {
-                            "$set": {
-                                "status": PaymentLinkStatus.PAID.value,
-                                "paid_at": datetime.now(timezone.utc),
-                                "stripe_checkout_session_id": data.get("id"),
-                                "stripe_payment_intent_id": data.get("payment_intent"),
-                                "updated_at": datetime.now(timezone.utc),
-                            }
-                        },
-                    )
-
-                    # Update related milestone if exists
+                    # Re-read the payment_link doc up front so we can route the
+                    # milestone credit through the canonical primitive BEFORE
+                    # we touch the link doc itself.
                     payment_link = await self.payment_links.find_one(
                         {"_id": ObjectId(payment_link_id)}
                     )
+
+                    # CANCELLED short-circuit: link was explicitly killed by
+                    # the planner. A late Stripe webhook should not credit and
+                    # should not overwrite the audit trail. Acknowledge so
+                    # Stripe stops retrying.
+                    if (
+                        payment_link
+                        and payment_link.get("status")
+                        == PaymentLinkStatus.CANCELLED.value
+                    ):
+                        logger.warning(
+                            "payment_link_webhook: late webhook for CANCELLED "
+                            "link; skipping credit and preserving audit",
+                            extra={
+                                "payment_link_id": payment_link_id,
+                                "event_id": event_id,
+                                "stripe_payment_intent_id": data.get("payment_intent"),
+                            },
+                        )
+                        return {"processed": True}
+
+                    record_payment_succeeded = False
+
                     if payment_link and payment_link.get("milestone_id"):
-                        await self.payment_milestones.update_one(
-                            {"_id": ObjectId(payment_link["milestone_id"])},
+                        milestone_id = str(payment_link["milestone_id"])
+                        created_by = payment_link.get("created_by")
+                        amount = float(payment_link.get("amount") or 0)
+                        payment_intent_id = data.get("payment_intent")
+
+                        # Best-effort receipt URL: Stripe gives us the PI id on
+                        # the checkout.session payload, but not the charge's
+                        # receipt URL. Fetch the PI and pull `latest_charge`.
+                        # This is best-effort — failures here must NOT prevent
+                        # the milestone credit from being recorded.
+                        receipt_url: Optional[str] = None
+                        if payment_intent_id:
+                            try:
+                                pi = stripe.PaymentIntent.retrieve(
+                                    payment_intent_id,
+                                    expand=["latest_charge"],
+                                )
+                                latest_charge = getattr(pi, "latest_charge", None)
+                                if latest_charge and not isinstance(latest_charge, str):
+                                    receipt_url = getattr(
+                                        latest_charge, "receipt_url", None
+                                    )
+                            except stripe.StripeError as exc:
+                                logger.warning(
+                                    "payment_link_webhook: could not fetch "
+                                    "receipt_url for intent %s: %s",
+                                    payment_intent_id,
+                                    exc,
+                                )
+
+                        if not created_by:
+                            # Without a created_by we can't look up the
+                            # milestone (record_payment scopes by ownership).
+                            # Log and bail on the milestone credit. The
+                            # payment_link doc still gets the PAID update
+                            # below — the planner needs the doc to reflect
+                            # what Stripe collected, even though the rollup
+                            # never ran. Ops finds these via the ERROR log.
+                            logger.error(
+                                "payment_link_webhook: missing created_by; "
+                                "cannot route to record_payment, milestone "
+                                "NOT credited",
+                                extra={
+                                    "payment_link_id": payment_link_id,
+                                    "milestone_id": milestone_id,
+                                    "stripe_payment_intent_id": payment_intent_id,
+                                    "event_id": event_id,
+                                    "amount": amount,
+                                },
+                            )
+                            # Allow the link doc update below to run; without
+                            # it the Stripe-provided session/PI ids never
+                            # land on the doc.
+                            record_payment_succeeded = True
+                        else:
+                            try:
+                                await self.record_payment(
+                                    milestone_id=milestone_id,
+                                    amount=amount,
+                                    payment_method="stripe",
+                                    created_by=created_by,
+                                    payment_date=event_payment_date,
+                                    stripe_payment_intent_id=payment_intent_id,
+                                    receipt_url=receipt_url,
+                                )
+                                record_payment_succeeded = True
+                            except HTTPException as exc:
+                                # Translate guard rejections into idempotent
+                                # 200-style returns so Stripe stops retrying.
+                                #   404 milestone-not-found → milestone was
+                                #     deleted between link creation and
+                                #     webhook fire. Don't mark the link PAID
+                                #     (record_payment did NOT run); log ERROR
+                                #     so ops finds the orphan, return
+                                #     processed=True to stop Stripe retries.
+                                #   409 with "already recorded" / status PAID →
+                                #     benign retry; the milestone is in the
+                                #     intended end state already.
+                                #   400 amount clamp → log + swallow; should be
+                                #     impossible if the link's amount matches
+                                #     the milestone, but a stale link against
+                                #     a partially-paid milestone could trip it.
+                                detail = str(exc.detail or "").lower()
+                                if exc.status_code == 404:
+                                    logger.error(
+                                        "payment_link_webhook: milestone not "
+                                        "found (likely deleted between link "
+                                        "creation and webhook fire); skipping "
+                                        "credit and link update",
+                                        extra={
+                                            "payment_link_id": payment_link_id,
+                                            "milestone_id": milestone_id,
+                                            "stripe_payment_intent_id": (
+                                                payment_intent_id
+                                            ),
+                                            "event_id": event_id,
+                                            "amount": amount,
+                                            "detail": exc.detail,
+                                        },
+                                    )
+                                    return {"processed": True}
+                                if exc.status_code == 409 and ("already" in detail):
+                                    logger.info(
+                                        "payment_link_webhook: idempotent "
+                                        "replay (record_payment 409)",
+                                        extra={
+                                            "payment_link_id": payment_link_id,
+                                            "milestone_id": milestone_id,
+                                            "stripe_payment_intent_id": (
+                                                payment_intent_id
+                                            ),
+                                            "event_id": event_id,
+                                            "detail": exc.detail,
+                                        },
+                                    )
+                                    record_payment_succeeded = True
+                                elif exc.status_code == 400 and (
+                                    "exceeds remaining" in detail
+                                ):
+                                    logger.warning(
+                                        "payment_link_webhook: amount clamp "
+                                        "rejected by record_payment; "
+                                        "swallowing so Stripe does not "
+                                        "infinite-retry",
+                                        extra={
+                                            "payment_link_id": payment_link_id,
+                                            "milestone_id": milestone_id,
+                                            "stripe_payment_intent_id": (
+                                                payment_intent_id
+                                            ),
+                                            "event_id": event_id,
+                                            "amount": amount,
+                                            "detail": exc.detail,
+                                        },
+                                    )
+                                    record_payment_succeeded = True
+                                else:
+                                    raise
+                    else:
+                        # No milestone bound — link doc update is the only
+                        # action this webhook performs. Treat as success so
+                        # the doc update below runs.
+                        record_payment_succeeded = True
+
+                    # Only mark the link doc PAID if record_payment succeeded
+                    # (or returned an idempotent ack). On non-idempotent
+                    # failure we want Stripe's retry to find the link still
+                    # in its prior status so the credit can be re-attempted.
+                    if record_payment_succeeded:
+                        # Stale-state guard: only DRAFT/SENT/CLICKED links
+                        # may transition to PAID via this fast path. The
+                        # filter is the source of truth — it prevents
+                        # CANCELLED audit overwrite (defence-in-depth on top
+                        # of the early-return above) and prevents replay
+                        # from clobbering the original paid_at on already-
+                        # PAID docs.
+                        update_result = await self.payment_links.update_one(
+                            {
+                                "_id": ObjectId(payment_link_id),
+                                "status": {
+                                    "$in": [
+                                        PaymentLinkStatus.DRAFT.value,
+                                        PaymentLinkStatus.SENT.value,
+                                        PaymentLinkStatus.CLICKED.value,
+                                    ]
+                                },
+                            },
                             {
                                 "$set": {
-                                    "status": PaymentMilestoneStatus.PAID.value,
-                                    "paid_amount": payment_link["amount"],
+                                    "status": PaymentLinkStatus.PAID.value,
                                     "paid_at": datetime.now(timezone.utc),
-                                    "payment_method": "stripe",
+                                    "stripe_checkout_session_id": data.get("id"),
+                                    "stripe_payment_intent_id": data.get(
+                                        "payment_intent"
+                                    ),
                                     "updated_at": datetime.now(timezone.utc),
                                 }
                             },
                         )
 
-                    logger.info(f"Payment link {payment_link_id} marked as paid")
+                        if update_result.matched_count == 0:
+                            # Either the link is already PAID (replay) or in
+                            # some other terminal state. For replay, fill in
+                            # missing session/intent ids defensively but do
+                            # NOT touch paid_at.
+                            await self.payment_links.update_one(
+                                {
+                                    "_id": ObjectId(payment_link_id),
+                                    "status": PaymentLinkStatus.PAID.value,
+                                    "$or": [
+                                        {
+                                            "stripe_checkout_session_id": {
+                                                "$in": [None, ""]
+                                            }
+                                        },
+                                        {
+                                            "stripe_checkout_session_id": {
+                                                "$exists": False
+                                            }
+                                        },
+                                        {
+                                            "stripe_payment_intent_id": {
+                                                "$in": [None, ""]
+                                            }
+                                        },
+                                        {
+                                            "stripe_payment_intent_id": {
+                                                "$exists": False
+                                            }
+                                        },
+                                    ],
+                                },
+                                {
+                                    "$set": {
+                                        "stripe_checkout_session_id": data.get("id"),
+                                        "stripe_payment_intent_id": data.get(
+                                            "payment_intent"
+                                        ),
+                                        "updated_at": datetime.now(timezone.utc),
+                                    }
+                                },
+                            )
+
+                        # Structured success log so dashboards / alerts can
+                        # filter on stable keys.
+                        milestone_log_id: Optional[str] = None
+                        amount_log: Optional[float] = None
+                        if payment_link and payment_link.get("milestone_id"):
+                            milestone_log_id = str(payment_link["milestone_id"])
+                            amount_log = float(payment_link.get("amount") or 0)
+                        logger.info(
+                            "payment_link_webhook: payment_link marked PAID",
+                            extra={
+                                "payment_link_id": payment_link_id,
+                                "milestone_id": milestone_log_id,
+                                "stripe_payment_intent_id": data.get("payment_intent"),
+                                "stripe_checkout_session_id": data.get("id"),
+                                "amount": amount_log,
+                                "event_id": event_id,
+                            },
+                        )
 
             return {"processed": True}
 
         except Exception as e:
-            logger.error(f"Error handling payment webhook: {str(e)}")
+            logger.exception(
+                "payment_link_webhook failed",
+                extra={
+                    "payment_link_id": payment_link_id,
+                    "event_id": event_id,
+                    "event_type": stripe_event.get("type")
+                    if isinstance(stripe_event, dict)
+                    else None,
+                },
+            )
             return {"processed": False, "error": str(e)}
 
 

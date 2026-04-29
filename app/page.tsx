@@ -415,11 +415,11 @@ function LandingContent({
             </div>
 
             <h1 className="mt-8 text-4xl font-semibold leading-tight text-white sm:text-5xl md:text-6xl">
-              The all-in-one platform for professional wedding planners.
+              Wedding planning software built for professional planners.
             </h1>
 
             <p className="mt-6 text-lg text-slate-200 max-w-2xl mx-auto">
-              AI contracts, the Couple Portal, and SMS reminders lead the way, with guest management, budgets, seating, vendor CRM, and day-of execution woven into one elegant workspace.
+              The all-in-one wedding planner CRM for guest management, seating, vendor contracts, budgets, payments, and a live couple portal — replacing HoneyBook, Aisle Planner, and Squarespace in one workspace.
             </p>
 
             {/* Replacement pills */}
@@ -628,28 +628,102 @@ function LandingContent({
 
       {/* ── Footer ── */}
       <footer className="bg-slate-950 border-t border-white/5">
-        <div className="mx-auto max-w-6xl px-6 py-6">
-          <div className="flex flex-col items-center gap-3 sm:flex-row sm:justify-between">
+        <div className="mx-auto max-w-6xl px-6 py-10">
+          {/* Compare-to row — high commercial intent ("X alternative" SEO) */}
+          <div className="mb-8 grid gap-6 sm:grid-cols-2 md:grid-cols-4">
+            <div>
+              <h3 className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">Compare</h3>
+              <ul className="mt-3 space-y-2 text-xs text-slate-500">
+                {!isClone ? (
+                  <>
+                    <li><Link href="/compare/honeybook" className="transition hover:text-white">vs HoneyBook</Link></li>
+                    <li><Link href="/compare/aisle-planner" className="transition hover:text-white">vs Aisle Planner</Link></li>
+                    <li><Link href="/compare/dubsado" className="transition hover:text-white">vs Dubsado</Link></li>
+                    <li><Link href="/compare/zola" className="transition hover:text-white">vs Zola</Link></li>
+                    <li><Link href="/compare/the-knot" className="transition hover:text-white">vs The Knot</Link></li>
+                    <li><Link href="/compare/planning-pod" className="transition hover:text-white">vs Planning Pod</Link></li>
+                    <li><Link href="/compare" className="transition hover:text-white">All comparisons →</Link></li>
+                  </>
+                ) : (
+                  <>
+                    <li><span>vs HoneyBook</span></li>
+                    <li><span>vs Aisle Planner</span></li>
+                    <li><span>vs Dubsado</span></li>
+                    <li><span>vs Zola</span></li>
+                    <li><span>vs The Knot</span></li>
+                    <li><span>vs Planning Pod</span></li>
+                  </>
+                )}
+              </ul>
+            </div>
+            <div>
+              <h3 className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">Product</h3>
+              <ul className="mt-3 space-y-2 text-xs text-slate-500">
+                {!isClone ? (
+                  <>
+                    <li><Link href="/features" className="transition hover:text-white">Features</Link></li>
+                    <li><Link href="/vendors" className="transition hover:text-white">Vendor directory</Link></li>
+                    <li><Link href="/admin/login" className="transition hover:text-white">Sign in</Link></li>
+                  </>
+                ) : (
+                  <>
+                    <li><span>Features</span></li>
+                    <li><span>Vendor directory</span></li>
+                    <li><span>Sign in</span></li>
+                  </>
+                )}
+              </ul>
+            </div>
+            <div>
+              <h3 className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">Resources</h3>
+              <ul className="mt-3 space-y-2 text-xs text-slate-500">
+                {!isClone ? (
+                  <>
+                    <li><Link href="/resources" className="transition hover:text-white">Blog</Link></li>
+                    <li><Link href="/support" className="transition hover:text-white">Support</Link></li>
+                    <li><a href="mailto:hello@thespecialwedding.io" className="transition hover:text-white">Contact</a></li>
+                  </>
+                ) : (
+                  <>
+                    <li><span>Blog</span></li>
+                    <li><span>Support</span></li>
+                    <li><span>Contact</span></li>
+                  </>
+                )}
+              </ul>
+            </div>
+            <div>
+              <h3 className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">Legal</h3>
+              <ul className="mt-3 space-y-2 text-xs text-slate-500">
+                {!isClone ? (
+                  <>
+                    <li><Link href="/privacy" className="transition hover:text-white">Privacy</Link></li>
+                    <li><Link href="/terms" className="transition hover:text-white">Terms</Link></li>
+                  </>
+                ) : (
+                  <>
+                    <li><span>Privacy</span></li>
+                    <li><span>Terms</span></li>
+                  </>
+                )}
+              </ul>
+            </div>
+          </div>
+
+          <div className="flex flex-col items-center gap-3 border-t border-white/5 pt-6 sm:flex-row sm:justify-between">
             <p className="text-xs text-slate-500">
               © {new Date().getFullYear()} The Special Wedding. All rights reserved.
             </p>
-            <div className="flex items-center gap-4">
+            <p className="text-xs text-slate-500">
+              Built by{' '}
               {!isClone ? (
-                <a href="mailto:hello@thespecialwedding.io" className="text-xs text-slate-500 transition hover:text-slate-300">Contact</a>
+                <a href="https://joatlabs.dev" target="_blank" rel="noopener noreferrer" className="text-slate-400 transition hover:text-white">
+                  JOATLABS LLC
+                </a>
               ) : (
-                <span className="text-xs text-slate-500">Contact</span>
+                <span className="text-slate-400">JOATLABS LLC</span>
               )}
-              <p className="text-xs text-slate-500">
-                Built by{' '}
-                {!isClone ? (
-                  <a href="https://joatlabs.dev" target="_blank" rel="noopener noreferrer" className="text-slate-400 transition hover:text-white">
-                    JOATLABS LLC
-                  </a>
-                ) : (
-                  <span className="text-slate-400">JOATLABS LLC</span>
-                )}
-              </p>
-            </div>
+            </p>
           </div>
         </div>
       </footer>

@@ -16,6 +16,7 @@ import {
   type LucideIcon,
 } from 'lucide-react';
 import { useTheme } from '@/contexts/ThemeContext';
+import { BrandLockup } from '@/components/brand/BrandLockup';
 
 export interface WorkspaceNavItem {
   key: string;
@@ -189,23 +190,24 @@ export function WorkspaceSidebar({
         role="navigation"
         aria-label={navigationLabel}
       >
-        <div className="flex h-16 items-center justify-between border-b border-slate-200/50 px-3 dark:border-slate-700/50">
-          <Link href={brandHref} className="mr-2 flex min-w-0 flex-1 items-center">
+        <div className="flex h-24 items-center justify-between border-b border-slate-200/50 px-3 dark:border-slate-700/50">
+          <Link href={brandHref} className="mr-2 flex min-w-0 flex-1 items-center" aria-label="The Special Wedding home">
             {isOpen ? (
-              <img
-                src="/logo.svg"
-                alt="The Special Wedding"
-                width={144}
-                height={36}
-                className="block shrink-0"
-              />
+              <>
+                <span className="block dark:hidden">
+                  <BrandLockup variant="full" surface="light" size="md" />
+                </span>
+                <span className="hidden dark:block">
+                  <BrandLockup variant="full" surface="dark" size="md" />
+                </span>
+              </>
             ) : (
               <NextImage
                 src="/favicon.svg"
                 alt="The Special Wedding"
-                width={32}
-                height={32}
-                className="h-8 w-8"
+                width={44}
+                height={44}
+                className="h-11 w-11"
                 priority
               />
             )}
