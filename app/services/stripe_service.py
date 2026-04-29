@@ -3413,59 +3413,6 @@ class StripeService:
                 status_code=500, detail=f"Error creating payment intent: {str(e)}"
             )
 
-    async def create_vendor_payment_intent(
-        self,
-        sender_user_id: str,
-        vendor_connect_id: str,
-        amount: float,
-        currency: str = "usd",
-        description: Optional[str] = None,
-    ) -> Dict[str, Any]:
-        """
-        Create a payment intent for a Planner to pay a Vendor.
-        The Planner pays (as a customer) and funds go to Vendor (connected account).
-        """
-        self._ensure_stripe_enabled()
-
-        try:
-            # Ensure sender has a customer ID
-            user = await self.users_collection.find_one(
-                {"_id": ObjectId(sender_user_id)}
-            )
-            if not user:
-                raise HTTPException(status_code=404, detail="User not found")
-
-            customer_id = await self.get_or_create_customer(
-                sender_user_id, user["email"], user.get("full_name")
-            )
-
-            payment_intent = stripe.PaymentIntent.create(
-                amount=int(amount * 100),
-                currency=currency.lower(),
-                customer=customer_id,
-                description=description or "Payment to vendor",
-                transfer_data={"destination": vendor_connect_id},
-                metadata={
-                    "sender_user_id": sender_user_id,
-                    "vendor_connect_id": vendor_connect_id,
-                },
-                automatic_payment_methods={"enabled": True},
-            )
-
-            return {
-                "payment_intent_id": payment_intent.id,
-                "client_secret": payment_intent.client_secret,
-                "amount": amount,
-                "currency": currency,
-                "status": payment_intent.status,
-            }
-
-        except StripeError as e:
-            logger.error(f"Stripe error creating vendor payment: {str(e)}")
-            raise HTTPException(
-                status_code=500, detail=f"Payment service error: {str(e)}"
-            )
-
 
 # Create singleton instance
 stripe_service = StripeService()

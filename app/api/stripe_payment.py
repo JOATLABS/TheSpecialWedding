@@ -131,15 +131,6 @@ class ConnectOnboardRequest(BaseModel):
     refresh_url: str = Field(..., description="Refresh URL if onboarding fails")
 
 
-class VendorPaymentRequest(BaseModel):
-    """Request model for paying a vendor"""
-
-    vendor_user_id: str = Field(..., description="User ID of the vendor to pay")
-    amount: float = Field(..., description="Payment amount in dollars", gt=0)
-    currency: str = Field(default="usd", description="Currency code")
-    description: Optional[str] = Field(None, description="Payment description")
-
-
 # ==================== CHECKOUT SESSION ENDPOINTS ====================
 
 
@@ -614,80 +605,6 @@ async def get_connect_status(
     except Exception as e:
         logger.error(f"Error checking connect status: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Failed to check status: {str(e)}")
-
-
-@router.post("/pay-vendor")
-async def pay_vendor(
-    request: VendorPaymentRequest,
-    current_user: ExtendedAuthUser = Depends(require_admin_or_planner),
-):
-    """
-    Create a payment intent for a Planner to pay a Vendor.
-    This handles resolving the vendor from either a User ID or a VendorProfile ID.
-    """
-    try:
-        sender_id = str(current_user.user_data.get("_id"))
-
-        from app.core.database import mongo
-
-        # 1. Try finding as User first (direct ID match)
-        vendor_user = await mongo.db["users"].find_one(
-            {"_id": ObjectId(request.vendor_user_id)}
-        )
-
-        # 2. If not found, try finding as VendorProfile and look up associated user by email
-        if not vendor_user:
-            # Assuming vendors collection name is 'vendor_directory' or 'vendors'.
-            # In vendor.py, it's VendorProfile.
-            # Based on services/vendorManagementApi.ts, endpoint is /admin/directory, so collection likely 'vendor_directory' or similar.
-            # I will check mongo collection name via introspection or common convention.
-            # Given vendor.py doesn't specify collection, I'll assume 'vendor_directory' or 'vendors'.
-            # Let's try 'vendor_directory' first as per API path.
-
-            vendor_profile = await mongo.db["vendor_directory"].find_one(
-                {"_id": ObjectId(request.vendor_user_id)}
-            )
-
-            if vendor_profile:
-                vendor_email = vendor_profile.get("email")
-                if vendor_email:
-                    vendor_user = await mongo.db["users"].find_one(
-                        {"email": vendor_email}
-                    )
-
-        if not vendor_user:
-            raise HTTPException(
-                status_code=404,
-                detail="Vendor user account not found. The vendor must be a registered user to receive payments.",
-            )
-
-        vendor_connect_id = vendor_user.get("stripe_connect_id")
-        if not vendor_connect_id:
-            raise HTTPException(
-                status_code=400,
-                detail="Vendor has not connected their Stripe account to receive payments.",
-            )
-
-        # Verify sender permission (if needed, e.g. checking budget)
-        # For now, we assume if they pay, they pay.
-
-        result = await stripe_service.create_vendor_payment_intent(
-            sender_user_id=sender_id,
-            vendor_connect_id=vendor_connect_id,
-            amount=request.amount,
-            currency=request.currency,
-            description=request.description or "",
-        )
-
-        return {"status": "success", "payment_intent": result}
-
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Error creating vendor payment: {str(e)}")
-        raise HTTPException(
-            status_code=500, detail=f"Failed to create payment: {str(e)}"
-        )
 
 
 # ==================== PAYMENT COLLECTION FOR COUPLES ====================
