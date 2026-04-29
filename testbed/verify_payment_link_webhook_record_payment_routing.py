@@ -299,23 +299,18 @@ def _approx_eq(a: float, b: float, tol: float = 0.005) -> bool:
     return abs(float(a) - float(b)) <= tol
 
 
-def _fire_webhook_sync(event: dict) -> dict:
-    """Drive the webhook handler. Lazy-imports the service so the harness
-    can finish env setup before Motor instantiates its event-loop-bound client.
-    """
-    # Late import — vendor_service binds to mongo.client at import time;
-    # importing it before the harness loads .env can pin to the wrong DB.
-    from app.services.vendor_service import vendor_service  # noqa: WPS433
-
-    return asyncio.run(vendor_service.handle_payment_link_webhook(event))
-
-
 # ---------------------------------------------------------------------------
 # Phases
 # ---------------------------------------------------------------------------
 
 
-def main() -> int:
+async def main() -> int:
+    # Late import — vendor_service binds to mongo.client at import time;
+    # importing it before the harness loads .env can pin to the wrong DB.
+    # The handler is awaited directly inside this single event loop so Motor's
+    # connection pool stays bound to a live loop across every CASE invocation.
+    from app.services.vendor_service import vendor_service  # noqa: WPS433
+
     h = Harness(driver_name="verify_payment_link_webhook_record_payment_routing")
     h.preflight()
     admin_token = h.get_admin_token()
@@ -451,7 +446,7 @@ def main() -> int:
         checkout_session_id=MILESTONE_A_CHECKOUT_SESSION,
         amount_cents=int(MILESTONE_A_AMOUNT * 100),
     )
-    result_a = _fire_webhook_sync(event_a)
+    result_a = await vendor_service.handle_payment_link_webhook(event_a)
     if not result_a.get("processed"):
         raise AssertionError(
             f"webhook reported processed=False for case A: {result_a!r}"
@@ -536,7 +531,7 @@ def main() -> int:
         checkout_session_id=MILESTONE_A_CHECKOUT_SESSION,
         amount_cents=int(MILESTONE_A_AMOUNT * 100),
     )
-    result_b = _fire_webhook_sync(event_b)
+    result_b = await vendor_service.handle_payment_link_webhook(event_b)
     if not result_b.get("processed"):
         raise AssertionError(
             f"webhook reported processed=False for case B (idempotent replay): "
@@ -635,7 +630,7 @@ def main() -> int:
         checkout_session_id=MILESTONE_C_CHECKOUT_SESSION,
         amount_cents=int(MILESTONE_C_AMOUNT * 100),
     )
-    result_c = _fire_webhook_sync(event_c)
+    result_c = await vendor_service.handle_payment_link_webhook(event_c)
     if not result_c.get("processed"):
         raise AssertionError(
             f"webhook reported processed=False for case C: {result_c!r}"
@@ -763,7 +758,7 @@ def main() -> int:
         checkout_session_id=MILESTONE_D_PARTIAL_CS,
         amount_cents=int(MILESTONE_D_PARTIAL_AMOUNT * 100),
     )
-    result_d_partial = _fire_webhook_sync(event_d_partial)
+    result_d_partial = await vendor_service.handle_payment_link_webhook(event_d_partial)
     if not result_d_partial.get("processed"):
         raise AssertionError(
             f"CASE D FAIL: partial webhook reported processed=False: "
@@ -807,7 +802,7 @@ def main() -> int:
         checkout_session_id=MILESTONE_D_TOPUP_CS,
         amount_cents=int(MILESTONE_D_TOPUP_AMOUNT * 100),
     )
-    result_d_topup = _fire_webhook_sync(event_d_topup)
+    result_d_topup = await vendor_service.handle_payment_link_webhook(event_d_topup)
     if not result_d_topup.get("processed"):
         raise AssertionError(
             f"CASE D FAIL: top-up webhook reported processed=False: {result_d_topup!r}"
@@ -954,7 +949,7 @@ def main() -> int:
         checkout_session_id=MILESTONE_F_CHECKOUT_SESSION,
         amount_cents=int(MILESTONE_F_AMOUNT * 100),
     )
-    result_f = _fire_webhook_sync(event_f)
+    result_f = await vendor_service.handle_payment_link_webhook(event_f)
     if not result_f.get("processed"):
         raise AssertionError(
             f"CASE F FAIL: webhook reported processed=False; expected True so "
@@ -1078,7 +1073,7 @@ def main() -> int:
         checkout_session_id=MILESTONE_G_CHECKOUT_SESSION,
         amount_cents=int(MILESTONE_G_AMOUNT * 100),
     )
-    result_g = _fire_webhook_sync(event_g)
+    result_g = await vendor_service.handle_payment_link_webhook(event_g)
     if not result_g.get("processed"):
         raise AssertionError(
             f"CASE G FAIL: webhook reported processed=False; expected True. "
@@ -1159,7 +1154,7 @@ def main() -> int:
 
 if __name__ == "__main__":
     try:
-        raise SystemExit(main())
+        raise SystemExit(asyncio.run(main()))
     except Exception as exc:
         import logging
 
