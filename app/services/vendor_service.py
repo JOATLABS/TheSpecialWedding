@@ -1561,7 +1561,7 @@ class VendorService:
         self,
         vendor_profile_id: str,
         wedding_id: str,
-        created_by: str,
+        created_by: Optional[str] = None,
         budget_category_id: Optional[str] = None,
         service_notes: Optional[str] = None,
     ) -> dict:
@@ -1646,7 +1646,10 @@ class VendorService:
             )
 
     async def update_assignment_status(
-        self, assignment_id: str, status: str, created_by: str
+        self,
+        assignment_id: str,
+        status: str,
+        created_by: Optional[str] = None,
     ) -> dict:
         """Update vendor assignment status"""
         from app.models.vendor import VendorAssignmentStatus
@@ -1809,7 +1812,7 @@ class VendorService:
         self,
         wedding_id: str,
         vendor_profile_id: str,
-        created_by: str,
+        created_by: Optional[str] = None,
         template_id: Optional[str] = None,
         quote_id: Optional[str] = None,
         total_amount: float = 0,
@@ -3699,7 +3702,7 @@ class VendorService:
         vendor_profile_id: str,
         contract_title: str,
         total_amount: float,
-        created_by: str,
+        created_by: Optional[str] = None,
         deposit_amount: Optional[float] = None,
         service_date: Optional[datetime] = None,
         service_location: Optional[str] = None,
@@ -3708,11 +3711,17 @@ class VendorService:
         """
         Create a contract by uploading an existing PDF.
         The planner uploads their own contract PDF instead of using templates.
+
+        ``created_by`` is the actor's planner email. Pass ``None`` for the
+        root-admin bypass case (skips the planner-ownership filter).
         """
         try:
-            # Get vendor profile (already scoped to planner via
-            # get_vendor_profile's _id+created_by filter).
-            vendor = await self.get_vendor_profile(vendor_profile_id, created_by)
+            # Get vendor profile (scoped by planner ownership — prevents a
+            # cross-tenant write via a client-supplied vendor_profile_id).
+            # Use the helper so root-admin (created_by=None) skips the
+            # ownership filter cleanly; the prior call to get_vendor_profile
+            # would have run {"_id": ..., "created_by": None} and 404'd.
+            vendor = await self._get_owned_vendor_profile(vendor_profile_id, created_by)
             if not vendor:
                 raise HTTPException(status_code=404, detail="Vendor not found")
 

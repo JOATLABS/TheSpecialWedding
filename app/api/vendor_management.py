@@ -162,12 +162,14 @@ async def assign_vendor_to_wedding(
     """
     Assign a vendor from the directory to a wedding.
     Optionally link to a budget category.
+    Root admins bypass the planner-ownership filter (pass ``None``).
     """
     enforce_team_permission(current_user, "manage_vendors")
+    owner_email = None if current_user.is_root_admin else current_user.email
     return await vendor_service.assign_vendor_to_wedding(
         vendor_profile_id=data.vendor_profile_id,
         wedding_id=data.wedding_id,
-        created_by=current_user.email,
+        created_by=owner_email,
         budget_category_id=data.budget_category_id,
         service_notes=data.service_notes,
     )
@@ -191,10 +193,14 @@ async def update_vendor_assignment_status(
     ),
     current_user: ExtendedAuthUser = Depends(require_vendor_feature),
 ):
-    """Update the status of a vendor assignment"""
+    """Update the status of a vendor assignment.
+
+    Root admins bypass the planner-ownership filter (pass ``None``).
+    """
     enforce_team_permission(current_user, "manage_vendors")
+    owner_email = None if current_user.is_root_admin else current_user.email
     return await vendor_service.update_assignment_status(
-        assignment_id=assignment_id, status=status, created_by=current_user.email
+        assignment_id=assignment_id, status=status, created_by=owner_email
     )
 
 
@@ -249,11 +255,13 @@ async def create_contract(
     Create a new vendor contract.
     Can be created from a template or from scratch.
     Placeholders in templates are auto-populated with vendor/wedding data.
+    Root admins bypass the planner-ownership filter (pass ``None``).
     """
     enforce_team_permission(current_user, "manage_vendors")
     payload = data.model_dump(exclude_none=True)
+    owner_email = None if current_user.is_root_admin else current_user.email
     return await vendor_service.create_contract(
-        created_by=current_user.email,
+        created_by=owner_email,
         **payload,
     )
 
@@ -608,6 +616,7 @@ async def upload_contract_pdf(
     """
     Upload an existing PDF contract instead of using templates.
     The planner can upload their own attorney-drafted contract.
+    Root admins bypass the planner-ownership filter (pass ``None``).
     """
     enforce_team_permission(current_user, "manage_vendors")
     service_date_parsed = None
@@ -619,13 +628,14 @@ async def upload_contract_pdf(
         except ValueError:
             raise HTTPException(status_code=400, detail="Invalid service_date format")
 
+    owner_email = None if current_user.is_root_admin else current_user.email
     return await vendor_service.upload_contract_pdf(
         file=file,
         wedding_id=wedding_id,
         vendor_profile_id=vendor_profile_id,
         contract_title=contract_title,
         total_amount=total_amount,
-        created_by=current_user.email,
+        created_by=owner_email,
         deposit_amount=deposit_amount,
         service_date=service_date_parsed,
         service_location=service_location,
