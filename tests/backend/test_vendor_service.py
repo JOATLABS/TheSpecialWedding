@@ -75,6 +75,12 @@ async def test_assign_vendor_to_wedding_returns_conflict_for_duplicates():
             "service_category": "photographer",
         }
     )
+    service.weddings = _DummyFindOneCollection(
+        {
+            "_id": "wedding_123",
+            "assigned_planner_email": "planner@example.com",
+        }
+    )
     service.vendor_assignments = _DummyFindOneCollection({"_id": "assignment_123"})
 
     with pytest.raises(HTTPException) as exc_info:

@@ -7,6 +7,7 @@ Handles all business logic for the vendor management feature.
 
 import hashlib
 import hmac
+import html
 import logging
 import os
 import re
@@ -2476,7 +2477,31 @@ class VendorService:
                 base_url, contract_id, raw_token
             )
 
-            # Build email
+            # Build email — escape every planner/vendor-supplied string before
+            # interpolating into the HTML body. Numeric amounts are formatted
+            # via :,.2f and contract_link is a server-built URL, but we still
+            # escape it defensively in case a future change lets user input
+            # leak into the URL.
+            safe_vendor_name = html.escape(str(contract["vendor_name"]), quote=True)
+            safe_couple_names = html.escape(str(couple_names), quote=True)
+            safe_contract_title = html.escape(
+                str(contract["contract_title"]), quote=True
+            )
+            safe_contract_number = html.escape(
+                str(contract.get("contract_number", "N/A")), quote=True
+            )
+            safe_service_label = html.escape(
+                str(
+                    self._get_vendor_service_label(
+                        contract["service_category"],
+                        contract.get("custom_service_category"),
+                    )
+                ),
+                quote=True,
+            )
+            safe_message = html.escape(str(message), quote=True) if message else ""
+            safe_contract_link = html.escape(str(contract_link), quote=True)
+
             subject = f"Contract for Review: {contract['contract_title']}"
             html_content = f"""
             <html>
@@ -2496,17 +2521,17 @@ class VendorService:
                         <h1>Contract Ready for Review</h1>
                     </div>
                     <div class="content">
-                        <p>Dear {contract["vendor_name"]},</p>
+                        <p>Dear {safe_vendor_name},</p>
 
-                        <p>A contract has been prepared for your services for the wedding of <strong>{couple_names}</strong>.</p>
+                        <p>A contract has been prepared for your services for the wedding of <strong>{safe_couple_names}</strong>.</p>
 
-                        {f"<p>{message}</p>" if message else ""}
+                        {f"<p>{safe_message}</p>" if message else ""}
 
                         <div class="details">
                             <h3>Contract Details:</h3>
-                            <p><strong>Contract:</strong> {contract["contract_title"]}</p>
-                            <p><strong>Contract #:</strong> {contract.get("contract_number", "N/A")}</p>
-                            <p><strong>Service:</strong> {self._get_vendor_service_label(contract["service_category"], contract.get("custom_service_category"))}</p>
+                            <p><strong>Contract:</strong> {safe_contract_title}</p>
+                            <p><strong>Contract #:</strong> {safe_contract_number}</p>
+                            <p><strong>Service:</strong> {safe_service_label}</p>
                             <p><strong>Total Amount:</strong> ${contract["total_amount"]:,.2f}</p>
                             {f"<p><strong>Deposit Required:</strong> ${contract['deposit_amount']:,.2f}</p>" if contract.get("deposit_amount") else ""}
                         </div>
@@ -2514,7 +2539,7 @@ class VendorService:
                         <p>Please review the contract and sign electronically by clicking the button below:</p>
 
                         <div style="text-align: center;">
-                            <a href="{contract_link}" class="button">Review & Sign Contract</a>
+                            <a href="{safe_contract_link}" class="button">Review &amp; Sign Contract</a>
                         </div>
 
                         <p>If you have any questions or need to discuss any terms, please don't hesitate to contact us.</p>
