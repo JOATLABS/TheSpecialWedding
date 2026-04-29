@@ -110,6 +110,8 @@ export interface VendorContract {
   contract_kind?: ContractKind;
   amendment_reason?: string;
   superseded_at?: string;
+  couple_email?: string | null;
+  couple_names?: string | null;
   created_at: string;
   updated_at: string;
 }

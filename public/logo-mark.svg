@@ -1,0 +1,33 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 220 60" fill="none" role="img" aria-label="The Special Wedding">
+  <defs>
+    <linearGradient id="ring" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#FFFFFF"/>
+      <stop offset="15%" stop-color="#FFE5DC"/>
+      <stop offset="40%" stop-color="#E8B4B8"/>
+      <stop offset="70%" stop-color="#7A4B50"/>
+      <stop offset="100%" stop-color="#1F0A0C"/>
+    </linearGradient>
+    <radialGradient id="heart" cx="30%" cy="25%" r="95%">
+      <stop offset="0%" stop-color="#FFE5DC"/>
+      <stop offset="50%" stop-color="#E8B4B8"/>
+      <stop offset="100%" stop-color="#5C2F34"/>
+    </radialGradient>
+    <filter id="hs" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur in="SourceAlpha" stdDeviation="1.4"/>
+      <feOffset dx="0.5" dy="1.6" result="b"/>
+      <feFlood flood-color="black" flood-opacity="0.7"/>
+      <feComposite in2="b" operator="in"/>
+      <feMerge><feMergeNode/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+  </defs>
+  <g transform="translate(4 0)">
+    <circle cx="24" cy="30" r="11" stroke="url(#ring)" stroke-width="5.5" fill="none"/>
+    <circle cx="36" cy="30" r="11" stroke="url(#ring)" stroke-width="5.5" fill="none"/>
+    <path d="M 31.07 38.43 A 11 11 0 0 1 28.65 39.97" stroke="url(#ring)" stroke-width="5.5" fill="none"/>
+    <g filter="url(#hs)">
+      <path d="M30 27 C28 24, 24 24, 24 27 C24 31, 30 36, 30 36 C30 36, 36 31, 36 27 C36 24, 32 24, 30 27" fill="url(#heart)" stroke="#3D1418" stroke-width="0.35"/>
+    </g>
+  </g>
+  <text x="78" y="26" font-family="Georgia, 'Times New Roman', serif" font-style="italic" font-size="9" font-weight="400" fill="#E8B4B8" letter-spacing="2.6">THE SPECIAL</text>
+  <text x="78" y="50" font-family="Georgia, 'Times New Roman', serif" font-size="26" font-weight="700" fill="#E8B4B8" letter-spacing="1.2">Wedding</text>
+</svg>

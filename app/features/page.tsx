@@ -127,7 +127,7 @@ export default function FeaturesPage() {
               <div className="relative mb-5 aspect-[16/10] overflow-hidden rounded-2xl border border-white/10 bg-slate-900/70">
                 <Image
                   src={f.image}
-                  alt={`${f.title} screenshot`}
+                  alt={`${f.title} — ${f.tagline}`}
                   fill
                   sizes="(min-width: 1024px) 30vw, (min-width: 640px) 45vw, 90vw"
                   className="object-cover object-top transition duration-500 group-hover:scale-[1.02]"

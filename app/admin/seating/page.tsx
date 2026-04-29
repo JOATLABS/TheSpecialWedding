@@ -15,6 +15,7 @@ import {
 import { useAdmin } from '@/contexts/AdminContext';
 import { getApiBaseUrl } from '@/utils/env';
 import PageHeader from '../components/PageHeader';
+import WeddingPicker from '../components/WeddingPicker';
 import { useTables } from '@/admin/hooks/useTables';
 import { useGuests } from '@/admin/hooks/useGuests';
 import { SeatingCanvas } from '@/admin/components/seating/SeatingCanvas';
@@ -588,48 +589,38 @@ export default function SeatingPage() {
           )}
         </PageHeader>
 
-        {/* Wedding Selector */}
-        <div className="bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-4">
-          <div className="flex flex-col sm:flex-row gap-4 items-center">
-            <label className="font-medium text-slate-700 dark:text-gray-200 whitespace-nowrap">
-              Select Wedding:
-            </label>
-            <select
-              id="wedding"
-              value={selectedWedding}
-              onChange={(e) => setSelectedWedding(e.target.value)}
-              className="flex-1 px-4 py-2.5 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-wedding-rose focus:border-transparent"
-              disabled={loadingWeddings}
-            >
-              <option value="">
-                {loadingWeddings ? 'Loading weddings...' : 'Choose a wedding...'}
-              </option>
-              {weddings.map((wedding) => (
-                <option key={wedding.id || wedding._id} value={wedding.id || wedding._id}>
-                  {wedding.couple_names} — {wedding.date}
-                </option>
-              ))}
-            </select>
-          </div>
+        {/* Wedding picker — shared compact pill (see WeddingPicker.tsx) */}
+        <div className="flex items-center gap-3">
+          <span className="text-sm text-slate-500 dark:text-gray-400">Wedding:</span>
+          <WeddingPicker
+            options={weddings.map((w) => ({
+              id: (w.id || w._id) as string,
+              label: `${w.couple_names} — ${w.date}`,
+            }))}
+            value={selectedWedding}
+            onChange={setSelectedWedding}
+            disabled={loadingWeddings}
+            placeholder={loadingWeddings ? 'Loading weddings…' : 'Choose a wedding…'}
+          />
         </div>
 
-        {/* Stats Bar */}
+        {/* Stats Bar — text-xl matches the platform-wide stat density */}
         {selectedWedding && (
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-            <div className="bg-white/70 dark:bg-slate-900/60 backdrop-blur-xl rounded-xl border border-white/50 dark:border-slate-700/50 p-3 text-center">
-              <p className="text-2xl font-semibold text-slate-900 dark:text-white">{tables.length}</p>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+            <div className="bg-white/70 dark:bg-slate-900/60 backdrop-blur-xl rounded-xl border border-white/50 dark:border-slate-700/50 px-3 py-2 text-center">
+              <p className="text-xl font-semibold text-slate-900 dark:text-white">{tables.length}</p>
               <p className="text-xs text-slate-500 dark:text-slate-400">Tables</p>
             </div>
-            <div className="bg-white/70 dark:bg-slate-900/60 backdrop-blur-xl rounded-xl border border-white/50 dark:border-slate-700/50 p-3 text-center">
-              <p className="text-2xl font-semibold text-emerald-600 dark:text-emerald-400">{seatedCount}</p>
+            <div className="bg-white/70 dark:bg-slate-900/60 backdrop-blur-xl rounded-xl border border-white/50 dark:border-slate-700/50 px-3 py-2 text-center">
+              <p className="text-xl font-semibold text-emerald-600 dark:text-emerald-400">{seatedCount}</p>
               <p className="text-xs text-slate-500 dark:text-slate-400">Seated</p>
             </div>
-            <div className="bg-white/70 dark:bg-slate-900/60 backdrop-blur-xl rounded-xl border border-white/50 dark:border-slate-700/50 p-3 text-center">
-              <p className="text-2xl font-semibold text-amber-600 dark:text-amber-400">{unseatedCount}</p>
+            <div className="bg-white/70 dark:bg-slate-900/60 backdrop-blur-xl rounded-xl border border-white/50 dark:border-slate-700/50 px-3 py-2 text-center">
+              <p className="text-xl font-semibold text-amber-600 dark:text-amber-400">{unseatedCount}</p>
               <p className="text-xs text-slate-500 dark:text-slate-400">Unseated</p>
             </div>
-            <div className="bg-white/70 dark:bg-slate-900/60 backdrop-blur-xl rounded-xl border border-white/50 dark:border-slate-700/50 p-3 text-center">
-              <p className="text-2xl font-semibold text-slate-900 dark:text-white">{totalCapacity}</p>
+            <div className="bg-white/70 dark:bg-slate-900/60 backdrop-blur-xl rounded-xl border border-white/50 dark:border-slate-700/50 px-3 py-2 text-center">
+              <p className="text-xl font-semibold text-slate-900 dark:text-white">{totalCapacity}</p>
               <p className="text-xs text-slate-500 dark:text-slate-400">Total Capacity</p>
             </div>
           </div>

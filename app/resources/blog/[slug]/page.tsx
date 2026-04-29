@@ -75,12 +75,23 @@ export default async function BlogPostPage({
       })
     : '';
 
+  // Use the article-specific OG image if uploaded, otherwise fall back to the
+  // dynamic /api/og route which renders a branded card per slug. Either way,
+  // BlogPosting.image must be present for Google rich-result eligibility.
+  const articleImage = article.ogImage
+    ? article.ogImage
+    : `https://thespecialwedding.io/api/og?type=blog&slug=${encodeURIComponent(slug)}`;
+
   const jsonLd = {
     '@context': 'https://schema.org',
     '@type': 'BlogPosting',
     headline: article.title,
     description: article.ogDescription,
     datePublished: article.date || undefined,
+    // Until we surface an explicit updated_at, mirror datePublished so the
+    // schema is complete. When the API returns updated_at, swap it in here.
+    dateModified: article.date || undefined,
+    image: articleImage,
     author: {
       '@type': article.authorName === 'The Special Wedding' ? 'Organization' : 'Person',
       name: article.authorName,
@@ -89,12 +100,15 @@ export default async function BlogPostPage({
       '@type': 'Organization',
       name: 'The Special Wedding',
       url: 'https://thespecialwedding.io',
+      logo: {
+        '@type': 'ImageObject',
+        url: 'https://thespecialwedding.io/logo.svg',
+      },
     },
     mainEntityOfPage: {
       '@type': 'WebPage',
       '@id': `https://thespecialwedding.io/resources/blog/${slug}`,
     },
-    ...(article.ogImage ? { image: article.ogImage } : {}),
   };
 
   return (

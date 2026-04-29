@@ -283,7 +283,11 @@ async def get_contract(
     contract_id: str, current_user: ExtendedAuthUser = Depends(require_vendor_feature)
 ):
     """Get a specific contract (only contracts created by the current user)"""
-    return await vendor_service.get_contract(contract_id, created_by=current_user.email)
+    return await vendor_service.get_contract(
+        contract_id,
+        created_by=current_user.email,
+        include_couple_contact=True,
+    )
 
 
 @router.post("/contracts/{contract_id}/revisions", tags=["Contracts"])

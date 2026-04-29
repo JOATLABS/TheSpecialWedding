@@ -4,16 +4,16 @@ import { ArrowRight, FileText, Sparkles } from 'lucide-react';
 import { comparePageData, COMPARE_AUDIT_QUALIFIER, COMPARE_AUDIT_STAMP } from './data';
 
 export const metadata: Metadata = {
-  title: 'Compare The Special Wedding',
+  title: 'Compare The Special Wedding to HoneyBook, Aisle Planner, Dubsado & more',
   description:
-    `Start here for comparison pages that position The Special Wedding against HoneyBook and Aisle Planner using official competitor sources reviewed on ${COMPARE_AUDIT_STAMP}.`,
+    `Wedding-first comparison pages positioning The Special Wedding against HoneyBook, Aisle Planner, Dubsado, Zola, The Knot, and Planning Pod, using official competitor sources reviewed on ${COMPARE_AUDIT_STAMP}.`,
   alternates: {
     canonical: '/compare',
   },
   openGraph: {
-    title: 'Compare The Special Wedding',
+    title: 'Compare The Special Wedding to HoneyBook, Aisle Planner, Dubsado & more',
     description:
-      'Start here for comparison pages that position The Special Wedding against HoneyBook and Aisle Planner.',
+      'Wedding-first comparison pages: HoneyBook, Aisle Planner, Dubsado, Zola, The Knot, Planning Pod.',
     url: 'https://thespecialwedding.io/compare',
     images: [
       {
@@ -27,9 +27,9 @@ export const metadata: Metadata = {
   twitter: {
     card: 'summary_large_image',
     site: '@thespecialwedding',
-    title: 'Compare The Special Wedding',
+    title: 'Compare The Special Wedding to HoneyBook, Aisle Planner, Dubsado & more',
     description:
-      'Start here for comparison pages that position The Special Wedding against HoneyBook and Aisle Planner.',
+      'Wedding-first comparison pages: HoneyBook, Aisle Planner, Dubsado, Zola, The Knot, Planning Pod.',
     images: ['/og-image.png'],
   },
 };

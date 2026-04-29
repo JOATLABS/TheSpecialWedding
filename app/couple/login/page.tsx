@@ -8,6 +8,7 @@ import { GlassCard } from '@/components/ui/GlassCard';
 import { Button } from '@/components/ui/Button';
 import Link from 'next/link';
 import { clearLegacyCoupleStorage, extractApiErrorMessage } from '@/couple/lib/auth';
+import { BrandLockup } from '@/components/brand/BrandLockup';
 
 const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -158,6 +159,9 @@ export default function CoupleLoginPage() {
             {/* Left: Login form */}
             <section className="order-1 md:order-1 md:pr-6 lg:pr-10">
               <GlassCard depth="near" blur="xl" className="h-full px-6 py-7 sm:px-8 xl:px-10">
+                <div className="mb-6">
+                  <BrandLockup variant="full" surface="light" size="md" />
+                </div>
                 <div className="flex items-center justify-between gap-4">
                   <div>
                     <p className="text-xs font-medium uppercase tracking-[0.3em] text-wedding-navy/70 sm:text-sm">Wedding portal</p>
