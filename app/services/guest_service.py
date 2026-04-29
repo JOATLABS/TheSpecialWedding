@@ -175,18 +175,26 @@ class GuestService:
         if not guest_docs:
             return {
                 "totalGuests": 0,
-                "totalPlusOneSlots": 0,
-                "respondedGuests": 0,
-                "respondedPlusOnes": 0,
-                "pendingGuests": 0,
-                "pendingPlusOneSlots": 0,
+                "invitedGuests": 0,
                 "notInvitedGuests": 0,
+                "respondedGuests": 0,
+                "confirmedGuests": 0,
+                "declinedGuests": 0,
+                "pendingGuests": 0,
+                "totalPlusOneSlots": 0,
+                "respondedPlusOnes": 0,
+                "pendingPlusOneSlots": 0,
                 "submittedPlusOnes": 0,
             }
 
         guest_ids_obj = [guest["_id"] for guest in guest_docs]
         guest_ids_str = [to_str_id(guest["_id"]) for guest in guest_docs]
 
+        # Pull `attending` along with `guest_id` so we can split responded
+        # guests into confirmed (attending at least one event) vs declined
+        # (responded with attending=[]). RsvpService creates the row with
+        # status='confirmed' if attending else 'declined' (rsvp_service.py
+        # ~line 170), so attending list length is the canonical signal.
         rsvp_docs = await self.rsvp_collection.find(
             {
                 "$or": [
@@ -194,9 +202,13 @@ class GuestService:
                     {"guest_id": {"$in": guest_ids_str}},
                 ]
             },
-            projection={"guest_id": 1},
+            projection={"guest_id": 1, "attending": 1},
         ).to_list(length=None)
-        responded_guest_ids = {str(doc.get("guest_id")) for doc in rsvp_docs}
+        rsvp_attending_by_guest: dict[str, list] = {}
+        for doc in rsvp_docs:
+            guest_id_key = str(doc.get("guest_id"))
+            rsvp_attending_by_guest[guest_id_key] = doc.get("attending") or []
+        responded_guest_ids = set(rsvp_attending_by_guest.keys())
 
         plus_one_docs = await self.plus_one_collection.find(
             {"guest_id": {"$in": guest_ids_str}},
@@ -207,7 +219,10 @@ class GuestService:
         )
 
         total_plus_one_slots = 0
+        invited_guests = 0
         responded_guests = 0
+        confirmed_guests = 0
+        declined_guests = 0
         responded_plus_ones = 0
         pending_guests = 0
         pending_plus_one_slots = 0
@@ -220,9 +235,19 @@ class GuestService:
 
             total_plus_one_slots += plus_one_slots
 
+            # `invited` covers anyone who got an invite, regardless of RSVP.
+            # Responding implies they were invited; we count them too.
+            if invited or has_rsvp:
+                invited_guests += 1
+
             if has_rsvp:
                 responded_guests += 1
                 responded_plus_ones += plus_one_counts.get(guest_id, 0)
+                attending = rsvp_attending_by_guest.get(guest_id) or []
+                if attending:
+                    confirmed_guests += 1
+                else:
+                    declined_guests += 1
                 continue
 
             if invited:
@@ -233,12 +258,15 @@ class GuestService:
 
         return {
             "totalGuests": len(guest_docs),
-            "totalPlusOneSlots": total_plus_one_slots,
-            "respondedGuests": responded_guests,
-            "respondedPlusOnes": responded_plus_ones,
-            "pendingGuests": pending_guests,
-            "pendingPlusOneSlots": pending_plus_one_slots,
+            "invitedGuests": invited_guests,
             "notInvitedGuests": not_invited_guests,
+            "respondedGuests": responded_guests,
+            "confirmedGuests": confirmed_guests,
+            "declinedGuests": declined_guests,
+            "pendingGuests": pending_guests,
+            "totalPlusOneSlots": total_plus_one_slots,
+            "respondedPlusOnes": responded_plus_ones,
+            "pendingPlusOneSlots": pending_plus_one_slots,
             "submittedPlusOnes": len(plus_one_docs),
         }
 

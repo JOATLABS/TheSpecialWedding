@@ -220,6 +220,10 @@ export default function AdminGuestsPage() {
   const [exportMenuOpen, setExportMenuOpen] = useState(false);
   const [exportLoading, setExportLoading] = useState(false);
 
+  // Show/hide the secondary filter row (Role, phone health, SMS prefs).
+  // Collapsed by default since most planners only use the primary filters.
+  const [showAdvancedFilters, setShowAdvancedFilters] = useState(false);
+
   // Guest activity log state
   const [guestActivity, setGuestActivity] = useState<Record<string, any[]>>({});
   const [activityLoading, setActivityLoading] = useState<string | null>(null);
@@ -1237,77 +1241,57 @@ export default function AdminGuestsPage() {
         {selectedWedding && (() => {
           return (
           <>
-            {/* Stats Overview */}
-            <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-8">
-                  {/* Total Guests */}
-                  <div className="bg-white dark:bg-slate-800 rounded-xl shadow-lg p-6">
-                    <div className="flex flex-col items-center text-center">
-                      <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-1">Total Guests</h3>
-                      <div className="flex items-baseline gap-2 justify-center">
-                        <div>
-                          <p className="text-3xl font-bold text-wedding-navy">{summary.totalGuests}</p>
-                          <p className="text-xs text-gray-400">guests</p>
-                        </div>
-                        {summary.totalPlusOneSlots > 0 && (
-                          <div className="border-l border-gray-200 dark:border-gray-600 pl-2">
-                            <p className="text-lg font-semibold text-purple-600 dark:text-purple-400">+{summary.totalPlusOneSlots}</p>
-                            <p className="text-xs text-gray-400">plus-ones</p>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                  {/* RSVPs Received */}
-                  <div className="bg-white dark:bg-slate-800 rounded-xl shadow-lg p-6">
-                    <div className="flex flex-col items-center text-center">
-                      <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-1">RSVPs Confirmed</h3>
-                      <div className="flex items-baseline gap-2 justify-center">
-                        <div>
-                          <p className="text-3xl font-bold text-green-600 dark:text-green-300">{summary.respondedGuests}</p>
-                          <p className="text-xs text-gray-400">guests</p>
-                        </div>
-                        {summary.respondedPlusOnes > 0 && (
-                          <div className="border-l border-gray-200 dark:border-gray-600 pl-2">
-                            <p className="text-lg font-semibold text-green-600 dark:text-green-400">+{summary.respondedPlusOnes}</p>
-                            <p className="text-xs text-gray-400">plus-ones</p>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                  {/* Awaiting Response */}
-                  <div className="bg-white dark:bg-slate-800 rounded-xl shadow-lg p-6">
-                    <div className="flex flex-col items-center text-center">
-                      <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-1">Awaiting Response</h3>
-                      <div className="flex items-baseline gap-2 justify-center">
-                        <div>
-                          <p className="text-3xl font-bold text-yellow-600">{summary.pendingGuests}</p>
-                          <p className="text-xs text-gray-400">guests</p>
-                        </div>
-                        {summary.pendingPlusOneSlots > 0 && (
-                          <div className="border-l border-gray-200 dark:border-gray-600 pl-2">
-                            <p className="text-lg font-semibold text-yellow-600 dark:text-yellow-400">+{summary.pendingPlusOneSlots}</p>
-                            <p className="text-xs text-gray-400">plus-ones</p>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                  {/* Not Invited */}
-                  <div className="bg-white dark:bg-slate-800 rounded-xl shadow-lg p-6">
-                    <div className="flex flex-col items-center text-center">
-                      <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-1">Not Invited</h3>
-                      <p className="text-3xl font-bold text-gray-500 mt-1">{summary.notInvitedGuests}</p>
-                    </div>
-                  </div>
-                  {/* Plus Ones Submitted */}
-                  <div className="bg-white dark:bg-slate-800 rounded-xl shadow-lg p-6">
-                    <div className="flex flex-col items-center text-center">
-                      <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-1">Plus Ones</h3>
-                      <p className="text-3xl font-bold text-wedding-sage mt-1">{summary.submittedPlusOnes}</p>
-                    </div>
-                  </div>
-                </div>
+            {/* Stats Overview — compact 9-metric grid. Each tile reads
+                label-on-top, number-below at a tighter grain than before;
+                related metrics share a color so the eye groups them.
+                Plus-one metrics live in their own subgroup at the end. */}
+            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-2 mb-6">
+              {/* Total guest records — the universe everything else slices */}
+              <div className="bg-white dark:bg-slate-800 rounded-lg border border-gray-200 dark:border-gray-700 px-3 py-2">
+                <p className="text-xs text-gray-500 dark:text-gray-400">Total records</p>
+                <p className="text-xl font-bold text-wedding-navy dark:text-white">{summary.totalGuests}</p>
+              </div>
+              {/* Invited — anyone marked invite_sent OR who has responded */}
+              <div className="bg-white dark:bg-slate-800 rounded-lg border border-gray-200 dark:border-gray-700 px-3 py-2">
+                <p className="text-xs text-gray-500 dark:text-gray-400">Invited</p>
+                <p className="text-xl font-bold text-blue-600 dark:text-blue-400">{summary.invitedGuests}</p>
+              </div>
+              {/* Not invited */}
+              <div className="bg-white dark:bg-slate-800 rounded-lg border border-gray-200 dark:border-gray-700 px-3 py-2">
+                <p className="text-xs text-gray-500 dark:text-gray-400">Not invited</p>
+                <p className="text-xl font-bold text-gray-500 dark:text-gray-400">{summary.notInvitedGuests}</p>
+              </div>
+              {/* Responded — total who have an RSVP record (confirmed + declined) */}
+              <div className="bg-white dark:bg-slate-800 rounded-lg border border-gray-200 dark:border-gray-700 px-3 py-2">
+                <p className="text-xs text-gray-500 dark:text-gray-400">Responded</p>
+                <p className="text-xl font-bold text-emerald-600 dark:text-emerald-400">{summary.respondedGuests}</p>
+              </div>
+              {/* Pending — invited, no RSVP yet */}
+              <div className="bg-white dark:bg-slate-800 rounded-lg border border-gray-200 dark:border-gray-700 px-3 py-2">
+                <p className="text-xs text-gray-500 dark:text-gray-400">Pending response</p>
+                <p className="text-xl font-bold text-yellow-600 dark:text-yellow-400">{summary.pendingGuests}</p>
+              </div>
+              {/* Confirmed — responded with attending events */}
+              <div className="bg-white dark:bg-slate-800 rounded-lg border border-gray-200 dark:border-gray-700 px-3 py-2">
+                <p className="text-xs text-gray-500 dark:text-gray-400">Confirmed</p>
+                <p className="text-xl font-bold text-green-600 dark:text-green-400">{summary.confirmedGuests}</p>
+              </div>
+              {/* Declined — responded with attending=[] */}
+              <div className="bg-white dark:bg-slate-800 rounded-lg border border-gray-200 dark:border-gray-700 px-3 py-2">
+                <p className="text-xs text-gray-500 dark:text-gray-400">Declined</p>
+                <p className="text-xl font-bold text-red-600 dark:text-red-400">{summary.declinedGuests}</p>
+              </div>
+              {/* Plus-one capacity — sum of `number_of_plus_ones_allowed` */}
+              <div className="bg-white dark:bg-slate-800 rounded-lg border border-gray-200 dark:border-gray-700 px-3 py-2">
+                <p className="text-xs text-gray-500 dark:text-gray-400">Plus-one capacity</p>
+                <p className="text-xl font-bold text-purple-600 dark:text-purple-400">{summary.totalPlusOneSlots}</p>
+              </div>
+              {/* Submitted plus-ones — actual plus_one_docs created */}
+              <div className="bg-white dark:bg-slate-800 rounded-lg border border-gray-200 dark:border-gray-700 px-3 py-2">
+                <p className="text-xs text-gray-500 dark:text-gray-400">Submitted plus-ones</p>
+                <p className="text-xl font-bold text-wedding-sage dark:text-emerald-300">{summary.submittedPlusOnes}</p>
+              </div>
+            </div>
 
             {/* Controls */}
             <div className="bg-white dark:bg-slate-800 rounded-xl shadow-lg p-6 mb-8">
@@ -1408,33 +1392,36 @@ export default function AdminGuestsPage() {
                   </div>
                 </div>
 
-                {/* Second row: Column filters */}
-                <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-6 gap-4">
+                {/* Filters — single inline row (wraps on narrow viewports).
+                    Primary filters always visible; rare ones (Role, phone
+                    health, SMS prefs) collapsed behind a "More" toggle so
+                    the bar stays scannable. */}
+                <div className="flex flex-wrap items-center gap-2">
                   <input
                     type="text"
                     placeholder="Filter name"
                     value={filters.name}
                     onChange={(e) => updateFilter('name', e.target.value)}
-                    className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-wedding-rose focus:border-transparent"
+                    className="flex-1 min-w-[140px] px-3 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-wedding-rose focus:border-transparent"
                   />
                   <input
                     type="text"
                     placeholder="Filter email"
                     value={filters.email}
                     onChange={(e) => updateFilter('email', e.target.value)}
-                    className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-wedding-rose focus:border-transparent"
+                    className="flex-1 min-w-[140px] px-3 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-wedding-rose focus:border-transparent"
                   />
                   <input
                     type="text"
                     placeholder="Filter phone"
                     value={filters.phone}
                     onChange={(e) => updateFilter('phone', e.target.value)}
-                    className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-wedding-rose focus:border-transparent"
+                    className="flex-1 min-w-[120px] px-3 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-wedding-rose focus:border-transparent"
                   />
                   <select
                     value={filters.groupId}
                     onChange={(e) => updateFilter('groupId', e.target.value)}
-                    className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100"
+                    className="px-2 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100"
                   >
                     <option value="">All Groups</option>
                     {PRESET_GROUPS.map((group) => (
@@ -1449,7 +1436,7 @@ export default function AdminGuestsPage() {
                   <select
                     value={filters.rsvpStatus}
                     onChange={(e) => updateFilter('rsvpStatus', e.target.value as RsvpStatusFilter)}
-                    className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100"
+                    className="px-2 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100"
                   >
                     <option value="all">All RSVP states</option>
                     <option value="responded">RSVP&apos;d</option>
@@ -1459,49 +1446,61 @@ export default function AdminGuestsPage() {
                   <select
                     value={filters.plusOneStatus}
                     onChange={(e) => updateFilter('plusOneStatus', e.target.value as PlusOneStatusFilter)}
-                    className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100"
+                    className="px-2 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100"
                   >
                     <option value="all">All plus-one states</option>
                     <option value="submitted">Has plus-ones submitted</option>
                     <option value="allowed">Plus-ones allowed</option>
                     <option value="none">No plus-ones</option>
                   </select>
+                  <button
+                    type="button"
+                    onClick={() => setShowAdvancedFilters((v) => !v)}
+                    className="px-3 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-slate-700 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-slate-600 transition-colors flex items-center gap-1"
+                    aria-expanded={showAdvancedFilters}
+                  >
+                    {showAdvancedFilters ? 'Less' : 'More'}
+                    <svg className={`w-3 h-3 transition-transform ${showAdvancedFilters ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                    </svg>
+                  </button>
                 </div>
 
-                {/* Third row: Secondary filters */}
-                <div className="grid grid-cols-1 md:grid-cols-3 xl:grid-cols-4 gap-4">
-                  <select
-                    value={filters.role}
-                    onChange={(e) => updateFilter('role', e.target.value)}
-                    className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100"
-                  >
-                    <option value="">All Roles</option>
-                    {availableRoles.map((role) => (
-                      <option key={role} value={role}>{role}</option>
-                    ))}
-                  </select>
-                  <select
-                    value={filters.phoneIssue}
-                    onChange={(e) => updateFilter('phoneIssue', e.target.value as PhoneIssueFilter)}
-                    className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100"
-                  >
-                    <option value="all">All phone health</option>
-                    <option value="invalid_or_unreachable">Invalid or unreachable phone</option>
-                    <option value="no_contact">No phone and no email</option>
-                  </select>
-                  <select
-                    value={filters.smsStatus}
-                    onChange={(e) => updateFilter('smsStatus', e.target.value as SmsStatusFilter)}
-                    className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100"
-                  >
-                    <option value="all">All SMS preferences</option>
-                    <option value="opted_in">SMS opted in</option>
-                    <option value="opted_out">SMS opted out</option>
-                  </select>
-                  <div className="flex items-center text-xs text-gray-500 dark:text-gray-400">
-                    Text filters are debounced before refetching so planners can type without hammering the API.
+                {/* Advanced filters — collapsed by default. Rare enough that
+                    they shouldn't take up real estate until the planner
+                    asks. Same compact sizing as the primary row. */}
+                {showAdvancedFilters && (
+                  <div className="flex flex-wrap items-center gap-2">
+                    <select
+                      value={filters.role}
+                      onChange={(e) => updateFilter('role', e.target.value)}
+                      className="px-2 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100"
+                    >
+                      <option value="">All Roles</option>
+                      {availableRoles.map((role) => (
+                        <option key={role} value={role}>{role}</option>
+                      ))}
+                    </select>
+                    <select
+                      value={filters.phoneIssue}
+                      onChange={(e) => updateFilter('phoneIssue', e.target.value as PhoneIssueFilter)}
+                      className="px-2 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100"
+                    >
+                      <option value="all">All phone health</option>
+                      <option value="invalid_or_unreachable">Invalid or unreachable phone</option>
+                      <option value="no_contact">No phone and no email</option>
+                    </select>
+                    <select
+                      value={filters.smsStatus}
+                      onChange={(e) => updateFilter('smsStatus', e.target.value as SmsStatusFilter)}
+                      className="px-2 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100"
+                    >
+                      <option value="all">All SMS preferences</option>
+                      <option value="opted_in">SMS opted in</option>
+                      <option value="opted_out">SMS opted out</option>
+                    </select>
                   </div>
-                </div>
+                )}
 
                 {/* Fourth row: Bulk actions (shown when guests selected) */}
                 {selectedGuests.size > 0 && (
