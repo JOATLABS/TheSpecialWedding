@@ -25,6 +25,8 @@ from fastapi import HTTPException, UploadFile
 from app.core.database import mongo
 from app.core.settings import settings
 from app.utils.planner_ownership import (
+    build_wedding_owner_query,
+    combine_mongo_filters,
     normalize_planner_email,
     wedding_belongs_to_owner,
 )
@@ -627,25 +629,178 @@ class VendorService:
         return defaults
 
     async def _get_wedding(self, wedding_id: str) -> Optional[dict]:
-        """Get wedding by ID, trying both string and ObjectId formats"""
-        wedding = None
+        """Get wedding by ID, trying both string and ObjectId formats.
 
-        # First try with string ID
+        Backwards-compatible shim. Existing callers that pre-date the
+        cross-tenant boundary fix should be migrated to
+        ``_get_owned_wedding`` so the planner-ownership check runs at the
+        Mongo query layer. This shim delegates to the owned helper with
+        ``actor_email=None`` (root-admin bypass) so legacy callers retain
+        their previous semantics until they are migrated.
+        """
+        return await self._get_owned_wedding(wedding_id, actor_email=None)
+
+    # ------------------------------------------------------------------
+    # Tenant-scoped lookup helpers
+    #
+    # These centralize the planner-ownership boundary at the Mongo query
+    # layer so vendor mutation paths cannot trust an `_id` from the
+    # client. They follow the established pattern documented in
+    # AGENTS.md "Authorization And Tenant Boundary Rule" and the
+    # 404-not-403 ambiguity convention used by ``get_contract`` (see
+    # vendor_service.py ~line 1928).
+    #
+    # Contract:
+    #   - actor_email=None → root-admin bypass (no ownership filter).
+    #   - actor_email=str  → require ownership match.
+    #   - returns None when not found OR owned by another planner.
+    #     The caller raises 404 with a generic "not found" detail so
+    #     foreign IDs and missing IDs are indistinguishable from the
+    #     outside.
+    # ------------------------------------------------------------------
+
+    async def _get_owned_vendor_profile(
+        self, vendor_id: str, actor_email: Optional[str]
+    ) -> Optional[dict]:
+        """Fetch a vendor profile, scoped by planner ownership.
+
+        ``vendor_profiles.created_by`` is the planner's email — the same
+        scope the existing ``get_vendor_profile`` (vendor_service.py
+        ~line 1199) enforces. Mutation paths must use this helper so the
+        client-supplied ``vendor_profile_id`` cannot leak across
+        tenants.
+
+        Returns None on bad ID, missing record, or wrong owner.
+        """
+        if not vendor_id:
+            return None
         try:
-            wedding = await self.weddings.find_one({"_id": wedding_id})
+            obj_id = ObjectId(vendor_id)
+        except (InvalidId, TypeError, ValueError):
+            return None
+
+        query: Dict[str, Any] = {"_id": obj_id}
+        normalized_actor = normalize_planner_email(actor_email)
+        if normalized_actor is not None:
+            query["created_by"] = normalized_actor
+
+        try:
+            return await self.vendor_profiles.find_one(query)
         except Exception as e:
-            logger.debug(f"Failed to find wedding with string ID '{wedding_id}': {e}")
+            logger.warning(
+                f"Failed to look up vendor profile '{vendor_id}' for actor "
+                f"'{actor_email}': {e}"
+            )
+            return None
 
-        # If not found, try with ObjectId
-        if not wedding:
+    async def _get_owned_wedding(
+        self, wedding_id: str, actor_email: Optional[str]
+    ) -> Optional[dict]:
+        """Fetch a wedding, scoped via the canonical planner-ownership query.
+
+        Weddings carry ownership via ``assigned_planner_id`` /
+        ``assigned_planner_email`` (NOT ``created_by``). We delegate to
+        ``planner_ownership.build_wedding_owner_query`` so the rule lives
+        in one place. Tries the string ID first, then ObjectId — matching
+        the legacy ``_get_wedding`` shape so wedding IDs stored as
+        ``wedding_<hex>`` strings still resolve.
+
+        Returns None on missing record or wrong owner.
+        """
+        if not wedding_id:
+            return None
+
+        normalized_actor = normalize_planner_email(actor_email)
+        owner_query = (
+            build_wedding_owner_query(planner_email=normalized_actor)
+            if normalized_actor is not None
+            else None
+        )
+
+        async def _find(id_value: Any) -> Optional[dict]:
+            id_filter = {"_id": id_value}
+            query = combine_mongo_filters(id_filter, owner_query)
             try:
-                wedding = await self.weddings.find_one({"_id": ObjectId(wedding_id)})
-            except InvalidId:
-                logger.debug(f"Invalid ObjectId format for wedding_id: {wedding_id}")
+                return await self.weddings.find_one(query)
             except Exception as e:
-                logger.warning(f"Error finding wedding by ObjectId '{wedding_id}': {e}")
+                logger.debug(
+                    f"Wedding lookup failed for id={id_value!r} "
+                    f"(actor={actor_email!r}): {e}"
+                )
+                return None
 
-        return wedding
+        # First try the string ID form (most weddings use ``wedding_<hex>``).
+        wedding = await _find(wedding_id)
+        if wedding:
+            return wedding
+
+        # Fall back to ObjectId form.
+        try:
+            obj_id = ObjectId(wedding_id)
+        except (InvalidId, TypeError, ValueError):
+            return None
+
+        return await _find(obj_id)
+
+    async def _get_owned_assignment(
+        self, assignment_id: str, actor_email: Optional[str]
+    ) -> Optional[dict]:
+        """Fetch a vendor_assignment, scoped by ``created_by == actor_email``.
+
+        Returns None on bad ID, missing record, or wrong owner.
+        """
+        if not assignment_id:
+            return None
+        try:
+            obj_id = ObjectId(assignment_id)
+        except (InvalidId, TypeError, ValueError):
+            return None
+
+        query: Dict[str, Any] = {"_id": obj_id}
+        normalized_actor = normalize_planner_email(actor_email)
+        if normalized_actor is not None:
+            query["created_by"] = normalized_actor
+
+        try:
+            return await self.vendor_assignments.find_one(query)
+        except Exception as e:
+            logger.warning(
+                f"Failed to look up vendor_assignment '{assignment_id}' for "
+                f"actor '{actor_email}': {e}"
+            )
+            return None
+
+    async def _get_owned_contract(
+        self, contract_id: str, actor_email: Optional[str]
+    ) -> Optional[dict]:
+        """Fetch a vendor_contract, scoped by ``created_by == actor_email``.
+
+        ``get_contract`` already enforces this boundary for the
+        contract-detail GET path; this helper is for mutation paths
+        (currently ``upload_contract_document``) that fetch by ID
+        without the ownership filter. Returns None on bad ID, missing
+        record, or wrong owner.
+        """
+        if not contract_id:
+            return None
+        try:
+            obj_id = ObjectId(contract_id)
+        except (InvalidId, TypeError, ValueError):
+            return None
+
+        query: Dict[str, Any] = {"_id": obj_id}
+        normalized_actor = normalize_planner_email(actor_email)
+        if normalized_actor is not None:
+            query["created_by"] = normalized_actor
+
+        try:
+            return await self.vendor_contracts.find_one(query)
+        except Exception as e:
+            logger.warning(
+                f"Failed to look up vendor_contract '{contract_id}' for "
+                f"actor '{actor_email}': {e}"
+            )
+            return None
 
     async def _resolve_couple_contact(
         self,
@@ -1412,12 +1567,17 @@ class VendorService:
     ) -> dict:
         """Assign a vendor from directory to a wedding"""
         try:
-            # Get vendor profile
-            vendor = await self.vendor_profiles.find_one(
-                {"_id": ObjectId(vendor_profile_id)}
-            )
+            # Get vendor profile (scoped by planner ownership — prevents
+            # cross-tenant assignment via a client-supplied vendor_profile_id).
+            vendor = await self._get_owned_vendor_profile(vendor_profile_id, created_by)
             if not vendor:
                 raise HTTPException(status_code=404, detail="Vendor not found")
+
+            # Verify the wedding belongs to the actor planner (was previously
+            # not fetched at all, so any wedding_id was trusted).
+            wedding = await self._get_owned_wedding(wedding_id, created_by)
+            if not wedding:
+                raise HTTPException(status_code=404, detail="Wedding not found")
 
             # Check if already assigned
             existing = await self.vendor_assignments.find_one(
@@ -1500,8 +1660,22 @@ class VendorService:
             )
 
         try:
+            # Pre-flight ownership check — keeps the planner-scoped query
+            # in the helper module and raises 404 if the assignment is
+            # missing or owned by another planner. The subsequent
+            # find_one_and_update is then re-scoped on _id + created_by
+            # so a TOCTOU swap between check and update cannot succeed.
+            owned = await self._get_owned_assignment(assignment_id, created_by)
+            if not owned:
+                raise HTTPException(status_code=404, detail="Assignment not found")
+
+            update_query: Dict[str, Any] = {"_id": ObjectId(assignment_id)}
+            normalized_actor = normalize_planner_email(created_by)
+            if normalized_actor is not None:
+                update_query["created_by"] = normalized_actor
+
             result = await self.vendor_assignments.find_one_and_update(
-                {"_id": ObjectId(assignment_id)},
+                update_query,
                 {"$set": {"status": status, "updated_at": datetime.now(timezone.utc)}},
                 return_document=True,
             )
@@ -1650,15 +1824,15 @@ class VendorService:
             # Get planner's contract settings (with fallback to system defaults)
             planner_settings = await self._get_planner_contract_settings(created_by)
 
-            # Get vendor profile
-            vendor = await self.vendor_profiles.find_one(
-                {"_id": ObjectId(vendor_profile_id)}
-            )
+            # Get vendor profile (scoped by planner ownership — prevents
+            # cross-tenant write via a client-supplied vendor_profile_id).
+            vendor = await self._get_owned_vendor_profile(vendor_profile_id, created_by)
             if not vendor:
                 raise HTTPException(status_code=404, detail="Vendor not found")
 
-            # Get wedding
-            wedding = await self._get_wedding(wedding_id)
+            # Get wedding (scoped by planner ownership — prevents
+            # cross-tenant write via a client-supplied wedding_id).
+            wedding = await self._get_owned_wedding(wedding_id, created_by)
             if not wedding:
                 raise HTTPException(status_code=404, detail="Wedding not found")
 
@@ -3415,9 +3589,19 @@ class VendorService:
     # =========================================================================
 
     async def upload_contract_document(
-        self, contract_id: str, file: UploadFile, document_type: str = "signed"
+        self,
+        contract_id: str,
+        file: UploadFile,
+        document_type: str = "signed",
+        created_by: Optional[str] = None,
     ) -> dict:
-        """Upload a contract document to S3"""
+        """Upload a contract document to S3.
+
+        ``created_by`` is the actor's planner email. When provided, the
+        contract lookup is scoped to that owner so a planner cannot
+        overwrite another tenant's ``document_url``. Pass ``None`` for
+        the root-admin bypass case.
+        """
         try:
             # Validate MIME type
             if file.content_type not in ALLOWED_CONTRACT_TYPES:
@@ -3425,6 +3609,12 @@ class VendorService:
                     status_code=400,
                     detail=f"File type '{file.content_type}' not allowed. Allowed types: {', '.join(sorted(ALLOWED_CONTRACT_TYPES))}",
                 )
+
+            # Verify the contract exists and belongs to this planner BEFORE
+            # we burn an S3 object on a foreign-tenant write attempt.
+            owned_contract = await self._get_owned_contract(contract_id, created_by)
+            if not owned_contract:
+                raise HTTPException(status_code=404, detail="Contract not found")
 
             # Generate unique key
             timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
@@ -3443,10 +3633,16 @@ class VendorService:
 
             file_url = f"{self.media_domain}/{filename}"
 
-            # Update contract with document URL
+            # Update contract with document URL — re-scope the update query
+            # to the owner so a TOCTOU swap between the ownership check
+            # and the write cannot smuggle in a foreign contract.
             field = f"{document_type}_document_url"
+            update_query: Dict[str, Any] = {"_id": ObjectId(contract_id)}
+            normalized_actor = normalize_planner_email(created_by)
+            if normalized_actor is not None:
+                update_query["created_by"] = normalized_actor
             await self.vendor_contracts.update_one(
-                {"_id": ObjectId(contract_id)},
+                update_query,
                 {"$set": {field: file_url, "updated_at": datetime.now(timezone.utc)}},
             )
 
@@ -3514,13 +3710,15 @@ class VendorService:
         The planner uploads their own contract PDF instead of using templates.
         """
         try:
-            # Get vendor profile
+            # Get vendor profile (already scoped to planner via
+            # get_vendor_profile's _id+created_by filter).
             vendor = await self.get_vendor_profile(vendor_profile_id, created_by)
             if not vendor:
                 raise HTTPException(status_code=404, detail="Vendor not found")
 
-            # Get wedding
-            wedding = await self._get_wedding(wedding_id)
+            # Get wedding (scoped by planner ownership — prevents a planner
+            # from uploading a PDF against another tenant's wedding).
+            wedding = await self._get_owned_wedding(wedding_id, created_by)
             if not wedding:
                 raise HTTPException(status_code=404, detail="Wedding not found")
 

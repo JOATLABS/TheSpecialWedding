@@ -430,10 +430,19 @@ async def upload_contract_document(
     document_type: str = Query("signed", description="Type: draft, signed, attachment"),
     current_user: ExtendedAuthUser = Depends(require_vendor_feature),
 ):
-    """Upload a contract document (PDF, etc.)"""
+    """Upload a contract document (PDF, etc.).
+
+    Scoped to the actor planner unless they are root-admin (root admins pass
+    ``None`` to skip the ownership filter). Mirrors the pattern used by
+    /admin/directory and other planner-scoped routes in this module.
+    """
     enforce_team_permission(current_user, "manage_vendors")
+    owner_email = None if current_user.is_root_admin else current_user.email
     return await vendor_service.upload_contract_document(
-        contract_id=contract_id, file=file, document_type=document_type
+        contract_id=contract_id,
+        file=file,
+        document_type=document_type,
+        created_by=owner_email,
     )
 
 

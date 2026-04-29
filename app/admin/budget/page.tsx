@@ -13,6 +13,7 @@ import PaymentHistoryPanel from '../../components/budget/PaymentHistoryPanel';
 import RecordPaymentModal from '../../components/budget/RecordPaymentModal';
 import { budgetApi } from '../../services/budgetApi';
 import PageHeader from '../components/PageHeader';
+import WeddingPicker from '../components/WeddingPicker';
 import {
   getVendorDirectory,
   getWeddingVendors,
@@ -541,25 +542,18 @@ export default function BudgetDashboard() {
       {/* Main Content — expands to full width when ad rail hidden */}
       <div className={`${showAdRail ? 'lg:col-span-3' : ''} space-y-6`}>
 
-      {/* Wedding Selection */}
-      <div className="bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 px-3 py-2">
-        <div className="flex flex-col sm:flex-row gap-3 items-center">
-          <label className="text-sm font-medium text-slate-700 dark:text-gray-200 whitespace-nowrap">
-            Select Wedding:
-          </label>
-          <select
-            value={selectedWedding}
-            onChange={(e) => setSelectedWedding(e.target.value)}
-            className="flex-1 px-3 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-wedding-rose focus:border-transparent"
-          >
-            <option value="">Choose a wedding...</option>
-            {weddings.map((wedding) => (
-              <option key={wedding._id || wedding.id} value={wedding._id || wedding.id}>
-                {wedding.couple_names} - {formatDate(wedding.date)}
-              </option>
-            ))}
-          </select>
-        </div>
+      {/* Wedding picker — shared compact pill (see WeddingPicker.tsx) */}
+      <div className="flex items-center gap-3">
+        <span className="text-sm text-slate-500 dark:text-gray-400">Wedding:</span>
+        <WeddingPicker
+          options={weddings.map((w) => ({
+            id: (w._id || w.id) as string,
+            label: `${w.couple_names} — ${formatDate(w.date)}`,
+          }))}
+          value={selectedWedding}
+          onChange={setSelectedWedding}
+          placeholder="Choose a wedding…"
+        />
       </div>
 
       {/* Budget Summary */}
