@@ -11,6 +11,7 @@ import { budgetApi } from '../../../services/budgetApi';
 import type { VendorQuote, CreateVendorQuoteRequest } from '../../../types/budget';
 import { formatDate } from '@/utils/dateFormat';
 import PageHeader from '../../components/PageHeader';
+import WeddingPicker from '../../components/WeddingPicker';
 
 interface Wedding {
   id?: string;
@@ -311,26 +312,19 @@ export default function VendorQuotesPage() {
         )}
       </PageHeader>
 
-      {/* Wedding Selection */}
-      <Card className="p-4">
-        <div className="flex flex-col sm:flex-row gap-4 items-center">
-          <label className="font-medium text-wedding-navy whitespace-nowrap">
-            Select Wedding:
-          </label>
-          <select
-            value={selectedWedding}
-            onChange={(e) => setSelectedWedding(e.target.value)}
-            className="flex-1 p-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 dark:text-gray-100-md focus:ring-2 focus:ring-wedding-rose focus:border-transparent"
-          >
-            <option value="">Choose a wedding...</option>
-            {weddings.map((wedding) => (
-              <option key={wedding._id || wedding.id} value={wedding._id || wedding.id}>
-                {wedding.couple_names} - {formatDate(wedding.date)}
-              </option>
-            ))}
-          </select>
-        </div>
-      </Card>
+      {/* Wedding picker — shared compact pill (see WeddingPicker.tsx) */}
+      <div className="flex items-center gap-3">
+        <span className="text-sm text-slate-500 dark:text-gray-400">Wedding:</span>
+        <WeddingPicker
+          options={weddings.map((w) => ({
+            id: (w._id || w.id) as string,
+            label: `${w.couple_names} — ${formatDate(w.date)}`,
+          }))}
+          value={selectedWedding}
+          onChange={setSelectedWedding}
+          placeholder="Choose a wedding…"
+        />
+      </div>
 
       {/* Filters and Controls */}
       {selectedWedding && (

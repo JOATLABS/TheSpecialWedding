@@ -11,6 +11,7 @@ import OnboardingModal from '../components/OnboardingModal';
 import { CampaignSponsoredRail } from '../vendors/components/CampaignSponsoredRail';
 import { fetchEngagementSignals, type WeddingEngagementSignal } from '@/services/behavioralAnalyticsApi';
 import { Users, Mail, ImagePlus } from 'lucide-react';
+import WeddingPicker from '../components/WeddingPicker';
 
 interface Wedding {
  id: string;
@@ -517,17 +518,13 @@ export default function WeddingPlannerDashboard() {
             </div>
 
             <div className="flex items-center space-x-3">
-              {/* Wedding Selector */}
+              {/* Wedding picker — shared compact pill (see WeddingPicker.tsx) */}
               {weddings.length > 1 && (
-                <select
+                <WeddingPicker
+                  options={weddings.map((w) => ({ id: w.id, label: w.couple_names }))}
                   value={selectedInsightWedding}
-                  onChange={(e) => setSelectedInsightWedding(e.target.value)}
-                  className="text-sm border border-slate-300 dark:border-slate-600 rounded-lg px-3 py-1.5 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 focus:ring-2 focus:ring-indigo-500"
-                >
-                  {weddings.map((w) => (
-                    <option key={w.id} value={w.id}>{w.couple_names}</option>
-                  ))}
-                </select>
+                  onChange={setSelectedInsightWedding}
+                />
               )}
 
               {/* Refresh Button */}
